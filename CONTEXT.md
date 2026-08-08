@@ -1,0 +1,78 @@
+# GDS ETL Workbench
+
+GDS ETL Workbench lets developers inspect governed metadata, prepare a complete Model change, validate it, and apply it through one controlled workflow.
+
+## Language
+
+**Tenant**:
+The ownership scope for accounts, metadata, Models, and authorization.
+_Avoid_: Customer, client, account scope
+
+**Model**:
+The governed metadata aggregate that contains scope, policy, effective Sections, and one current revision.
+_Avoid_: Project, workspace model
+
+**Model Scope**:
+The server-owned set of source Objects and Attributes that a Model can use.
+_Avoid_: Selection, source list
+
+**Section**:
+One versioned part of a Model change: Evidence, Analysis, Conceptual, Logical, Dimensional, or Mapping.
+_Avoid_: Phase document, payload type
+
+**Model Change Set**:
+The draft aggregate that replaces whole Sections, validates one future Model graph, and applies atomically.
+_Avoid_: Patch, transaction draft
+
+**Candidate**:
+An uncommitted workflow result that can become one or more Model Change Set Sections after validation.
+_Avoid_: Agent answer, model output
+
+**Workflow Grant**:
+The server-created authorization that binds one human, workload identity, Model, workflow, request, allowed operations, and expiry.
+_Avoid_: Token, lease
+
+**Workflow Run**:
+One active execution under a Workflow Grant.
+_Avoid_: Job, session
+
+**Actor Kind**:
+The server-derived `human` or `workload` classification used to project the MCP
+tool and contract-resource inventory. Client-declared metadata never selects it.
+_Avoid_: Client mode, audience hint
+
+**Workflow Control**:
+The three fixed non-MCP human operations that authorize, revoke, or read the
+safe status of one exact Workflow Run and Workflow Grant pair.
+_Avoid_: Management API, workflow MCP tools
+
+**Notebook Definition**:
+The notebook-owned model, reasoning, prompt, tool, and workflow configuration compiled once at notebook startup.
+_Avoid_: Profile registry, release asset
+
+**Model Snapshot**:
+The immutable, bounded Model context archive returned through MCP for one workflow.
+_Avoid_: Dump, export
+
+**Verified Model Graph**:
+The typed and indexed in-memory form of a verified Model Snapshot.
+_Avoid_: Projection input, document map
+
+**Profiling Run**:
+The bounded staging and finalization aggregate for Attribute profiling results and failures.
+_Avoid_: Profile job
+
+**Mapping Package**:
+The complete normalized Mapping result for the approved target Object and source System pairs.
+_Avoid_: Mapping payload, mapper output
+
+**Apply Receipt**:
+The immutable result that binds an applied Model Change Set to its revision, digest, and idempotent outcome.
+_Avoid_: Apply response
+
+**DBML Export**:
+The immutable, revision-bound Conceptual and/or Logical visualization bundle
+generated from effective Model Sections. An MCP client chooses where to save
+the downloaded bundle; an authorized DBML Workflow Run may publish it only
+beneath the deployment-owned Databricks Volume root.
+_Avoid_: Database dump, server-local export, arbitrary path write
