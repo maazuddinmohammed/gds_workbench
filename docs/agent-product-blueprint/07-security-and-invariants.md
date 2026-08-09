@@ -4,13 +4,14 @@
 
 1. Azure App Service Easy Auth authenticates the HTTP request.
 2. The App Service parses only the bounded `X-MS-CLIENT-PRINCIPAL` envelope.
-3. Repository lookup resolves current human account, Tenant, role, and active
-   state. Request claims do not assert Model ownership.
+3. Repository lookup resolves the current registered Principal, Tenant,
+   effective role, and active state. Request claims do not assert Model
+   ownership or authorization.
 4. The configured workload must match one exact Entra Tenant/Object identity
    and present application role `Workflow.Run`.
 5. Workflow Grant identifiers delegate no authority by themselves. Every call
-   rechecks identity, status, expiry, Model, operation, binding, and initiating
-   human.
+   rechecks identity, status, expiry, Model, operation, binding, the initiating
+   user Principal, and the workload service Principal.
 6. PostgreSQL roles and constraints remain a second independent boundary.
 
 Protected routes require HTTPS when configured. Request middleware rejects
@@ -30,19 +31,22 @@ each resolve unambiguously through the accepted claim aliases.
 - The actor kind is server-derived. No request field, MCP metadata, or cached
   tool list may choose it.
 
-## Human capability matrix
+## Tenant capability matrix
 
-| Capability | Developer | Architect | Admin |
-|---|:---:|:---:|:---:|
-| Open catalog read | Yes | Yes | Yes |
-| Owned Model read | Yes | Yes | Yes |
-| Bounded Modeling Evidence summary | Yes | Yes | Yes |
-| Private Change Set or draft overlay | No | Yes | Yes |
-| Model mutation | No | Yes | Yes |
-| Profiling | No | Yes | Yes |
-| Workflow authorization | No | Yes | Yes |
-| Downstream engineering registration capability | Yes | No | Yes |
-| Security administration | No | No | Yes |
+| Capability | Viewer | Developer | Architect | Tenant Admin |
+|---|:---:|:---:|:---:|:---:|
+| Tenant data read | Yes | Yes | Yes | Yes |
+| Private Change Set or draft overlay | No | Yes | Yes | Yes |
+| Permitted workflow development | No | Yes | Yes | Yes |
+| Validate, apply, and lock Model changes | No | No | Yes | Yes |
+| Tenant settings and access administration | No | No | No | Yes |
+
+An active authenticated Principal without Tenant access receives implicit
+Viewer capability only for a `global` Tenant. A `private` Tenant requires an
+active, unexpired access row. `is_super_admin` is a Principal attribute, not a
+Tenant role; it grants every application capability across active Tenants.
+Neither global visibility nor super-admin status bypasses locks, revisions,
+audit, Workflow Grant binding, or operation availability.
 
 The downstream engineering capability does not create a Release 1 public
 registration or foundational CRUD tool. Physical target registration remains
@@ -51,13 +55,12 @@ an external owner action.
 Model-private failures normally return `not_found` so another Tenant's
 ownership is not disclosed.
 
-Sensitive human calls resolve one active Entra identity, account, and exactly
-one active owning-Tenant membership. More than one match is ambiguous and is
-rejected; the server never selects one. Mutations resolve and lock the exact
-Tenant, identity, account, and membership facts inside the transaction through
-a narrow, fully-qualified `SECURITY DEFINER` function with a fixed safe
-`search_path`. The runtime role receives no direct foundational security-table
-write access.
+Sensitive calls resolve one active Entra identity and registered Principal.
+Private-Tenant calls additionally resolve one active, unexpired Tenant access
+row unless the Principal is a super admin. Mutations resolve and lock those
+facts inside the transaction through a narrow, fully-qualified
+`SECURITY DEFINER` function with a fixed safe `search_path`. The runtime role
+receives no direct foundational security-table write access.
 
 ## Workflow Grant checks
 
@@ -71,8 +74,9 @@ Each workload call verifies:
 6. exact bound Change Set or Profiling Run when applicable; and
 7. current authorization of the initiating human.
 
-The initiating human must still be active, linked to the same account and
-Tenant, and be an architect or admin with workflow-authorization capability.
+The initiating user Principal must remain active and authorized for the same
+Tenant. The workload identity must remain bound to the registered service
+Principal recorded on the grant.
 
 ## Mutation promotion
 
@@ -126,10 +130,12 @@ file upload, secret-returning, code-execution, or physical-deployment operation.
 15. Routine modeling does not use Tenant Leases.
 16. Deterministic context digests detect stale inputs.
 17. Actor and ownership are derived server-side.
-18. Source catalog is open to active humans with one active Tenant membership;
-    private Model state is not.
-19. Only active owning-Tenant architects/admins profile or mutate Models.
-20. Grants bind human, Model, run, selection, operations, workload, and expiry.
+18. Global-Tenant data is readable by any active authenticated Principal;
+    private-Tenant data requires active Tenant access or super-admin status.
+19. Only effective architects, Tenant Admins, or super admins validate, apply,
+    or lock Model changes.
+20. Grants bind initiating user Principal, workload service Principal, Model,
+    run, selection, operations, and expiry.
 21. Databricks never connects to metadata PostgreSQL.
 22. Raw physical data does not traverse MCP.
 23. Sensitive data does not appear in ordinary results or logs.

@@ -77,13 +77,13 @@ selected Object, common code applies these exact rules:
    finalization records a successful no-op and advances no Model revision.
 
 Readiness reports every affected Connection/Object and correction in one pass.
-Profiling staging records the selected environment/mode and resolved per-Object
-batch values in the immutable run context; Attribute Profile identity remains
+The Profiling Run records the selected environment/mode and resolved per-Object
+batch values in immutable request context; Attribute Profile identity remains
 `(model_id, attribute_id)` rather than adding batch history.
 
 ### 7.2 DD-109 — exact combined Mapping persistence
 
-Use exactly two tables. Add no environment, contributor, materialization,
+Use exactly three tables. Add no environment, contributor, materialization,
 Relationship-mapping, or orchestration-process table/column.
 
 Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
@@ -92,6 +92,12 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 `created_time/updated_time TIMESTAMPTZ` default current timestamp, and
 `created_by/updated_by VARCHAR(255)` default current user. Lifecycle is exactly
 `active|needs_review|inactive|deprecated`; all FKs use `ON DELETE NO ACTION`.
+
+#### `workflow.mapping_source_system_dependency`
+
+One row controls each `(model_id, modeled_entity_type, source_system_id)`
+execution wave. Equal dependency orders may run in parallel; lower orders
+complete before higher orders.
 
 #### `workflow.object_mapping`
 
@@ -105,8 +111,7 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 | `dimensional_entity_id` | `BIGINT NULL` |
 | `target_object_id` | `BIGINT NOT NULL` |
 | `source_system_id` | `BIGINT NOT NULL` |
-| `source_system_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
-| `target_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
+| `object_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
 | `artifact_type` | `VARCHAR(30) NULL`, `sql_file|python_file|python_notebook` |
 | `artifact_generation_instructions` | `TEXT NULL`, nonblank and at most 32,768 characters when present |
 | `mapping_profile_key` | `VARCHAR(100) NULL`, pattern `[a-z][a-z0-9_.-]{0,99}` |
@@ -121,7 +126,8 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 
 Exactly one typed Entity ID must be non-null and agree with
 `modeled_entity_type`. Composite FKs bind that Entity to the same Model;
-ordinary FKs bind target Object and source System. Add unique witness
+an FK binds the exact Mapping Source System Dependency row, and an ordinary FK
+binds the target Object. Add unique witness
 `(object_mapping_id, model_id, modeled_entity_type, target_object_id)`. Preserve
 binding identity across every lifecycle state with two partial unique indexes:
 
@@ -166,7 +172,8 @@ multiple contributor bindings, but an existing binding can never be repointed.
 Null transformation is an unauthored registered binding; completed direct
 content explicitly stores `transformation_kind=direct`.
 
-Deferred constraint triggers enforce all cases ordinary FKs cannot express:
+A transaction-deduplicated deferred graph validator enforces all cases
+ordinary FKs cannot express:
 
 - the typed modeled Attribute belongs to the exact typed Entity on its header;
 - effective child, typed parents, and target parent are effective/valid;
@@ -175,16 +182,17 @@ Deferred constraint triggers enforce all cases ordinary FKs cannot express:
   `bronze|silver|gold`;
 - every effective header in one
   `(model_id, modeled_entity_type, target_object_id, source_system_id)` package
-  has byte-equivalent artifact/profile/instruction/wave fields and equal
+  has byte-equivalent artifact/profile/instruction fields and equal
   canonical package JSON as well as equal digest;
-- one source System/layer has one `source_system_dependency_order`;
+- one source System/layer has one controlled dependency row;
+- one target Object/layer has one `object_dependency_order`;
 - parent/child binding identity columns are immutable after insert;
 - locked rows and locked-header descendants are immutable, and ordinary DML
   cannot toggle lock flags.
 
 To make that route check declarative, T03 adds
-`core.zone.zone_code VARCHAR(30) NOT NULL UNIQUE`, constrained to lowercase
-identifier syntax. Release fixtures/bootstrap use the exact codes `bronze`,
+`reference.zone.zone_code VARCHAR(30) NOT NULL`, with case-insensitive
+uniqueness. Release fixtures/bootstrap use the exact codes `bronze`,
 `silver`, and `gold`; display names remain independent.
 
 The supporting indexes cover Model/package/status, Model/layer/System and both

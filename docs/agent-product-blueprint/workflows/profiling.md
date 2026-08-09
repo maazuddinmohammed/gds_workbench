@@ -46,9 +46,9 @@ DD-108 defines the batch rules:
 7. Compute row, non-null, null, blank, and distinct counts; minimum and maximum
    string lengths; and their bounded percentages.
 8. Convert each computation into exactly one success or failure disposition.
-9. Stage dispositions in ordered batches of at most 500.
-10. Reload context, require the frozen identity, and finalize the Profiling
-    Run against the expected Model revision.
+9. Validate the complete bounded disposition set in process.
+10. Reload context, require the frozen identity, and atomically publish the
+    successful Profiles, final receipt, and terminal Profiling Run state.
 
 Spark builds predicates with Column and literal APIs. It casts only the
 already range-checked literal. It never casts the source column or interpolates
@@ -56,14 +56,13 @@ SQL.
 
 ## Persistence and revision
 
-Results and failures first enter append-only Profiling staging tables. A
-deferred database check prevents one Attribute from having both dispositions.
-Finalization validates counts and coverage, then replaces only successful
-Attribute Profiles. Failed Attributes retain their prior Profile.
+Profiling has no staging tables. Completion validates counts and coverage, then
+replaces only successful Attribute Profiles and writes one final receipt in the
+same transaction. Failed Attributes retain their prior Profile; the receipt
+stores the bounded retained-failure count rather than individual failure rows.
 
-The durable state machine is `staging -> validated|failed|expired`, then
-`validated -> completed|completed_with_warnings|failed|expired`. Final states
-are immutable.
+The durable state machine moves `running` to `completed`,
+`completed_with_warnings`, `failed`, or `expired`. Final states are immutable.
 
 - At least one changed success and no failure: `completed`.
 - Mixed success and failure: `completed_with_warnings`.
@@ -71,24 +70,25 @@ are immutable.
 - Explicit empty batches or no effective Profile changes: workflow no-op.
 - Model revision advances once only if a stored Attribute Profile changes.
 
-The final receipt, staging records, and idempotency outcomes are immutable.
+The final receipt and idempotency outcomes are immutable.
 
 ## Failure, retry, and concurrency
 
 A bad batch policy, missing source identity, or changed context blocks before
-finalization. An individual Spark error becomes a retained nonfatal failure;
+publication. An individual Spark error becomes a retained nonfatal failure;
 timeout and cancellation still stop the whole run. Coverage must have no
-pending or fatal slots before staging or finalization.
+pending or fatal slots before publication.
 
-Stage keys include the batch number. Finalization has a separate key. Replays
-return the stored outcome and cannot duplicate a disposition or revision.
-Concurrent finalization and grant revocation/expiry serialize in PostgreSQL.
+Completion has one idempotency key. Replays return the stored outcome and
+cannot duplicate a receipt or revision. Concurrent completion and grant
+revocation/expiry serialize in PostgreSQL.
 
 ## Boundaries
 
 Profiling cannot sample arbitrary SQL, select arbitrary columns, read secrets,
-or store raw rows. It does not create a Model Change Set. It changes only
-Attribute Profile state through the Profiling Run protocol.
+or store raw rows. The Profiling Run and final receipt remain the authoritative
+execution/publication protocol; a Model Change Set may additionally carry its
+bounded Profiling document for atomic orchestration with other Model documents.
 
 Sources:
 [`workflow.py`](../../../jobs/src/gds_etl_jobs/profiling/workflow.py),

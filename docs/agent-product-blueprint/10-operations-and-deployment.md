@@ -4,7 +4,7 @@
 
 Release 1 has three independently deployed parts:
 
-1. a PostgreSQL 16 database created from the canonical nine SQL files;
+1. a PostgreSQL 16 database created from the canonical thirteen SQL files;
 2. one Azure Linux App Service ZIP containing the MCP modular monolith; and
 3. one immutable Databricks source release containing the jobs library and
    seven separate notebooks.
@@ -130,7 +130,7 @@ changes, and cloud deployment are not App Service or notebook responsibilities.
 
 ### Database
 
-`database/1_*.sql` through `database/9_*.sql` are one fresh-install schema, not
+`database/01_*.sql` through `database/13_*.sql` are one fresh-install schema, not
 an in-place migration chain. Apply them once, in order, in one transaction with
 the migration identity. There is no destructive downgrade or populated-
 database cleanup helper.

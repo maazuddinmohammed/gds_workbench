@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Conceptual artifacts and physical Support.
+-- GDS ETL Workbench Release 1: Conceptual Section and physical Support.
 
 CREATE TABLE workflow.conceptual_object (
     conceptual_object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -21,16 +21,16 @@ CREATE TABLE workflow.conceptual_object (
     CONSTRAINT uq_conceptual_object_id_model
         UNIQUE (conceptual_object_id, model_id),
     CONSTRAINT ck_conceptual_object_name CHECK (
-        core.is_nonblank(conceptual_object_name)
+        reference.is_nonblank(conceptual_object_name)
     ),
     CONSTRAINT ck_conceptual_object_definition CHECK (
-        core.is_nonblank(conceptual_object_definition)
+        reference.is_nonblank(conceptual_object_definition)
     ),
     CONSTRAINT ck_conceptual_object_type CHECK (
-        core.is_nonblank(conceptual_object_type)
+        reference.is_nonblank(conceptual_object_type)
     ),
     CONSTRAINT ck_conceptual_object_grain CHECK (
-        core.is_nonblank(conceptual_object_grain)
+        reference.is_nonblank(conceptual_object_grain)
     ),
     CONSTRAINT ck_conceptual_object_confidence CHECK (
         conceptual_object_confidence IN ('low', 'medium', 'high')
@@ -89,13 +89,13 @@ CREATE TABLE workflow.conceptual_relationship (
         from_conceptual_object_id <> to_conceptual_object_id
     ),
     CONSTRAINT ck_conceptual_relationship_name CHECK (
-        core.is_nonblank(conceptual_relationship_name)
+        reference.is_nonblank(conceptual_relationship_name)
     ),
     CONSTRAINT ck_conceptual_relationship_type CHECK (
-        core.is_nonblank(conceptual_relationship_type)
+        reference.is_nonblank(conceptual_relationship_type)
     ),
     CONSTRAINT ck_conceptual_relationship_definition CHECK (
-        core.is_nonblank(conceptual_relationship_definition)
+        reference.is_nonblank(conceptual_relationship_definition)
     ),
     CONSTRAINT ck_conceptual_relationship_cardinality CHECK (
         conceptual_relationship_cardinality IN (
@@ -104,8 +104,8 @@ CREATE TABLE workflow.conceptual_relationship (
         )
     ),
     CONSTRAINT ck_conceptual_relationship_basis CHECK (
-        core.is_nonblank(conceptual_relationship_basis)
-        AND core.is_nonblank(conceptual_relationship_cardinality_basis)
+        reference.is_nonblank(conceptual_relationship_basis)
+        AND reference.is_nonblank(conceptual_relationship_cardinality_basis)
     ),
     CONSTRAINT ck_conceptual_relationship_confidence CHECK (
         conceptual_relationship_confidence IN ('low', 'medium', 'high')
@@ -178,14 +178,14 @@ CREATE TABLE workflow.conceptual_support (
     ),
     CONSTRAINT ck_conceptual_support_role CHECK (
         conceptual_support_role IS NULL
-        OR core.is_nonblank(conceptual_support_role)
+        OR reference.is_nonblank(conceptual_support_role)
     ),
     CONSTRAINT ck_conceptual_support_reason CHECK (
-        core.is_nonblank(conceptual_support_reason)
+        reference.is_nonblank(conceptual_support_reason)
     ),
     CONSTRAINT ck_conceptual_support_reason_detail CHECK (
         conceptual_support_reason_detail IS NULL
-        OR core.is_nonblank(conceptual_support_reason_detail)
+        OR reference.is_nonblank(conceptual_support_reason_detail)
     ),
     CONSTRAINT ck_conceptual_support_confidence CHECK (
         conceptual_support_confidence IN ('low', 'medium', 'high')
@@ -219,18 +219,7 @@ FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
 
 CREATE INDEX ix_conceptual_object_model_status
     ON workflow.conceptual_object (model_id, conceptual_object_status);
-CREATE INDEX ix_conceptual_relationship_from_object
-    ON workflow.conceptual_relationship (model_id, from_conceptual_object_id);
 CREATE INDEX ix_conceptual_relationship_to_object
     ON workflow.conceptual_relationship (model_id, to_conceptual_object_id);
 CREATE INDEX ix_conceptual_support_physical_object
     ON workflow.conceptual_support (model_id, object_id);
-CREATE INDEX ix_conceptual_object_locked
-    ON workflow.conceptual_object (model_id, conceptual_object_id)
-    WHERE conceptual_object_is_locked;
-CREATE INDEX ix_conceptual_relationship_locked
-    ON workflow.conceptual_relationship (model_id, conceptual_relationship_id)
-    WHERE conceptual_relationship_is_locked;
-CREATE INDEX ix_conceptual_support_locked
-    ON workflow.conceptual_support (model_id, conceptual_support_id)
-    WHERE conceptual_support_is_locked;

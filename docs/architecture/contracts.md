@@ -20,7 +20,7 @@ HTTP, PostgreSQL, Spark, Databricks, or provider SDKs.
 The test fixture randomizes its database, role, password, and run marker,
 verifies loopback/container/database/user/PostgreSQL-major ownership before
 DDL, and exposes connections only through its opaque capability. Applying the
-nine numbered SQL files is one fail-fast transaction and may happen once per
+thirteen numbered SQL files is one fail-fast transaction and may happen once per
 fixture. Stopping the container is the only cleanup operation.
 
 ## Canonical JSON v1
@@ -82,7 +82,7 @@ become Evidence foreign keys.
 
 Every definition has one exact audience selected from the server-derived
 `ActorKind`; an MCP client cannot declare or override it. The complete registry
-contains 25 tools in three disjoint partitions:
+contains 22 tools in three disjoint partitions:
 
 Human-only (5, all read-only):
 
@@ -104,7 +104,7 @@ Shared (9):
 8. `validate_model_change_set`
 9. `apply_model_change_set`
 
-Workload-only (11):
+Workload-only (8):
 
 1. `get_mapping_materialization` (read-only)
 2. `get_profiling_run` (read-only)
@@ -113,13 +113,10 @@ Workload-only (11):
 5. `complete_dbml_export`
 6. `activate_workflow_run`
 7. `create_profiling_run`
-8. `stage_profiling_success_batch`
-9. `stage_profiling_failure_batch`
-10. `validate_profiling_run`
-11. `finalize_profiling_run`
+8. `complete_profiling_run`
 
 A human therefore has 14 available tools and the exact configured workload has
-20. Verified mutation promotion registers all tools in the current actor's
+17. Verified mutation promotion registers all tools in the current actor's
 inventory. Without it, registration is read-only: ten tools for a human and
 eight for the workload.
 
@@ -204,7 +201,7 @@ process-start `VerifiedMutationPromotion`; when it is absent they return the
 safe not-found envelope before parsing a body. Status is registered in read-only
 posture. It requires the exact Workflow Run and Workflow Grant UUID pair and is
 available only to the initiating human with current workflow authorization or
-an owning-Tenant security admin. Missing, mismatched, and private identifiers
+an owning-Tenant Tenant Admin/super admin. Missing, mismatched, and private identifiers
 normalize to not-found.
 
 The status result contains only `workflow_run_id`, `workflow_grant_id`,

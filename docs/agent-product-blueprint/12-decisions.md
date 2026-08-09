@@ -9,7 +9,8 @@ replacement for the accepted ADRs or approved decision text.
 |---|---|---|
 | PostgreSQL is authoritative | Model state, authorization, locks, receipts, and idempotency need one transactional truth | Caches and Databricks output are reconstructible; jobs never write the metadata database |
 | One feature-first App Service monolith | The features share identity, authorization, transactions, and one database | No microservices, internal HTTP, command bus, or event bus |
-| Whole-Section Model Change Sets | A graph must be validated as one future state, not as unrelated row edits | Six complete typed Section documents compile and apply atomically |
+| Whole-Section Model Change Sets | A graph must be validated as one future state, not as unrelated row edits | Eight complete typed documents compile and apply atomically |
+| Tenant Metadata Change Sets | Core metadata spans Objects, Attributes, Copy, and Process configuration | Twelve typed documents validate as one Tenant-owned draft |
 | Server-derived actor inventories | Client metadata and discovered tool names are not authority | Human and workload MCP discovery and dispatch use the same projection |
 | Workflow Control is outside MCP | Humans authorize work but must not see workload execution tools | Exactly three narrow human JSON routes; MCP remains actor-separated |
 | Workload handles are references | A leaked UUID must not grant access | Every call rechecks identity, grant, run, human authority, operation, Model, binding, and expiry |
@@ -40,10 +41,11 @@ empty batch, and prevents a bad filter from silently becoming a full scan.
 
 ### DD-109: combined Mapping persistence and profile
 
-Mapping has exactly two durable families: Object Mapping and Attribute
-Mapping. The same rows bind the modeled identity to a registered target and,
-when authored, contain the transformation documents. Header authorship is
-all-or-null. Existing binding identities cannot be repointed.
+Mapping has one Source System Dependency control table plus Object Mapping and
+Attribute Mapping. Dependency rows control parallel/sequential source waves.
+Mapping rows bind modeled identities to registered targets and, when authored,
+contain the transformation documents. Header authorship is all-or-null.
+Existing binding identities cannot be repointed.
 
 The only Release 1 profile is `mapping.standard@1.0.0` with
 `HeaderMapperOutputV1`, `AttributeMapperBatchOutputV1`, and
@@ -75,6 +77,8 @@ modeling judgment from platform policy.
 
 The exact normative shapes are in
 [`RELEASE-1-DECISIONS.md`](../design/RELEASE-1-DECISIONS.md).
+They are application validation contracts, not PostgreSQL template-validator
+functions. PostgreSQL enforces only Silver-pair and Gold-triple completeness.
 
 ## Complete Feature 001 decision coverage
 
@@ -117,9 +121,10 @@ the supersession rules below before rebuilding any historical row.
 4. [ADR-0004](../adr/0004-governed-dbml-export.md) added deterministic DBML
    export, reversed the earlier DBML deferral, and added a seventh notebook and
    two tools. The count changed from the initial actor-neutral 25, to ADR-0002's
-   actor-separated 23, to the final actor-separated 25: 5 human-only, 9 shared,
-   and 11 workload-only. The two 25-tool inventories are not equivalent. Final
-   promoted discovery is 14 human and 20 workload tools.
+   actor-separated 23, then actor-separated 25 after DBML. Removing the four
+   staged Profiling operations in favor of one completion operation produces
+   the current 22: 5 human-only, 9 shared, and 8 workload-only. Final promoted
+   discovery is 14 human and 17 workload tools.
 
 ## Frozen Feature 001 supersession ledger
 

@@ -5,8 +5,27 @@ GDS ETL Workbench lets developers inspect governed metadata, prepare a complete 
 ## Language
 
 **Tenant**:
-The ownership scope for accounts, metadata, Models, and authorization.
+The ownership scope for Principals, metadata, Models, and authorization.
 _Avoid_: Customer, client, account scope
+
+**Principal**:
+One active internal identity representing either a user or an Entra service
+principal. Authentication maps an Entra Tenant/Object pair to this record.
+_Avoid_: User account when referring to both identity kinds
+
+**Tenant Visibility**:
+`global` permits every active authenticated Principal to read; `private`
+requires Tenant access. Visibility never grants mutation authority.
+_Avoid_: Public write access, open Tenant
+
+**Tenant Role**:
+One Tenant-scoped capability set: Viewer, Developer, Architect, or Tenant Admin.
+_Avoid_: Global role, database role
+
+**Super Admin**:
+An explicit Principal flag granting all application authorization across active
+Tenants without bypassing locks, revisions, audits, or operation boundaries.
+_Avoid_: Database superuser, automatic workload admin
 
 **Model**:
 The governed metadata aggregate that contains scope, policy, effective Sections, and one current revision.
@@ -17,19 +36,27 @@ The server-owned set of source Objects and Attributes that a Model can use.
 _Avoid_: Selection, source list
 
 **Section**:
-One versioned part of a Model change: Evidence, Analysis, Conceptual, Logical, Dimensional, or Mapping.
+One versioned part of a Model change: Model Scope, Profiling, Evidence,
+Analysis, Conceptual, Logical, Dimensional, or Mapping.
 _Avoid_: Phase document, payload type
 
 **Model Change Set**:
 The draft aggregate that replaces whole Sections, validates one future Model graph, and applies atomically.
 _Avoid_: Patch, transaction draft
 
+**Metadata Change Set**:
+The Tenant-owned draft aggregate for Source/Bronze/Silver/Gold Objects and
+Attributes plus Copy and Process configuration.
+_Avoid_: Model Change Set, foundational CRUD
+
 **Candidate**:
 An uncommitted workflow result that can become one or more Model Change Set Sections after validation.
 _Avoid_: Agent answer, model output
 
 **Workflow Grant**:
-The server-created authorization that binds one human, workload identity, Model, workflow, request, allowed operations, and expiry.
+The server-created authorization that binds one initiating user Principal, one
+registered service-principal identity, Model, workflow, request, allowed
+operations, and expiry.
 _Avoid_: Token, lease
 
 **Workflow Run**:
@@ -59,7 +86,7 @@ The typed and indexed in-memory form of a verified Model Snapshot.
 _Avoid_: Projection input, document map
 
 **Profiling Run**:
-The bounded staging and finalization aggregate for Attribute profiling results and failures.
+The bounded execution and atomic-publication aggregate for Attribute profiles and failures.
 _Avoid_: Profile job
 
 **Mapping Package**:

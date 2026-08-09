@@ -9,7 +9,7 @@ effective Release 1 shape is:
 
 - one PostgreSQL 16 authoritative metadata store;
 - one Entra-authenticated modular App Service;
-- one actor-filtered MCP endpoint with 25 tools;
+- one actor-filtered MCP endpoint with 22 tools;
 - three fixed human Workflow Control routes;
 - seven source-loaded Databricks notebooks; and
 - no general management UI, generated-code execution, or direct Databricks
@@ -69,4 +69,3 @@ source links. Record a new design decision when the change alters a boundary,
 trust model, public contract, durable state, workflow meaning, or release
 scope. Keep observed defects in [current gaps](14-current-gaps.md) until the
 implementation and its rejecting test are corrected.
-

@@ -2,33 +2,35 @@
 
 The Release 1 database is a canonical, fresh-install PostgreSQL 16 schema. It
 is not an in-place migration set and it is not idempotent DDL. A new database
-must execute `database/1_core_reference.sql` through
-`database/9_workflow_mapping.sql` exactly once, in numeric order, in one
-fail-fast transaction. `core.schema_version` records schema and contract
-version `1.0.0` under the singleton key `gds_etl_workbench`.
+must execute `database/01_reference.sql` through
+`database/13_runtime_integrity.sql` exactly once, in numeric order, in one
+fail-fast transaction.
 
 ## Ownership and dependency order
 
 The numbered interface is deliberately split by dependency rather than by
 deployment unit:
 
-1. `core` reference codes and schema-version helpers;
-2. foundational projects, Tenants, Systems, Connections, Objects, Attributes,
+1. `reference` lookup tables and shared validation helpers;
+2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
-3. `core_security` identities, Tenant membership, dormant Tenant Lease data,
+3. `security` identities, Tenant membership, dormant Tenant Lease data,
    and the three database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Evidence tables, and revision machinery;
 5. Attribute Profile and Analysis;
 6. Conceptual Object, Relationship, and typed physical Support;
-7. the exact seven Logical and exact seven Dimensional families;
-8. Model Change Sets, workflow grants/summaries, idempotency, profiling staging,
-   and final receipts; and
-9. the two combined Mapping tables plus cross-family guards, audited business
-   locks, and final privileges.
+7. the exact seven Logical families;
+8. the exact seven Dimensional families;
+9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
+10. Model and Metadata Change Sets, idempotency outcomes, and Apply Receipts;
+11. Profiling Runs and final receipts;
+12. Workflow Grants and Workflow Run summaries; and
+13. cross-family guards, audited business locks, and final privileges.
 
-There are 61 release tables across `core`, `core_security`, `model`, and
-`workflow`. Every table has a primary key. Generated numeric artifact IDs use
+There are 83 domain tables plus one internal transaction-validation queue
+across `reference`, `core`, `security`, `model`, and `workflow`. Every table
+has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
 application boundary where the public contract requires them.
@@ -41,21 +43,31 @@ cross-Model reference.
 
 ## Foundational and Model invariants
 
-Reference codes are normalized lowercase identifiers. The deterministic CSV
+Reference codes use trimmed, case-insensitive uniqueness. The deterministic CSV
 fixtures under `tests/database/fixtures/reference/` have the same shape as the
 external Excel loader and pass through the production table constraints.
 Runtime DDL is not coupled to that loader.
 
-Connection profiling policy implements DD-108 with the four canonical columns:
-development/test initial batch IDs and development/test ordered incremental
-batch-ID arrays. Incremental arrays are one-dimensional, one-based, bounded,
-strictly increasing, duplicate-free, null-free, and disjoint from the matching
-initial ID. A nullable Object batch-attribute name must still be nonblank when
-present.
+Connection stores optional test initial and incremental batch metadata. A
+nullable Object batch-attribute name must still be nonblank when present.
 
-Connection values enforce exactly one literal or Key Vault reference and a
-deferred trigger checks that storage matches the reference parameter's
-`is_key_vault` policy. General application roles cannot select this table.
+Connection values store optional literal configuration. General application
+roles cannot select this table.
+
+Tenant visibility is `global|private` and defaults to private. An active
+authenticated Principal may read a global Tenant without membership. Private
+reads and every mutation require active, unexpired Tenant access unless the
+Principal has the explicit super-admin flag.
+
+`security.principal` represents either a user or service principal. User shape
+requires a unique case-insensitive email; service-principal shape requires an
+Entra application ID and application/managed-identity type. Entra Tenant/Object
+identity remains normalized in `security.entra_principal_identity`.
+`security.tenant_principal_access` owns the fixed Viewer, Developer, Architect,
+and Tenant Admin capability sets.
+
+Copy Group Control carries Tenant and System witnesses. Composite foreign keys
+require its Copy Group and optional Member Group to belong to that same scope.
 
 A Model belongs to one Tenant but its Scope may intentionally include active
 Bronze Objects from another Tenant. That open source-composition boundary is
@@ -91,23 +103,30 @@ Object/Attribute Mappings for the same Model. Measures, key roles, audit roles,
 and Type 0/1/2 change behavior are constrained relationally; historized
 Attributes require the Model's Gold technical-column policy.
 
-Combined Mapping is exactly `workflow.object_mapping` and
-`workflow.attribute_mapping`. Typed Logical/Dimensional parent columns are
+Combined Mapping uses `workflow.mapping_source_system_dependency`,
+`workflow.object_mapping`, and `workflow.attribute_mapping`. Typed
+Logical/Dimensional parent columns are
 exclusive. Composite keys bind children to the same header, target Object, and
 Model. Effective Logical targets must be Silver and Dimensional targets Gold.
 The current allowlisted package profile is `mapping.standard@1.0.0`; the
 database accepts normalized profile keys and SemVer identities so an atomic
 future allowlisted package upgrade is representable. Authored metadata is
 all-null or complete and JSON/digests are bounded. Effective headers in one
-target/System package share package metadata and both dependency waves. Source
-System waves are consistent per layer/System and target waves per layer/target.
+target/System package share package metadata and object dependency order.
+Source System waves are controlled once per Model/layer/System; Object waves
+are consistent per Model/layer/target.
 
-Deferred constraint triggers validate the final transaction graph from both
-child-side and parent/source-side mutations. The implementation intentionally
-scans the final affected graph for correctness. The mandatory Model-row lock
-serializes effective writes for one Model, preventing same-Model write skew;
-different Models retain independent lock domains. Read indexes cover status,
-parent traversal, impact, source, target, digest, and lock paths.
+Statement-level triggers on the 30 graph-input tables enqueue one transient
+request per writing transaction. One deferred constraint trigger validates the
+final graph and removes that request, so a multi-row transaction performs one
+whole-graph scan instead of one scan per changed row. If constraints are forced
+immediate, validation runs once per affected statement. The mandatory
+Model-row lock serializes effective writes for one Model, preventing same-Model write skew;
+different Models retain independent lock domains. Read indexes cover proven
+status, parent traversal, impact, source, target, and digest paths. Primary-key
+or unique indexes serve exact lock-owner lookups; separate Boolean-first and
+partial lock indexes are intentionally omitted because no current read path
+uses them.
 
 ## Revision and business-lock protocol
 
@@ -124,19 +143,22 @@ guard accepts its internal session flag only when the executing database role
 is the protected function owner, so an application role cannot forge the
 custom GUC to write a revision directly.
 
-All 21 approved lock-bearing families have direct DML guards. Aggregate edges
+All 25 approved lock-bearing families have direct DML guards. Aggregate edges
 also protect owned descendants: Conceptual parents protect Support; Logical and
 Dimensional Entities protect their Attributes and source mappings; Submodels
 jointly protect membership; source headers protect source children; and Object
 Mapping protects Attribute Mapping. Relationships may continue to reference a
 locked endpoint because reference use does not mutate the lock owner.
 
-The only lock toggle is
-`core_security.set_artifact_lock(bigint,text,bigint,boolean,bigint,text,uuid)`.
-It validates an active Tenant and active architect/admin membership, holds
-share locks on that Tenant and the actor authorization rows, locks the active
+The Model-owned lock toggle is
+`security.set_artifact_lock(bigint,text,bigint,boolean,uuid,uuid,text,uuid)`.
+The two UUID arguments are the authenticated Entra Tenant/Object identity. The
+function resolves the active user or service Principal rather than trusting an
+internal Principal ID supplied by a request. It validates an active Tenant and
+active Architect/Tenant Admin access or super admin, holds share locks on that
+Tenant and the actor authorization rows, locks the active
 Model row before the artifact, changes only lock/audit fields, advances one
-Model revision, and appends `core_security.artifact_lock_event`. Its
+Model revision, and appends `security.artifact_lock_event`. Its
 artifact-type switch is an allowlist, SQL identifiers are never caller
 supplied, its search path is fixed, and `PUBLIC` has no execution right. A
 no-op request returns the current revision without a new audit row. Release 1
@@ -145,7 +167,14 @@ the application boundary before calling it. The internal lock flag has the
 same owner check as revision capture, so a runtime role cannot bypass a locked
 row by setting a custom GUC.
 
-`core_security.lock_model_row(bigint)` is the narrower application primitive.
+Core Object and Attribute locks use the separate Tenant-scoped
+`security.set_metadata_artifact_lock(...)` function. It authorizes against the
+artifact's owning Connection Tenant, resolves the same authenticated Entra
+identity, and writes
+`security.metadata_artifact_lock_event`; it never borrows authority from a
+Model that merely references a cross-Tenant source.
+
+`security.lock_model_row(bigint)` is the narrower application primitive.
 It is a fixed-search-path `SECURITY DEFINER` function executable only by
 `gds_app_write`; it returns only an existence Boolean while holding a real
 `SELECT ... FOR UPDATE` lock through transaction end. The repository combines
@@ -156,7 +185,9 @@ transactions and revision guards without taking a Model-row lock.
 
 ## Durable workflow state
 
-Model Change Sets store six bounded object-shaped JSON sections plus queryable
+Model Change Sets store eight bounded object-shaped JSON documents—Model
+Scope, Profiling, Evidence, Analysis, Conceptual, Logical, Dimensional, and
+Mapping—plus queryable
 base revision/digests, global `draft_revision`, validation outcome, sealed
 candidate digest, activity/expiry, and terminal timestamps. Their lifecycle is
 `active`, `validated`, `applied`, `expired`, `discarded`, or `superseded`.
@@ -164,6 +195,11 @@ Section writes advance the global draft revision exactly once, return the row
 to `active`, clear validation, and refresh activity/expiry. Validation seals a
 digest/outcome without advancing the draft revision. Terminal payloads are
 retained and immutable. Event sequences are unique and append-only.
+
+Tenant-owned Metadata Change Sets store twelve bounded documents for
+Source/Bronze/Silver/Gold Objects and Attributes, Copy Group, Copy, Process
+Group, and Process. Their `base_metadata_digest` fences stale drafts; their
+events and apply receipts are append-only.
 
 The `ChangeSetsFeature` draft-expiry worker asks the repository to select one
 bounded batch. In
@@ -186,17 +222,17 @@ bounded expiry metrics.
 
 Workflow grants freeze the exact request, selection, allowed operations, fixed
 Databricks workspace/job identity, source release, safe Notebook Definition
-audit values, workload identity, Model, Tenant, and expiry.
+audit values, initiating user Principal, registered service-principal identity,
+Model, Tenant, and expiry.
 They move through `pending`, `active`, and one terminal state. Change-set,
 profiling-run, and Databricks bindings are write-once. A composite witness binds
 safe workflow summaries to the same grant/run/Model/workflow tuple. Profiling
-success and failure staging is append-only and mutually exclusive for each
-run/Attribute. A batch idempotency key may cover multiple Attribute rows; stage
-replays are still unique by run, key, and Attribute, while the operation ledger
-owns exact request replay. Failure rows durably retain code, message, and the
-required retryable classification. Final profiling and apply receipts are
-append-only. No workflow, grant, summary, or staging column stores a bearer
-token, password, credential, or connection secret.
+completion publishes successful Attribute Profiles and one final receipt in a
+single transaction. Failed Attributes retain their prior Profile, while the
+receipt records the bounded failure count. The operation ledger owns exact
+request replay. Final profiling and apply receipts are append-only. No
+workflow, grant, summary, or receipt column stores a bearer token, password,
+credential, or connection secret.
 
 ## Roles and privileges
 
@@ -206,19 +242,19 @@ The fresh cluster defines three non-login, non-superuser roles:
 - `gds_app_read`: safe catalog/model/workflow reads; and
 - `gds_app_write`: the same safe reads, constrained Model/workflow DML,
   sequence use, pure CHECK validators, the narrow artifact-lock function, and
-  the bounded mutation-principal and Model-row lock functions.
+  the bounded Principal-access and Model-row lock functions.
 
 `PUBLIC` loses schema, table, and function rights. Both application roles are
 explicitly denied `core.connection_value`. Append-only events, idempotency,
-staging, receipts, revision transactions, and audit projections cannot be
+receipts, revision transactions, and audit projections cannot be
 updated/deleted by the write role. Trigger functions and internal revision
-functions are not directly executable by runtime roles. The mutation-principal
+functions are not directly executable by runtime roles. The Principal-access
 function is `SECURITY DEFINER`, has a fixed `pg_catalog` search path, returns
-only bounded authorization fields, joins an active Tenant, and holds share
-locks on Tenant, identity, account, and membership rows without granting
-foundational table UPDATE. Read resolution likewise treats an inactive Tenant
-membership as no authority while retaining only the safely authenticated human
-identity.
+only bounded identity, effective-role, and capability fields, joins an active
+Tenant, and holds share locks on Tenant, identity, Principal, and access rows
+without granting foundational table UPDATE. Global visibility projects Viewer
+read capability only; expired/inactive access grants no authority, and super
+admin projects all application capabilities.
 
 The bootstrap principal must have permission to create the three group roles;
 the application LOGIN must have exactly one direct membership,
@@ -242,7 +278,7 @@ centrally resolves and validates a local Unix Docker socket before inspecting
 or starting an image, creates random credentials/database/container
 coordinates, uses only the pinned `postgres:16.13-bookworm` digest, proves the
 image/container/database identity,
-applies the nine files once in a transaction, loads the CSV fixtures, runs exact
+applies the thirteen files once in a transaction, loads the CSV fixtures, runs exact
 catalog/security assertions and accepted/rejected behavior cases, observes
 same-Model blocking through `pg_blocking_pids`, proves different-Model commit
 independence, and disposes only its marker-verified container. An unavailable

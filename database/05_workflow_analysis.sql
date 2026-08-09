@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: computed Attribute Profiles and Analysis.
+-- GDS ETL Workbench Release 1: computed Attribute Profile and Analysis Sections.
 
 CREATE SCHEMA workflow;
 
@@ -116,12 +116,12 @@ CREATE TABLE workflow.analysis_result (
         from_attribute_id <> to_attribute_id
     ),
     CONSTRAINT ck_analysis_relationship_kind CHECK (
-        core.is_nonblank(relationship_kind)
+        reference.is_nonblank(relationship_kind)
     ),
     CONSTRAINT ck_analysis_confidence CHECK (
         relationship_confidence IN ('low', 'medium', 'high')
     ),
-    CONSTRAINT ck_analysis_basis CHECK (core.is_nonblank(relationship_basis)),
+    CONSTRAINT ck_analysis_basis CHECK (reference.is_nonblank(relationship_basis)),
     CONSTRAINT ck_analysis_policy_version CHECK (
         validation_policy_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'
     ),
@@ -164,6 +164,3 @@ CREATE INDEX ix_analysis_result_from_endpoint
     ON workflow.analysis_result (model_id, from_object_id, from_attribute_id);
 CREATE INDEX ix_analysis_result_to_endpoint
     ON workflow.analysis_result (model_id, to_object_id, to_attribute_id);
-CREATE INDEX ix_analysis_result_locked
-    ON workflow.analysis_result (model_id, analysis_result_id)
-    WHERE analysis_result_is_locked;

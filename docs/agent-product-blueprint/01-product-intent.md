@@ -43,7 +43,7 @@ Release 1 solves this by:
 1. An active human inspects Tenants, Bronze Objects, Attributes, ingestion
    lineage, owned Models, and Modeling Evidence.
 2. The human checks readiness for the intended workflow.
-3. An authorized architect/admin either edits through the shared Model Change Set tools or
+3. An authorized Architect/Tenant Admin either edits through the shared Model Change Set tools or
    authorizes one Databricks Workflow Run through Workflow Control.
 4. A predefined Databricks task receives only the Workflow Run and Workflow
    Grant identifiers.
@@ -80,8 +80,10 @@ deploys physical Silver or Gold tables.
 - Human catalog and Model reads through MCP.
 - Actor-separated MCP discovery and dispatch.
 - Model readiness, immutable Model Snapshots, and governed DBML resources.
-- Six-section Model Change Sets: Evidence, Analysis, Conceptual, Logical,
-  Dimensional, and Mapping.
+- Eight-document Model Change Sets: Model Scope, Profiling, Evidence, Analysis,
+  Conceptual, Logical, Dimensional, and Mapping.
+- Tenant Metadata Change Sets for physical Objects/Attributes and Copy/Process
+  configuration.
 - Short-lived Workflow Grants and safe Workflow Run status.
 - Profiling, Analysis, Conceptual, Logical, Dimensional, Mapping, and DBML
   Databricks workflows.

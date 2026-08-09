@@ -1,19 +1,21 @@
 # Model Change Sets
 
 A Model Change Set is the only general path for changing applied modeling
-artifacts. It stores six complete operation documents and one global draft
+artifacts. It stores eight complete operation documents and one global draft
 revision.
 
 ## Draft shape
 
 Every draft contains these Sections, even when untouched:
 
-1. Evidence
-2. Analysis
-3. Conceptual
-4. Logical
-5. Dimensional
-6. Mapping
+1. Model Scope
+2. Profiling
+3. Evidence
+4. Analysis
+5. Conceptual
+6. Logical
+7. Dimensional
+8. Mapping
 
 Each Section is `{schema_version, section, operations}`. A put replaces the
 complete Section; it is never a JSON patch. Create/update/lifecycle operations
@@ -52,11 +54,20 @@ The App Service:
 1. resolves and authorizes the current human or grant-bound workload;
 2. checks global idempotency and the exact expected Model revision;
 3. copies the revision plus source, Evidence, and policy digests;
-4. creates six empty Sections at draft revision `1`;
+4. creates eight empty documents at draft revision `1`;
 5. records a `created` event and expiry; and
 6. binds the draft to the Workflow Grant when called by a workload.
 
 All records commit together.
+
+The three base digests are independent stale-input fences:
+
+- source-context digest covers the selected physical catalog and Model Scope;
+- Evidence digest covers the Evidence used by the draft; and
+- policy digest covers naming, audit, and technical Model policies.
+
+Validate and apply compare them with the current values. A mismatch rejects a
+stale draft instead of applying work produced from outdated context.
 
 ## Put a complete Section
 
@@ -80,7 +91,7 @@ The caller must use the returned revision for the next put or validation.
 Validation never changes effective Model state.
 
 1. Lock the draft and optional grant; fence the exact draft revision.
-2. Compile the six draft Sections over the effective graph without a Mapping
+2. Compile the eight draft documents over the effective graph without a Mapping
    catalog. This discovers every physical Object needed for full validation.
 3. Load those Objects, Attributes, lineage, Scope, and applicable Evidence.
 4. Compile again with the authoritative catalog context.
@@ -115,6 +126,14 @@ One transaction writes the normalized effective graph, Model revision, terminal
 draft, append-only event, idempotency result, Apply Receipt, local reference
 mappings, and optional grant/summary completion. A real effective change
 advances the revision by one. A valid no-change apply keeps it unchanged.
+
+## Tenant Metadata Change Sets
+
+`workflow.metadata_change_set` uses the same draft lifecycle for Tenant-owned
+Core metadata. Its twelve documents are Source/Bronze/Silver/Gold Object and
+Attribute pairs, Copy Group, Copy, Process Group, and Process. One
+`base_metadata_digest` fences the complete current Tenant metadata snapshot.
+Events, apply receipts, and local-reference mappings are append-only.
 
 ## Concurrency, expiry, and replay
 

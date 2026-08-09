@@ -87,7 +87,7 @@ document is validated as part of the complete future Model graph and applied
 atomically. The Model revision advances once only when effective stored state
 changes.
 
-Profiling uses its own append-only staging and finalization aggregate. DBML is
+Profiling uses its own direct run and atomic-publication receipt. DBML is
 read-only with respect to the Model. See
 [Model Change Sets](../08-model-change-sets.md) for the shared apply protocol.
 

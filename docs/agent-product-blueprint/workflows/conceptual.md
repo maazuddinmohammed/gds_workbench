@@ -75,6 +75,5 @@ describe business meaning; they do not create physical Silver or Gold objects.
 Sources:
 [`models.py`](../../../jobs/src/gds_etl_jobs/conceptual/models.py),
 [`workflow.py`](../../../jobs/src/gds_etl_jobs/conceptual/workflow.py),
-[`database/6_workflow_conceptual.sql`](../../../database/6_workflow_conceptual.sql), and
+[`database/06_workflow_conceptual.sql`](../../../database/06_workflow_conceptual.sql), and
 [`test_conceptual_workflow.py`](../../../tests/workflows/test_conceptual_workflow.py).
-

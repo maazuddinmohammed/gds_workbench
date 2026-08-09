@@ -7,7 +7,9 @@ Use these names consistently. They encode ownership and workflow boundaries.
 | Term | Meaning | Do not substitute |
 |---|---|---|
 | Project | Foundational parent of one or more Tenants | Product Model |
-| Tenant | Ownership boundary for accounts, metadata, Models, and authorization | Customer, client, workspace |
+| Tenant | Visibility and ownership boundary for Principals, metadata, Models, and authorization | Customer, client, workspace |
+| Principal | Registered application actor: a user or service principal | User account |
+| Tenant Access | One Principal's active, optionally expiring Tenant role | Membership |
 | System | Business or technical source system | Connection |
 | Connection | Tenant-owned link to a System; owns physical Objects and profiling batch policy | Credential |
 | Object | Registered physical Bronze, Silver, or Gold object | Model entity |
@@ -19,7 +21,8 @@ Use these names consistently. They encode ownership and workflow boundaries.
 | Impact Scope | Selected items plus required dependants | Selection |
 | Modeling Evidence | Model-owned document metadata and verified structured Evidence Records | Persisted downstream lineage |
 | Section | One versioned part of a Model: Evidence, Analysis, Conceptual, Logical, Dimensional, or Mapping | Patch, payload type |
-| Model Change Set | Draft aggregate that replaces whole Sections, validates one future graph, and applies atomically | Patch, transaction draft |
+| Model Change Set | Model-owned eight-document draft that validates one future graph and applies atomically | Patch, transaction draft |
+| Metadata Change Set | Tenant-owned twelve-document draft for physical metadata and Copy/Process configuration | Model Change Set |
 | Candidate | Uncommitted workflow result that may become one or more draft Sections | Agent answer |
 | Apply Receipt | Immutable result binding a change set to its digest, generated IDs, revision, and replay outcome | Apply response only |
 
@@ -27,14 +30,14 @@ Use these names consistently. They encode ownership and workflow boundaries.
 
 | Term | Meaning |
 |---|---|
-| Workflow Grant | Server-created authorization binding one human, workload identity, Model, workflow, request, allowed operations, deployment, and expiry |
+| Workflow Grant | Server-created authorization binding one initiating user Principal, one workload service Principal identity, Model, workflow, request, allowed operations, deployment, and expiry |
 | Workflow Run | One execution under a Workflow Grant |
 | Workflow Control | Three non-MCP human operations: authorize, revoke, and safe status |
 | Actor Kind | Server-derived `human` or `workload`; client metadata cannot choose it |
 | Notebook Definition | Notebook-owned model, prompt, tool, phase, retry, and limit configuration compiled once at startup |
 | Model Snapshot | Immutable, bounded, revisioned Model context archive returned through MCP |
 | Verified Model Graph | Typed and indexed in-memory form of a verified Model Snapshot |
-| Profiling Run | Durable staging and finalization aggregate for Attribute profiles and failures |
+| Profiling Run | Durable execution and atomic-publication aggregate for Attribute profiles and failures |
 | Mapping Package | Complete normalized Mapping result for one target Object and source System pair |
 | DBML Export | Immutable revision-bound Conceptual or Logical visualization bundle |
 
@@ -78,8 +81,8 @@ operations. Omission always means unchanged; it never means retire.
 - Workflow Run Summary: `pending`, `running`, `awaiting_validation`,
   `completed`, `completed_with_warnings`, `blocked`, `failed`, `expired`,
   `revoked`.
-- Profiling Run: `staging`, `staged`, `validated`, `completed`,
-  `completed_with_warnings`, `failed`, `expired` in durable PostgreSQL state.
+- Profiling Run: `running`, `completed`, `completed_with_warnings`, `failed`,
+  `expired` in durable PostgreSQL state.
 
 Primary source: [`CONTEXT.md`](../../CONTEXT.md). Exact enums are in
 [`domain/entities.py`](../../mcp_server/src/gds_etl_workbench/domain/entities.py)

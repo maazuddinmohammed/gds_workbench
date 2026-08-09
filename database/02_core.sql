@@ -1,4 +1,6 @@
--- GDS ETL Workbench Release 1: foundational business and physical metadata.
+-- GDS ETL Workbench Release 1: foundational Core business and physical metadata.
+
+CREATE SCHEMA core;
 
 CREATE TABLE core.project (
     project_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -10,8 +12,8 @@ CREATE TABLE core.project (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT ck_project_code CHECK (core.is_nonblank(project_code)),
-    CONSTRAINT ck_project_name CHECK (core.is_nonblank(project_name))
+    CONSTRAINT ck_project_code CHECK (reference.is_nonblank(project_code)),
+    CONSTRAINT ck_project_name CHECK (reference.is_nonblank(project_name))
 );
 
 CREATE TABLE core.tenant (
@@ -23,6 +25,7 @@ CREATE TABLE core.tenant (
     tenant_catalog VARCHAR(255) NOT NULL,
     gds_admin_catalog VARCHAR(255) NOT NULL,
     gds_connection_id BIGINT,
+    tenant_visibility VARCHAR(20) NOT NULL DEFAULT 'private',
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -30,8 +33,11 @@ CREATE TABLE core.tenant (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_tenant_project FOREIGN KEY (project_id)
         REFERENCES core.project (project_id) ON DELETE NO ACTION,
-    CONSTRAINT ck_tenant_code CHECK (core.is_nonblank(tenant_code)),
-    CONSTRAINT ck_tenant_name CHECK (core.is_nonblank(tenant_name))
+    CONSTRAINT ck_tenant_code CHECK (reference.is_nonblank(tenant_code)),
+    CONSTRAINT ck_tenant_name CHECK (reference.is_nonblank(tenant_name)),
+    CONSTRAINT ck_tenant_visibility CHECK (
+        tenant_visibility IN ('global', 'private')
+    )
 );
 
 CREATE TABLE core.system (
@@ -46,9 +52,29 @@ CREATE TABLE core.system (
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_system_system_type FOREIGN KEY (system_type_id)
-        REFERENCES core.system_type (system_type_id) ON DELETE NO ACTION,
-    CONSTRAINT ck_system_code CHECK (core.is_nonblank(system_code)),
-    CONSTRAINT ck_system_name CHECK (core.is_nonblank(system_name))
+        REFERENCES reference.system_type (system_type_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_system_code CHECK (reference.is_nonblank(system_code)),
+    CONSTRAINT ck_system_name CHECK (reference.is_nonblank(system_name))
+);
+
+CREATE TABLE core.system_notebook_path (
+    system_notebook_path_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    system_id BIGINT NOT NULL,
+    system_notebook_id BIGINT NOT NULL,
+    system_notebook_path TEXT NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT fk_system_notebook_path_system FOREIGN KEY (system_id)
+        REFERENCES core.system (system_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_system_notebook_path_notebook FOREIGN KEY (system_notebook_id)
+        REFERENCES reference.system_notebook (system_notebook_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_system_notebook_path
+        UNIQUE (system_id, system_notebook_id),
+    CONSTRAINT ck_system_notebook_path CHECK (
+        reference.is_nonblank(system_notebook_path)
+    )
 );
 
 CREATE TABLE core.connection (
@@ -73,10 +99,67 @@ CREATE TABLE core.connection (
     CONSTRAINT fk_connection_system FOREIGN KEY (system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
     CONSTRAINT fk_connection_type FOREIGN KEY (connection_type_id)
-        REFERENCES core.connection_type (connection_type_id) ON DELETE NO ACTION,
+        REFERENCES reference.connection_type (connection_type_id) ON DELETE NO ACTION,
     CONSTRAINT uq_connection_id_tenant UNIQUE (connection_id, tenant_id),
-    CONSTRAINT ck_connection_code CHECK (core.is_nonblank(connection_code)),
-    CONSTRAINT ck_connection_name CHECK (core.is_nonblank(connection_name))
+    CONSTRAINT ck_connection_code CHECK (reference.is_nonblank(connection_code)),
+    CONSTRAINT ck_connection_name CHECK (reference.is_nonblank(connection_name))
+);
+
+CREATE TABLE core.connection_location (
+    connection_location_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    connection_id BIGINT NOT NULL,
+    location_type_id BIGINT NOT NULL,
+    environment_id BIGINT NOT NULL,
+    connection_location_storage_account VARCHAR(255) NOT NULL,
+    connection_location_secret_reference TEXT NOT NULL,
+    connection_location_container VARCHAR(255) NOT NULL,
+    connection_location_path TEXT NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT fk_connection_location_connection FOREIGN KEY (connection_id)
+        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_connection_location_type FOREIGN KEY (location_type_id)
+        REFERENCES reference.location_type (location_type_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_connection_location_environment FOREIGN KEY (environment_id)
+        REFERENCES reference.environment (environment_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_connection_location
+        UNIQUE (connection_id, location_type_id, environment_id),
+    CONSTRAINT ck_connection_location_storage_account CHECK (
+        reference.is_nonblank(connection_location_storage_account)
+    ),
+    CONSTRAINT ck_connection_location_secret_reference CHECK (
+        reference.is_nonblank(connection_location_secret_reference)
+    ),
+    CONSTRAINT ck_connection_location_container CHECK (
+        reference.is_nonblank(connection_location_container)
+    ),
+    CONSTRAINT ck_connection_location_path CHECK (
+        reference.is_nonblank(connection_location_path)
+    )
+);
+
+CREATE TABLE core.connection_value (
+    connection_value_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    environment_id BIGINT NOT NULL,
+    connection_id BIGINT NOT NULL,
+    connection_parameter_id BIGINT NOT NULL,
+    connection_value TEXT,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT fk_connection_value_connection FOREIGN KEY (connection_id)
+        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_connection_value_parameter FOREIGN KEY (connection_parameter_id)
+        REFERENCES reference.connection_parameter (connection_parameter_id)
+        ON DELETE NO ACTION,
+    CONSTRAINT uq_connection_value_parameter
+        UNIQUE (connection_id, connection_parameter_id, environment_id),
+    CONSTRAINT ck_connection_literal_value CHECK (
+        connection_value IS NULL OR reference.is_nonblank(connection_value)
+    )
 );
 
 CREATE TABLE core.object (
@@ -91,6 +174,7 @@ CREATE TABLE core.object (
     batch_attribute_name VARCHAR(400),
     object_type_id BIGINT NOT NULL,
     zone_id BIGINT NOT NULL,
+    object_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -99,34 +183,13 @@ CREATE TABLE core.object (
     CONSTRAINT fk_object_connection FOREIGN KEY (connection_id)
         REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
     CONSTRAINT fk_object_type FOREIGN KEY (object_type_id)
-        REFERENCES core.object_type (object_type_id) ON DELETE NO ACTION,
+        REFERENCES reference.object_type (object_type_id) ON DELETE NO ACTION,
     CONSTRAINT fk_object_zone FOREIGN KEY (zone_id)
-        REFERENCES core.zone (zone_id) ON DELETE NO ACTION,
+        REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
     CONSTRAINT uq_object_id_connection UNIQUE (object_id, connection_id),
     CONSTRAINT uq_object_id_zone UNIQUE (object_id, zone_id),
-    CONSTRAINT ck_object_schema CHECK (core.is_nonblank(object_schema)),
-    CONSTRAINT ck_object_name CHECK (core.is_nonblank(object_name))
-);
-
-CREATE TABLE core.connection_value (
-    connection_value_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    connection_id BIGINT NOT NULL,
-    connection_parameter_id BIGINT NOT NULL,
-    connection_value TEXT,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_connection_value_connection FOREIGN KEY (connection_id)
-        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_connection_value_parameter FOREIGN KEY (connection_parameter_id)
-        REFERENCES core.connection_parameter (connection_parameter_id)
-        ON DELETE NO ACTION,
-    CONSTRAINT uq_connection_value_parameter
-        UNIQUE (connection_id, connection_parameter_id),
-    CONSTRAINT ck_connection_literal_value CHECK (
-        connection_value IS NULL OR core.is_nonblank(connection_value)
-    )
+    CONSTRAINT ck_object_schema CHECK (reference.is_nonblank(object_schema)),
+    CONSTRAINT ck_object_name CHECK (reference.is_nonblank(object_name))
 );
 
 CREATE TABLE core.attribute (
@@ -146,6 +209,7 @@ CREATE TABLE core.attribute (
     is_masking_required BOOLEAN NOT NULL DEFAULT FALSE,
     is_mapped BOOLEAN NOT NULL DEFAULT FALSE,
     is_purge BOOLEAN NOT NULL DEFAULT FALSE,
+    attribute_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -156,7 +220,7 @@ CREATE TABLE core.attribute (
     CONSTRAINT uq_attribute_object_ordinal
         UNIQUE (object_id, attribute_ordinal_position),
     CONSTRAINT uq_attribute_id_object UNIQUE (attribute_id, object_id),
-    CONSTRAINT ck_attribute_name CHECK (core.is_nonblank(attribute_name)),
+    CONSTRAINT ck_attribute_name CHECK (reference.is_nonblank(attribute_name)),
     CONSTRAINT ck_attribute_ordinal CHECK (attribute_ordinal_position > 0)
 );
 
@@ -226,61 +290,6 @@ CREATE TABLE core.ingestion_attribute_mapping (
     )
 );
 
-CREATE TABLE core.system_notebook_path (
-    system_notebook_path_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    system_id BIGINT NOT NULL,
-    system_notebook_id BIGINT NOT NULL,
-    system_notebook_path TEXT NOT NULL,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_system_notebook_path_system FOREIGN KEY (system_id)
-        REFERENCES core.system (system_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_system_notebook_path_notebook FOREIGN KEY (system_notebook_id)
-        REFERENCES core.system_notebook (system_notebook_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_system_notebook_path
-        UNIQUE (system_id, system_notebook_id),
-    CONSTRAINT ck_system_notebook_path CHECK (
-        core.is_nonblank(system_notebook_path)
-    )
-);
-
-CREATE TABLE core.connection_location (
-    connection_location_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    connection_id BIGINT NOT NULL,
-    location_type_id BIGINT NOT NULL,
-    environment_id BIGINT NOT NULL,
-    connection_location_storage_account VARCHAR(255) NOT NULL,
-    connection_location_secret_reference TEXT NOT NULL,
-    connection_location_container VARCHAR(255) NOT NULL,
-    connection_location_path TEXT NOT NULL,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_connection_location_connection FOREIGN KEY (connection_id)
-        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_connection_location_type FOREIGN KEY (location_type_id)
-        REFERENCES core.location_type (location_type_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_connection_location_environment FOREIGN KEY (environment_id)
-        REFERENCES core.environment (environment_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_connection_location
-        UNIQUE (connection_id, location_type_id, environment_id),
-    CONSTRAINT ck_connection_location_storage_account CHECK (
-        core.is_nonblank(connection_location_storage_account)
-    ),
-    CONSTRAINT ck_connection_location_secret_reference CHECK (
-        core.is_nonblank(connection_location_secret_reference)
-    ),
-    CONSTRAINT ck_connection_location_container CHECK (
-        core.is_nonblank(connection_location_container)
-    ),
-    CONSTRAINT ck_connection_location_path CHECK (
-        core.is_nonblank(connection_location_path)
-    )
-);
-
 CREATE TABLE core.copy_group (
     copy_group_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
@@ -300,7 +309,7 @@ CREATE TABLE core.copy_group (
     CONSTRAINT uq_copy_group_scope
         UNIQUE (copy_group_id, tenant_id, system_id),
     CONSTRAINT ck_copy_group_name CHECK (
-        core.is_nonblank(copy_group_name)
+        reference.is_nonblank(copy_group_name)
     )
 );
 
@@ -319,8 +328,10 @@ CREATE TABLE core.member_group (
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
     CONSTRAINT fk_member_group_system FOREIGN KEY (system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_member_group_scope
+        UNIQUE (member_group_id, tenant_id, system_id),
     CONSTRAINT ck_member_group_name CHECK (
-        core.is_nonblank(member_group_name)
+        reference.is_nonblank(member_group_name)
     )
 );
 
@@ -328,6 +339,8 @@ CREATE TABLE core.copy_group_control (
     copy_group_control_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     copy_group_id BIGINT NOT NULL,
     member_group_id BIGINT,
+    tenant_id BIGINT NOT NULL,
+    system_id BIGINT NOT NULL,
     copy_group_control_initial_load_date DATE,
     copy_group_control_last_run_time TIMESTAMPTZ,
     copy_group_control_last_run_value TEXT,
@@ -335,15 +348,29 @@ CREATE TABLE core.copy_group_control (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_copy_group_control_copy_group FOREIGN KEY (copy_group_id)
-        REFERENCES core.copy_group (copy_group_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_copy_group_control_member_group FOREIGN KEY (member_group_id)
-        REFERENCES core.member_group (member_group_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_copy_group_control_copy_group FOREIGN KEY (
+        copy_group_id,
+        tenant_id,
+        system_id
+    ) REFERENCES core.copy_group (
+        copy_group_id,
+        tenant_id,
+        system_id
+    ) ON DELETE NO ACTION,
+    CONSTRAINT fk_copy_group_control_member_group FOREIGN KEY (
+        member_group_id,
+        tenant_id,
+        system_id
+    ) REFERENCES core.member_group (
+        member_group_id,
+        tenant_id,
+        system_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_copy_group_control
         UNIQUE NULLS NOT DISTINCT (copy_group_id, member_group_id),
     CONSTRAINT ck_copy_group_control_last_run_value CHECK (
         copy_group_control_last_run_value IS NULL
-        OR core.is_nonblank(copy_group_control_last_run_value)
+        OR reference.is_nonblank(copy_group_control_last_run_value)
     )
 );
 
@@ -375,15 +402,15 @@ CREATE TABLE core.copy (
     ) REFERENCES core.ingestion_object_mapping (ingestion_object_mapping_id)
         ON DELETE NO ACTION,
     CONSTRAINT fk_copy_chunk_type FOREIGN KEY (chunk_type_id)
-        REFERENCES core.chunk_type (chunk_type_id) ON DELETE NO ACTION,
+        REFERENCES reference.chunk_type (chunk_type_id) ON DELETE NO ACTION,
     CONSTRAINT fk_copy_source_file_type FOREIGN KEY (source_file_type_id)
-        REFERENCES core.file_type (file_type_id) ON DELETE NO ACTION,
+        REFERENCES reference.file_type (file_type_id) ON DELETE NO ACTION,
     CONSTRAINT fk_copy_source_data_operation FOREIGN KEY (
         source_data_operation_id
-    ) REFERENCES core.data_operation (data_operation_id) ON DELETE NO ACTION,
+    ) REFERENCES reference.data_operation (data_operation_id) ON DELETE NO ACTION,
     CONSTRAINT fk_copy_target_data_operation FOREIGN KEY (
         target_data_operation_id
-    ) REFERENCES core.data_operation (data_operation_id) ON DELETE NO ACTION,
+    ) REFERENCES reference.data_operation (data_operation_id) ON DELETE NO ACTION,
     CONSTRAINT uq_copy_group_mapping
         UNIQUE (copy_group_id, ingestion_object_mapping_id),
     CONSTRAINT uq_copy_group_order
@@ -408,7 +435,7 @@ CREATE TABLE core.process_group (
     CONSTRAINT fk_process_group_system FOREIGN KEY (system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
     CONSTRAINT fk_process_group_zone FOREIGN KEY (zone_id)
-        REFERENCES core.zone (zone_id) ON DELETE NO ACTION,
+        REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
     CONSTRAINT fk_process_group_copy_group FOREIGN KEY (
         copy_group_id,
         tenant_id,
@@ -419,7 +446,7 @@ CREATE TABLE core.process_group (
         system_id
     ) ON DELETE NO ACTION,
     CONSTRAINT ck_process_group_name CHECK (
-        core.is_nonblank(process_group_name)
+        reference.is_nonblank(process_group_name)
     )
 );
 
@@ -442,17 +469,17 @@ CREATE TABLE core.process (
         connection_id
     ) REFERENCES core.object (object_id, connection_id) ON DELETE NO ACTION,
     CONSTRAINT fk_process_type FOREIGN KEY (process_type_id)
-        REFERENCES core.process_type (process_type_id) ON DELETE NO ACTION,
+        REFERENCES reference.process_type (process_type_id) ON DELETE NO ACTION,
     CONSTRAINT fk_process_group FOREIGN KEY (process_group_id)
         REFERENCES core.process_group (process_group_id) ON DELETE NO ACTION,
     CONSTRAINT uq_process_group_order
         UNIQUE (process_group_id, process_execution_order, process_location, process_executable),
     CONSTRAINT ck_process_execution_order CHECK (process_execution_order > 0),
     CONSTRAINT ck_process_location CHECK (
-        core.is_nonblank(process_location)
+        reference.is_nonblank(process_location)
     ),
     CONSTRAINT ck_process_executable CHECK (
-        core.is_nonblank(process_executable)
+        reference.is_nonblank(process_executable)
     )
 );
 
@@ -523,8 +550,6 @@ CREATE INDEX ix_process_group_copy_active
     ON core.process_group (copy_group_id, is_active);
 CREATE INDEX ix_process_group_zone_active
     ON core.process_group (zone_id, is_active, tenant_id, system_id);
-CREATE INDEX ix_process_group_order_active
-    ON core.process (process_group_id, process_execution_order, is_active);
 CREATE INDEX ix_process_connection_active
     ON core.process (connection_id, is_active);
 CREATE INDEX ix_process_object_active

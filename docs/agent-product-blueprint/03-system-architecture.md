@@ -30,7 +30,7 @@ The App Service owns:
 - HTTPS, request capacity, time limits, and Easy Auth identity parsing;
 - actor-filtered MCP tools and resources;
 - the three Workflow Control routes;
-- current human and Workflow Grant authorization;
+- current Principal, Tenant RBAC, and Workflow Grant authorization;
 - catalog, Model, Evidence, readiness, snapshot, and DBML reads;
 - Model Change Set compilation, validation, and apply;
 - Profiling Run and Workflow Run state;
@@ -88,7 +88,7 @@ Important boundaries:
 | State | Authority | Lifetime |
 |---|---|---|
 | Applied Model graph and revision | PostgreSQL | Durable |
-| Change Sets, grants, runs, profiling stages, receipts, audit events | PostgreSQL | Durable |
+| Change Sets, grants, runs, Profiling receipts, audit events | PostgreSQL | Durable |
 | Workflow Deployment definitions | Checked-in App Service asset | Process lifetime |
 | Snapshot and DBML resource bytes | Bounded App Service cache | Reconstructible |
 | Notebook Definition and workflow context | Databricks process | One run |

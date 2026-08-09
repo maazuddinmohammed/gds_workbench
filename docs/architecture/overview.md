@@ -31,7 +31,7 @@ event bus.
 gds_etl_workbench/
     runtime.py             composition and process lifecycle
     access.py              shared principal and Workflow Grant checks
-    adapters/mcp/          exact 25-tool actor-filtered transport bindings
+    adapters/mcp/          exact 22-tool actor-filtered transport bindings
     adapters/workflow_control/  three fixed human control routes
     adapters/health/       liveness and readiness HTTP routes
     application/           typed ports, shared compiler, and RuntimeReadiness
@@ -53,7 +53,7 @@ Each tool binds directly to one feature. There is no generic central service or
 | `ModelContextFeature` | 6 | `list_models`, `get_model`, `get_modeling_evidence`, `check_model_readiness`, `get_model_snapshot`, `get_model_dbml` |
 | `ChangeSetsFeature` | 5 | `get_model_change_set`, `create_model_change_set`, `put_model_change_set_section`, `validate_model_change_set`, `apply_model_change_set` |
 | `MappingFeature` | 1 | `get_mapping_materialization` |
-| `ProfilingRunsFeature` | 6 | `get_profiling_run`, `create_profiling_run`, `stage_profiling_success_batch`, `stage_profiling_failure_batch`, `validate_profiling_run`, `finalize_profiling_run` |
+| `ProfilingRunsFeature` | 3 | `get_profiling_run`, `create_profiling_run`, `complete_profiling_run` |
 | `WorkflowRunsFeature` | 4 | `get_workflow_run_contract`, `activate_workflow_run`, `complete_workflow_no_op`, `complete_dbml_export` |
 
 `WorkflowRunsFeature` also serves the non-MCP authorize, revoke, and safe-status
@@ -69,11 +69,11 @@ discovery or dispatch. The exact MCP audience partitions are:
 |---|---:|---|
 | Human-only | 5 | `list_tenants`, `list_objects`, `get_objects`, `list_models`, `get_modeling_evidence` |
 | Shared | 9 | `get_model`, `check_model_readiness`, `get_model_snapshot`, `get_model_dbml`, `get_model_change_set`, `create_model_change_set`, `put_model_change_set_section`, `validate_model_change_set`, `apply_model_change_set` |
-| Workload-only | 11 | `get_mapping_materialization`, `get_profiling_run`, `get_workflow_run_contract`, `complete_workflow_no_op`, `complete_dbml_export`, `activate_workflow_run`, `create_profiling_run`, `stage_profiling_success_batch`, `stage_profiling_failure_batch`, `validate_profiling_run`, `finalize_profiling_run` |
+| Workload-only | 8 | `get_mapping_materialization`, `get_profiling_run`, `get_workflow_run_contract`, `complete_workflow_no_op`, `complete_dbml_export`, `activate_workflow_run`, `create_profiling_run`, `complete_profiling_run` |
 
 A promoted human sees the five human-only plus nine shared tools (14); the
-exact configured workload sees the nine shared plus eleven workload-only tools
-(20). Without verified mutation promotion, mutating tools are removed globally,
+exact configured workload sees the nine shared plus eight workload-only tools
+(17). Without verified mutation promotion, mutating tools are removed globally,
 leaving ten human and eight workload reads. The same per-request projection
 governs tool discovery, direct calls, capabilities, registry, and tool-schema
 resources. Hidden names fail before schema validation with the generic
@@ -156,7 +156,7 @@ stable local references within the candidate.
 
 ## Deployment boundaries
 
-- `database/1_*.sql` through `9_*.sql` are one canonical fresh-install schema.
+- `database/01_*.sql` through `13_*.sql` are one canonical fresh-install schema.
   They are applied by a separate deployment identity, never at server startup.
 - `mcp_server/` builds one allowlisted Azure App Service ZIP. It contains the
   production monolith source and locked runtime dependencies. It contains no

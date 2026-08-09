@@ -48,7 +48,7 @@ grouped by the question an agent is trying to answer.
 | Catalog | [`catalog/feature.py`](../../mcp_server/src/gds_etl_workbench/catalog/feature.py) |
 | Model reads, readiness, snapshots, DBML | [`model_context/feature.py`](../../mcp_server/src/gds_etl_workbench/model_context/feature.py), [`readiness.py`](../../mcp_server/src/gds_etl_workbench/application/readiness.py), [`snapshot.py`](../../mcp_server/src/gds_etl_workbench/application/snapshot.py), [`dbml.py`](../../mcp_server/src/gds_etl_workbench/application/dbml.py) |
 | Change Sets and compilation | [`change_sets/feature.py`](../../mcp_server/src/gds_etl_workbench/change_sets/feature.py), [`compiler.py`](../../mcp_server/src/gds_etl_workbench/application/compiler.py) |
-| Profiling staging/finalization | [`profiling_runs/feature.py`](../../mcp_server/src/gds_etl_workbench/profiling_runs/feature.py) |
+| Profiling run/publication | [`profiling_runs/feature.py`](../../mcp_server/src/gds_etl_workbench/profiling_runs/feature.py) |
 | Workflow Grant/Run control | [`workflow_runs/feature.py`](../../mcp_server/src/gds_etl_workbench/workflow_runs/feature.py) |
 | Committed Mapping reconstruction | [`mapping/feature.py`](../../mcp_server/src/gds_etl_workbench/mapping/feature.py) |
 | Durable idempotency | [`idempotency.py`](../../mcp_server/src/gds_etl_workbench/application/idempotency.py) |

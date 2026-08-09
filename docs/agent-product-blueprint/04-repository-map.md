@@ -22,7 +22,7 @@ artifacts/            generated local evidence; not source authority
 | `mcp_server/src/gds_etl_workbench/runtime.py` | Composition | Repository, features, routes, middleware |
 | `jobs/notebooks/<workflow>.py` | Databricks task | Compiled Notebook Definition and shared runner |
 | `jobs/src/gds_etl_jobs/notebook.py` | Notebook execution | Workflow launch and selected workflow |
-| `database/1_*.sql` through `9_*.sql` | Fresh database install | Four PostgreSQL schemas |
+| `database/01_*.sql` through `13_*.sql` | Fresh database install | Five PostgreSQL schemas |
 
 ## App Service modules
 
@@ -34,7 +34,7 @@ artifacts/            generated local evidence; not source authority
 | Catalog | `catalog/feature.py` | Human open-catalog reads |
 | Model context | `model_context/`, `application/snapshot.py`, `application/dbml.py` | Model reads, Evidence, readiness, snapshots, DBML |
 | Change control | `change_sets/feature.py`, `application/compiler.py` | Draft lifecycle and complete future-graph validation |
-| Run state | `workflow_runs/`, `profiling_runs/`, `mapping/` | Grants, summaries, profiling stages, committed Mapping reads |
+| Run state | `workflow_runs/`, `profiling_runs/`, `mapping/` | Grants, summaries, Profiling Runs/receipts, committed Mapping reads |
 | Contracts | `contracts/` | Pydantic models, registry, canonical JSON, schemas, examples |
 | Persistence | `infrastructure/postgres.py` | One production repository, pool, transactions, locks, SQL |
 | Resource cache | `infrastructure/snapshots.py` | Bounded reconstructible bytes |
@@ -78,4 +78,3 @@ No test code is copied into either deployment.
   test, formatting, or output target.
 
 Primary source: [`docs/code-guide/01-repository-map.md`](../code-guide/01-repository-map.md).
-

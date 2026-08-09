@@ -1,53 +1,6 @@
--- GDS ETL Workbench Release 1: Model, Scope, policy, Evidence, and revision.
+-- GDS ETL Workbench Release 1: Model, Scope, policy, Evidence, and revision state.
 
 CREATE SCHEMA model;
-
-CREATE FUNCTION model.is_versioned_object(value JSONB)
-RETURNS BOOLEAN
-LANGUAGE sql
-IMMUTABLE
-PARALLEL SAFE
-RETURN value IS NOT NULL
-   AND jsonb_typeof(value) = 'object'
-   AND value ->> 'schema_version' = '1.0';
-
-CREATE FUNCTION model.is_naming_template_v1(value JSONB)
-RETURNS BOOLEAN
-LANGUAGE sql
-IMMUTABLE
-PARALLEL SAFE
-RETURN model.is_versioned_object(value)
-   AND value ->> 'default_style' = 'PascalCase'
-   AND value ->> 'submodel_style' = 'PascalCase'
-   AND value ->> 'entity_style' = 'PascalCase'
-   AND value ->> 'attribute_style' = 'PascalCase'
-   AND value ->> 'relationship_style' = 'PascalCase'
-   AND jsonb_typeof(value -> 'acronyms') = 'object'
-   AND jsonb_typeof(value -> 'reserved_words') = 'array'
-   AND (value ->> 'max_length') ~ '^[0-9]+$'
-   AND (value ->> 'max_length')::INTEGER BETWEEN 1 AND 255;
-
-CREATE FUNCTION model.is_audit_columns_template_v1(value JSONB)
-RETURNS BOOLEAN
-LANGUAGE sql
-IMMUTABLE
-PARALLEL SAFE
-RETURN model.is_versioned_object(value)
-   AND jsonb_typeof(value -> 'columns') = 'array'
-   AND jsonb_array_length(value -> 'columns') BETWEEN 1 AND 32;
-
-CREATE FUNCTION model.is_gold_technical_columns_template_v1(value JSONB)
-RETURNS BOOLEAN
-LANGUAGE sql
-IMMUTABLE
-PARALLEL SAFE
-RETURN model.is_versioned_object(value)
-   AND jsonb_typeof(value -> 'dimension_surrogate_key') = 'object'
-   AND jsonb_typeof(value -> 'fact_bridge_foreign_key') = 'object'
-   AND jsonb_typeof(value -> 'type_2') = 'object'
-   AND jsonb_typeof(value #> '{type_2,effective_from}') = 'object'
-   AND jsonb_typeof(value #> '{type_2,effective_to}') = 'object'
-   AND jsonb_typeof(value #> '{type_2,is_current}') = 'object';
 
 CREATE TABLE model.model (
     model_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -68,9 +21,10 @@ CREATE TABLE model.model (
     CONSTRAINT fk_model_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
     CONSTRAINT uq_model_id_tenant UNIQUE (model_id, tenant_id),
-    CONSTRAINT ck_model_name CHECK (core.is_nonblank(model_name)),
+    CONSTRAINT ck_model_name CHECK (reference.is_nonblank(model_name)),
     CONSTRAINT ck_model_description CHECK (
-        model_description IS NULL OR core.is_nonblank(model_description)
+        model_description IS NULL
+        OR reference.is_nonblank(model_description)
     ),
     CONSTRAINT ck_model_revision CHECK (model_revision > 0),
     CONSTRAINT ck_model_silver_policy_group CHECK (
@@ -82,30 +36,6 @@ CREATE TABLE model.model (
         = (gold_model_technical_columns_template IS NULL)
         AND (gold_model_naming_template IS NULL)
         = (gold_model_audit_columns_template IS NULL)
-    ),
-    CONSTRAINT ck_model_silver_naming_template CHECK (
-        silver_model_naming_template IS NULL
-        OR model.is_naming_template_v1(silver_model_naming_template)
-    ),
-    CONSTRAINT ck_model_silver_audit_template CHECK (
-        silver_model_audit_columns_template IS NULL
-        OR model.is_audit_columns_template_v1(
-            silver_model_audit_columns_template
-        )
-    ),
-    CONSTRAINT ck_model_gold_naming_template CHECK (
-        gold_model_naming_template IS NULL
-        OR model.is_naming_template_v1(gold_model_naming_template)
-    ),
-    CONSTRAINT ck_model_gold_technical_template CHECK (
-        gold_model_technical_columns_template IS NULL
-        OR model.is_gold_technical_columns_template_v1(
-            gold_model_technical_columns_template
-        )
-    ),
-    CONSTRAINT ck_model_gold_audit_template CHECK (
-        gold_model_audit_columns_template IS NULL
-        OR model.is_audit_columns_template_v1(gold_model_audit_columns_template)
     )
 );
 
@@ -113,6 +43,7 @@ CREATE TABLE model.model_scope (
     model_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
+    model_scope_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -149,7 +80,7 @@ CREATE TABLE model.model_event_log (
         )
     ),
     CONSTRAINT ck_model_event_log_stage CHECK (
-        core.is_nonblank(model_event_log_stage)
+        reference.is_nonblank(model_event_log_stage)
     ),
     CONSTRAINT ck_model_event_log_status CHECK (
         model_event_log_status IN (
@@ -157,7 +88,7 @@ CREATE TABLE model.model_event_log (
         )
     ),
     CONSTRAINT ck_model_event_log_message CHECK (
-        core.is_nonblank(model_event_log_message)
+        reference.is_nonblank(model_event_log_message)
     ),
     CONSTRAINT ck_model_event_log_progress CHECK (
         (model_event_log_current IS NULL OR model_event_log_current >= 0)
@@ -200,19 +131,19 @@ CREATE TABLE model.modeling_evidence_document (
     CONSTRAINT uq_evidence_document_id_model
         UNIQUE (modeling_evidence_document_id, model_id),
     CONSTRAINT ck_evidence_document_name CHECK (
-        core.is_nonblank(modeling_evidence_document_name)
+        reference.is_nonblank(modeling_evidence_document_name)
     ),
     CONSTRAINT ck_evidence_file_pattern CHECK (
         modeling_evidence_file_pattern IS NULL
-        OR core.is_nonblank(modeling_evidence_file_pattern)
+        OR reference.is_nonblank(modeling_evidence_file_pattern)
     ),
     CONSTRAINT ck_evidence_document_type CHECK (
         modeling_evidence_document_type IS NULL
-        OR core.is_nonblank(modeling_evidence_document_type)
+        OR reference.is_nonblank(modeling_evidence_document_type)
     ),
     CONSTRAINT ck_evidence_document_description CHECK (
         modeling_evidence_document_description IS NULL
-        OR core.is_nonblank(modeling_evidence_document_description)
+        OR reference.is_nonblank(modeling_evidence_document_description)
     ),
     CONSTRAINT ck_evidence_document_metadata CHECK (
         jsonb_typeof(modeling_evidence_document_metadata) = 'object'
@@ -248,10 +179,10 @@ CREATE TABLE model.modeling_evidence_record (
     CONSTRAINT uq_evidence_record_id_model
         UNIQUE (modeling_evidence_record_id, model_id),
     CONSTRAINT ck_evidence_record_type CHECK (
-        core.is_nonblank(modeling_evidence_record_type)
+        reference.is_nonblank(modeling_evidence_record_type)
     ),
     CONSTRAINT ck_evidence_record_text CHECK (
-        core.is_nonblank(modeling_evidence_text)
+        reference.is_nonblank(modeling_evidence_text)
     ),
     CONSTRAINT ck_evidence_record_details CHECK (
         jsonb_typeof(modeling_evidence_details) = 'object'
@@ -286,7 +217,7 @@ CREATE TABLE model.model_revision_transaction (
     CONSTRAINT fk_model_revision_transaction_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT ck_model_revision_change_kind CHECK (
-        core.is_nonblank(change_kind)
+        reference.is_nonblank(change_kind)
     )
 );
 
@@ -324,7 +255,7 @@ SECURITY DEFINER
 SET search_path = pg_catalog
 AS $$
 BEGIN
-    IF target_model_id IS NULL OR NOT core.is_nonblank(target_change_kind) THEN
+    IF target_model_id IS NULL OR NOT reference.is_nonblank(target_change_kind) THEN
         RAISE EXCEPTION USING
             ERRCODE = '22023',
             MESSAGE = 'model change requires a Model and nonblank change kind';
@@ -390,18 +321,6 @@ BEGIN
 END;
 $$;
 
-CREATE FUNCTION model.capture_model_row_change()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $$
-BEGIN
-    PERFORM model.record_effective_change(NEW.model_id, 'model.model');
-    RETURN NULL;
-END;
-$$;
-
 CREATE TRIGGER guard_model_revision
 BEFORE UPDATE ON model.model
 FOR EACH ROW EXECUTE FUNCTION model.guard_model_revision();
@@ -420,7 +339,7 @@ WHEN (
     OR OLD.gold_model_audit_columns_template IS DISTINCT FROM NEW.gold_model_audit_columns_template
     OR OLD.is_active IS DISTINCT FROM NEW.is_active
 )
-EXECUTE FUNCTION model.capture_model_row_change();
+EXECUTE FUNCTION model.capture_effective_change();
 
 CREATE TRIGGER capture_model_scope_change
 BEFORE INSERT OR UPDATE OR DELETE ON model.model_scope
@@ -434,10 +353,10 @@ FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
 
 CREATE TRIGGER guard_model_event_log_append_only
 BEFORE UPDATE OR DELETE ON model.model_event_log
-FOR EACH ROW EXECUTE FUNCTION core_security.reject_append_only_change();
+FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
 CREATE TRIGGER guard_model_revision_transaction_append_only
 BEFORE UPDATE OR DELETE ON model.model_revision_transaction
-FOR EACH ROW EXECUTE FUNCTION core_security.reject_append_only_change();
+FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
 
 CREATE UNIQUE INDEX ux_model_tenant_name_ci
     ON model.model (tenant_id, lower(btrim(model_name)));
@@ -461,6 +380,3 @@ CREATE INDEX ix_evidence_record_model_status
         modeling_evidence_record_status,
         modeling_evidence_document_id
     );
-CREATE INDEX ix_evidence_record_locked
-    ON model.modeling_evidence_record (model_id, modeling_evidence_record_id)
-    WHERE modeling_evidence_record_is_locked;

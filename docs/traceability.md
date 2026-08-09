@@ -29,7 +29,7 @@ the exact labels passed to the fixture's fail-closed `expect_error` helper.
 | INV-16 | Source-context changes are detected by deterministic digest rather than stale snapshots. | IMPLEMENTATION_PLAN.md §6, invariant 16 | `tests/workflows/adapters/test_snapshot_projection.py::test_verified_snapshot_projects_profiles_and_full_evidence_records` | `tests/workflows/adapters/test_snapshot_projection.py::test_snapshot_rejects_outer_and_inner_digest_tampering`<br>`tests/mcp/application/test_change_sets.py::test_context_drift_invalidates_sealed_candidate` | T02, T09, T12–T13, T17 | PASS | EXTERNAL (T25) |
 | INV-17 | Tenant/Model ownership and actor identity are derived server-side. | IMPLEMENTATION_PLAN.md §6, invariant 17 | `tests/mcp/application/test_change_sets.py::test_apply_receipt_persists_the_actual_human_applier` | `tests/mcp/application/test_change_sets.py::test_same_mutation_content_and_key_cannot_replay_across_human_actors` | T08–T15 | PASS | EXTERNAL (T25) |
 | INV-18 | Source catalog discovery is open to active authenticated users; private Model/draft access is not. | IMPLEMENTATION_PLAN.md §6, invariant 18 | `tests/workflows/unit/test_source_catalog.py::test_source_catalog_accepts_a_sorted_transitive_lineage_closure` | `tests/mcp/application/test_catalog_snapshot.py::test_catalog_is_open_but_model_is_owning_tenant_private` | T08–T09, T15 | PASS | EXTERNAL (T25) |
-| INV-19 | Only active owning-Tenant architects/admins can profile or mutate Model artifacts. | IMPLEMENTATION_PLAN.md §6, invariant 19 | `tests/mcp/application/test_change_sets.py::test_change_set_cas_validate_apply_and_replay` | `tests/mcp/infrastructure/test_postgres_repository.py::test_inactive_tenant_removes_membership_and_denies_mutation_and_lock_commands` | T08, T10–T15 | PASS | EXTERNAL (T25) |
+| INV-19 | Only effective architects, Tenant Admins, or super admins can validate, apply, or lock Model changes. | IMPLEMENTATION_PLAN.md §6, invariant 19 | `tests/mcp/application/test_change_sets.py::test_change_set_cas_validate_apply_and_replay` | `tests/mcp/infrastructure/test_postgres_repository.py::test_inactive_tenant_removes_membership_and_denies_mutation_and_lock_commands` | T08, T10–T15 | PASS | EXTERNAL (T25) |
 | INV-20 | Workflow grants bind the human, Model, run, selection, operations, workload identity, and expiry. | IMPLEMENTATION_PLAN.md §6, invariant 20 | `tests/mcp/application/test_service_readiness_and_lifecycle.py::test_completed_mapping_contract_requires_exact_applied_materialization_binding` | `tests/mcp/application/test_service_readiness_and_lifecycle.py::test_completed_non_mapping_contract_is_not_readable` | T06, T08, T15, T17 | PASS | EXTERNAL (T25) |
 | INV-21 | Databricks never connects directly to metadata PostgreSQL. | IMPLEMENTATION_PLAN.md §6, invariant 21 | `tests/workflows/adapters/test_production_adapter.py::test_databricks_notebooks_import_source_without_a_wheel_or_entry_point` | `tests/workflows/adapters/test_production_adapter.py::test_production_adapter_has_no_database_or_server_core_imports` | T17–T24 | PASS | EXTERNAL (T25) |
 | INV-22 | Raw physical datasets do not traverse MCP. | IMPLEMENTATION_PLAN.md §6, invariant 22 | `tests/workflows/adapters/test_snapshot_projection.py::test_verified_snapshot_projects_profiles_and_full_evidence_records` | `tests/workflows/adapters/test_mcp_gateway.py::test_gateway_never_falls_back_to_unstructured_tool_content` | T14, T17–T24 | PASS | EXTERNAL (T25) |
@@ -106,7 +106,7 @@ renumber any of the 26 canonical Release 1 invariants above.
   PostgreSQL result translation through
   `tests/mcp/application/test_feature_modules.py::test_modeling_evidence_preserves_actor_and_private_identifier_ordering`,
   `tests/mcp/application/test_workflow_grants_profiling.py::test_profiling_context_ignores_non_mapping_attribute_rows`,
-  `tests/mcp/application/test_change_sets.py::test_change_set_mutations_require_a_resolved_user_account`,
+  `tests/mcp/application/test_change_sets.py::test_change_set_mutations_require_a_resolved_principal`,
   `tests/mcp/application/test_mapping_materialization.py::test_completed_mapping_no_op_materializes_current_committed_state_without_draft`,
   and the three local repository anchors
   `test_outcome_status_matches_the_response_code_contract`,
@@ -129,15 +129,12 @@ renumber any of the 26 canonical Release 1 invariants above.
   `tests/mcp/foundation/test_release_gate_contract.py::test_complete_release_evidence_validation_has_one_owner`.
   This ownership check does not constitute a completed T24 aggregate or any T25
   authorization.
-- The append-only database invariant is implemented once and reused by eleven
+- The append-only database invariant is implemented once and reused by thirteen
   triggers. Its static ownership anchor is
   `tests/database/test_schema_static.py::test_change_state_is_bounded_append_only_and_secret_free`;
   `tests/mcp/infrastructure/test_postgres_repository.py::test_catalog_identity_health_and_schema_are_normalized`
-  also passes against the disposable PostgreSQL fixture. The full catalog run
-  created the fresh trigger set and passed the `profiling_failure_stage`
-  append-only assertion, then failed on the unrelated existing generated-ID
-  SQLSTATE mismatch at `behavior_assertions.sql:1136`; later append-only checks
-  were not reached, and it is not recorded as a full database pass.
+  also passes against the disposable PostgreSQL fixture. Profiling has no stage
+  tables; its final receipt remains append-only.
 
 Audited service checkpoints:
 

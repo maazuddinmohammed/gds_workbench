@@ -29,15 +29,14 @@ The workload's server-derived `ActorKind` exposes the nine shared MCP tools
 (`get_model`, `check_model_readiness`, `get_model_snapshot`,
 `get_model_dbml`, `get_model_change_set`, `create_model_change_set`,
 `put_model_change_set_section`, `validate_model_change_set`, and
-`apply_model_change_set`) and the eleven workload-only tools
+`apply_model_change_set`) and the eight workload-only tools
 (`get_mapping_materialization`, `get_profiling_run`,
 `get_workflow_run_contract`, `complete_workflow_no_op`,
 `complete_dbml_export`, `activate_workflow_run`, `create_profiling_run`,
-`stage_profiling_success_batch`, `stage_profiling_failure_batch`,
-`validate_profiling_run`, and `finalize_profiling_run`). It cannot discover or
+and `complete_profiling_run`). It cannot discover or
 invoke the five human-only catalog/navigation tools. Without verified mutation
 promotion, only the workload's eight read-only tools are registered. With
-promotion, workload discovery contains exactly 20 tools; promoted human
+promotion, workload discovery contains exactly 17 tools; promoted human
 discovery contains 14.
 
 Humans authorize or revoke outside MCP through the fixed workflow-control
@@ -221,7 +220,7 @@ the server transaction.
 
 | Workflow | Frozen input and coverage | Deterministic boundary | Persistence result |
 |---|---|---|---|
-| Profiling | Exact full/selected Objects and per-Connection DD-108 environment/mode batch policy | Column/literal batch filters and one aggregation per Attribute; technical, audit, and batch Attributes excluded | Bounded idempotent success/failure batches, then one finalize; all-failed records a retained failed attempt without advancing the Model revision |
+| Profiling | Exact full/selected Objects and per-Connection DD-108 environment/mode batch policy | Column/literal batch filters and one aggregation per Attribute; technical, audit, and batch Attributes excluded | One bounded idempotent success/failure result is published atomically; all-failed records a retained failed attempt without advancing the Model revision |
 | Analysis | Selected Bronze Objects, stable endpoints, existing outgoing relationships, and exact mode/target | Finder/Resolver coverage, one Reconciler/Reviewer loop, then at most one versioned Spark CASE pass over the frozen candidate | Pending staged Analysis or one final Analysis replacement/apply according to the exact mode branch |
 | Conceptual | Selected Bronze Objects, baseline, Object Ledger, relationship evidence packages, and Relationship Ledger | Sole whole-Model Reconciler, deterministic checks, unified Validator, repeated-digest repair | One `conceptual.json`; new/reactivated Objects and Relationships carry a transient physical/Evidence basis that the server verifies and strips, so Evidence-only creation persists no Evidence FK |
 | Logical | Selected Bronze Objects, topology/detail coverage, seven-family baseline, signal ledger, locks, and downstream dependency paths | Sole Reconciler, naming/audit projection, dependency waves, packaged Validators plus one Lead | One `logical.json`; policy audit Attributes are Boolean-marked and unsourced |

@@ -24,7 +24,7 @@ and set `Cache-Control: no-store`. They are not an expandable REST API.
 
 ## MCP tool inventory
 
-The registry has exactly 25 tools.
+The registry has exactly 22 tools.
 
 ### Human-only reads
 
@@ -65,12 +65,9 @@ Mutating:
 5. `complete_dbml_export`
 6. `activate_workflow_run`
 7. `create_profiling_run`
-8. `stage_profiling_success_batch`
-9. `stage_profiling_failure_batch`
-10. `validate_profiling_run`
-11. `finalize_profiling_run`
+8. `complete_profiling_run`
 
-A promoted human sees 14 tools. The exact configured workload sees 20. In
+A promoted human sees 14 tools. The exact configured workload sees 17. In
 read-only posture these become 10 human and 8 workload reads. Discovery and
 direct dispatch require both actor authorization and promotion registration.
 Capabilities distinguish actor-available tools from currently enabled tools.
@@ -103,7 +100,7 @@ human authoring workspace. It contains:
 
 - `input/manifest.json`, `input/model.json`, `input/source-catalog.json`, and
   `input/modeling-evidence.json`;
-- `output/change-set.json` and one output file for each of the six Sections;
+- `output/change-set.json` and one output file for each of the eight documents;
 - `output/_workbench/activity.jsonl` and `latest-validation.json`; and
 - an allowlisted `contract/` directory with common schemas, examples, the
   source-catalog schema, and the Mapping profile schema.
@@ -190,7 +187,7 @@ All seven deployments use source release `2026.08.06.2`.
 
 | Workflow | Job key | Definition | Delegated operation groups |
 |---|---|---|---|
-| Profiling | `gds-profiling` | `profiling-2` | readiness, Model/snapshot reads, profiling create/read/stage/validate/finalize, contract read |
+| Profiling | `gds-profiling` | `profiling-2` | readiness, Model/snapshot reads, Profiling create/read/complete, contract read |
 | Analysis | `gds-analysis` | `analysis-2` | readiness, Model/snapshot reads, Analysis Change Set create/read/put/validate/apply, contract read |
 | Conceptual | `gds-conceptual` | `conceptual-2` | readiness, Model/snapshot reads, Conceptual Change Set create/put/validate/apply, contract read |
 | Logical | `gds-logical` | `logical-2` | readiness, Model/snapshot reads, Logical Change Set create/put/validate/apply, contract read |

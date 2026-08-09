@@ -16,9 +16,10 @@ workspace. Never place the snapshot on a production import path.
 1. Adopt the terms in [domain language](02-domain-language.md).
 2. Record DD-108, DD-109, and DD-110 exactly.
 3. Apply ADR-0001 through ADR-0004 in order.
-4. Fix the public boundaries: 25 MCP tools, three Workflow Control routes,
-   seven workflows, six Model Sections, and no foundational CRUD, arbitrary
-   SQL, code-execution, or generated-code execution public surface.
+4. Fix the public boundaries: 22 MCP tools, three Workflow Control routes,
+   seven workflows, eight Model Change Set documents, and no foundational
+   CRUD, arbitrary SQL, code-execution, or generated-code execution public
+   surface.
 5. Turn the security rules and 26 traced invariants into rejecting tests.
 
 This prevents a convenient implementation choice from changing product intent.
@@ -37,7 +38,7 @@ must reproduce byte-for-byte from a clean checkout.
 
 ## 3. Install the fresh PostgreSQL schema
 
-Apply the nine numbered SQL files once, in order, in one fail-fast transaction.
+Apply the thirteen numbered SQL files once, in order, in one fail-fast transaction.
 Implement:
 
 - reference, foundational, security, Model, six Section, Mapping, profiling,
@@ -79,7 +80,7 @@ Parse only bounded normalized Easy Auth claims. Derive human or workload actor
 kind on the server. Implement Tenant/Model/capability rules and the exact
 workload grant fence before exposing tools.
 
-Bind the 25 tools directly to feature methods. Discovery and dispatch require
+Bind the 22 tools directly to feature methods. Discovery and dispatch require
 actor authorization plus promotion registration. Capabilities distinguish
 actor-available from enabled tools; the registry exposes the complete actor
 inventory; schemas expose only enabled tools. A hidden name must fail like an

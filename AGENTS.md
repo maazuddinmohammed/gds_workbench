@@ -34,3 +34,18 @@ Optimize for readability, locality, and traceability, not maximum decomposition.
 - Before creating an abstraction, ask: --Does this reduce cognitive load, or does it just make the reader navigate elsewhere?--
 - During refactoring, actively look for unnecessary indirection and consolidate it where doing so improves readability without introducing meaningful duplication.
 - Make fewer, more meaningful abstractions—not simply fewer functions.
+
+## Agent skills
+
+### Issue tracker
+
+Local Markdown under `.scratch/`. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default five-label vocabulary. See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: root `CONTEXT.md`, with ADRs under `docs/adr/`. See
+`docs/agents/domain.md`.

@@ -5,7 +5,7 @@
 Azure Easy Auth v2 is responsible for token signature, issuer, audience, and
 lifetime validation. Application code accepts only the normalized trusted claim
 envelope, validates the required `tid`/`oid` and human/workload shape, and maps
-that pair to an active internal account on each authorization-sensitive call.
+that pair to an active internal Principal on each authorization-sensitive call.
 Caller-supplied Tenant, owner, role, grant scope, or actor values are never
 trusted.
 
@@ -15,9 +15,9 @@ names only and make readiness fail while liveness remains available.
 
 The resolved principal's server-owned `ActorKind` is the MCP audience boundary.
 Client metadata, cached inventory, annotations, request fields, and known tool
-names cannot select or widen it. The 25 MCP definitions are disjoint: five
+names cannot select or widen it. The 22 MCP definitions are disjoint: five
 human-only catalog/navigation tools, nine shared Model/change-set/DBML tools,
-and eleven workload-only Workflow Run, Profiling Run, Mapping-materialization,
+and eight workload-only Workflow Run, Profiling Run, Mapping-materialization,
 and DBML-completion tools. Discovery, direct dispatch, capabilities, registry, and tool-schema
 resources apply the same projection on every request. A hidden tool or schema
 is rejected before schema validation with the generic response used for an
@@ -36,11 +36,17 @@ constructing the mutation-registration capability.
 
 ## Authorization
 
-- Active authenticated users may discover bounded cross-Tenant source metadata.
-- Applied Model state is limited to owning-Tenant developer, architect, or admin.
-- Draft, graph, and profiling mutations require owning architect/admin authority.
+- Active authenticated Principals may read active global Tenants. Private
+  Tenant reads require Viewer, Developer, Architect, or Tenant Admin access.
+- Global visibility grants read only and never grants mutation authority.
+- Developer may read, create drafts, and run permitted workflows.
+- Architect adds validation, apply, and business-lock authority.
+- Tenant Admin adds Tenant settings and Tenant-access administration.
+- An explicit super-admin Principal flag grants every application capability
+  across active Tenants but does not bypass locks, revisions, audit, grant
+  binding, or exposed-operation boundaries.
 - Admin-only security/recovery actions are not exposed as general MCP tools.
-- An owning-Tenant architect/admin human with `workbench.access` may
+- An owning-Tenant Architect/Tenant Admin user Principal with `workbench.access` may
   authorize/revoke a narrowly bound workflow grant only through the fixed
   non-MCP workflow-control routes. Authorize and revoke require verified
   mutation promotion. Only the configured
@@ -49,7 +55,7 @@ constructing the mutation-registration capability.
   deadline, expiry, status, and revocation are rechecked; a bare handle has no
   authority.
 - Read-only workflow status is available outside MCP to the initiating human
-  with current workflow authorization or an owning-Tenant security admin. It
+  with current workflow authorization or an owning-Tenant Tenant Admin/super admin. It
   requires the exact run/grant pair, normalizes private and missing identifiers
   to not-found, and returns scalar state, bounded aggregate counts, binding
   presence, and a diagnostic count—not the workload contract or raw diagnostics.
@@ -68,11 +74,12 @@ effective schema, table, sequence, and function privileges with the frozen
 boolean only. A mismatch invalidates repository access, closes a newly opened
 pool, and leaves process-only liveness available while readiness stays failed.
 
-Mutation authorization fences the exact active identity, account, and Tenant
-membership rows through a fixed-search-path `SECURITY DEFINER` function. Only
-`gds_app_write` may execute that bounded function. This preserves transaction
-stability without granting UPDATE on foundational security tables or exposing a
-foundational mutation surface.
+Authorization fences the exact active Entra identity, Principal, Tenant, and
+Tenant-access rows through a fixed-search-path `SECURITY DEFINER` function.
+Both runtime roles may resolve bounded read capability; mutation paths require
+the returned Developer/Architect/Administer capability appropriate to the
+operation. This preserves transaction stability without granting UPDATE on
+foundational security tables or exposing a foundational mutation surface.
 
 ## Data and secret handling
 
@@ -99,7 +106,7 @@ license, and SBOM gates run in `scripts/verify_local.sh`.
 |---|---|
 | Spoofed ownership or actor | server-side Entra mapping and ownership lookup |
 | Human discovery or guessed invocation of workload MCP tools | per-request `ActorKind` projection across discovery, dispatch, registry, capabilities, and schemas; generic unknown response |
-| Cross-Tenant Model access | role/owner authorization plus composite database keys |
+| Cross-Tenant Model access | Tenant visibility, Principal capability resolution, and composite database keys |
 | Stale or partial graph commit | whole-candidate validation, revision/CAS, one transaction |
 | Lock bypass | future-graph checks plus database triggers |
 | Grant replay/escalation | exact binding, expiry/revocation recheck, actor-bound idempotency |

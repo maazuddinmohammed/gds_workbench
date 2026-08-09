@@ -94,7 +94,7 @@ The approved implementation target is:
    exact run/grant UUID pair and returns only scalar run/grant state, workflow,
    Model ID, aggregate item counts, timestamps, binding-presence booleans, and
    a bounded diagnostic count. It is available only to the initiating human
-   with current Workflow authorization or an owning-Tenant security admin;
+   with current Workflow authorization or an owning-Tenant Tenant Admin/super admin;
    private ownership and identifier failures are normalized to not-found.
 7. Keep manual Databricks launch unchanged: the human control authorization
    returns the existing safe run/grant handles, and the predefined workload
@@ -185,9 +185,9 @@ members, and different existing bytes, and accepts byte-identical retries. The
 workflow calls the same MCP tool/resource and completes through one dedicated,
 idempotent `complete_dbml_export` workload tool after output publication.
 
-The registry is now exactly 25 tools: five human-only, nine shared, and eleven
+The registry is now exactly 22 tools: five human-only, nine shared, and eight
 workload-only. Human discovery contains 14; configured-workload discovery
-contains 20 when mutation registration is promoted. There are seven deployment
+contains 17 when mutation registration is promoted. There are seven deployment
 definitions and notebooks. Only effective `active|needs_review` artifacts are
 exported; invalid effective endpoints fail closed. File count, individual DBML
 bytes, aggregate DBML bytes, archive bytes, and manifest bytes are code-bounded.
@@ -394,7 +394,7 @@ It does not contain:
 - Dimensional or Mapping workflow implementation;
 - Entra request middleware or enforced authorization;
 - model revision/source-digest concurrency fencing;
-- durable change-set/profiling staging state;
+- durable change-set and Profiling Run state;
 - production deployment code;
 - any automated test suite.
 
@@ -473,8 +473,8 @@ orchestrator retains final ownership; see the current
   grant delegation, and redaction.
 - Bounded discovery, Model/readiness, Evidence, snapshot, profiling, and Model
   Change Set surfaces.
-- Six-section Model Change Sets: Evidence, Analysis, Conceptual, Logical,
-  Dimensional, and Mapping.
+- Eight-document Model Change Sets: Model Scope, Profiling, Evidence, Analysis,
+  Conceptual, Logical, Dimensional, and Mapping.
 - Separate `jobs/` package and thin notebooks for all six workflow families.
 - A secret-free Azure Linux App Service ZIP.
 - Deterministic local, PostgreSQL, Spark, MCP, concurrency, artifact, and
@@ -505,8 +505,8 @@ Excel-to-PostgreSQL process.
 
 These are release-blocking, not aspirational:
 
-1. PostgreSQL is authoritative for applied state, drafts, grants, staging,
-   receipts, and events.
+1. PostgreSQL is authoritative for applied state, drafts, grants, Profiling
+   Runs, receipts, and events.
 2. Every Model-owned row has `model_id`.
 3. Every Model-owned parent/child foreign key includes `model_id`.
 4. Object/Attribute pairs are enforced relationally.
@@ -530,9 +530,10 @@ These are release-blocking, not aspirational:
 16. Source-context changes are detected by a deterministic digest, not by
     trusting stale snapshots.
 17. Tenant/Model ownership and actor identity are derived server-side.
-18. Source catalog discovery is intentionally open to active authenticated
-    platform users; private Model/draft access is not.
-19. Only owning-Tenant architects/admins can profile or mutate Model artifacts.
+18. Active authenticated Principals may read global Tenants; private Tenant
+    reads require Tenant access or super admin. Visibility never grants writes.
+19. Only owning-Tenant Architects/Tenant Admins or super admins can apply or
+    lock Model artifacts; Developers may prepare drafts and permitted workflows.
 20. Workflows use short-lived grants bound to the initiating human, Model, run,
     selection, operations, and expiry.
 21. Databricks never connects directly to the metadata PostgreSQL database.
@@ -620,13 +621,13 @@ selected Object, common code applies these exact rules:
    finalization records a successful no-op and advances no Model revision.
 
 Readiness reports every affected Connection/Object and correction in one pass.
-Profiling staging records the selected environment/mode and resolved per-Object
-batch values in the immutable run context; Attribute Profile identity remains
+The Profiling Run records the selected environment/mode and resolved per-Object
+batch values in immutable request context; Attribute Profile identity remains
 `(model_id, attribute_id)` rather than adding batch history.
 
 ### 7.2 DD-109 — exact combined Mapping persistence
 
-Use exactly two tables. Add no environment, contributor, materialization,
+Use exactly three tables. Add no environment, contributor, materialization,
 Relationship-mapping, or orchestration-process table/column.
 
 Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
@@ -635,6 +636,13 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 `created_time/updated_time TIMESTAMPTZ` default current timestamp, and
 `created_by/updated_by VARCHAR(255)` default current user. Lifecycle is exactly
 `active|needs_review|inactive|deprecated`; all FKs use `ON DELETE NO ACTION`.
+
+#### `workflow.mapping_source_system_dependency`
+
+One row controls each `(model_id, modeled_entity_type, source_system_id)`
+execution wave. It carries the common envelope plus
+`source_system_dependency_order INTEGER NOT NULL DEFAULT 0`. Equal orders may
+run in parallel; lower orders complete before higher orders.
 
 #### `workflow.object_mapping`
 
@@ -648,8 +656,7 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 | `dimensional_entity_id` | `BIGINT NULL` |
 | `target_object_id` | `BIGINT NOT NULL` |
 | `source_system_id` | `BIGINT NOT NULL` |
-| `source_system_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
-| `target_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
+| `object_dependency_order` | `INTEGER NOT NULL DEFAULT 0`, non-negative |
 | `artifact_type` | `VARCHAR(30) NULL`, `sql_file|python_file|python_notebook` |
 | `artifact_generation_instructions` | `TEXT NULL`, nonblank and at most 32,768 characters when present |
 | `mapping_profile_key` | `VARCHAR(100) NULL`, pattern `[a-z][a-z0-9_.-]{0,99}` |
@@ -664,7 +671,8 @@ Every table uses the common Feature 001 envelope: generated `BIGINT` ID,
 
 Exactly one typed Entity ID must be non-null and agree with
 `modeled_entity_type`. Composite FKs bind that Entity to the same Model;
-ordinary FKs bind target Object and source System. Add unique witness
+an FK binds the exact Mapping Source System Dependency row, and an ordinary FK
+binds the target Object. Add unique witness
 `(object_mapping_id, model_id, modeled_entity_type, target_object_id)`. Preserve
 binding identity across every lifecycle state with two partial unique indexes:
 
@@ -709,7 +717,8 @@ multiple contributor bindings, but an existing binding can never be repointed.
 Null transformation is an unauthored registered binding; completed direct
 content explicitly stores `transformation_kind=direct`.
 
-Deferred constraint triggers enforce all cases ordinary FKs cannot express:
+A transaction-deduplicated deferred graph validator enforces all cases
+ordinary FKs cannot express:
 
 - the typed modeled Attribute belongs to the exact typed Entity on its header;
 - effective child, typed parents, and target parent are effective/valid;
@@ -718,19 +727,20 @@ Deferred constraint triggers enforce all cases ordinary FKs cannot express:
   `bronze|silver|gold`;
 - every effective header in one
   `(model_id, modeled_entity_type, target_object_id, source_system_id)` package
-  has byte-equivalent artifact/profile/instruction/wave fields and equal
+  has byte-equivalent artifact/profile/instruction fields and equal
   canonical package JSON as well as equal digest;
-- one source System/layer has one `source_system_dependency_order`;
+- one source System/layer has one controlled dependency row;
+- one target Object/layer has one `object_dependency_order`;
 - parent/child binding identity columns are immutable after insert;
 - locked rows and locked-header descendants are immutable, and ordinary DML
   cannot toggle lock flags.
 
 To make that route check declarative, T03 adds
-`core.zone.zone_code VARCHAR(30) NOT NULL UNIQUE`, constrained to lowercase
-identifier syntax. Release fixtures/bootstrap use the exact codes `bronze`,
+`reference.zone.zone_code VARCHAR(30) NOT NULL`, with case-insensitive
+uniqueness. Release fixtures/bootstrap use the exact codes `bronze`,
 `silver`, and `gold`; display names remain independent.
 
-The supporting indexes cover Model/package/status, Model/layer/System and both
+The supporting indexes cover Model/package/status, source-System and Object
 wave orders, each typed Entity/Attribute, target Object/Attribute, source
 System, parent traversal, and partial locked-row lookup. Catalog tests assert
 the exact indexes rather than treating this list as query-planner advice.
@@ -1030,15 +1040,19 @@ Spark/Databricks dependencies:
 ├── IMPLEMENTATION_STATUS.md
 ├── README.md
 ├── database/
-│   ├── 1_core_reference.sql
-│   ├── 2_core.sql
-│   ├── 3_core_security.sql
-│   ├── 4_model.sql
-│   ├── 5_workflow_analysis.sql
-│   ├── 6_workflow_conceptual.sql
-│   ├── 7_workflow_logical.sql
-│   ├── 8_workflow_log.sql
-│   └── 9_workflow_mapping.sql
+│   ├── 01_reference.sql
+│   ├── 02_core.sql
+│   ├── 03_security.sql
+│   ├── 04_model.sql
+│   ├── 05_workflow_analysis.sql
+│   ├── 06_workflow_conceptual.sql
+│   ├── 07_workflow_logical.sql
+│   ├── 08_workflow_dimensional.sql
+│   ├── 09_workflow_mapping.sql
+│   ├── 10_workflow_change.sql
+│   ├── 11_workflow_profiling.sql
+│   ├── 12_workflow_runtime.sql
+│   └── 13_runtime_integrity.sql
 ├── docs/
 │   ├── architecture/
 │   ├── contracts/
@@ -1089,9 +1103,9 @@ Spark/Databricks dependencies:
 └── reference_snapshot/
 ```
 
-Retain and rewrite exactly the original nine filenames because the accepted
-rollout is fresh-schema only. Put runtime roles, privileges, functions, and
-guards into their owning numbered files; do not add an ambiguous tenth file.
+The target uses thirteen zero-padded, dependency-ordered modules because the
+accepted rollout is fresh-schema only. Keep local table behavior in its owning
+module and cross-family guards and privileges in the final runtime module.
 The runner executes exact numeric order and verifies the catalog. Do not pretend
 `CREATE TABLE IF NOT EXISTS` upgrades an existing schema.
 
@@ -1137,13 +1151,13 @@ not production DDL.
 
 Preserve and harden:
 
-- `core.environment`, `system_type`, `zone`, `connection_type`,
+- `reference.environment`, `system_type`, `zone`, `connection_type`,
   `object_type`, and `connection_parameter`;
 - Project → Tenant → Connection → Object → Attribute ancestry;
 - Systems and ingestion Object/Attribute mappings;
-- `core_security.user_account`;
-- stable Entra `(tenant UUID, object UUID)` linkage;
-- owning-Tenant `admin|architect|developer` membership records;
+- `security.principal` with user/service-principal shape and super-admin flag;
+- stable `security.entra_principal_identity` `(tenant UUID, object UUID)` linkage;
+- expiring `viewer|developer|architect|tenant_admin` Tenant access records;
 - legacy Tenant Lease/history as dormant data, not routine Model coordination.
 
 Required corrections include:
@@ -1167,7 +1181,8 @@ has an explicit approved policy.
 `model.model` must add:
 
 - monotonic `model_revision BIGINT NOT NULL DEFAULT 1`;
-- approved versioned Silver/Gold naming and audit policy documents;
+- Silver/Gold naming and audit policy JSON documents, with content validated
+  by application readiness rather than PostgreSQL template functions;
 - stable owning Tenant and active state.
 
 Retain:
@@ -1197,7 +1212,8 @@ composite FKs, and `ON DELETE NO ACTION`.
   Submodel, Entity, Entity-Submodel membership, Attribute, Entity source
   mapping, Attribute source mapping, Relationship.
 - Exactly seven Dimensional tables with the same family pattern.
-- Exactly two combined Mapping tables: Object Mapping and Attribute Mapping.
+- Exactly three combined Mapping tables: Source System Dependency, Object
+  Mapping, and Attribute Mapping.
 - Remove Logical and Dimensional Relationship source-mapping tables.
 
 Logical Attribute key facts are orthogonal Booleans for primary, natural, and
@@ -1215,13 +1231,14 @@ Role-playing is represented by role-named Relationships to one Dimension.
 Add durable tables for:
 
 - `model_change_set` with a server-generated UUID primary key, indexed metadata,
-  and six bounded JSONB section columns;
+  and eight bounded JSONB document columns;
+- Tenant-owned `metadata_change_set` with twelve bounded Core metadata
+  documents, append-only events, receipts, and reference mappings;
 - append-only `model_change_set_event`;
 - idempotency records/outcomes;
 - short-lived workflow grants;
 - workflow coverage/diagnostic summaries keyed by server-generated UUID run;
-- profiling run (server-generated UUID), staged result/failure batches, and
-  final receipt;
+- Profiling Run (server-generated UUID) and final receipt;
 - immutable apply receipts and local-ref/ID mappings;
 - expiry status and timestamps.
 
@@ -1236,8 +1253,8 @@ Implement and test:
 
 - generated-ID and same-Model composite FKs;
 - physical Object/Attribute pairing;
-- effective-parent/source constraint triggers where FKs cannot express
-  lifecycle eligibility;
+- statement-level graph-validation enqueue triggers plus one deferred queue
+  trigger where FKs cannot express lifecycle eligibility;
 - aggregate business-lock triggers for update, lifecycle transition, child
   creation/reparenting, and delete;
 - a narrow fully qualified `SECURITY DEFINER` lock function with fixed
@@ -1278,7 +1295,7 @@ Freeze exact names in T02; the recommended initial inventory is:
 - `get_modeling_evidence` — filtered, paginated summary/detail reads.
 - `check_model_readiness` — deterministic complete preflight.
 - `get_model_snapshot` — small manifest plus immutable ZIP `resource_link`.
-- `get_model_change_set` — architect/admin draft summary, one section, or full
+- `get_model_change_set` — authorized draft summary, one section, or full
   document plus bounded activity.
 - bounded profiling run/status reads required for retry and diagnostics.
 
@@ -1364,7 +1381,9 @@ selection and operation data and creates:
 ```text
 workflow_grant_id UUID (server generated; non-secret handle)
 workflow_run_id UUID (server generated)
-initiating_user_account_id BIGINT
+initiating_principal_id BIGINT
+initiating_entra_principal_identity_id BIGINT
+initiating_principal_type VARCHAR(30) = user
 tenant_id BIGINT
 model_id BIGINT
 workflow_name VARCHAR(30)
@@ -1374,11 +1393,12 @@ allowed_operations TEXT[] (canonical, server derived)
 job_key VARCHAR(100)
 source_release VARCHAR(100)
 notebook_definition_version VARCHAR(100)
-workload_entra_tenant_id UUID (server configuration)
-workload_entra_object_id UUID (server configuration)
+workload_principal_id BIGINT
+workload_entra_principal_identity_id BIGINT
+workload_principal_type VARCHAR(30) = service_principal
 status VARCHAR(20): pending|active|revoked|expired|completed
 issued_time / activation_expires_time / expires_time TIMESTAMPTZ
-revoked_time / revoked_by_user_account_id / revoked_reason
+revoked_time / revoked_by_principal_id / revoked_reason
 bound_change_set_id UUID NULL
 bound_profiling_run_id UUID NULL
 ```
@@ -1412,11 +1432,12 @@ send the non-secret run/grant handles on every Streamable HTTP request in
 `X-GDS-Workflow-Run-ID` and `X-GDS-Workflow-Grant-ID`. Those headers alone
 authorize nothing. The server jointly requires:
 
-1. the Easy Auth principal is the exact configured workload `tid`/`oid`;
+1. the Easy Auth principal resolves to the exact registered service-principal
+   identity bound to the grant;
 2. the `Workflow.Run` application role is present and the handles match one
    active unexpired/unrevoked row;
-3. the initiating human identity/account and owning-Tenant architect/admin
-   membership are still active;
+3. the initiating user Principal/identity and owning-Tenant Architect/Tenant
+   Admin or super-admin authority are still active;
 4. requested Model, workflow, tool, operation, and immutable selection fit the
    stored grant; and
 5. the binding matches the profiling run/change set when one exists.
@@ -1441,13 +1462,12 @@ check inside its Model transaction. Audit records both workload run and human.
 Define focused tools/use cases for:
 
 - authorized profiling-run creation with frozen selection/context;
-- bounded idempotent success/failure batch staging;
-- complete staged-run validation;
-- retry-safe finalization;
+- complete bounded success/failure result validation;
+- retry-safe atomic Profile publication and final receipt;
 - status/diagnostic retrieval.
 
-Staging changes no Attribute Profile and no Model revision. Finalization keeps
-the last valid profile for failed Attributes, commits every valid changed
+Computation changes no Attribute Profile and no Model revision. Completion
+keeps the last valid profile for failed Attributes, commits every valid changed
 profile atomically, records `completed_with_warnings` when needed, and advances
 the Model revision once only when effective rows change.
 
@@ -1485,29 +1505,30 @@ Request flow:
    `tid`/`oid` headers. Easy Auth owns JWT signature/issuer/audience/lifetime
    validation; the application validates the required normalized claim shape.
 3. Human calls require `idtyp=user`, delegated scope `workbench.access`, and
-   resolve stable Entra `tid` + `oid` to an active identity and User Account.
-   Workflow calls require `idtyp=app`, application role `Workflow.Run`, and the
-   exact configured workload `tid`/`oid` plus Section 10.3 grant checks. Local
+   resolve stable Entra `tid` + `oid` to an active user Principal. Workflow
+   calls require `idtyp=app`, application role `Workflow.Run`, and the exact
+   registered service-principal identity plus Section 10.3 grant checks. Local
    and tests use an explicit non-production authenticator with signed fixtures,
    never a “trust arbitrary headers” switch.
 4. Derive the requested Model's owning Tenant from PostgreSQL and evaluate
-   active membership/capability server-side.
+   Principal, visibility, unexpired Tenant access, and capabilities server-side.
 5. Authorize again inside mutating transactions.
 6. Normalize unauthorized/nonexistent private identifiers to avoid leaks.
 7. Record safe initiating-human and workflow actors.
 
 Capabilities:
 
-| Data/action | developer | architect | admin |
-|---|---:|---:|---:|
-| Open source catalog read | yes | yes | yes |
-| Owning-Tenant applied Model read | yes | yes | yes |
-| Draft/validation/workflow diagnostics | no | yes | yes |
-| Profiling and Model workflows | no | yes | yes |
-| Change-set create/put/validate/apply | no | yes | yes |
-| Future human Scope/lock command | no | yes | yes |
-| Security/access administration | no | no | yes |
-| Future downstream engineering mutation | yes | no | yes |
+| Data/action | viewer | developer | architect | tenant admin |
+|---|---:|---:|---:|---:|
+| Tenant read | yes | yes | yes | yes |
+| Draft create/put and permitted workflows | no | yes | yes | yes |
+| Validate/apply and business-lock command | no | no | yes | yes |
+| Tenant settings/access administration | no | no | no | yes |
+
+An active authenticated Principal without Tenant access receives Viewer read
+capability only when the Tenant is global. An active super-admin Principal
+receives every application capability across active Tenants. Neither condition
+bypasses locks, revisions, audits, grant binding, or operation availability.
 
 Workflow grants are non-transferable, short-lived, and bound to the initiating
 human, Tenant, Model, workflow/run, immutable selection, allowed operations,
@@ -1606,7 +1627,7 @@ P00/T26 isolated baseline
   → T10 draft lifecycle
   → T12 authoritative validation
   → T13 atomic apply
-  → T14 profiling intake/finalization
+  → T14 Profiling execution/publication
   → T15 complete MCP/client workspace surface
   → [T16 App Service artifact,
      T17 shared jobs runtime]
@@ -1692,7 +1713,7 @@ Implementation:
 
 - Define one versioned registry for common IDs/local refs, lifecycle, operations,
   coverage, errors, issues, events, pagination, idempotency, receipts, snapshot
-  manifest, and six-section envelope.
+  manifest, and eight-document Model Change Set envelope.
 - Define canonical JSON serialization: Unicode, timestamps, decimals, key
   ordering, omitted/null semantics, and digest exclusions.
 - Freeze exact MCP tool names, actor audiences, titles, descriptions,
@@ -1795,19 +1816,21 @@ Exit evidence:
 - Mapping children cannot escape their Entity/target parent;
 - no obsolete table remains.
 
-### T06 — Change control, grants, profiling staging, and workflow state
+### T06 — Change control, grants, Profiling Runs, and workflow state
 
 **Depends on:** T03, T04, T05  
 **Risk:** schema, state transitions, idempotency
 
 Implementation:
 
-- Add Model Change Set row/events with six JSONB sections and queryable metadata.
+- Add Model Change Set row/events with eight JSONB documents and queryable metadata.
+- Add Tenant Metadata Change Set rows/events/receipts with twelve Core metadata
+  documents and a base metadata digest.
 - Add draft revision, base Model revision, source-context digest, candidate
   digest, validation outcome, TTL/activity/expiry, terminal state, and receipt.
 - Add append-only idempotency outcomes.
 - Add short-lived workflow grants and exact selection/operation binding.
-- Add profiling run/stage/result/failure/final receipt tables.
+- Add Profiling Run and append-only final receipt tables.
 - Add safe coverage/diagnostic summaries and event sequence keys.
 - Enforce bounded object-shaped documents and valid state transitions.
 
@@ -1818,7 +1841,7 @@ Exit evidence:
 - TTL refresh semantics distinguish put/validate from get;
 - terminal payloads are retained and immutable where required;
 - same idempotency key returns the original outcome;
-- no run/grant/staging table exposes a raw token or secret in general reads.
+- no run, grant, or receipt table exposes a raw token or secret in general reads.
 
 ### T07 — PostgreSQL lock, revision, and privilege enforcement
 
@@ -1859,8 +1882,8 @@ Implementation:
 - Create request-principal and trusted-auth-header adapter with explicit
   production versus test behavior and the exact Easy Auth trust boundary in
   Section 10.6.
-- Resolve human `tid`/`oid` to active identity/account; accept the configured
-  workload `tid`/`oid` only together with an active grant.
+- Resolve `tid`/`oid` to an active registered Principal identity; accept a
+  service principal only when its identity is bound to an active grant.
 - Implement the complete capability matrix and Model-derived owning Tenant.
 - Implement open source catalog versus private Model/draft visibility.
 - Implement human-only authorize/revoke/status control routes outside MCP,
@@ -1876,9 +1899,10 @@ Exit evidence:
 - spoofed identity headers are rejected outside the trusted adapter;
 - direct human, configured workload+grant, wrong workload, bare handle, expired,
   revoked, changed-selection, and deactivated-human cases all match the matrix;
-- inactive identity/account/membership fails;
-- Developer reads applied owning Model but cannot read drafts or mutate;
-- Architect/Admin workflow grant expiry/revocation blocks apply;
+- inactive identity/Principal/Tenant access fails;
+- global read, private Viewer read, Developer draft, Architect apply, Tenant
+  Admin administration, and super-admin override match the capability matrix;
+- workflow grant expiry/revocation blocks apply;
 - connection values, Key Vault refs, tokens, raw prompts/tools never appear in
   responses, logs, errors, traces, events, snapshots, or dumps.
 
@@ -2019,30 +2043,29 @@ Exit evidence:
 - no-op produces no revision and no empty effective mutation;
 - receipt maps every successful local ref exactly once.
 
-### T14 — Profiling MCP staging and finalization
+### T14 — Profiling execution and atomic publication
 
 **Depends on:** T03, T06, T08, T09, T13  
 **Risk:** authorization, partial computation policy, transaction
 
 Implementation:
 
-- Add workload-only profiling create/stage/validate/finalize/status use cases
-  and tools.
+- Add workload-only Profiling create/complete/status use cases and tools.
 - Freeze explicit selection, approved batch policy, Model revision, and source
   digest.
-- Validate bounded success/failure batches idempotently.
+- Validate one bounded success/failure result set idempotently.
 - Preserve the prior valid profile for every failed Attribute.
-- Finalize all valid changed profiles atomically and retry-safely.
+- Publish all valid changed profiles atomically and retry-safely.
 - Record complete diagnostics and `completed_with_warnings`.
 
 Exit evidence:
 
 - one Attribute computation failure does not block valid peers;
-- invalid staged metadata blocks finalization before Profile writes;
+- invalid result metadata blocks publication before Profile writes;
 - unexpected DB error rolls back all valid rows;
 - all-failed and unchanged runs do not advance Model revision;
 - changed successful set advances it once;
-- finalization retry returns one receipt.
+- completion retry returns one receipt.
 
 ### T15 — Complete MCP and client-workspace surface
 
@@ -2450,9 +2473,8 @@ Every workflow:
 13. Treats authoritative MCP stale/auth/lock/persistence failure as terminal for
     that attempt; it does not ask an agent to repair external state.
 
-Except for Analysis discovery staging and Profiling staging, agent workflow
-intermediates remain in process memory. A process failure restarts from a fresh
-authoritative snapshot.
+Except for Analysis discovery staging, agent workflow intermediates remain in
+process memory. A process failure restarts from a fresh authoritative snapshot.
 
 ### 14.2 Profiling
 
@@ -2817,8 +2839,8 @@ repository or invoke the server's application package in-process.
 
 The only intentional exceptions are:
 
-- Profiling writes an isolated staging attempt and publishes it atomically; it
-  does not use a Model Change Set.
+- Profiling publishes one complete bounded result atomically; it does not use a
+  Model Change Set.
 - Analysis alone may put its complete discovery candidate into the shared Model
   Change Set `analysis` section, run deterministic Spark validation against that
   frozen draft, then replace the same section with final classifications using
@@ -2869,7 +2891,7 @@ Maintain `docs/traceability.md` with one row per invariant containing:
 
 No invariant is considered covered by an accepting test alone. Examples of
 required rejecting cases include stale Model revision, stale global draft CAS, expired
-draft, unauthorized role, inactive account, wrong tenant, forged ownership,
+draft, unauthorized role, inactive Principal, wrong Tenant, forged ownership,
 missing grant, altered grant scope, context digest drift, locked component,
 cross-parent identifier, omission-driven deletion, incomplete Mapping package,
 multi-System ambiguity, secret-shaped value, and repeated idempotency key with
@@ -2940,23 +2962,24 @@ itself is insufficient.
 
 ### 16.5 Authentication, authorization, and secret tests
 
-Build the full matrix over active/inactive account, tenant, role, ownership,
+Build the full matrix over active/inactive Principal, Tenant, visibility, role,
+super-admin flag, ownership,
 workflow grant, Model status, and operation. At minimum prove:
 
 - Entra `tid`/`oid` are mapped server-side and caller-supplied owner/tenant
   fields cannot escalate access;
-- source catalog reads are intentionally cross-tenant while tenant-owned Model
-  state is not;
-- applied Model read permits owning developer/architect/admin only;
-- drafts, graph mutation, and profiling permit architect/admin only except for
-  narrowly scoped workflow grants;
+- global Tenant reads require only an active authenticated Principal; private
+  reads require active Viewer-or-higher access or super admin;
+- global visibility never grants writes;
+- Developer may create drafts/run permitted workflows; Architect may
+  validate/apply; Tenant Admin may manage Tenant access; super admin may do all;
 - workflow grants are expiring, single-scope, revocable, bound to the exact
   configured workload `tid`/`oid`, workflow run/change set/Model/selection/
   operations, and useless as bare handles;
 - only a human delegated `workbench.access` principal can authorize/revoke;
   only the `Workflow.Run` application principal can activate/use; activation
   deadline, four-hour expiry, status transitions, and no-renewal behavior hold;
-- security and recovery operations are admin-only;
+- Tenant security administration is Tenant Admin/super-admin only;
 - unauthorized/not-found responses do not reveal resource existence;
 - secrets, credentials, tokens, raw connection strings, and disallowed source
   values do not appear in MCP results, logs, traces, journals, snapshots, ZIPs,
@@ -3085,7 +3108,7 @@ following:
   enforce its tenant/audience/HTTPS/401 configuration as deployment tests, and
   validate the normalized trusted claim envelope and required user/workload
   claim shape in application code;
-- map `tid`/`oid` to an active internal account on every authorization-sensitive
+- map `tid`/`oid` to an active internal Principal on every authorization-sensitive
   request; never trust caller-supplied owner, tenant, or role values;
 - require TLS, use bounded timeouts/body limits, and reject unsupported protocol
   or schema versions with typed errors;
@@ -3116,7 +3139,7 @@ Transactional PostgreSQL audit is authoritative. Application logs and traces
 are diagnostic and never substitute for it.
 
 Record safe identifiers and measures only: correlation ID, operation/tool,
-workflow run, tenant/account internal IDs where permitted, Model/change-set ID,
+workflow run, Tenant/Principal internal IDs where permitted, Model/change-set ID,
 revision/draft revision, profile/template version, status, finding counts,
 latency, retry count, bounded token/usage metrics, and redacted exception class.
 
@@ -3274,7 +3297,7 @@ agent cannot confuse the frozen reference with the writable target.
 | Current task ledger | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/tasks/index.json` and `TASK-001.json` through `TASK-026.json` |
 | Active guided-development state | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/.guided-dev/state.json` |
 | Stale-but-useful handoff context | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/gds-etl-workbench-agent-handoff.md` |
-| Current staged database baseline | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/database/1_core_reference.sql` through `9_workflow_mapping.sql` |
+| Current canonical database baseline | `/Users/maazuddinmohammed/main/projects/gds_workbench_v2/database/01_reference.sql` through `13_runtime_integrity.sql` |
 | Architecture inventory | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/codebase.md` |
 | Prototype package root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/gds_ai` |
 | Prototype notebook root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/notebooks` |

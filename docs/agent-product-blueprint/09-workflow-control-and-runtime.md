@@ -3,7 +3,7 @@
 ## Why Workflow Control is separate from MCP
 
 Humans may decide that an automated workflow should run, but they must not
-discover or invoke workload execution, Profiling staging, or Mapping
+discover or invoke workload execution, Profiling publication, or Mapping
 materialization tools through MCP. The product therefore exposes exactly three
 human JSON routes outside MCP: authorize, revoke, and status.
 
@@ -115,7 +115,7 @@ skills, or subagent surface and uses a 64 KiB context cap.
    for every required work item. DBML verifies exact manifest/member/file
    coverage instead.
 8. Recheck context identity before non-empty persistence.
-9. Complete by Profiling finalization, Model Change Set apply, exact no-op, or
+9. Complete by atomic Profiling publication, Model Change Set apply, exact no-op, or
    DBML receipt.
 10. Redact and return canonical JSON; flush payload-free telemetry.
 
@@ -126,7 +126,7 @@ skills, or subagent surface and uses a 64 KiB context cap.
 | Empty modeling Section | `complete_workflow_no_op` with exact context fence | Unchanged |
 | Analysis discovery-only with pending work | Stage the bound Analysis Change Set and enter `awaiting_validation` | Unchanged |
 | Non-empty final Analysis/Conceptual/Logical/Dimensional/Mapping | Validate and apply bound Change Set | +1 only for effective change |
-| Profiling | Validate and finalize staged success/failure coverage | +1 only if a stored profile changes |
+| Profiling | Validate and publish one complete success/failure result | +1 only if a stored profile changes |
 | DBML | Rebuild identity and record publication receipt | Unchanged |
 
 ## Status, revocation, and expiry
@@ -135,7 +135,7 @@ The status route returns only identifiers, grant/run state, aggregate counts,
 times, binding flags, and a diagnostic count. It never returns the frozen
 request, prompts, candidate, raw diagnostics, or receipts.
 
-The initiating human or owning-Tenant security admin may revoke pending or
+The initiating human or owning-Tenant Tenant Admin/super admin may revoke pending or
 active work with a bounded reason. Grant, summary, and idempotency result commit
 together. A background worker uses PostgreSQL time and row locks to expire
 pending or active grants in bounded batches. Grants are never renewed or

@@ -61,15 +61,17 @@ The unit of work is one target Object and source System pair.
 
 ## Persistence and revision
 
-DD-109 permits exactly two tables:
+DD-109 permits exactly three tables:
 
+- `workflow.mapping_source_system_dependency` for controlled source-System
+  execution waves;
 - `workflow.object_mapping` for the typed Entity-to-target/source package
   header; and
 - `workflow.attribute_mapping` for typed Attribute-to-target Attribute
   contributors.
 
 Headers in one package must have byte-equivalent profile, artifact,
-instruction, wave, package document, and digest fields. Logical targets must be
+instruction, object wave, package document, and digest fields. Logical targets must be
 registered Silver; Dimensional targets must be registered Gold. Parent and
 child identity witnesses, partial unique indexes, and deferred graph checks
 preserve bindings across every lifecycle state.
