@@ -1,0 +1,46 @@
+[project]
+name = "gds-etl-workbench-mcp"
+version = "0.1.0"
+description = "GDS ETL Workbench MCP App Service"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "gunicorn==26.0.0",
+    "mcp==2.0.0",
+    "psycopg[binary]==3.3.4",
+    "psycopg-pool==3.3.1",
+    "pydantic==2.13.4",
+    "uvicorn==0.51.0",
+    "uvicorn-worker==0.4.0",
+]
+
+[dependency-groups]
+dev = [
+    "httpx==0.28.1",
+    "pyright==1.1.411",
+    "pytest==9.1.1",
+    "pytest-asyncio==1.4.0",
+    "ruff==0.15.22",
+]
+
+[tool.pytest.ini_options]
+asyncio_mode = "auto"
+testpaths = ["../tests/mcp"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
+
+[tool.pyright]
+include = ["gds_etl_workbench", "../tests/mcp"]
+pythonVersion = "3.12"
+typeCheckingMode = "strict"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["gds_etl_workbench"]
