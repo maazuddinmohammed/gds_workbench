@@ -14,8 +14,8 @@ deployment unit:
 1. `reference` lookup tables and shared validation helpers;
 2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
-3. `security` identities, Tenant membership, dormant Tenant Lease data,
-   and the three database roles;
+3. `security` identities, Tenant membership, governed Tenant Locks,
+   centralized authorization functions, and the three database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Evidence tables, and revision machinery;
 5. Attribute Profile and Analysis;
@@ -25,10 +25,10 @@ deployment unit:
 9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
 10. Model and Metadata Change Sets, idempotency outcomes, and Apply Receipts;
 11. Profiling Runs and final receipts;
-12. Workflow Grants and Workflow Run summaries; and
+12. a reserved empty workflow-runtime installation slot; and
 13. lock-audit tables and final privileges.
 
-There are 83 tables across `reference`, `core`, `security`, `model`, and
+There are 81 tables across `reference`, `core`, `security`, `model`, and
 `workflow`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
@@ -120,13 +120,13 @@ primary keys, foreign keys, unique constraints, and column `CHECK` rules. Draft
 cross-table graph validation was archived until its application behavior is
 finalized. Existing read indexes remain available for evaluation.
 
-## Archived behavior
+## Installed and archived behavior
 
-Revision advancement, business locks, lifecycle guards, append-only guards,
-authorization helpers, identity witnesses, and cross-table graph validation
-are not installed by the numbered DDL. Their prior draft SQL is preserved under
-`database/archived_functions_triggers/` for reference only. Each behavior must
-be rebuilt from finalized requirements and rejecting tests before activation.
+The numbered DDL installs active Principal/Tenant authorization plus governed
+Tenant Lock acquisition, renewal, release, explicit override, audit, and bounded
+expiry. It does not install the archived draft graph, revision, artifact-lock,
+or lifecycle triggers under `database/archived_functions_triggers/`; those need
+separate finalized requirements and rejecting tests before activation.
 
 ## Durable workflow state
 
@@ -155,29 +155,14 @@ terminal timestamp, and appends exactly one `expired` event with a worker actor,
 correlation ID, draft revision, and `ttl_elapsed` reason. Repeated or concurrent
 worker calls cannot append a second terminal event.
 
-The production lifespan runs the same bounded recovery pass through
-`WorkflowRunsFeature`. Repository/database time expires `pending` grants at
-their activation deadline and `active` grants at run expiry. PostgreSQL locks
-each selected grant and its summary with `FOR UPDATE ... SKIP LOCKED`, then
-commits both terminal `expired` states and the safe reason together. Apply and
-expiry share the grant fence, so expiry between validation and apply makes apply
-fail truthfully while leaving the validated draft and Model unchanged. The
-worker runs an immediate pass at startup, repeats periodically, and reports only
-bounded expiry metrics.
+The production lifespan calls `security.expire_tenant_locks` immediately and
+every 60 seconds. PostgreSQL selects at most 100 expired rows with
+`FOR UPDATE SKIP LOCKED`, writes one `expired` event per row, and removes only
+those stale locks in the same transaction. Interaction paths perform the same
+event-before-replacement behavior. There is no time-based trigger.
 
-Workflow grants freeze the exact request, selection, allowed operations, fixed
-Databricks workspace/job identity, source release, safe Notebook Definition
-audit values, initiating user Principal, registered service-principal identity,
-Model, Tenant, and expiry.
-They move through `pending`, `active`, and one terminal state. Change-set,
-profiling-run, and Databricks bindings are write-once. A composite witness binds
-safe workflow summaries to the same grant/run/Model/workflow tuple. Profiling
-completion publishes successful Attribute Profiles and one final receipt in a
-single transaction. Failed Attributes retain their prior Profile, while the
-receipt records the bounded failure count. The operation ledger owns exact
-request replay. Final profiling and apply receipts are append-only. No
-workflow, grant, summary, or receipt column stores a bearer token, password,
-credential, or connection secret.
+Workflow Grant and grant-bound run-summary structures are intentionally absent.
+Registered workload identities map directly to active Super Admin Principals.
 
 ## Roles and privileges
 
@@ -186,13 +171,14 @@ The fresh cluster defines three non-login, non-superuser roles:
 - `gds_migration`: schema creation plus all release objects;
 - `gds_app_read`: safe catalog/model/workflow reads; and
 - `gds_app_write`: the same safe reads, constrained Model/workflow DML,
-  sequence use, and the two pure `CHECK` validators.
+  sequence use, the two pure `CHECK` validators, centralized authorization,
+  and governed Tenant Lock functions.
 
 `PUBLIC` loses schema, table, and function rights. Both application roles are
 explicitly denied `core.connection_value`. Append-only events, idempotency,
 receipts, revision transactions, and audit projections cannot be
-updated/deleted by the write role. Runtime authorization behavior remains an
-application responsibility until its final database contract is approved.
+updated/deleted by the write role. The runtime role cannot directly mutate
+Principal, Tenant-access, Tenant Lock, or Tenant Lock event tables.
 
 The bootstrap principal must have permission to create the three group roles;
 the application LOGIN must have exactly one direct membership,
@@ -207,20 +193,12 @@ PostgreSQL deployment must use PostgreSQL 16 and preserve these grants.
 Run:
 
 ```bash
-bash tests/database/run_postgres_catalog.sh \
-  --evidence-output artifacts/database-results.json
+mcp_server/.venv/bin/pytest tests/mcp/test_database_authorization.py -q
 ```
 
-The harness rejects external DSNs and libpq/Azure connection environment,
-centrally resolves and validates a local Unix Docker socket before inspecting
-or starting an image, creates random credentials/database/container
-coordinates, uses only the pinned `postgres:16.13-bookworm` digest, proves the
-image/container/database identity,
-applies the thirteen files once in a transaction, loads the CSV fixtures, runs exact
-catalog/security assertions and accepted/rejected behavior cases, observes
-same-Model blocking through `pg_blocking_pids`, proves different-Model commit
-independence, and disposes only its marker-verified container. An unavailable
-container runtime is a test failure, never a skip. It writes the observed
-PostgreSQL patch version and executed assertion counts to the requested evidence
-path. There is no drop, truncate,
-reset, or external-DSN cleanup path.
+The fixture rejects existing DSN/libpq connection environment, creates random
+database, owner, runtime login, passwords, port, container name, and sentinel,
+uses the pinned PostgreSQL 16 image, installs all thirteen files once in one
+transaction, and exercises the actual runtime role and pool. Cleanup validates
+the per-run container label and stops only that container. There is no drop,
+truncate, reset, external-DSN, or populated-database cleanup path.

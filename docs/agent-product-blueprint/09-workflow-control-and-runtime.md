@@ -1,5 +1,9 @@
 # Workflow Control and notebook runtime
 
+> Historical proposal. Workflow Grants and fixed Workflow Control routes are not
+> implemented current behavior; see
+> [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).
+
 ## Why Workflow Control is separate from MCP
 
 Humans may decide that an automated workflow should run, but they must not

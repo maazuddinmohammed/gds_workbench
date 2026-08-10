@@ -1,5 +1,11 @@
 # Release 1 invariant traceability
 
+> Historical release-planning evidence. Entries referring to Workflow Grants,
+> Tenant Lease exclusion, the former 22-tool registry, or missing test paths do
+> not describe the current scaffold. Current authorization evidence is
+> `tests/mcp/test_database_authorization.py`; see
+> [ADR 001](adr/001-direct-principal-authorization-and-tenant-locks.md).
+
 This is the canonical Release 1 traceability map required by Section 16.1 of
 `IMPLEMENTATION_PLAN.md`. `PASS` records focused local evidence for the cited
 invariant; it does not claim that the aggregate clean-checkout T24 gate has

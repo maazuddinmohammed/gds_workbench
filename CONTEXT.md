@@ -27,6 +27,19 @@ An explicit Principal flag granting all application authorization across active
 Tenants without bypassing locks, revisions, audits, or operation boundaries.
 _Avoid_: Database superuser, automatic workload admin
 
+**Tenant Lock**:
+The database-time lease that permits ordinary Tenant writes only for its exact
+owning Principal. A different human or workload Principal is blocked until the
+owner releases it, it expires, or an authorized Principal explicitly overrides
+it with an audited reason.
+_Avoid_: Tenant Lease token, lock Boolean, implicit override
+
+**Tool Policy**:
+One server-owned authorization category declared beside a tool:
+Tenant Read, Tenant Metadata Write, Tenant Model Write, Tenant Lock Manage, or
+Super Admin Only. Client input never chooses the policy.
+_Avoid_: Caller role, per-tool role code
+
 **Model**:
 The governed metadata aggregate that contains scope, policy, effective Sections, and one current revision.
 _Avoid_: Project, workspace model
@@ -53,25 +66,15 @@ _Avoid_: Model Change Set, foundational CRUD
 An uncommitted workflow result that can become one or more Model Change Set Sections after validation.
 _Avoid_: Agent answer, model output
 
-**Workflow Grant**:
-The server-created authorization that binds one initiating user Principal, one
-registered service-principal identity, Model, workflow, request, allowed
-operations, and expiry.
-_Avoid_: Token, lease
-
 **Workflow Run**:
-One active execution under a Workflow Grant.
+One execution by an active registered workload Principal. The MCP server maps
+the workload's Entra identity directly to its internal Principal.
 _Avoid_: Job, session
 
 **Actor Kind**:
 The server-derived `human` or `workload` classification used to project the MCP
 tool and contract-resource inventory. Client-declared metadata never selects it.
 _Avoid_: Client mode, audience hint
-
-**Workflow Control**:
-The three fixed non-MCP human operations that authorize, revoke, or read the
-safe status of one exact Workflow Run and Workflow Grant pair.
-_Avoid_: Management API, workflow MCP tools
 
 **Notebook Definition**:
 The notebook-owned model, reasoning, prompt, tool, and workflow configuration compiled once at notebook startup.

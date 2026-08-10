@@ -1,140 +1,135 @@
-# Release 1 security contract
+# Authentication, authorization, and Tenant Locks
 
-## Trust boundaries
+This is the current security contract for the MCP scaffold. PostgreSQL and the
+numbered greenfield SQL are authoritative when prose and older planning material
+disagree.
 
-Azure Easy Auth v2 is responsible for token signature, issuer, audience, and
-lifetime validation. Application code accepts only the normalized trusted claim
-envelope, validates the required `tid`/`oid` and human/workload shape, and maps
-that pair to an active internal Principal on each authorization-sensitive call.
-Caller-supplied Tenant, owner, role, grant scope, or actor values are never
-trusted.
+## Public surface
 
-Production requires HTTPS. Test authentication is an explicit signed-fixture
-mode whose key is rejected in production. Configuration failures disclose key
-names only and make readiness fail while liveness remains available.
+- `/health/live` is anonymous and process-only.
+- `/health/ready` is anonymous and returns bounded database posture only.
+- `/mcp` uses stateless Streamable HTTP.
+- The only registered MCP tool is read-only `list_tenants`.
+- No Tenant Lock tool is registered yet. The governed database operations exist
+  so a later MCP or FastAPI adapter can use the same rules.
 
-The resolved principal's server-owned `ActorKind` is the MCP audience boundary.
-Client metadata, cached inventory, annotations, request fields, and known tool
-names cannot select or widen it. The 22 MCP definitions are disjoint: five
-human-only catalog/navigation tools, nine shared Model/change-set/DBML tools,
-and eight workload-only Workflow Run, Profiling Run, Mapping-materialization,
-and DBML-completion tools. Discovery, direct dispatch, capabilities, registry, and tool-schema
-resources apply the same projection on every request. A hidden tool or schema
-is rejected before schema validation with the generic response used for an
-unknown name.
+## Authentication
 
-Mutating MCP registration is a capability established at process start, not an
-environment boolean. A bare `GDS_MUTATION_ENABLED=true` fails configuration.
-The runtime requires a non-writable, non-symlink T24 evidence file outside the
-application tree, an independent SHA-256 pin for that file, and the selected ZIP
-SHA-256. It accepts only complete `local` or protected `ci` evidence containing
-the exact release gate order (including the OSV audits), no skipped/failed/
-expected-failed/warning outcomes, and one matching App Service artifact. It
-then binds the evidence revision, contract bundle/registry, lock, staged digest,
-and every packaged source file to the canonical embedded build manifest before
-constructing the mutation-registration capability.
+Azure App Service Easy Auth validates token signature, issuer, audience, and
+lifetime. Application code accepts only its bounded `X-MS-CLIENT-PRINCIPAL`
+envelope.
 
-## Authorization
+Human tokens require:
 
-- Active authenticated Principals may read active global Tenants. Private
-  Tenant reads require Viewer, Developer, Architect, or Tenant Admin access.
-- Global visibility grants read only and never grants mutation authority.
-- Developer may read, create drafts, and run permitted workflows.
-- Architect adds validation, apply, and business-lock authority.
-- Tenant Admin adds Tenant settings and Tenant-access administration.
-- An explicit super-admin Principal flag grants every application capability
-  across active Tenants but does not bypass locks, revisions, audit, grant
-  binding, or exposed-operation boundaries.
-- Admin-only security/recovery actions are not exposed as general MCP tools.
-- An owning-Tenant Architect/Tenant Admin user Principal with `workbench.access` may
-  authorize/revoke a narrowly bound workflow grant only through the fixed
-  non-MCP workflow-control routes. Authorize and revoke require verified
-  mutation promotion. Only the configured
-  `Workflow.Run` workload identity may activate/use the grant through MCP.
-  Model, human, run, change set, workflow, selection, operations, activation
-  deadline, expiry, status, and revocation are rechecked; a bare handle has no
-  authority.
-- Read-only workflow status is available outside MCP to the initiating human
-  with current workflow authorization or an owning-Tenant Tenant Admin/super admin. It
-  requires the exact run/grant pair, normalizes private and missing identifiers
-  to not-found, and returns scalar state, bounded aggregate counts, binding
-  presence, and a diagnostic count—not the workload contract or raw diagnostics.
-- Unauthorized and not-found paths intentionally avoid existence disclosure.
+- exactly one `tid` and `oid`;
+- `idtyp=user`; and
+- delegated scope `workbench.access`.
 
-Database roles separate deployment, application, and read-only access. Runtime
-roles cannot execute DDL, bypass Model revisions, mutate locked aggregates, or
-alter/delete authoritative audit. The application role receives no foundational
-CRUD, Tenant Lease, direct graph delete, lock-toggle, or generic SQL capability.
-The production database LOGIN must have exactly one direct group membership,
-`gds_app_write`; it must not be the schema owner, migration identity, Azure
-administrator, superuser, or a member of any stronger release-schema role. On
-pool startup and every readiness probe, the adapter compares the session's
-effective schema, table, sequence, and function privileges with the frozen
-`gds_app_write` posture and checks all elevated role attributes. The result is a
-boolean only. A mismatch invalidates repository access, closes a newly opened
-pool, and leaves process-only liveness available while readiness stays failed.
+Workload tokens require:
 
-Authorization fences the exact active Entra identity, Principal, Tenant, and
-Tenant-access rows through a fixed-search-path `SECURITY DEFINER` function.
-Both runtime roles may resolve bounded read capability; mutation paths require
-the returned Developer/Architect/Administer capability appropriate to the
-operation. This preserves transaction stability without granting UPDATE on
-foundational security tables or exposing a foundational mutation surface.
+- exactly one `tid` and `oid`;
+- `idtyp=app`; and
+- application permission `workbench.workflow` in the `roles` claim.
 
-## Data and secret handling
+Middleware resolves this envelope once and attaches the resulting request
+Principal to trusted request state. Tools do not trust caller-supplied Principal,
+Tenant Role, actor kind, ownership, or policy values.
 
-MCP never transports physical source rows. Recursive redaction covers results,
-diagnostics, journals, snapshots, and exception chains. Logs and traces exclude
-prompts, model output, generator documents, credentials, DSNs, bearer/workflow
-tokens, source values, and full payloads. Secrets arrive only through injected
-settings or managed identity/Key Vault; `.env` files are ignored and never
-loaded by production code.
+The Entra Tenant/Object pair must map to one active
+`security.entra_principal_identity` and active `security.principal`. A workload
+Principal must also have `is_super_admin=true`; merely obtaining a valid token is
+not enough.
 
-Model Snapshot archives use an explicit transport-neutral allowlist. They omit
-MCP capabilities, registry, schema catalog, and all MCP tool request/result DTO
-schemas so a human snapshot cannot become an offline map of the workload
-transport surface.
+## Local development mode
 
-The server ZIP uses an explicit allowlist and rejects secret signatures,
-symlinks, SQL, tests, notebooks, Spark/jobs dependencies, reference material,
-caches, and nested archives. Repository, archive, dependency-vulnerability,
-license, and SBOM gates run in `scripts/verify_local.sh`.
+`GDS_AUTH_MODE=dev` is accepted only when `GDS_ENVIRONMENT=local`. It creates the
+synthetic request actor `Local Developer`, skips Entra and Tenant role/visibility
+checks, and permits all active Tenants to be listed. It does not change database
+Tenant Lock, revision, audit, or business invariants. Production requires
+`GDS_AUTH_MODE=azure_easy_auth`, HTTPS, explicit hosts, and verified PostgreSQL
+TLS.
 
-## Principal threats and controls
+## Tool policies
 
-| Threat | Control |
-|---|---|
-| Spoofed ownership or actor | server-side Entra mapping and ownership lookup |
-| Human discovery or guessed invocation of workload MCP tools | per-request `ActorKind` projection across discovery, dispatch, registry, capabilities, and schemas; generic unknown response |
-| Cross-Tenant Model access | Tenant visibility, Principal capability resolution, and composite database keys |
-| Stale or partial graph commit | whole-candidate validation, revision/CAS, one transaction |
-| Lock bypass | blocked until lock behavior is rebuilt from finalized requirements |
-| Grant replay/escalation | exact binding, expiry/revocation recheck, actor-bound idempotency |
-| Duplicate/racing apply | Model/advisory locks, request hash, immutable receipt |
-| Secret disclosure | strict schemas, recursive redaction, safe errors, scans |
-| Database mis-targeting | fixture-owned local DSNs; one-connection sentinel-guarded T25 deployment |
-| Premature mutation registration | complete T24 evidence plus evidence/artifact/source/manifest identity gate |
-| Workflow-control expansion | three fixed JSON-only routes; strict DTOs; authorize/revoke promotion gate; read-safe status only |
-| Arbitrary computation | no SQL/code/file-upload tools; bounded deterministic jobs ports |
+Every tool declares one policy beside its handler. Shared authorization and the
+database function interpret it.
 
-T25 is disabled and `EXTERNAL`. Its early preflight performs bounded reads only.
-Its separately authorized DDL command requires an expiring target-, operation-,
-network-, sentinel-, and release-bound approval record, rejects alternate DSNs,
-uses bounded timeouts plus a transaction deployment lease, rejects concurrent
-clients, proves no non-sentinel user objects exist, and revalidates the same
-connection and sentinel immediately before one atomic canonical install. It has
-no override, drop, truncate, reset, or cleanup path. App Service artifact
-selection is derived only from complete release-mode T24 evidence, revalidates
-the exact gate order and clean test partition, and rechecks the recorded archive
-path, size, digest, and sidecar. The database guard applies the same T24
-precondition before any T25 connection.
+| Tool policy | Minimum authority | Active owned Tenant Lock |
+|---|---|---|
+| `tenant_read` | Viewer, or implicit Viewer on a global Tenant | No |
+| `tenant_metadata_write` | Developer | Yes |
+| `tenant_model_write` | Architect | Yes |
+| `tenant_lock_manage` | Developer | No |
+| `super_admin_only` | Super Admin | No unless the operation separately writes Tenant state |
 
-The T24 record is presently unsigned, and an extracted process cannot recover
-the byte identity of a ZIP that the platform no longer exposes. Therefore the
-deployment platform remains the trust root for mapping the selector's ZIP SHA
-to the mounted application and for protecting the three promotion settings and
-read-only evidence mount. Runtime per-file manifest verification detects stale
-or altered extracted application content, but it cannot defend against a fully
-privileged platform operator forging both configuration and the unsigned local
-record. A provider-signed deployment attestation would be required to remove
-that residual trust; no external attestation call is made in Release 1.
+Tenant Roles are cumulative: Viewer < Developer < Architect < Tenant Admin.
+Tenant Admin may perform every Tenant-scoped operation. Super Admin is a global
+Principal flag, not a Tenant Role. It bypasses Tenant visibility/membership and
+role requirements, but never Tenant Lock ownership, revisions, audit, history,
+idempotency, or business invariants.
+
+Global visibility grants read access only. Private reads require an active,
+unexpired Viewer-or-higher access row. Missing and inaccessible private Tenants
+must produce the same `tenant_not_found` response. `list_tenants` simply omits
+inaccessible private Tenants.
+
+## Tenant Lock behavior
+
+One active lock may exist per Tenant. Ownership is the exact internal Principal;
+human versus workload type does not affect ownership.
+
+- Ordinary metadata and Model writes require an unexpired lock owned by the
+  current Principal.
+- A different owner's lock blocks humans, workloads, Tenant Admins, and Super
+  Admins alike.
+- Lock management requires Developer, Architect, Tenant Admin, or Super Admin.
+- Acquire is retry-safe for the existing owner.
+- Only the owner may renew or release.
+- Override is explicit, replaces only the lock, requires a nonblank reason, and
+  records `force_unlocked`; it does not remove the prior owner's Tenant access.
+- Default duration is 60 minutes; callers may request 1 through 240 minutes.
+- PostgreSQL `CURRENT_TIMESTAMP` owns acquired and expiry time.
+- Stale locks do not authorize or block writes. Interaction paths record
+  `expired`, and the App Service invokes bounded `expire_tenant_locks` batches at
+  startup and every 60 seconds.
+
+The lock event stream records `acquired`, `renewed`, `released`,
+`force_unlocked`, and `expired`. Expiry has no acting Principal. Override records
+both the displaced owner and acting Principal.
+
+Lock conflict responses may disclose only the owner's normalized display name
+and bounded lock timing/purpose. They never disclose email, Entra IDs, bearer
+tokens, internal lock identifiers, or internal Principal IDs.
+
+## Transaction and database boundary
+
+`security.authorize_tenant_operation` is a fixed-search-path,
+`SECURITY DEFINER` function. It resolves the exact active Entra identity,
+Principal, Tenant, effective role, policy, and active Tenant Lock. Future write
+tools must call it in the same database transaction as their state change.
+
+Governed lock functions are:
+
+- `security.acquire_tenant_lock`
+- `security.renew_tenant_lock`
+- `security.release_tenant_lock`
+- `security.override_tenant_lock`
+- `security.expire_tenant_locks`
+
+The runtime login activates the `NOINHERIT` role `gds_app_write`. It cannot run
+DDL, delete product state, modify Principal/Tenant-access rows, or directly
+mutate Tenant Lock tables. It receives only explicit function execution and the
+existing allowlisted table privileges. `PUBLIC` receives no release-schema
+rights.
+
+Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
+not exist. Registered workloads authenticate and authorize directly as active
+service Principals.
+
+## Safe failures
+
+Stable public codes include `authentication_required`, `authorization_denied`,
+`tenant_not_found`, `tenant_lock_required`, `tenant_locked`, `invalid_request`,
+and `dependency_unavailable`. Unexpected exceptions become a bounded
+`internal_error`; raw SQL, connection values, claims, and exception text are not
+returned.

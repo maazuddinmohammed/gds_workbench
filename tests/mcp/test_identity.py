@@ -5,11 +5,17 @@ import json
 from uuid import UUID
 
 import pytest
+from starlette.applications import Starlette
+from starlette.requests import Request
+from starlette.responses import JSONResponse, Response
+from starlette.routing import Route
+from starlette.testclient import TestClient
 
 from gds_etl_workbench.adapters.auth.identity import (
     AuthenticationError,
     IdentityProvider,
 )
+from gds_etl_workbench.adapters.auth.middleware import ProtectedMCPMiddleware
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind
 
@@ -17,7 +23,12 @@ TENANT_ID = UUID("11111111-1111-1111-1111-111111111111")
 OBJECT_ID = UUID("22222222-2222-2222-2222-222222222222")
 
 
-def easy_auth_header(*, idtyp: str = "user", scopes: str = "workbench.access") -> str:
+def easy_auth_header(
+    *,
+    idtyp: str = "user",
+    scopes: str = "workbench.access",
+    roles: tuple[str, ...] = (),
+) -> str:
     claims = [
         {
             "typ": "http://schemas.microsoft.com/identity/claims/tenantid",
@@ -31,6 +42,7 @@ def easy_auth_header(*, idtyp: str = "user", scopes: str = "workbench.access") -
     ]
     if scopes:
         claims.append({"typ": "scp", "val": scopes})
+    claims.extend({"typ": "roles", "val": role} for role in roles)
     payload = {
         "auth_typ": "aad",
         "name_typ": "name",
@@ -70,7 +82,23 @@ def test_missing_principal_envelope_requires_authentication() -> None:
     assert error.value.http_status == 401
 
 
-def test_workload_cannot_discover_human_only_tool() -> None:
+def test_workload_application_permission_maps_workload_actor() -> None:
+    principal = IdentityProvider(AuthMode.AZURE_EASY_AUTH).authenticate(
+        {
+            "X-MS-CLIENT-PRINCIPAL": easy_auth_header(
+                idtyp="app",
+                scopes="",
+                roles=("workbench.workflow",),
+            )
+        }
+    )
+
+    assert principal.actor_kind is ActorKind.WORKLOAD
+    assert principal.entra_tenant_id == TENANT_ID
+    assert principal.entra_object_id == OBJECT_ID
+
+
+def test_workload_without_application_permission_is_denied() -> None:
     with pytest.raises(AuthenticationError) as error:
         IdentityProvider(AuthMode.AZURE_EASY_AUTH).authenticate(
             {"X-MS-CLIENT-PRINCIPAL": easy_auth_header(idtyp="app", scopes="")}
@@ -108,3 +136,26 @@ def test_oversized_envelope_fails_before_decode() -> None:
         IdentityProvider(AuthMode.AZURE_EASY_AUTH).authenticate(
             {"X-MS-CLIENT-PRINCIPAL": "A" * (91 * 1024)}
         )
+
+
+def test_middleware_propagates_the_authenticated_principal() -> None:
+    async def current_actor(request: Request) -> Response:
+        return JSONResponse(
+            {"actor_kind": request.state.request_principal.actor_kind.value}
+        )
+
+    application = Starlette(routes=[Route("/mcp/actor", current_actor)])
+    application.add_middleware(
+        ProtectedMCPMiddleware,
+        identity_provider=IdentityProvider(AuthMode.AZURE_EASY_AUTH),
+        require_https=False,
+    )
+
+    with TestClient(application) as client:
+        response = client.get(
+            "/mcp/actor",
+            headers={"X-MS-CLIENT-PRINCIPAL": easy_auth_header()},
+        )
+
+    assert response.status_code == 200
+    assert response.json() == {"actor_kind": "human"}

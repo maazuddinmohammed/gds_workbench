@@ -75,6 +75,51 @@ GRANT EXECUTE ON FUNCTION
     core.is_canonical_text_array(TEXT[])
 TO gds_app_write;
 
+GRANT EXECUTE ON FUNCTION security.authorize_tenant_operation(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    VARCHAR
+) TO gds_app_read, gds_app_write;
+
+GRANT EXECUTE ON FUNCTION security.acquire_tenant_lock(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    INTEGER,
+    VARCHAR
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION security.override_tenant_lock(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    INTEGER,
+    VARCHAR,
+    VARCHAR
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION security.renew_tenant_lock(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    INTEGER
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION security.release_tenant_lock(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION security.expire_tenant_locks(INTEGER)
+TO gds_app_write;
+
 GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
     TO gds_app_read, gds_app_write;
 REVOKE SELECT ON core.connection_value FROM gds_app_read, gds_app_write;
@@ -116,9 +161,7 @@ GRANT INSERT, UPDATE ON
     workflow.metadata_change_set,
     workflow.model_change_set,
     workflow.object_mapping,
-    workflow.profiling_run,
-    workflow.workflow_grant,
-    workflow.workflow_run_summary
+    workflow.profiling_run
 TO gds_app_write;
 GRANT INSERT ON
     workflow.metadata_change_set_event,

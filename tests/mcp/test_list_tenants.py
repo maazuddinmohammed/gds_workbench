@@ -27,6 +27,9 @@ class RecordingDatabase:
     async def readiness(self) -> ReadinessRecord:
         return ReadinessRecord(ready=True, code="ready")
 
+    async def expire_tenant_locks(self) -> int:
+        return 0
+
     @asynccontextmanager
     async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
         yield RecordingReadTransaction(self)
@@ -52,7 +55,7 @@ class RecordingReadTransaction:
 def settings() -> RuntimeSettings:
     return RuntimeSettings.from_environment(
         {
-            "GDS_ENVIRONMENT": "development",
+            "GDS_ENVIRONMENT": "local",
             "GDS_AUTH_MODE": "dev",
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",

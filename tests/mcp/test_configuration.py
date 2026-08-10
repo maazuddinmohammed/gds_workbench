@@ -11,7 +11,7 @@ from gds_etl_workbench.configuration import (
 
 def settings_values(**overrides: str) -> dict[str, str]:
     values = {
-        "GDS_ENVIRONMENT": "development",
+        "GDS_ENVIRONMENT": "local",
         "GDS_AUTH_MODE": "dev",
         "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
         "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",

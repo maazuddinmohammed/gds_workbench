@@ -2,15 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from mcp.server.mcpserver import MCPServer
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import Database
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
 
@@ -23,9 +26,15 @@ def create_mcp_server(
     @asynccontextmanager
     async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
         await database.open()
+        with suppress(DependencyUnavailableError):
+            await database.expire_tenant_locks()
+        expiry_task = asyncio.create_task(_expire_tenant_locks(database))
         try:
             yield None
         finally:
+            expiry_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await expiry_task
             await database.close()
 
     server = MCPServer[None](
@@ -44,6 +53,7 @@ def create_mcp_server(
         server,
         database=database,
         identity_provider=identity_provider,
+        authorizer=AuthorizationService(),
         cursor_signing_key=settings.cursor_signing_key,
     )
 
@@ -68,3 +78,12 @@ def create_mcp_server(
         )
 
     return server
+
+
+async def _expire_tenant_locks(database: Database) -> None:
+    while True:
+        await asyncio.sleep(60)
+        try:
+            await database.expire_tenant_locks()
+        except DependencyUnavailableError:
+            continue

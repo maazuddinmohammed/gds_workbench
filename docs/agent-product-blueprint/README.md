@@ -1,5 +1,11 @@
 # GDS ETL Workbench product blueprint
 
+> Historical planning snapshot: its Workflow Grant, fixed Workflow Control,
+> dormant Tenant Lease, and 22-tool descriptions are not current implementation
+> requirements. For authentication and authorization use current numbered SQL,
+> [`docs/security.md`](../security.md), and
+> [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).
+
 This directory explains Release 1 as one coherent product. It is written for an
 AI agent that must understand the intent before changing or rebuilding the
 system.
@@ -55,7 +61,7 @@ Use this order:
 4. The frozen Feature 001 material in `reference_snapshot/` where the plan
    explicitly delegates detail.
 5. Current production SQL, contract assets, and source code for implemented
-   behavior.
+   behavior. These control over historical blueprint inventory descriptions.
 6. [`IMPLEMENTATION_STATUS.md`](../../IMPLEMENTATION_STATUS.md) and
    [`docs/traceability.md`](../traceability.md) for dated evidence, not new
    requirements.

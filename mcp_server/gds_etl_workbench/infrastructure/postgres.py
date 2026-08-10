@@ -44,6 +44,8 @@ class Database(Protocol):
 
     async def readiness(self) -> ReadinessRecord: ...
 
+    async def expire_tenant_locks(self) -> int: ...
+
     def read_transaction(self) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
@@ -59,7 +61,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('security.entra_principal_identity') IS NOT NULL
        AND to_regclass('security.tenant_principal_access') IS NOT NULL
        AND to_regprocedure(
-           'security.resolve_principal_access(uuid,uuid,bigint)'
+           'security.authorize_tenant_operation(uuid,uuid,varchar,bigint,varchar)'
        ) IS NOT NULL AS schema_shape_ok,
        CURRENT_USER = 'gds_app_write'
        AND NOT runtime_role.rolsuper
@@ -159,3 +161,15 @@ class PostgresDatabase:
             return ReadinessRecord(ready=True, code="ready")
         except PsycopgError:
             return ReadinessRecord(ready=False, code="database_unavailable")
+
+    async def expire_tenant_locks(self) -> int:
+        try:
+            async with self._pool.connection() as connection, connection.transaction():
+                result = await connection.execute(
+                    "SELECT security.expire_tenant_locks(%s) AS expired_count",
+                    (100,),
+                )
+                row = await result.fetchone()
+            return 0 if row is None else int(row["expired_count"])
+        except PsycopgError as exc:
+            raise DependencyUnavailableError() from exc

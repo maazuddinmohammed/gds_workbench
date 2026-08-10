@@ -9,32 +9,23 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
+from gds_etl_workbench.application.authorization import (
+    AuthorizationService,
+    ResolvedPrincipal,
+)
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     Capability,
-    RequestPrincipal,
     TenantRole,
+    ToolPolicy,
     has_capability,
 )
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import Database
+from gds_etl_workbench.infrastructure.postgres import Database, ReadTransaction
 
 _COLLECTION = "list_tenants"
-
-_RESOLVE_PRINCIPAL_SQL = """
-SELECT principal.principal_id, principal.is_super_admin
-  FROM security.entra_principal_identity AS identity
-  JOIN security.principal AS principal
-    ON principal.principal_id = identity.principal_id
-   AND principal.principal_type = identity.principal_type
- WHERE identity.entra_tenant_id = %s
-   AND identity.entra_object_id = %s
-   AND identity.principal_type = 'user'
-   AND identity.is_active
-   AND principal.is_active
- FOR SHARE OF identity, principal
-"""
+POLICY = ToolPolicy.TENANT_READ
 
 _AUTHORIZED_TENANTS_SQL = """
 SELECT tenant.tenant_id,
@@ -110,6 +101,7 @@ def register_list_tenants_tool(
     *,
     database: Database,
     identity_provider: IdentityProvider,
+    authorizer: AuthorizationService,
     cursor_signing_key: bytes,
 ) -> None:
     """Register list_tenants with its explicit shared dependencies."""
@@ -137,19 +129,21 @@ def register_list_tenants_tool(
     ) -> ListTenantsResult:
         """List the Tenant summaries visible to the current human Principal."""
         try:
-            principal = identity_provider.authenticate(ctx.headers)
+            principal = identity_provider.request_principal(ctx.request_context.request)
             request = ListTenantsRequest(
                 schema_version=schema_version,
                 page_size=page_size,
                 cursor=cursor,
             )
             offset = cursors.decode(request.cursor, collection=_COLLECTION)
-            rows = await _query_visible_tenants(
-                database,
-                principal,
-                limit=request.page_size + 1,
-                offset=offset,
-            )
+            async with database.read_transaction() as transaction:
+                actor = await authorizer.resolve_principal(transaction, principal)
+                rows = await _query_visible_tenants(
+                    transaction,
+                    actor,
+                    limit=request.page_size + 1,
+                    offset=offset,
+                )
             tenants = tuple(
                 TenantSummary(
                     tenant_id=row["tenant_id"],
@@ -183,31 +177,23 @@ def register_list_tenants_tool(
 
 
 async def _query_visible_tenants(
-    database: Database,
-    principal: RequestPrincipal,
+    transaction: ReadTransaction,
+    principal: ResolvedPrincipal,
     *,
     limit: int,
     offset: int,
 ) -> list[dict[str, Any]]:
-    async with database.read_transaction() as transaction:
-        if principal.actor_kind is ActorKind.DEVELOPMENT:
-            return await transaction.fetch_all(_DEV_TENANTS_SQL, (limit, offset))
-
-        if principal.entra_tenant_id is None or principal.entra_object_id is None:
-            raise AuthorizationDeniedError()
-        actor = await transaction.fetch_one(
-            _RESOLVE_PRINCIPAL_SQL,
-            (principal.entra_tenant_id, principal.entra_object_id),
-        )
-        if actor is None:
-            raise AuthorizationDeniedError()
-        return await transaction.fetch_all(
-            _AUTHORIZED_TENANTS_SQL,
-            (
-                actor["is_super_admin"],
-                actor["principal_id"],
-                actor["is_super_admin"],
-                limit,
-                offset,
-            ),
-        )
+    if principal.actor_kind is ActorKind.DEVELOPMENT:
+        return await transaction.fetch_all(_DEV_TENANTS_SQL, (limit, offset))
+    if principal.principal_id is None:
+        raise AuthorizationDeniedError()
+    return await transaction.fetch_all(
+        _AUTHORIZED_TENANTS_SQL,
+        (
+            principal.is_super_admin,
+            principal.principal_id,
+            principal.is_super_admin,
+            limit,
+            offset,
+        ),
+    )

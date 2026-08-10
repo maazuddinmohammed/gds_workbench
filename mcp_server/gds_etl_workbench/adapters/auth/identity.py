@@ -23,6 +23,7 @@ _TENANT_CLAIMS = frozenset({"tid", "http://schemas.microsoft.com/identity/claims
 _OBJECT_CLAIMS = frozenset({"oid", "http://schemas.microsoft.com/identity/claims/objectidentifier"})
 _IDENTITY_TYPE_CLAIMS = frozenset({"idtyp"})
 _SCOPE_CLAIMS = frozenset({"scp", "http://schemas.microsoft.com/identity/claims/scope"})
+_ROLE_CLAIMS = frozenset({"roles", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"})
 
 
 @dataclass(frozen=True, slots=True)
@@ -91,30 +92,56 @@ class IdentityProvider:
         tenant_id = _one_uuid_claim(claim_values, _TENANT_CLAIMS)
         object_id = _one_uuid_claim(claim_values, _OBJECT_CLAIMS)
         identity_type = _one_text_claim(claim_values, _IDENTITY_TYPE_CLAIMS)
-        if identity_type != "user":
+        if identity_type == "user":
+            scopes = {
+                scope
+                for claim_type in _SCOPE_CLAIMS
+                for value in claim_values.get(claim_type, [])
+                for scope in value.split()
+            }
+            if "workbench.access" not in scopes:
+                raise AuthenticationError(
+                    public_code="authorization_denied",
+                    message="Required application scope is missing.",
+                    http_status=403,
+                )
+            actor_kind = ActorKind.HUMAN
+        elif identity_type == "app":
+            roles = {
+                role for claim_type in _ROLE_CLAIMS for role in claim_values.get(claim_type, [])
+            }
+            if "workbench.workflow" not in roles:
+                raise AuthenticationError(
+                    public_code="authorization_denied",
+                    message="Required application permission is missing.",
+                    http_status=403,
+                )
+            actor_kind = ActorKind.WORKLOAD
+        else:
             raise AuthenticationError(
                 public_code="authorization_denied",
                 message="This operation is not available to this actor.",
                 http_status=403,
             )
 
-        scopes = {
-            scope
-            for claim_type in _SCOPE_CLAIMS
-            for value in claim_values.get(claim_type, [])
-            for scope in value.split()
-        }
-        if "workbench.access" not in scopes:
-            raise AuthenticationError(
-                public_code="authorization_denied",
-                message="Required application scope is missing.",
-                http_status=403,
-            )
-
         return RequestPrincipal(
-            actor_kind=ActorKind.HUMAN,
+            actor_kind=actor_kind,
             entra_tenant_id=tenant_id,
             entra_object_id=object_id,
+        )
+
+    def request_principal(self, request: object | None) -> RequestPrincipal:
+        """Read middleware-authenticated state; only local dev may lack HTTP state."""
+        state = getattr(request, "state", None)
+        principal = getattr(state, "request_principal", None)
+        if isinstance(principal, RequestPrincipal):
+            return principal
+        if self._auth_mode is AuthMode.DEV:
+            return RequestPrincipal.development()
+        raise AuthenticationError(
+            public_code="authentication_required",
+            message="Authentication is required.",
+            http_status=401,
         )
 
 

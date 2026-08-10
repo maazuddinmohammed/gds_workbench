@@ -15,7 +15,7 @@ class ConfigurationError(ValueError):
 
 
 class Environment(StrEnum):
-    DEVELOPMENT = "development"
+    LOCAL = "local"
     PRODUCTION = "production"
 
 
@@ -78,6 +78,8 @@ class RuntimeSettings:
         auth_mode = _enum_value(source, "GDS_AUTH_MODE", AuthMode)
         if environment is Environment.PRODUCTION and auth_mode is not AuthMode.AZURE_EASY_AUTH:
             raise ConfigurationError("production requires GDS_AUTH_MODE=azure_easy_auth")
+        if auth_mode is AuthMode.DEV and environment is not Environment.LOCAL:
+            raise ConfigurationError("GDS_AUTH_MODE=dev requires GDS_ENVIRONMENT=local")
 
         database_dsn = _required(source, "GDS_DATABASE_DSN")
         if environment is Environment.PRODUCTION:

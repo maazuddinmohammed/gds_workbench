@@ -1,5 +1,9 @@
 # Security and invariants
 
+> Superseded for authentication, authorization, and Tenant Locks by
+> [`docs/security.md`](../security.md) and
+> [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).
+
 ## Trust boundaries
 
 1. Azure App Service Easy Auth authenticates the HTTP request.

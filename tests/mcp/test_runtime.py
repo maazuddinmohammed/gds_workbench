@@ -1,12 +1,16 @@
 from __future__ import annotations
 
+import base64
+import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, LiteralString
 
 import pytest
+import httpx2
 from mcp import Client
+from mcp.client.streamable_http import streamable_http_client
 from starlette.testclient import TestClient
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
@@ -26,7 +30,11 @@ class FakeReadTransaction:
     async def fetch_one(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
-        raise AssertionError("development mode must not resolve a production Principal")
+        if self._database.resolved_principal is None:
+            raise AssertionError(
+                "development mode must not resolve a production Principal"
+            )
+        return self._database.resolved_principal
 
     async def fetch_all(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
@@ -40,6 +48,8 @@ class FakeDatabase:
         self.ready = ready
         self.opened = False
         self.closed = False
+        self.expiry_calls = 0
+        self.resolved_principal: dict[str, Any] | None = None
         self.records: list[dict[str, Any]] = [
             {
                 "tenant_id": 1,
@@ -63,6 +73,10 @@ class FakeDatabase:
             code="ready" if self.ready else "database_unavailable",
         )
 
+    async def expire_tenant_locks(self) -> int:
+        self.expiry_calls += 1
+        return 0
+
     @asynccontextmanager
     async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
         yield FakeReadTransaction(self)
@@ -71,7 +85,7 @@ class FakeDatabase:
 def development_settings() -> RuntimeSettings:
     return RuntimeSettings.from_environment(
         {
-            "GDS_ENVIRONMENT": "development",
+            "GDS_ENVIRONMENT": "local",
             "GDS_AUTH_MODE": "dev",
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
@@ -120,6 +134,18 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert database.closed is True
 
 
+@pytest.mark.asyncio
+async def test_server_expires_tenant_locks_during_lifespan() -> None:
+    settings = development_settings()
+    database = FakeDatabase()
+    server = create_mcp_server(settings, database, IdentityProvider(settings.auth_mode))
+
+    async with Client(server):
+        pass
+
+    assert database.expiry_calls == 1
+
+
 def test_health_routes_are_anonymous() -> None:
     database = FakeDatabase()
     application = create_application(development_settings(), database)
@@ -148,6 +174,56 @@ def test_production_mcp_rejects_missing_easy_auth_envelope() -> None:
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_required"
+
+
+@pytest.mark.asyncio
+async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() -> None:
+    settings = replace(
+        development_settings(),
+        environment=Environment.PRODUCTION,
+        auth_mode=AuthMode.AZURE_EASY_AUTH,
+        require_https=True,
+    )
+    database = FakeDatabase()
+    database.resolved_principal = {
+        "principal_id": 41,
+        "principal_display_name": "HTTP Human",
+        "is_super_admin": False,
+    }
+    database.records[0]["tenant_visibility"] = "global"
+    database.records[0]["effective_role"] = "viewer"
+    application = create_application(settings, database)
+    claims = {
+        "auth_typ": "aad",
+        "claims": [
+            {"typ": "tid", "val": "11111111-1111-1111-1111-111111111111"},
+            {"typ": "oid", "val": "22222222-2222-2222-2222-222222222222"},
+            {"typ": "idtyp", "val": "user"},
+            {"typ": "scp", "val": "workbench.access"},
+        ],
+    }
+    principal_header = base64.b64encode(json.dumps(claims).encode()).decode()
+
+    async with application.router.lifespan_context(application):
+        async with httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=application),
+            base_url="http://testserver",
+            headers={
+                "x-forwarded-proto": "https",
+                "x-ms-client-principal": principal_header,
+            },
+        ) as http_client:
+            transport = streamable_http_client(
+                "http://testserver/mcp",
+                http_client=http_client,
+                terminate_on_close=False,
+            )
+            async with Client(transport) as client:
+                result = await client.call_tool("list_tenants", {})
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["tenants"][0]["effective_role"] == "viewer"
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

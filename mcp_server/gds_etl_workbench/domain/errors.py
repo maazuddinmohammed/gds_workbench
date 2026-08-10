@@ -26,6 +26,27 @@ class AuthorizationDeniedError(WorkbenchError):
         )
 
 
+class TenantNotFoundError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(code="tenant_not_found", message="Tenant was not found.")
+
+
+class TenantLockRequiredError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="tenant_lock_required",
+            message="An active Tenant Lock owned by the current Principal is required.",
+        )
+
+
+class TenantLockedError(WorkbenchError):
+    def __init__(self, owner_display_name: str) -> None:
+        super().__init__(
+            code="tenant_locked",
+            message=f"Tenant is locked by {owner_display_name}.",
+        )
+
+
 class DependencyUnavailableError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

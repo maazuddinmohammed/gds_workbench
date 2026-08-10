@@ -45,7 +45,7 @@ class ProtectedMCPMiddleware:
                 return
 
         try:
-            self._identity_provider.authenticate(headers)
+            principal = self._identity_provider.authenticate(headers)
         except AuthenticationError as error:
             response = JSONResponse(
                 {
@@ -60,4 +60,5 @@ class ProtectedMCPMiddleware:
             )
             await response(scope, receive, send)
             return
+        scope.setdefault("state", {})["request_principal"] = principal
         await self._app(scope, receive, send)

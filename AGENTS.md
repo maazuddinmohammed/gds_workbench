@@ -17,8 +17,8 @@ These rules apply to every file and command in this repository.
 ## Security and public surface
 
 - Never commit or log secrets, connection values or strings, bearer/workflow tokens, secret names or references, raw prompts, raw physical rows, raw tool output, or unredacted run dumps.
-- MCP must not expose foundational CRUD, Model Scope mutation, lock toggles, Tenant Lease tools, individual graph mutation, arbitrary SQL, delete, secret-returning, file-upload, or code-execution tools.
-- Derive actor, Tenant, Model ownership, and authorization server-side. Preserve least privilege, redaction, lock protection, revision fencing, grant binding, and idempotency.
+- MCP must not expose foundational CRUD, Model Scope mutation, direct lock-table toggles, individual graph mutation, arbitrary SQL, delete, secret-returning, file-upload, or code-execution tools. Any future Tenant Lock tool must call only the governed acquire, renew, release, or explicit override operations and preserve their role, ownership, duration, reason, and audit rules.
+- Derive actor, Tenant, Model ownership, and authorization server-side. Preserve least privilege, redaction, Tenant Lock protection, revision fencing, and idempotency.
 
 ### Code Structure and Abstraction
 

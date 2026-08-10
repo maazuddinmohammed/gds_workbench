@@ -8,7 +8,7 @@ This is the Azure App Service code root. It contains one read-only MCP tool,
 - `adapters/`: Easy Auth middleware, identity parsing, and MCP server composition.
 - `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
   authorization flow, pagination, and SQL together.
-- `application/`: shared signed pagination cursor implementation.
+- `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role/capability policy and safe errors.
 - `infrastructure/`: shared PostgreSQL pool, readiness, and read-only transactions.
 - Tests live outside this deployable folder in `../tests/mcp/`.
@@ -17,9 +17,15 @@ Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`
 envelope. The request never supplies Principal IDs, Tenant IDs, or roles.
 PostgreSQL resolves the active Principal and effective Tenant access.
 
-`GDS_AUTH_MODE=dev` skips authentication and Tenant authorization and lists all
-active Tenants. Configuration rejects this mode when
-`GDS_ENVIRONMENT=production`.
+Humans require delegated scope `workbench.access`. Workloads require application
+permission `workbench.workflow` and an active registered service Principal with
+the server-owned Super Admin flag.
+
+`GDS_AUTH_MODE=dev` skips Entra authentication and Tenant role/visibility checks,
+uses the synthetic display name `Local Developer`, and lists all active Tenants.
+Configuration accepts this mode only with `GDS_ENVIRONMENT=local`. Tenant Lock,
+revision, audit, and business invariants remain production behavior for future
+write tools.
 
 ## Local run
 
@@ -46,9 +52,10 @@ uv run --project mcp_server pyright
 uv run --project mcp_server pytest tests/mcp
 ```
 
-Tests use typed fakes and never read `.env` or connect to an existing database.
-A later database integration suite must create its own disposable PostgreSQL 16
-container under the repository's database safety rules.
+Tests never read `.env` or connect to an existing database. Database tests reject
+connection environment, create random credentials and a per-run sentinel in a
+disposable loopback PostgreSQL 16 container, install the canonical SQL once, and
+dispose only that verified container.
 
 ## Azure ZIP shape
 
@@ -67,9 +74,12 @@ artifact.
 Azure App Service must use Python 3.12, build automation
 (`SCM_DO_BUILD_DURING_DEPLOYMENT=1`), and startup command `startup.sh`. Configure
 Easy Auth to require authentication, reject unauthenticated requests with 401,
-accept only the intended Entra tenant/audience, and emit delegated scope
-`workbench.access`. Configure the Entra access-token optional claim `idtyp`.
+and accept only the intended Entra tenant/audience. Human tokens need delegated
+scope `workbench.access`; workload tokens need application permission
+`workbench.workflow`. Configure the Entra access-token optional claim `idtyp`.
 Health paths stay anonymous. The database login must have exactly one direct
 membership: `gds_app_write`; the pool activates that `NOINHERIT` role.
 
-Startup never applies DDL and the application exposes no database mutation.
+Startup never applies DDL. The only background database mutation is bounded,
+audited expiration of stale Tenant Locks. No Tenant Lock MCP tool is registered
+in this scaffold.

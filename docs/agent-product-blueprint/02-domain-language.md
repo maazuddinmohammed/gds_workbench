@@ -1,5 +1,9 @@
 # Domain language
 
+> Historical planning detail. Workflow Grant terminology below is superseded by
+> [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md) and
+> is not present in the current database.
+
 Use these names consistently. They encode ownership and workflow boundaries.
 
 ## Core concepts
