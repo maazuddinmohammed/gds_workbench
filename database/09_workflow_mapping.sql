@@ -279,14 +279,6 @@ CREATE UNIQUE INDEX ux_attribute_mapping_dimensional_binding
         target_attribute_id
     ) WHERE modeled_entity_type = 'dimensional_entity';
 
-CREATE TRIGGER capture_mapping_source_dependency_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.mapping_source_system_dependency
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_object_mapping_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.object_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_attribute_mapping_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.attribute_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-
 CREATE INDEX ix_object_mapping_model_package_status
     ON workflow.object_mapping (
         model_id,

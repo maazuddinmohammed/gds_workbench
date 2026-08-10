@@ -207,16 +207,6 @@ CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent
         object_id
     ) WHERE supported_artifact_type = 'conceptual_relationship';
 
-CREATE TRIGGER capture_conceptual_object_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.conceptual_object
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_conceptual_relationship_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.conceptual_relationship
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_conceptual_support_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.conceptual_support
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-
 CREATE INDEX ix_conceptual_object_model_status
     ON workflow.conceptual_object (model_id, conceptual_object_status);
 CREATE INDEX ix_conceptual_relationship_to_object

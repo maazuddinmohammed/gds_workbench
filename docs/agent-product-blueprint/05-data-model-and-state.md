@@ -6,9 +6,8 @@ The database is a canonical fresh PostgreSQL 16 schema. It is not a migration
 set and is not idempotent DDL. Apply the thirteen numbered files once, in numeric
 order, in one fail-fast transaction.
 
-There are 83 domain tables plus one internal transaction-validation queue in
-five schemas. Every foreign key uses `ON DELETE NO ACTION`. Automated deletion
-and cascading cleanup are absent by design.
+There are 83 tables in five schemas. Every foreign key uses `ON DELETE NO
+ACTION`. Automated deletion and cascading cleanup are absent by design.
 
 ## Schema inventory
 
@@ -146,7 +145,6 @@ Silver; Dimensional Mapping targets Gold.
 | `profiling_final_receipt` | Append-only atomic Profile publication outcome and counts |
 | `model_apply_receipt`, `model_apply_receipt_ref` | Applied candidate and local-to-database ID mappings |
 | `metadata_apply_receipt`, `metadata_apply_receipt_ref` | Applied Core metadata candidate and local-to-database ID mappings |
-| `effective_graph_validation_queue` | Transient per-transaction request for one deferred whole-graph validation |
 
 ## Applied graph rules
 
@@ -159,43 +157,26 @@ Silver; Dimensional Mapping targets Gold.
   are effective.
 - Candidate-local references never persist. Apply resolves them to generated
   IDs and records the mapping in the receipt.
-- Effective parent closure, source eligibility, key/grain rules, audit policy,
-  Mapping package consistency, and dependency waves are enforced in SQL and
-  application validation.
-- Statement-level source triggers enqueue one transient request; one deferred
-  queue trigger inspects the final transaction graph. Write order inside one
-  transaction does not weaken integrity, and row batches do not repeat the
-  whole-graph scan.
+- The numbered DDL currently enforces only declarative row and relationship
+  constraints. Cross-table lifecycle and graph behavior remains uninstalled.
 
-## Revisions and locks
+## Archived behavior
 
-Every effective write first locks the Model row. The first real effective
-change in one database transaction advances `model_revision` once. Later
-effective row changes in that transaction reuse the same revision witness.
-Draft edits, validation, reads, no-ops, and DBML export do not advance it.
-
-A byte-identical update exits before revision capture. Sequence values do not
-roll back, so an aborted apply may leave unused numeric IDs without leaving
-partial rows.
-
-Twenty-five artifact families carry business locks. Direct DML guards protect a
-locked row and its owned descendants. `security.set_artifact_lock(...)` handles
-Model-owned locks; `security.set_metadata_artifact_lock(...)` handles Core
-Object/Attribute locks against their owning Tenant. Both require
-Architect/Tenant Admin access or super admin, resolve the actor from the
-authenticated Entra Tenant/Object identity, and write append-only audit.
-Public application roles cannot forge their internal flags.
+Revision, lock, lifecycle, append-only, identity, authorization, and effective
+graph behavior is archived under `database/archived_functions_triggers/`.
+Those drafts are not installed. Rebuild only after the corresponding functional
+requirements and rejecting tests are finalized.
 
 ## Database roles
 
 - `gds_migration`: creates and owns release objects.
 - `gds_app_read`: safe catalog, Model, and workflow reads.
-- `gds_app_write`: safe reads plus constrained Model/workflow DML and narrow
-  security-definer functions.
+- `gds_app_write`: safe reads, constrained Model/workflow DML, and the two pure
+  `CHECK` validators.
 
 `PUBLIC` has no release-schema, table, or function rights. Application roles
 cannot read `core.connection_value`, update/delete append-only records, write
-Model revisions directly, or execute internal trigger functions.
+foundational security rows, or execute archived behavior functions.
 
 Exact source: [`database/`](../../database/). Design explanation:
 [`docs/architecture/database.md`](../architecture/database.md).

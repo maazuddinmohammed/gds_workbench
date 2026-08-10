@@ -129,12 +129,12 @@ renumber any of the 26 canonical Release 1 invariants above.
   `tests/mcp/foundation/test_release_gate_contract.py::test_complete_release_evidence_validation_has_one_owner`.
   This ownership check does not constitute a completed T24 aggregate or any T25
   authorization.
-- The append-only database invariant is implemented once and reused by thirteen
-  triggers. Its static ownership anchor is
+- The prior append-only trigger design is preserved in the disabled behavior
+  archive. Its former static ownership anchor is
   `tests/database/test_schema_static.py::test_change_state_is_bounded_append_only_and_secret_free`;
   `tests/mcp/infrastructure/test_postgres_repository.py::test_catalog_identity_health_and_schema_are_normalized`
-  also passes against the disposable PostgreSQL fixture. Profiling has no stage
-  tables; its final receipt remains append-only.
+  also passes against the disposable PostgreSQL fixture. It is not a current
+  numbered-DDL guarantee.
 
 Audited service checkpoints:
 

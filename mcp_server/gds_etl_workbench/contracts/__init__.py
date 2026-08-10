@@ -1,1 +1,0 @@
-"""Versioned public MCP contracts."""

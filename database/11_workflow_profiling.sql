@@ -87,42 +87,5 @@ CREATE TABLE workflow.profiling_final_receipt (
     )
 );
 
-CREATE FUNCTION workflow.guard_profiling_run_transition()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = pg_catalog
-AS $$
-BEGIN
-    IF NEW.profiling_run_id <> OLD.profiling_run_id
-       OR NEW.model_id <> OLD.model_id
-       OR NEW.request_document <> OLD.request_document
-       OR NEW.batch_environment <> OLD.batch_environment
-       OR NEW.batch_mode <> OLD.batch_mode
-       OR NEW.selection_digest <> OLD.selection_digest
-       OR NEW.source_context_digest <> OLD.source_context_digest
-       OR NEW.base_model_revision <> OLD.base_model_revision
-       OR NEW.selected_object_count <> OLD.selected_object_count
-       OR NEW.correlation_id <> OLD.correlation_id
-       OR NEW.created_time <> OLD.created_time
-       OR NEW.expires_time <> OLD.expires_time
-    THEN
-        RAISE EXCEPTION USING ERRCODE = '55000', MESSAGE = 'profiling run scope is immutable';
-    END IF;
-    IF OLD.profiling_run_status IN (
-        'completed', 'completed_with_warnings', 'failed', 'expired'
-    ) THEN
-        RAISE EXCEPTION USING ERRCODE = '55000', MESSAGE = 'terminal profiling run is immutable';
-    END IF;
-    RETURN NEW;
-END;
-$$;
-
-CREATE TRIGGER guard_profiling_run_transition BEFORE UPDATE
-ON workflow.profiling_run FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_profiling_run_transition();
-
-CREATE TRIGGER guard_profiling_receipt_append_only BEFORE UPDATE OR DELETE
-ON workflow.profiling_final_receipt FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
-
 CREATE INDEX ix_profiling_run_model_status
     ON workflow.profiling_run (model_id, profiling_run_status, created_time);

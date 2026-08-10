@@ -147,13 +147,6 @@ CREATE TABLE workflow.analysis_result (
     )
 );
 
-CREATE TRIGGER capture_attribute_profile_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.attribute_profile
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_analysis_result_change
-BEFORE INSERT OR UPDATE OR DELETE ON workflow.analysis_result
-FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-
 CREATE INDEX ix_attribute_profile_object
     ON workflow.attribute_profile (model_id, object_id, attribute_id);
 CREATE INDEX ix_attribute_profile_digest

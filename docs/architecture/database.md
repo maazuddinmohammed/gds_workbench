@@ -26,11 +26,10 @@ deployment unit:
 10. Model and Metadata Change Sets, idempotency outcomes, and Apply Receipts;
 11. Profiling Runs and final receipts;
 12. Workflow Grants and Workflow Run summaries; and
-13. cross-family guards, audited business locks, and final privileges.
+13. lock-audit tables and final privileges.
 
-There are 83 domain tables plus one internal transaction-validation queue
-across `reference`, `core`, `security`, `model`, and `workflow`. Every table
-has a primary key. Generated numeric artifact IDs use
+There are 83 tables across `reference`, `core`, `security`, `model`, and
+`workflow`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
 application boundary where the public contract requires them.
@@ -116,72 +115,18 @@ target/System package share package metadata and object dependency order.
 Source System waves are controlled once per Model/layer/System; Object waves
 are consistent per Model/layer/target.
 
-Statement-level triggers on the 30 graph-input tables enqueue one transient
-request per writing transaction. One deferred constraint trigger validates the
-final graph and removes that request, so a multi-row transaction performs one
-whole-graph scan instead of one scan per changed row. If constraints are forced
-immediate, validation runs once per affected statement. The mandatory
-Model-row lock serializes effective writes for one Model, preventing same-Model write skew;
-different Models retain independent lock domains. Read indexes cover proven
-status, parent traversal, impact, source, target, and digest paths. Primary-key
-or unique indexes serve exact lock-owner lookups; separate Boolean-first and
-partial lock indexes are intentionally omitted because no current read path
-uses them.
+The numbered greenfield DDL currently enforces declarative constraints only:
+primary keys, foreign keys, unique constraints, and column `CHECK` rules. Draft
+cross-table graph validation was archived until its application behavior is
+finalized. Existing read indexes remain available for evaluation.
 
-## Revision and business-lock protocol
+## Archived behavior
 
-Every effective mutation first locks its Model row. The first effective write
-in one PostgreSQL transaction records `(model_id, txid_current())` and advances
-`model_revision` once; later writes in that transaction reuse the record. A
-byte-for-byte no-op update returns before revision capture. Draft validation,
-change-set section writes, and other workflow-state mutations do not own a
-revision trigger.
-
-`model.record_effective_change` and its trigger entry points are protected
-`SECURITY DEFINER` functions with `search_path=pg_catalog`. The revision-column
-guard accepts its internal session flag only when the executing database role
-is the protected function owner, so an application role cannot forge the
-custom GUC to write a revision directly.
-
-All 25 approved lock-bearing families have direct DML guards. Aggregate edges
-also protect owned descendants: Conceptual parents protect Support; Logical and
-Dimensional Entities protect their Attributes and source mappings; Submodels
-jointly protect membership; source headers protect source children; and Object
-Mapping protects Attribute Mapping. Relationships may continue to reference a
-locked endpoint because reference use does not mutate the lock owner.
-
-The Model-owned lock toggle is
-`security.set_artifact_lock(bigint,text,bigint,boolean,uuid,uuid,text,uuid)`.
-The two UUID arguments are the authenticated Entra Tenant/Object identity. The
-function resolves the active user or service Principal rather than trusting an
-internal Principal ID supplied by a request. It validates an active Tenant and
-active Architect/Tenant Admin access or super admin, holds share locks on that
-Tenant and the actor authorization rows, locks the active
-Model row before the artifact, changes only lock/audit fields, advances one
-Model revision, and appends `security.artifact_lock_event`. Its
-artifact-type switch is an allowlist, SQL identifiers are never caller
-supplied, its search path is fixed, and `PUBLIC` has no execution right. A
-no-op request returns the current revision without a new audit row. Release 1
-exposes no MCP route for this function; a future human command must authorize at
-the application boundary before calling it. The internal lock flag has the
-same owner check as revision capture, so a runtime role cannot bypass a locked
-row by setting a custom GUC.
-
-Core Object and Attribute locks use the separate Tenant-scoped
-`security.set_metadata_artifact_lock(...)` function. It authorizes against the
-artifact's owning Connection Tenant, resolves the same authenticated Entra
-identity, and writes
-`security.metadata_artifact_lock_event`; it never borrows authority from a
-Model that merely references a cross-Tenant source.
-
-`security.lock_model_row(bigint)` is the narrower application primitive.
-It is a fixed-search-path `SECURITY DEFINER` function executable only by
-`gds_app_write`; it returns only an existence Boolean while holding a real
-`SELECT ... FOR UPDATE` lock through transaction end. The repository combines
-that row lock with its process-independent advisory namespace. Apply acquires
-this Model fence before the draft and rechecks active state and context. Draft
-create, section put, and validation deliberately use their workflow-state
-transactions and revision guards without taking a Model-row lock.
+Revision advancement, business locks, lifecycle guards, append-only guards,
+authorization helpers, identity witnesses, and cross-table graph validation
+are not installed by the numbered DDL. Their prior draft SQL is preserved under
+`database/archived_functions_triggers/` for reference only. Each behavior must
+be rebuilt from finalized requirements and rejecting tests before activation.
 
 ## Durable workflow state
 
@@ -241,20 +186,13 @@ The fresh cluster defines three non-login, non-superuser roles:
 - `gds_migration`: schema creation plus all release objects;
 - `gds_app_read`: safe catalog/model/workflow reads; and
 - `gds_app_write`: the same safe reads, constrained Model/workflow DML,
-  sequence use, pure CHECK validators, the narrow artifact-lock function, and
-  the bounded Principal-access and Model-row lock functions.
+  sequence use, and the two pure `CHECK` validators.
 
 `PUBLIC` loses schema, table, and function rights. Both application roles are
 explicitly denied `core.connection_value`. Append-only events, idempotency,
 receipts, revision transactions, and audit projections cannot be
-updated/deleted by the write role. Trigger functions and internal revision
-functions are not directly executable by runtime roles. The Principal-access
-function is `SECURITY DEFINER`, has a fixed `pg_catalog` search path, returns
-only bounded identity, effective-role, and capability fields, joins an active
-Tenant, and holds share locks on Tenant, identity, Principal, and access rows
-without granting foundational table UPDATE. Global visibility projects Viewer
-read capability only; expired/inactive access grants no authority, and super
-admin projects all application capabilities.
+updated/deleted by the write role. Runtime authorization behavior remains an
+application responsibility until its final database contract is approved.
 
 The bootstrap principal must have permission to create the three group roles;
 the application LOGIN must have exactly one direct membership,

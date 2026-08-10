@@ -1,0 +1,8 @@
+-- Support object used only by the archived whole-graph validation design.
+-- Reference-only archive. Do not include in the numbered fresh-install DDL.
+
+CREATE TABLE workflow.effective_graph_validation_queue (
+    transaction_id BIGINT PRIMARY KEY,
+    queued_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT ck_effective_graph_queue_transaction CHECK (transaction_id > 0)
+);

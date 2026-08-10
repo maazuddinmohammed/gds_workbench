@@ -1,5 +1,7 @@
 -- GDS ETL Workbench Release 1: foundational Core business and physical metadata.
 
+-- DROP SCHEMA workflow CASCADE ;
+
 CREATE SCHEMA core;
 
 CREATE TABLE core.project (

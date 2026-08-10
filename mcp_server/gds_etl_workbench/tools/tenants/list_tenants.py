@@ -1,0 +1,213 @@
+"""Complete list_tenants vertical slice: contract, SQL, policy, and MCP binding."""
+
+from __future__ import annotations
+
+from typing import Annotated, Any, Literal
+
+from mcp.server.mcpserver import Context, MCPServer
+from mcp.types import ToolAnnotations
+from pydantic import BaseModel, ConfigDict, Field
+
+from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
+from gds_etl_workbench.application.cursor import CursorCodec
+from gds_etl_workbench.domain.authorization import (
+    ActorKind,
+    Capability,
+    RequestPrincipal,
+    TenantRole,
+    has_capability,
+)
+from gds_etl_workbench.domain.errors import AuthorizationDeniedError, WorkbenchError
+from gds_etl_workbench.infrastructure.postgres import Database
+
+_COLLECTION = "list_tenants"
+
+_RESOLVE_PRINCIPAL_SQL = """
+SELECT principal.principal_id, principal.is_super_admin
+  FROM security.entra_principal_identity AS identity
+  JOIN security.principal AS principal
+    ON principal.principal_id = identity.principal_id
+   AND principal.principal_type = identity.principal_type
+ WHERE identity.entra_tenant_id = %s
+   AND identity.entra_object_id = %s
+   AND identity.principal_type = 'user'
+   AND identity.is_active
+   AND principal.is_active
+ FOR SHARE OF identity, principal
+"""
+
+_AUTHORIZED_TENANTS_SQL = """
+SELECT tenant.tenant_id,
+       tenant.tenant_code,
+       tenant.tenant_name,
+       left(tenant.tenant_description, 2000) AS tenant_description,
+       tenant.tenant_visibility,
+       CASE
+           WHEN %s THEN 'super_admin'
+           WHEN membership.tenant_role IS NOT NULL THEN membership.tenant_role
+           ELSE 'viewer'
+       END AS effective_role
+  FROM core.tenant AS tenant
+  LEFT JOIN security.tenant_principal_access AS membership
+    ON membership.tenant_id = tenant.tenant_id
+   AND membership.principal_id = %s
+   AND membership.is_active
+   AND (
+       membership.access_expires_time IS NULL
+       OR membership.access_expires_time > CURRENT_TIMESTAMP
+   )
+ WHERE tenant.is_active
+   AND (%s OR tenant.tenant_visibility = 'global' OR membership.tenant_id IS NOT NULL)
+ ORDER BY lower(tenant.tenant_name), tenant.tenant_id
+ LIMIT %s OFFSET %s
+"""
+
+_DEV_TENANTS_SQL = """
+SELECT tenant.tenant_id,
+       tenant.tenant_code,
+       tenant.tenant_name,
+       left(tenant.tenant_description, 2000) AS tenant_description,
+       tenant.tenant_visibility,
+       'development' AS effective_role
+  FROM core.tenant AS tenant
+ WHERE tenant.is_active
+ ORDER BY lower(tenant.tenant_name), tenant.tenant_id
+ LIMIT %s OFFSET %s
+"""
+
+
+class ContractModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+
+class ListTenantsRequest(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    page_size: int = Field(default=50, ge=1, le=200)
+    cursor: str | None = Field(default=None, max_length=2048)
+
+
+class TenantSummary(ContractModel):
+    tenant_id: int = Field(gt=0)
+    tenant_code: str = Field(min_length=1, max_length=100)
+    tenant_name: str = Field(min_length=1, max_length=200)
+    tenant_description: str | None = Field(default=None, max_length=2000)
+    tenant_visibility: Literal["global", "private"]
+    effective_role: TenantRole
+
+
+class ListTenantsResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    tenants: tuple[TenantSummary, ...] = Field(max_length=200)
+    next_cursor: str | None = Field(default=None, max_length=2048)
+
+
+class SafeToolError(Exception):
+    """A tool failure whose text is safe for the MCP SDK to serialize."""
+
+
+def register_list_tenants_tool(
+    server: MCPServer[None],
+    *,
+    database: Database,
+    identity_provider: IdentityProvider,
+    cursor_signing_key: bytes,
+) -> None:
+    """Register list_tenants with its explicit shared dependencies."""
+    cursors = CursorCodec(cursor_signing_key)
+
+    @server.tool(
+        description=(
+            "List active Tenants the current human Principal can read. Global Tenants are "
+            "visible to every active registered Principal; private Tenants require current "
+            "Tenant access. Super admins can read every active Tenant."
+        ),
+        annotations=ToolAnnotations(
+            read_only_hint=True,
+            destructive_hint=False,
+            idempotent_hint=True,
+            open_world_hint=False,
+        ),
+        structured_output=True,
+    )
+    async def list_tenants(
+        ctx: Context[None],
+        schema_version: Literal["1.0"] = "1.0",
+        page_size: Annotated[int, Field(ge=1, le=200)] = 50,
+        cursor: Annotated[str | None, Field(max_length=2048)] = None,
+    ) -> ListTenantsResult:
+        """List the Tenant summaries visible to the current human Principal."""
+        try:
+            principal = identity_provider.authenticate(ctx.headers)
+            request = ListTenantsRequest(
+                schema_version=schema_version,
+                page_size=page_size,
+                cursor=cursor,
+            )
+            offset = cursors.decode(request.cursor, collection=_COLLECTION)
+            rows = await _query_visible_tenants(
+                database,
+                principal,
+                limit=request.page_size + 1,
+                offset=offset,
+            )
+            tenants = tuple(
+                TenantSummary(
+                    tenant_id=row["tenant_id"],
+                    tenant_code=row["tenant_code"],
+                    tenant_name=row["tenant_name"],
+                    tenant_description=row["tenant_description"],
+                    tenant_visibility=row["tenant_visibility"],
+                    effective_role=TenantRole(row["effective_role"]),
+                )
+                for row in rows[: request.page_size]
+            )
+            if any(
+                not has_capability(tenant.effective_role, Capability.READ_TENANT)
+                for tenant in tenants
+            ):
+                raise AuthorizationDeniedError()
+
+            next_cursor = None
+            if len(rows) > request.page_size:
+                next_cursor = cursors.encode(
+                    collection=_COLLECTION,
+                    offset=offset + request.page_size,
+                )
+            return ListTenantsResult(tenants=tenants, next_cursor=next_cursor)
+        except AuthenticationError as error:
+            raise SafeToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise SafeToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise SafeToolError("internal_error: The operation could not be completed.") from None
+
+
+async def _query_visible_tenants(
+    database: Database,
+    principal: RequestPrincipal,
+    *,
+    limit: int,
+    offset: int,
+) -> list[dict[str, Any]]:
+    async with database.read_transaction() as transaction:
+        if principal.actor_kind is ActorKind.DEVELOPMENT:
+            return await transaction.fetch_all(_DEV_TENANTS_SQL, (limit, offset))
+
+        if principal.entra_tenant_id is None or principal.entra_object_id is None:
+            raise AuthorizationDeniedError()
+        actor = await transaction.fetch_one(
+            _RESOLVE_PRINCIPAL_SQL,
+            (principal.entra_tenant_id, principal.entra_object_id),
+        )
+        if actor is None:
+            raise AuthorizationDeniedError()
+        return await transaction.fetch_all(
+            _AUTHORIZED_TENANTS_SQL,
+            (
+                actor["is_super_admin"],
+                actor["principal_id"],
+                actor["is_super_admin"],
+                limit,
+                offset,
+            ),
+        )

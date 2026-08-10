@@ -108,7 +108,7 @@ license, and SBOM gates run in `scripts/verify_local.sh`.
 | Human discovery or guessed invocation of workload MCP tools | per-request `ActorKind` projection across discovery, dispatch, registry, capabilities, and schemas; generic unknown response |
 | Cross-Tenant Model access | Tenant visibility, Principal capability resolution, and composite database keys |
 | Stale or partial graph commit | whole-candidate validation, revision/CAS, one transaction |
-| Lock bypass | future-graph checks plus database triggers |
+| Lock bypass | blocked until lock behavior is rebuilt from finalized requirements |
 | Grant replay/escalation | exact binding, expiry/revocation recheck, actor-bound idempotency |
 | Duplicate/racing apply | Model/advisory locks, request hash, immutable receipt |
 | Secret disclosure | strict schemas, recursive redaction, safe errors, scans |

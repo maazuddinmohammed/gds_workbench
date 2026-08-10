@@ -2,16 +2,50 @@
 
 from __future__ import annotations
 
-from typing import Any
+from collections.abc import AsyncIterator
+from contextlib import AbstractAsyncContextManager, asynccontextmanager
+from dataclasses import dataclass
+from typing import Any, LiteralString, Protocol
 
 from psycopg import AsyncConnection
 from psycopg import Error as PsycopgError
 from psycopg.rows import dict_row
 from psycopg_pool import AsyncConnectionPool
 
-from gds_etl_workbench.application.ports import ReadinessRecord, TenantRecord
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, TenantRole
-from gds_etl_workbench.domain.errors import AuthorizationDeniedError, DependencyUnavailableError
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
+
+type QueryParameters = tuple[Any, ...]
+
+
+@dataclass(frozen=True, slots=True)
+class ReadinessRecord:
+    ready: bool
+    code: str
+
+
+class ReadTransaction(Protocol):
+    """Small read interface exposed to tool modules."""
+
+    async def fetch_one(
+        self, query: LiteralString, parameters: QueryParameters = ()
+    ) -> dict[str, Any] | None: ...
+
+    async def fetch_all(
+        self, query: LiteralString, parameters: QueryParameters = ()
+    ) -> list[dict[str, Any]]: ...
+
+
+class Database(Protocol):
+    """Shared database lifecycle and read-only transaction interface."""
+
+    async def open(self) -> None: ...
+
+    async def close(self) -> None: ...
+
+    async def readiness(self) -> ReadinessRecord: ...
+
+    def read_transaction(self) -> AbstractAsyncContextManager[ReadTransaction]: ...
+
 
 _READINESS_SQL = """
 WITH runtime_role AS (
@@ -47,66 +81,32 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
   FROM runtime_role
 """
 
-_RESOLVE_PRINCIPAL_SQL = """
-SELECT principal.principal_id, principal.is_super_admin
-  FROM security.entra_principal_identity AS identity
-  JOIN security.principal AS principal
-    ON principal.principal_id = identity.principal_id
-   AND principal.principal_type = identity.principal_type
- WHERE identity.entra_tenant_id = %s
-   AND identity.entra_object_id = %s
-   AND identity.principal_type = 'user'
-   AND identity.is_active
-   AND principal.is_active
- FOR SHARE OF identity, principal
-"""
-
-_AUTHORIZED_TENANTS_SQL = """
-SELECT tenant.tenant_id,
-       tenant.tenant_code,
-       tenant.tenant_name,
-       left(tenant.tenant_description, 2000) AS tenant_description,
-       tenant.tenant_visibility,
-       CASE
-           WHEN %s THEN 'super_admin'
-           WHEN membership.tenant_role IS NOT NULL THEN membership.tenant_role
-           ELSE 'viewer'
-       END AS effective_role
-  FROM core.tenant AS tenant
-  LEFT JOIN security.tenant_principal_access AS membership
-    ON membership.tenant_id = tenant.tenant_id
-   AND membership.principal_id = %s
-   AND membership.is_active
-   AND (
-       membership.access_expires_time IS NULL
-       OR membership.access_expires_time > CURRENT_TIMESTAMP
-   )
- WHERE tenant.is_active
-   AND (%s OR tenant.tenant_visibility = 'global' OR membership.tenant_id IS NOT NULL)
- ORDER BY lower(tenant.tenant_name), tenant.tenant_id
- LIMIT %s OFFSET %s
-"""
-
-_DEV_TENANTS_SQL = """
-SELECT tenant.tenant_id,
-       tenant.tenant_code,
-       tenant.tenant_name,
-       left(tenant.tenant_description, 2000) AS tenant_description,
-       tenant.tenant_visibility,
-       'development' AS effective_role
-  FROM core.tenant AS tenant
- WHERE tenant.is_active
- ORDER BY lower(tenant.tenant_name), tenant.tenant_id
- LIMIT %s OFFSET %s
-"""
-
 
 async def _activate_runtime_role(connection: AsyncConnection[Any]) -> None:
     """Activate the only NOINHERIT group role allowed for the production login."""
     await connection.execute("SET ROLE gds_app_write")
 
 
-class PostgresRepository:
+class _PostgresReadTransaction:
+    def __init__(self, connection: AsyncConnection[Any]) -> None:
+        self._connection = connection
+
+    async def fetch_one(
+        self, query: LiteralString, parameters: QueryParameters = ()
+    ) -> dict[str, Any] | None:
+        result = await self._connection.execute(query, parameters)
+        row: dict[str, Any] | None = await result.fetchone()
+        return row
+
+    async def fetch_all(
+        self, query: LiteralString, parameters: QueryParameters = ()
+    ) -> list[dict[str, Any]]:
+        result = await self._connection.execute(query, parameters)
+        rows: list[dict[str, Any]] = await result.fetchall()
+        return rows
+
+
+class PostgresDatabase:
     def __init__(
         self,
         *,
@@ -134,6 +134,15 @@ class PostgresRepository:
     async def close(self) -> None:
         await self._pool.close()
 
+    @asynccontextmanager
+    async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
+        try:
+            async with self._pool.connection() as connection, connection.transaction():
+                await connection.execute("SET TRANSACTION READ ONLY")
+                yield _PostgresReadTransaction(connection)
+        except PsycopgError as exc:
+            raise DependencyUnavailableError() from exc
+
     async def readiness(self) -> ReadinessRecord:
         try:
             async with self._pool.connection() as connection:
@@ -150,49 +159,3 @@ class PostgresRepository:
             return ReadinessRecord(ready=True, code="ready")
         except PsycopgError:
             return ReadinessRecord(ready=False, code="database_unavailable")
-
-    async def list_tenants(
-        self, principal: RequestPrincipal, *, limit: int, offset: int
-    ) -> list[TenantRecord]:
-        try:
-            async with self._pool.connection() as connection, connection.transaction():
-                await connection.execute("SET TRANSACTION READ ONLY")
-                if principal.actor_kind is ActorKind.DEVELOPMENT:
-                    result = await connection.execute(_DEV_TENANTS_SQL, (limit, offset))
-                else:
-                    if principal.entra_tenant_id is None or principal.entra_object_id is None:
-                        raise AuthorizationDeniedError()
-                    resolved = await connection.execute(
-                        _RESOLVE_PRINCIPAL_SQL,
-                        (principal.entra_tenant_id, principal.entra_object_id),
-                    )
-                    actor: dict[str, Any] | None = await resolved.fetchone()
-                    if actor is None:
-                        raise AuthorizationDeniedError()
-                    result = await connection.execute(
-                        _AUTHORIZED_TENANTS_SQL,
-                        (
-                            actor["is_super_admin"],
-                            actor["principal_id"],
-                            actor["is_super_admin"],
-                            limit,
-                            offset,
-                        ),
-                    )
-                rows: list[dict[str, Any]] = await result.fetchall()
-        except AuthorizationDeniedError:
-            raise
-        except PsycopgError as exc:
-            raise DependencyUnavailableError() from exc
-
-        return [
-            TenantRecord(
-                tenant_id=row["tenant_id"],
-                tenant_code=row["tenant_code"],
-                tenant_name=row["tenant_name"],
-                tenant_description=row["tenant_description"],
-                tenant_visibility=row["tenant_visibility"],
-                effective_role=TenantRole(row["effective_role"]),
-            )
-            for row in rows
-        ]

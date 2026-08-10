@@ -5,11 +5,12 @@ This is the Azure App Service code root. It contains one read-only MCP tool,
 
 ## Boundaries
 
-- `adapters/`: Easy Auth and MCP/HTTP translation.
-- `catalog/`: `list_tenants` use case.
+- `adapters/`: Easy Auth middleware, identity parsing, and MCP server composition.
+- `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
+  authorization flow, pagination, and SQL together.
+- `application/`: shared signed pagination cursor implementation.
 - `domain/`: role/capability policy and safe errors.
-- `infrastructure/`: PostgreSQL pool and SQL.
-- `contracts/`: strict public request/result models.
+- `infrastructure/`: shared PostgreSQL pool, readiness, and read-only transactions.
 - Tests live outside this deployable folder in `../tests/mcp/`.
 
 Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`

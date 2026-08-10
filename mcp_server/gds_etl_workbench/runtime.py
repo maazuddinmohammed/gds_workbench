@@ -13,20 +13,19 @@ from starlette.routing import Route
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.auth.middleware import ProtectedMCPMiddleware
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
-from gds_etl_workbench.application.ports import StateRepository
 from gds_etl_workbench.configuration import (
     ConfigurationError,
     Environment,
     RuntimeSettings,
 )
-from gds_etl_workbench.infrastructure.postgres import PostgresRepository
+from gds_etl_workbench.infrastructure.postgres import Database, PostgresDatabase
 
 
 def create_application(
     settings: RuntimeSettings,
-    repository: StateRepository | None = None,
+    database: Database | None = None,
 ) -> Starlette:
-    persistence = repository or PostgresRepository(
+    runtime_database = database or PostgresDatabase(
         dsn=settings.database_dsn,
         pool_min=settings.pool_min,
         pool_max=settings.pool_max,
@@ -34,7 +33,7 @@ def create_application(
         require_runtime_role=settings.environment is Environment.PRODUCTION,
     )
     identity_provider = IdentityProvider(settings.auth_mode)
-    server = create_mcp_server(settings, persistence, identity_provider)
+    server = create_mcp_server(settings, runtime_database, identity_provider)
     transport_security = TransportSecuritySettings(
         allowed_hosts=list(settings.allowed_hosts),
         allowed_origins=[],

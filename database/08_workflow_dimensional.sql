@@ -483,22 +483,7 @@ CREATE UNIQUE INDEX ux_dimensional_relationship_effective_identity
         coalesce(lower(btrim(dimensional_relationship_role_name)), '')
     ) WHERE dimensional_relationship_status IN ('active', 'needs_review');
 
-
 -- Every Dimensional mutation participates in the one-revision transaction guard.
-CREATE TRIGGER capture_dimensional_submodel_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_submodel FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_entity_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_entity_submodel_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity_submodel FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_attribute_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_attribute FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_entity_source_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity_source_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_attribute_source_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_attribute_source_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_dimensional_relationship_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_relationship FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
 
 -- Supporting read, impact, and parent indexes.
 CREATE INDEX ix_dimensional_submodel_status ON workflow.dimensional_submodel (model_id, dimensional_submodel_status);

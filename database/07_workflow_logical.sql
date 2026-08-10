@@ -381,22 +381,7 @@ CREATE UNIQUE INDEX ux_logical_relationship_identity
         lower(btrim(logical_relationship_name))
     );
 
-
 -- Every Logical mutation participates in the one-revision transaction guard.
-CREATE TRIGGER capture_logical_submodel_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_submodel FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_entity_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_entity_submodel_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity_submodel FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_attribute_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_attribute FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_entity_source_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity_source_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_attribute_source_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_attribute_source_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
-CREATE TRIGGER capture_logical_relationship_change BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_relationship FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
 
 -- Supporting read, impact, and parent indexes.
 CREATE INDEX ix_logical_submodel_status ON workflow.logical_submodel (model_id, logical_submodel_status);

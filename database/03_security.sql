@@ -181,22 +181,6 @@ CREATE TABLE security.tenant_lock_event (
     )
 );
 
-CREATE FUNCTION security.reject_append_only_change()
-RETURNS TRIGGER
-LANGUAGE plpgsql
-SET search_path = pg_catalog
-AS $$
-BEGIN
-    RAISE EXCEPTION USING
-        ERRCODE = '55000',
-        MESSAGE = format('%s is append-only', TG_TABLE_SCHEMA || '.' || TG_TABLE_NAME);
-END;
-$$;
-
-CREATE TRIGGER guard_tenant_lock_event_append_only
-BEFORE UPDATE OR DELETE ON security.tenant_lock_event
-FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
-
 CREATE UNIQUE INDEX ux_principal_email_ci
     ON security.principal (lower(btrim(principal_email)))
     WHERE principal_type = 'user';
