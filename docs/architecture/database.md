@@ -15,7 +15,7 @@ deployment unit:
 2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
 3. `security` identities, Tenant membership, governed Tenant Locks,
-   centralized authorization functions, and the three database roles;
+   centralized authorization functions, and the two database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Evidence tables, and revision machinery;
 5. Attribute Profile and Analysis;
@@ -166,15 +166,14 @@ Registered workload identities map directly to active Super Admin Principals.
 
 ## Roles and privileges
 
-The fresh cluster defines three non-login, non-superuser roles:
+The fresh cluster defines two non-login, non-superuser roles:
 
 - `gds_migration`: schema creation plus all release objects;
-- `gds_app_read`: safe catalog/model/workflow reads; and
-- `gds_app_write`: the same safe reads, constrained Model/workflow DML,
+- `gds_app_write`: safe reads, constrained Model/workflow DML,
   sequence use, the two pure `CHECK` validators, centralized authorization,
   and governed Tenant Lock functions.
 
-`PUBLIC` loses schema, table, and function rights. Both application roles are
+`PUBLIC` loses schema, table, and function rights. The application role is
 explicitly denied `core.connection_value`. Append-only events, idempotency,
 receipts, revision transactions, and audit projections cannot be
 updated/deleted by the write role. The runtime role cannot directly mutate

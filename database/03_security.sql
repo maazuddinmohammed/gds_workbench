@@ -3,7 +3,6 @@
 CREATE SCHEMA security;
 
 CREATE ROLE gds_migration NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
-CREATE ROLE gds_app_read NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 CREATE ROLE gds_app_write NOLOGIN NOSUPERUSER NOCREATEDB NOCREATEROLE NOINHERIT;
 
 CREATE TABLE security.principal (
@@ -214,7 +213,6 @@ CREATE FUNCTION security.authorize_tenant_operation(
 )
 RETURNS TABLE (
     principal_id BIGINT,
-    principal_type VARCHAR(30),
     principal_display_name VARCHAR(200),
     is_super_admin BOOLEAN,
     effective_role VARCHAR(30),
@@ -230,7 +228,6 @@ SET search_path = pg_catalog, security, core
 AS $authorize_tenant_operation$
 DECLARE
     v_principal_id BIGINT;
-    v_principal_type VARCHAR(30);
     v_principal_display_name VARCHAR(200);
     v_is_super_admin BOOLEAN;
     v_tenant_visibility VARCHAR(20);
@@ -256,11 +253,9 @@ BEGIN
     END IF;
 
     SELECT principal.principal_id,
-           principal.principal_type,
            principal.principal_display_name,
            principal.is_super_admin
       INTO v_principal_id,
-           v_principal_type,
            v_principal_display_name,
            v_is_super_admin
       FROM security.entra_principal_identity AS identity
@@ -276,10 +271,9 @@ BEGIN
     IF NOT FOUND THEN
         RETURN;
     END IF;
-    IF v_principal_type = 'service_principal' AND NOT v_is_super_admin THEN
+    IF p_expected_principal_type = 'service_principal' AND NOT v_is_super_admin THEN
         RETURN QUERY SELECT
             v_principal_id,
-            v_principal_type,
             v_principal_display_name,
             v_is_super_admin,
             NULL::VARCHAR(30),
@@ -299,7 +293,6 @@ BEGIN
     IF NOT FOUND THEN
         RETURN QUERY SELECT
             v_principal_id,
-            v_principal_type,
             v_principal_display_name,
             v_is_super_admin,
             NULL::VARCHAR(30),
@@ -348,7 +341,6 @@ BEGIN
        OR (p_policy = 'super_admin_only' AND NOT v_is_super_admin) THEN
         RETURN QUERY SELECT
             v_principal_id,
-            v_principal_type,
             v_principal_display_name,
             v_is_super_admin,
             v_effective_role,
@@ -378,7 +370,6 @@ BEGIN
         IF NOT FOUND THEN
             RETURN QUERY SELECT
                 v_principal_id,
-                v_principal_type,
                 v_principal_display_name,
                 v_is_super_admin,
                 v_effective_role,
@@ -391,7 +382,6 @@ BEGIN
         IF v_lock_owner_principal_id <> v_principal_id THEN
             RETURN QUERY SELECT
                 v_principal_id,
-                v_principal_type,
                 v_principal_display_name,
                 v_is_super_admin,
                 v_effective_role,
@@ -405,14 +395,13 @@ BEGIN
 
     RETURN QUERY SELECT
         v_principal_id,
-        v_principal_type,
         v_principal_display_name,
         v_is_super_admin,
         v_effective_role,
         TRUE,
         NULL::VARCHAR(50),
         NULL::VARCHAR(200),
-        NULL::TIMESTAMPTZ;
+        v_lock_expires_time;
 END;
 $authorize_tenant_operation$;
 

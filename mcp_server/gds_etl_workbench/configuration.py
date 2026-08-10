@@ -56,14 +56,9 @@ class RuntimeSettings:
     allowed_hosts: tuple[str, ...]
     require_https: bool
     schema_version: str
-    port: int
-    web_concurrency: int
     pool_min: int
     pool_max: int
     pool_timeout_seconds: int
-    database_connection_budget: int
-    database_connection_headroom: int
-    request_timeout_seconds: int
 
     @classmethod
     def from_environment(cls, values: Mapping[str, str] | None = None) -> RuntimeSettings:
@@ -112,7 +107,7 @@ class RuntimeSettings:
         if schema_version != "1.0.0":
             raise ConfigurationError("GDS_SCHEMA_VERSION must be 1.0.0")
 
-        port = _integer(source, "PORT", minimum=1, maximum=65535)
+        _integer(source, "PORT", minimum=1, maximum=65535)
         web_concurrency = _integer(source, "WEB_CONCURRENCY", minimum=1, maximum=32)
         pool_min = _integer(source, "GDS_DATABASE_POOL_MIN", minimum=1, maximum=100)
         pool_max = _integer(source, "GDS_DATABASE_POOL_MAX", minimum=1, maximum=100)
@@ -123,7 +118,7 @@ class RuntimeSettings:
         connection_headroom = _integer(
             source, "GDS_DATABASE_CONNECTION_HEADROOM", minimum=1, maximum=9999
         )
-        request_timeout = _integer(source, "GDS_REQUEST_TIMEOUT_SECONDS", minimum=1, maximum=600)
+        _integer(source, "GDS_REQUEST_TIMEOUT_SECONDS", minimum=1, maximum=600)
 
         if pool_min > pool_max:
             raise ConfigurationError("database pool minimum cannot exceed maximum")
@@ -142,14 +137,9 @@ class RuntimeSettings:
             allowed_hosts=allowed_hosts,
             require_https=require_https,
             schema_version=schema_version,
-            port=port,
-            web_concurrency=web_concurrency,
             pool_min=pool_min,
             pool_max=pool_max,
             pool_timeout_seconds=pool_timeout,
-            database_connection_budget=connection_budget,
-            database_connection_headroom=connection_headroom,
-            request_timeout_seconds=request_timeout,
         )
 
 

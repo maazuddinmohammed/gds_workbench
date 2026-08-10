@@ -7,7 +7,6 @@ from datetime import datetime
 from typing import LiteralString
 
 from gds_etl_workbench.domain.authorization import (
-    POLICY_REQUIREMENTS,
     ActorKind,
     RequestPrincipal,
     TenantRole,
@@ -116,7 +115,10 @@ class AuthorizationService:
         policy: ToolPolicy,
     ) -> TenantAuthorization:
         if request_principal.actor_kind is ActorKind.DEVELOPMENT:
-            if POLICY_REQUIREMENTS[policy].requires_tenant_lock:
+            if policy in (
+                ToolPolicy.TENANT_METADATA_WRITE,
+                ToolPolicy.TENANT_MODEL_WRITE,
+            ):
                 raise TenantLockRequiredError()
             return TenantAuthorization(
                 principal=await self.resolve_principal(transaction, request_principal),

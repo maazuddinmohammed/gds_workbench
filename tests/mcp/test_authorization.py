@@ -1,62 +1,58 @@
+from __future__ import annotations
+
+from typing import Any, LiteralString
+
 import pytest
 
+from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import (
-    Capability,
-    POLICY_REQUIREMENTS,
+    RequestPrincipal,
     TenantRole,
     ToolPolicy,
-    has_capability,
 )
+from gds_etl_workbench.domain.errors import TenantLockRequiredError
 
 
-@pytest.mark.parametrize(
-    ("role", "expected"),
-    [
-        (TenantRole.VIEWER, {Capability.READ_TENANT}),
-        (TenantRole.DEVELOPER, {Capability.READ_TENANT, Capability.DEVELOP}),
-        (
-            TenantRole.ARCHITECT,
-            {Capability.READ_TENANT, Capability.DEVELOP, Capability.ARCHITECT},
-        ),
-        (
-            TenantRole.TENANT_ADMIN,
-            {
-                Capability.READ_TENANT,
-                Capability.DEVELOP,
-                Capability.ARCHITECT,
-                Capability.ADMINISTER,
-            },
-        ),
-        (
-            TenantRole.SUPER_ADMIN,
-            {
-                Capability.READ_TENANT,
-                Capability.DEVELOP,
-                Capability.ARCHITECT,
-                Capability.ADMINISTER,
-            },
-        ),
-    ],
-)
-def test_role_capability_matrix(role: TenantRole, expected: set[Capability]) -> None:
-    actual = {
-        capability for capability in Capability if has_capability(role, capability)
-    }
-    assert actual == expected
-
-
-def test_tool_policy_requirements_are_centralized() -> None:
-    assert {
-        policy: (
-            requirement.minimum_role,
-            requirement.requires_tenant_lock,
-            requirement.requires_super_admin,
+class UnexpectedDatabaseAccess:
+    async def fetch_one(
+        self, query: LiteralString, parameters: tuple[Any, ...] = ()
+    ) -> dict[str, Any] | None:
+        raise AssertionError(
+            "dev authorization must not query production identity data"
         )
-        for policy, requirement in POLICY_REQUIREMENTS.items()
-    } == {
-        ToolPolicy.TENANT_READ: (TenantRole.VIEWER, False, False),
-        ToolPolicy.TENANT_METADATA_WRITE: (TenantRole.DEVELOPER, True, False),
-        ToolPolicy.TENANT_MODEL_WRITE: (TenantRole.ARCHITECT, True, False),
-        ToolPolicy.TENANT_LOCK_MANAGE: (TenantRole.DEVELOPER, False, False),
-        ToolPolicy.SUPER_ADMIN_ONLY: (TenantRole.SUPER_ADMIN, False, True),
-    }
+
+    async def fetch_all(
+        self, query: LiteralString, parameters: tuple[Any, ...] = ()
+    ) -> list[dict[str, Any]]:
+        raise AssertionError(
+            "dev authorization must not query production identity data"
+        )
+
+
+@pytest.mark.asyncio
+async def test_dev_tenant_read_skips_identity_and_role_checks() -> None:
+    decision = await AuthorizationService().authorize_tenant(
+        UnexpectedDatabaseAccess(),
+        RequestPrincipal.development(),
+        tenant_id=1,
+        policy=ToolPolicy.TENANT_READ,
+    )
+
+    assert decision.effective_role is TenantRole.DEVELOPMENT
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "policy",
+    [ToolPolicy.TENANT_METADATA_WRITE, ToolPolicy.TENANT_MODEL_WRITE],
+)
+async def test_dev_tenant_write_still_requires_a_tenant_lock(
+    policy: ToolPolicy,
+) -> None:
+    with pytest.raises(TenantLockRequiredError):
+        await AuthorizationService().authorize_tenant(
+            UnexpectedDatabaseAccess(),
+            RequestPrincipal.development(),
+            tenant_id=1,
+            policy=policy,
+        )

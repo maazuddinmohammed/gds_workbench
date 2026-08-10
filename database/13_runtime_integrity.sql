@@ -67,7 +67,7 @@ REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, model, workflow FR
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow FROM PUBLIC;
 
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow
-    TO gds_app_read, gds_app_write;
+    TO gds_app_write;
 
 -- Runtime writes need only the pure validators referenced by CHECK constraints.
 GRANT EXECUTE ON FUNCTION
@@ -81,7 +81,7 @@ GRANT EXECUTE ON FUNCTION security.authorize_tenant_operation(
     VARCHAR,
     BIGINT,
     VARCHAR
-) TO gds_app_read, gds_app_write;
+) TO gds_app_write;
 
 GRANT EXECUTE ON FUNCTION security.acquire_tenant_lock(
     UUID,
@@ -121,15 +121,15 @@ GRANT EXECUTE ON FUNCTION security.expire_tenant_locks(INTEGER)
 TO gds_app_write;
 
 GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
-    TO gds_app_read, gds_app_write;
-REVOKE SELECT ON core.connection_value FROM gds_app_read, gds_app_write;
+    TO gds_app_write;
+REVOKE SELECT ON core.connection_value FROM gds_app_write;
 GRANT SELECT ON
     security.principal,
     security.entra_principal_identity,
     security.tenant_principal_access,
     security.artifact_lock_event,
     security.metadata_artifact_lock_event
-TO gds_app_read, gds_app_write;
+TO gds_app_write;
 
 -- The application mutates only the normalized artifact and workflow state used
 -- by PostgresRepository.  Foundational Model/Scope/target rows, audit rows, and

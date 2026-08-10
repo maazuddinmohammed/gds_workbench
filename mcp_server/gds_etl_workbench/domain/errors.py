@@ -7,7 +7,6 @@ from dataclasses import dataclass
 class WorkbenchError(Exception):
     code: str
     message: str
-    retryable: bool = False
 
     def __str__(self) -> str:
         return self.message
@@ -52,5 +51,4 @@ class DependencyUnavailableError(WorkbenchError):
         super().__init__(
             code="dependency_unavailable",
             message="A required dependency is unavailable.",
-            retryable=True,
         )

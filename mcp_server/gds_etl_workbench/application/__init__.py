@@ -1,1 +1,1 @@
-"""Application use cases and ports."""
+"""Shared authorization and pagination logic."""

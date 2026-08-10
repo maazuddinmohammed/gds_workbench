@@ -170,11 +170,10 @@ requirements and rejecting tests are finalized.
 ## Database roles
 
 - `gds_migration`: creates and owns release objects.
-- `gds_app_read`: safe catalog, Model, and workflow reads.
 - `gds_app_write`: safe reads, constrained Model/workflow DML, and the two pure
   `CHECK` validators.
 
-`PUBLIC` has no release-schema, table, or function rights. Application roles
+`PUBLIC` has no release-schema, table, or function rights. The application role
 cannot read `core.connection_value`, update/delete append-only records, write
 foundational security rows, or execute archived behavior functions.
 

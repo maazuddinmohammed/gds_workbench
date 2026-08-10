@@ -115,6 +115,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         result = await client.call_tool("list_tenants", {"page_size": 50})
 
     assert [tool.name for tool in tools.tools] == ["list_tenants"]
+    assert tools.tools[0].meta == {"gds/toolPolicy": "tenant_read"}
     assert result.is_error is False
     assert result.structured_content == {
         "schema_version": "1.0",

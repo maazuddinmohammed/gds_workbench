@@ -9,7 +9,7 @@ This is the Azure App Service code root. It contains one read-only MCP tool,
 - `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
   authorization flow, pagination, and SQL together.
 - `application/`: shared authorization boundary and signed pagination cursor.
-- `domain/`: role/capability policy and safe errors.
+- `domain/`: role and Tool Policy vocabulary plus safe errors.
 - `infrastructure/`: shared PostgreSQL pool, readiness, and read-only transactions.
 - Tests live outside this deployable folder in `../tests/mcp/`.
 

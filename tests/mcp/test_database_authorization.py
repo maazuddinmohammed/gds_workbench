@@ -5,6 +5,10 @@ from uuid import UUID
 
 import pytest
 
+from gds_etl_workbench.application.authorization import ResolvedPrincipal
+from gds_etl_workbench.domain.authorization import ActorKind
+from gds_etl_workbench.tools.tenants.list_tenants import _query_visible_tenants
+
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
     from psycopg import Connection
@@ -22,6 +26,72 @@ def test_greenfield_schema_omits_workflow_grant_structures(
         ).fetchone()
 
     assert row == {"workflow_grant": None, "workflow_run_summary": None}
+
+
+@pytest.mark.asyncio
+async def test_list_tenants_sql_enforces_visibility_with_one_bound_actor(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000010")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000010")
+    with postgres_database.connect_owner() as connection:
+        visible_private_id = _seed_private_tenant(connection, "LIST_SQL_MEMBER")
+        _seed_private_tenant(connection, "LIST_SQL_HIDDEN")
+        principal_id = _seed_user_actor(
+            connection,
+            tenant_id=visible_private_id,
+            display_name="List SQL Developer",
+            email="list.sql.developer@example.test",
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            tenant_role="developer",
+        )
+        project = connection.execute(
+            """
+            INSERT INTO core.project (project_code, project_name)
+            VALUES ('LIST_SQL_GLOBAL', 'List SQL Global Project')
+            RETURNING project_id
+            """
+        ).fetchone()
+        assert project is not None
+        connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog,
+                tenant_visibility
+            )
+            VALUES (%s, 'LIST_SQL_GLOBAL', 'List SQL Global Tenant',
+                    'list_sql_global', 'list_sql_global_admin', 'global')
+            """,
+            (project["project_id"],),
+        )
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        async with database.read_transaction() as transaction:
+            rows = await _query_visible_tenants(
+                transaction,
+                ResolvedPrincipal(
+                    principal_id=principal_id,
+                    actor_kind=ActorKind.HUMAN,
+                    display_name="List SQL Developer",
+                    is_super_admin=False,
+                ),
+                limit=200,
+                offset=0,
+            )
+    finally:
+        await database.close()
+
+    role_by_code = {row["tenant_code"]: row["effective_role"] for row in rows}
+    assert role_by_code["LIST_SQL_GLOBAL"] == "viewer"
+    assert role_by_code["LIST_SQL_MEMBER"] == "developer"
+    assert "LIST_SQL_HIDDEN" not in role_by_code
 
 
 def test_global_tenant_read_grants_implicit_viewer_access(
@@ -199,7 +269,9 @@ def test_metadata_write_requires_an_owned_active_tenant_lock(
         ).fetchone()
         allowed = connection.execute(
             """
-            SELECT authorized, denial_code
+            SELECT authorized,
+                   denial_code,
+                   lock_expires_time IS NOT NULL AS has_lock_expiry
               FROM security.authorize_tenant_operation(%s, %s, %s, %s, %s)
             """,
             (
@@ -216,7 +288,11 @@ def test_metadata_write_requires_an_owned_active_tenant_lock(
     assert decision["effective_role"] == "developer"
     assert decision["denial_code"] == "tenant_lock_required"
     assert acquired == {"acquired": True}
-    assert allowed == {"authorized": True, "denial_code": None}
+    assert allowed == {
+        "authorized": True,
+        "denial_code": None,
+        "has_lock_expiry": True,
+    }
 
 
 def test_registered_workload_without_super_admin_authority_is_denied(

@@ -14,13 +14,7 @@ from gds_etl_workbench.application.authorization import (
     ResolvedPrincipal,
 )
 from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.domain.authorization import (
-    ActorKind,
-    Capability,
-    TenantRole,
-    ToolPolicy,
-    has_capability,
-)
+from gds_etl_workbench.domain.authorization import ActorKind, TenantRole, ToolPolicy
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadTransaction
 
@@ -28,27 +22,35 @@ _COLLECTION = "list_tenants"
 POLICY = ToolPolicy.TENANT_READ
 
 _AUTHORIZED_TENANTS_SQL = """
+WITH actor (principal_id, is_super_admin) AS (
+    VALUES (%s::BIGINT, %s::BOOLEAN)
+)
 SELECT tenant.tenant_id,
        tenant.tenant_code,
        tenant.tenant_name,
        left(tenant.tenant_description, 2000) AS tenant_description,
        tenant.tenant_visibility,
        CASE
-           WHEN %s THEN 'super_admin'
+           WHEN actor.is_super_admin THEN 'super_admin'
            WHEN membership.tenant_role IS NOT NULL THEN membership.tenant_role
            ELSE 'viewer'
        END AS effective_role
-  FROM core.tenant AS tenant
+  FROM actor
+ CROSS JOIN core.tenant AS tenant
   LEFT JOIN security.tenant_principal_access AS membership
     ON membership.tenant_id = tenant.tenant_id
-   AND membership.principal_id = %s
+   AND membership.principal_id = actor.principal_id
    AND membership.is_active
    AND (
        membership.access_expires_time IS NULL
        OR membership.access_expires_time > CURRENT_TIMESTAMP
    )
  WHERE tenant.is_active
-   AND (%s OR tenant.tenant_visibility = 'global' OR membership.tenant_id IS NOT NULL)
+   AND (
+       actor.is_super_admin
+       OR tenant.tenant_visibility = 'global'
+       OR membership.tenant_id IS NOT NULL
+   )
  ORDER BY lower(tenant.tenant_name), tenant.tenant_id
  LIMIT %s OFFSET %s
 """
@@ -109,7 +111,7 @@ def register_list_tenants_tool(
 
     @server.tool(
         description=(
-            "List active Tenants the current human Principal can read. Global Tenants are "
+            "List active Tenants the current Principal can read. Global Tenants are "
             "visible to every active registered Principal; private Tenants require current "
             "Tenant access. Super admins can read every active Tenant."
         ),
@@ -119,6 +121,7 @@ def register_list_tenants_tool(
             idempotent_hint=True,
             open_world_hint=False,
         ),
+        meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
     async def list_tenants(
@@ -127,7 +130,7 @@ def register_list_tenants_tool(
         page_size: Annotated[int, Field(ge=1, le=200)] = 50,
         cursor: Annotated[str | None, Field(max_length=2048)] = None,
     ) -> ListTenantsResult:
-        """List the Tenant summaries visible to the current human Principal."""
+        """List the Tenant summaries visible to the current Principal."""
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
             request = ListTenantsRequest(
@@ -155,12 +158,6 @@ def register_list_tenants_tool(
                 )
                 for row in rows[: request.page_size]
             )
-            if any(
-                not has_capability(tenant.effective_role, Capability.READ_TENANT)
-                for tenant in tenants
-            ):
-                raise AuthorizationDeniedError()
-
             next_cursor = None
             if len(rows) > request.page_size:
                 next_cursor = cursors.encode(
@@ -190,7 +187,6 @@ async def _query_visible_tenants(
     return await transaction.fetch_all(
         _AUTHORIZED_TENANTS_SQL,
         (
-            principal.is_super_admin,
             principal.principal_id,
             principal.is_super_admin,
             limit,
