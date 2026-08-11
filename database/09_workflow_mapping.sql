@@ -34,8 +34,8 @@ CREATE TABLE workflow.mapping_source_system_dependency (
     )
 );
 
-CREATE TABLE workflow.object_mapping (
-    object_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE workflow.mapping_object (
+    mapping_object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     modeled_entity_type VARCHAR(30) NOT NULL,
@@ -79,10 +79,10 @@ CREATE TABLE workflow.object_mapping (
         ON DELETE NO ACTION,
     CONSTRAINT fk_object_mapping_target_object FOREIGN KEY (target_object_id)
         REFERENCES core.object (object_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_object_mapping_id_model
-        UNIQUE (object_mapping_id, model_id),
-    CONSTRAINT uq_object_mapping_witness UNIQUE (
-        object_mapping_id,
+    CONSTRAINT uq_mapping_object_id_model
+        UNIQUE (mapping_object_id, model_id),
+    CONSTRAINT uq_mapping_object_witness UNIQUE (
+        mapping_object_id,
         model_id,
         modeled_entity_type,
         target_object_id
@@ -173,23 +173,23 @@ CREATE TABLE workflow.object_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_object_mapping_logical_binding
-    ON workflow.object_mapping (
+CREATE UNIQUE INDEX ux_mapping_object_logical_binding
+    ON workflow.mapping_object (
         model_id,
         logical_entity_id,
         target_object_id,
         source_system_id
     ) WHERE modeled_entity_type = 'logical_entity';
-CREATE UNIQUE INDEX ux_object_mapping_dimensional_binding
-    ON workflow.object_mapping (
+CREATE UNIQUE INDEX ux_mapping_object_dimensional_binding
+    ON workflow.mapping_object (
         model_id,
         dimensional_entity_id,
         target_object_id,
         source_system_id
     ) WHERE modeled_entity_type = 'dimensional_entity';
 
-CREATE TABLE workflow.attribute_mapping (
-    attribute_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE workflow.mapping_attribute (
+    mapping_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     object_mapping_id BIGINT NOT NULL,
@@ -208,12 +208,12 @@ CREATE TABLE workflow.attribute_mapping (
     CONSTRAINT fk_attribute_mapping_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT fk_attribute_mapping_parent FOREIGN KEY (
-        object_mapping_id,
+        mapping_object_id,
         model_id,
         modeled_entity_type,
         target_object_id
-    ) REFERENCES workflow.object_mapping (
-        object_mapping_id,
+    ) REFERENCES workflow.mapping_object (
+        mapping_object_id,
         model_id,
         modeled_entity_type,
         target_object_id
@@ -235,7 +235,7 @@ CREATE TABLE workflow.attribute_mapping (
         target_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT uq_attribute_mapping_id_model
-        UNIQUE (attribute_mapping_id, model_id),
+        UNIQUE (mapping_attribute_id, model_id),
     CONSTRAINT ck_attribute_mapping_typed_attribute CHECK (
         (
             modeled_entity_type = 'logical_entity'
@@ -264,23 +264,23 @@ CREATE TABLE workflow.attribute_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_attribute_mapping_logical_binding
-    ON workflow.attribute_mapping (
+CREATE UNIQUE INDEX ux_mapping_attribute_logical_binding
+    ON workflow.mapping_attribute (
         model_id,
-        object_mapping_id,
+        mapping_object_id,
         logical_attribute_id,
         target_attribute_id
     ) WHERE modeled_entity_type = 'logical_entity';
-CREATE UNIQUE INDEX ux_attribute_mapping_dimensional_binding
-    ON workflow.attribute_mapping (
+CREATE UNIQUE INDEX ux_mapping_attribute_dimensional_binding
+    ON workflow.mapping_attribute (
         model_id,
-        object_mapping_id,
+        mapping_object_id,
         dimensional_attribute_id,
         target_attribute_id
     ) WHERE modeled_entity_type = 'dimensional_entity';
 
-CREATE INDEX ix_object_mapping_model_package_status
-    ON workflow.object_mapping (
+CREATE INDEX ix_mapping_object_model_package_status
+    ON workflow.mapping_object (
         model_id,
         modeled_entity_type,
         target_object_id,
@@ -300,22 +300,22 @@ CREATE INDEX ix_mapping_source_dependency_system
         mapping_source_system_dependency_status,
         model_id
     );
-CREATE INDEX ix_object_mapping_object_wave
-    ON workflow.object_mapping (
+CREATE INDEX ix_mapping_object_object_wave
+    ON workflow.mapping_object (
         model_id,
         modeled_entity_type,
         object_dependency_order,
         target_object_id
     );
-CREATE INDEX ix_object_mapping_source_system
-    ON workflow.object_mapping (model_id, source_system_id);
-CREATE INDEX ix_attribute_mapping_parent
-    ON workflow.attribute_mapping (model_id, object_mapping_id, attribute_mapping_status);
-CREATE INDEX ix_attribute_mapping_target
-    ON workflow.attribute_mapping (model_id, target_object_id, target_attribute_id);
-CREATE INDEX ix_attribute_mapping_logical_attribute
-    ON workflow.attribute_mapping (model_id, logical_attribute_id)
+CREATE INDEX ix_mapping_object_source_system
+    ON workflow.mapping_object (model_id, source_system_id);
+CREATE INDEX ix_mapping_attribute_parent
+    ON workflow.mapping_attribute (model_id, mapping_object_id, attribute_mapping_status);
+CREATE INDEX ix_mapping_attribute_target
+    ON workflow.mapping_attribute (model_id, target_object_id, target_attribute_id);
+CREATE INDEX ix_mapping_attribute_logical_attribute
+    ON workflow.mapping_attribute (model_id, logical_attribute_id)
     WHERE modeled_entity_type = 'logical_entity';
-CREATE INDEX ix_attribute_mapping_dimensional_attribute
-    ON workflow.attribute_mapping (model_id, dimensional_attribute_id)
+CREATE INDEX ix_mapping_attribute_dimensional_attribute
+    ON workflow.mapping_attribute (model_id, dimensional_attribute_id)
     WHERE modeled_entity_type = 'dimensional_entity';
