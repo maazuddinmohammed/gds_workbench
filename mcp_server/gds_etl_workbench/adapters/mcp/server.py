@@ -116,8 +116,27 @@ def create_mcp_server(
             headers={"Cache-Control": "no-store"},
         )
 
+    async def oauth_protected_resource_metadata(_request: Request) -> Response:
+        return JSONResponse(
+            {
+                "resource": settings.mcp_public_url,
+                "authorization_servers": [
+                    f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0"
+                ],
+                "scopes_supported": [f"api://{settings.entra_api_client_id}/workbench.access"],
+                "bearer_methods_supported": ["header"],
+            },
+            headers={"Cache-Control": "public, max-age=300"},
+        )
+
     server.custom_route("/health/live", methods=["GET"])(live)
     server.custom_route("/health/ready", methods=["GET"])(ready)
+    server.custom_route("/.well-known/oauth-protected-resource", methods=["GET"])(
+        oauth_protected_resource_metadata
+    )
+    server.custom_route("/.well-known/oauth-protected-resource/mcp", methods=["GET"])(
+        oauth_protected_resource_metadata
+    )
     return server
 
 

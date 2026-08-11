@@ -28,12 +28,17 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
         database_dsn="postgresql://unused.invalid/workbench",
         cursor_signing_key=b"development-only-key-32-bytes-long",
         allowed_hosts=("testserver",),
+        mcp_public_url="https://workbench.example.test/mcp",
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_api_client_id=UUID("22222222-2222-2222-2222-222222222222"),
         require_https=False,
         schema_version="1.0.0",
         pool_min=1,
         pool_max=2,
         pool_timeout_seconds=5,
-        metadata_snapshot_storage_account_url=("https://snapshot.blob.core.windows.net"),
+        metadata_snapshot_storage_account_url=(
+            "https://snapshot.blob.core.windows.net"
+        ),
         metadata_snapshot_storage_container="snapshots",
         metadata_snapshot_download_ttl_seconds=900,
         metadata_snapshot_retention_hours=24,

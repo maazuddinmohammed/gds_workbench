@@ -47,7 +47,9 @@ class FakeReadTransaction:
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
         if self._database.resolved_principal is None:
-            raise AssertionError("development mode must not resolve a production Principal")
+            raise AssertionError(
+                "development mode must not resolve a production Principal"
+            )
         return self._database.resolved_principal
 
     async def fetch_all(
@@ -124,7 +126,9 @@ class FakeSnapshotStore:
         created_at: datetime,
         available_until: datetime,
     ) -> None:
-        raise AssertionError("tool orchestration is replaced in this HTTP contract test")
+        raise AssertionError(
+            "tool orchestration is replaced in this HTTP contract test"
+        )
 
     async def create_read_url(
         self,
@@ -134,29 +138,24 @@ class FakeSnapshotStore:
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
-        raise AssertionError("MCP must return the protected application URL, not a SAS URL")
+        raise AssertionError(
+            "MCP must return the protected application URL, not a SAS URL"
+        )
 
 
 def development_settings() -> RuntimeSettings:
     return RuntimeSettings.from_environment(
         {
             "GDS_ENVIRONMENT": "local",
-            "GDS_AUTH_MODE": "dev",
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
-            "GDS_MCP_ALLOWED_HOSTS": "testserver,testserver:*",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
+            "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
-            "GDS_REQUIRE_HTTPS": "false",
-            "GDS_SCHEMA_VERSION": "1.0.0",
-            "GDS_DATABASE_POOL_MIN": "1",
-            "GDS_DATABASE_POOL_MAX": "5",
-            "GDS_DATABASE_POOL_TIMEOUT_SECONDS": "10",
-            "GDS_DATABASE_CONNECTION_BUDGET": "100",
-            "GDS_DATABASE_CONNECTION_HEADROOM": "20",
-            "GDS_REQUEST_TIMEOUT_SECONDS": "120",
-            "WEB_CONCURRENCY": "2",
-            "PORT": "8000",
         }
     )
 
@@ -208,7 +207,9 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
     database = FakeDatabase()
     store = FakeSnapshotStore()
 
-    async def fake_create_metadata_snapshot(*_args: Any, **kwargs: Any) -> ReadyMetadataSnapshot:
+    async def fake_create_metadata_snapshot(
+        *_args: Any, **kwargs: Any
+    ) -> ReadyMetadataSnapshot:
         assert kwargs["tenant_id"] == 123
         return ReadyMetadataSnapshot(
             snapshot_id=snapshot_id,
@@ -251,7 +252,9 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
         "snapshot_kind": "metadata",
         "status": "ready",
         "tenant_id": 123,
-        "download_url": (f"http://testserver/metadata-snapshots/123/{snapshot_id}/download"),
+        "download_url": (
+            f"http://testserver/metadata-snapshots/123/{snapshot_id}/download"
+        ),
         "available_until": "2026-08-12T16:00:00Z",
         "size_bytes": 4567,
         "sha256": "a" * 64,
@@ -317,6 +320,35 @@ def test_health_routes_are_anonymous() -> None:
     assert live.json() == {"status": "live"}
     assert ready.status_code == 200
     assert ready.json()["status"] == "ready"
+
+
+def test_oauth_protected_resource_metadata_is_anonymous_and_configured() -> None:
+    settings = replace(
+        development_settings(),
+        environment=Environment.PRODUCTION,
+        auth_mode=AuthMode.AZURE_EASY_AUTH,
+        require_https=True,
+    )
+    application = create_application(settings, FakeDatabase())
+    expected = {
+        "resource": "https://testserver/mcp",
+        "authorization_servers": [
+            "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0"
+        ],
+        "scopes_supported": [
+            "api://22222222-2222-2222-2222-222222222222/workbench.access"
+        ],
+        "bearer_methods_supported": ["header"],
+    }
+
+    with TestClient(application) as client:
+        root_metadata = client.get("/.well-known/oauth-protected-resource")
+        mcp_metadata = client.get("/.well-known/oauth-protected-resource/mcp")
+
+    for response in (root_metadata, mcp_metadata):
+        assert response.status_code == 200
+        assert response.json() == expected
+        assert response.headers["cache-control"] == "public, max-age=300"
 
 
 def test_production_mcp_rejects_missing_easy_auth_envelope() -> None:

@@ -13,7 +13,12 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadinessRecord,
+    ReadIsolation,
+    ReadTransaction,
+    ToolCallLogRecord,
+)
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     register_metadata_snapshot_download_route,
 )
@@ -41,6 +46,22 @@ class FakeTransaction:
 class FakeDatabase:
     def __init__(self) -> None:
         self.transaction_count = 0
+
+    async def open(self) -> None:
+        raise AssertionError("download route must not open the database")
+
+    async def close(self) -> None:
+        raise AssertionError("download route must not close the database")
+
+    async def readiness(self) -> ReadinessRecord:
+        raise AssertionError("download route must not check database readiness")
+
+    async def expire_tenant_locks(self) -> int:
+        raise AssertionError("download route must not expire tenant locks")
+
+    async def append_tool_call_log(self, record: ToolCallLogRecord) -> None:
+        del record
+        raise AssertionError("download route must not append a tool-call log")
 
     @asynccontextmanager
     async def read_transaction(

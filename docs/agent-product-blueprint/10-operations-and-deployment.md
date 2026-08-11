@@ -30,12 +30,12 @@ but keeps readiness and product traffic unavailable.
 
 - production mode, one PostgreSQL DSN with a host, database, and
   `sslmode=verify-full`;
-- the exact workload Entra Tenant and Object IDs;
+- the exact Entra Tenant and API application IDs;
 - one credential-free HTTPS MCP URL ending at `/mcp`;
-- a bounded cursor-signing key and HTTPS enforcement;
-- request concurrency, request timeout, draft TTL, snapshot, and cache bounds;
-- schema version `1.0.0`; and
-- per-instance pool settings that pass the runtime's
+- a bounded cursor-signing key;
+- the private snapshot storage account URL and container, plus an optional
+  user-assigned managed-identity client ID; and
+- checked-in pool settings that pass the runtime's
   `WEB_CONCURRENCY * pool_max <= budget - headroom` check.
 
 The deployment owner must additionally size all instances so
@@ -56,7 +56,7 @@ Production telemetry also requires environment-owned retention, access, and
 deletion policy. Payload tracing must be `false`. No production test
 authenticator or test signing-key setting exists.
 
-Intended defaults are pool min/max `1/5`, pool timeout `10` seconds,
+Checked-in policy is pool min/max `1/5`, pool timeout `10` seconds,
 `WEB_CONCURRENCY=2`, connection budget/headroom `100/20`, request timeout `120`
 seconds, request concurrency `64`, draft TTL `14,400` seconds, and snapshot
 archive/cache `64/256` MiB. The cursor key is 32–4,096 bytes. Production
@@ -86,14 +86,10 @@ refresh margin defaults to 300 seconds and is bounded to 30–900.
 The exact environment-key owners are:
 
 - App runtime: `GDS_ENVIRONMENT`, `GDS_DATABASE_DSN`,
-  `GDS_DATABASE_POOL_MIN`, `GDS_DATABASE_POOL_MAX`,
-  `GDS_DATABASE_POOL_TIMEOUT_SECONDS`, `GDS_DATABASE_CONNECTION_BUDGET`,
-  `GDS_DATABASE_CONNECTION_HEADROOM`, `WEB_CONCURRENCY`,
-  `GDS_WORKLOAD_ENTRA_TENANT_ID`, `GDS_WORKLOAD_ENTRA_OBJECT_ID`,
-  `GDS_MCP_PUBLIC_URL`, `GDS_CURSOR_SIGNING_KEY`, `GDS_REQUIRE_HTTPS`,
-  `GDS_REQUEST_TIMEOUT_SECONDS`, `GDS_REQUEST_CONCURRENCY_LIMIT`,
-  `GDS_DRAFT_TTL_SECONDS`, `GDS_SNAPSHOT_MAX_BYTES`,
-  `GDS_SNAPSHOT_CACHE_BYTES`, `GDS_SCHEMA_VERSION`, and platform-owned `PORT`;
+  `GDS_CURSOR_SIGNING_KEY`, `GDS_MCP_PUBLIC_URL`, `GDS_ENTRA_TENANT_ID`,
+  `GDS_ENTRA_API_CLIENT_ID`, `GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL`,
+  `GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER`, and optional
+  `GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID`;
 - App telemetry: `GDS_TELEMETRY_RETENTION_DAYS`,
   `GDS_TELEMETRY_ACCESS_OWNER`, `GDS_TELEMETRY_DELETION_OWNER`, and
   `GDS_TELEMETRY_TRACE_PAYLOADS`;
@@ -106,10 +102,9 @@ The exact environment-key owners are:
 - jobs telemetry: the same four policy suffixes under the
   `GDS_JOBS_TELEMETRY_*` prefix.
 
-`startup.sh` requires `PORT`, `WEB_CONCURRENCY`, and
-`GDS_REQUEST_TIMEOUT_SECONDS` to be positive integers. This startup boundary is
-stricter than the Python settings parser, which represents the request timeout
-as a number of seconds.
+`startup.sh` uses the platform-owned `SERVER_PORT` when present and otherwise
+binds to `8000`. Gunicorn workers `2` and request timeout `120` seconds are
+checked-in process policy.
 
 ## Integration boundaries
 

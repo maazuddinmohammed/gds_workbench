@@ -1,21 +1,19 @@
 #!/usr/bin/env sh
 set -eu
 
-case "${PORT:-}" in
-    ''|*[!0-9]*|0) echo "PORT must be a positive integer" >&2; exit 1 ;;
-esac
-case "${WEB_CONCURRENCY:-}" in
-    ''|*[!0-9]*|0) echo "WEB_CONCURRENCY must be a positive integer" >&2; exit 1 ;;
-esac
-case "${GDS_REQUEST_TIMEOUT_SECONDS:-}" in
-    ''|*[!0-9]*|0) echo "GDS_REQUEST_TIMEOUT_SECONDS must be a positive integer" >&2; exit 1 ;;
+gds_server_port="${SERVER_PORT:-8000}"
+gds_web_concurrency=2
+gds_request_timeout_seconds=120
+
+case "${gds_server_port}" in
+    ''|*[!0-9]*|0) echo "SERVER_PORT must be a positive integer" >&2; exit 1 ;;
 esac
 
 exec gunicorn \
-    --bind "0.0.0.0:${PORT}" \
-    --workers "${WEB_CONCURRENCY}" \
+    --bind "0.0.0.0:${gds_server_port}" \
+    --workers "${gds_web_concurrency}" \
     --worker-class uvicorn_worker.UvicornWorker \
-    --timeout "${GDS_REQUEST_TIMEOUT_SECONDS}" \
+    --timeout "${gds_request_timeout_seconds}" \
     --graceful-timeout 30 \
     --keep-alive 5 \
     --access-logfile - \

@@ -70,22 +70,15 @@ def settings() -> RuntimeSettings:
     return RuntimeSettings.from_environment(
         {
             "GDS_ENVIRONMENT": "local",
-            "GDS_AUTH_MODE": "dev",
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
-            "GDS_MCP_ALLOWED_HOSTS": "testserver,testserver:*",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
+            "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
-            "GDS_REQUIRE_HTTPS": "false",
-            "GDS_SCHEMA_VERSION": "1.0.0",
-            "GDS_DATABASE_POOL_MIN": "1",
-            "GDS_DATABASE_POOL_MAX": "5",
-            "GDS_DATABASE_POOL_TIMEOUT_SECONDS": "10",
-            "GDS_DATABASE_CONNECTION_BUDGET": "100",
-            "GDS_DATABASE_CONNECTION_HEADROOM": "20",
-            "GDS_REQUEST_TIMEOUT_SECONDS": "120",
-            "WEB_CONCURRENCY": "2",
-            "PORT": "8000",
         }
     )
 

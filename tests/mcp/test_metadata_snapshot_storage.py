@@ -169,7 +169,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     blob = FakeBlob()
     service = FakeBlobService(blob)
     sas_arguments: dict[str, Any] = {}
-    monkeypatch.setattr(storage_module, "DefaultAzureCredential", lambda **_kwargs: credential)
+    monkeypatch.setattr(
+        storage_module, "DefaultAzureCredential", lambda **_kwargs: credential
+    )
     monkeypatch.setattr(storage_module, "BlobServiceClient", lambda **_kwargs: service)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
@@ -224,7 +226,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         size=7,
         content_settings=SimpleNamespace(
             content_type="application/zip",
-            content_disposition=(f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'),
+            content_disposition=(
+                f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'
+            ),
         ),
     )
     read_url = await store.create_read_url(
@@ -268,6 +272,9 @@ def _settings() -> RuntimeSettings:
         database_dsn="postgresql://unused.invalid/workbench",
         cursor_signing_key=b"development-only-key-32-bytes-long",
         allowed_hosts=("testserver",),
+        mcp_public_url="https://workbench.example.test/mcp",
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_api_client_id=UUID("22222222-2222-2222-2222-222222222222"),
         require_https=False,
         schema_version="1.0.0",
         pool_min=1,

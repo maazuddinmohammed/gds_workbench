@@ -8,6 +8,8 @@ disagree.
 
 - `/health/live` is anonymous and process-only.
 - `/health/ready` is anonymous and returns bounded database posture only.
+- `/.well-known/oauth-protected-resource` and its `/mcp` path variant are
+  anonymous, cacheable, non-secret OAuth discovery documents.
 - `/mcp` uses stateless Streamable HTTP.
 - `/metadata-snapshots/{tenant_id}/{snapshot_id}/download` is authenticated,
   reauthorizes Tenant Read, and returns a no-store redirect to a short-lived
@@ -46,12 +48,12 @@ not enough.
 
 ## Local development mode
 
-`GDS_AUTH_MODE=dev` is accepted only when `GDS_ENVIRONMENT=local`. It creates the
+`GDS_ENVIRONMENT=local` derives development authentication. It creates the
 synthetic request actor `Local Developer`, skips Entra and Tenant role/visibility
 checks, and permits all active Tenants to be listed. It does not change database
-Tenant Lock, revision, audit, or business invariants. Production requires
-`GDS_AUTH_MODE=azure_easy_auth`, HTTPS, explicit hosts, and verified PostgreSQL
-TLS.
+Tenant Lock, revision, audit, or business invariants. Production derives Easy
+Auth and HTTPS, derives the host allowlist from `GDS_MCP_PUBLIC_URL`, and requires
+verified PostgreSQL TLS.
 
 ## Tool policies
 

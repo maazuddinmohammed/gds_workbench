@@ -30,11 +30,11 @@ Humans require delegated scope `workbench.access`. Workloads require application
 permission `workbench.workflow` and an active registered service Principal with
 the server-owned Super Admin flag.
 
-`GDS_AUTH_MODE=dev` skips Entra authentication and Tenant role/visibility checks,
-uses the synthetic display name `Local Developer`, and lists all active Tenants.
-Configuration accepts this mode only with `GDS_ENVIRONMENT=local`. Tenant Lock,
-revision, audit, and business invariants remain production behavior for future
-write tools.
+`GDS_ENVIRONMENT=local` derives development authentication, disables the HTTPS
+requirement, uses the synthetic display name `Local Developer`, and lists all
+active Tenants. Production derives Easy Auth, HTTPS, and the public host
+allowlist. Tenant Lock, revision, audit, and business invariants remain
+production behavior for future write tools.
 
 ## Local run
 
@@ -52,6 +52,16 @@ cd mcp_server
 ```
 
 Connect an MCP client to `http://localhost:8000/mcp`.
+
+`GDS_MCP_PUBLIC_URL`, `GDS_ENTRA_TENANT_ID`, and
+`GDS_ENTRA_API_CLIENT_ID` publish the MCP OAuth protected-resource metadata.
+They are public deployment identifiers and do not need Key Vault. The server
+derives the Entra authorization-server URL and the delegated
+`workbench.access` scope from them.
+
+Schema version, snapshot bounds, PostgreSQL pool sizing, connection budget,
+Gunicorn workers, and request timeout are checked-in runtime policy. They are
+not environment overrides.
 
 Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result
 contains a protected application download URL, availability time, byte count,
@@ -107,8 +117,19 @@ Easy Auth to require authentication, reject unauthenticated requests with 401,
 and accept only the intended Entra tenant/audience. Human tokens need delegated
 scope `workbench.access`; workload tokens need application permission
 `workbench.workflow`. Configure the Entra access-token optional claim `idtyp`.
-Health paths stay anonymous. The database login must have exactly one direct
-membership: `gds_app_write`; the pool activates that `NOINHERIT` role.
+Configure these Easy Auth excluded paths so health and OAuth discovery remain
+anonymous:
+
+```text
+/health/live
+/health/ready
+/.well-known/oauth-protected-resource
+/.well-known/oauth-protected-resource/mcp
+```
+
+`/mcp` and Metadata Snapshot downloads remain protected. The database login
+must have exactly one direct membership: `gds_app_write`; the pool activates
+that `NOINHERIT` role.
 
 The configured Blob container must already exist and remain private. Grant the
 App Service identity narrowly scoped Blob create/read access and Storage Blob

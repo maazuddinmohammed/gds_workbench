@@ -1,4 +1,4 @@
-"""Environment-only runtime configuration."""
+"""Deployment configuration and checked-in runtime policy."""
 
 from __future__ import annotations
 
@@ -27,29 +27,29 @@ class AuthMode(StrEnum):
     AZURE_EASY_AUTH = "azure_easy_auth"
 
 
+SCHEMA_VERSION = "1.0.0"
+SNAPSHOT_DOWNLOAD_TTL_SECONDS = 900
+SNAPSHOT_RETENTION_HOURS = 24
+SNAPSHOT_MAX_ARCHIVE_BYTES = 268_435_456
+DATABASE_POOL_MIN = 1
+DATABASE_POOL_MAX = 5
+DATABASE_POOL_TIMEOUT_SECONDS = 10
+DATABASE_CONNECTION_BUDGET = 100
+DATABASE_CONNECTION_HEADROOM = 20
+WEB_CONCURRENCY = 2
+
+
 _EXPECTED_KEYS = frozenset(
     {
-        "GDS_AUTH_MODE",
         "GDS_CURSOR_SIGNING_KEY",
-        "GDS_DATABASE_CONNECTION_BUDGET",
-        "GDS_DATABASE_CONNECTION_HEADROOM",
         "GDS_DATABASE_DSN",
-        "GDS_DATABASE_POOL_MAX",
-        "GDS_DATABASE_POOL_MIN",
-        "GDS_DATABASE_POOL_TIMEOUT_SECONDS",
+        "GDS_ENTRA_API_CLIENT_ID",
+        "GDS_ENTRA_TENANT_ID",
         "GDS_ENVIRONMENT",
-        "GDS_MCP_ALLOWED_HOSTS",
-        "GDS_METADATA_SNAPSHOT_DOWNLOAD_TTL_SECONDS",
+        "GDS_MCP_PUBLIC_URL",
         "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID",
-        "GDS_METADATA_SNAPSHOT_MAX_ARCHIVE_BYTES",
-        "GDS_METADATA_SNAPSHOT_RETENTION_HOURS",
         "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL",
         "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER",
-        "GDS_REQUEST_TIMEOUT_SECONDS",
-        "GDS_REQUIRE_HTTPS",
-        "GDS_SCHEMA_VERSION",
-        "PORT",
-        "WEB_CONCURRENCY",
     }
 )
 
@@ -63,6 +63,9 @@ class RuntimeSettings:
     database_dsn: str = field(repr=False)
     cursor_signing_key: bytes = field(repr=False)
     allowed_hosts: tuple[str, ...]
+    mcp_public_url: str
+    entra_tenant_id: UUID
+    entra_api_client_id: UUID
     require_https: bool
     schema_version: str
     pool_min: int
@@ -85,11 +88,7 @@ class RuntimeSettings:
             raise ConfigurationError(f"unsupported GDS setting: {unknown[0]}")
 
         environment = _enum_value(source, "GDS_ENVIRONMENT", Environment)
-        auth_mode = _enum_value(source, "GDS_AUTH_MODE", AuthMode)
-        if environment is Environment.PRODUCTION and auth_mode is not AuthMode.AZURE_EASY_AUTH:
-            raise ConfigurationError("production requires GDS_AUTH_MODE=azure_easy_auth")
-        if auth_mode is AuthMode.DEV and environment is not Environment.LOCAL:
-            raise ConfigurationError("GDS_AUTH_MODE=dev requires GDS_ENVIRONMENT=local")
+        auth_mode = AuthMode.DEV if environment is Environment.LOCAL else AuthMode.AZURE_EASY_AUTH
 
         database_dsn = _required(source, "GDS_DATABASE_DSN")
         if environment is Environment.PRODUCTION:
@@ -106,21 +105,59 @@ class RuntimeSettings:
         if not 32 <= len(cursor_signing_key) <= 4096:
             raise ConfigurationError("GDS_CURSOR_SIGNING_KEY must be 32-4096 UTF-8 bytes")
 
-        require_https = _boolean(source, "GDS_REQUIRE_HTTPS")
-        if environment is Environment.PRODUCTION and not require_https:
-            raise ConfigurationError("production requires GDS_REQUIRE_HTTPS=true")
+        require_https = environment is Environment.PRODUCTION
 
-        allowed_hosts = tuple(
-            part.strip()
-            for part in _required(source, "GDS_MCP_ALLOWED_HOSTS").split(",")
-            if part.strip()
-        )
-        if not allowed_hosts or any(host == "*" for host in allowed_hosts):
-            raise ConfigurationError("GDS_MCP_ALLOWED_HOSTS requires an explicit host allowlist")
+        mcp_public_url = _required(source, "GDS_MCP_PUBLIC_URL")
+        parsed_mcp_url = urlsplit(mcp_public_url)
+        try:
+            mcp_port = parsed_mcp_url.port
+        except ValueError as exc:
+            raise ConfigurationError("GDS_MCP_PUBLIC_URL is invalid") from exc
+        if (
+            parsed_mcp_url.scheme not in {"http", "https"}
+            or not parsed_mcp_url.hostname
+            or parsed_mcp_url.username is not None
+            or parsed_mcp_url.password is not None
+            or parsed_mcp_url.path != "/mcp"
+            or parsed_mcp_url.query
+            or parsed_mcp_url.fragment
+            or (parsed_mcp_url.scheme == "https" and mcp_port == 80)
+            or (parsed_mcp_url.scheme == "http" and mcp_port == 443)
+        ):
+            raise ConfigurationError("GDS_MCP_PUBLIC_URL must be an absolute HTTP(S) /mcp endpoint")
+        if environment is Environment.PRODUCTION and parsed_mcp_url.scheme != "https":
+            raise ConfigurationError("production GDS_MCP_PUBLIC_URL must use HTTPS")
 
-        schema_version = _required(source, "GDS_SCHEMA_VERSION")
-        if schema_version != "1.0.0":
-            raise ConfigurationError("GDS_SCHEMA_VERSION must be 1.0.0")
+        public_host = parsed_mcp_url.hostname
+        if ":" in public_host:
+            public_host = f"[{public_host}]"
+        allowed_hosts = [public_host, f"{public_host}:*"]
+        if environment is Environment.LOCAL:
+            allowed_hosts.extend(
+                [
+                    "localhost",
+                    "localhost:*",
+                    "127.0.0.1",
+                    "127.0.0.1:*",
+                    "[::1]",
+                    "[::1]:*",
+                ]
+            )
+        allowed_hosts = tuple(dict.fromkeys(allowed_hosts))
+
+        try:
+            entra_tenant_id = UUID(_required(source, "GDS_ENTRA_TENANT_ID"))
+        except ValueError as exc:
+            raise ConfigurationError("GDS_ENTRA_TENANT_ID must be a UUID") from exc
+        if entra_tenant_id.int == 0:
+            raise ConfigurationError("GDS_ENTRA_TENANT_ID must be a nonzero UUID")
+
+        try:
+            entra_api_client_id = UUID(_required(source, "GDS_ENTRA_API_CLIENT_ID"))
+        except ValueError as exc:
+            raise ConfigurationError("GDS_ENTRA_API_CLIENT_ID must be a UUID") from exc
+        if entra_api_client_id.int == 0:
+            raise ConfigurationError("GDS_ENTRA_API_CLIENT_ID must be a nonzero UUID")
 
         account_url = _required(source, "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL")
         parsed_account_url = urlsplit(account_url)
@@ -160,27 +197,6 @@ class RuntimeSettings:
                 "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER must be a valid container name"
             )
 
-        download_ttl_seconds = _integer(
-            source,
-            "GDS_METADATA_SNAPSHOT_DOWNLOAD_TTL_SECONDS",
-            minimum=60,
-            maximum=3600,
-            default=900,
-        )
-        retention_hours = _integer(
-            source,
-            "GDS_METADATA_SNAPSHOT_RETENTION_HOURS",
-            minimum=1,
-            maximum=168,
-            default=24,
-        )
-        max_archive_bytes = _integer(
-            source,
-            "GDS_METADATA_SNAPSHOT_MAX_ARCHIVE_BYTES",
-            minimum=1048576,
-            maximum=1073741824,
-            default=268435456,
-        )
         client_id_text = source.get(
             "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID",
             "",
@@ -192,24 +208,13 @@ class RuntimeSettings:
                 "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID must be a UUID"
             ) from exc
 
-        _integer(source, "PORT", minimum=1, maximum=65535)
-        web_concurrency = _integer(source, "WEB_CONCURRENCY", minimum=1, maximum=32)
-        pool_min = _integer(source, "GDS_DATABASE_POOL_MIN", minimum=1, maximum=100)
-        pool_max = _integer(source, "GDS_DATABASE_POOL_MAX", minimum=1, maximum=100)
-        pool_timeout = _integer(source, "GDS_DATABASE_POOL_TIMEOUT_SECONDS", minimum=1, maximum=120)
-        connection_budget = _integer(
-            source, "GDS_DATABASE_CONNECTION_BUDGET", minimum=2, maximum=10000
-        )
-        connection_headroom = _integer(
-            source, "GDS_DATABASE_CONNECTION_HEADROOM", minimum=1, maximum=9999
-        )
-        _integer(source, "GDS_REQUEST_TIMEOUT_SECONDS", minimum=1, maximum=600)
-
-        if pool_min > pool_max:
+        if DATABASE_POOL_MIN > DATABASE_POOL_MAX:
             raise ConfigurationError("database pool minimum cannot exceed maximum")
-        if connection_headroom >= connection_budget:
+        if DATABASE_CONNECTION_HEADROOM >= DATABASE_CONNECTION_BUDGET:
             raise ConfigurationError("database connection headroom must be below budget")
-        if web_concurrency * pool_max > connection_budget - connection_headroom:
+        if WEB_CONCURRENCY * DATABASE_POOL_MAX > (
+            DATABASE_CONNECTION_BUDGET - DATABASE_CONNECTION_HEADROOM
+        ):
             raise ConfigurationError(
                 "worker and pool settings exceed the database connection budget"
             )
@@ -220,16 +225,19 @@ class RuntimeSettings:
             database_dsn=database_dsn,
             cursor_signing_key=cursor_signing_key,
             allowed_hosts=allowed_hosts,
+            mcp_public_url=mcp_public_url,
+            entra_tenant_id=entra_tenant_id,
+            entra_api_client_id=entra_api_client_id,
             require_https=require_https,
-            schema_version=schema_version,
-            pool_min=pool_min,
-            pool_max=pool_max,
-            pool_timeout_seconds=pool_timeout,
+            schema_version=SCHEMA_VERSION,
+            pool_min=DATABASE_POOL_MIN,
+            pool_max=DATABASE_POOL_MAX,
+            pool_timeout_seconds=DATABASE_POOL_TIMEOUT_SECONDS,
             metadata_snapshot_storage_account_url=account_url,
             metadata_snapshot_storage_container=storage_container,
-            metadata_snapshot_download_ttl_seconds=download_ttl_seconds,
-            metadata_snapshot_retention_hours=retention_hours,
-            metadata_snapshot_max_archive_bytes=max_archive_bytes,
+            metadata_snapshot_download_ttl_seconds=SNAPSHOT_DOWNLOAD_TTL_SECONDS,
+            metadata_snapshot_retention_hours=SNAPSHOT_RETENTION_HOURS,
+            metadata_snapshot_max_archive_bytes=SNAPSHOT_MAX_ARCHIVE_BYTES,
             metadata_snapshot_managed_identity_client_id=managed_identity_client_id,
         )
 
@@ -239,35 +247,6 @@ def _required(source: Mapping[str, str], key: str) -> str:
     if not value:
         raise ConfigurationError(f"{key} is required")
     return value
-
-
-def _integer(
-    source: Mapping[str, str],
-    key: str,
-    *,
-    minimum: int,
-    maximum: int,
-    default: int | None = None,
-) -> int:
-    raw = source.get(key, "").strip()
-    if not raw:
-        if default is not None:
-            return default
-        raise ConfigurationError(f"{key} is required")
-    try:
-        value = int(raw)
-    except ValueError as exc:
-        raise ConfigurationError(f"{key} must be an integer") from exc
-    if not minimum <= value <= maximum:
-        raise ConfigurationError(f"{key} must be between {minimum} and {maximum}")
-    return value
-
-
-def _boolean(source: Mapping[str, str], key: str) -> bool:
-    raw = _required(source, key).lower()
-    if raw not in {"true", "false"}:
-        raise ConfigurationError(f"{key} must be true or false")
-    return raw == "true"
 
 
 def _enum_value[

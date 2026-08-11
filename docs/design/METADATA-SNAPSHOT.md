@@ -452,16 +452,16 @@ read-only allowlisted tables:
 
 ## Azure configuration
 
-The runtime accepts only these new settings:
+The runtime accepts only these deployment-specific snapshot settings:
 
 ```text
 GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL
 GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER
-GDS_METADATA_SNAPSHOT_DOWNLOAD_TTL_SECONDS=900
-GDS_METADATA_SNAPSHOT_RETENTION_HOURS=24
-GDS_METADATA_SNAPSHOT_MAX_ARCHIVE_BYTES=268435456
 GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID=<optional UUID>
 ```
+
+Download TTL `900` seconds, retention `24` hours, and maximum archive size
+`268435456` bytes are checked-in snapshot policy.
 
 There is no configurable Blob prefix, filesystem path, account key, SAS token,
 or storage connection string. The full account URL supports the correct Azure

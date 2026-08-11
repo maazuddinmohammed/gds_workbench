@@ -52,6 +52,7 @@ outputs.
 
 - Anonymous `GET /health/live`
 - Anonymous `GET /health/ready`
+- Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
 - Protected stateless `/mcp`
 - Protected `GET /metadata-snapshots/{tenant_id}/{snapshot_id}/download`
 - Two read-only MCP tools: `list_tenants`, `get_metadata_snapshot`

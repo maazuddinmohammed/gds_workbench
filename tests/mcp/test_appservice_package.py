@@ -44,7 +44,9 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         )
         assert all("tests/" not in name and ".env" not in name for name in names)
         assert "download_metadata_snapshot.py" not in names
-        assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())
+        assert all(
+            info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()
+        )
 
         manifest = json.loads(archive.read("BUILD_MANIFEST.json"))
         for item in manifest["files"]:
@@ -56,6 +58,14 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         assert "aiohttp==3.14.3" in requirements
         assert "azure-identity==1.25.3" in requirements
         assert "azure-storage-blob==12.30.0" in requirements
+
+        startup = archive.read("startup.sh").decode()
+        assert 'gds_server_port="${SERVER_PORT:-8000}"' in startup
+        assert "gds_web_concurrency=2" in startup
+        assert "gds_request_timeout_seconds=120" in startup
+        assert "GDS_REQUEST_TIMEOUT_SECONDS" not in startup
+        assert "WEB_CONCURRENCY" not in startup
+        assert "${PORT" not in startup
 
 
 def test_appservice_zip_builder_refuses_overwrite(tmp_path: Path) -> None:
