@@ -1,0 +1,9 @@
+{
+  "servers": {
+    "gds_workbench_v1": {
+      "type": "http",
+      "url": "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp"
+    }
+  },
+  "inputs": []
+}
