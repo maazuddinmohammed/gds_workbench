@@ -81,7 +81,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('security.principal') IS NOT NULL
        AND to_regclass('security.entra_principal_identity') IS NOT NULL
        AND to_regclass('security.tenant_principal_access') IS NOT NULL
-       AND to_regclass('security.mcp_tool_call_log') IS NOT NULL
+       AND to_regclass('mcp.tool_call_log') IS NOT NULL
        AND to_regprocedure(
            'security.authorize_tenant_operation(uuid,uuid,varchar,bigint,varchar)'
        ) IS NOT NULL AS schema_shape_ok,
@@ -106,7 +106,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
 """
 
 _APPEND_TOOL_CALL_LOG_SQL = """
-INSERT INTO security.mcp_tool_call_log (
+INSERT INTO mcp.tool_call_log (
     tool_call_id,
     principal_id,
     principal_display_name,

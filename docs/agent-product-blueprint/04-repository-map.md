@@ -22,7 +22,7 @@ artifacts/            generated local evidence; not source authority
 | `mcp_server/src/gds_etl_workbench/runtime.py` | Composition | Repository, features, routes, middleware |
 | `jobs/notebooks/<workflow>.py` | Databricks task | Compiled Notebook Definition and shared runner |
 | `jobs/src/gds_etl_jobs/notebook.py` | Notebook execution | Workflow launch and selected workflow |
-| `database/01_*.sql` through `13_*.sql` | Fresh database install | Five PostgreSQL schemas |
+| `database/01_*.sql` through `11_*.sql` | Fresh database install | Six PostgreSQL schemas |
 
 ## App Service modules
 

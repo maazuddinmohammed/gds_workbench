@@ -51,7 +51,7 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
                    input_metadata,
                    tool_call_status,
                    failure_code
-              FROM security.mcp_tool_call_log
+              FROM mcp.tool_call_log
              WHERE actor_kind = 'development'
                AND input_metadata = '{"schema_version":"1.0","page_size":137,
                                       "cursor_provided":false}'::JSONB
@@ -128,7 +128,7 @@ async def test_runtime_adapter_can_append_a_bounded_tool_call_log(
                    tool_call_status,
                    failure_code,
                    tool_call_time IS NOT NULL AS has_timestamp
-              FROM security.mcp_tool_call_log
+              FROM mcp.tool_call_log
              WHERE tool_call_id = %s
             """,
             (tool_call_id,),
@@ -137,22 +137,22 @@ async def test_runtime_adapter_can_append_a_bounded_tool_call_log(
             """
             SELECT has_table_privilege(
                        'gds_app_write',
-                       'security.mcp_tool_call_log',
+                       'mcp.tool_call_log',
                        'INSERT'
                    ) AS can_insert,
                    has_table_privilege(
                        'gds_app_write',
-                       'security.mcp_tool_call_log',
+                       'mcp.tool_call_log',
                        'UPDATE'
                    )
                    OR has_table_privilege(
                        'gds_app_write',
-                       'security.mcp_tool_call_log',
+                       'mcp.tool_call_log',
                        'DELETE'
                    )
                    OR has_table_privilege(
                        'gds_app_write',
-                       'security.mcp_tool_call_log',
+                       'mcp.tool_call_log',
                        'TRUNCATE'
                    ) AS can_mutate
             """
@@ -180,7 +180,7 @@ def test_tool_call_log_rejects_update_and_delete(
     with postgres_database.connect_owner() as connection:
         connection.execute(
             """
-            INSERT INTO security.mcp_tool_call_log (
+            INSERT INTO mcp.tool_call_log (
                 tool_call_id,
                 principal_display_name,
                 actor_kind,
@@ -209,7 +209,7 @@ def test_tool_call_log_rejects_update_and_delete(
     ):
         connection.execute(
             """
-            UPDATE security.mcp_tool_call_log
+            UPDATE mcp.tool_call_log
                SET tool_call_status = 'failed'
              WHERE tool_call_id = %s
             """,
@@ -224,7 +224,7 @@ def test_tool_call_log_rejects_update_and_delete(
         postgres_database.connect_owner() as connection,
     ):
         connection.execute(
-            "DELETE FROM security.mcp_tool_call_log WHERE tool_call_id = %s",
+            "DELETE FROM mcp.tool_call_log WHERE tool_call_id = %s",
             (tool_call_id,),
         )
 
@@ -238,7 +238,7 @@ def test_tool_call_log_rejects_unbounded_input_shapes(
     ):
         connection.execute(
             """
-            INSERT INTO security.mcp_tool_call_log (
+            INSERT INTO mcp.tool_call_log (
                 tool_call_id,
                 principal_display_name,
                 actor_kind,

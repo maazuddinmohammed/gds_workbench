@@ -3,10 +3,10 @@
 ## Installation model
 
 The database is a canonical fresh PostgreSQL 16 schema. It is not a migration
-set and is not idempotent DDL. Apply the thirteen numbered files once, in numeric
+set and is not idempotent DDL. Apply the eleven numbered files once, in sorted
 order, in one fail-fast transaction.
 
-There are 83 tables in five schemas. Every foreign key uses `ON DELETE NO
+There are 73 tables in six schemas. Every foreign key uses `ON DELETE NO
 ACTION`. Automated deletion and cascading cleanup are absent by design.
 
 ## Schema inventory
@@ -46,7 +46,7 @@ substitute.
 `copy_group_control` stores Tenant/System witnesses. Its composite foreign keys
 prevent a Copy Group from being paired with a Member Group from another scope.
 
-### `security`: identities, membership, locks, and audit
+### `security`: identities, membership, and Tenant Locks
 
 | Tables | Meaning |
 |---|---|
@@ -54,11 +54,9 @@ prevent a Copy Group from being paired with a Member Group from another scope.
 | `entra_principal_identity` | Entra Tenant/Object linkage with a witnessed Principal type |
 | `tenant_principal_access` | Active, optionally expiring Tenant role: viewer, developer, architect, or tenant admin |
 | `tenant_lock`, `tenant_lock_event` | Dormant long-lived Tenant Lease data and its audit |
-| `artifact_lock_event`, `metadata_artifact_lock_event` | Append-only Model and Tenant metadata lock audit |
 
-Routine modeling does not use Tenant Leases. Artifact lock changes are
-available only through a narrow database function; Release 1 exposes no public
-MCP lock tool.
+Routine modeling does not use Tenant Leases. Release 1 exposes no public MCP
+lock tool.
 
 ### `model`: governed Model aggregate
 
@@ -136,18 +134,13 @@ Physical Dimensional sources remain reachable through effective
 Logical-to-Silver Mapping. Logical Mapping targets Silver; Dimensional Mapping
 targets Gold.
 
-### `workflow`: change and run state
+### `mcp`: change and tool-call state
 
 | Tables | Meaning |
 |---|---|
 | `model_change_set`, `model_change_set_event` | Eight-document Model draft, validation seal, expiry, and append-only activity |
 | `metadata_change_set`, `metadata_change_set_event` | Twelve-document Tenant metadata draft and append-only activity |
-| `idempotency_outcome` | Request digest and durable replay result |
-| `workflow_grant`, `workflow_run_summary` | Frozen authorization and safe run status |
-| `profiling_run` | Immutable profiling selection and state |
-| `profiling_final_receipt` | Append-only atomic Profile publication outcome and counts |
-| `model_apply_receipt`, `model_apply_receipt_ref` | Applied candidate and local-to-database ID mappings |
-| `metadata_apply_receipt`, `metadata_apply_receipt_ref` | Applied Core metadata candidate and local-to-database ID mappings |
+| `tool_call_log` | Append-only bounded audit of completed MCP tool calls |
 
 ## Applied graph rules
 
@@ -158,8 +151,8 @@ targets Gold.
   never relational mutation identity.
 - Applied lifecycle is `active|needs_review|inactive|deprecated`; the first two
   are effective.
-- Candidate-local references never persist. Apply resolves them to generated
-  IDs and records the mapping in the receipt.
+- Candidate-local references never persist. Apply resolves them before writing
+  normalized rows.
 - The numbered DDL currently enforces only declarative row and relationship
   constraints. Cross-table lifecycle and graph behavior remains uninstalled.
 
@@ -173,8 +166,8 @@ requirements and rejecting tests are finalized.
 ## Database roles
 
 - `gds_migration`: creates and owns release objects.
-- `gds_app_write`: safe reads, constrained Model/workflow DML, and the two pure
-  `CHECK` validators.
+- `gds_app_write`: safe reads, constrained Model/workflow/MCP DML, and the pure
+  `CHECK` validator.
 
 `PUBLIC` has no release-schema, table, or function rights. The application role
 cannot read `core.connection_value`, update/delete append-only records, write

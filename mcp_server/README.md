@@ -19,7 +19,7 @@ envelope. The request never supplies Principal IDs, Tenant IDs, or roles.
 PostgreSQL resolves the active Principal and effective Tenant access.
 
 Every completed tool call by an active resolved Principal appends one bounded
-row to `security.mcp_tool_call_log`. Tool modules allowlist their own safe input
+row to `mcp.tool_call_log`. Tool modules allowlist their own safe input
 summary. Raw arguments, cursors, prompts, output, rows, tokens, and exceptions
 are not logged.
 

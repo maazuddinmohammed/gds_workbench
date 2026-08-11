@@ -128,7 +128,7 @@ service Principals.
 
 ## MCP tool-call log
 
-`security.mcp_tool_call_log` stores one row after each completed MCP tool call by
+`mcp.tool_call_log` stores one row after each completed MCP tool call by
 an active server-resolved Principal.
 It records the server-generated call ID, server-resolved Principal snapshot,
 Actor Kind, Tool Policy, optional Tenant, bounded input metadata, safe outcome,

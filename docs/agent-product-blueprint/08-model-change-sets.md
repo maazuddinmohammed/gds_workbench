@@ -129,7 +129,7 @@ advances the revision by one. A valid no-change apply keeps it unchanged.
 
 ## Tenant Metadata Change Sets
 
-`workflow.metadata_change_set` uses the same draft lifecycle for Tenant-owned
+`mcp.metadata_change_set` uses the same draft lifecycle for Tenant-owned
 Core metadata. Its twelve documents are Source/Bronze/Silver/Gold Object and
 Attribute pairs, Copy Group, Copy, Process Group, and Process. One
 `base_metadata_digest` fences the complete current Tenant metadata snapshot.

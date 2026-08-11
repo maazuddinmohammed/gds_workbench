@@ -38,11 +38,11 @@ must reproduce byte-for-byte from a clean checkout.
 
 ## 3. Install the fresh PostgreSQL schema
 
-Apply the thirteen numbered SQL files once, in order, in one fail-fast transaction.
+Apply the eleven numbered SQL files once, in sorted order, in one fail-fast transaction.
 Implement:
 
-- reference, foundational, security, Model, six Section, Mapping, profiling,
-  Change Set, grant/run, receipt, idempotency, and event tables;
+- reference, foundational, security, Model, applied workflow, Mapping,
+  Change Set, event, and MCP audit tables;
 - composite witness keys and `ON DELETE NO ACTION` foreign keys;
 - immutable binding, append-only, lifecycle, lock, and final-graph triggers;
 - Model row and advisory locking plus one revision increment per effective

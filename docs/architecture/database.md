@@ -2,9 +2,9 @@
 
 The Release 1 database is a canonical, fresh-install PostgreSQL 16 schema. It
 is not an in-place migration set and it is not idempotent DDL. A new database
-must execute `database/01_reference.sql` through
-`database/13_runtime_integrity.sql` exactly once, in numeric order, in one
-fail-fast transaction.
+must execute all eleven numbered files from `database/01_reference.sql`
+through `database/11_runtime_integrity.sql` exactly once, in sorted order, in
+one fail-fast transaction.
 
 ## Ownership and dependency order
 
@@ -15,8 +15,7 @@ deployment unit:
 2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
 3. `security` identities, Tenant membership, governed Tenant Locks,
-   centralized authorization functions, append-only MCP tool-call logs, and
-   the two database roles;
+   centralized authorization functions, and the two database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Assertion tables, and revision machinery;
 5. Attribute Profile and Analysis;
@@ -24,13 +23,11 @@ deployment unit:
 7. the exact seven Logical families;
 8. the exact seven Dimensional families;
 9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
-10. Model and Metadata Change Sets, idempotency outcomes, and Apply Receipts;
-11. Profiling Runs and final receipts;
-12. a reserved empty workflow-runtime installation slot; and
-13. lock-audit tables and final privileges.
+10. MCP-owned Model and Metadata Change Sets, their events, and tool-call log;
+11. final runtime privileges.
 
-There are 82 tables across `reference`, `core`, `security`, `model`, and
-`workflow`. Every table has a primary key. Generated numeric artifact IDs use
+There are 73 tables across `reference`, `core`, `security`, `model`, `workflow`,
+and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
 application boundary where the public contract requires them.
@@ -128,11 +125,11 @@ finalized. Existing read indexes remain available for evaluation.
 
 The numbered DDL installs active Principal/Tenant authorization plus governed
 Tenant Lock acquisition, renewal, release, explicit override, audit, and bounded
-expiry. It does not install the archived draft graph, revision, artifact-lock,
-or lifecycle triggers under `database/archived_functions_triggers/`; those need
+expiry. It does not install the archived draft graph, revision, or lifecycle
+triggers under `database/archived_functions_triggers/`; those need
 separate finalized requirements and rejecting tests before activation.
 
-## Durable workflow state
+## Durable MCP state
 
 Model Change Sets store eight bounded object-shaped JSON documents—Model
 Scope, Profiling, Assertion, Analysis, Conceptual, Logical, Dimensional, and
@@ -148,7 +145,7 @@ retained and immutable. Event sequences are unique and append-only.
 Tenant-owned Metadata Change Sets store twelve bounded documents for
 Source/Bronze/Silver/Gold Objects and Attributes, Copy Group, Copy, Process
 Group, and Process. Their `base_metadata_digest` fences stale drafts; their
-events and apply receipts are append-only.
+events are append-only.
 
 The `ChangeSetsFeature` draft-expiry worker asks the repository to select one
 bounded batch. In
@@ -173,16 +170,16 @@ Registered workload identities map directly to active Super Admin Principals.
 The fresh cluster defines two non-login, non-superuser roles:
 
 - `gds_migration`: schema creation plus all release objects;
-- `gds_app_write`: safe reads, constrained Model/workflow DML,
-  sequence use, the two pure `CHECK` validators, centralized authorization,
+- `gds_app_write`: safe reads, constrained Model/workflow/MCP DML,
+  sequence use, the pure `CHECK` validator, centralized authorization,
   and governed Tenant Lock functions.
 
 `PUBLIC` loses schema, table, and function rights. The application role is
-explicitly denied `core.connection_value`. Append-only events, idempotency,
-receipts, revision transactions, and audit projections cannot be
+explicitly denied `core.connection_value`. Append-only events, revision
+transactions, and audit projections cannot be
 updated/deleted by the write role. The runtime role cannot directly mutate
 Principal, Tenant-access, Tenant Lock, or Tenant Lock event tables. It can
-insert into `security.mcp_tool_call_log`, but cannot select, update, delete, or
+insert into `mcp.tool_call_log`, but cannot select, update, delete, or
 truncate that append-only table.
 
 The bootstrap principal must have permission to create the three group roles;
@@ -203,7 +200,7 @@ mcp_server/.venv/bin/pytest tests/mcp/test_database_authorization.py -q
 
 The fixture rejects existing DSN/libpq connection environment, creates random
 database, owner, runtime login, passwords, port, container name, and sentinel,
-uses the pinned PostgreSQL 16 image, installs all thirteen files once in one
+uses the pinned PostgreSQL 16 image, installs all eleven files once in one
 transaction, and exercises the actual runtime role and pool. Cleanup validates
 the per-run container label and stops only that container. There is no drop,
 truncate, reset, external-DSN, or populated-database cleanup path.

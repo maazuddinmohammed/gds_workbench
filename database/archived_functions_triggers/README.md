@@ -38,4 +38,3 @@ rebuild it. Do not bulk-enable this archive.
 The main schema retains only structural `CHECK` helpers:
 
 - `reference.is_nonblank(text)`
-- `core.is_canonical_text_array(text[])`

@@ -132,18 +132,18 @@ ON workflow.object_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective
 CREATE TRIGGER capture_attribute_mapping_change BEFORE INSERT OR UPDATE OR DELETE
 ON workflow.attribute_mapping FOR EACH ROW EXECUTE FUNCTION model.capture_effective_change();
 
--- Source: database/10_workflow_change.sql
+-- Sources: database/10_mcp.sql and database/10_workflow_change.sql
 
 CREATE TRIGGER guard_change_set_transition BEFORE UPDATE
-ON workflow.model_change_set FOR EACH ROW
+ON mcp.model_change_set FOR EACH ROW
 EXECUTE FUNCTION workflow.guard_model_change_set_transition();
 
 CREATE TRIGGER guard_metadata_change_set_transition BEFORE UPDATE
-ON workflow.metadata_change_set FOR EACH ROW
+ON mcp.metadata_change_set FOR EACH ROW
 EXECUTE FUNCTION workflow.guard_metadata_change_set_transition();
 
 CREATE TRIGGER guard_change_set_event_append_only BEFORE UPDATE OR DELETE
-ON workflow.model_change_set_event FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
+ON mcp.model_change_set_event FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
 
 CREATE TRIGGER guard_idempotency_outcome_append_only BEFORE UPDATE OR DELETE
 ON workflow.idempotency_outcome FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
@@ -155,7 +155,7 @@ CREATE TRIGGER guard_apply_receipt_ref_append_only BEFORE UPDATE OR DELETE
 ON workflow.model_apply_receipt_ref FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
 
 CREATE TRIGGER guard_metadata_change_set_event_append_only BEFORE UPDATE OR DELETE
-ON workflow.metadata_change_set_event FOR EACH ROW
+ON mcp.metadata_change_set_event FOR EACH ROW
 EXECUTE FUNCTION security.reject_append_only_change();
 
 CREATE TRIGGER guard_metadata_apply_receipt_append_only BEFORE UPDATE OR DELETE
@@ -187,107 +187,6 @@ EXECUTE FUNCTION workflow.guard_workflow_run_summary_transition();
 
 -- Source: database/13_runtime_integrity.sql
 
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON core.object FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('object_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON core.attribute FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('attribute_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON model.model_scope FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('model_scope_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.mapping_source_system_dependency FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock(
-    'mapping_source_system_dependency_is_locked'
-);
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON model.modeling_evidence_record FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('modeling_evidence_record_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.analysis_result FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('analysis_result_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.conceptual_object FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('conceptual_object_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.conceptual_relationship FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('conceptual_relationship_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.conceptual_support FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('conceptual_support_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_submodel FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_submodel_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_entity_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity_submodel FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_entity_submodel_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_attribute FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_attribute_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_entity_source_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_entity_source_mapping_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_attribute_source_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_attribute_source_mapping_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.logical_relationship FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('logical_relationship_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_submodel FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_submodel_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_entity_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity_submodel FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_entity_submodel_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_attribute FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_attribute_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_entity_source_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_entity_source_mapping_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_attribute_source_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_attribute_source_mapping_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.dimensional_relationship FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('dimensional_relationship_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.object_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('object_mapping_is_locked');
-
-CREATE TRIGGER guard_business_lock BEFORE INSERT OR UPDATE OR DELETE
-ON workflow.attribute_mapping FOR EACH ROW
-EXECUTE FUNCTION workflow.guard_business_lock('attribute_mapping_is_locked');
 
 CREATE TRIGGER guard_identity_witness BEFORE UPDATE
 ON core.object FOR EACH ROW EXECUTE FUNCTION
@@ -620,11 +519,3 @@ CREATE CONSTRAINT TRIGGER validate_effective_graph
 AFTER INSERT ON workflow.effective_graph_validation_queue
 DEFERRABLE INITIALLY DEFERRED FOR EACH ROW
 EXECUTE FUNCTION workflow.assert_effective_graph();
-
-CREATE TRIGGER guard_artifact_lock_event_append_only
-BEFORE UPDATE OR DELETE ON security.artifact_lock_event
-FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();
-
-CREATE TRIGGER guard_metadata_artifact_lock_event_append_only
-BEFORE UPDATE OR DELETE ON security.metadata_artifact_lock_event
-FOR EACH ROW EXECUTE FUNCTION security.reject_append_only_change();

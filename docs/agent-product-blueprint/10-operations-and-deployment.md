@@ -4,7 +4,7 @@
 
 Release 1 has three independently deployed parts:
 
-1. a PostgreSQL 16 database created from the canonical thirteen SQL files;
+1. a PostgreSQL 16 database created from the canonical eleven SQL files;
 2. one Azure Linux App Service ZIP containing the MCP modular monolith; and
 3. one immutable Databricks source release containing the jobs library and
    seven separate notebooks.

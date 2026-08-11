@@ -1,6 +1,0 @@
--- GDS ETL Workbench Release 1: reserved workflow runtime installation slot.
---
--- Workflow Grants and their grant-bound run summaries are intentionally absent.
--- Registered workload Principals authenticate directly and receive their authority
--- from the same Principal, Tenant Role, Tenant visibility, and Tenant Lock policy
--- used for human Principals.

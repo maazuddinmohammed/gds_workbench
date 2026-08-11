@@ -1049,10 +1049,8 @@ Spark/Databricks dependencies:
 │   ├── 07_workflow_logical.sql
 │   ├── 08_workflow_dimensional.sql
 │   ├── 09_workflow_mapping.sql
-│   ├── 10_workflow_change.sql
-│   ├── 11_workflow_profiling.sql
-│   ├── 12_workflow_runtime.sql
-│   └── 13_runtime_integrity.sql
+│   ├── 10_mcp.sql
+│   └── 11_runtime_integrity.sql
 ├── docs/
 │   ├── architecture/
 │   ├── contracts/
@@ -1103,7 +1101,7 @@ Spark/Databricks dependencies:
 └── reference_snapshot/
 ```
 
-The target uses thirteen zero-padded, dependency-ordered modules because the
+The target uses eleven zero-padded, dependency-ordered modules because the
 accepted rollout is fresh-schema only. Keep local table behavior in its owning
 module and cross-family guards and privileges in the final runtime module.
 The runner executes exact numeric order and verifies the catalog. Do not pretend
@@ -3296,7 +3294,7 @@ agent cannot confuse the frozen reference with the writable target.
 | Current task ledger | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/tasks/index.json` and `TASK-001.json` through `TASK-026.json` |
 | Active guided-development state | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/.guided-dev/state.json` |
 | Stale-but-useful handoff context | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/gds-etl-workbench-agent-handoff.md` |
-| Current canonical database baseline | `/Users/maazuddinmohammed/main/projects/gds_workbench_v2/database/01_reference.sql` through `13_runtime_integrity.sql` |
+| Current canonical database baseline | `/Users/maazuddinmohammed/main/projects/gds_workbench_v2/database/01_reference.sql` through `11_runtime_integrity.sql` |
 | Architecture inventory | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/codebase.md` |
 | Prototype package root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/gds_ai` |
 | Prototype notebook root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/notebooks` |

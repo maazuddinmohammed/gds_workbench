@@ -53,6 +53,60 @@ def test_modeling_assertion_tables_replace_modeling_evidence_tables(
     }
 
 
+def test_mcp_schema_owns_change_sets_and_tool_call_log(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        row = connection.execute(
+            """
+            SELECT to_regclass('mcp.model_change_set') AS model_change_set,
+                   to_regclass('mcp.model_change_set_event')
+                       AS model_change_set_event,
+                   to_regclass('mcp.metadata_change_set')
+                       AS metadata_change_set,
+                   to_regclass('mcp.metadata_change_set_event')
+                       AS metadata_change_set_event,
+                   to_regclass('mcp.tool_call_log') AS tool_call_log,
+                   to_regclass('workflow.model_change_set')
+                       AS old_model_change_set,
+                   to_regclass('workflow.metadata_change_set')
+                       AS old_metadata_change_set,
+                   to_regclass('security.mcp_tool_call_log')
+                       AS old_tool_call_log
+            """
+        ).fetchone()
+
+    assert row == {
+        "model_change_set": "mcp.model_change_set",
+        "model_change_set_event": "mcp.model_change_set_event",
+        "metadata_change_set": "mcp.metadata_change_set",
+        "metadata_change_set_event": "mcp.metadata_change_set_event",
+        "tool_call_log": "mcp.tool_call_log",
+        "old_model_change_set": None,
+        "old_metadata_change_set": None,
+        "old_tool_call_log": None,
+    }
+
+
+def test_artifact_lock_event_tables_are_absent(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        row = connection.execute(
+            """
+            SELECT to_regclass('security.artifact_lock_event')
+                       AS artifact_lock_event,
+                   to_regclass('security.metadata_artifact_lock_event')
+                       AS metadata_artifact_lock_event
+            """
+        ).fetchone()
+
+    assert row == {
+        "artifact_lock_event": None,
+        "metadata_artifact_lock_event": None,
+    }
+
+
 def test_model_change_set_uses_assertion_contract_names(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -61,25 +115,25 @@ def test_model_change_set_uses_assertion_contract_names(
             """
             SELECT EXISTS (
                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'workflow'
+                        WHERE table_schema = 'mcp'
                           AND table_name = 'model_change_set'
                           AND column_name = 'base_assertion_digest'
                    ) AS base_assertion_digest,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'workflow'
+                        WHERE table_schema = 'mcp'
                           AND table_name = 'model_change_set'
                           AND column_name = 'assertion_document'
                    ) AS assertion_document,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'workflow'
+                        WHERE table_schema = 'mcp'
                           AND table_name = 'model_change_set'
                           AND column_name = 'base_evidence_digest'
                    ) AS base_evidence_digest,
                    EXISTS (
                        SELECT 1 FROM information_schema.columns
-                        WHERE table_schema = 'workflow'
+                        WHERE table_schema = 'mcp'
                           AND table_name = 'model_change_set'
                           AND column_name = 'evidence_document'
                    ) AS evidence_document
@@ -90,8 +144,7 @@ def test_model_change_set_uses_assertion_contract_names(
             SELECT conname, pg_get_constraintdef(oid) AS definition
               FROM pg_constraint
              WHERE conname IN (
-                 'ck_change_set_event_section',
-                 'ck_apply_receipt_ref_section'
+                 'ck_change_set_event_section'
              )
              ORDER BY conname
             """
@@ -103,7 +156,7 @@ def test_model_change_set_uses_assertion_contract_names(
         "base_evidence_digest": False,
         "evidence_document": False,
     }
-    assert len(constraints) == 2
+    assert len(constraints) == 1
     for constraint in constraints:
         assert "assertion" in constraint["definition"]
         assert "evidence" not in constraint["definition"]
