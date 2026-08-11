@@ -5,17 +5,23 @@ This is the Azure App Service code root. It contains one read-only MCP tool,
 
 ## Boundaries
 
-- `adapters/`: Easy Auth middleware, identity parsing, and MCP server composition.
+- `adapters/`: Easy Auth, MCP server composition, and centralized tool-call audit.
 - `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
   authorization flow, pagination, and SQL together.
 - `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role and Tool Policy vocabulary plus safe errors.
-- `infrastructure/`: shared PostgreSQL pool, readiness, and read-only transactions.
+- `infrastructure/`: shared PostgreSQL pool, readiness, read transactions, and
+  bounded append-only audit inserts.
 - Tests live outside this deployable folder in `../tests/mcp/`.
 
 Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`
 envelope. The request never supplies Principal IDs, Tenant IDs, or roles.
 PostgreSQL resolves the active Principal and effective Tenant access.
+
+Every completed tool call by an active resolved Principal appends one bounded
+row to `security.mcp_tool_call_log`. Tool modules allowlist their own safe input
+summary. Raw arguments, cursors, prompts, output, rows, tokens, and exceptions
+are not logged.
 
 Humans require delegated scope `workbench.access`. Workloads require application
 permission `workbench.workflow` and an active registered service Principal with

@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: lock-audit tables and final privileges.
+-- GDS ETL Workbench Release 1: audit tables and final privileges.
 
 CREATE TABLE security.artifact_lock_event (
     artifact_lock_event_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -46,6 +46,86 @@ CREATE TABLE security.metadata_artifact_lock_event (
     )
 );
 
+-- One immutable row per completed MCP tool call. input_metadata is a bounded,
+-- server-created summary; it must never contain raw prompts, rows, output, or secrets.
+CREATE TABLE security.mcp_tool_call_log (
+    tool_call_id UUID PRIMARY KEY,
+    principal_id BIGINT,
+    principal_display_name VARCHAR(200) NOT NULL,
+    actor_kind VARCHAR(20) NOT NULL,
+    tool_name VARCHAR(200) NOT NULL,
+    tool_policy VARCHAR(50) NOT NULL,
+    tenant_id BIGINT,
+    input_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    tool_call_status VARCHAR(20) NOT NULL,
+    failure_code VARCHAR(100),
+    tool_call_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_mcp_tool_call_principal FOREIGN KEY (principal_id)
+        REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_mcp_tool_call_tenant FOREIGN KEY (tenant_id)
+        REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
+    CONSTRAINT ck_mcp_tool_call_principal CHECK (
+        (
+            actor_kind = 'development'
+            AND principal_id IS NULL
+        )
+        OR
+        (
+            actor_kind IN ('human', 'workload')
+            AND principal_id IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_mcp_tool_call_display_name CHECK (
+        reference.is_nonblank(principal_display_name)
+    ),
+    CONSTRAINT ck_mcp_tool_call_name CHECK (
+        reference.is_nonblank(tool_name)
+    ),
+    CONSTRAINT ck_mcp_tool_call_policy CHECK (
+        tool_policy IN (
+            'tenant_read',
+            'tenant_metadata_write',
+            'tenant_model_write',
+            'tenant_lock_manage',
+            'super_admin_only'
+        )
+    ),
+    CONSTRAINT ck_mcp_tool_call_input_metadata CHECK (
+        jsonb_typeof(input_metadata) = 'object'
+        AND octet_length(input_metadata::TEXT) <= 16384
+    ),
+    CONSTRAINT ck_mcp_tool_call_status CHECK (
+        tool_call_status IN ('succeeded', 'failed')
+    ),
+    CONSTRAINT ck_mcp_tool_call_failure CHECK (
+        (
+            tool_call_status = 'succeeded'
+            AND failure_code IS NULL
+        )
+        OR
+        (
+            tool_call_status = 'failed'
+            AND reference.is_nonblank(failure_code)
+        )
+    )
+);
+
+CREATE FUNCTION security.reject_mcp_tool_call_log_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $reject_mcp_tool_call_log_mutation$
+BEGIN
+    RAISE EXCEPTION 'MCP tool call log is append-only' USING ERRCODE = '55000';
+END;
+$reject_mcp_tool_call_log_mutation$;
+
+CREATE TRIGGER reject_mcp_tool_call_log_mutation
+BEFORE UPDATE OR DELETE OR TRUNCATE
+ON security.mcp_tool_call_log
+FOR EACH STATEMENT
+EXECUTE FUNCTION security.reject_mcp_tool_call_log_mutation();
+
 CREATE INDEX ix_artifact_lock_event_model_created
     ON security.artifact_lock_event (model_id, created_time);
 CREATE INDEX ix_artifact_lock_event_actor_created
@@ -60,6 +140,12 @@ CREATE INDEX ix_metadata_lock_event_actor_created
         acted_by_principal_id,
         created_time
     );
+CREATE INDEX ix_mcp_tool_call_log_time
+    ON security.mcp_tool_call_log (tool_call_time DESC);
+CREATE INDEX ix_mcp_tool_call_log_principal_time
+    ON security.mcp_tool_call_log (principal_id, tool_call_time DESC);
+CREATE INDEX ix_mcp_tool_call_log_tool_time
+    ON security.mcp_tool_call_log (tool_name, tool_call_time DESC);
 
 -- Least-privilege runtime roles. Deployment owns DDL; these roles cannot create it.
 REVOKE ALL ON SCHEMA reference, core, security, model, workflow FROM PUBLIC;
@@ -130,6 +216,7 @@ GRANT SELECT ON
     security.artifact_lock_event,
     security.metadata_artifact_lock_event
 TO gds_app_write;
+GRANT INSERT ON security.mcp_tool_call_log TO gds_app_write;
 
 -- The application mutates only the normalized artifact and workflow state used
 -- by PostgresRepository.  Foundational Model/Scope/target rows, audit rows, and

@@ -7,16 +7,22 @@ from contextlib import asynccontextmanager
 from dataclasses import replace
 from typing import Any, LiteralString
 
-import pytest
 import httpx2
+import pytest
 from mcp import Client
 from mcp.client.streamable_http import streamable_http_client
+from mcp.shared.exceptions import MCPError
 from starlette.testclient import TestClient
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
-from gds_etl_workbench.infrastructure.postgres import ReadinessRecord, ReadTransaction
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadinessRecord,
+    ReadTransaction,
+    ToolCallLogRecord,
+)
 from gds_etl_workbench.runtime import (
     create_application,
     create_application_from_environment,
@@ -49,6 +55,8 @@ class FakeDatabase:
         self.opened = False
         self.closed = False
         self.expiry_calls = 0
+        self.audit_unavailable = False
+        self.audit_records: list[ToolCallLogRecord] = []
         self.resolved_principal: dict[str, Any] | None = None
         self.records: list[dict[str, Any]] = [
             {
@@ -76,6 +84,11 @@ class FakeDatabase:
     async def expire_tenant_locks(self) -> int:
         self.expiry_calls += 1
         return 0
+
+    async def append_tool_call_log(self, record: ToolCallLogRecord) -> None:
+        if self.audit_unavailable:
+            raise DependencyUnavailableError()
+        self.audit_records.append(record)
 
     @asynccontextmanager
     async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
@@ -133,6 +146,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     }
     assert database.opened is True
     assert database.closed is True
+    assert len(database.audit_records) == 1
+    assert database.audit_records[0].principal_display_name == "Local Developer"
+    assert database.audit_records[0].status == "succeeded"
 
 
 @pytest.mark.asyncio
@@ -145,6 +161,20 @@ async def test_server_expires_tenant_locks_during_lifespan() -> None:
         pass
 
     assert database.expiry_calls == 1
+
+
+@pytest.mark.asyncio
+async def test_tool_call_fails_safely_when_required_audit_is_unavailable() -> None:
+    settings = development_settings()
+    database = FakeDatabase()
+    database.audit_unavailable = True
+    server = create_mcp_server(settings, database, IdentityProvider(settings.auth_mode))
+
+    async with Client(server) as client:
+        with pytest.raises(MCPError, match="Tool-call audit is unavailable"):
+            await client.call_tool("list_tenants", {})
+
+    assert database.audit_records == []
 
 
 def test_health_routes_are_anonymous() -> None:
@@ -205,26 +235,31 @@ async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() ->
     }
     principal_header = base64.b64encode(json.dumps(claims).encode()).decode()
 
-    async with application.router.lifespan_context(application):
-        async with httpx2.AsyncClient(
+    async with (
+        application.router.lifespan_context(application),
+        httpx2.AsyncClient(
             transport=httpx2.ASGITransport(app=application),
             base_url="http://testserver",
             headers={
                 "x-forwarded-proto": "https",
                 "x-ms-client-principal": principal_header,
             },
-        ) as http_client:
-            transport = streamable_http_client(
-                "http://testserver/mcp",
-                http_client=http_client,
-                terminate_on_close=False,
-            )
-            async with Client(transport) as client:
-                result = await client.call_tool("list_tenants", {})
+        ) as http_client,
+    ):
+        transport = streamable_http_client(
+            "http://testserver/mcp",
+            http_client=http_client,
+            terminate_on_close=False,
+        )
+        async with Client(transport) as client:
+            result = await client.call_tool("list_tenants", {})
 
     assert result.is_error is False
     assert result.structured_content is not None
     assert result.structured_content["tenants"][0]["effective_role"] == "viewer"
+    assert len(database.audit_records) == 1
+    assert database.audit_records[0].principal_id == 41
+    assert database.audit_records[0].principal_display_name == "HTTP Human"
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

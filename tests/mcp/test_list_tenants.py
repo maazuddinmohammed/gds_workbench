@@ -11,7 +11,11 @@ from mcp import Client
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.configuration import RuntimeSettings
-from gds_etl_workbench.infrastructure.postgres import ReadinessRecord, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadinessRecord,
+    ReadTransaction,
+    ToolCallLogRecord,
+)
 from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
 
 
@@ -19,6 +23,7 @@ from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
 class RecordingDatabase:
     records: list[dict[str, Any]]
     calls: list[tuple[int, int]] = field(default_factory=list)
+    audit_records: list[ToolCallLogRecord] = field(default_factory=list)
 
     async def open(self) -> None: ...
 
@@ -29,6 +34,9 @@ class RecordingDatabase:
 
     async def expire_tenant_locks(self) -> int:
         return 0
+
+    async def append_tool_call_log(self, record: ToolCallLogRecord) -> None:
+        self.audit_records.append(record)
 
     @asynccontextmanager
     async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
@@ -108,6 +116,16 @@ async def test_list_tenants_pages_with_a_signed_cursor() -> None:
     assert [item.tenant_name for item in second.tenants] == ["Beta"]
     assert second.next_cursor is None
     assert database.calls == [(2, 0), (2, 1)]
+    assert [record.status for record in database.audit_records] == [
+        "succeeded",
+        "succeeded",
+    ]
+    assert database.audit_records[0].input_metadata == {
+        "schema_version": "1.0",
+        "page_size": 1,
+        "cursor_provided": False,
+    }
+    assert database.audit_records[1].input_metadata["cursor_provided"] is True
 
 
 @pytest.mark.asyncio
@@ -133,3 +151,10 @@ async def test_tampered_cursor_is_rejected_before_database_access() -> None:
 
     assert rejected.is_error is True
     assert database.calls == [(2, 0)]
+    assert database.audit_records[-1].status == "failed"
+    assert database.audit_records[-1].failure_code == "tool_error"
+    assert database.audit_records[-1].input_metadata == {
+        "schema_version": "1.0",
+        "page_size": 1,
+        "cursor_provided": True,
+    }

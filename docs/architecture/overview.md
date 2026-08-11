@@ -30,7 +30,7 @@ mcp_server/
         runtime.py
         configuration.py
         adapters/auth/          Easy Auth parsing and request middleware
-        adapters/mcp/server.py  server composition and health routes
+        adapters/mcp/          server composition, health, tool-call audit
         application/            shared authorization and cursor boundaries
         domain/                 policy vocabulary and safe errors
         infrastructure/         PostgreSQL pool, readiness, expiry worker call
@@ -41,7 +41,10 @@ tests/mcp/                     all MCP and disposable-database tests
 Each tool keeps its MCP binding, strict request/result contracts, declared
 `ToolPolicy`, pagination, and tool-specific SQL in one module. Shared
 authentication, authorization interpretation, PostgreSQL transaction mechanics,
-safe errors, and cursor signing remain architectural boundaries.
+central tool-call audit, safe errors, and cursor signing remain architectural
+boundaries. Each tool also declares its bounded audit-input summary beside its
+handler; the shared middleware appends the result without storing raw inputs or
+outputs.
 
 ## Current surface
 

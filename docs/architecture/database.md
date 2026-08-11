@@ -15,7 +15,8 @@ deployment unit:
 2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
 3. `security` identities, Tenant membership, governed Tenant Locks,
-   centralized authorization functions, and the two database roles;
+   centralized authorization functions, append-only MCP tool-call logs, and
+   the two database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Evidence tables, and revision machinery;
 5. Attribute Profile and Analysis;
@@ -28,7 +29,7 @@ deployment unit:
 12. a reserved empty workflow-runtime installation slot; and
 13. lock-audit tables and final privileges.
 
-There are 81 tables across `reference`, `core`, `security`, `model`, and
+There are 82 tables across `reference`, `core`, `security`, `model`, and
 `workflow`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
@@ -177,7 +178,9 @@ The fresh cluster defines two non-login, non-superuser roles:
 explicitly denied `core.connection_value`. Append-only events, idempotency,
 receipts, revision transactions, and audit projections cannot be
 updated/deleted by the write role. The runtime role cannot directly mutate
-Principal, Tenant-access, Tenant Lock, or Tenant Lock event tables.
+Principal, Tenant-access, Tenant Lock, or Tenant Lock event tables. It can
+insert into `security.mcp_tool_call_log`, but cannot select, update, delete, or
+truncate that append-only table.
 
 The bootstrap principal must have permission to create the three group roles;
 the application LOGIN must have exactly one direct membership,

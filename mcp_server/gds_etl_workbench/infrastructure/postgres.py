@@ -2,16 +2,19 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
-from typing import Any, LiteralString, Protocol
+from typing import Any, Literal, LiteralString, Protocol
+from uuid import UUID
 
 from psycopg import AsyncConnection
 from psycopg import Error as PsycopgError
 from psycopg.rows import dict_row
+from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
 
+from gds_etl_workbench.domain.authorization import ActorKind, ToolPolicy
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 
 type QueryParameters = tuple[Any, ...]
@@ -21,6 +24,22 @@ type QueryParameters = tuple[Any, ...]
 class ReadinessRecord:
     ready: bool
     code: str
+
+
+@dataclass(frozen=True, slots=True)
+class ToolCallLogRecord:
+    """One server-derived, bounded MCP tool-call audit record."""
+
+    tool_call_id: UUID
+    principal_id: int | None
+    principal_display_name: str
+    actor_kind: ActorKind
+    tool_name: str
+    tool_policy: ToolPolicy
+    tenant_id: int | None
+    input_metadata: Mapping[str, Any]
+    status: Literal["succeeded", "failed"]
+    failure_code: str | None
 
 
 class ReadTransaction(Protocol):
@@ -36,7 +55,7 @@ class ReadTransaction(Protocol):
 
 
 class Database(Protocol):
-    """Shared database lifecycle and read-only transaction interface."""
+    """Shared database lifecycle, read, and audit interface."""
 
     async def open(self) -> None: ...
 
@@ -45,6 +64,8 @@ class Database(Protocol):
     async def readiness(self) -> ReadinessRecord: ...
 
     async def expire_tenant_locks(self) -> int: ...
+
+    async def append_tool_call_log(self, record: ToolCallLogRecord) -> None: ...
 
     def read_transaction(self) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
@@ -60,6 +81,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('security.principal') IS NOT NULL
        AND to_regclass('security.entra_principal_identity') IS NOT NULL
        AND to_regclass('security.tenant_principal_access') IS NOT NULL
+       AND to_regclass('security.mcp_tool_call_log') IS NOT NULL
        AND to_regprocedure(
            'security.authorize_tenant_operation(uuid,uuid,varchar,bigint,varchar)'
        ) IS NOT NULL AS schema_shape_ok,
@@ -81,6 +103,22 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
               AND granted_role.rolname = 'gds_app_write'
        ) AS runtime_role_ok
   FROM runtime_role
+"""
+
+_APPEND_TOOL_CALL_LOG_SQL = """
+INSERT INTO security.mcp_tool_call_log (
+    tool_call_id,
+    principal_id,
+    principal_display_name,
+    actor_kind,
+    tool_name,
+    tool_policy,
+    tenant_id,
+    input_metadata,
+    tool_call_status,
+    failure_code
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 
@@ -171,5 +209,26 @@ class PostgresDatabase:
                 )
                 row = await result.fetchone()
             return 0 if row is None else int(row["expired_count"])
+        except PsycopgError as exc:
+            raise DependencyUnavailableError() from exc
+
+    async def append_tool_call_log(self, record: ToolCallLogRecord) -> None:
+        try:
+            async with self._pool.connection() as connection, connection.transaction():
+                await connection.execute(
+                    _APPEND_TOOL_CALL_LOG_SQL,
+                    (
+                        record.tool_call_id,
+                        record.principal_id,
+                        record.principal_display_name,
+                        record.actor_kind.value,
+                        record.tool_name,
+                        record.tool_policy.value,
+                        record.tenant_id,
+                        Jsonb(dict(record.input_metadata)),
+                        record.status,
+                        record.failure_code,
+                    ),
+                )
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc

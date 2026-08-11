@@ -126,6 +126,31 @@ Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
 not exist. Registered workloads authenticate and authorize directly as active
 service Principals.
 
+## MCP tool-call log
+
+`security.mcp_tool_call_log` stores one row after each completed MCP tool call by
+an active server-resolved Principal.
+It records the server-generated call ID, server-resolved Principal snapshot,
+Actor Kind, Tool Policy, optional Tenant, bounded input metadata, safe outcome,
+safe failure code, and one PostgreSQL timestamp.
+
+The table is append-only. The runtime role may insert but cannot select, update,
+delete, or truncate it. A database trigger also rejects update, delete, and
+truncate attempts by more privileged callers. Input metadata must be a JSON
+object no larger than 16 KiB and must never contain raw prompts, physical rows,
+tool output, bearer tokens, secrets, connection values, or exception text.
+
+Central MCP middleware performs the append after the tool returns. Each tool
+registers its server-owned Tool Policy and a small input summarizer beside its
+handler. `list_tenants` records only schema version, bounded page size, and
+whether a cursor was supplied; it never records the cursor. The middleware
+checks only MCP's `isError` flag and never reads or stores tool output.
+
+Authentication rejected before MCP execution and identities that do not map to
+an active internal Principal cannot produce a Principal-owned tool-call row.
+Calls by active Principals fail safely if the required audit insert is
+unavailable.
+
 ## Safe failures
 
 Stable public codes include `authentication_required`, `authorization_denied`,

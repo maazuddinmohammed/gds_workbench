@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import Annotated, Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -9,6 +10,7 @@ from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
+from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import (
     AuthorizationService,
     ResolvedPrincipal,
@@ -104,6 +106,7 @@ def register_list_tenants_tool(
     database: Database,
     identity_provider: IdentityProvider,
     authorizer: AuthorizationService,
+    audit: ToolCallAuditMiddleware,
     cursor_signing_key: bytes,
 ) -> None:
     """Register list_tenants with its explicit shared dependencies."""
@@ -171,6 +174,26 @@ def register_list_tenants_tool(
             raise SafeToolError(f"{error.code}: {error.message}") from None
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
+
+    audit.register_tool(
+        _COLLECTION,
+        policy=POLICY,
+        summarize_input=_audit_input_metadata,
+    )
+
+
+def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:
+    raw_schema_version = arguments.get("schema_version", "1.0")
+    raw_page_size = arguments.get("page_size", 50)
+    schema_version = "1.0" if raw_schema_version == "1.0" else "invalid"
+    page_size: int | str = (
+        raw_page_size if type(raw_page_size) is int and 1 <= raw_page_size <= 200 else "invalid"
+    )
+    return {
+        "schema_version": schema_version,
+        "page_size": page_size,
+        "cursor_provided": arguments.get("cursor") is not None,
+    }
 
 
 async def _query_visible_tenants(

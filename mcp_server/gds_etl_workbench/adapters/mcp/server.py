@@ -17,6 +17,8 @@ from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import Database
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
 
+from .tool_audit import ToolCallAuditMiddleware
+
 
 def create_mcp_server(
     settings: RuntimeSettings,
@@ -37,6 +39,12 @@ def create_mcp_server(
                 await expiry_task
             await database.close()
 
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
     server = MCPServer[None](
         name="gds-etl-workbench",
         title="GDS ETL Workbench",
@@ -47,13 +55,15 @@ def create_mcp_server(
             "list_tenants. Tenant visibility and roles are always resolved server-side."
         ),
         lifespan=lifespan,
+        middleware=[audit],
     )
 
     register_list_tenants_tool(
         server,
         database=database,
         identity_provider=identity_provider,
-        authorizer=AuthorizationService(),
+        authorizer=authorizer,
+        audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
 

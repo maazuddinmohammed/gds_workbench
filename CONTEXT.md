@@ -40,6 +40,11 @@ Tenant Read, Tenant Metadata Write, Tenant Model Write, Tenant Lock Manage, or
 Super Admin Only. Client input never chooses the policy.
 _Avoid_: Caller role, per-tool role code
 
+**MCP Tool Call Log**:
+One append-only record for a completed MCP tool call containing bounded,
+server-derived audit metadata and no raw input, output, prompt, or secret.
+_Avoid_: Transcript, request dump, tool output log
+
 **Model**:
 The governed metadata aggregate that contains scope, policy, effective Sections, and one current revision.
 _Avoid_: Project, workspace model
