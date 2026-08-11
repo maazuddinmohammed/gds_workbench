@@ -32,7 +32,7 @@ artifacts/            generated local evidence; not source authority
 | Transport | `adapters/auth`, `adapters/http`, `adapters/mcp`, `adapters/workflow_control`, `adapters/health` | Bound requests, derive identity, filter and dispatch interfaces |
 | Access | `access.py`, `domain/authorization.py` | Human capabilities, ownership, workload shape, grant binding |
 | Catalog | `catalog/feature.py` | Human open-catalog reads |
-| Model context | `model_context/`, `application/snapshot.py`, `application/dbml.py` | Model reads, Evidence, readiness, snapshots, DBML |
+| Model context | `model_context/`, `application/snapshot.py`, `application/dbml.py` | Model reads, Assertions, readiness, snapshots, DBML |
 | Change control | `change_sets/feature.py`, `application/compiler.py` | Draft lifecycle and complete future-graph validation |
 | Run state | `workflow_runs/`, `profiling_runs/`, `mapping/` | Grants, summaries, Profiling Runs/receipts, committed Mapping reads |
 | Contracts | `contracts/` | Pydantic models, registry, canonical JSON, schemas, examples |

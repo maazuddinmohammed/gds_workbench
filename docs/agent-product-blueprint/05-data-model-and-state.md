@@ -66,7 +66,7 @@ MCP lock tool.
 |---|---|
 | `model` | Owning Tenant, current revision, status, and five DD-110 policy documents |
 | `model_scope` | Same-Tenant physical Object set the Model may use, with guarded lock state |
-| `modeling_evidence_document`, `modeling_evidence_record` | Evidence metadata and structured verified records |
+| `modeling_assertion_document`, `modeling_assertion_record` | Assertion source metadata and structured factual records |
 | `model_event_log` | Safe event projection |
 | `model_revision_transaction` | One revision advance witness per Model and PostgreSQL transaction |
 
@@ -86,10 +86,11 @@ The Silver pair is all-null or complete. The Gold group is all-null or
 complete. PostgreSQL does not validate template-specific JSON shapes;
 application readiness validates policy content before dependent workflows.
 
-## Modeling Evidence design
+## Modeling Assertion design
 
-Modeling Evidence is Model-owned context, not a physical source or persisted
-downstream lineage. It uses exactly two tables:
+Modeling Assertions are Model-owned factual context. An Assertion may also be a
+persisted support source for Conceptual, Logical, or Dimensional artifacts. The
+design uses exactly two tables:
 
 - a Document stores identity, optional Tenant/System provenance, optional file
   pattern/type/description, structured metadata, and active state; and
@@ -99,18 +100,17 @@ downstream lineage. It uses exactly two tables:
 
 Original document bytes remain client-side. Release 1 has no upload, parser,
 OCR, blob store, or retrieval-index service. A client extracts structured
-records and submits Document/Record operations through the Evidence Section of
-a Model Change Set. Evidence applies in the same graph transaction before
-dependent Sections. The human `get_modeling_evidence` tool returns paginated
+records and submits Document/Record operations through the Assertion Section of
+a Model Change Set. Assertions apply in the same graph transaction before
+dependent Sections. The human `get_modeling_assertions` tool returns paginated
 safe summaries; verified snapshots supply bounded typed context to workloads.
 
-A Conceptual create/reactivate may cite active Evidence marked
-`details.verified=true` and applicable to Conceptual. The compiler verifies the
-basis, then removes the transient Evidence references before persistence.
-Analysis and the other modeling workflows may consult applicable records, but
-no applied Analysis, Conceptual, Logical, Dimensional, Mapping, Support, or
-source-mapping row stores an Evidence foreign key. Evidence changes alter the
-Evidence digest and stale dependent Candidates.
+An effective support/source-mapping row may cite an active Assertion Record
+marked `details.verified=true` and applicable to its layer. It stores a
+same-Model foreign key to that Record. A discriminator and XOR check require
+exactly one physical or Assertion source. Analysis and Mapping may consult
+applicable Assertions but do not persist an Assertion foreign key. Assertion
+changes alter the Assertion digest and stale dependent Candidates.
 
 ### `workflow`: applied modeling graph
 
@@ -128,10 +128,13 @@ uses exactly three. Typed parent columns and composite witness keys prevent a ro
 from crossing layer, Model, Object, Attribute, Entity, or Mapping-header
 boundaries.
 
-Logical source mappings point to eligible Bronze objects and Attributes.
-Dimensional source mappings point to eligible Silver objects and Attributes
-reachable through effective Logical-to-Silver Mapping. Logical Mapping targets
-Silver; Dimensional Mapping targets Gold.
+Logical Entity source mappings point to an eligible Bronze Object or an
+applicable Assertion Record. Logical Attribute source mappings point to a
+physical Bronze Attribute path or an Assertion Record. Dimensional mappings
+use the corresponding eligible Silver Object/Attribute or Assertion choice.
+Physical Dimensional sources remain reachable through effective
+Logical-to-Silver Mapping. Logical Mapping targets Silver; Dimensional Mapping
+targets Gold.
 
 ### `workflow`: change and run state
 

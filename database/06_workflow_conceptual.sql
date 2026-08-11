@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Conceptual Section and physical Support.
+-- GDS ETL Workbench Release 1: Conceptual Section and typed Support.
 
 CREATE TABLE workflow.conceptual_object (
     conceptual_object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -132,7 +132,9 @@ CREATE TABLE workflow.conceptual_support (
     supported_artifact_type VARCHAR(30) NOT NULL,
     conceptual_object_id BIGINT,
     conceptual_relationship_id BIGINT,
-    object_id BIGINT NOT NULL,
+    support_source_type VARCHAR(20) NOT NULL,
+    source_object_id BIGINT,
+    modeling_assertion_record_id BIGINT,
     conceptual_support_role VARCHAR(255),
     conceptual_support_reason TEXT NOT NULL,
     conceptual_support_reason_detail TEXT,
@@ -161,8 +163,15 @@ CREATE TABLE workflow.conceptual_support (
     ) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_support_physical_object FOREIGN KEY (
         model_id,
-        object_id
+        source_object_id
     ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_conceptual_support_assertion_record FOREIGN KEY (
+        modeling_assertion_record_id,
+        model_id
+    ) REFERENCES model.modeling_assertion_record (
+        modeling_assertion_record_id,
+        model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_conceptual_support_id_model
         UNIQUE (conceptual_support_id, model_id),
     CONSTRAINT ck_conceptual_support_typed_parent CHECK (
@@ -174,6 +183,17 @@ CREATE TABLE workflow.conceptual_support (
             supported_artifact_type = 'conceptual_relationship'
             AND conceptual_relationship_id IS NOT NULL
             AND conceptual_object_id IS NULL
+        )
+    ),
+    CONSTRAINT ck_conceptual_support_typed_source CHECK (
+        (
+            support_source_type = 'object'
+            AND source_object_id IS NOT NULL
+            AND modeling_assertion_record_id IS NULL
+        ) OR (
+            support_source_type = 'assertion'
+            AND modeling_assertion_record_id IS NOT NULL
+            AND source_object_id IS NULL
         )
     ),
     CONSTRAINT ck_conceptual_support_role CHECK (
@@ -197,19 +217,42 @@ CREATE TABLE workflow.conceptual_support (
     )
 );
 
-CREATE UNIQUE INDEX ux_conceptual_support_object_parent
-    ON workflow.conceptual_support (model_id, conceptual_object_id, object_id)
-    WHERE supported_artifact_type = 'conceptual_object';
-CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent
+CREATE UNIQUE INDEX ux_conceptual_support_object_parent_object_source
+    ON workflow.conceptual_support (
+        model_id,
+        conceptual_object_id,
+        source_object_id
+    ) WHERE supported_artifact_type = 'conceptual_object'
+        AND support_source_type = 'object';
+CREATE UNIQUE INDEX ux_conceptual_support_object_parent_assertion_source
+    ON workflow.conceptual_support (
+        model_id,
+        conceptual_object_id,
+        modeling_assertion_record_id
+    ) WHERE supported_artifact_type = 'conceptual_object'
+        AND support_source_type = 'assertion';
+CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent_object_source
     ON workflow.conceptual_support (
         model_id,
         conceptual_relationship_id,
-        object_id
-    ) WHERE supported_artifact_type = 'conceptual_relationship';
+        source_object_id
+    ) WHERE supported_artifact_type = 'conceptual_relationship'
+        AND support_source_type = 'object';
+CREATE UNIQUE INDEX ux_conceptual_support_relationship_parent_assertion_source
+    ON workflow.conceptual_support (
+        model_id,
+        conceptual_relationship_id,
+        modeling_assertion_record_id
+    ) WHERE supported_artifact_type = 'conceptual_relationship'
+        AND support_source_type = 'assertion';
 
 CREATE INDEX ix_conceptual_object_model_status
     ON workflow.conceptual_object (model_id, conceptual_object_status);
 CREATE INDEX ix_conceptual_relationship_to_object
     ON workflow.conceptual_relationship (model_id, to_conceptual_object_id);
 CREATE INDEX ix_conceptual_support_physical_object
-    ON workflow.conceptual_support (model_id, object_id);
+    ON workflow.conceptual_support (model_id, source_object_id)
+    WHERE support_source_type = 'object';
+CREATE INDEX ix_conceptual_support_assertion_record
+    ON workflow.conceptual_support (model_id, modeling_assertion_record_id)
+    WHERE support_source_type = 'assertion';

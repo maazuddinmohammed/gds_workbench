@@ -183,7 +183,9 @@ CREATE TABLE workflow.logical_entity_source_mapping (
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     logical_entity_id BIGINT NOT NULL,
-    source_object_id BIGINT NOT NULL,
+    support_source_type VARCHAR(20) NOT NULL,
+    source_object_id BIGINT,
+    modeling_assertion_record_id BIGINT,
     logical_entity_source_mapping_order INTEGER,
     logical_entity_source_mapping_rationale TEXT NOT NULL,
     logical_entity_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -203,6 +205,13 @@ CREATE TABLE workflow.logical_entity_source_mapping (
         model_id,
         source_object_id
     ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_entity_source_assertion_record FOREIGN KEY (
+        modeling_assertion_record_id,
+        model_id
+    ) REFERENCES model.modeling_assertion_record (
+        modeling_assertion_record_id,
+        model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_logical_entity_source_id_model
         UNIQUE (logical_entity_source_mapping_id, model_id),
     CONSTRAINT uq_logical_entity_source_witness UNIQUE (
@@ -211,8 +220,17 @@ CREATE TABLE workflow.logical_entity_source_mapping (
         source_object_id,
         model_id
     ),
-    CONSTRAINT uq_logical_entity_source_identity
-        UNIQUE (model_id, logical_entity_id, source_object_id),
+    CONSTRAINT ck_logical_entity_source_typed_source CHECK (
+        (
+            support_source_type = 'object'
+            AND source_object_id IS NOT NULL
+            AND modeling_assertion_record_id IS NULL
+        ) OR (
+            support_source_type = 'assertion'
+            AND modeling_assertion_record_id IS NOT NULL
+            AND source_object_id IS NULL
+        )
+    ),
     CONSTRAINT ck_logical_entity_source_order CHECK (
         logical_entity_source_mapping_order IS NULL
         OR logical_entity_source_mapping_order > 0
@@ -227,15 +245,30 @@ CREATE TABLE workflow.logical_entity_source_mapping (
     )
 );
 
+CREATE UNIQUE INDEX ux_logical_entity_source_object
+    ON workflow.logical_entity_source_mapping (
+        model_id,
+        logical_entity_id,
+        source_object_id
+    ) WHERE support_source_type = 'object';
+CREATE UNIQUE INDEX ux_logical_entity_source_assertion
+    ON workflow.logical_entity_source_mapping (
+        model_id,
+        logical_entity_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
+
 CREATE TABLE workflow.logical_attribute_source_mapping (
     logical_attribute_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
-    logical_entity_source_mapping_id BIGINT NOT NULL,
+    logical_entity_source_mapping_id BIGINT,
     logical_entity_id BIGINT NOT NULL,
     logical_attribute_id BIGINT NOT NULL,
-    source_object_id BIGINT NOT NULL,
-    source_attribute_id BIGINT NOT NULL,
+    support_source_type VARCHAR(20) NOT NULL,
+    source_object_id BIGINT,
+    source_attribute_id BIGINT,
+    modeling_assertion_record_id BIGINT,
     logical_attribute_source_mapping_order INTEGER,
     logical_attribute_source_mapping_rationale TEXT NOT NULL,
     logical_attribute_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -270,13 +303,29 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
         source_attribute_id,
         source_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_logical_attribute_source_assertion_record FOREIGN KEY (
+        modeling_assertion_record_id,
+        model_id
+    ) REFERENCES model.modeling_assertion_record (
+        modeling_assertion_record_id,
+        model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_logical_attribute_source_id_model
         UNIQUE (logical_attribute_source_mapping_id, model_id),
-    CONSTRAINT uq_logical_attribute_source_identity UNIQUE (
-        model_id,
-        logical_entity_source_mapping_id,
-        logical_attribute_id,
-        source_attribute_id
+    CONSTRAINT ck_logical_attribute_source_typed_source CHECK (
+        (
+            support_source_type = 'attribute'
+            AND logical_entity_source_mapping_id IS NOT NULL
+            AND source_object_id IS NOT NULL
+            AND source_attribute_id IS NOT NULL
+            AND modeling_assertion_record_id IS NULL
+        ) OR (
+            support_source_type = 'assertion'
+            AND modeling_assertion_record_id IS NOT NULL
+            AND logical_entity_source_mapping_id IS NULL
+            AND source_object_id IS NULL
+            AND source_attribute_id IS NULL
+        )
     ),
     CONSTRAINT ck_logical_attribute_source_order CHECK (
         logical_attribute_source_mapping_order IS NULL
@@ -291,6 +340,20 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
         )
     )
 );
+
+CREATE UNIQUE INDEX ux_logical_attribute_source_physical
+    ON workflow.logical_attribute_source_mapping (
+        model_id,
+        logical_entity_source_mapping_id,
+        logical_attribute_id,
+        source_attribute_id
+    ) WHERE support_source_type = 'attribute';
+CREATE UNIQUE INDEX ux_logical_attribute_source_assertion
+    ON workflow.logical_attribute_source_mapping (
+        model_id,
+        logical_attribute_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
 
 CREATE TABLE workflow.logical_relationship (
     logical_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -388,7 +451,24 @@ CREATE INDEX ix_logical_submodel_status ON workflow.logical_submodel (model_id, 
 CREATE INDEX ix_logical_entity_status_order ON workflow.logical_entity (model_id, logical_entity_status, logical_entity_dependency_order);
 CREATE INDEX ix_logical_entity_submodel_submodel ON workflow.logical_entity_submodel (model_id, logical_submodel_id);
 CREATE INDEX ix_logical_attribute_entity_status ON workflow.logical_attribute (model_id, logical_entity_id, logical_attribute_status);
-CREATE INDEX ix_logical_entity_source_object ON workflow.logical_entity_source_mapping (model_id, source_object_id);
-CREATE INDEX ix_logical_attribute_source_physical ON workflow.logical_attribute_source_mapping (model_id, source_object_id, source_attribute_id);
+CREATE INDEX ix_logical_entity_source_object
+    ON workflow.logical_entity_source_mapping (model_id, source_object_id)
+    WHERE support_source_type = 'object';
+CREATE INDEX ix_logical_entity_source_assertion
+    ON workflow.logical_entity_source_mapping (
+        model_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
+CREATE INDEX ix_logical_attribute_source_physical
+    ON workflow.logical_attribute_source_mapping (
+        model_id,
+        source_object_id,
+        source_attribute_id
+    ) WHERE support_source_type = 'attribute';
+CREATE INDEX ix_logical_attribute_source_assertion
+    ON workflow.logical_attribute_source_mapping (
+        model_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
 CREATE INDEX ix_logical_attribute_source_target ON workflow.logical_attribute_source_mapping (model_id, logical_attribute_id);
 CREATE INDEX ix_logical_relationship_to ON workflow.logical_relationship (model_id, logical_relationship_to_entity_id, logical_relationship_to_attribute_id);

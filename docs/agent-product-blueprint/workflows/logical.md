@@ -10,7 +10,7 @@ and Relationships. It also applies the Model's Silver naming and audit policy.
 
 The request freezes Build or Extend plus full or selected Bronze Object
 coverage. The projected context includes selected sources, the effective
-Logical baseline, Analysis relationship signals, applicable Evidence, locks,
+Logical baseline, Analysis relationship signals, applicable Assertions, locks,
 downstream dependency paths, and the complete Silver DD-110 policy group.
 
 Readiness blocks missing or invalid policy, ineligible sources, inconsistent
@@ -49,10 +49,12 @@ Logical persists exactly seven families:
 - Attribute source mapping; and
 - Relationship.
 
-Source mappings bind modeled artifacts to eligible Bronze Objects and
-Attributes. Policy-owned audit Attributes have no source mapping and are marked
-as audit columns. Composite database witnesses keep every child, source, and
-Relationship in the same Model and parent graph.
+Entity source mappings bind modeled artifacts to an eligible Bronze Object or
+applicable Assertion Record. Attribute source mappings bind to a physical
+Bronze Attribute path or applicable Assertion Record. Policy-owned audit
+Attributes have no source mapping and are marked as audit columns. Composite
+database witnesses keep every child, source, and Relationship in the same
+Model and parent graph.
 
 The relational semantics are fixed:
 
@@ -85,7 +87,7 @@ are fatal.
 
 The repair loop is bounded and stops on repeated Candidate digest. The shared
 agent runtime owns provider retry and budget limits. The workflow rechecks
-Model revision, source context, policy, and Evidence before a non-empty
+Model revision, source context, policy, and Assertion digests before a non-empty
 handoff. PostgreSQL serializes same-Model apply and safely replays identical
 idempotency keys.
 

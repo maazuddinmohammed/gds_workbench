@@ -53,8 +53,14 @@ _Avoid_: Project, workspace model
 The server-owned set of source Objects and Attributes that a Model can use.
 _Avoid_: Selection, source list
 
+**Modeling Assertion**:
+One Model-owned structured factual statement derived from a document, email,
+meeting note, or direct user input. An Assertion Record may durably support a
+Conceptual, Logical, or Dimensional artifact.
+_Avoid_: Modeling Evidence, fact, transient context
+
 **Section**:
-One versioned part of a Model change: Model Scope, Profiling, Evidence,
+One versioned part of a Model change: Model Scope, Profiling, Assertion,
 Analysis, Conceptual, Logical, Dimensional, or Mapping.
 _Avoid_: Phase document, payload type
 

@@ -259,7 +259,9 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
     dimensional_entity_id BIGINT NOT NULL,
-    source_object_id BIGINT NOT NULL,
+    support_source_type VARCHAR(20) NOT NULL,
+    source_object_id BIGINT,
+    modeling_assertion_record_id BIGINT,
     dimensional_entity_source_role VARCHAR(255) NOT NULL,
     dimensional_entity_source_mapping_order INTEGER,
     dimensional_entity_source_mapping_rationale TEXT NOT NULL,
@@ -278,6 +280,13 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_object FOREIGN KEY (source_object_id)
         REFERENCES core.object (object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_source_assertion_record FOREIGN KEY (
+        modeling_assertion_record_id,
+        model_id
+    ) REFERENCES model.modeling_assertion_record (
+        modeling_assertion_record_id,
+        model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_dimensional_entity_source_id_model
         UNIQUE (dimensional_entity_source_mapping_id, model_id),
     CONSTRAINT uq_dimensional_entity_source_witness UNIQUE (
@@ -285,6 +294,17 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         dimensional_entity_id,
         source_object_id,
         model_id
+    ),
+    CONSTRAINT ck_dimensional_entity_source_typed_source CHECK (
+        (
+            support_source_type = 'object'
+            AND source_object_id IS NOT NULL
+            AND modeling_assertion_record_id IS NULL
+        ) OR (
+            support_source_type = 'assertion'
+            AND modeling_assertion_record_id IS NOT NULL
+            AND source_object_id IS NULL
+        )
     ),
     CONSTRAINT ck_dimensional_entity_source_role CHECK (
         reference.is_nonblank(dimensional_entity_source_role)
@@ -303,22 +323,32 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_dimensional_entity_source_effective
+CREATE UNIQUE INDEX ux_dimensional_entity_source_object_effective
     ON workflow.dimensional_entity_source_mapping (
         model_id,
         dimensional_entity_id,
         source_object_id
-    ) WHERE dimensional_entity_source_mapping_status IN ('active', 'needs_review');
+    ) WHERE support_source_type = 'object'
+        AND dimensional_entity_source_mapping_status IN ('active', 'needs_review');
+CREATE UNIQUE INDEX ux_dimensional_entity_source_assertion_effective
+    ON workflow.dimensional_entity_source_mapping (
+        model_id,
+        dimensional_entity_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion'
+        AND dimensional_entity_source_mapping_status IN ('active', 'needs_review');
 
 CREATE TABLE workflow.dimensional_attribute_source_mapping (
     dimensional_attribute_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
-    dimensional_entity_source_mapping_id BIGINT NOT NULL,
+    dimensional_entity_source_mapping_id BIGINT,
     dimensional_entity_id BIGINT NOT NULL,
     dimensional_attribute_id BIGINT NOT NULL,
-    source_object_id BIGINT NOT NULL,
-    source_attribute_id BIGINT NOT NULL,
+    support_source_type VARCHAR(20) NOT NULL,
+    source_object_id BIGINT,
+    source_attribute_id BIGINT,
+    modeling_assertion_record_id BIGINT,
     dimensional_attribute_source_mapping_order INTEGER,
     dimensional_attribute_source_mapping_rationale TEXT NOT NULL,
     dimensional_attribute_source_mapping_status VARCHAR(20) NOT NULL DEFAULT 'active',
@@ -353,8 +383,30 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
         source_attribute_id,
         source_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_attribute_source_assertion_record FOREIGN KEY (
+        modeling_assertion_record_id,
+        model_id
+    ) REFERENCES model.modeling_assertion_record (
+        modeling_assertion_record_id,
+        model_id
+    ) ON DELETE NO ACTION,
     CONSTRAINT uq_dimensional_attribute_source_id_model
         UNIQUE (dimensional_attribute_source_mapping_id, model_id),
+    CONSTRAINT ck_dimensional_attribute_source_typed_source CHECK (
+        (
+            support_source_type = 'attribute'
+            AND dimensional_entity_source_mapping_id IS NOT NULL
+            AND source_object_id IS NOT NULL
+            AND source_attribute_id IS NOT NULL
+            AND modeling_assertion_record_id IS NULL
+        ) OR (
+            support_source_type = 'assertion'
+            AND modeling_assertion_record_id IS NOT NULL
+            AND dimensional_entity_source_mapping_id IS NULL
+            AND source_object_id IS NULL
+            AND source_attribute_id IS NULL
+        )
+    ),
     CONSTRAINT ck_dimensional_attribute_source_order CHECK (
         dimensional_attribute_source_mapping_order IS NULL
         OR dimensional_attribute_source_mapping_order > 0
@@ -369,13 +421,21 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     )
 );
 
-CREATE UNIQUE INDEX ux_dimensional_attribute_source_effective
+CREATE UNIQUE INDEX ux_dimensional_attribute_source_physical_effective
     ON workflow.dimensional_attribute_source_mapping (
         model_id,
         dimensional_entity_source_mapping_id,
         dimensional_attribute_id,
         source_attribute_id
-    ) WHERE dimensional_attribute_source_mapping_status IN ('active', 'needs_review');
+    ) WHERE support_source_type = 'attribute'
+        AND dimensional_attribute_source_mapping_status IN ('active', 'needs_review');
+CREATE UNIQUE INDEX ux_dimensional_attribute_source_assertion_effective
+    ON workflow.dimensional_attribute_source_mapping (
+        model_id,
+        dimensional_attribute_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion'
+        AND dimensional_attribute_source_mapping_status IN ('active', 'needs_review');
 
 CREATE TABLE workflow.dimensional_relationship (
     dimensional_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -491,8 +551,25 @@ CREATE INDEX ix_dimensional_entity_status_order ON workflow.dimensional_entity (
 CREATE INDEX ix_dimensional_entity_submodel_entity ON workflow.dimensional_entity_submodel (model_id, dimensional_entity_id);
 CREATE INDEX ix_dimensional_entity_submodel_submodel ON workflow.dimensional_entity_submodel (model_id, dimensional_submodel_id);
 CREATE INDEX ix_dimensional_attribute_entity_status ON workflow.dimensional_attribute (model_id, dimensional_entity_id, dimensional_attribute_status);
-CREATE INDEX ix_dimensional_entity_source_object ON workflow.dimensional_entity_source_mapping (model_id, source_object_id);
-CREATE INDEX ix_dimensional_attribute_source_physical ON workflow.dimensional_attribute_source_mapping (model_id, source_object_id, source_attribute_id);
+CREATE INDEX ix_dimensional_entity_source_object
+    ON workflow.dimensional_entity_source_mapping (model_id, source_object_id)
+    WHERE support_source_type = 'object';
+CREATE INDEX ix_dimensional_entity_source_assertion
+    ON workflow.dimensional_entity_source_mapping (
+        model_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
+CREATE INDEX ix_dimensional_attribute_source_physical
+    ON workflow.dimensional_attribute_source_mapping (
+        model_id,
+        source_object_id,
+        source_attribute_id
+    ) WHERE support_source_type = 'attribute';
+CREATE INDEX ix_dimensional_attribute_source_assertion
+    ON workflow.dimensional_attribute_source_mapping (
+        model_id,
+        modeling_assertion_record_id
+    ) WHERE support_source_type = 'assertion';
 CREATE INDEX ix_dimensional_attribute_source_target ON workflow.dimensional_attribute_source_mapping (model_id, dimensional_attribute_id);
 CREATE INDEX ix_dimensional_relationship_from ON workflow.dimensional_relationship (model_id, dimensional_relationship_from_entity_id, dimensional_relationship_from_attribute_id);
 CREATE INDEX ix_dimensional_relationship_to ON workflow.dimensional_relationship (model_id, dimensional_relationship_to_entity_id, dimensional_relationship_to_attribute_id);

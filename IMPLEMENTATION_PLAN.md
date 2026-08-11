@@ -422,8 +422,8 @@ adoption as isolated bootstrap work in the new repository.
 - **Model Scope** is the complete Bronze input context readable by a Model.
 - **Selected Scope** is the explicit selection for one run.
 - **Impact Scope** adds all dependents needed for consistency.
-- **Modeling Evidence** is Model-owned document metadata plus structured
-  Evidence Records; it is context, not downstream persisted lineage.
+- **Modeling Assertion** is Model-owned document metadata plus structured
+  Assertion Records; Records may persist as typed artifact support.
 - **Analysis Relationship** is a candidate Attribute-level Bronze association.
 - **Conceptual Object/Relationship** captures stable business concepts.
 - **Logical Model** is the implementation-oriented Silver design.
@@ -471,9 +471,9 @@ orchestrator retains final ownership; see the current
 - `/health/live` and `/health/ready`.
 - Entra/App Service identity resolution, server-derived ownership, authorization,
   grant delegation, and redaction.
-- Bounded discovery, Model/readiness, Evidence, snapshot, profiling, and Model
+- Bounded discovery, Model/readiness, Assertion, snapshot, profiling, and Model
   Change Set surfaces.
-- Eight-document Model Change Sets: Model Scope, Profiling, Evidence, Analysis,
+- Eight-document Model Change Sets: Model Scope, Profiling, Assertion, Analysis,
   Conceptual, Logical, Dimensional, and Mapping.
 - Separate `jobs/` package and thin notebooks for all six workflow families.
 - A secret-free Azure Linux App Service ZIP.
@@ -1191,12 +1191,12 @@ Retain:
 - human-managed Model Scope;
 - safe append-only operational events.
 
-Add exactly two Evidence tables:
+Add exactly two Assertion tables:
 
-- `model.modeling_evidence_document`;
-- `model.modeling_evidence_record`.
+- `model.modeling_assertion_document`;
+- `model.modeling_assertion_record`.
 
-Only Evidence Records carry a business-lock flag. Evidence source file bytes
+Only Assertion Records carry a business-lock flag. Assertion source file bytes
 are never persisted.
 
 ### 9.3 Applied workflow artifacts
@@ -1292,7 +1292,7 @@ Freeze exact names in T02; the recommended initial inventory is:
 - `get_objects` — bounded metadata, Attributes, and ingestion lineage.
 - `list_models` — owning-Tenant member summaries.
 - `get_model` — bounded navigation detail and Scope summary.
-- `get_modeling_evidence` — filtered, paginated summary/detail reads.
+- `get_modeling_assertions` — filtered, paginated summary/detail reads.
 - `check_model_readiness` — deterministic complete preflight.
 - `get_model_snapshot` — small manifest plus immutable ZIP `resource_link`.
 - `get_model_change_set` — authorized draft summary, one section, or full
@@ -1309,7 +1309,7 @@ contract/README.md
 contract/schemas/       shared section/envelope JSON Schemas only
 contract/examples/      shared accepted/rejected examples only
 output/change-set.json
-output/evidence.json
+output/assertion.json
 output/analysis.json
 output/conceptual.json
 output/logical.json
@@ -1346,7 +1346,7 @@ Core contract:
 - validation overlays the complete future graph, returns all issues and an
   impact summary, and seals a digest only when valid;
 - apply accepts the exact digest, locks the Model row, rechecks authorization,
-  grant, revision, source/policy/Evidence digests, locks, and constraints,
+  grant, revision, source/policy/Assertion digests, locks, and constraints,
   revalidates, orders writes and retirements, records receipt/events, advances
   one revision only for an effective change, and commits or rolls back as one
   transaction;
@@ -1761,20 +1761,20 @@ Exit evidence:
 - external Excel-shaped seed fixtures load without schema bypasses;
 - no in-place migration/reapplication claim is made.
 
-### T04 — Modeling Evidence, Analysis, and Conceptual schema
+### T04 — Modeling Assertions, Analysis, and Conceptual schema
 
 **Depends on:** T03  
 **Risk:** schema, locks, polymorphic integrity
 
 Implementation:
 
-- Add exactly two Modeling Evidence tables.
+- Add exactly two Modeling Assertion tables.
 - Rebuild Analysis with generated ID, stable Attribute endpoints, metrics,
   lifecycle, audit, run provenance, and Model-scoped constraints.
 - Rebuild Conceptual Object, Relationship, and Support with generated IDs and
   common lifecycle/lock/audit envelopes.
 - Represent Support with typed application refs plus exactly one populated
-  relational Conceptual FK and one physical Object source.
+  relational Conceptual FK and one Object or Assertion Record source.
 - Add Model-scoped keys, effective-parent guards, aggregate lock edges, and
   necessary indexes.
 
@@ -1783,8 +1783,8 @@ Exit evidence:
 - no default violates its check constraint;
 - cross-Model Conceptual endpoints/support are rejected;
 - Support target exclusivity and physical source pairing are enforced;
-- locked Evidence/Analysis/Conceptual rows and descendants reject direct DML;
-- Evidence IDs cannot be persisted as downstream Conceptual lineage.
+- locked Assertion/Analysis/Conceptual rows and descendants reject direct DML;
+- Support source exclusivity and same-Model Assertion pairing are enforced.
 
 ### T05 — Logical, Dimensional, and combined Mapping schema
 
@@ -1916,10 +1916,10 @@ Implementation:
 - Wire configuration and bounded PostgreSQL pooling.
 - Expose `/health/live` and secret-safe `/health/ready`.
 - Serve stateless Streamable HTTP at `/mcp`.
-- Implement bounded Tenant/Object/Model/Evidence reads.
+- Implement bounded Tenant/Object/Model/Assertion reads.
 - Implement deterministic `check_model_readiness`.
 - Assemble immutable snapshot ZIP and manifest in a bounded temporary resource.
-- Preserve source-Tenant provenance and compute Model/source/Evidence digests.
+- Preserve source-Tenant provenance and compute Model/source/Assertion digests.
 - Register reads only; mutation inventory must be empty. Filter discovery,
   registry, capabilities, and schemas by server-derived actor kind.
 
@@ -2025,7 +2025,7 @@ Implementation:
 - Accept only change-set ID, exact sealed candidate digest, and idempotency key;
   base revision/context are server-stored and rechecked, not caller-supplied.
 - Begin transaction and lock the Model row first.
-- Recheck principal/grant, revision, source/Evidence/policy digests, candidate,
+- Recheck principal/grant, revision, source/Assertion/policy digests, candidate,
   locks, and all validation.
 - Execute dependency-ordered parent/child writes and lifecycle transitions.
 - Generate IDs server-side and return immutable local-ref mappings.
@@ -2079,7 +2079,7 @@ Implementation:
 - Add resources/templates needed for snapshot and contract retrieval.
 - Implement local activity/latest-validation mirror guidance and recovery
   results without pretending the server writes client-local files.
-- Add Evidence authoring examples and all six section examples.
+- Add Assertion authoring examples and all six section examples.
 - Add server instructions with the critical sequence/limits in the first 512
   characters.
 - Add rate/size/time bounds and consistent error/trace correlation.
@@ -2201,7 +2201,7 @@ Implementation:
   Object with exact coverage.
 - Remove agent-accessible `query_bronze` and the old advisory relationship
   evidence subagent.
-- Use stable Object/Attribute endpoints and bounded Metadata/Evidence reads.
+- Use stable Object/Attribute endpoints and bounded Metadata/Assertion reads.
 - Add whole-slice Reconciler, deterministic compiler, Reviewer, and bounded
   pre-Spark repair loop.
 - Explicitly include existing outgoing relationships in revalidation; omission
@@ -2240,7 +2240,7 @@ Implementation:
   Builder proposals/dispositions; preserve competing suggestions until
   relationship context is available.
 - Build deterministic bounded Relationship Evidence Packages from Analysis,
-  physical support, multi-concept-source signals, and applicable Evidence, with
+  physical support, multi-concept-source signals, and applicable Assertions, with
   exactly one owner per signal.
 - Run Relationship Builders and freeze a Relationship Ledger.
 - Run one whole-Model Reconciler that jointly resolves Object/Relationship
@@ -2252,7 +2252,7 @@ Implementation:
   report and all deterministic findings back to the same Reconciler;
   regenerate from the frozen ledgers and stop on quality acceptance,
   limit, or repeated digest.
-- Require a physical or verified transient Evidence creation basis.
+- Require a physical Object or verified applicable Assertion creation basis.
 - Keep all intermediates in memory and create one final `conceptual.json` only
   after acceptance.
 
@@ -2260,7 +2260,7 @@ Exit evidence:
 
 - selected source, proposal, existing-impact, and relationship-package coverage
   are complete;
-- Evidence-only creation is semantically reviewed but stores no Evidence FK;
+- Assertion-only creation stores the same-Model Assertion Record support FK;
 - missing/failed package remains explicit Reconciler work without rerunning
   successful Builders; any unresolved final coverage/disposition blocks handoff;
 - locks override semantic intent;
@@ -2455,7 +2455,7 @@ Every workflow:
    initiating human, authenticates the configured workload, and rechecks the
    human's current owning-Tenant role on every MCP call.
 3. Runs deterministic readiness before any agent/Spark work.
-4. Freezes Model revision, source/policy/Evidence digests, selection, effective
+4. Freezes Model revision, source/policy/Assertion digests, selection, effective
    baseline, locks, and configuration digest.
 5. Creates immutable coverage slots owned by the orchestrator.
 6. Runs bounded typed agent/Spark work without holding a Model transaction
@@ -2537,7 +2537,7 @@ Agent/deterministic phases:
 1. **Candidate Finder per Object** returns possible FK-like source Attribute
    IDs and rationale.
 2. **Relationship Resolver per successful Object** returns all outgoing stable
-   Object/Attribute pairs using bounded metadata/Evidence.
+   Object/Attribute pairs using bounded metadata/Assertions.
 3. **Whole-slice Reconciler** accounts for every new proposal and every existing
    in-impact outgoing relationship.
 4. **Deterministic compiler/validator** checks scope, endpoints, pairing,
@@ -2558,9 +2558,9 @@ Agent/deterministic phases:
 Spark SQL owns the classification policy:
 
 - complete source inclusion + unique target → supported/active;
-- inconclusive/conflicting with verified transient Evidence use →
+- inconclusive/conflicting with a verified applicable Assertion →
   needs-review;
-- unsupported without such Evidence → rejected/no new artifact;
+- unsupported without such an Assertion → rejected/no new artifact;
 - existing relationship outcomes are active, needs-review, or inactive
   according to the same explicit policy.
 
@@ -2582,7 +2582,7 @@ Phases:
    names/identities remain visible until relationship context is available.
 3. Common code creates bounded **Relationship Evidence Packages** from physical
    Analysis, Object support, multi-concept-source signals, and applicable
-   Evidence. Every signal has exactly one owner; boundary context may repeat.
+   Assertions. Every signal has exactly one owner; boundary context may repeat.
 4. Relationship Builder calls cannot invent Objects and return typed proposals
    plus complete signal/package dispositions. Common code freezes the
    **Relationship Ledger** containing the effective baseline, every proposal,
@@ -2606,10 +2606,9 @@ Phases:
    `conceptual.json`, validates it authoritatively, and applies the exact sealed
    digest once.
 
-A new/reactivated Conceptual artifact requires physical support or verified
-Evidence used during the run. Physical support persists in Conceptual Support.
-Evidence use remains run/change-set diagnostics and never becomes effective
-artifact lineage.
+A new/reactivated Conceptual artifact requires a physical Object or verified
+applicable Assertion. Conceptual Support persists exactly one Object or
+same-Model Assertion Record source per row.
 
 ### 14.5 Logical
 
@@ -2625,7 +2624,7 @@ Phases:
 5. Common code creates the immutable Detail Ledger.
 6. Common code builds a deterministic **Relationship Signal Ledger** from
    existing relationships, physical mappings/keys, Analysis, Conceptual,
-   Evidence, and low-confidence naming signals.
+   Assertions, and low-confidence naming signals.
 7. **Whole-Model Logical Reconciler** is sole mutation owner for all seven
    families and signal dispositions.
 8. Compile complete future graph and deterministic findings.
@@ -2658,7 +2657,7 @@ Mapping set. Environment is not part of Mapping identity.
 
 Phases:
 
-1. Freeze exact Silver coverage, Model/source/Evidence/policy context, current
+1. Freeze exact Silver coverage, Model/source/Assertion/policy context, current
    Dimensional graph, profiles if present, and locks.
 2. **Topology Builder per selected Silver Object** proposes Fact/Dimension/
    Bridge shells, Submodels, grain, identity, and explicit source disposition.
@@ -2705,7 +2704,7 @@ Phases:
    Validator; resolve one immutable template key/version/schema digest and
    artifact-generation instruction text.
 2. Authorize and freeze exact `(target_object_id, source_system_id)` coverage.
-3. Freeze Model/lineage/target/Mapping/lock/batch/Evidence context.
+3. Freeze Model/lineage/target/Mapping/lock/batch/Assertion context.
 4. Build one immutable package per target/System, grouping every applicable
    Entity header and child mapping for that target/System.
 5. **Header Mapper** authors complete table-level sources, joins/unions, filters,
@@ -2857,7 +2856,7 @@ invent or bypass them.
    profiles, naming/audit policies, template rows, and required secrets outside
    this repository's Release 1 ownership.
 2. Readiness proves exact profile/template availability and authorization.
-3. Run Profiling and verify atomic publication plus Evidence visibility.
+3. Run Profiling and verify atomic publication plus Assertion visibility.
 4. Run Analysis and verify selection/eligibility plus complete draft publish.
 5. Run Conceptual and apply one Conceptual section.
 6. Run Logical and apply one Logical section with Silver projection metadata.
@@ -3228,7 +3227,7 @@ link or command result in `IMPLEMENTATION_STATUS.md`:
       selected coverage cases.
 - [ ] Local Spark tests cover approved initial/incremental Profiling metrics and
       publication plus the deterministic Analysis SQL/CASE pass; unrelated
-      Evidence/Mapping behavior is tested outside Spark.
+      Assertion/Mapping behavior is tested outside Spark.
 - [ ] Physical Silver/Gold registration and generator execution remain explicit
       downstream gates; the implementation does not fabricate those resources.
 - [ ] Snapshot ZIP/manifest export is deterministic, immutable, hash-verified,

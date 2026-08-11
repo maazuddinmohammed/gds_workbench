@@ -32,7 +32,7 @@ The registry has exactly 22 tools.
 2. `list_objects`
 3. `get_objects`
 4. `list_models`
-5. `get_modeling_evidence`
+5. `get_modeling_assertions`
 
 ### Shared tools
 
@@ -99,14 +99,14 @@ A Model Snapshot ZIP is both immutable workflow input and a transport-neutral
 human authoring workspace. It contains:
 
 - `input/manifest.json`, `input/model.json`, `input/source-catalog.json`, and
-  `input/modeling-evidence.json`;
+  `input/modeling-assertions.json`;
 - `output/change-set.json` and one output file for each of the eight documents;
 - `output/_workbench/activity.jsonl` and `latest-validation.json`; and
 - an allowlisted `contract/` directory with common schemas, examples, the
   source-catalog schema, and the Mapping profile schema.
 
 The manifest binds every listed member, Model revision, source-context digest,
-Evidence digest, and total size. ZIP entries are deterministically ordered with
+Assertion digest, and total size. ZIP entries are deterministically ordered with
 fixed metadata. The activity and validation mirrors never enter a Candidate
 digest.
 
@@ -155,7 +155,7 @@ Important registry limits are:
 |---|---:|
 | Standard request/result | 1 MiB / 2 MiB |
 | Whole-Section transport request | 17 MiB |
-| Evidence Section | 4 MiB |
+| Assertion Section | 4 MiB |
 | Analysis or Conceptual Section | 8 MiB |
 | Logical or Dimensional Section | 12 MiB |
 | Mapping Section | 16 MiB |

@@ -5,6 +5,8 @@
 > requirements. For authentication and authorization use current numbered SQL,
 > [`docs/security.md`](../security.md), and
 > [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).
+> For Modeling Assertion terminology and persisted support use
+> [ADR 002](../adr/002-modeling-assertions-as-persisted-support.md).
 
 This directory explains Release 1 as one coherent product. It is written for an
 AI agent that must understand the intent before changing or rebuilding the

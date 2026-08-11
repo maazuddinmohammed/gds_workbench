@@ -222,8 +222,8 @@ GRANT INSERT ON security.mcp_tool_call_log TO gds_app_write;
 -- by PostgresRepository.  Foundational Model/Scope/target rows, audit rows, and
 -- every DELETE operation remain deployment-owner capabilities.
 GRANT INSERT, UPDATE ON
-    model.modeling_evidence_document,
-    model.modeling_evidence_record,
+    model.modeling_assertion_document,
+    model.modeling_assertion_record,
     workflow.analysis_result,
     workflow.attribute_mapping,
     workflow.attribute_profile,

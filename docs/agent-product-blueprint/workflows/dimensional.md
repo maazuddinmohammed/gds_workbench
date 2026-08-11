@@ -47,10 +47,12 @@ Dimensional uses the seven Dimensional tables parallel to the Logical graph:
 Submodel, Entity, membership, Attribute, Entity source mapping, Attribute
 source mapping, and Relationship.
 
-Source mappings point only to eligible registered Silver Objects and
-Attributes. Policy-owned technical and audit Attributes are produced by code,
-not agent invention. A complete effective change advances Model revision once;
-an empty operation set leaves it unchanged.
+Entity source mappings point to an eligible registered Silver Object or
+applicable Assertion Record. Attribute source mappings point to a physical
+Silver Attribute path or applicable Assertion Record. Policy-owned technical
+and audit Attributes are produced by code, not agent invention. A complete
+effective change advances Model revision once; an empty operation set leaves it
+unchanged.
 
 Entity type is Fact, Dimension, or Bridge. Facts and Bridges require a
 nonblank authoritative grain plus structured grain/key components; a Dimension

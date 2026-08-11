@@ -35,7 +35,7 @@ All definitions use source release `2026.08.06.2`.
 The five agent-backed notebooks currently select `openai_agents_sdk`. Their
 common phase defaults are Foundry deployment `gds-modeling-agent`, high
 reasoning, no explicit verbosity, eight turns, two outer retries,
-`metadata.read` plus `evidence.read`, a 2 MiB package cap, and 4 MiB context.
+`metadata.read` plus `assertion.read`, a 2 MiB package cap, and 4 MiB context.
 Selecting Deep Agents automatically reduces context to 64 KiB. Mapping's
 Target Validator is narrower: medium reasoning, four turns, one retry,
 `metadata.read` only, and a 1 MiB package cap. Prompts remain notebook-owned;
@@ -54,7 +54,7 @@ All workflows follow the runtime described in
 5. Load and verify an immutable Model Snapshot. DBML instead verifies its
    revision-bound export archive.
 6. For a snapshot-backed workflow, freeze the Model revision plus
-   source-context, policy, and Evidence identities.
+   source-context, policy, and Assertion identities.
 7. For those six workflows, track a terminal coverage disposition for every
    owned work item. DBML requires exact manifest and file coverage instead.
 8. Recheck authoritative context before a non-empty write.
@@ -117,7 +117,7 @@ A typical progression is:
 
 - Jobs have no PostgreSQL driver or database credentials.
 - Metadata reads and writes use typed, grant-bound MCP operations.
-- Agents receive governed metadata and Evidence, not raw physical rows.
+- Agents receive governed metadata and Assertions, not raw physical rows.
 - Only Profiling and Analysis read physical data through fixed Spark adapters.
 - Workflows cannot change Model Scope, policy, locks, authorization, or their
   own operation allowlist.

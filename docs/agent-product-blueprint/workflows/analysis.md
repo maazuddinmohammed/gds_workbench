@@ -19,7 +19,7 @@ execution mode:
 Validation-only with staged input carries the exact Model Change Set ID and
 expected draft revision. Readiness requires an active Model, selected Bronze
 Objects in the permitted context, usable Attributes, verified Spark endpoints,
-and valid applicable Evidence context. Missing Profiles are reported as a
+and valid applicable Assertion context. Missing Profiles are reported as a
 warning and may lower confidence. Locked changes are rejected.
 
 ## Discovery flow
@@ -52,7 +52,7 @@ warning and may lower confidence. Locked changes are rejected.
 5. Apply the immutable classification rule:
    - non-empty endpoints, complete source inclusion, and unique target become
      `supported`;
-   - otherwise verified transient Evidence becomes `needs_review`;
+   - otherwise a verified applicable Assertion becomes `needs_review`;
    - otherwise an existing Relationship becomes `inactive`;
    - otherwise the proposal is `rejected` and is not persisted.
 6. Recheck the frozen context.
@@ -89,7 +89,7 @@ prevents two continuations from applying different content.
 
 Agents cannot decide physical validation status. Spark cannot invent
 relationships. Analysis writes only its Section and never changes Model Scope,
-Evidence, locks, or physical data.
+Assertions, locks, or physical data.
 
 Sources:
 [`workflow.py`](../../../jobs/src/gds_etl_jobs/analysis/workflow.py),

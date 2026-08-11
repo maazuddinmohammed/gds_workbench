@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Model, Scope, policy, Evidence, and revision state.
+-- GDS ETL Workbench Release 1: Model, Scope, policy, Assertions, and revision state.
 
 CREATE SCHEMA model;
 
@@ -106,102 +106,102 @@ CREATE TABLE model.model_event_log (
     )
 );
 
-CREATE TABLE model.modeling_evidence_document (
-    modeling_evidence_document_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE model.modeling_assertion_document (
+    modeling_assertion_document_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     tenant_id BIGINT,
     system_id BIGINT,
-    modeling_evidence_document_name VARCHAR(255) NOT NULL,
-    modeling_evidence_file_pattern VARCHAR(500),
-    modeling_evidence_document_type VARCHAR(100),
-    modeling_evidence_document_description VARCHAR(2000),
-    modeling_evidence_document_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
+    modeling_assertion_document_name VARCHAR(255) NOT NULL,
+    modeling_assertion_file_pattern VARCHAR(500),
+    modeling_assertion_document_type VARCHAR(100),
+    modeling_assertion_document_description VARCHAR(2000),
+    modeling_assertion_document_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     agent_run_id VARCHAR(500),
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_evidence_document_model FOREIGN KEY (model_id)
+    CONSTRAINT fk_assertion_document_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_evidence_document_tenant FOREIGN KEY (tenant_id)
+    CONSTRAINT fk_assertion_document_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_evidence_document_system FOREIGN KEY (system_id)
+    CONSTRAINT fk_assertion_document_system FOREIGN KEY (system_id)
         REFERENCES core.system (system_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_evidence_document_id_model
-        UNIQUE (modeling_evidence_document_id, model_id),
-    CONSTRAINT ck_evidence_document_name CHECK (
-        reference.is_nonblank(modeling_evidence_document_name)
+    CONSTRAINT uq_assertion_document_id_model
+        UNIQUE (modeling_assertion_document_id, model_id),
+    CONSTRAINT ck_assertion_document_name CHECK (
+        reference.is_nonblank(modeling_assertion_document_name)
     ),
-    CONSTRAINT ck_evidence_file_pattern CHECK (
-        modeling_evidence_file_pattern IS NULL
-        OR reference.is_nonblank(modeling_evidence_file_pattern)
+    CONSTRAINT ck_assertion_file_pattern CHECK (
+        modeling_assertion_file_pattern IS NULL
+        OR reference.is_nonblank(modeling_assertion_file_pattern)
     ),
-    CONSTRAINT ck_evidence_document_type CHECK (
-        modeling_evidence_document_type IS NULL
-        OR reference.is_nonblank(modeling_evidence_document_type)
+    CONSTRAINT ck_assertion_document_type CHECK (
+        modeling_assertion_document_type IS NULL
+        OR reference.is_nonblank(modeling_assertion_document_type)
     ),
-    CONSTRAINT ck_evidence_document_description CHECK (
-        modeling_evidence_document_description IS NULL
-        OR reference.is_nonblank(modeling_evidence_document_description)
+    CONSTRAINT ck_assertion_document_description CHECK (
+        modeling_assertion_document_description IS NULL
+        OR reference.is_nonblank(modeling_assertion_document_description)
     ),
-    CONSTRAINT ck_evidence_document_metadata CHECK (
-        jsonb_typeof(modeling_evidence_document_metadata) = 'object'
+    CONSTRAINT ck_assertion_document_metadata CHECK (
+        jsonb_typeof(modeling_assertion_document_metadata) = 'object'
     )
 );
 
-CREATE TABLE model.modeling_evidence_record (
-    modeling_evidence_record_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE model.modeling_assertion_record (
+    modeling_assertion_record_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
-    modeling_evidence_document_id BIGINT NOT NULL,
-    modeling_evidence_record_type VARCHAR(100) NOT NULL,
-    modeling_evidence_text TEXT NOT NULL,
-    modeling_evidence_details JSONB NOT NULL DEFAULT '{}'::JSONB,
-    modeling_evidence_source_location JSONB,
-    modeling_evidence_applicable_layers TEXT[] NOT NULL DEFAULT '{}',
-    modeling_evidence_confidence VARCHAR(10),
-    modeling_evidence_record_status VARCHAR(20) NOT NULL DEFAULT 'active',
-    modeling_evidence_record_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    modeling_assertion_document_id BIGINT NOT NULL,
+    modeling_assertion_record_type VARCHAR(100) NOT NULL,
+    modeling_assertion_text TEXT NOT NULL,
+    modeling_assertion_details JSONB NOT NULL DEFAULT '{}'::JSONB,
+    modeling_assertion_source_location JSONB,
+    modeling_assertion_applicable_layers TEXT[] NOT NULL DEFAULT '{}',
+    modeling_assertion_confidence VARCHAR(10),
+    modeling_assertion_record_status VARCHAR(20) NOT NULL DEFAULT 'active',
+    modeling_assertion_record_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     agent_run_id VARCHAR(500),
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_evidence_record_model FOREIGN KEY (model_id)
+    CONSTRAINT fk_assertion_record_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_evidence_record_document FOREIGN KEY (
-        modeling_evidence_document_id,
+    CONSTRAINT fk_assertion_record_document FOREIGN KEY (
+        modeling_assertion_document_id,
         model_id
-    ) REFERENCES model.modeling_evidence_document (
-        modeling_evidence_document_id,
+    ) REFERENCES model.modeling_assertion_document (
+        modeling_assertion_document_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_evidence_record_id_model
-        UNIQUE (modeling_evidence_record_id, model_id),
-    CONSTRAINT ck_evidence_record_type CHECK (
-        reference.is_nonblank(modeling_evidence_record_type)
+    CONSTRAINT uq_assertion_record_id_model
+        UNIQUE (modeling_assertion_record_id, model_id),
+    CONSTRAINT ck_assertion_record_type CHECK (
+        reference.is_nonblank(modeling_assertion_record_type)
     ),
-    CONSTRAINT ck_evidence_record_text CHECK (
-        reference.is_nonblank(modeling_evidence_text)
+    CONSTRAINT ck_assertion_record_text CHECK (
+        reference.is_nonblank(modeling_assertion_text)
     ),
-    CONSTRAINT ck_evidence_record_details CHECK (
-        jsonb_typeof(modeling_evidence_details) = 'object'
+    CONSTRAINT ck_assertion_record_details CHECK (
+        jsonb_typeof(modeling_assertion_details) = 'object'
     ),
-    CONSTRAINT ck_evidence_source_location CHECK (
-        modeling_evidence_source_location IS NULL
-        OR jsonb_typeof(modeling_evidence_source_location) = 'object'
+    CONSTRAINT ck_assertion_source_location CHECK (
+        modeling_assertion_source_location IS NULL
+        OR jsonb_typeof(modeling_assertion_source_location) = 'object'
     ),
-    CONSTRAINT ck_evidence_applicable_layers CHECK (
-        modeling_evidence_applicable_layers <@ ARRAY[
+    CONSTRAINT ck_assertion_applicable_layers CHECK (
+        modeling_assertion_applicable_layers <@ ARRAY[
             'analysis', 'conceptual', 'logical', 'dimensional', 'mapping'
         ]::TEXT[]
     ),
-    CONSTRAINT ck_evidence_confidence CHECK (
-        modeling_evidence_confidence IS NULL
-        OR modeling_evidence_confidence IN ('low', 'medium', 'high')
+    CONSTRAINT ck_assertion_confidence CHECK (
+        modeling_assertion_confidence IS NULL
+        OR modeling_assertion_confidence IN ('low', 'medium', 'high')
     ),
-    CONSTRAINT ck_evidence_record_status CHECK (
-        modeling_evidence_record_status IN (
+    CONSTRAINT ck_assertion_record_status CHECK (
+        modeling_assertion_record_status IN (
             'active', 'needs_review', 'inactive', 'deprecated'
         )
     )
@@ -223,23 +223,23 @@ CREATE TABLE model.model_revision_transaction (
 
 CREATE UNIQUE INDEX ux_model_tenant_name_ci
     ON model.model (tenant_id, lower(btrim(model_name)));
-CREATE UNIQUE INDEX ux_evidence_document_model_name_ci
-    ON model.modeling_evidence_document (
+CREATE UNIQUE INDEX ux_assertion_document_model_name_ci
+    ON model.modeling_assertion_document (
         model_id,
-        lower(btrim(modeling_evidence_document_name))
+        lower(btrim(modeling_assertion_document_name))
     );
 
 CREATE INDEX ix_model_tenant_active ON model.model (tenant_id, is_active);
 CREATE INDEX ix_model_scope_object ON model.model_scope (object_id, model_id);
 CREATE INDEX ix_model_event_log_model_created
     ON model.model_event_log (model_id, created_time);
-CREATE INDEX ix_evidence_document_model_active
-    ON model.modeling_evidence_document (model_id, is_active);
-CREATE INDEX ix_evidence_document_tenant_system
-    ON model.modeling_evidence_document (tenant_id, system_id);
-CREATE INDEX ix_evidence_record_model_status
-    ON model.modeling_evidence_record (
+CREATE INDEX ix_assertion_document_model_active
+    ON model.modeling_assertion_document (model_id, is_active);
+CREATE INDEX ix_assertion_document_tenant_system
+    ON model.modeling_assertion_document (tenant_id, system_id);
+CREATE INDEX ix_assertion_record_model_status
+    ON model.modeling_assertion_record (
         model_id,
-        modeling_evidence_record_status,
-        modeling_evidence_document_id
+        modeling_assertion_record_status,
+        modeling_assertion_document_id
     );

@@ -91,7 +91,7 @@ every row without duplicating its normative text.
 | DD-001–012 | Platform boundary, snapshots, Change Sets, lifecycle, cross-Tenant Scope, bounded reads, durable drafts, and client journal | [Intent](01-product-intent.md), [architecture](03-system-architecture.md), [contracts](06-interfaces-and-contracts.md), [Change Sets](08-model-change-sets.md) |
 | DD-013–028 | Roles, delegation, secrets, revisions, Profiling atomicity, Mapping ownership, business locks, Tenant Lease exclusion, and relational identity | [Data](05-data-model-and-state.md), [security](07-security-and-invariants.md), [runtime](09-workflow-control-and-runtime.md) |
 | DD-029–040 | Conceptual Support, generated IDs, workflow separation and coverage, build/extend, fresh DDL, Scope removal, and visibility | [Data](05-data-model-and-state.md), [Change Sets](08-model-change-sets.md), [workflow index](workflows/README.md) |
-| DD-041–048 | Modeling Evidence terminology, persistence, read boundary, Section ownership, and context-only use | [Domain](02-domain-language.md), [data](05-data-model-and-state.md), [Conceptual](workflows/conceptual.md) |
+| DD-041–048 | Prior Modeling Evidence terminology and context-only boundary; superseded by ADR 002 | [Domain](02-domain-language.md), [data](05-data-model-and-state.md), [ADR 002](../adr/002-modeling-assertions-as-persisted-support.md) |
 | DD-049–053 | Analysis phases, Spark classification, reconciliation, repair, freezing, and execution modes | [Analysis](workflows/analysis.md) |
 | DD-054–061 | Conceptual creation basis, notebook boundary, ledgers, Evidence packages, reconciliation, validation, and final handoff | [Conceptual](workflows/conceptual.md) |
 | DD-062–065 and DD-091–102 | Logical details, validators, naming/audit projection, seven-family lifecycle, downstream protection, signals, locks, keys, cardinalities, types, and uniqueness | [Logical](workflows/logical.md), [data](05-data-model-and-state.md) |
@@ -134,7 +134,7 @@ rebuilder must apply the final state, not combine every historical proposal.
 | Decision | Final treatment |
 |---|---|
 | DD-038 | Fully superseded by DD-069 and DD-079, with DD-080–090 supplying final workflow detail. Mapping uses combined rows and a post-commit generator handoff; generated-code execution is deferred beyond Release 1. |
-| DD-044, DD-045 | Fully superseded by DD-048. Modeling Evidence is workflow context and its own Section, not persisted downstream support lineage. |
+| DD-044, DD-045, DD-048 | Superseded by ADR 002. Modeling Assertions own a Section and may persist through typed support/source-mapping foreign keys. |
 | DD-068 | Fully superseded by DD-069. Mapping keeps two public levels, but no separate materialization or contributor table. |
 | DD-070 | Fully superseded by DD-071. Environment-specific variants are deferred; Release 1 Mapping identity is environment-neutral. |
 | DD-066 | Partly retained: Dimensional remains a distinct sixth Section sourced through registered Silver Mapping. DD-069 supersedes its separate materialization-table boundary. |

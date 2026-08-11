@@ -31,7 +31,7 @@ The App Service owns:
 - actor-filtered MCP tools and resources;
 - the three Workflow Control routes;
 - current Principal, Tenant RBAC, and Workflow Grant authorization;
-- catalog, Model, Evidence, readiness, snapshot, and DBML reads;
+- catalog, Model, Assertion, readiness, snapshot, and DBML reads;
 - Model Change Set compilation, validation, and apply;
 - Profiling Run and Workflow Run state;
 - PostgreSQL transactions, locks, idempotency, and receipts; and

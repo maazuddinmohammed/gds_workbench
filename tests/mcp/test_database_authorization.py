@@ -28,6 +28,414 @@ def test_greenfield_schema_omits_workflow_grant_structures(
     assert row == {"workflow_grant": None, "workflow_run_summary": None}
 
 
+def test_modeling_assertion_tables_replace_modeling_evidence_tables(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        row = connection.execute(
+            """
+            SELECT to_regclass('model.modeling_assertion_document')
+                       AS assertion_document,
+                   to_regclass('model.modeling_assertion_record')
+                       AS assertion_record,
+                   to_regclass('model.modeling_evidence_document')
+                       AS evidence_document,
+                   to_regclass('model.modeling_evidence_record')
+                       AS evidence_record
+            """
+        ).fetchone()
+
+    assert row == {
+        "assertion_document": "model.modeling_assertion_document",
+        "assertion_record": "model.modeling_assertion_record",
+        "evidence_document": None,
+        "evidence_record": None,
+    }
+
+
+def test_model_change_set_uses_assertion_contract_names(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        columns = connection.execute(
+            """
+            SELECT EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'workflow'
+                          AND table_name = 'model_change_set'
+                          AND column_name = 'base_assertion_digest'
+                   ) AS base_assertion_digest,
+                   EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'workflow'
+                          AND table_name = 'model_change_set'
+                          AND column_name = 'assertion_document'
+                   ) AS assertion_document,
+                   EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'workflow'
+                          AND table_name = 'model_change_set'
+                          AND column_name = 'base_evidence_digest'
+                   ) AS base_evidence_digest,
+                   EXISTS (
+                       SELECT 1 FROM information_schema.columns
+                        WHERE table_schema = 'workflow'
+                          AND table_name = 'model_change_set'
+                          AND column_name = 'evidence_document'
+                   ) AS evidence_document
+            """
+        ).fetchone()
+        constraints = connection.execute(
+            """
+            SELECT conname, pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint
+             WHERE conname IN (
+                 'ck_change_set_event_section',
+                 'ck_apply_receipt_ref_section'
+             )
+             ORDER BY conname
+            """
+        ).fetchall()
+
+    assert columns == {
+        "base_assertion_digest": True,
+        "assertion_document": True,
+        "base_evidence_digest": False,
+        "evidence_document": False,
+    }
+    assert len(constraints) == 2
+    for constraint in constraints:
+        assert "assertion" in constraint["definition"]
+        assert "evidence" not in constraint["definition"]
+
+
+def test_conceptual_support_accepts_an_assertion_record_source(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        model_id, assertion_record_id = _seed_model_assertion(
+            connection,
+            tenant_code="ASSERTION_SUPPORT",
+            model_name="Assertion Support Model",
+            document_name="Architecture Notes",
+            assertion_text="Orders belong to customers.",
+            applicable_layer="conceptual",
+        )
+        conceptual_object = connection.execute(
+            """
+            INSERT INTO workflow.conceptual_object (
+                model_id,
+                conceptual_object_name,
+                conceptual_object_definition,
+                conceptual_object_type,
+                conceptual_object_grain
+            )
+            VALUES (%s, 'Order', 'A customer order.', 'business_object', 'One order')
+            RETURNING conceptual_object_id
+            """,
+            (model_id,),
+        ).fetchone()
+        assert conceptual_object is not None
+        support = connection.execute(
+            """
+            INSERT INTO workflow.conceptual_support (
+                model_id,
+                supported_artifact_type,
+                conceptual_object_id,
+                support_source_type,
+                modeling_assertion_record_id,
+                conceptual_support_reason
+            )
+            VALUES (%s, 'conceptual_object', %s, 'assertion', %s,
+                    'The assertion establishes the business concept.')
+            RETURNING support_source_type,
+                      source_object_id,
+                      modeling_assertion_record_id
+            """,
+            (
+                model_id,
+                conceptual_object["conceptual_object_id"],
+                assertion_record_id,
+            ),
+        ).fetchone()
+
+    assert support == {
+        "support_source_type": "assertion",
+        "source_object_id": None,
+        "modeling_assertion_record_id": assertion_record_id,
+    }
+
+
+def test_logical_entity_source_accepts_an_assertion_record(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        model_id, assertion_record_id = _seed_model_assertion(
+            connection,
+            tenant_code="LOGICAL_ASSERTION",
+            model_name="Logical Assertion Model",
+            document_name="Logical Design Notes",
+            assertion_text="Orders have an independent lifecycle.",
+            applicable_layer="logical",
+        )
+        logical_entity = connection.execute(
+            """
+            INSERT INTO workflow.logical_entity (
+                model_id,
+                logical_entity_name,
+                logical_entity_definition,
+                logical_entity_type,
+                logical_entity_grain
+            )
+            VALUES (%s, 'Order', 'A customer order.', 'transaction', 'One order')
+            RETURNING logical_entity_id
+            """,
+            (model_id,),
+        ).fetchone()
+        assert logical_entity is not None
+        source = connection.execute(
+            """
+            INSERT INTO workflow.logical_entity_source_mapping (
+                model_id,
+                logical_entity_id,
+                support_source_type,
+                modeling_assertion_record_id,
+                logical_entity_source_mapping_rationale
+            )
+            VALUES (%s, %s, 'assertion', %s,
+                    'The assertion establishes the entity boundary.')
+            RETURNING support_source_type,
+                      source_object_id,
+                      modeling_assertion_record_id
+            """,
+            (
+                model_id,
+                logical_entity["logical_entity_id"],
+                assertion_record_id,
+            ),
+        ).fetchone()
+
+    assert source == {
+        "support_source_type": "assertion",
+        "source_object_id": None,
+        "modeling_assertion_record_id": assertion_record_id,
+    }
+
+
+def test_logical_attribute_source_accepts_an_assertion_record(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        model_id, assertion_record_id = _seed_model_assertion(
+            connection,
+            tenant_code="LOGICAL_ATTRIBUTE_ASSERTION",
+            model_name="Logical Attribute Assertion Model",
+            document_name="Logical Attribute Notes",
+            assertion_text="Every order has a business order number.",
+            applicable_layer="logical",
+        )
+        logical_entity = connection.execute(
+            """
+            INSERT INTO workflow.logical_entity (
+                model_id,
+                logical_entity_name,
+                logical_entity_definition,
+                logical_entity_type,
+                logical_entity_grain
+            )
+            VALUES (%s, 'Order', 'A customer order.', 'transaction', 'One order')
+            RETURNING logical_entity_id
+            """,
+            (model_id,),
+        ).fetchone()
+        assert logical_entity is not None
+        logical_attribute = connection.execute(
+            """
+            INSERT INTO workflow.logical_attribute (
+                model_id,
+                logical_entity_id,
+                logical_attribute_name,
+                logical_attribute_definition,
+                logical_attribute_data_type,
+                logical_attribute_ordinal_position
+            )
+            VALUES (%s, %s, 'Order Number', 'Business order identifier.',
+                    'varchar(50)', 1)
+            RETURNING logical_attribute_id
+            """,
+            (model_id, logical_entity["logical_entity_id"]),
+        ).fetchone()
+        assert logical_attribute is not None
+        source = connection.execute(
+            """
+            INSERT INTO workflow.logical_attribute_source_mapping (
+                model_id,
+                logical_entity_id,
+                logical_attribute_id,
+                support_source_type,
+                modeling_assertion_record_id,
+                logical_attribute_source_mapping_rationale
+            )
+            VALUES (%s, %s, %s, 'assertion', %s,
+                    'The assertion establishes the business Attribute.')
+            RETURNING support_source_type,
+                      logical_entity_source_mapping_id,
+                      source_object_id,
+                      source_attribute_id,
+                      modeling_assertion_record_id
+            """,
+            (
+                model_id,
+                logical_entity["logical_entity_id"],
+                logical_attribute["logical_attribute_id"],
+                assertion_record_id,
+            ),
+        ).fetchone()
+
+    assert source == {
+        "support_source_type": "assertion",
+        "logical_entity_source_mapping_id": None,
+        "source_object_id": None,
+        "source_attribute_id": None,
+        "modeling_assertion_record_id": assertion_record_id,
+    }
+
+
+def test_dimensional_entity_source_accepts_an_assertion_record(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        model_id, assertion_record_id = _seed_model_assertion(
+            connection,
+            tenant_code="DIMENSIONAL_ASSERTION",
+            model_name="Dimensional Assertion Model",
+            document_name="Dimensional Design Notes",
+            assertion_text="Customers require a reusable analytical dimension.",
+            applicable_layer="dimensional",
+        )
+        dimensional_entity = connection.execute(
+            """
+            INSERT INTO workflow.dimensional_entity (
+                model_id,
+                dimensional_entity_name,
+                dimensional_entity_definition,
+                dimensional_entity_type
+            )
+            VALUES (%s, 'Customer', 'Reusable customer dimension.', 'dimension')
+            RETURNING dimensional_entity_id
+            """,
+            (model_id,),
+        ).fetchone()
+        assert dimensional_entity is not None
+        source = connection.execute(
+            """
+            INSERT INTO workflow.dimensional_entity_source_mapping (
+                model_id,
+                dimensional_entity_id,
+                support_source_type,
+                modeling_assertion_record_id,
+                dimensional_entity_source_role,
+                dimensional_entity_source_mapping_rationale
+            )
+            VALUES (%s, %s, 'assertion', %s, 'business_basis',
+                    'The assertion establishes the reusable Dimension.')
+            RETURNING support_source_type,
+                      source_object_id,
+                      modeling_assertion_record_id
+            """,
+            (
+                model_id,
+                dimensional_entity["dimensional_entity_id"],
+                assertion_record_id,
+            ),
+        ).fetchone()
+
+    assert source == {
+        "support_source_type": "assertion",
+        "source_object_id": None,
+        "modeling_assertion_record_id": assertion_record_id,
+    }
+
+
+def test_dimensional_attribute_source_accepts_an_assertion_record(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        model_id, assertion_record_id = _seed_model_assertion(
+            connection,
+            tenant_code="DIMENSIONAL_ATTRIBUTE_ASSERTION",
+            model_name="Dimensional Attribute Assertion Model",
+            document_name="Dimensional Attribute Notes",
+            assertion_text="Customer segment is required for reporting.",
+            applicable_layer="dimensional",
+        )
+        dimensional_entity = connection.execute(
+            """
+            INSERT INTO workflow.dimensional_entity (
+                model_id,
+                dimensional_entity_name,
+                dimensional_entity_definition,
+                dimensional_entity_type
+            )
+            VALUES (%s, 'Customer', 'Reusable customer dimension.', 'dimension')
+            RETURNING dimensional_entity_id
+            """,
+            (model_id,),
+        ).fetchone()
+        assert dimensional_entity is not None
+        dimensional_attribute = connection.execute(
+            """
+            INSERT INTO workflow.dimensional_attribute (
+                model_id,
+                dimensional_entity_id,
+                dimensional_attribute_name,
+                dimensional_attribute_definition,
+                dimensional_attribute_data_type,
+                dimensional_attribute_ordinal_position,
+                dimensional_attribute_role
+            )
+            VALUES (%s, %s, 'Customer Segment', 'Reporting segment.',
+                    'varchar(100)', 1, 'descriptor')
+            RETURNING dimensional_attribute_id
+            """,
+            (model_id, dimensional_entity["dimensional_entity_id"]),
+        ).fetchone()
+        assert dimensional_attribute is not None
+        source = connection.execute(
+            """
+            INSERT INTO workflow.dimensional_attribute_source_mapping (
+                model_id,
+                dimensional_entity_id,
+                dimensional_attribute_id,
+                support_source_type,
+                modeling_assertion_record_id,
+                dimensional_attribute_source_mapping_rationale
+            )
+            VALUES (%s, %s, %s, 'assertion', %s,
+                    'The assertion establishes the analytical Attribute.')
+            RETURNING support_source_type,
+                      dimensional_entity_source_mapping_id,
+                      source_object_id,
+                      source_attribute_id,
+                      modeling_assertion_record_id
+            """,
+            (
+                model_id,
+                dimensional_entity["dimensional_entity_id"],
+                dimensional_attribute["dimensional_attribute_id"],
+                assertion_record_id,
+            ),
+        ).fetchone()
+
+    assert source == {
+        "support_source_type": "assertion",
+        "dimensional_entity_source_mapping_id": None,
+        "source_object_id": None,
+        "source_attribute_id": None,
+        "modeling_assertion_record_id": assertion_record_id,
+    }
+
+
 @pytest.mark.asyncio
 async def test_list_tenants_sql_enforces_visibility_with_one_bound_actor(
     postgres_database: DisposablePostgres,
@@ -872,6 +1280,61 @@ def _seed_private_tenant(
     ).fetchone()
     assert tenant is not None
     return cast(int, tenant["tenant_id"])
+
+
+def _seed_model_assertion(
+    connection: Connection[dict[str, object]],
+    *,
+    tenant_code: str,
+    model_name: str,
+    document_name: str,
+    assertion_text: str,
+    applicable_layer: str,
+) -> tuple[int, int]:
+    tenant_id = _seed_private_tenant(connection, tenant_code)
+    model = connection.execute(
+        """
+        INSERT INTO model.model (tenant_id, model_name)
+        VALUES (%s, %s)
+        RETURNING model_id
+        """,
+        (tenant_id, model_name),
+    ).fetchone()
+    assert model is not None
+    model_id = cast(int, model["model_id"])
+    document = connection.execute(
+        """
+        INSERT INTO model.modeling_assertion_document (
+            model_id,
+            modeling_assertion_document_name
+        )
+        VALUES (%s, %s)
+        RETURNING modeling_assertion_document_id
+        """,
+        (model_id, document_name),
+    ).fetchone()
+    assert document is not None
+    assertion = connection.execute(
+        """
+        INSERT INTO model.modeling_assertion_record (
+            model_id,
+            modeling_assertion_document_id,
+            modeling_assertion_record_type,
+            modeling_assertion_text,
+            modeling_assertion_applicable_layers
+        )
+        VALUES (%s, %s, 'business_rule', %s, %s)
+        RETURNING modeling_assertion_record_id
+        """,
+        (
+            model_id,
+            document["modeling_assertion_document_id"],
+            assertion_text,
+            [applicable_layer],
+        ),
+    ).fetchone()
+    assert assertion is not None
+    return model_id, cast(int, assertion["modeling_assertion_record_id"])
 
 
 def _seed_user_actor(

@@ -28,6 +28,10 @@ These files are intentionally not executable `.sql` files. Do not load them as
 migrations. Re-evaluate requirements, tests, permissions, indexes, and function
 ownership before rebuilding any behavior in the numbered DDL.
 
+This archive predates ADR 002 and therefore retains the historical
+`modeling_evidence_*` names and context-only behavior. Do not copy those names
+or semantics into active Assertion code.
+
 If revisiting a behavior, use the numbered schema as the base and selectively
 rebuild it. Do not bulk-enable this archive.
 

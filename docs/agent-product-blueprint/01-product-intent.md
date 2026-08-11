@@ -41,7 +41,7 @@ Release 1 solves this by:
 ## Main product journey
 
 1. An active human inspects Tenants, Bronze Objects, Attributes, ingestion
-   lineage, owned Models, and Modeling Evidence.
+   lineage, owned Models, and Modeling Assertions.
 2. The human checks readiness for the intended workflow.
 3. An authorized Architect/Tenant Admin either edits through the shared Model Change Set tools or
    authorizes one Databricks Workflow Run through Workflow Control.
@@ -80,7 +80,7 @@ deploys physical Silver or Gold tables.
 - Human catalog and Model reads through MCP.
 - Actor-separated MCP discovery and dispatch.
 - Model readiness, immutable Model Snapshots, and governed DBML resources.
-- Eight-document Model Change Sets: Model Scope, Profiling, Evidence, Analysis,
+- Eight-document Model Change Sets: Model Scope, Profiling, Assertion, Analysis,
   Conceptual, Logical, Dimensional, and Mapping.
 - Tenant Metadata Change Sets for physical Objects/Attributes and Copy/Process
   configuration.

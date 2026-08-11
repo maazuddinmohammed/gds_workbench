@@ -10,7 +10,7 @@ Every draft contains these Sections, even when untouched:
 
 1. Model Scope
 2. Profiling
-3. Evidence
+3. Assertion
 4. Analysis
 5. Conceptual
 6. Logical
@@ -53,7 +53,7 @@ The App Service:
 
 1. resolves and authorizes the current human or grant-bound workload;
 2. checks global idempotency and the exact expected Model revision;
-3. copies the revision plus source, Evidence, and policy digests;
+3. copies the revision plus source, Assertion, and policy digests;
 4. creates eight empty documents at draft revision `1`;
 5. records a `created` event and expiry; and
 6. binds the draft to the Workflow Grant when called by a workload.
@@ -63,7 +63,7 @@ All records commit together.
 The three base digests are independent stale-input fences:
 
 - source-context digest covers the selected physical catalog and Model Scope;
-- Evidence digest covers the Evidence used by the draft; and
+- Assertion digest covers the Assertions used by the draft; and
 - policy digest covers naming, audit, and technical Model policies.
 
 Validate and apply compare them with the current values. A mismatch rejects a
@@ -93,7 +93,7 @@ Validation never changes effective Model state.
 1. Lock the draft and optional grant; fence the exact draft revision.
 2. Compile the eight draft documents over the effective graph without a Mapping
    catalog. This discovers every physical Object needed for full validation.
-3. Load those Objects, Attributes, lineage, Scope, and applicable Evidence.
+3. Load those Objects, Attributes, lineage, Scope, and applicable Assertions.
 4. Compile again with the authoritative catalog context.
 5. Compare the current Model revision and context digests with the draft base.
 6. Collect all safely discoverable issues, impact, and effective-change result.
@@ -117,7 +117,7 @@ Materialization then:
 
 1. allocates PostgreSQL IDs for all local creates;
 2. resolves typed local and existing references;
-3. strips transport-only operation fields and transient Conceptual basis data;
+3. strips transport-only operation fields;
 4. overlays create, update, and lifecycle operations on effective artifacts;
 5. sorts the complete future Sections deterministically; and
 6. records every local-reference-to-database-ID mapping.

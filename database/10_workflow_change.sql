@@ -27,14 +27,14 @@ CREATE TABLE workflow.model_change_set (
     model_change_set_status VARCHAR(20) NOT NULL DEFAULT 'active',
     base_model_revision BIGINT NOT NULL,
     base_source_context_digest CHAR(64) NOT NULL,
-    base_evidence_digest CHAR(64) NOT NULL,
+    base_assertion_digest CHAR(64) NOT NULL,
     base_policy_digest CHAR(64) NOT NULL,
     draft_revision BIGINT NOT NULL DEFAULT 1,
     candidate_digest CHAR(64),
     validation_outcome JSONB,
     model_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     profiling_document JSONB NOT NULL DEFAULT '{}'::JSONB,
-    evidence_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    assertion_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     analysis_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     logical_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -64,7 +64,7 @@ CREATE TABLE workflow.model_change_set (
     ),
     CONSTRAINT ck_change_set_digests CHECK (
         base_source_context_digest ~ '^[0-9a-f]{64}$'
-        AND base_evidence_digest ~ '^[0-9a-f]{64}$'
+        AND base_assertion_digest ~ '^[0-9a-f]{64}$'
         AND base_policy_digest ~ '^[0-9a-f]{64}$'
         AND (candidate_digest IS NULL OR candidate_digest ~ '^[0-9a-f]{64}$')
     ),
@@ -74,7 +74,7 @@ CREATE TABLE workflow.model_change_set (
     CONSTRAINT ck_change_set_documents CHECK (
         jsonb_typeof(model_scope_document) = 'object'
         AND jsonb_typeof(profiling_document) = 'object'
-        AND jsonb_typeof(evidence_document) = 'object'
+        AND jsonb_typeof(assertion_document) = 'object'
         AND jsonb_typeof(analysis_document) = 'object'
         AND jsonb_typeof(conceptual_document) = 'object'
         AND jsonb_typeof(logical_document) = 'object'
@@ -82,7 +82,7 @@ CREATE TABLE workflow.model_change_set (
         AND jsonb_typeof(mapping_document) = 'object'
         AND octet_length(model_scope_document::TEXT) <= 16777216
         AND octet_length(profiling_document::TEXT) <= 16777216
-        AND octet_length(evidence_document::TEXT) <= 16777216
+        AND octet_length(assertion_document::TEXT) <= 16777216
         AND octet_length(analysis_document::TEXT) <= 16777216
         AND octet_length(conceptual_document::TEXT) <= 16777216
         AND octet_length(logical_document::TEXT) <= 16777216
@@ -139,7 +139,7 @@ CREATE TABLE workflow.model_change_set_event (
     CONSTRAINT ck_change_set_event_section CHECK (
         section_name IS NULL
         OR section_name IN (
-            'model_scope', 'profiling', 'evidence', 'analysis', 'conceptual',
+            'model_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping'
         )
     ),
@@ -239,7 +239,7 @@ CREATE TABLE workflow.model_apply_receipt_ref (
     ),
     CONSTRAINT ck_apply_receipt_ref_section CHECK (
         section_name IN (
-            'model_scope', 'profiling', 'evidence', 'analysis', 'conceptual',
+            'model_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping'
         )
     ),

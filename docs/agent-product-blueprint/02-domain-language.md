@@ -23,8 +23,8 @@ Use these names consistently. They encode ownership and workflow boundaries.
 | Model Scope | Server-owned set of Bronze Objects and Attributes a Model may use | Selection, source list |
 | Selected Scope | Explicit subset requested for one run | Model Scope |
 | Impact Scope | Selected items plus required dependants | Selection |
-| Modeling Evidence | Model-owned document metadata and verified structured Evidence Records | Persisted downstream lineage |
-| Section | One versioned part of a Model: Evidence, Analysis, Conceptual, Logical, Dimensional, or Mapping | Patch, payload type |
+| Modeling Assertion | Model-owned document metadata and structured factual Assertion Records that may persist as artifact support | Modeling Evidence, fact |
+| Section | One versioned part of a Model: Assertion, Analysis, Conceptual, Logical, Dimensional, or Mapping | Patch, payload type |
 | Model Change Set | Model-owned eight-document draft that validates one future graph and applies atomically | Patch, transaction draft |
 | Metadata Change Set | Tenant-owned twelve-document draft for physical metadata and Copy/Process configuration | Model Change Set |
 | Candidate | Uncommitted workflow result that may become one or more draft Sections | Agent answer |
@@ -50,11 +50,11 @@ Use these names consistently. They encode ownership and workflow boundaries.
 - **Analysis** records candidate Attribute-level relationships between Bronze
   Objects and their deterministic physical validation.
 - **Conceptual** records stable business Objects, Relationships, and typed
-  physical Support.
+  Object/Assertion Support.
 - **Logical** records implementation-oriented Silver submodels, entities,
-  Attributes, relationships, memberships, and Bronze source mappings.
+  Attributes, relationships, memberships, and Bronze/Assertion source mappings.
 - **Dimensional** records Gold facts, dimensions, bridges, Attributes,
-  relationships, memberships, and Silver source mappings.
+  relationships, memberships, and Silver/Assertion source mappings.
 - **Mapping** binds Logical entities to Silver targets or Dimensional entities
   to Gold targets, with transformation and generator metadata.
 

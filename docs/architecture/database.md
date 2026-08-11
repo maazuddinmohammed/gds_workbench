@@ -18,7 +18,7 @@ deployment unit:
    centralized authorization functions, append-only MCP tool-call logs, and
    the two database roles;
 4. Model, environment targets, Scope, safe event projection, exactly two
-   Modeling Evidence tables, and revision machinery;
+   Modeling Assertion tables, and revision machinery;
 5. Attribute Profile and Analysis;
 6. Conceptual Object, Relationship, and typed physical Support;
 7. the exact seven Logical families;
@@ -82,13 +82,15 @@ The applied lifecycle is `active`, `needs_review`, `inactive`, or `deprecated`;
 the first two states are effective. Candidate-local references and AI/human
 acceptance labels never appear in applied tables.
 
-Modeling Evidence consists of one document table and one record table. Analysis
+Modeling Assertions consist of one document table and one record table. Analysis
 uses a generated result ID and stable physical Attribute/Object endpoints.
-Conceptual Support contains one physical Object and exactly one typed relational
-parent: Conceptual Object or Conceptual Relationship. No transient Evidence ID
-is a downstream Conceptual lineage column.
+Conceptual Support contains exactly one Object or Assertion Record source and
+exactly one typed relational parent: Conceptual Object or Conceptual
+Relationship. Composite foreign keys keep Assertion support in the same Model.
 
-Logical has exactly seven persisted families. Its natural identities remain
+Logical has exactly seven persisted families. Entity source rows contain one
+Bronze Object or Assertion Record; Attribute source rows contain one physical
+Attribute path or Assertion Record. Its natural identities remain
 reserved across lifecycle. The database enforces orthogonal primary, natural,
 and surrogate key facts; non-null keys; same-Model endpoints; authoritative
 Model Scope; Bronze source eligibility; effective parent closure; unique
@@ -96,7 +98,8 @@ effective Attribute ordinals; and the rule that effective policy-owned audit
 Attributes have no physical source mapping.
 
 Dimensional has the corresponding seven families and no Relationship source
-mapping. Facts and Bridges require both a nonblank grain definition and at
+mapping. Entity and Attribute sources have the same typed physical/Assertion
+choice. Facts and Bridges require both a nonblank grain definition and at
 least one effective structured grain component. Entity and Attribute sources
 must be active Silver objects/attributes reachable through effective Logical
 Object/Attribute Mappings for the same Model. Measures, key roles, audit roles,
@@ -132,7 +135,7 @@ separate finalized requirements and rejecting tests before activation.
 ## Durable workflow state
 
 Model Change Sets store eight bounded object-shaped JSON documents—Model
-Scope, Profiling, Evidence, Analysis, Conceptual, Logical, Dimensional, and
+Scope, Profiling, Assertion, Analysis, Conceptual, Logical, Dimensional, and
 Mapping—plus queryable
 base revision/digests, global `draft_revision`, validation outcome, sealed
 candidate digest, activity/expiry, and terminal timestamps. Their lifecycle is
