@@ -2,8 +2,8 @@
 
 ## Installation model
 
-The database is a canonical fresh PostgreSQL 16 schema. It is not a migration
-set and is not idempotent DDL. Apply the eleven numbered files once, in sorted
+The database is a canonical fresh PostgreSQL 18 schema. It is not a migration
+set and is not idempotent DDL. Apply the twelve install files once, in sorted
 order, in one fail-fast transaction.
 
 There are 73 tables in six schemas. Every foreign key uses `ON DELETE NO

@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: final privileges.
+-- GDS ETL Workbench Release 1: final privileges after runtime-role creation.
 
 -- Least-privilege runtime roles. Deployment owns DDL; these roles cannot create it.
 REVOKE ALL ON SCHEMA reference, core, security, model, workflow, mcp FROM PUBLIC;

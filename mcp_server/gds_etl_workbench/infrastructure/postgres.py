@@ -209,7 +209,7 @@ class PostgresDatabase:
                 row = await result.fetchone()
             if row is None:
                 return ReadinessRecord(ready=False, code="database_posture_invalid")
-            if row["postgres_major"] != 16:
+            if row["postgres_major"] != 18:
                 return ReadinessRecord(ready=False, code="database_version_invalid")
             if not row["schema_shape_ok"]:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")

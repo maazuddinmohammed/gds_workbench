@@ -20,13 +20,17 @@ from psycopg.rows import dict_row
 from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
 
 POSTGRES_IMAGE = (
-    "postgres:16.13-bookworm@"
-    "sha256:472efd9a66f2b2f1a5aeb18b28de74332e6ef88c2b93a1a5d812fb6db67a5f60"
+    "postgres:18.4-bookworm@"
+    "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
 )
 DATABASE_ROOT = Path(__file__).parents[2] / "database"
-DATABASE_FILES = tuple(sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql")))
-DATABASE_PREFLIGHT_FILE = DATABASE_ROOT / "deployment" / "00_preflight.sql"
-DATABASE_VERIFY_FILE = DATABASE_ROOT / "deployment" / "12_verify_install.sql"
+DATABASE_FILES = tuple(
+    path
+    for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+    if 1 <= int(path.name[:2]) <= 12
+)
+DATABASE_PREFLIGHT_FILE = DATABASE_ROOT / "00_preflight.sql"
+DATABASE_VERIFY_FILE = DATABASE_ROOT / "13_verify_install.sql"
 FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
     {
         "DATABASE_URL",
@@ -290,7 +294,7 @@ def _assert_fixture_identity(
     ).fetchone()
     if row is None:
         raise AssertionError("database fixture identity query returned no row")
-    if row["database_name"] != fixture.database or row["major"] != 16:
+    if row["database_name"] != fixture.database or row["major"] != 18:
         raise AssertionError("database fixture identity mismatch")
     if row["session_user"] not in {fixture.owner_user, fixture.runtime_user}:
         raise AssertionError("database fixture user mismatch")

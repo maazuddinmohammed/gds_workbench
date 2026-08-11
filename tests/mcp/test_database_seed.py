@@ -20,11 +20,11 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
     postgres_database: DisposablePostgres,
 ) -> None:
     template = HUMAN_SEED_TEMPLATE.read_text(encoding="utf-8")
-    with postgres_database.connect_owner() as connection:
-        with connection.transaction():
-            connection.execute(
-                cast(LiteralString, DEMO_SEED.read_text(encoding="utf-8"))
-            )
+    connection = postgres_database.connect_owner()
+    try:
+        connection.execute(
+            cast(LiteralString, DEMO_SEED.read_text(encoding="utf-8"))
+        )
 
         with pytest.raises(psycopg.errors.RaiseException), connection.transaction():
             connection.execute(cast(LiteralString, template))
@@ -41,8 +41,7 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
             rendered = rendered.replace(placeholder, value)
         assert all(placeholder not in rendered for placeholder in replacements)
 
-        with connection.transaction():
-            connection.execute(cast(LiteralString, rendered))
+        connection.execute(cast(LiteralString, rendered))
 
         row = connection.execute(
             """
@@ -51,11 +50,25 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
                    count(DISTINCT attribute.attribute_id) AS attribute_count,
                    (
                        SELECT count(*)
-                         FROM core.ingestion_object_mapping
+                         FROM core.ingestion_object_mapping AS mapping
+                         JOIN core.object AS source_object
+                           ON source_object.object_id = mapping.source_object_id
+                        WHERE source_object.object_schema IN (
+                                  'source_demo',
+                                  'bronze_demo',
+                                  'silver_demo'
+                              )
                    ) AS object_mapping_count,
                    (
                        SELECT count(*)
-                         FROM core.ingestion_attribute_mapping
+                         FROM core.ingestion_attribute_mapping AS mapping
+                         JOIN core.object AS source_object
+                           ON source_object.object_id = mapping.source_object_id
+                        WHERE source_object.object_schema IN (
+                                  'source_demo',
+                                  'bronze_demo',
+                                  'silver_demo'
+                              )
                    ) AS attribute_mapping_count,
                    (
                        SELECT count(*)
@@ -87,8 +100,6 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
         assert row["attribute_mapping_count"] == 6
         assert row["discovery_scope_count"] == 3
         tenant_id = row["tenant_id"]
-
-    with postgres_database.connect_runtime() as connection:
         decision = connection.execute(
             """
             SELECT authorized, effective_role, denial_code
@@ -102,6 +113,9 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
                 "tenant_read",
             ),
         ).fetchone()
+    finally:
+        connection.rollback()
+        connection.close()
 
     assert decision == {
         "authorized": True,

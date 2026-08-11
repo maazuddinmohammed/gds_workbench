@@ -1050,7 +1050,8 @@ Spark/Databricks dependencies:
 │   ├── 08_workflow_dimensional.sql
 │   ├── 09_workflow_mapping.sql
 │   ├── 10_mcp.sql
-│   └── 11_runtime_integrity.sql
+│   ├── 11_runtime_account.sql
+│   └── 12_runtime_integrity.sql
 ├── docs/
 │   ├── architecture/
 │   ├── contracts/
@@ -1682,7 +1683,7 @@ Exit evidence:
 Implementation:
 
 - Create `mcp_server/` as one locked `uv` project.
-- Use Python 3.12 and PostgreSQL 16; pin an exact non-`latest` PostgreSQL 16
+- Use Python 3.12 and PostgreSQL 18; pin an exact non-`latest` PostgreSQL 18
   container patch/digest during T01 and require the approved Azure target to use
   the same major.
 - Add Pydantic, the Python MCP SDK, ASGI runtime, Psycopg/pool, pytest,
@@ -3294,7 +3295,7 @@ agent cannot confuse the frozen reference with the writable target.
 | Current task ledger | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/tasks/index.json` and `TASK-001.json` through `TASK-026.json` |
 | Active guided-development state | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/.guided-dev/state.json` |
 | Stale-but-useful handoff context | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/gds-etl-workbench-agent-handoff.md` |
-| Current canonical database baseline | `/Users/maazuddinmohammed/main/projects/gds_workbench_v2/database/01_reference.sql` through `11_runtime_integrity.sql` |
+| Current canonical database baseline | `/Users/maazuddinmohammed/main/projects/gds_workbench_v2/database/01_reference.sql` through `12_runtime_integrity.sql` |
 | Architecture inventory | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/docs/codebase.md` |
 | Prototype package root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/gds_ai` |
 | Prototype notebook root | `/Users/maazuddinmohammed/main/projects/gds_etl_workbench/sample_code/notebooks` |

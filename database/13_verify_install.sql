@@ -1,14 +1,15 @@
 -- Fail-fast verification after database/01_reference.sql through
--- database/11_runtime_integrity.sql have completed.
+-- database/12_runtime_integrity.sql have completed.
 
 DO $verify_install$
 DECLARE
     v_schema_count INTEGER;
-    v_role_count INTEGER;
+    v_group_role_count INTEGER;
+    v_membership_count INTEGER;
     v_security_definer_count INTEGER;
 BEGIN
-    IF current_setting('server_version_num')::INTEGER / 10000 <> 16 THEN
-        RAISE EXCEPTION 'PostgreSQL 16 is required';
+    IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
+        RAISE EXCEPTION 'PostgreSQL 18 is required';
     END IF;
 
     SELECT count(*)
@@ -23,7 +24,7 @@ BEGIN
     END IF;
 
     SELECT count(*)
-      INTO v_role_count
+      INTO v_group_role_count
       FROM pg_catalog.pg_roles AS role_record
      WHERE role_record.rolname IN ('gds_migration', 'gds_app_write')
        AND NOT role_record.rolcanlogin
@@ -34,8 +35,46 @@ BEGIN
        AND NOT role_record.rolreplication
        AND NOT role_record.rolbypassrls;
 
-    IF v_role_count <> 2 THEN
+    IF v_group_role_count <> 2 THEN
         RAISE EXCEPTION 'release group-role posture is invalid';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_roles AS role_record
+         WHERE role_record.rolname = 'gds_mcp_runtime'
+           AND role_record.rolcanlogin
+           AND NOT role_record.rolsuper
+           AND NOT role_record.rolinherit
+           AND NOT role_record.rolcreatedb
+           AND NOT role_record.rolcreaterole
+           AND NOT role_record.rolreplication
+           AND NOT role_record.rolbypassrls
+    ) THEN
+        RAISE EXCEPTION 'gds_mcp_runtime posture is invalid';
+    END IF;
+
+    SELECT count(*)
+      INTO v_membership_count
+      FROM pg_catalog.pg_auth_members AS membership
+      JOIN pg_catalog.pg_roles AS member_role
+        ON member_role.oid = membership.member
+     WHERE member_role.rolname = 'gds_mcp_runtime';
+
+    IF v_membership_count <> 1 OR NOT pg_has_role(
+        'gds_mcp_runtime',
+        'gds_app_write',
+        'MEMBER'
+    ) THEN
+        RAISE EXCEPTION 'gds_mcp_runtime must have exactly one direct membership';
+    END IF;
+
+    IF NOT has_database_privilege(
+        'gds_mcp_runtime',
+        current_database(),
+        'CONNECT'
+    ) THEN
+        RAISE EXCEPTION 'gds_mcp_runtime cannot connect to this database';
     END IF;
 
     IF to_regclass('core.tenant_metadata_discovery_scope') IS NULL
@@ -128,4 +167,6 @@ END;
 $verify_install$;
 
 SELECT '1.0.0' AS schema_version,
+       'gds_mcp_runtime' AS runtime_login,
+       'gds_app_write' AS activated_role,
        'passed' AS verification_status;

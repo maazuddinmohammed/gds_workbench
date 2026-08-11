@@ -38,7 +38,7 @@ must reproduce byte-for-byte from a clean checkout.
 
 ## 3. Install the fresh PostgreSQL schema
 
-Apply the eleven numbered SQL files once, in sorted order, in one fail-fast transaction.
+Apply the twelve install SQL files once, in sorted order, in one fail-fast transaction.
 Implement:
 
 - reference, foundational, security, Model, applied workflow, Mapping,

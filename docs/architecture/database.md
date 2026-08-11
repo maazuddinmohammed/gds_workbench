@@ -1,10 +1,10 @@
 # Release 1 database architecture
 
-The Release 1 database is a canonical, fresh-install PostgreSQL 16 schema. It
+The Release 1 database is a canonical, fresh-install PostgreSQL 18 schema. It
 is not an in-place migration set and it is not idempotent DDL. A new database
-must execute all eleven numbered files from `database/01_reference.sql`
-through `database/11_runtime_integrity.sql` exactly once, in sorted order, in
-one fail-fast transaction.
+must execute the ordered install files from `database/01_reference.sql`
+through `database/12_runtime_integrity.sql` exactly once. Run each file in its
+own fail-fast transaction.
 
 ## Ownership and dependency order
 
@@ -24,7 +24,9 @@ deployment unit:
 8. the exact seven Dimensional families;
 9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
 10. MCP-owned Model and Metadata Change Sets, their events, and tool-call log;
-11. final runtime privileges.
+11. group roles, the passwordless `gds_mcp_runtime` login, and its sole group
+    membership;
+12. final runtime privileges.
 
 There are 73 tables across `reference`, `core`, `security`, `model`, `workflow`,
 and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
@@ -167,12 +169,15 @@ Registered workload identities map directly to active Super Admin Principals.
 
 ## Roles and privileges
 
-The fresh cluster defines two non-login, non-superuser roles:
+The fresh cluster defines two non-login, non-superuser group roles:
 
 - `gds_migration`: schema creation plus all release objects;
 - `gds_app_write`: safe reads, constrained Model/workflow/MCP DML,
   sequence use, the pure `CHECK` validator, centralized authorization,
   and governed Tenant Lock functions.
+
+`gds_mcp_runtime` is the LOGIN used by App Service. It has exactly one direct
+membership, `gds_app_write`, and activates that group with `SET ROLE`.
 
 `PUBLIC` loses schema, table, and function rights. The application role is
 explicitly denied `core.connection_value`. Append-only events, revision
@@ -188,7 +193,7 @@ the application LOGIN must have exactly one direct membership,
 additional group capability. Startup and readiness compare its effective
 release-schema table, schema, function, and sequence privileges exactly with
 `gds_app_write`; only a boolean posture leaves repository access enabled. Azure
-PostgreSQL deployment must use PostgreSQL 16 and preserve these grants.
+PostgreSQL deployment must use PostgreSQL 18 and preserve these grants.
 
 ## Verification
 
@@ -200,7 +205,8 @@ mcp_server/.venv/bin/pytest tests/mcp/test_database_authorization.py -q
 
 The fixture rejects existing DSN/libpq connection environment, creates random
 database, owner, runtime login, passwords, port, container name, and sentinel,
-uses the pinned PostgreSQL 16 image, installs all eleven files once in one
-transaction, and exercises the actual runtime role and pool. Cleanup validates
+uses the pinned PostgreSQL 18 image, runs the preflight, installs files `01`
+through `12`, runs the verifier, and exercises the actual runtime role and
+pool. Cleanup validates
 the per-run container label and stops only that container. There is no drop,
 truncate, reset, external-DSN, or populated-database cleanup path.

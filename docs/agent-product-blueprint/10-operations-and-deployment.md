@@ -4,13 +4,13 @@
 
 Release 1 has three independently deployed parts:
 
-1. a PostgreSQL 16 database created from the canonical eleven SQL files;
+1. a PostgreSQL 18 database created from the canonical SQL files;
 2. one Azure Linux App Service ZIP containing the MCP modular monolith; and
 3. one immutable Databricks source release containing the jobs library and
    seven separate notebooks.
 
 Both Python runtimes use the `3.12.*` release line with exact locked production
-dependencies. PostgreSQL is the pinned 16 release line.
+dependencies. PostgreSQL is the pinned 18 release line.
 
 The database is installed by a deployment identity before the application
 starts. App Service startup never applies DDL. The jobs release never contains

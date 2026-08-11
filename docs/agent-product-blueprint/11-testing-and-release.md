@@ -23,7 +23,7 @@ No test or test-support file is copied into either production deployment.
 
 ## Database and external safety
 
-Local and CI database tests create their own disposable PostgreSQL 16 container
+Local and CI database tests create their own disposable PostgreSQL 18 container
 with random credentials, a random database, and a per-run sentinel. They reject
 user, environment, default, local-service, Azure, staging, and production DSNs
 before connecting. Only a validated local Unix Docker socket is accepted.

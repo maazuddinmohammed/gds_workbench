@@ -7,7 +7,7 @@ flowchart LR
     Human["Human MCP client"] -->|"Entra + HTTPS"| App["Modular App Service"]
     Operator["Human workflow operator"] -->|"Workflow Control"| App
     Task["Databricks task"] -->|"Workload MCP"| App
-    App --> PG[("PostgreSQL 16")]
+    App --> PG[("PostgreSQL 18")]
     Task --> Spark["Approved physical data through Spark (current workflows: Bronze)"]
     Task --> Foundry["Microsoft Foundry model endpoint"]
     Task --> Volume["Unity Catalog Volume for DBML only"]

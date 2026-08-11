@@ -1,7 +1,7 @@
 # Seed data
 
 Seed files are separate from canonical DDL. Run them only after
-`database/deployment/12_verify_install.sql` passes.
+`database/13_verify_install.sql` passes.
 
 ## Demo metadata
 

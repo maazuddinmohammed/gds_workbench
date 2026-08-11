@@ -84,7 +84,7 @@ uv run --project mcp_server pytest tests/mcp
 
 Tests never read `.env` or connect to an existing database. Database tests reject
 connection environment, create random credentials and a per-run sentinel in a
-disposable loopback PostgreSQL 16 container, install the canonical SQL once, and
+disposable loopback PostgreSQL 18 container, install the canonical SQL once, and
 dispose only that verified container.
 
 ## Azure ZIP shape

@@ -1,14 +1,14 @@
 # Current MCP scaffold architecture
 
 The deployed unit is one stateless Python 3.12 MCP application on Azure App
-Service backed by PostgreSQL 16.
+Service backed by PostgreSQL 18.
 
 ```text
 human MCP client -------- delegated Entra token ---+
                                                     +--> Easy Auth --> /mcp
 registered workflow app -- application Entra token +                    |
                                                                          v
-                                                                  PostgreSQL 16
+                                                                  PostgreSQL 18
 ```
 
 Azure Easy Auth validates tokens. Middleware parses one bounded claim envelope
@@ -79,7 +79,7 @@ documentation, caches, and nested archives. Database DDL is installed separately
 and never at application startup.
 
 The server opens one bounded PostgreSQL pool. Production connections activate
-the `NOINHERIT` `gds_app_write` role. Readiness checks PostgreSQL 16, required
+the `NOINHERIT` `gds_app_write` role. Readiness checks PostgreSQL 18, required
 schema functions, and the runtime role posture. The only background write is a
 bounded Tenant Lock expiry pass at startup and every 60 seconds.
 

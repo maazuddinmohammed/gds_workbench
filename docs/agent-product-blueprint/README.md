@@ -15,7 +15,7 @@ system.
 The guide describes the development working tree inspected on 2026-08-07. The
 effective Release 1 shape is:
 
-- one PostgreSQL 16 authoritative metadata store;
+- one PostgreSQL 18 authoritative metadata store;
 - one Entra-authenticated modular App Service;
 - one actor-filtered MCP endpoint with 22 tools;
 - three fixed human Workflow Control routes;

@@ -6,40 +6,46 @@ INSERT INTO reference.system_type (
     system_type_name,
     system_type_description
 )
-VALUES ('DEMO_DATABASE', 'Demo Database', 'Test-only database system type');
+VALUES ('DEMO_DATABASE', 'Demo Database', 'Test-only database system type')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.connection_type (
     connection_type_code,
     connection_type_name,
     connection_type_description
 )
-VALUES ('DEMO_POSTGRESQL', 'Demo PostgreSQL', 'Test-only PostgreSQL connection');
+VALUES ('DEMO_POSTGRESQL', 'Demo PostgreSQL', 'Test-only PostgreSQL connection')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.object_type (
     object_type_code,
     object_type_name,
     object_type_description
 )
-VALUES ('TABLE', 'Table', 'Relational table');
+VALUES ('TABLE', 'Table', 'Relational table')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.zone (zone_code, zone_name, zone_description)
 VALUES
     ('source', 'Source', 'Source-system metadata'),
     ('bronze', 'Bronze', 'Raw global-data-store metadata'),
     ('silver', 'Silver', 'Conformed global-data-store metadata'),
-    ('gold', 'Gold', 'Presentation global-data-store metadata');
+    ('gold', 'Gold', 'Presentation global-data-store metadata')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.chunk_type (
     chunk_type_name,
     chunk_type_description
 )
-VALUES ('Full', 'Test-only full-load chunk');
+VALUES ('Full', 'Test-only full-load chunk')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.file_type (
     file_type_name,
     file_type_description
 )
-VALUES ('Parquet', 'Apache Parquet file');
+VALUES ('Parquet', 'Apache Parquet file')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.data_operation (
     data_operation_name,
@@ -47,13 +53,15 @@ INSERT INTO reference.data_operation (
 )
 VALUES
     ('Read', 'Read source records'),
-    ('Write', 'Write target records');
+    ('Write', 'Write target records')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO reference.process_type (
     process_type_name,
     process_type_description
 )
-VALUES ('Notebook', 'Notebook-backed metadata process');
+VALUES ('Notebook', 'Notebook-backed metadata process')
+ON CONFLICT DO NOTHING;
 
 INSERT INTO core.project (
     project_code,

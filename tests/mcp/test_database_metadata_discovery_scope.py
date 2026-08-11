@@ -30,7 +30,7 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
     with postgres_database.connect_owner() as connection:
         columns = connection.execute(
             """
-            SELECT column_name
+            SELECT column_name, is_nullable
               FROM information_schema.columns
              WHERE table_schema = 'core'
                AND table_name = 'tenant_metadata_discovery_scope'
@@ -40,8 +40,9 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
         constraints = connection.execute(
             """
             SELECT conname, pg_get_constraintdef(oid) AS definition
-              FROM pg_constraint
+             FROM pg_constraint
              WHERE conrelid = 'core.tenant_metadata_discovery_scope'::REGCLASS
+               AND contype IN ('p', 'f', 'c', 'u')
              ORDER BY conname
             """
         ).fetchall()
@@ -85,6 +86,7 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
         ).fetchone()
 
     assert [column["column_name"] for column in columns] == EXPECTED_COLUMNS
+    assert all(column["is_nullable"] == "NO" for column in columns)
     assert {constraint["conname"]: constraint["definition"] for constraint in constraints} == {
         "ck_metadata_discovery_scope_schema": (
             "CHECK (reference.is_nonblank((object_schema)::text))"

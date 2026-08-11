@@ -1,4 +1,4 @@
--- Read-only preflight for a new PostgreSQL 16 database.
+-- Read-only preflight for a new PostgreSQL 18 database.
 -- This intentionally fails if the target is not empty for this release.
 
 DO $preflight$
@@ -7,8 +7,8 @@ DECLARE
     v_existing_role TEXT;
     v_can_create_roles BOOLEAN;
 BEGIN
-    IF current_setting('server_version_num')::INTEGER / 10000 <> 16 THEN
-        RAISE EXCEPTION 'PostgreSQL 16 is required';
+    IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
+        RAISE EXCEPTION 'PostgreSQL 18 is required';
     END IF;
 
     SELECT role_record.rolsuper OR role_record.rolcreaterole
@@ -36,7 +36,9 @@ BEGIN
     SELECT role_record.rolname
       INTO v_existing_role
       FROM pg_catalog.pg_roles AS role_record
-     WHERE role_record.rolname IN ('gds_migration', 'gds_app_write')
+     WHERE role_record.rolname IN (
+               'gds_migration', 'gds_app_write', 'gds_mcp_runtime'
+           )
      ORDER BY role_record.rolname
      LIMIT 1;
 
@@ -46,7 +48,7 @@ BEGIN
 END;
 $preflight$;
 
-SELECT 16 AS required_postgres_major,
+SELECT 18 AS required_postgres_major,
        current_setting('server_version_num')::INTEGER / 10000
            AS actual_postgres_major,
        'passed' AS preflight_status;
