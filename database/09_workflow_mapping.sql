@@ -192,7 +192,7 @@ CREATE TABLE workflow.mapping_attribute (
     mapping_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
-    object_mapping_id BIGINT NOT NULL,
+    mapping_object_id BIGINT NOT NULL,
     modeled_entity_type VARCHAR(30) NOT NULL,
     target_object_id BIGINT NOT NULL,
     logical_attribute_id BIGINT,

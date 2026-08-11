@@ -31,6 +31,11 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "startup.sh",
             "requirements.txt",
             "BUILD_MANIFEST.json",
+            "gds_etl_workbench/tools/snapshots/metadata/archive.py",
+            "gds_etl_workbench/tools/snapshots/metadata/contracts.py",
+            "gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py",
+            "gds_etl_workbench/tools/snapshots/metadata/sql.py",
+            "gds_etl_workbench/tools/snapshots/metadata/storage.py",
         } <= set(names)
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}
@@ -38,15 +43,19 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             for name in names
         )
         assert all("tests/" not in name and ".env" not in name for name in names)
-        assert all(
-            info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()
-        )
+        assert "download_metadata_snapshot.py" not in names
+        assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist())
 
         manifest = json.loads(archive.read("BUILD_MANIFEST.json"))
         for item in manifest["files"]:
             content = archive.read(item["path"])
             assert len(content) == item["size"]
             assert hashlib.sha256(content).hexdigest() == item["sha256"]
+
+        requirements = archive.read("requirements.txt").decode()
+        assert "aiohttp==3.14.3" in requirements
+        assert "azure-identity==1.25.3" in requirements
+        assert "azure-storage-blob==12.30.0" in requirements
 
 
 def test_appservice_zip_builder_refuses_overwrite(tmp_path: Path) -> None:

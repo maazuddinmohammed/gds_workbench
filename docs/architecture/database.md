@@ -104,7 +104,7 @@ and Type 0/1/2 change behavior are constrained relationally; historized
 Attributes require the Model's Gold technical-column policy.
 
 Combined Mapping uses `workflow.mapping_source_system_dependency`,
-`workflow.object_mapping`, and `workflow.attribute_mapping`. Typed
+`workflow.mapping_object`, and `workflow.mapping_attribute`. Typed
 Logical/Dimensional parent columns are
 exclusive. Composite keys bind children to the same header, target Object, and
 Model. Effective Logical targets must be Silver and Dimensional targets Gold.

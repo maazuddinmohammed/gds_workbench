@@ -29,6 +29,7 @@ type InputMetadataBuilder = Callable[[Mapping[str, Any]], InputMetadata]
 class ToolAuditSpec:
     policy: ToolPolicy
     summarize_input: InputMetadataBuilder
+    tenant_argument: str | None
 
 
 class ToolCallAuditMiddleware:
@@ -52,12 +53,14 @@ class ToolCallAuditMiddleware:
         *,
         policy: ToolPolicy,
         summarize_input: InputMetadataBuilder,
+        tenant_argument: str | None = None,
     ) -> None:
         if name in self._tools:
             raise ValueError(f"duplicate tool audit registration: {name}")
         self._tools[name] = ToolAuditSpec(
             policy=policy,
             summarize_input=summarize_input,
+            tenant_argument=tenant_argument,
         )
 
     async def __call__(
@@ -73,10 +76,15 @@ class ToolCallAuditMiddleware:
             return await call_next(ctx)
 
         arguments = ctx.params.get("arguments")
-        safe_arguments = (
+        safe_arguments: Mapping[str, Any] = (
             cast(Mapping[str, Any], arguments) if isinstance(arguments, Mapping) else {}
         )
         input_metadata = spec.summarize_input(safe_arguments)
+        tenant_id = None
+        if spec.tenant_argument is not None:
+            raw_tenant_id: Any = safe_arguments.get(spec.tenant_argument)
+            if type(raw_tenant_id) is int and 0 < raw_tenant_id <= 9_223_372_036_854_775_807:
+                tenant_id = raw_tenant_id
 
         try:
             request_principal = self._identity_provider.request_principal(ctx.request)
@@ -98,6 +106,7 @@ class ToolCallAuditMiddleware:
                 tool_name=tool_name,
                 spec=spec,
                 input_metadata=input_metadata,
+                tenant_id=tenant_id,
                 status="failed",
                 failure_code=_protocol_failure_code(error),
             )
@@ -109,6 +118,7 @@ class ToolCallAuditMiddleware:
             tool_name=tool_name,
             spec=spec,
             input_metadata=input_metadata,
+            tenant_id=tenant_id,
             status="failed" if failed else "succeeded",
             failure_code="tool_error" if failed else None,
         )
@@ -121,6 +131,7 @@ class ToolCallAuditMiddleware:
         tool_name: str,
         spec: ToolAuditSpec,
         input_metadata: InputMetadata,
+        tenant_id: int | None,
         status: Literal["succeeded", "failed"],
         failure_code: str | None,
     ) -> None:
@@ -133,7 +144,7 @@ class ToolCallAuditMiddleware:
                     actor_kind=principal.actor_kind,
                     tool_name=tool_name,
                     tool_policy=spec.policy,
-                    tenant_id=None,
+                    tenant_id=tenant_id,
                     input_metadata=input_metadata,
                     status=status,
                     failure_code=failure_code,

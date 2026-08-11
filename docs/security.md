@@ -9,7 +9,11 @@ disagree.
 - `/health/live` is anonymous and process-only.
 - `/health/ready` is anonymous and returns bounded database posture only.
 - `/mcp` uses stateless Streamable HTTP.
-- The only registered MCP tool is read-only `list_tenants`.
+- `/metadata-snapshots/{tenant_id}/{snapshot_id}/download` is authenticated,
+  reauthorizes Tenant Read, and returns a no-store redirect to a short-lived
+  read-only Blob SAS.
+- The registered MCP tools are read-only `list_tenants` and
+  `get_metadata_snapshot`.
 - No Tenant Lock tool is registered yet. The governed database operations exist
   so a later MCP or FastAPI adapter can use the same rules.
 
@@ -143,7 +147,9 @@ tool output, bearer tokens, secrets, connection values, or exception text.
 Central MCP middleware performs the append after the tool returns. Each tool
 registers its server-owned Tool Policy and a small input summarizer beside its
 handler. `list_tenants` records only schema version, bounded page size, and
-whether a cursor was supplied; it never records the cursor. The middleware
+whether a cursor was supplied; it never records the cursor.
+`get_metadata_snapshot` records only schema version and validated requested
+Tenant ID. The middleware
 checks only MCP's `isError` flag and never reads or stores tool output.
 
 Authentication rejected before MCP execution and identities that do not map to
@@ -155,6 +161,6 @@ unavailable.
 
 Stable public codes include `authentication_required`, `authorization_denied`,
 `tenant_not_found`, `tenant_lock_required`, `tenant_locked`, `invalid_request`,
-and `dependency_unavailable`. Unexpected exceptions become a bounded
+`payload_too_large`, and `dependency_unavailable`. Unexpected exceptions become a bounded
 `internal_error`; raw SQL, connection values, claims, and exception text are not
 returned.

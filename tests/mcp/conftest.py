@@ -23,9 +23,10 @@ POSTGRES_IMAGE = (
     "postgres:16.13-bookworm@"
     "sha256:472efd9a66f2b2f1a5aeb18b28de74332e6ef88c2b93a1a5d812fb6db67a5f60"
 )
-DATABASE_FILES = tuple(
-    sorted((Path(__file__).parents[2] / "database").glob("[0-9][0-9]_*.sql"))
-)
+DATABASE_ROOT = Path(__file__).parents[2] / "database"
+DATABASE_FILES = tuple(sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql")))
+DATABASE_PREFLIGHT_FILE = DATABASE_ROOT / "deployment" / "00_preflight.sql"
+DATABASE_VERIFY_FILE = DATABASE_ROOT / "deployment" / "12_verify_install.sql"
 FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
     {
         "DATABASE_URL",
@@ -153,29 +154,40 @@ def postgres_database() -> Iterator[DisposablePostgres]:
             _runtime_password=runtime_password,
         )
         _wait_for_postgres(fixture)
-        with fixture.connect_owner() as connection:
-            with connection.transaction():
-                connection.execute(
-                    "CREATE TABLE public.gds_test_sentinel (marker UUID PRIMARY KEY)"
+        with fixture.connect_owner() as connection, connection.transaction():
+            connection.execute(
+                "CREATE TABLE public.gds_test_sentinel (marker UUID PRIMARY KEY)"
+            )
+            connection.execute(
+                "INSERT INTO public.gds_test_sentinel (marker) VALUES (%s)",
+                (marker,),
+            )
+            connection.execute(
+                cast(
+                    LiteralString,
+                    DATABASE_PREFLIGHT_FILE.read_text(encoding="utf-8"),
                 )
+            )
+            for database_file in DATABASE_FILES:
                 connection.execute(
-                    "INSERT INTO public.gds_test_sentinel (marker) VALUES (%s)",
-                    (marker,),
-                )
-                for database_file in DATABASE_FILES:
-                    connection.execute(
-                        cast(
-                            LiteralString,
-                            database_file.read_text(encoding="utf-8"),
-                        )
+                    cast(
+                        LiteralString,
+                        database_file.read_text(encoding="utf-8"),
                     )
-                connection.execute(
-                    "SELECT set_config('gds.test_runtime_password', %s, true)",
-                    (runtime_password,),
                 )
-                connection.execute(
-                    sql.SQL(
-                        """
+            connection.execute(
+                cast(
+                    LiteralString,
+                    DATABASE_VERIFY_FILE.read_text(encoding="utf-8"),
+                )
+            )
+            connection.execute(
+                "SELECT set_config('gds.test_runtime_password', %s, true)",
+                (runtime_password,),
+            )
+            connection.execute(
+                sql.SQL(
+                    """
                         DO $create_test_runtime$
                         BEGIN
                             EXECUTE format(
@@ -186,18 +198,18 @@ def postgres_database() -> Iterator[DisposablePostgres]:
                         END;
                         $create_test_runtime$
                         """
-                    ).format(sql.Literal(runtime_user))
+                ).format(sql.Literal(runtime_user))
+            )
+            connection.execute(
+                sql.SQL("GRANT gds_app_write TO {}").format(
+                    sql.Identifier(runtime_user)
                 )
-                connection.execute(
-                    sql.SQL("GRANT gds_app_write TO {}").format(
-                        sql.Identifier(runtime_user)
-                    )
+            )
+            connection.execute(
+                sql.SQL("GRANT SELECT ON public.gds_test_sentinel TO {}").format(
+                    sql.Identifier(runtime_user)
                 )
-                connection.execute(
-                    sql.SQL("GRANT SELECT ON public.gds_test_sentinel TO {}").format(
-                        sql.Identifier(runtime_user)
-                    )
-                )
+            )
         yield fixture
     finally:
         inspected = subprocess.run(

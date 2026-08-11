@@ -73,6 +73,11 @@ The Tenant-owned draft aggregate for Source/Bronze/Silver/Gold Objects and
 Attributes plus Copy and Process configuration.
 _Avoid_: Model Change Set, foundational CRUD
 
+**Local Reference**:
+A typed, Change-Set-scoped identity for a proposed record that has no database
+ID yet. Apply resolves it to a server-generated ID; it never persists.
+_Avoid_: Temporary database ID, client-generated database ID, name reference
+
 **Candidate**:
 An uncommitted workflow result that can become one or more Model Change Set Sections after validation.
 _Avoid_: Agent answer, model output
@@ -94,6 +99,21 @@ _Avoid_: Profile registry, release asset
 **Model Snapshot**:
 The immutable, bounded Model context archive returned through MCP for one workflow.
 _Avoid_: Dump, export
+
+**Metadata Snapshot**:
+An immutable, bounded Tenant metadata archive delivered outside the MCP tool
+result so an agent can inspect selected metadata without filling its context.
+_Avoid_: Model Snapshot, metadata dump, workflow snapshot
+
+**Metadata Discovery Scope**:
+The Tenant-owned lookup scope that lets a Metadata Snapshot discover otherwise
+unrelated global-data-store Objects. It neither establishes nor restricts lineage.
+_Avoid_: Model Scope, lineage mapping, authorization grant
+
+**Zone**:
+The physical classification of an Object as exactly Source, Bronze, Silver, or
+Gold.
+_Avoid_: Modeling layer, inferred Connection type
 
 **Verified Model Graph**:
 The typed and indexed in-memory form of a verified Model Snapshot.

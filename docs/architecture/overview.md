@@ -35,6 +35,8 @@ mcp_server/
         domain/                 policy vocabulary and safe errors
         infrastructure/         PostgreSQL pool, readiness, expiry worker call
         tools/tenants/          complete list_tenants vertical slice
+        tools/snapshots/metadata/
+                                complete Metadata Snapshot vertical slice
 tests/mcp/                     all MCP and disposable-database tests
 ```
 
@@ -51,12 +53,19 @@ outputs.
 - Anonymous `GET /health/live`
 - Anonymous `GET /health/ready`
 - Protected stateless `/mcp`
-- One read-only MCP tool: `list_tenants`
+- Protected `GET /metadata-snapshots/{tenant_id}/{snapshot_id}/download`
+- Two read-only MCP tools: `list_tenants`, `get_metadata_snapshot`
 
 `list_tenants` returns active global Tenants plus private Tenants for which the
 human has active, unexpired Viewer-or-higher access. Registered workload
 Principals must be active Super Admins and therefore see all active Tenants.
 Local dev mode lists all active Tenants.
+
+`get_metadata_snapshot` authorizes one Tenant, selects a fixed 29-dataset
+closure in a repeatable-read read-only transaction, creates a deterministic ZIP
+in temporary storage, uploads it create-only to private Blob Storage, and
+returns only the protected application URL and bounded descriptor. Download
+requests reauthorize Tenant access before minting a fresh read-only SAS.
 
 No write or Tenant Lock MCP tool is registered. The database already exposes
 governed authorization and acquire/renew/release/override/expiry functions for

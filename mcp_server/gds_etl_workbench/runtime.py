@@ -19,11 +19,13 @@ from gds_etl_workbench.configuration import (
     RuntimeSettings,
 )
 from gds_etl_workbench.infrastructure.postgres import Database, PostgresDatabase
+from gds_etl_workbench.tools.snapshots.metadata.storage import MetadataSnapshotStore
 
 
 def create_application(
     settings: RuntimeSettings,
     database: Database | None = None,
+    metadata_snapshot_store: MetadataSnapshotStore | None = None,
 ) -> Starlette:
     runtime_database = database or PostgresDatabase(
         dsn=settings.database_dsn,
@@ -33,7 +35,12 @@ def create_application(
         require_runtime_role=settings.environment is Environment.PRODUCTION,
     )
     identity_provider = IdentityProvider(settings.auth_mode)
-    server = create_mcp_server(settings, runtime_database, identity_provider)
+    server = create_mcp_server(
+        settings,
+        runtime_database,
+        identity_provider,
+        metadata_snapshot_store,
+    )
     transport_security = TransportSecuritySettings(
         allowed_hosts=list(settings.allowed_hosts),
         allowed_origins=[],
@@ -86,5 +93,10 @@ def _configuration_error_application() -> Starlette:
             Route("/health/live", live, methods=["GET"]),
             Route("/health/ready", unavailable, methods=["GET"]),
             Route("/mcp", unavailable, methods=["GET", "POST", "DELETE"]),
+            Route(
+                "/metadata-snapshots/{tenant_id}/{snapshot_id}/download",
+                unavailable,
+                methods=["GET"],
+            ),
         ]
     )

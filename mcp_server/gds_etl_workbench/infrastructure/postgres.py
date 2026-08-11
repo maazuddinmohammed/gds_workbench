@@ -5,6 +5,7 @@ from __future__ import annotations
 from collections.abc import AsyncIterator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any, Literal, LiteralString, Protocol
 from uuid import UUID
 
@@ -18,6 +19,11 @@ from gds_etl_workbench.domain.authorization import ActorKind, ToolPolicy
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 
 type QueryParameters = tuple[Any, ...]
+
+
+class ReadIsolation(StrEnum):
+    READ_COMMITTED = "read_committed"
+    REPEATABLE_READ = "repeatable_read"
 
 
 @dataclass(frozen=True, slots=True)
@@ -67,7 +73,11 @@ class Database(Protocol):
 
     async def append_tool_call_log(self, record: ToolCallLogRecord) -> None: ...
 
-    def read_transaction(self) -> AbstractAsyncContextManager[ReadTransaction]: ...
+    def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
 _READINESS_SQL = """
@@ -175,10 +185,19 @@ class PostgresDatabase:
         await self._pool.close()
 
     @asynccontextmanager
-    async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncIterator[ReadTransaction]:
         try:
             async with self._pool.connection() as connection, connection.transaction():
-                await connection.execute("SET TRANSACTION READ ONLY")
+                if isolation is ReadIsolation.REPEATABLE_READ:
+                    await connection.execute(
+                        "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
+                    )
+                else:
+                    await connection.execute("SET TRANSACTION READ ONLY")
                 yield _PostgresReadTransaction(connection)
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc

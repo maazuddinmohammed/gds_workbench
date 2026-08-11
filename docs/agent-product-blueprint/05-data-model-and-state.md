@@ -119,7 +119,7 @@ changes alter the Assertion digest and stale dependent Candidates.
 | Conceptual | `conceptual_object`, `conceptual_relationship`, `conceptual_support` |
 | Logical | `logical_submodel`, `logical_entity`, `logical_entity_submodel`, `logical_attribute`, `logical_entity_source_mapping`, `logical_attribute_source_mapping`, `logical_relationship` |
 | Dimensional | `dimensional_submodel`, `dimensional_entity`, `dimensional_entity_submodel`, `dimensional_attribute`, `dimensional_entity_source_mapping`, `dimensional_attribute_source_mapping`, `dimensional_relationship` |
-| Mapping | `mapping_source_system_dependency`, `object_mapping`, `attribute_mapping` |
+| Mapping | `mapping_source_system_dependency`, `mapping_object`, `mapping_attribute` |
 
 Logical and Dimensional each use exactly seven table families. Combined Mapping
 uses exactly three. Typed parent columns and composite witness keys prevent a row

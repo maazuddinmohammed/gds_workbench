@@ -1,13 +1,16 @@
 # GDS ETL Workbench MCP scaffold
 
-This is the Azure App Service code root. It contains one read-only MCP tool,
-`list_tenants`, plus `/health/live` and `/health/ready`.
+This is the Azure App Service code root. It contains two read-only MCP tools,
+`list_tenants` and `get_metadata_snapshot`, plus health routes and the protected
+Metadata Snapshot download route.
 
 ## Boundaries
 
 - `adapters/`: Easy Auth, MCP server composition, and centralized tool-call audit.
 - `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
   authorization flow, pagination, and SQL together.
+- `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
+  generation, Azure storage, MCP binding, and protected download route.
 - `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role and Tool Policy vocabulary plus safe errors.
 - `infrastructure/`: shared PostgreSQL pool, readiness, read transactions, and
@@ -36,7 +39,8 @@ write tools.
 ## Local run
 
 1. Copy `.env.example` to an untracked `.env`.
-2. Supply a database DSN and a random cursor key of at least 32 bytes.
+2. Supply a database DSN, a random cursor key of at least 32 bytes, and the
+   private Azure Blob account URL/container used for Metadata Snapshots.
 3. Export those settings into the shell. The app deliberately does not load
    `.env` files.
 4. Run:
@@ -48,6 +52,26 @@ cd mcp_server
 ```
 
 Connect an MCP client to `http://localhost:8000/mcp`.
+
+Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result
+contains a protected application download URL, availability time, byte count,
+and SHA-256. It never contains snapshot rows, ZIP bytes, a Blob URL, or a SAS.
+Opening the returned URL downloads the ZIP after current Tenant Read
+reauthorization. In production, an interactive browser follows the normal Easy
+Auth sign-in flow.
+
+An optional CLI helper is available when browser download is inconvenient:
+
+```bash
+uv run --project mcp_server python mcp_server/download_metadata_snapshot.py \
+  "<download_url>" \
+  --scope "api://<application-id>/.default" \
+  --output ./metadata-snapshot.zip
+```
+
+The helper obtains a developer Entra token through `DefaultAzureCredential`,
+sends it only to App Service, and downloads the redirected Blob in a separate
+request without that bearer token. It refuses to overwrite the output file.
 
 ## Tests
 
@@ -85,6 +109,12 @@ scope `workbench.access`; workload tokens need application permission
 `workbench.workflow`. Configure the Entra access-token optional claim `idtyp`.
 Health paths stay anonymous. The database login must have exactly one direct
 membership: `gds_app_write`; the pool activates that `NOINHERIT` role.
+
+The configured Blob container must already exist and remain private. Grant the
+App Service identity narrowly scoped Blob create/read access and Storage Blob
+Delegator at account scope. Configure lifecycle deletion for the code-owned
+`metadata/` prefix at or after the configured retention period. The application
+does not create containers, alter roles, or run broad Blob cleanup.
 
 Startup never applies DDL. The only background database mutation is bounded,
 audited expiration of stale Tenant Locks. No Tenant Lock MCP tool is registered

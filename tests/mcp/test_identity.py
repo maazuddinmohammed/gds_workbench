@@ -140,9 +140,7 @@ def test_oversized_envelope_fails_before_decode() -> None:
 
 def test_middleware_propagates_the_authenticated_principal() -> None:
     async def current_actor(request: Request) -> Response:
-        return JSONResponse(
-            {"actor_kind": request.state.request_principal.actor_kind.value}
-        )
+        return JSONResponse({"actor_kind": request.state.request_principal.actor_kind.value})
 
     application = Starlette(routes=[Route("/mcp/actor", current_actor)])
     application.add_middleware(

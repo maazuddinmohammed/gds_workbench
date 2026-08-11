@@ -1,4 +1,4 @@
-"""ASGI authentication boundary for the protected MCP endpoint."""
+"""ASGI authentication boundary for MCP and snapshot downloads."""
 
 from __future__ import annotations
 
@@ -22,7 +22,10 @@ class ProtectedMCPMiddleware:
         self._require_https = require_https
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
-        if scope["type"] != "http" or not scope.get("path", "").startswith("/mcp"):
+        path = scope.get("path", "")
+        if scope["type"] != "http" or not (
+            path.startswith("/mcp") or path.startswith("/metadata-snapshots/")
+        ):
             await self._app(scope, receive, send)
             return
 

@@ -13,6 +13,7 @@ from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
+    ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
 )
@@ -39,7 +40,12 @@ class RecordingDatabase:
         self.audit_records.append(record)
 
     @asynccontextmanager
-    async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncIterator[ReadTransaction]:
+        assert isolation is ReadIsolation.READ_COMMITTED
         yield RecordingReadTransaction(self)
 
 
@@ -68,6 +74,8 @@ def settings() -> RuntimeSettings:
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_MCP_ALLOWED_HOSTS": "testserver,testserver:*",
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
             "GDS_REQUIRE_HTTPS": "false",
             "GDS_SCHEMA_VERSION": "1.0.0",
             "GDS_DATABASE_POOL_MIN": "1",

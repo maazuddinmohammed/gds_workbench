@@ -34,6 +34,29 @@ Tenants require active, unexpired Viewer-or-higher access. Active registered
 workloads must be Super Admin Principals and see all active Tenants. Local dev
 mode sees all active Tenants with effective role `development`.
 
+## `get_metadata_snapshot`
+
+Policy: `tenant_read`
+
+Annotations: read-only, non-idempotent, non-destructive, closed-world.
+
+Request:
+
+| Field | Contract |
+|---|---|
+| `tenant_id` | positive PostgreSQL BIGINT |
+| `schema_version` | exactly `"1.0"`; default `"1.0"` |
+
+The result contains only schema version, Snapshot UUID, kind/status, Tenant ID,
+protected application download URL, availability time, ZIP byte count, ZIP
+SHA-256, and `application/zip` content type. Metadata rows, JSONL, indexes,
+manifest, ZIP bytes, Blob URL, and SAS never enter MCP.
+
+The protected download route parses canonical path values, reauthorizes current
+Tenant Read, validates immutable Blob metadata and logical expiry, and returns a
+no-store 302 redirect using a fresh read-only user-delegation SAS. Authenticated
+unauthorized, malformed, expired, and missing requests all return the same 404.
+
 ## Health
 
 `/health/live` returns only `{"status":"live"}`. `/health/ready` returns bounded

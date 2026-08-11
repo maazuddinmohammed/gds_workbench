@@ -6,6 +6,9 @@ from collections.abc import Mapping
 from dataclasses import dataclass, field
 from enum import StrEnum
 from os import environ
+from re import fullmatch
+from urllib.parse import urlsplit
+from uuid import UUID
 
 from psycopg.conninfo import conninfo_to_dict
 
@@ -36,6 +39,12 @@ _EXPECTED_KEYS = frozenset(
         "GDS_DATABASE_POOL_TIMEOUT_SECONDS",
         "GDS_ENVIRONMENT",
         "GDS_MCP_ALLOWED_HOSTS",
+        "GDS_METADATA_SNAPSHOT_DOWNLOAD_TTL_SECONDS",
+        "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID",
+        "GDS_METADATA_SNAPSHOT_MAX_ARCHIVE_BYTES",
+        "GDS_METADATA_SNAPSHOT_RETENTION_HOURS",
+        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL",
+        "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER",
         "GDS_REQUEST_TIMEOUT_SECONDS",
         "GDS_REQUIRE_HTTPS",
         "GDS_SCHEMA_VERSION",
@@ -59,6 +68,12 @@ class RuntimeSettings:
     pool_min: int
     pool_max: int
     pool_timeout_seconds: int
+    metadata_snapshot_storage_account_url: str
+    metadata_snapshot_storage_container: str
+    metadata_snapshot_download_ttl_seconds: int
+    metadata_snapshot_retention_hours: int
+    metadata_snapshot_max_archive_bytes: int
+    metadata_snapshot_managed_identity_client_id: UUID | None
 
     @classmethod
     def from_environment(cls, values: Mapping[str, str] | None = None) -> RuntimeSettings:
@@ -107,6 +122,76 @@ class RuntimeSettings:
         if schema_version != "1.0.0":
             raise ConfigurationError("GDS_SCHEMA_VERSION must be 1.0.0")
 
+        account_url = _required(source, "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL")
+        parsed_account_url = urlsplit(account_url)
+        try:
+            account_port = parsed_account_url.port
+        except ValueError as exc:
+            raise ConfigurationError(
+                "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL is invalid"
+            ) from exc
+        if (
+            parsed_account_url.scheme != "https"
+            or not parsed_account_url.hostname
+            or parsed_account_url.username is not None
+            or parsed_account_url.password is not None
+            or account_port is not None
+            or parsed_account_url.path not in {"", "/"}
+            or parsed_account_url.query
+            or parsed_account_url.fragment
+        ):
+            raise ConfigurationError(
+                "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL must be an HTTPS account root"
+            )
+        account_url = account_url.rstrip("/")
+
+        storage_container = _required(
+            source,
+            "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER",
+        )
+        if (
+            fullmatch(
+                r"(?!.*--)[a-z0-9][a-z0-9-]{1,61}[a-z0-9]",
+                storage_container,
+            )
+            is None
+        ):
+            raise ConfigurationError(
+                "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER must be a valid container name"
+            )
+
+        download_ttl_seconds = _integer(
+            source,
+            "GDS_METADATA_SNAPSHOT_DOWNLOAD_TTL_SECONDS",
+            minimum=60,
+            maximum=3600,
+            default=900,
+        )
+        retention_hours = _integer(
+            source,
+            "GDS_METADATA_SNAPSHOT_RETENTION_HOURS",
+            minimum=1,
+            maximum=168,
+            default=24,
+        )
+        max_archive_bytes = _integer(
+            source,
+            "GDS_METADATA_SNAPSHOT_MAX_ARCHIVE_BYTES",
+            minimum=1048576,
+            maximum=1073741824,
+            default=268435456,
+        )
+        client_id_text = source.get(
+            "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID",
+            "",
+        ).strip()
+        try:
+            managed_identity_client_id = UUID(client_id_text) if client_id_text else None
+        except ValueError as exc:
+            raise ConfigurationError(
+                "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID must be a UUID"
+            ) from exc
+
         _integer(source, "PORT", minimum=1, maximum=65535)
         web_concurrency = _integer(source, "WEB_CONCURRENCY", minimum=1, maximum=32)
         pool_min = _integer(source, "GDS_DATABASE_POOL_MIN", minimum=1, maximum=100)
@@ -140,6 +225,12 @@ class RuntimeSettings:
             pool_min=pool_min,
             pool_max=pool_max,
             pool_timeout_seconds=pool_timeout,
+            metadata_snapshot_storage_account_url=account_url,
+            metadata_snapshot_storage_container=storage_container,
+            metadata_snapshot_download_ttl_seconds=download_ttl_seconds,
+            metadata_snapshot_retention_hours=retention_hours,
+            metadata_snapshot_max_archive_bytes=max_archive_bytes,
+            metadata_snapshot_managed_identity_client_id=managed_identity_client_id,
         )
 
 
@@ -150,8 +241,19 @@ def _required(source: Mapping[str, str], key: str) -> str:
     return value
 
 
-def _integer(source: Mapping[str, str], key: str, *, minimum: int, maximum: int) -> int:
-    raw = _required(source, key)
+def _integer(
+    source: Mapping[str, str],
+    key: str,
+    *,
+    minimum: int,
+    maximum: int,
+    default: int | None = None,
+) -> int:
+    raw = source.get(key, "").strip()
+    if not raw:
+        if default is not None:
+            return default
+        raise ConfigurationError(f"{key} is required")
     try:
         value = int(raw)
     except ValueError as exc:

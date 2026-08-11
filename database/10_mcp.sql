@@ -148,7 +148,11 @@ CREATE TABLE mcp.metadata_change_set (
     silver_attribute_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     gold_object_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     gold_attribute_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    ingestion_object_mapping_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    ingestion_attribute_mapping_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     copy_group_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    member_group_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    copy_group_control_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     copy_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     process_group_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     process_document JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -193,7 +197,11 @@ CREATE TABLE mcp.metadata_change_set (
         AND jsonb_typeof(silver_attribute_document) = 'object'
         AND jsonb_typeof(gold_object_document) = 'object'
         AND jsonb_typeof(gold_attribute_document) = 'object'
+        AND jsonb_typeof(ingestion_object_mapping_document) = 'object'
+        AND jsonb_typeof(ingestion_attribute_mapping_document) = 'object'
         AND jsonb_typeof(copy_group_document) = 'object'
+        AND jsonb_typeof(member_group_document) = 'object'
+        AND jsonb_typeof(copy_group_control_document) = 'object'
         AND jsonb_typeof(copy_document) = 'object'
         AND jsonb_typeof(process_group_document) = 'object'
         AND jsonb_typeof(process_document) = 'object'
@@ -205,7 +213,11 @@ CREATE TABLE mcp.metadata_change_set (
         AND octet_length(silver_attribute_document::TEXT) <= 16777216
         AND octet_length(gold_object_document::TEXT) <= 16777216
         AND octet_length(gold_attribute_document::TEXT) <= 16777216
+        AND octet_length(ingestion_object_mapping_document::TEXT) <= 16777216
+        AND octet_length(ingestion_attribute_mapping_document::TEXT) <= 16777216
         AND octet_length(copy_group_document::TEXT) <= 16777216
+        AND octet_length(member_group_document::TEXT) <= 16777216
+        AND octet_length(copy_group_control_document::TEXT) <= 16777216
         AND octet_length(copy_document::TEXT) <= 16777216
         AND octet_length(process_group_document::TEXT) <= 16777216
         AND octet_length(process_document::TEXT) <= 16777216
@@ -274,7 +286,9 @@ CREATE TABLE mcp.metadata_change_set_event (
             'bronze_object', 'bronze_attribute',
             'silver_object', 'silver_attribute',
             'gold_object', 'gold_attribute',
-            'copy_group', 'copy', 'process_group', 'process'
+            'ingestion_object_mapping', 'ingestion_attribute_mapping',
+            'copy_group', 'member_group', 'copy_group_control', 'copy',
+            'process_group', 'process'
         )
     ),
     CONSTRAINT ck_metadata_change_set_event_action_count CHECK (

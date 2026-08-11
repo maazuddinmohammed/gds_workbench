@@ -99,11 +99,11 @@ One row controls each `(model_id, modeled_entity_type, source_system_id)`
 execution wave. Equal dependency orders may run in parallel; lower orders
 complete before higher orders.
 
-#### `workflow.object_mapping`
+#### `workflow.mapping_object`
 
 | Column | Type/null/default |
 |---|---|
-| `object_mapping_id` | `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` |
+| `mapping_object_id` | `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` |
 | `model_id` | `BIGINT NOT NULL` |
 | `agent_run_id` | `VARCHAR(500) NULL` |
 | `modeled_entity_type` | `VARCHAR(30) NOT NULL`, `logical_entity|dimensional_entity` |
@@ -128,7 +128,7 @@ Exactly one typed Entity ID must be non-null and agree with
 `modeled_entity_type`. Composite FKs bind that Entity to the same Model;
 an FK binds the exact Mapping Source System Dependency row, and an ordinary FK
 binds the target Object. Add unique witness
-`(object_mapping_id, model_id, modeled_entity_type, target_object_id)`. Preserve
+`(mapping_object_id, model_id, modeled_entity_type, target_object_id)`. Preserve
 binding identity across every lifecycle state with two partial unique indexes:
 
 ```text
@@ -144,14 +144,14 @@ Object transformation. An authored header has all eight non-null. Null
 transformation therefore means “binding exists but is not script-ready”; a
 completed no-expression header explicitly stores `transformation_kind=direct`.
 
-#### `workflow.attribute_mapping`
+#### `workflow.mapping_attribute`
 
 | Column | Type/null/default |
 |---|---|
-| `attribute_mapping_id` | `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` |
+| `mapping_attribute_id` | `BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY` |
 | `model_id` | `BIGINT NOT NULL` |
 | `agent_run_id` | `VARCHAR(500) NULL` |
-| `object_mapping_id` | `BIGINT NOT NULL` |
+| `mapping_object_id` | `BIGINT NOT NULL` |
 | `modeled_entity_type` | `VARCHAR(30) NOT NULL`, same discriminator as parent |
 | `target_object_id` | `BIGINT NOT NULL`, repeated parent witness |
 | `logical_attribute_id` | `BIGINT NULL` |
@@ -166,7 +166,7 @@ Exactly one typed modeled Attribute is non-null and agrees with the parent's
 layer. A composite FK to the Object Mapping witness carries Model/layer/target
 Object; a `(target_attribute_id, target_object_id)` FK uses a required
 `core.attribute(attribute_id, object_id)` unique witness. Two partial unique
-indexes preserve `(model_id, object_mapping_id, typed_attribute_id,
+indexes preserve `(model_id, mapping_object_id, typed_attribute_id,
 target_attribute_id)` identity across lifecycle. A target Attribute may have
 multiple contributor bindings, but an existing binding can never be repointed.
 Null transformation is an unauthored registered binding; completed direct
@@ -281,7 +281,7 @@ expression. A step output must exist in the named DAG. All aliases/Attributes
 must resolve to executable lineage for the declared business System.
 
 `HeaderMapperOutputV1` has `schema_version`, one exact `package`, a nonempty
-`headers[]` of `(object_mapping_id, transformation)`, and `coverage` containing
+`headers[]` of `(mapping_object_id, transformation)`, and `coverage` containing
 unique nonempty expected and returned Object Mapping ID lists.
 
 `AttributeMapperBatchOutputV1` has `schema_version`, `package_ref`, target and
@@ -289,7 +289,7 @@ source-System IDs, `chunk_index`/`chunk_count` in `1..100`, the 64-character
 package digest, `coverage_manifest_digest`, `attribute_mappings[]`,
 `target_attribute_dispositions[]`, and `coverage`. Each mapping contains parent
 ID, exactly one existing
-`attribute_mapping_id` or new `local_ref`, layer discriminator, exactly one
+`mapping_attribute_id` or new `local_ref`, layer discriminator, exactly one
 typed modeled Attribute ID, target Attribute ID,
 `disposition=create|update|unchanged`, and complete transformation. Target
 disposition is `mapped|already_mapped|intentionally_unmapped` with a reason

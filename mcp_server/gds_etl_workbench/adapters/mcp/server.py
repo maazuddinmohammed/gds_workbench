@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 
 from mcp.server.mcpserver import MCPServer
@@ -15,6 +15,14 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import Database
+from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+    register_get_metadata_snapshot_tool,
+    register_metadata_snapshot_download_route,
+)
+from gds_etl_workbench.tools.snapshots.metadata.storage import (
+    AzureMetadataSnapshotStore,
+    MetadataSnapshotStore,
+)
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
 
 from .tool_audit import ToolCallAuditMiddleware
@@ -24,9 +32,12 @@ def create_mcp_server(
     settings: RuntimeSettings,
     database: Database,
     identity_provider: IdentityProvider,
+    metadata_snapshot_store: MetadataSnapshotStore | None = None,
 ) -> MCPServer[None]:
+    snapshot_store = metadata_snapshot_store or AzureMetadataSnapshotStore(settings)
+
     @asynccontextmanager
-    async def lifespan(_server: MCPServer[None]) -> AsyncIterator[None]:
+    async def lifespan(_server: MCPServer[None]) -> AsyncGenerator[None, None]:
         await database.open()
         with suppress(DependencyUnavailableError):
             await database.expire_tenant_locks()
@@ -37,6 +48,7 @@ def create_mcp_server(
             expiry_task.cancel()
             with suppress(asyncio.CancelledError):
                 await expiry_task
+            await snapshot_store.close()
             await database.close()
 
     authorizer = AuthorizationService()
@@ -51,8 +63,9 @@ def create_mcp_server(
         version="0.1.0",
         description="Governed metadata access for GDS ETL Workbench.",
         instructions=(
-            "Check /health/ready before use. This scaffold exposes one read-only tool: "
-            "list_tenants. Tenant visibility and roles are always resolved server-side."
+            "Check /health/ready before use. Read-only tools list authorized Tenants and "
+            "create protected Metadata Snapshot downloads. Tenant visibility and roles "
+            "are always resolved server-side."
         ),
         lifespan=lifespan,
         middleware=[audit],
@@ -66,15 +79,31 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
+    register_get_metadata_snapshot_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        store=snapshot_store,
+        retention_hours=settings.metadata_snapshot_retention_hours,
+        max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
+    )
+    register_metadata_snapshot_download_route(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        store=snapshot_store,
+        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
+    )
 
-    @server.custom_route("/health/live", methods=["GET"])
     async def live(_request: Request) -> Response:
         return JSONResponse(
             {"status": "live"},
             headers={"Cache-Control": "no-store"},
         )
 
-    @server.custom_route("/health/ready", methods=["GET"])
     async def ready(_request: Request) -> Response:
         readiness = await database.readiness()
         return JSONResponse(
@@ -87,6 +116,8 @@ def create_mcp_server(
             headers={"Cache-Control": "no-store"},
         )
 
+    server.custom_route("/health/live", methods=["GET"])(live)
+    server.custom_route("/health/ready", methods=["GET"])(ready)
     return server
 
 

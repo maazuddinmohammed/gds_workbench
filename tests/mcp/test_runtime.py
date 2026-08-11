@@ -5,7 +5,9 @@ import json
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
+from datetime import UTC, datetime, timedelta
 from typing import Any, LiteralString
+from uuid import UUID
 
 import httpx2
 import pytest
@@ -20,12 +22,20 @@ from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettin
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
+    ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
 )
 from gds_etl_workbench.runtime import (
     create_application,
     create_application_from_environment,
+)
+from gds_etl_workbench.tools.snapshots.metadata import (
+    get_metadata_snapshot as metadata_snapshot_module,
+)
+from gds_etl_workbench.tools.snapshots.metadata.archive import SnapshotArchive
+from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+    ReadyMetadataSnapshot,
 )
 
 
@@ -37,9 +47,7 @@ class FakeReadTransaction:
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
         if self._database.resolved_principal is None:
-            raise AssertionError(
-                "development mode must not resolve a production Principal"
-            )
+            raise AssertionError("development mode must not resolve a production Principal")
         return self._database.resolved_principal
 
     async def fetch_all(
@@ -91,8 +99,42 @@ class FakeDatabase:
         self.audit_records.append(record)
 
     @asynccontextmanager
-    async def read_transaction(self) -> AsyncIterator[ReadTransaction]:
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncIterator[ReadTransaction]:
+        assert isolation is ReadIsolation.READ_COMMITTED
         yield FakeReadTransaction(self)
+
+
+class FakeSnapshotStore:
+    def __init__(self) -> None:
+        self.closed = False
+
+    async def close(self) -> None:
+        self.closed = True
+
+    async def upload_archive(
+        self,
+        archive: SnapshotArchive,
+        *,
+        tenant_id: int,
+        snapshot_id: UUID,
+        created_at: datetime,
+        available_until: datetime,
+    ) -> None:
+        raise AssertionError("tool orchestration is replaced in this HTTP contract test")
+
+    async def create_read_url(
+        self,
+        *,
+        tenant_id: int,
+        snapshot_id: UUID,
+        now: datetime,
+        ttl_seconds: int,
+    ) -> str | None:
+        raise AssertionError("MCP must return the protected application URL, not a SAS URL")
 
 
 def development_settings() -> RuntimeSettings:
@@ -103,6 +145,8 @@ def development_settings() -> RuntimeSettings:
             "GDS_DATABASE_DSN": "postgresql://app@db.example.invalid/workbench",
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_MCP_ALLOWED_HOSTS": "testserver,testserver:*",
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
             "GDS_REQUIRE_HTTPS": "false",
             "GDS_SCHEMA_VERSION": "1.0.0",
             "GDS_DATABASE_POOL_MIN": "1",
@@ -127,8 +171,12 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         tools = await client.list_tools()
         result = await client.call_tool("list_tenants", {"page_size": 50})
 
-    assert [tool.name for tool in tools.tools] == ["list_tenants"]
+    assert [tool.name for tool in tools.tools] == [
+        "list_tenants",
+        "get_metadata_snapshot",
+    ]
     assert tools.tools[0].meta == {"gds/toolPolicy": "tenant_read"}
+    assert tools.tools[1].meta == {"gds/toolPolicy": "tenant_read"}
     assert result.is_error is False
     assert result.structured_content == {
         "schema_version": "1.0",
@@ -149,6 +197,86 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert len(database.audit_records) == 1
     assert database.audit_records[0].principal_display_name == "Local Developer"
     assert database.audit_records[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    snapshot_id = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
+    created_at = datetime(2026, 8, 11, 16, 0, tzinfo=UTC)
+    database = FakeDatabase()
+    store = FakeSnapshotStore()
+
+    async def fake_create_metadata_snapshot(*_args: Any, **kwargs: Any) -> ReadyMetadataSnapshot:
+        assert kwargs["tenant_id"] == 123
+        return ReadyMetadataSnapshot(
+            snapshot_id=snapshot_id,
+            tenant_id=123,
+            created_at=created_at,
+            available_until=created_at + timedelta(hours=24),
+            size_bytes=4567,
+            sha256="a" * 64,
+        )
+
+    monkeypatch.setattr(
+        metadata_snapshot_module,
+        "create_metadata_snapshot",
+        fake_create_metadata_snapshot,
+    )
+    application = create_application(development_settings(), database, store)
+
+    async with (
+        application.router.lifespan_context(application),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=application),
+            base_url="http://testserver",
+        ) as http_client,
+    ):
+        transport = streamable_http_client(
+            "http://testserver/mcp",
+            http_client=http_client,
+            terminate_on_close=False,
+        )
+        async with Client(transport) as client:
+            result = await client.call_tool(
+                "get_metadata_snapshot",
+                {"tenant_id": 123},
+            )
+
+    assert result.is_error is False
+    assert result.structured_content == {
+        "schema_version": "1.0",
+        "snapshot_id": str(snapshot_id),
+        "snapshot_kind": "metadata",
+        "status": "ready",
+        "tenant_id": 123,
+        "download_url": (f"http://testserver/metadata-snapshots/123/{snapshot_id}/download"),
+        "available_until": "2026-08-12T16:00:00Z",
+        "size_bytes": 4567,
+        "sha256": "a" * 64,
+        "content_type": "application/zip",
+    }
+    assert set(result.structured_content) == {
+        "schema_version",
+        "snapshot_id",
+        "snapshot_kind",
+        "status",
+        "tenant_id",
+        "download_url",
+        "available_until",
+        "size_bytes",
+        "sha256",
+        "content_type",
+    }
+    assert len(database.audit_records) == 1
+    assert database.audit_records[0].tool_name == "get_metadata_snapshot"
+    assert database.audit_records[0].tenant_id == 123
+    assert database.audit_records[0].input_metadata == {
+        "schema_version": "1.0",
+        "tenant_id": 123,
+    }
+    assert store.closed is True
 
 
 @pytest.mark.asyncio
@@ -202,9 +330,16 @@ def test_production_mcp_rejects_missing_easy_auth_envelope() -> None:
 
     with TestClient(application) as client:
         response = client.post("/mcp", headers={"x-forwarded-proto": "https"}, json={})
+        download = client.get(
+            "/metadata-snapshots/123/7d7cc8ad-62b5-44ef-aeb0-c09c770ff233/download",
+            headers={"x-forwarded-proto": "https"},
+            follow_redirects=False,
+        )
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_required"
+    assert download.status_code == 401
+    assert download.json()["error"]["code"] == "authentication_required"
 
 
 @pytest.mark.asyncio

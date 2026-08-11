@@ -65,9 +65,9 @@ DD-109 permits exactly three tables:
 
 - `workflow.mapping_source_system_dependency` for controlled source-System
   execution waves;
-- `workflow.object_mapping` for the typed Entity-to-target/source package
+- `workflow.mapping_object` for the typed Entity-to-target/source package
   header; and
-- `workflow.attribute_mapping` for typed Attribute-to-target Attribute
+- `workflow.mapping_attribute` for typed Attribute-to-target Attribute
   contributors.
 
 Headers in one package must have byte-equivalent profile, artifact,

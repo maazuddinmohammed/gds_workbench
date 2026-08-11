@@ -33,6 +33,12 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
         pool_min=1,
         pool_max=2,
         pool_timeout_seconds=5,
+        metadata_snapshot_storage_account_url=("https://snapshot.blob.core.windows.net"),
+        metadata_snapshot_storage_container="snapshots",
+        metadata_snapshot_download_ttl_seconds=900,
+        metadata_snapshot_retention_hours=24,
+        metadata_snapshot_max_archive_bytes=268435456,
+        metadata_snapshot_managed_identity_client_id=None,
     )
     server = create_mcp_server(settings, database, IdentityProvider(settings.auth_mode))
 

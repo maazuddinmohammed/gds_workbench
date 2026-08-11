@@ -79,7 +79,7 @@ GRANT INSERT, UPDATE ON
     model.modeling_assertion_document,
     model.modeling_assertion_record,
     workflow.analysis_result,
-    workflow.attribute_mapping,
+    workflow.mapping_attribute,
     workflow.attribute_profile,
     workflow.conceptual_object,
     workflow.conceptual_relationship,
@@ -101,7 +101,7 @@ GRANT INSERT, UPDATE ON
     workflow.mapping_source_system_dependency,
     mcp.metadata_change_set,
     mcp.model_change_set,
-    workflow.object_mapping
+    workflow.mapping_object
 TO gds_app_write;
 GRANT INSERT ON
     mcp.metadata_change_set_event,
