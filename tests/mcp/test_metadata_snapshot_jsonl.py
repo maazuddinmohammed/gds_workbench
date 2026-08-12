@@ -1,7 +1,8 @@
 from __future__ import annotations
 
 import json
-from datetime import date
+from datetime import UTC, date, datetime
+from typing import Any, cast
 
 import pytest
 
@@ -19,118 +20,127 @@ def dataset(name: str) -> DatasetDefinition:
     return next(definition for definition in DATASETS if definition.name == name)
 
 
-def project_row(project_id: int, name: str) -> dict[str, object]:
+def project_row(code: str, name: str) -> dict[str, object]:
     return {
-        "project_id": project_id,
-        "project_code": f"P{project_id}",
+        "project_code": code,
         "project_name": name,
         "project_description": None,
         "is_active": True,
     }
 
 
-def test_snapshot_rows_exclude_database_audit_columns() -> None:
-    encoded = encode_dataset(
-        dataset("project"),
-        [
-            {
-                "project_id": 1,
-                "project_code": "P1",
-                "project_name": "Finance",
-                "project_description": None,
-                "is_active": True,
-            }
-        ],
-    )
+def object_row(name: str) -> dict[str, object]:
+    return {
+        "tenant_code": "TENANT",
+        "system_code": "ERP",
+        "connection_code": "SOURCE",
+        "object_schema": "dbo",
+        "object_name": name,
+        "fc_object_schema": None,
+        "fc_object_name": None,
+        "object_transformation": "select *\nfrom source",
+        "object_description": None,
+        "batch_attribute_name": None,
+        "object_type_code": "TABLE",
+        "zone_code": "source",
+        "is_locked": False,
+        "is_active": True,
+    }
+
+
+def test_snapshot_rows_are_flat_and_id_free() -> None:
+    encoded = encode_dataset(dataset("project"), [project_row("P1", "Finance")])
 
     assert json.loads(encoded.rows_jsonl) == {
-        "project_id": "1",
         "project_code": "P1",
         "project_name": "Finance",
         "project_description": None,
         "is_active": True,
     }
+    assert encoded.lookup_jsonl is None
 
 
-def test_jsonl_is_numeric_pk_sorted_utf8_and_bigint_safe() -> None:
+def test_rows_sort_by_normalized_natural_key_and_preserve_utf8() -> None:
     encoded = encode_dataset(
         dataset("project"),
         [
-            project_row(10, "Risk\nAnalytics 🚀"),
-            project_row(2, "Finance"),
+            project_row("risk", "Risk\nAnalytics 🚀"),
+            project_row("FINANCE", "Finance"),
         ],
     )
 
     row_lines = encoded.rows_jsonl.decode().splitlines()
-    index_lines = encoded.index_jsonl.decode().splitlines()
-    assert [json.loads(line)["project_id"] for line in row_lines] == ["2", "10"]
+    assert [json.loads(line)["project_code"] for line in row_lines] == [
+        "FINANCE",
+        "risk",
+    ]
     assert json.loads(row_lines[1])["project_name"] == "Risk\nAnalytics 🚀"
     assert "\\n" in row_lines[1]
-    assert json.loads(index_lines[0]) == {
-        "primary_key": {"project_id": "2"},
-        "label": "P2 · Finance",
-        "file": "rows.jsonl",
-        "line": 1,
-    }
-    assert json.loads(index_lines[1])["label"] == "P10 · Risk Analytics 🚀"
     assert encoded.row_count == 2
 
 
-def test_jsonl_preserves_arrays_dates_nulls_and_utc_timestamps() -> None:
-    row = {
-        "connection_id": 9007199254740993,
-        "tenant_id": 2,
-        "system_id": 3,
-        "connection_code": "GDS",
-        "connection_name": "Global Store",
-        "connection_type_id": 4,
-        "has_foreign_catalog": True,
-        "foreign_catalog": None,
-        "is_global_data_store": True,
-        "test_initial_batch_id": 9007199254740995,
-        "test_incremental_batch_ids": [9007199254740997, None],
+def test_wide_dataset_lookup_contains_only_key_filters_and_line() -> None:
+    encoded = encode_dataset(
+        dataset("source_object"),
+        [object_row("orders"), object_row("customers")],
+    )
+
+    assert encoded.lookup_jsonl is not None
+    lookup_lines = [
+        cast(dict[str, Any], json.loads(line))
+        for line in encoded.lookup_jsonl.decode().splitlines()
+    ]
+    assert lookup_lines[0] == {
+        "tenant_code": "TENANT",
+        "system_code": "ERP",
+        "connection_code": "SOURCE",
+        "object_schema": "dbo",
+        "object_name": "customers",
+        "object_type_code": "TABLE",
+        "zone_code": "source",
+        "is_locked": False,
         "is_active": True,
+        "line": 1,
     }
-    encoded = encode_dataset(dataset("connection"), [row])
-    payload = json.loads(encoded.rows_jsonl)
+    assert "object_transformation" not in lookup_lines[0]
 
-    assert payload["connection_id"] == "9007199254740993"
-    assert payload["test_initial_batch_id"] == "9007199254740995"
-    assert payload["test_incremental_batch_ids"] == ["9007199254740997", None]
-    assert payload["foreign_catalog"] is None
 
+def test_jsonl_preserves_dates_timestamps_and_bigint_text() -> None:
     control_row = {
-        "copy_group_control_id": 1,
-        "copy_group_id": 2,
-        "member_group_id": None,
-        "tenant_id": 3,
-        "system_id": 4,
+        "tenant_code": "TENANT",
+        "system_code": "ERP",
+        "copy_group_name": "daily",
+        "member_group_name": None,
         "copy_group_control_initial_load_date": date(2026, 8, 1),
-        "copy_group_control_last_run_time": None,
+        "copy_group_control_last_run_time": datetime(2026, 8, 2, tzinfo=UTC),
         "copy_group_control_last_run_value": None,
     }
-    control = json.loads(
-        encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl
-    )
+    control = json.loads(encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl)
     assert control["copy_group_control_initial_load_date"] == "2026-08-01"
+    assert control["copy_group_control_last_run_time"] == "2026-08-02T00:00:00Z"
 
 
-def test_jsonl_rejects_schema_drift_invalid_values_and_duplicate_keys() -> None:
-    valid = project_row(1, "One")
+def test_jsonl_rejects_schema_drift_invalid_values_and_normalized_duplicates() -> None:
+    valid = project_row("P1", "One")
 
-    with pytest.raises(SnapshotContractError, match="fixed column contract"):
+    with pytest.raises(SnapshotContractError, match="fixed schema"):
         encode_dataset(dataset("project"), [{**valid, "unexpected": "value"}])
-    with pytest.raises(SnapshotContractError, match="cannot contain a null"):
+    with pytest.raises(SnapshotContractError, match="fixed schema"):
         encode_dataset(dataset("project"), [{**valid, "project_code": None}])
-    with pytest.raises(SnapshotContractError, match="must be a BIGINT"):
-        encode_dataset(dataset("project"), [{**valid, "project_id": True}])
-    with pytest.raises(SnapshotContractError, match="duplicate primary key"):
-        encode_dataset(dataset("project"), [valid, project_row(1, "Duplicate")])
+    with pytest.raises(SnapshotContractError, match="duplicate unique key"):
+        encode_dataset(
+            dataset("project"),
+            [valid, project_row(" p1 ", "Duplicate")],
+        )
+    with pytest.raises(SnapshotContractError, match="fixed dataset values"):
+        encode_dataset(dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}])
 
 
-def test_jsonl_empty_dataset_is_two_empty_files() -> None:
-    encoded = encode_dataset(dataset("project"), [])
+def test_empty_dataset_writes_only_its_declared_files() -> None:
+    project = encode_dataset(dataset("project"), [])
+    source_object = encode_dataset(dataset("source_object"), [])
 
-    assert encoded.rows_jsonl == b""
-    assert encoded.index_jsonl == b""
-    assert encoded.row_count == 0
+    assert project.rows_jsonl == b""
+    assert project.lookup_jsonl is None
+    assert source_object.rows_jsonl == b""
+    assert source_object.lookup_jsonl == b""

@@ -22,6 +22,7 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
 )
 from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
+    SelectedMetadataSnapshot,
     create_metadata_snapshot,
     select_snapshot_datasets,
 )
@@ -34,6 +35,7 @@ if TYPE_CHECKING:
 @dataclass(frozen=True, slots=True)
 class SelectionSeed:
     tenant_id: int
+    tenant_code: str
     requested_connection_id: int
     global_connection_id: int
     object_type_id: int
@@ -48,22 +50,21 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     with postgres_database.connect_owner() as connection:
         seed = _seed_selection_graph(connection)
 
-    encoded = await _select(postgres_database, seed.tenant_id)
-    rows_by_dataset = {
-        dataset.definition.name: _decode_rows(dataset) for dataset in encoded
-    }
+    selected = await _select(postgres_database, seed.tenant_id)
+    encoded = selected.datasets
+    assert selected.tenant_code == seed.tenant_code
+    rows_by_dataset = {dataset.definition.name: _decode_rows(dataset) for dataset in encoded}
 
     assert list(rows_by_dataset) == [dataset.name for dataset in DATASETS]
     forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
     assert all(
         forbidden_columns.isdisjoint(row)
+        and not any(column == "id" or column.endswith("_id") for column in row)
         for rows in rows_by_dataset.values()
         for row in rows
     )
     assert len(rows_by_dataset["project"]) == 1
-    assert {row["tenant_id"] for row in rows_by_dataset["tenant"]} >= {
-        str(seed.tenant_id)
-    }
+    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {seed.tenant_code}
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
     assert len(rows_by_dataset["tenant_metadata_discovery_scope"]) == 1
@@ -85,8 +86,8 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         assert {row["attribute_name"] for row in attribute_rows} == {
             f"{object_name}_attribute" for object_name in expected_names
         }
-        assert all(isinstance(row["object_id"], str) for row in object_rows)
-        assert all(isinstance(row["attribute_id"], str) for row in attribute_rows)
+        assert all(row["zone_code"] == zone_code for row in object_rows)
+        assert all("attributes" not in row for row in object_rows)
 
     all_object_names = {
         row["object_name"]
@@ -117,13 +118,13 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         "process",
     ):
         assert len(rows_by_dataset[dataset_name]) == 1
-    assert rows_by_dataset["copy_group"][0]["tenant_id"] == str(seed.tenant_id)
+    assert rows_by_dataset["copy_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["copy_group"][0]["is_active"] is False
-    assert rows_by_dataset["member_group"][0]["tenant_id"] == str(seed.tenant_id)
+    assert rows_by_dataset["member_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["member_group"][0]["is_active"] is False
-    assert rows_by_dataset["copy_group_control"][0]["tenant_id"] == str(seed.tenant_id)
+    assert rows_by_dataset["copy_group_control"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["copy"][0]["is_active"] is False
-    assert rows_by_dataset["process_group"][0]["tenant_id"] == str(seed.tenant_id)
+    assert rows_by_dataset["process_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process_group"][0]["is_active"] is False
     assert rows_by_dataset["process"][0]["is_active"] is False
 
@@ -273,15 +274,15 @@ async def test_complete_database_snapshot_builds_uploads_and_cleans_archive(
     assert store.path is not None and not store.path.exists()
     with zipfile.ZipFile(BytesIO(store.content)) as archive:
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
-    assert manifest["tenant_id"] == str(tenant["tenant_id"])
+    assert manifest["tenant_code"] == f"{prefix}_TENANT"
     assert manifest["counts"]["logical_dataset_count"] == 29
-    assert manifest["counts"]["file_count"] == 61
+    assert manifest["counts"]["file_count"] == 70
 
 
 async def _select(
     postgres_database: DisposablePostgres,
     tenant_id: int,
-) -> tuple[EncodedDataset, ...]:
+) -> SelectedMetadataSnapshot:
     database = postgres_database.create_runtime_adapter()
     await database.open()
     try:
@@ -542,9 +543,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (list(object_ids.values()),),
     ).fetchall()
-    attribute_id_by_object_id = {
-        row["object_id"]: row["attribute_id"] for row in attribute_rows
-    }
+    attribute_id_by_object_id = {row["object_id"]: row["attribute_id"] for row in attribute_rows}
     first_mapping = connection.execute(
         """
         INSERT INTO core.ingestion_object_mapping (
@@ -602,11 +601,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (object_ids["unrelated_bronze"], object_ids["inactive_model_gold"]),
     ).fetchone()
-    assert (
-        first_mapping is not None
-        and second_mapping is not None
-        and copy_mapping is not None
-    )
+    assert first_mapping is not None and second_mapping is not None and copy_mapping is not None
     assert inactive_unreferenced_mapping is not None and unrelated_mapping is not None
     connection.execute(
         """
@@ -903,6 +898,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
 
     return SelectionSeed(
         tenant_id=requested_tenant["tenant_id"],
+        tenant_code=f"{prefix}_TENANT",
         requested_connection_id=requested_connection["connection_id"],
         global_connection_id=global_connection["connection_id"],
         object_type_id=object_type["object_type_id"],

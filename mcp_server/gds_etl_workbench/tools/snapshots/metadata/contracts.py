@@ -1,11 +1,37 @@
-"""Static Metadata Snapshot table and dataset contracts."""
+"""ID-free Metadata Snapshot dataset registry."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import PurePosixPath
-from typing import Literal
+
+from gds_etl_workbench.domain.metadata_records import (
+    AttributeRecord,
+    ChunkTypeRecord,
+    ConnectionRecord,
+    ConnectionTypeRecord,
+    CopyGroupControlRecord,
+    CopyGroupRecord,
+    CopyRecord,
+    DataOperationRecord,
+    FileTypeRecord,
+    IngestionAttributeMappingRecord,
+    IngestionObjectMappingRecord,
+    MemberGroupRecord,
+    MetadataRecord,
+    ObjectRecord,
+    ObjectTypeRecord,
+    ProcessGroupRecord,
+    ProcessRecord,
+    ProcessTypeRecord,
+    ProjectRecord,
+    SystemRecord,
+    SystemTypeRecord,
+    TenantMetadataDiscoveryScopeRecord,
+    TenantRecord,
+    ZoneRecord,
+)
 
 
 class SnapshotSection(StrEnum):
@@ -14,882 +40,479 @@ class SnapshotSection(StrEnum):
 
 
 @dataclass(frozen=True, slots=True)
+class ReferenceDefinition:
+    columns: tuple[str, ...]
+    target_record_type: str
+    target_columns: tuple[str, ...]
+    nullable: bool = False
+
+
+@dataclass(frozen=True, slots=True)
 class DatasetDefinition:
     name: str
     label: str
     database_table: str
+    record_type: str
     section: SnapshotSection
     change_set_eligible: bool
-    primary_key: tuple[str, ...]
-    display_columns: tuple[str, ...]
+    row_model: type[MetadataRecord]
+    canonical_key: tuple[str, ...]
+    unique_constraints: tuple[tuple[str, ...], ...]
+    references: tuple[ReferenceDefinition, ...] = ()
+    lookup_fields: tuple[str, ...] = ()
+    fixed_values: tuple[tuple[str, object], ...] = ()
 
     @property
-    def directory(self) -> PurePosixPath:
-        database_schema, _table_name = self.database_table.split(".", maxsplit=1)
-        return PurePosixPath(self.section.value, database_schema, self.name)
+    def data_directory(self) -> PurePosixPath:
+        return PurePosixPath("data", self.name)
 
     @property
-    def data_path(self) -> str:
-        return (self.directory / "rows.jsonl").as_posix()
+    def rows_path(self) -> str:
+        return (self.data_directory / "rows.jsonl").as_posix()
 
     @property
-    def index_path(self) -> str:
-        return (self.directory / "index.jsonl").as_posix()
-
-
-type ColumnType = Literal[
-    "bigint",
-    "bigint[]",
-    "boolean",
-    "date",
-    "integer",
-    "text",
-    "timestamptz",
-    "varchar",
-]
-
-
-@dataclass(frozen=True, slots=True)
-class ColumnDefinition:
-    name: str
-    type: ColumnType
-    nullable: bool = False
-    generated: bool = False
-
-
-@dataclass(frozen=True, slots=True)
-class ForeignKeyDefinition:
-    columns: tuple[str, ...]
-    references_table: str
-    references_columns: tuple[str, ...]
-
-
-@dataclass(frozen=True, slots=True)
-class TableDefinition:
-    database_table: str
-    columns: tuple[ColumnDefinition, ...]
-    unique_column_groups: tuple[tuple[str, ...], ...] = ()
-    foreign_keys: tuple[ForeignKeyDefinition, ...] = ()
+    def lookup_path(self) -> str | None:
+        if not self.lookup_fields:
+            return None
+        return (self.data_directory / "lookup.jsonl").as_posix()
 
     @property
-    def snapshot_columns(self) -> tuple[ColumnDefinition, ...]:
-        return tuple(column for column in self.columns if column.name not in AUDIT_COLUMN_NAMES)
+    def search_path(self) -> str:
+        return self.lookup_path or self.rows_path
+
+    @property
+    def schema_path(self) -> str:
+        return PurePosixPath("schemas", f"{self.name}.schema.json").as_posix()
+
+    @property
+    def search_fields(self) -> tuple[str, ...]:
+        return tuple(dict.fromkeys((*self.canonical_key, *self.lookup_fields)))
 
 
-AUDIT_COLUMN_NAMES = frozenset({"created_time", "created_by", "updated_time", "updated_by"})
-
-_AUDIT_COLUMNS = (
-    ColumnDefinition("created_time", "timestamptz"),
-    ColumnDefinition("created_by", "varchar"),
-    ColumnDefinition("updated_time", "timestamptz"),
-    ColumnDefinition("updated_by", "varchar"),
+PROJECT_KEY = ("project_code",)
+TENANT_KEY = ("tenant_code",)
+SYSTEM_KEY = ("system_code",)
+CONNECTION_KEY = ("tenant_code", "system_code", "connection_code")
+OBJECT_KEY = (*CONNECTION_KEY, "object_schema", "object_name")
+ATTRIBUTE_KEY = (*OBJECT_KEY, "attribute_name")
+COPY_GROUP_KEY = ("tenant_code", "system_code", "copy_group_name")
+MEMBER_GROUP_KEY = ("tenant_code", "system_code", "member_group_name")
+PROCESS_GROUP_KEY = (
+    "tenant_code",
+    "system_code",
+    "zone_code",
+    "process_group_name",
 )
 
 
-def _table(
-    database_table: str,
-    columns: tuple[ColumnDefinition, ...],
+def _prefixed(prefix: str, columns: tuple[str, ...]) -> tuple[str, ...]:
+    return tuple(f"{prefix}_{column}" for column in columns)
+
+
+SOURCE_OBJECT_KEY = _prefixed("source", OBJECT_KEY)
+TARGET_OBJECT_KEY = _prefixed("target", OBJECT_KEY)
+SOURCE_ATTRIBUTE_KEY = _prefixed("source", ATTRIBUTE_KEY)
+TARGET_ATTRIBUTE_KEY = _prefixed("target", ATTRIBUTE_KEY)
+OBJECT_MAPPING_KEY = (*SOURCE_OBJECT_KEY, *TARGET_OBJECT_KEY)
+ATTRIBUTE_MAPPING_KEY = (*SOURCE_ATTRIBUTE_KEY, *TARGET_ATTRIBUTE_KEY)
+COPY_KEY = (*COPY_GROUP_KEY, *SOURCE_OBJECT_KEY, *TARGET_OBJECT_KEY)
+COPY_GROUP_CONTROL_KEY = (*COPY_GROUP_KEY, "member_group_name")
+PROCESS_KEY = (
+    *PROCESS_GROUP_KEY,
+    "process_execution_order",
+    "process_location",
+    "process_executable",
+)
+
+
+def _reference(
+    columns: tuple[str, ...],
+    target_record_type: str,
+    target_columns: tuple[str, ...],
     *,
-    unique_column_groups: tuple[tuple[str, ...], ...] = (),
-    foreign_keys: tuple[ForeignKeyDefinition, ...] = (),
-) -> TableDefinition:
-    return TableDefinition(
+    nullable: bool = False,
+) -> ReferenceDefinition:
+    return ReferenceDefinition(columns, target_record_type, target_columns, nullable)
+
+
+def _dataset(
+    name: str,
+    label: str,
+    database_table: str,
+    record_type: str,
+    section: SnapshotSection,
+    change_set_eligible: bool,
+    row_model: type[MetadataRecord],
+    canonical_key: tuple[str, ...],
+    *,
+    unique_constraints: tuple[tuple[str, ...], ...] = (),
+    references: tuple[ReferenceDefinition, ...] = (),
+    lookup_fields: tuple[str, ...] = (),
+    fixed_values: tuple[tuple[str, object], ...] = (),
+) -> DatasetDefinition:
+    return DatasetDefinition(
+        name=name,
+        label=label,
         database_table=database_table,
-        columns=(*columns, *_AUDIT_COLUMNS),
-        unique_column_groups=unique_column_groups,
-        foreign_keys=foreign_keys,
+        record_type=record_type,
+        section=section,
+        change_set_eligible=change_set_eligible,
+        row_model=row_model,
+        canonical_key=canonical_key,
+        unique_constraints=(canonical_key, *unique_constraints),
+        references=references,
+        lookup_fields=lookup_fields,
+        fixed_values=fixed_values,
     )
 
 
-TABLES = (
-    _table(
-        "core.project",
-        (
-            ColumnDefinition("project_id", "bigint", generated=True),
-            ColumnDefinition("project_code", "varchar"),
-            ColumnDefinition("project_name", "varchar"),
-            ColumnDefinition("project_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("project_code",),),
-    ),
-    _table(
-        "core.tenant",
-        (
-            ColumnDefinition("tenant_id", "bigint", generated=True),
-            ColumnDefinition("project_id", "bigint"),
-            ColumnDefinition("tenant_code", "varchar"),
-            ColumnDefinition("tenant_name", "varchar"),
-            ColumnDefinition("tenant_description", "text", nullable=True),
-            ColumnDefinition("tenant_catalog", "varchar"),
-            ColumnDefinition("gds_admin_catalog", "varchar"),
-            ColumnDefinition("gds_connection_id", "bigint", nullable=True),
-            ColumnDefinition("tenant_visibility", "varchar"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("tenant_code",),),
-        foreign_keys=(ForeignKeyDefinition(("project_id",), "core.project", ("project_id",)),),
-    ),
-    _table(
-        "core.system",
-        (
-            ColumnDefinition("system_id", "bigint", generated=True),
-            ColumnDefinition("system_code", "varchar"),
-            ColumnDefinition("system_name", "varchar"),
-            ColumnDefinition("system_description", "text", nullable=True),
-            ColumnDefinition("system_type_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("system_code",),),
-        foreign_keys=(
-            ForeignKeyDefinition(
-                ("system_type_id",),
-                "reference.system_type",
-                ("system_type_id",),
-            ),
-        ),
-    ),
-    _table(
-        "core.connection",
-        (
-            ColumnDefinition("connection_id", "bigint", generated=True),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("system_id", "bigint"),
-            ColumnDefinition("connection_code", "varchar"),
-            ColumnDefinition("connection_name", "varchar"),
-            ColumnDefinition("connection_type_id", "bigint"),
-            ColumnDefinition("has_foreign_catalog", "boolean"),
-            ColumnDefinition("foreign_catalog", "varchar", nullable=True),
-            ColumnDefinition("is_global_data_store", "boolean"),
-            ColumnDefinition("test_initial_batch_id", "bigint", nullable=True),
-            ColumnDefinition("test_incremental_batch_ids", "bigint[]", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("connection_id", "tenant_id"),
-            ("system_id", "tenant_id", "connection_code"),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(("tenant_id",), "core.tenant", ("tenant_id",)),
-            ForeignKeyDefinition(("system_id",), "core.system", ("system_id",)),
-            ForeignKeyDefinition(
-                ("connection_type_id",),
-                "reference.connection_type",
-                ("connection_type_id",),
-            ),
-        ),
-    ),
-    _table(
-        "core.tenant_metadata_discovery_scope",
-        (
-            ColumnDefinition(
-                "tenant_metadata_discovery_scope_id",
-                "bigint",
-                generated=True,
-            ),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("connection_id", "bigint"),
-            ColumnDefinition("zone_id", "bigint"),
-            ColumnDefinition("object_schema", "varchar"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("tenant_id", "connection_id", "zone_id", "object_schema"),),
-        foreign_keys=(
-            ForeignKeyDefinition(("tenant_id",), "core.tenant", ("tenant_id",)),
-            ForeignKeyDefinition(
-                ("connection_id",),
-                "core.connection",
-                ("connection_id",),
-            ),
-            ForeignKeyDefinition(("zone_id",), "reference.zone", ("zone_id",)),
-        ),
-    ),
-    _table(
-        "reference.system_type",
-        (
-            ColumnDefinition("system_type_id", "bigint", generated=True),
-            ColumnDefinition("system_type_code", "varchar"),
-            ColumnDefinition("system_type_name", "varchar"),
-            ColumnDefinition("system_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("system_type_code",),),
-    ),
-    _table(
-        "reference.connection_type",
-        (
-            ColumnDefinition("connection_type_id", "bigint", generated=True),
-            ColumnDefinition("connection_type_code", "varchar"),
-            ColumnDefinition("connection_type_name", "varchar"),
-            ColumnDefinition("connection_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("connection_type_code",),),
-    ),
-    _table(
-        "reference.object_type",
-        (
-            ColumnDefinition("object_type_id", "bigint", generated=True),
-            ColumnDefinition("object_type_code", "varchar"),
-            ColumnDefinition("object_type_name", "varchar"),
-            ColumnDefinition("object_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("object_type_code",),),
-    ),
-    _table(
-        "reference.zone",
-        (
-            ColumnDefinition("zone_id", "bigint", generated=True),
-            ColumnDefinition("zone_code", "varchar"),
-            ColumnDefinition("zone_name", "varchar"),
-            ColumnDefinition("zone_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("zone_code",), ("zone_name",)),
-    ),
-    _table(
-        "reference.chunk_type",
-        (
-            ColumnDefinition("chunk_type_id", "bigint", generated=True),
-            ColumnDefinition("chunk_type_name", "varchar"),
-            ColumnDefinition("chunk_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("chunk_type_name",),),
-    ),
-    _table(
-        "reference.file_type",
-        (
-            ColumnDefinition("file_type_id", "bigint", generated=True),
-            ColumnDefinition("file_type_name", "varchar"),
-            ColumnDefinition("file_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("file_type_name",),),
-    ),
-    _table(
-        "reference.data_operation",
-        (
-            ColumnDefinition("data_operation_id", "bigint", generated=True),
-            ColumnDefinition("data_operation_name", "varchar"),
-            ColumnDefinition("data_operation_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("data_operation_name",),),
-    ),
-    _table(
-        "reference.process_type",
-        (
-            ColumnDefinition("process_type_id", "bigint", generated=True),
-            ColumnDefinition("process_type_name", "varchar"),
-            ColumnDefinition("process_type_description", "text", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("process_type_name",),),
-    ),
-    _table(
-        "core.object",
-        (
-            ColumnDefinition("object_id", "bigint", generated=True),
-            ColumnDefinition("connection_id", "bigint"),
-            ColumnDefinition("object_schema", "varchar"),
-            ColumnDefinition("object_name", "varchar"),
-            ColumnDefinition("fc_object_schema", "varchar", nullable=True),
-            ColumnDefinition("fc_object_name", "varchar", nullable=True),
-            ColumnDefinition("object_transformation", "text", nullable=True),
-            ColumnDefinition("object_description", "text", nullable=True),
-            ColumnDefinition("batch_attribute_name", "varchar", nullable=True),
-            ColumnDefinition("object_type_id", "bigint"),
-            ColumnDefinition("zone_id", "bigint"),
-            ColumnDefinition("is_locked", "boolean"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("object_id", "connection_id"),
-            ("object_id", "zone_id"),
-            ("connection_id", "object_schema", "object_name"),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(
-                ("connection_id",),
-                "core.connection",
-                ("connection_id",),
-            ),
-            ForeignKeyDefinition(
-                ("object_type_id",),
-                "reference.object_type",
-                ("object_type_id",),
-            ),
-            ForeignKeyDefinition(("zone_id",), "reference.zone", ("zone_id",)),
-        ),
-    ),
-    _table(
-        "core.attribute",
-        (
-            ColumnDefinition("attribute_id", "bigint", generated=True),
-            ColumnDefinition("object_id", "bigint"),
-            ColumnDefinition("attribute_name", "varchar"),
-            ColumnDefinition("fc_attribute_name", "varchar", nullable=True),
-            ColumnDefinition("attribute_ordinal_position", "integer"),
-            ColumnDefinition("attribute_description", "text", nullable=True),
-            ColumnDefinition("attribute_data_type", "varchar"),
-            ColumnDefinition("attribute_nullability", "boolean"),
-            ColumnDefinition("attribute_custom_code", "text", nullable=True),
-            ColumnDefinition("business_glossary_id", "bigint", nullable=True),
-            ColumnDefinition("is_surrogate_key", "boolean"),
-            ColumnDefinition("is_natural_key", "boolean"),
-            ColumnDefinition("is_meta_data", "boolean"),
-            ColumnDefinition("is_masking_required", "boolean"),
-            ColumnDefinition("is_mapped", "boolean"),
-            ColumnDefinition("is_purge", "boolean"),
-            ColumnDefinition("is_locked", "boolean"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("object_id", "attribute_ordinal_position"),
-            ("attribute_id", "object_id"),
-            ("object_id", "attribute_name"),
-        ),
-        foreign_keys=(ForeignKeyDefinition(("object_id",), "core.object", ("object_id",)),),
-    ),
-    _table(
-        "core.ingestion_object_mapping",
-        (
-            ColumnDefinition("ingestion_object_mapping_id", "bigint", generated=True),
-            ColumnDefinition("source_object_id", "bigint"),
-            ColumnDefinition("target_object_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("source_object_id", "target_object_id"),
-            (
-                "ingestion_object_mapping_id",
-                "source_object_id",
-                "target_object_id",
-            ),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(("source_object_id",), "core.object", ("object_id",)),
-            ForeignKeyDefinition(("target_object_id",), "core.object", ("object_id",)),
-        ),
-    ),
-    _table(
-        "core.ingestion_attribute_mapping",
-        (
-            ColumnDefinition(
-                "ingestion_attribute_mapping_id",
-                "bigint",
-                generated=True,
-            ),
-            ColumnDefinition("ingestion_object_mapping_id", "bigint"),
-            ColumnDefinition("source_object_id", "bigint"),
-            ColumnDefinition("target_object_id", "bigint"),
-            ColumnDefinition("source_attribute_id", "bigint"),
-            ColumnDefinition("target_attribute_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            (
-                "ingestion_object_mapping_id",
-                "source_attribute_id",
-                "target_attribute_id",
-            ),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(
-                (
-                    "ingestion_object_mapping_id",
-                    "source_object_id",
-                    "target_object_id",
-                ),
-                "core.ingestion_object_mapping",
-                (
-                    "ingestion_object_mapping_id",
-                    "source_object_id",
-                    "target_object_id",
-                ),
-            ),
-            ForeignKeyDefinition(
-                ("source_attribute_id", "source_object_id"),
-                "core.attribute",
-                ("attribute_id", "object_id"),
-            ),
-            ForeignKeyDefinition(
-                ("target_attribute_id", "target_object_id"),
-                "core.attribute",
-                ("attribute_id", "object_id"),
-            ),
-        ),
-    ),
-    _table(
-        "core.copy_group",
-        (
-            ColumnDefinition("copy_group_id", "bigint", generated=True),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("system_id", "bigint"),
-            ColumnDefinition("copy_group_name", "varchar"),
-            ColumnDefinition("copy_group_description", "text", nullable=True),
-            ColumnDefinition("is_member_group_required", "boolean"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("copy_group_id", "tenant_id", "system_id"),
-            ("tenant_id", "system_id", "copy_group_name"),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(("tenant_id",), "core.tenant", ("tenant_id",)),
-            ForeignKeyDefinition(("system_id",), "core.system", ("system_id",)),
-        ),
-    ),
-    _table(
-        "core.member_group",
-        (
-            ColumnDefinition("member_group_id", "bigint", generated=True),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("system_id", "bigint"),
-            ColumnDefinition("member_group_name", "varchar"),
-            ColumnDefinition("member_group_description", "text", nullable=True),
-            ColumnDefinition("member_group_initial_load_date", "date", nullable=True),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("member_group_id", "tenant_id", "system_id"),
-            ("tenant_id", "system_id", "member_group_name"),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(("tenant_id",), "core.tenant", ("tenant_id",)),
-            ForeignKeyDefinition(("system_id",), "core.system", ("system_id",)),
-        ),
-    ),
-    _table(
-        "core.copy_group_control",
-        (
-            ColumnDefinition("copy_group_control_id", "bigint", generated=True),
-            ColumnDefinition("copy_group_id", "bigint"),
-            ColumnDefinition("member_group_id", "bigint", nullable=True),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("system_id", "bigint"),
-            ColumnDefinition(
-                "copy_group_control_initial_load_date",
-                "date",
-                nullable=True,
-            ),
-            ColumnDefinition(
-                "copy_group_control_last_run_time",
-                "timestamptz",
-                nullable=True,
-            ),
-            ColumnDefinition(
-                "copy_group_control_last_run_value",
-                "text",
-                nullable=True,
-            ),
-        ),
-        unique_column_groups=(("copy_group_id", "member_group_id"),),
-        foreign_keys=(
-            ForeignKeyDefinition(
-                ("copy_group_id", "tenant_id", "system_id"),
-                "core.copy_group",
-                ("copy_group_id", "tenant_id", "system_id"),
-            ),
-            ForeignKeyDefinition(
-                ("member_group_id", "tenant_id", "system_id"),
-                "core.member_group",
-                ("member_group_id", "tenant_id", "system_id"),
-            ),
-        ),
-    ),
-    _table(
-        "core.copy",
-        (
-            ColumnDefinition("copy_id", "bigint", generated=True),
-            ColumnDefinition("copy_group_id", "bigint"),
-            ColumnDefinition("ingestion_object_mapping_id", "bigint"),
-            ColumnDefinition("copy_source_record_limit", "bigint", nullable=True),
-            ColumnDefinition(
-                "copy_source_record_limit_attribute",
-                "varchar",
-                nullable=True,
-            ),
-            ColumnDefinition("chunk_type_id", "bigint", nullable=True),
-            ColumnDefinition("copy_source_initial_sql_script", "text", nullable=True),
-            ColumnDefinition(
-                "copy_source_incremental_sql_script",
-                "text",
-                nullable=True,
-            ),
-            ColumnDefinition("copy_source_file_name", "text", nullable=True),
-            ColumnDefinition("copy_source_file_pattern", "text", nullable=True),
-            ColumnDefinition("copy_source_file_delimiter", "varchar", nullable=True),
-            ColumnDefinition("source_file_type_id", "bigint", nullable=True),
-            ColumnDefinition("copy_source_order", "integer"),
-            ColumnDefinition("source_data_operation_id", "bigint"),
-            ColumnDefinition("target_data_operation_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            ("copy_group_id", "ingestion_object_mapping_id"),
-            ("copy_group_id", "copy_source_order"),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(("copy_group_id",), "core.copy_group", ("copy_group_id",)),
-            ForeignKeyDefinition(
-                ("ingestion_object_mapping_id",),
-                "core.ingestion_object_mapping",
-                ("ingestion_object_mapping_id",),
-            ),
-            ForeignKeyDefinition(
-                ("chunk_type_id",),
-                "reference.chunk_type",
-                ("chunk_type_id",),
-            ),
-            ForeignKeyDefinition(
-                ("source_file_type_id",),
-                "reference.file_type",
-                ("file_type_id",),
-            ),
-            ForeignKeyDefinition(
-                ("source_data_operation_id",),
-                "reference.data_operation",
-                ("data_operation_id",),
-            ),
-            ForeignKeyDefinition(
-                ("target_data_operation_id",),
-                "reference.data_operation",
-                ("data_operation_id",),
-            ),
-        ),
-    ),
-    _table(
-        "core.process_group",
-        (
-            ColumnDefinition("process_group_id", "bigint", generated=True),
-            ColumnDefinition("tenant_id", "bigint"),
-            ColumnDefinition("system_id", "bigint"),
-            ColumnDefinition("zone_id", "bigint"),
-            ColumnDefinition("process_group_name", "varchar"),
-            ColumnDefinition("process_group_description", "text", nullable=True),
-            ColumnDefinition("copy_group_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(("tenant_id", "system_id", "zone_id", "process_group_name"),),
-        foreign_keys=(
-            ForeignKeyDefinition(("tenant_id",), "core.tenant", ("tenant_id",)),
-            ForeignKeyDefinition(("system_id",), "core.system", ("system_id",)),
-            ForeignKeyDefinition(("zone_id",), "reference.zone", ("zone_id",)),
-            ForeignKeyDefinition(
-                ("copy_group_id", "tenant_id", "system_id"),
-                "core.copy_group",
-                ("copy_group_id", "tenant_id", "system_id"),
-            ),
-        ),
-    ),
-    _table(
-        "core.process",
-        (
-            ColumnDefinition("process_id", "bigint", generated=True),
-            ColumnDefinition("connection_id", "bigint"),
-            ColumnDefinition("object_id", "bigint"),
-            ColumnDefinition("process_execution_order", "integer"),
-            ColumnDefinition("process_location", "text"),
-            ColumnDefinition("process_executable", "text"),
-            ColumnDefinition("process_type_id", "bigint"),
-            ColumnDefinition("process_group_id", "bigint"),
-            ColumnDefinition("is_active", "boolean"),
-        ),
-        unique_column_groups=(
-            (
-                "process_group_id",
-                "process_execution_order",
-                "process_location",
-                "process_executable",
-            ),
-        ),
-        foreign_keys=(
-            ForeignKeyDefinition(
-                ("object_id", "connection_id"),
-                "core.object",
-                ("object_id", "connection_id"),
-            ),
-            ForeignKeyDefinition(
-                ("process_type_id",),
-                "reference.process_type",
-                ("process_type_id",),
-            ),
-            ForeignKeyDefinition(
-                ("process_group_id",),
-                "core.process_group",
-                ("process_group_id",),
-            ),
-        ),
-    ),
-)
-
-
 DATASETS = (
-    DatasetDefinition(
+    _dataset(
         "project",
         "Projects",
         "core.project",
+        "project",
         SnapshotSection.FOUNDATION,
         False,
-        ("project_id",),
-        ("project_code", "project_name"),
+        ProjectRecord,
+        PROJECT_KEY,
     ),
-    DatasetDefinition(
+    _dataset(
         "tenant",
         "Tenants",
         "core.tenant",
+        "tenant",
         SnapshotSection.FOUNDATION,
         False,
-        ("tenant_id",),
-        ("tenant_code", "tenant_name"),
+        TenantRecord,
+        TENANT_KEY,
+        references=(
+            _reference(("project_code",), "project", PROJECT_KEY),
+            _reference(
+                (
+                    "gds_connection_tenant_code",
+                    "gds_connection_system_code",
+                    "gds_connection_code",
+                ),
+                "connection",
+                CONNECTION_KEY,
+                nullable=True,
+            ),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "system",
         "Systems",
         "core.system",
+        "system",
         SnapshotSection.FOUNDATION,
         False,
-        ("system_id",),
-        ("system_code", "system_name"),
+        SystemRecord,
+        SYSTEM_KEY,
+        references=(_reference(("system_type_code",), "system_type", ("system_type_code",)),),
     ),
-    DatasetDefinition(
+    _dataset(
         "connection",
         "Connections",
         "core.connection",
+        "connection",
         SnapshotSection.FOUNDATION,
         False,
-        ("connection_id",),
-        ("connection_code", "connection_name"),
+        ConnectionRecord,
+        CONNECTION_KEY,
+        references=(
+            _reference(("tenant_code",), "tenant", TENANT_KEY),
+            _reference(("system_code",), "system", SYSTEM_KEY),
+            _reference(("connection_type_code",), "connection_type", ("connection_type_code",)),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "tenant_metadata_discovery_scope",
         "Tenant Metadata Discovery Scopes",
         "core.tenant_metadata_discovery_scope",
+        "tenant_metadata_discovery_scope",
         SnapshotSection.FOUNDATION,
         False,
-        ("tenant_metadata_discovery_scope_id",),
-        ("object_schema",),
+        TenantMetadataDiscoveryScopeRecord,
+        (
+            "scope_tenant_code",
+            "connection_tenant_code",
+            "connection_system_code",
+            "connection_code",
+            "zone_code",
+            "object_schema",
+        ),
+        references=(
+            _reference(("scope_tenant_code",), "tenant", TENANT_KEY),
+            _reference(
+                ("connection_tenant_code", "connection_system_code", "connection_code"),
+                "connection",
+                CONNECTION_KEY,
+            ),
+            _reference(("zone_code",), "zone", ("zone_code",)),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "system_type",
         "System Types",
         "reference.system_type",
+        "system_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("system_type_id",),
-        ("system_type_code", "system_type_name"),
+        SystemTypeRecord,
+        ("system_type_code",),
     ),
-    DatasetDefinition(
+    _dataset(
         "connection_type",
         "Connection Types",
         "reference.connection_type",
+        "connection_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("connection_type_id",),
-        ("connection_type_code", "connection_type_name"),
+        ConnectionTypeRecord,
+        ("connection_type_code",),
     ),
-    DatasetDefinition(
+    _dataset(
         "object_type",
         "Object Types",
         "reference.object_type",
+        "object_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("object_type_id",),
-        ("object_type_code", "object_type_name"),
+        ObjectTypeRecord,
+        ("object_type_code",),
     ),
-    DatasetDefinition(
+    _dataset(
         "zone",
         "Zones",
         "reference.zone",
+        "zone",
         SnapshotSection.FOUNDATION,
         False,
-        ("zone_id",),
-        ("zone_code", "zone_name"),
+        ZoneRecord,
+        ("zone_code",),
+        unique_constraints=(("zone_name",),),
     ),
-    DatasetDefinition(
+    _dataset(
         "chunk_type",
         "Chunk Types",
         "reference.chunk_type",
+        "chunk_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("chunk_type_id",),
+        ChunkTypeRecord,
         ("chunk_type_name",),
     ),
-    DatasetDefinition(
+    _dataset(
         "file_type",
         "File Types",
         "reference.file_type",
+        "file_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("file_type_id",),
+        FileTypeRecord,
         ("file_type_name",),
     ),
-    DatasetDefinition(
+    _dataset(
         "data_operation",
         "Data Operations",
         "reference.data_operation",
+        "data_operation",
         SnapshotSection.FOUNDATION,
         False,
-        ("data_operation_id",),
+        DataOperationRecord,
         ("data_operation_name",),
     ),
-    DatasetDefinition(
+    _dataset(
         "process_type",
         "Process Types",
         "reference.process_type",
+        "process_type",
         SnapshotSection.FOUNDATION,
         False,
-        ("process_type_id",),
+        ProcessTypeRecord,
         ("process_type_name",),
     ),
-    DatasetDefinition(
-        "source_object",
-        "Source Objects",
-        "core.object",
-        SnapshotSection.METADATA,
-        True,
-        ("object_id",),
-        ("object_schema", "object_name"),
+    *(
+        item
+        for zone_code, label in (
+            ("source", "Source"),
+            ("bronze", "Bronze"),
+            ("silver", "Silver"),
+            ("gold", "Gold"),
+        )
+        for item in (
+            _dataset(
+                f"{zone_code}_object",
+                f"{label} Objects",
+                "core.object",
+                "object",
+                SnapshotSection.METADATA,
+                True,
+                ObjectRecord,
+                OBJECT_KEY,
+                references=(
+                    _reference(CONNECTION_KEY, "connection", CONNECTION_KEY),
+                    _reference(("object_type_code",), "object_type", ("object_type_code",)),
+                    _reference(("zone_code",), "zone", ("zone_code",)),
+                ),
+                lookup_fields=("object_type_code", "zone_code", "is_locked", "is_active"),
+                fixed_values=(("zone_code", zone_code),),
+            ),
+            _dataset(
+                f"{zone_code}_attribute",
+                f"{label} Attributes",
+                "core.attribute",
+                "attribute",
+                SnapshotSection.METADATA,
+                True,
+                AttributeRecord,
+                ATTRIBUTE_KEY,
+                unique_constraints=((*OBJECT_KEY, "attribute_ordinal_position"),),
+                references=(_reference(OBJECT_KEY, "object", OBJECT_KEY),),
+                lookup_fields=(
+                    "attribute_data_type",
+                    "is_natural_key",
+                    "is_locked",
+                    "is_active",
+                ),
+            ),
+        )
     ),
-    DatasetDefinition(
-        "source_attribute",
-        "Source Attributes",
-        "core.attribute",
-        SnapshotSection.METADATA,
-        True,
-        ("attribute_id",),
-        ("attribute_name",),
-    ),
-    DatasetDefinition(
-        "bronze_object",
-        "Bronze Objects",
-        "core.object",
-        SnapshotSection.METADATA,
-        True,
-        ("object_id",),
-        ("object_schema", "object_name"),
-    ),
-    DatasetDefinition(
-        "bronze_attribute",
-        "Bronze Attributes",
-        "core.attribute",
-        SnapshotSection.METADATA,
-        True,
-        ("attribute_id",),
-        ("attribute_name",),
-    ),
-    DatasetDefinition(
-        "silver_object",
-        "Silver Objects",
-        "core.object",
-        SnapshotSection.METADATA,
-        True,
-        ("object_id",),
-        ("object_schema", "object_name"),
-    ),
-    DatasetDefinition(
-        "silver_attribute",
-        "Silver Attributes",
-        "core.attribute",
-        SnapshotSection.METADATA,
-        True,
-        ("attribute_id",),
-        ("attribute_name",),
-    ),
-    DatasetDefinition(
-        "gold_object",
-        "Gold Objects",
-        "core.object",
-        SnapshotSection.METADATA,
-        True,
-        ("object_id",),
-        ("object_schema", "object_name"),
-    ),
-    DatasetDefinition(
-        "gold_attribute",
-        "Gold Attributes",
-        "core.attribute",
-        SnapshotSection.METADATA,
-        True,
-        ("attribute_id",),
-        ("attribute_name",),
-    ),
-    DatasetDefinition(
+    _dataset(
         "ingestion_object_mapping",
         "Ingestion Object Mappings",
         "core.ingestion_object_mapping",
+        "ingestion_object_mapping",
         SnapshotSection.METADATA,
         True,
-        ("ingestion_object_mapping_id",),
-        ("source_object_id", "target_object_id"),
+        IngestionObjectMappingRecord,
+        OBJECT_MAPPING_KEY,
+        references=(
+            _reference(SOURCE_OBJECT_KEY, "object", OBJECT_KEY),
+            _reference(TARGET_OBJECT_KEY, "object", OBJECT_KEY),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "ingestion_attribute_mapping",
         "Ingestion Attribute Mappings",
         "core.ingestion_attribute_mapping",
+        "ingestion_attribute_mapping",
         SnapshotSection.METADATA,
         True,
-        ("ingestion_attribute_mapping_id",),
-        ("source_attribute_id", "target_attribute_id"),
+        IngestionAttributeMappingRecord,
+        ATTRIBUTE_MAPPING_KEY,
+        references=(
+            _reference(OBJECT_MAPPING_KEY, "ingestion_object_mapping", OBJECT_MAPPING_KEY),
+            _reference(SOURCE_ATTRIBUTE_KEY, "attribute", ATTRIBUTE_KEY),
+            _reference(TARGET_ATTRIBUTE_KEY, "attribute", ATTRIBUTE_KEY),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "copy_group",
         "Copy Groups",
         "core.copy_group",
+        "copy_group",
         SnapshotSection.METADATA,
         True,
-        ("copy_group_id",),
-        ("copy_group_name",),
+        CopyGroupRecord,
+        COPY_GROUP_KEY,
+        references=(
+            _reference(("tenant_code",), "tenant", TENANT_KEY),
+            _reference(("system_code",), "system", SYSTEM_KEY),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "member_group",
         "Member Groups",
         "core.member_group",
+        "member_group",
         SnapshotSection.METADATA,
         True,
-        ("member_group_id",),
-        ("member_group_name",),
+        MemberGroupRecord,
+        MEMBER_GROUP_KEY,
+        references=(
+            _reference(("tenant_code",), "tenant", TENANT_KEY),
+            _reference(("system_code",), "system", SYSTEM_KEY),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "copy_group_control",
         "Copy Group Controls",
         "core.copy_group_control",
+        "copy_group_control",
         SnapshotSection.METADATA,
         True,
-        ("copy_group_control_id",),
-        ("copy_group_id", "member_group_id"),
+        CopyGroupControlRecord,
+        COPY_GROUP_CONTROL_KEY,
+        references=(
+            _reference(COPY_GROUP_KEY, "copy_group", COPY_GROUP_KEY),
+            _reference(MEMBER_GROUP_KEY, "member_group", MEMBER_GROUP_KEY, nullable=True),
+        ),
+        lookup_fields=("copy_group_control_last_run_time",),
     ),
-    DatasetDefinition(
+    _dataset(
         "copy",
         "Copies",
         "core.copy",
+        "copy",
         SnapshotSection.METADATA,
         True,
-        ("copy_id",),
-        ("copy_group_id", "ingestion_object_mapping_id"),
+        CopyRecord,
+        COPY_KEY,
+        unique_constraints=((*COPY_GROUP_KEY, "copy_source_order"),),
+        references=(
+            _reference(COPY_GROUP_KEY, "copy_group", COPY_GROUP_KEY),
+            _reference(OBJECT_MAPPING_KEY, "ingestion_object_mapping", OBJECT_MAPPING_KEY),
+            _reference(("chunk_type_name",), "chunk_type", ("chunk_type_name",), nullable=True),
+            _reference(("source_file_type_name",), "file_type", ("file_type_name",), nullable=True),
+            _reference(("source_data_operation_name",), "data_operation", ("data_operation_name",)),
+            _reference(("target_data_operation_name",), "data_operation", ("data_operation_name",)),
+        ),
+        lookup_fields=("copy_source_order", "is_active"),
     ),
-    DatasetDefinition(
+    _dataset(
         "process_group",
         "Process Groups",
         "core.process_group",
+        "process_group",
         SnapshotSection.METADATA,
         True,
-        ("process_group_id",),
-        ("process_group_name",),
+        ProcessGroupRecord,
+        PROCESS_GROUP_KEY,
+        references=(
+            _reference(("tenant_code",), "tenant", TENANT_KEY),
+            _reference(("system_code",), "system", SYSTEM_KEY),
+            _reference(("zone_code",), "zone", ("zone_code",)),
+            _reference(COPY_GROUP_KEY, "copy_group", COPY_GROUP_KEY),
+        ),
     ),
-    DatasetDefinition(
+    _dataset(
         "process",
         "Processes",
         "core.process",
+        "process",
         SnapshotSection.METADATA,
         True,
-        ("process_id",),
-        ("process_location", "process_executable"),
+        ProcessRecord,
+        PROCESS_KEY,
+        references=(
+            _reference(PROCESS_GROUP_KEY, "process_group", PROCESS_GROUP_KEY),
+            _reference(
+                (
+                    "object_tenant_code",
+                    "object_system_code",
+                    "object_connection_code",
+                    "object_schema",
+                    "object_name",
+                ),
+                "object",
+                OBJECT_KEY,
+            ),
+            _reference(("process_type_name",), "process_type", ("process_type_name",)),
+        ),
     ),
 )
 
-TABLES_BY_NAME = {table.database_table: table for table in TABLES}
 DATASETS_BY_NAME = {dataset.name: dataset for dataset in DATASETS}
+PHYSICAL_TABLE_COUNT = len({dataset.database_table for dataset in DATASETS})

@@ -126,6 +126,7 @@ async def test_archive_upload_uses_temporary_file_and_always_removes_it() -> Non
         encoded,
         store,
         tenant_id=123,
+        tenant_code="TENANT",
         snapshot_id=SNAPSHOT_ID,
         created_at=CREATED_AT,
         available_until=AVAILABLE_UNTIL,
@@ -149,6 +150,7 @@ async def test_archive_upload_failure_also_removes_temporary_file() -> None:
             encoded,
             store,
             tenant_id=123,
+            tenant_code="TENANT",
             snapshot_id=SNAPSHOT_ID,
             created_at=CREATED_AT,
             available_until=AVAILABLE_UNTIL,
@@ -169,9 +171,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     blob = FakeBlob()
     service = FakeBlobService(blob)
     sas_arguments: dict[str, Any] = {}
-    monkeypatch.setattr(
-        storage_module, "DefaultAzureCredential", lambda **_kwargs: credential
-    )
+    monkeypatch.setattr(storage_module, "DefaultAzureCredential", lambda **_kwargs: credential)
     monkeypatch.setattr(storage_module, "BlobServiceClient", lambda **_kwargs: service)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
@@ -226,9 +226,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         size=7,
         content_settings=SimpleNamespace(
             content_type="application/zip",
-            content_disposition=(
-                f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'
-            ),
+            content_disposition=(f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'),
         ),
     )
     read_url = await store.create_read_url(

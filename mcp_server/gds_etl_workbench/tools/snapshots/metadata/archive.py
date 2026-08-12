@@ -1,4 +1,4 @@
-"""Deterministic JSONL, root documents, and ZIP generation."""
+"""Deterministic ID-free JSONL and Metadata Snapshot ZIP generation."""
 
 from __future__ import annotations
 
@@ -13,59 +13,14 @@ from pathlib import Path, PurePosixPath
 from typing import cast
 from uuid import UUID
 
+from pydantic import ValidationError
+
 from .contracts import (
     DATASETS,
-    TABLES,
-    TABLES_BY_NAME,
-    ColumnDefinition,
+    PHYSICAL_TABLE_COUNT,
     DatasetDefinition,
     SnapshotSection,
-    TableDefinition,
 )
-
-
-def build_schema_document() -> dict[str, object]:
-    """Build the small viewer contract without database rows or checksums."""
-    datasets: list[dict[str, object]] = []
-    for dataset in DATASETS:
-        table = TABLES_BY_NAME[dataset.database_table]
-        datasets.append(
-            {
-                "name": dataset.name,
-                "label": dataset.label,
-                "database_table": dataset.database_table,
-                "section": dataset.section.value,
-                "change_set_eligible": dataset.change_set_eligible,
-                "data_files": [dataset.data_path],
-                "primary_key": list(dataset.primary_key),
-                "display_columns": list(dataset.display_columns),
-                "unique_column_groups": [
-                    list(column_group) for column_group in table.unique_column_groups
-                ],
-                "columns": [
-                    {
-                        "name": column.name,
-                        "type": column.type,
-                        "nullable": column.nullable,
-                        "generated": column.generated,
-                    }
-                    for column in table.snapshot_columns
-                ],
-                "foreign_keys": [
-                    {
-                        "columns": list(foreign_key.columns),
-                        "references_table": foreign_key.references_table,
-                        "references_columns": list(foreign_key.references_columns),
-                    }
-                    for foreign_key in table.foreign_keys
-                ],
-            }
-        )
-    return {
-        "schema_version": "2.0",
-        "snapshot_kind": "metadata",
-        "datasets": datasets,
-    }
 
 
 class SnapshotContractError(ValueError):
@@ -80,14 +35,14 @@ class SnapshotPayloadTooLargeError(SnapshotContractError):
 class EncodedDataset:
     definition: DatasetDefinition
     rows_jsonl: bytes
-    index_jsonl: bytes
+    lookup_jsonl: bytes | None
     row_count: int
 
 
 @dataclass(frozen=True, slots=True)
 class RootDocuments:
-    schema_json: bytes
-    index_json: bytes
+    catalog_json: bytes
+    schemas: tuple[tuple[str, bytes], ...]
 
 
 @dataclass(frozen=True, slots=True)
@@ -99,79 +54,114 @@ class SnapshotArchive:
     sha256: str
 
 
+def build_dataset_schema_document(definition: DatasetDefinition) -> dict[str, object]:
+    """Build one standard JSON Schema plus GDS key/reference metadata."""
+    generated = definition.row_model.model_json_schema(mode="serialization")
+    properties = generated.get("properties")
+    if not isinstance(properties, dict):
+        raise SnapshotContractError(f"{definition.name} generated an invalid JSON Schema")
+    typed_properties = cast(dict[str, object], properties)
+    for field_name, expected_value in definition.fixed_values:
+        raw_property = typed_properties.get(field_name)
+        if not isinstance(raw_property, dict):
+            raise SnapshotContractError(
+                f"{definition.name}.{field_name} fixed field is absent from its schema"
+            )
+        cast(dict[str, object], raw_property)["const"] = expected_value
+
+    return {
+        "$schema": "https://json-schema.org/draft/2020-12/schema",
+        "$id": definition.schema_path,
+        "title": definition.label,
+        "description": (
+            f"One flat, ID-free {definition.record_type} record. "
+            "Named key strings compare after trimming and case folding."
+        ),
+        "type": "object",
+        "additionalProperties": False,
+        "properties": typed_properties,
+        "required": generated.get("required", []),
+        "x-gds-dataset": definition.name,
+        "x-gds-record-type": definition.record_type,
+        "x-gds-change-set-eligible": definition.change_set_eligible,
+        "x-gds-canonical-key": list(definition.canonical_key),
+        "x-gds-key-comparison": "named-fields-case-insensitive-trimmed",
+        "x-gds-unique-constraints": [
+            list(constraint) for constraint in definition.unique_constraints
+        ],
+        "x-gds-references": [
+            {
+                "columns": list(reference.columns),
+                "target_record_type": reference.target_record_type,
+                "target_columns": list(reference.target_columns),
+                "nullable": reference.nullable,
+            }
+            for reference in definition.references
+        ],
+        "x-gds-fixed-values": dict(definition.fixed_values),
+    }
+
+
 def encode_dataset(
     definition: DatasetDefinition,
     rows: Sequence[Mapping[str, object]],
 ) -> EncodedDataset:
-    """Validate, order, and encode one dataset without filesystem access."""
-    table = TABLES_BY_NAME[definition.database_table]
-    expected_columns = tuple(column.name for column in table.snapshot_columns)
-    expected_column_set = frozenset(expected_columns)
-    columns_by_name = {column.name: column for column in table.snapshot_columns}
+    """Validate, sort, and encode one flat ID-free dataset."""
     encoded_rows: list[dict[str, object]] = []
-    for row in rows:
-        if frozenset(row) != expected_column_set:
+    for row_number, row in enumerate(rows, start=1):
+        try:
+            record = definition.row_model.model_validate(row)
+        except ValidationError as exc:
             raise SnapshotContractError(
-                f"{definition.name} row does not match its fixed column contract"
-            )
-        encoded_row: dict[str, object] = {}
-        for column_name in expected_columns:
-            column = columns_by_name[column_name]
-            encoded_row[column_name] = _encode_column_value(
-                definition.name,
-                column,
-                row[column_name],
+                f"{definition.name} row {row_number} does not match its fixed schema"
+            ) from exc
+        encoded_row = record.model_dump(mode="json")
+        if any(encoded_row.get(field) != value for field, value in definition.fixed_values):
+            raise SnapshotContractError(
+                f"{definition.name} row {row_number} violates its fixed dataset values"
             )
         encoded_rows.append(encoded_row)
 
-    encoded_rows.sort(key=lambda row: _primary_key_sort_key(definition, table, row))
-    seen_primary_keys: set[tuple[object, ...]] = set()
-    row_lines: list[str] = []
-    index_lines: list[str] = []
-    for line_number, row in enumerate(encoded_rows, start=1):
-        primary_key = {column_name: row[column_name] for column_name in definition.primary_key}
-        primary_key_tuple = tuple(primary_key.values())
-        if primary_key_tuple in seen_primary_keys:
-            raise SnapshotContractError(f"{definition.name} contains a duplicate primary key")
-        seen_primary_keys.add(primary_key_tuple)
-        row_lines.append(_json_line(row))
-        index_lines.append(
+    encoded_rows.sort(key=lambda row: _key_sort_value(definition.canonical_key, row))
+    for unique_constraint in definition.unique_constraints:
+        seen: set[tuple[object, ...]] = set()
+        for row in encoded_rows:
+            key = _normalized_key(unique_constraint, row)
+            if key in seen:
+                raise SnapshotContractError(
+                    f"{definition.name} contains a duplicate unique key: "
+                    f"{', '.join(unique_constraint)}"
+                )
+            seen.add(key)
+
+    row_lines = [_json_line(row) for row in encoded_rows]
+    lookup_jsonl: bytes | None = None
+    if definition.lookup_path is not None:
+        lookup_lines = [
             _json_line(
                 {
-                    "primary_key": primary_key,
-                    "label": _index_label(definition, row),
-                    "file": "rows.jsonl",
+                    **{field: row[field] for field in definition.search_fields},
                     "line": line_number,
                 }
             )
-        )
+            for line_number, row in enumerate(encoded_rows, start=1)
+        ]
+        lookup_jsonl = "".join(lookup_lines).encode("utf-8")
 
     return EncodedDataset(
         definition=definition,
         rows_jsonl="".join(row_lines).encode("utf-8"),
-        index_jsonl="".join(index_lines).encode("utf-8"),
+        lookup_jsonl=lookup_jsonl,
         row_count=len(encoded_rows),
     )
 
 
 def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocuments:
-    """Build deterministic viewer and navigation documents for one complete snapshot."""
-    encoded_by_name: dict[str, EncodedDataset] = {}
-    for encoded in encoded_datasets:
-        name = encoded.definition.name
-        if name in encoded_by_name:
-            raise SnapshotContractError(f"duplicate encoded dataset: {name}")
-        encoded_by_name[name] = encoded
-
-    expected_names = {definition.name for definition in DATASETS}
-    if set(encoded_by_name) != expected_names:
-        raise SnapshotContractError("encoded datasets do not match the fixed snapshot registry")
-    for definition in DATASETS:
-        if encoded_by_name[definition.name].definition != definition:
-            raise SnapshotContractError(
-                f"encoded dataset definition does not match the registry: {definition.name}"
-            )
-
+    """Build the small agent catalog and one schema per dataset."""
+    encoded_by_name = _complete_encoded_registry(encoded_datasets)
+    for encoded in encoded_by_name.values():
+        _validate_encoded_dataset(encoded)
+    _validate_snapshot_references(encoded_by_name)
     sections: list[dict[str, object]] = []
     for section, label in (
         (SnapshotSection.FOUNDATION, "Foundation"),
@@ -185,11 +175,14 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
                     {
                         "name": definition.name,
                         "label": definition.label,
+                        "record_type": definition.record_type,
                         "row_count": encoded_by_name[definition.name].row_count,
-                        "data_path": definition.data_path,
-                        "table_index_path": definition.index_path,
-                        "primary_key": list(definition.primary_key),
-                        "display_columns": list(definition.display_columns),
+                        "canonical_key": list(definition.canonical_key),
+                        "search_fields": list(definition.search_fields),
+                        "schema_file": definition.schema_path,
+                        "search_file": definition.search_path,
+                        "rows_file": definition.rows_path,
+                        "search_result_complete": definition.lookup_path is None,
                     }
                     for definition in DATASETS
                     if definition.section is section
@@ -197,35 +190,66 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
             }
         )
 
-    index_document = {
+    catalog = {
         "schema_version": "2.0",
         "snapshot_kind": "metadata",
+        "row_format": "flat-json-lines",
+        "database_ids_included": False,
         "instructions": [
-            "Read manifest.json and index.json first.",
-            "Do not recursively load the snapshot into context.",
-            ("Search a dataset's index.jsonl, then read only the located line from rows.jsonl."),
+            "Read catalog.json first; do not recursively load this archive into context.",
+            "Choose only the needed dataset or record group.",
+            "Search search_file using canonical_key or search_fields.",
+            "When search_result_complete is false, use line to read that line from rows_file.",
+            "Read schema_file only when field, key, or reference meaning is needed.",
+        ],
+        "record_groups": [
+            {
+                "name": "objects",
+                "datasets": [
+                    "source_object",
+                    "bronze_object",
+                    "silver_object",
+                    "gold_object",
+                ],
+            },
+            {
+                "name": "attributes",
+                "datasets": [
+                    "source_attribute",
+                    "bronze_attribute",
+                    "silver_attribute",
+                    "gold_attribute",
+                ],
+            },
         ],
         "sections": sections,
     }
-    return RootDocuments(
-        schema_json=_json_document(build_schema_document()),
-        index_json=_json_document(index_document),
+    schemas = tuple(
+        (
+            definition.schema_path,
+            _json_document(build_dataset_schema_document(definition)),
+        )
+        for definition in DATASETS
     )
+    return RootDocuments(catalog_json=_json_document(catalog), schemas=schemas)
 
 
 def build_snapshot_archive(
     output: Path,
     *,
     snapshot_id: UUID,
-    tenant_id: int,
+    tenant_code: str,
     created_time: datetime,
     available_until: datetime,
     encoded_datasets: Sequence[EncodedDataset],
     max_archive_bytes: int,
 ) -> SnapshotArchive:
     """Create and verify one deterministic Metadata Snapshot ZIP."""
-    if tenant_id <= 0:
-        raise SnapshotContractError("tenant_id must be positive")
+    normalized_tenant_code = tenant_code.strip()
+    if not normalized_tenant_code or len(normalized_tenant_code) > 100:
+        raise SnapshotContractError("tenant_code is invalid")
+    if snapshot_id.version != 4:
+        raise SnapshotContractError("snapshot_id must be a UUID version 4")
     if max_archive_bytes <= 0:
         raise SnapshotContractError("max_archive_bytes must be positive")
     created_at = _utc_timestamp("created_time", created_time)
@@ -237,19 +261,16 @@ def build_snapshot_archive(
 
     roots = build_root_documents(encoded_datasets)
     encoded_by_name = {encoded.definition.name: encoded for encoded in encoded_datasets}
-    members: list[tuple[str, bytes, int | None]] = [
-        ("schema.json", roots.schema_json, None),
-        ("index.json", roots.index_json, None),
-    ]
+    members: list[tuple[str, bytes, int | None]] = [("catalog.json", roots.catalog_json, None)]
+    members.extend((path, content, None) for path, content in roots.schemas)
     for definition in DATASETS:
         encoded = encoded_by_name[definition.name]
         _validate_encoded_dataset(encoded)
-        members.extend(
-            (
-                (definition.index_path, encoded.index_jsonl, encoded.row_count),
-                (definition.data_path, encoded.rows_jsonl, encoded.row_count),
-            )
-        )
+        members.append((definition.rows_path, encoded.rows_jsonl, encoded.row_count))
+        if definition.lookup_path is not None:
+            if encoded.lookup_jsonl is None:
+                raise SnapshotContractError(f"{definition.name} lookup file is missing")
+            members.append((definition.lookup_path, encoded.lookup_jsonl, encoded.row_count))
 
     member_paths = [path for path, _content, _row_count in members]
     if len(member_paths) != len(set(member_paths)):
@@ -283,32 +304,36 @@ def build_snapshot_archive(
     manifest_json = b""
     expanded_bytes = non_manifest_bytes
     for _attempt in range(4):
-        manifest_document = {
+        manifest = {
             "schema_version": "2.0",
             "snapshot_kind": "metadata",
             "snapshot_id": str(snapshot_id),
-            "tenant_id": str(tenant_id),
+            "tenant_code": normalized_tenant_code,
+            "database_ids_included": False,
             "generated_at": created_at,
             "available_until": available_at,
             "counts": {
-                "physical_table_count": len(TABLES),
+                "physical_table_count": PHYSICAL_TABLE_COUNT,
                 "logical_dataset_count": len(DATASETS),
+                "lookup_file_count": sum(
+                    definition.lookup_path is not None for definition in DATASETS
+                ),
                 "row_count": row_count,
                 "file_count": len(members) + 1,
                 "expanded_bytes": expanded_bytes,
             },
             "sections": section_counts,
-            "schema": {
-                "path": "schema.json",
-                "sha256": hashlib.sha256(roots.schema_json).hexdigest(),
+            "catalog": {
+                "path": "catalog.json",
+                "sha256": hashlib.sha256(roots.catalog_json).hexdigest(),
             },
-            "index": {
-                "path": "index.json",
-                "sha256": hashlib.sha256(roots.index_json).hexdigest(),
+            "schemas": {
+                "directory": "schemas",
+                "dataset_count": len(DATASETS),
             },
             "members": member_records,
         }
-        manifest_json = _json_document(manifest_document)
+        manifest_json = _json_document(manifest)
         next_expanded_bytes = non_manifest_bytes + len(manifest_json)
         if next_expanded_bytes == expanded_bytes:
             break
@@ -370,72 +395,180 @@ def build_snapshot_archive(
         raise
 
 
+def _complete_encoded_registry(
+    encoded_datasets: Sequence[EncodedDataset],
+) -> dict[str, EncodedDataset]:
+    encoded_by_name: dict[str, EncodedDataset] = {}
+    for encoded in encoded_datasets:
+        name = encoded.definition.name
+        if name in encoded_by_name:
+            raise SnapshotContractError(f"duplicate encoded dataset: {name}")
+        encoded_by_name[name] = encoded
+    expected_names = {definition.name for definition in DATASETS}
+    if set(encoded_by_name) != expected_names:
+        raise SnapshotContractError("encoded datasets do not match the fixed snapshot registry")
+    for definition in DATASETS:
+        if encoded_by_name[definition.name].definition != definition:
+            raise SnapshotContractError(
+                f"encoded dataset definition does not match the registry: {definition.name}"
+            )
+    return encoded_by_name
+
+
 def _validate_encoded_dataset(encoded: EncodedDataset) -> None:
-    table = TABLES_BY_NAME[encoded.definition.database_table]
-    expected_columns = [column.name for column in table.snapshot_columns]
     try:
         row_lines = encoded.rows_jsonl.decode("utf-8").splitlines()
-        index_lines = encoded.index_jsonl.decode("utf-8").splitlines()
+        lookup_lines = (
+            encoded.lookup_jsonl.decode("utf-8").splitlines()
+            if encoded.lookup_jsonl is not None
+            else None
+        )
     except UnicodeDecodeError as exc:
         raise SnapshotContractError(f"{encoded.definition.name} JSONL is not valid UTF-8") from exc
     if encoded.rows_jsonl and not encoded.rows_jsonl.endswith(b"\n"):
         raise SnapshotContractError(f"{encoded.definition.name} rows JSONL lacks final newline")
-    if encoded.index_jsonl and not encoded.index_jsonl.endswith(b"\n"):
-        raise SnapshotContractError(f"{encoded.definition.name} index JSONL lacks final newline")
-    if len(row_lines) != encoded.row_count or len(index_lines) != encoded.row_count:
+    if encoded.row_count != len(row_lines):
         raise SnapshotContractError(f"{encoded.definition.name} JSONL row count is inconsistent")
+    if encoded.definition.lookup_path is None:
+        if lookup_lines is not None:
+            raise SnapshotContractError(f"{encoded.definition.name} has an unexpected lookup file")
+    else:
+        if lookup_lines is None or len(lookup_lines) != encoded.row_count:
+            raise SnapshotContractError(
+                f"{encoded.definition.name} lookup row count is inconsistent"
+            )
+        if encoded.lookup_jsonl and not encoded.lookup_jsonl.endswith(b"\n"):
+            raise SnapshotContractError(
+                f"{encoded.definition.name} lookup JSONL lacks final newline"
+            )
 
-    for line_number, (row_line, index_line) in enumerate(
-        zip(row_lines, index_lines, strict=True),
-        start=1,
-    ):
+    expected_columns = list(encoded.definition.row_model.model_fields)
+    for line_number, row_line in enumerate(row_lines, start=1):
         try:
             parsed_row: object = json.loads(row_line)
-            parsed_locator: object = json.loads(index_line)
         except json.JSONDecodeError as exc:
             raise SnapshotContractError(
-                f"{encoded.definition.name} contains invalid JSONL"
+                f"{encoded.definition.name} contains invalid rows JSONL"
             ) from exc
         if not isinstance(parsed_row, dict):
             raise SnapshotContractError(
-                f"{encoded.definition.name} rows JSONL violates column order"
-            )
-        untyped_row = cast(dict[object, object], parsed_row)
-        if (
-            not all(isinstance(key, str) for key in untyped_row)
-            or list(untyped_row) != expected_columns
-        ):
-            raise SnapshotContractError(
-                f"{encoded.definition.name} rows JSONL violates column order"
+                f"{encoded.definition.name} rows JSONL violates its object contract"
             )
         row = cast(dict[str, object], parsed_row)
-        expected_primary_key = {
-            column_name: row[column_name] for column_name in encoded.definition.primary_key
-        }
-        if not isinstance(parsed_locator, dict):
+        if list(row) != expected_columns:
             raise SnapshotContractError(
-                f"{encoded.definition.name} index JSONL contains an invalid locator"
+                f"{encoded.definition.name} rows JSONL violates column order"
             )
-        untyped_locator = cast(dict[object, object], parsed_locator)
-        if not all(isinstance(key, str) for key in untyped_locator):
+        try:
+            encoded.definition.row_model.model_validate_json(row_line)
+        except ValidationError as exc:
             raise SnapshotContractError(
-                f"{encoded.definition.name} index JSONL contains an invalid locator"
-            )
-        locator = cast(dict[str, object], parsed_locator)
-        if locator != {
-            "primary_key": expected_primary_key,
-            "label": locator.get("label"),
-            "file": "rows.jsonl",
-            "line": line_number,
-        }:
+                f"{encoded.definition.name} rows JSONL violates its schema"
+            ) from exc
+        if any(row.get(field) != value for field, value in encoded.definition.fixed_values):
             raise SnapshotContractError(
-                f"{encoded.definition.name} index JSONL contains an invalid locator"
+                f"{encoded.definition.name} rows JSONL violates fixed dataset values"
             )
-        label = locator["label"]
-        if not isinstance(label, str) or not label or len(label) > 500 or "\n" in label:
-            raise SnapshotContractError(
-                f"{encoded.definition.name} index JSONL contains an invalid label"
-            )
+        if lookup_lines is not None:
+            try:
+                parsed_lookup: object = json.loads(lookup_lines[line_number - 1])
+            except json.JSONDecodeError as exc:
+                raise SnapshotContractError(
+                    f"{encoded.definition.name} contains invalid lookup JSONL"
+                ) from exc
+            expected_lookup = {
+                **{field: row[field] for field in encoded.definition.search_fields},
+                "line": line_number,
+            }
+            if parsed_lookup != expected_lookup:
+                raise SnapshotContractError(
+                    f"{encoded.definition.name} lookup does not match rows JSONL"
+                )
+
+
+def _validate_snapshot_references(
+    encoded_by_name: Mapping[str, EncodedDataset],
+) -> None:
+    rows_by_name = {
+        definition.name: _parse_rows(encoded_by_name[definition.name]) for definition in DATASETS
+    }
+    keys_by_record_type: dict[str, set[tuple[object, ...]]] = {}
+    for definition in DATASETS:
+        record_keys = keys_by_record_type.setdefault(definition.record_type, set())
+        for row in rows_by_name[definition.name]:
+            key = _normalized_key(definition.canonical_key, row)
+            if key in record_keys:
+                raise SnapshotContractError(
+                    f"{definition.record_type} contains a duplicate cross-dataset key"
+                )
+            record_keys.add(key)
+
+    for definition in DATASETS:
+        for row in rows_by_name[definition.name]:
+            for reference in definition.references:
+                local_values = tuple(row[column] for column in reference.columns)
+                if reference.nullable and any(value is None for value in local_values):
+                    continue
+                if any(value is None for value in local_values):
+                    raise SnapshotContractError(
+                        f"{definition.name} contains an incomplete natural-key reference"
+                    )
+                target_key = tuple(
+                    _normalize_key_value(target_column, value)
+                    for target_column, value in zip(
+                        reference.target_columns,
+                        local_values,
+                        strict=True,
+                    )
+                )
+                if target_key not in keys_by_record_type.get(
+                    reference.target_record_type,
+                    set(),
+                ):
+                    raise SnapshotContractError(
+                        f"{definition.name} contains an unresolved natural-key reference"
+                    )
+
+
+def _parse_rows(encoded: EncodedDataset) -> list[dict[str, object]]:
+    return [
+        cast(dict[str, object], json.loads(line))
+        for line in encoded.rows_jsonl.decode("utf-8").splitlines()
+    ]
+
+
+def _normalized_key(
+    columns: tuple[str, ...],
+    row: Mapping[str, object],
+) -> tuple[object, ...]:
+    return tuple(_normalize_key_value(column, row[column]) for column in columns)
+
+
+def _normalize_key_value(column: str, value: object) -> object:
+    if isinstance(value, str) and (
+        column.endswith("_code") or column.endswith("_name") or column.endswith("_schema")
+    ):
+        return value.strip().casefold()
+    return value
+
+
+def _key_sort_value(
+    columns: tuple[str, ...],
+    row: Mapping[str, object],
+) -> tuple[tuple[int, str], ...]:
+    key: list[tuple[int, str]] = []
+    for value in _normalized_key(columns, row):
+        if value is None:
+            key.append((0, ""))
+        elif isinstance(value, bool):
+            key.append((1, "1" if value else "0"))
+        elif isinstance(value, int):
+            key.append((2, f"{value:+020d}"))
+        elif isinstance(value, (date, datetime)):
+            key.append((3, value.isoformat()))
+        else:
+            key.append((4, str(value)))
+    return tuple(key)
 
 
 def _validate_member_path(member_path: str) -> None:
@@ -454,96 +587,6 @@ def _utc_timestamp(field_name: str, value: datetime) -> str:
     if value.utcoffset() is None:
         raise SnapshotContractError(f"{field_name} must be timezone-aware")
     return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _encode_column_value(
-    dataset_name: str,
-    column: ColumnDefinition,
-    value: object,
-) -> object:
-    if value is None:
-        if not column.nullable:
-            raise SnapshotContractError(f"{dataset_name}.{column.name} cannot contain a null value")
-        return None
-    if column.type == "bigint":
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be a BIGINT")
-        return str(value)
-    if column.type == "bigint[]":
-        if not isinstance(value, (list, tuple)):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be a BIGINT array")
-        encoded_array: list[str | None] = []
-        for element in cast(Sequence[object], value):
-            if element is None:
-                encoded_array.append(None)
-            elif isinstance(element, bool) or not isinstance(element, int):
-                raise SnapshotContractError(
-                    f"{dataset_name}.{column.name} must contain only BIGINT values"
-                )
-            else:
-                encoded_array.append(str(element))
-        return encoded_array
-    if column.type == "integer":
-        if isinstance(value, bool) or not isinstance(value, int):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be an INTEGER")
-        return value
-    if column.type == "boolean":
-        if not isinstance(value, bool):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be a BOOLEAN")
-        return value
-    if column.type in {"varchar", "text"}:
-        if not isinstance(value, str):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be text")
-        return value
-    if column.type == "date":
-        if isinstance(value, datetime) or not isinstance(value, date):
-            raise SnapshotContractError(f"{dataset_name}.{column.name} must be a DATE")
-        return value.isoformat()
-    if column.type == "timestamptz":
-        if not isinstance(value, datetime) or value.utcoffset() is None:
-            raise SnapshotContractError(
-                f"{dataset_name}.{column.name} must be a timezone-aware timestamp"
-            )
-        return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-    raise SnapshotContractError(f"{dataset_name}.{column.name} has an unsupported type")
-
-
-def _primary_key_sort_key(
-    definition: DatasetDefinition,
-    table: TableDefinition,
-    row: Mapping[str, object],
-) -> tuple[int | str, ...]:
-    columns_by_name = {column.name: column for column in table.columns}
-    key: list[int | str] = []
-    for column_name in definition.primary_key:
-        value = row[column_name]
-        if value is None:
-            raise SnapshotContractError(f"{definition.name} primary key cannot be null")
-        if columns_by_name[column_name].type == "bigint":
-            if not isinstance(value, str):
-                raise SnapshotContractError(
-                    f"{definition.name} primary key has an invalid encoded type"
-                )
-            key.append(int(value))
-        elif isinstance(value, (int, str)) and not isinstance(value, bool):
-            key.append(value)
-        else:
-            raise SnapshotContractError(
-                f"{definition.name} primary key has an unsupported encoded type"
-            )
-    return tuple(key)
-
-
-def _index_label(definition: DatasetDefinition, row: Mapping[str, object]) -> str:
-    values = [
-        " ".join(str(row[column_name]).split())
-        for column_name in definition.display_columns
-        if row[column_name] is not None and " ".join(str(row[column_name]).split())
-    ]
-    if not values:
-        values = [str(row[column_name]) for column_name in definition.primary_key]
-    label = " · ".join(values)
-    return label if len(label) <= 500 else f"{label[:499]}…"
 
 
 def _json_line(value: object) -> str:

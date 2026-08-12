@@ -32,7 +32,6 @@ def encoded_datasets(*, include_project: bool = False) -> tuple[EncodedDataset, 
             DATASETS[0],
             [
                 {
-                    "project_id": 9007199254740993,
                     "project_code": "RISK",
                     "project_name": "Risk Analytics",
                     "project_description": None,
@@ -47,7 +46,7 @@ def build(output: Path, datasets: tuple[EncodedDataset, ...]) -> SnapshotArchive
     return build_snapshot_archive(
         output,
         snapshot_id=SNAPSHOT_ID,
-        tenant_id=123,
+        tenant_code="TENANT",
         created_time=CREATED_TIME,
         available_until=AVAILABLE_UNTIL,
         encoded_datasets=datasets,
@@ -69,18 +68,17 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         infos = archive.infolist()
         names = archive.namelist()
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
-        assert len(names) == 61
+        assert len(names) == 70
         assert names[0] == "metadata-snapshot/manifest.json"
         assert all(name.startswith("metadata-snapshot/") for name in names)
         assert all(".." not in name.split("/") and "\\" not in name for name in names)
         assert all(not info.is_dir() for info in infos)
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in infos)
-        assert all(
-            stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos
-        )
+        assert all(stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos)
 
         assert manifest["snapshot_id"] == str(SNAPSHOT_ID)
-        assert manifest["tenant_id"] == "123"
+        assert manifest["tenant_code"] == "TENANT"
+        assert manifest["database_ids_included"] is False
         assert manifest["schema_version"] == "2.0"
         assert manifest["generated_at"] == "2026-08-11T16:00:00Z"
         assert "created_time" not in manifest
@@ -88,30 +86,27 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         assert manifest["counts"] == {
             "physical_table_count": 23,
             "logical_dataset_count": 29,
+            "lookup_file_count": 10,
             "row_count": 1,
-            "file_count": 61,
+            "file_count": 70,
             "expanded_bytes": sum(info.file_size for info in infos),
         }
         assert manifest["sections"] == {
             "foundation": {"dataset_count": 13, "row_count": 1},
             "metadata": {"dataset_count": 16, "row_count": 0},
         }
-        assert len(manifest["members"]) == 60
+        assert len(manifest["members"]) == 69
         for member in manifest["members"]:
             content = archive.read(f"metadata-snapshot/{member['path']}")
             assert member["size_bytes"] == len(content)
             assert member["sha256"] == hashlib.sha256(content).hexdigest()
-        assert manifest["schema"] == {
-            "path": "schema.json",
-            "sha256": hashlib.sha256(
-                archive.read("metadata-snapshot/schema.json")
-            ).hexdigest(),
+        assert manifest["catalog"] == {
+            "path": "catalog.json",
+            "sha256": hashlib.sha256(archive.read("metadata-snapshot/catalog.json")).hexdigest(),
         }
-        assert manifest["index"] == {
-            "path": "index.json",
-            "sha256": hashlib.sha256(
-                archive.read("metadata-snapshot/index.json")
-            ).hexdigest(),
+        assert manifest["schemas"] == {
+            "directory": "schemas",
+            "dataset_count": 29,
         }
     assert result.expanded_bytes == manifest["counts"]["expanded_bytes"]
 
@@ -142,7 +137,7 @@ def test_snapshot_archive_rejects_inconsistent_or_oversized_content(
         build_snapshot_archive(
             tmp_path / "oversized.zip",
             snapshot_id=SNAPSHOT_ID,
-            tenant_id=123,
+            tenant_code="TENANT",
             created_time=CREATED_TIME,
             available_until=AVAILABLE_UNTIL,
             encoded_datasets=datasets,
@@ -165,7 +160,7 @@ def test_snapshot_archive_refuses_overwrite_and_invalid_availability(
         build_snapshot_archive(
             tmp_path / "invalid-time.zip",
             snapshot_id=SNAPSHOT_ID,
-            tenant_id=123,
+            tenant_code="TENANT",
             created_time=CREATED_TIME,
             available_until=CREATED_TIME,
             encoded_datasets=encoded_datasets(),

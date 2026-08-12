@@ -166,7 +166,6 @@ SELECT attribute_id,
        attribute_data_type,
        attribute_nullability,
        attribute_custom_code,
-       business_glossary_id,
        is_surrogate_key,
        is_natural_key,
        is_meta_data,
@@ -323,8 +322,6 @@ SELECT connection.connection_id,
        connection.has_foreign_catalog,
        connection.foreign_catalog,
        connection.is_global_data_store,
-       connection.test_initial_batch_id,
-       connection.test_incremental_batch_ids,
        connection.is_active
   FROM core.connection AS connection
  WHERE connection.tenant_id = %s

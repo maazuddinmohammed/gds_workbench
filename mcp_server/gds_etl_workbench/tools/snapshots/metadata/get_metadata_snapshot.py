@@ -36,7 +36,8 @@ from .archive import (
     build_snapshot_archive,
     encode_dataset,
 )
-from .contracts import DATASETS_BY_NAME
+from .contracts import DATASETS
+from .projection import REFERENCE_ID_COLUMNS, project_id_free_rows
 from .sql import (
     ATTRIBUTE_ROWS_SQL,
     COPY_GROUP_CONTROL_ROWS_SQL,
@@ -67,6 +68,12 @@ class ReadyMetadataSnapshot:
     available_until: datetime
     size_bytes: int
     sha256: str
+
+
+@dataclass(frozen=True, slots=True)
+class SelectedMetadataSnapshot:
+    tenant_code: str
+    datasets: tuple[EncodedDataset, ...]
 
 
 class MetadataSnapshotContractModel(BaseModel):
@@ -324,7 +331,7 @@ async def select_snapshot_datasets(
     tenant_id: int,
     request_principal: RequestPrincipal,
     authorizer: AuthorizationService,
-) -> tuple[EncodedDataset, ...]:
+) -> SelectedMetadataSnapshot:
     """Authorize Tenant Read and select the complete 29-dataset snapshot closure."""
     if tenant_id <= 0:
         raise SnapshotContractError("tenant_id must be positive")
@@ -521,7 +528,7 @@ async def select_snapshot_datasets(
         for dataset_name, query in REFERENCE_ROWS_SQL.items()
     }
     reference_ids_by_dataset = {
-        dataset_name: {row[DATASETS_BY_NAME[dataset_name].primary_key[0]] for row in rows}
+        dataset_name: {row[REFERENCE_ID_COLUMNS[dataset_name]] for row in rows}
         for dataset_name, rows in reference_rows_by_dataset.items()
     }
     if any(
@@ -568,11 +575,6 @@ async def select_snapshot_datasets(
     ):
         raise SnapshotContractError("foundation Process reference relationship is incomplete")
 
-    object_attribute_datasets = tuple(
-        encode_dataset(DATASETS_BY_NAME[dataset_name], rows_by_dataset[dataset_name])
-        for zone_code in ("source", "bronze", "silver", "gold")
-        for dataset_name in (f"{zone_code}_object", f"{zone_code}_attribute")
-    )
     configuration_rows_by_dataset = {
         "ingestion_object_mapping": ingestion_object_mapping_rows,
         "ingestion_attribute_mapping": ingestion_attribute_mapping_rows,
@@ -583,10 +585,6 @@ async def select_snapshot_datasets(
         "process_group": process_group_rows,
         "process": process_rows,
     }
-    metadata_datasets = object_attribute_datasets + tuple(
-        encode_dataset(DATASETS_BY_NAME[dataset_name], rows)
-        for dataset_name, rows in configuration_rows_by_dataset.items()
-    )
     foundation_rows_by_dataset = {
         "project": project_rows,
         "tenant": tenant_rows,
@@ -595,11 +593,19 @@ async def select_snapshot_datasets(
         "tenant_metadata_discovery_scope": discovery_scope_rows,
         **reference_rows_by_dataset,
     }
-    foundation_datasets = tuple(
-        encode_dataset(DATASETS_BY_NAME[dataset_name], rows)
-        for dataset_name, rows in foundation_rows_by_dataset.items()
+    raw_rows_by_dataset = {
+        **foundation_rows_by_dataset,
+        **rows_by_dataset,
+        **configuration_rows_by_dataset,
+    }
+    projected_rows = project_id_free_rows(raw_rows_by_dataset)
+    encoded_datasets = tuple(
+        encode_dataset(definition, projected_rows[definition.name]) for definition in DATASETS
     )
-    return foundation_datasets + metadata_datasets
+    return SelectedMetadataSnapshot(
+        tenant_code=str(requested_tenant["tenant_code"]),
+        datasets=encoded_datasets,
+    )
 
 
 async def create_metadata_snapshot(
@@ -625,7 +631,7 @@ async def create_metadata_snapshot(
     available_until = created + timedelta(hours=retention_hours)
 
     async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
-        encoded_datasets = await select_snapshot_datasets(
+        selected = await select_snapshot_datasets(
             transaction,
             tenant_id=tenant_id,
             request_principal=request_principal,
@@ -633,9 +639,10 @@ async def create_metadata_snapshot(
         )
 
     return await build_and_upload_metadata_snapshot(
-        encoded_datasets,
+        selected.datasets,
         store,
         tenant_id=tenant_id,
+        tenant_code=selected.tenant_code,
         snapshot_id=identifier,
         created_at=created,
         available_until=available_until,
@@ -648,6 +655,7 @@ async def build_and_upload_metadata_snapshot(
     store: MetadataSnapshotStore,
     *,
     tenant_id: int,
+    tenant_code: str,
     snapshot_id: UUID,
     created_at: datetime,
     available_until: datetime,
@@ -658,7 +666,7 @@ async def build_and_upload_metadata_snapshot(
         archive = await asyncio.to_thread(
             build_snapshot_archive,
             Path(temporary_directory) / "metadata-snapshot.zip",
-            tenant_id=tenant_id,
+            tenant_code=tenant_code,
             snapshot_id=snapshot_id,
             created_time=created_at,
             available_until=available_until,

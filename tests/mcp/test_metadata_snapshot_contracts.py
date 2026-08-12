@@ -1,9 +1,11 @@
 from __future__ import annotations
 
-from gds_etl_workbench.tools.snapshots.metadata.archive import build_schema_document
+from gds_etl_workbench.tools.snapshots.metadata.archive import (
+    build_dataset_schema_document,
+)
 from gds_etl_workbench.tools.snapshots.metadata.contracts import (
     DATASETS,
-    TABLES,
+    PHYSICAL_TABLE_COUNT,
     SnapshotSection,
 )
 
@@ -43,53 +45,55 @@ EXPECTED_DATASET_NAMES = (
 def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
     assert tuple(dataset.name for dataset in DATASETS) == EXPECTED_DATASET_NAMES
     assert len({dataset.name for dataset in DATASETS}) == 29
-    assert len({dataset.database_table for dataset in DATASETS}) == 23
+    assert PHYSICAL_TABLE_COUNT == 23
 
     foundation = tuple(
         dataset for dataset in DATASETS if dataset.section is SnapshotSection.FOUNDATION
     )
-    metadata = tuple(
-        dataset for dataset in DATASETS if dataset.section is SnapshotSection.METADATA
-    )
+    metadata = tuple(dataset for dataset in DATASETS if dataset.section is SnapshotSection.METADATA)
     assert len(foundation) == 13
     assert len(metadata) == 16
     assert all(not dataset.change_set_eligible for dataset in foundation)
     assert all(dataset.change_set_eligible for dataset in metadata)
 
 
-def test_metadata_snapshot_registry_uses_fixed_safe_paths() -> None:
-    data_paths = {dataset.data_path for dataset in DATASETS}
-    index_paths = {dataset.index_path for dataset in DATASETS}
+def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> None:
+    rows_paths = {dataset.rows_path for dataset in DATASETS}
+    schema_paths = {dataset.schema_path for dataset in DATASETS}
+    lookup_paths = {dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None}
 
-    assert len(data_paths) == 29
-    assert len(index_paths) == 29
-    assert data_paths.isdisjoint(index_paths)
-    assert next(
-        dataset for dataset in DATASETS if dataset.name == "project"
-    ).data_path == ("foundation/core/project/rows.jsonl")
-    assert (
-        next(
-            dataset for dataset in DATASETS if dataset.name == "system_type"
-        ).index_path
-        == "foundation/reference/system_type/index.jsonl"
+    assert len(rows_paths) == 29
+    assert len(schema_paths) == 29
+    assert len(lookup_paths) == 10
+    assert next(dataset for dataset in DATASETS if dataset.name == "project").rows_path == (
+        "data/project/rows.jsonl"
     )
     assert (
-        next(
-            dataset for dataset in DATASETS if dataset.name == "gold_attribute"
-        ).data_path
-        == "metadata/core/gold_attribute/rows.jsonl"
+        next(dataset for dataset in DATASETS if dataset.name == "source_object").lookup_path
+        == "data/source_object/lookup.jsonl"
     )
-    assert all(
-        ".." not in path.split("/") and not path.startswith("/") for path in data_paths
+    assert (
+        next(dataset for dataset in DATASETS if dataset.name == "system_type").lookup_path is None
     )
+    assert all(".." not in path.split("/") and not path.startswith("/") for path in rows_paths)
 
 
-def test_zone_datasets_share_physical_tables_without_sharing_paths() -> None:
-    object_datasets = tuple(
-        dataset for dataset in DATASETS if dataset.database_table == "core.object"
-    )
+def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
+    for dataset in DATASETS:
+        fields = set(dataset.row_model.model_fields)
+        assert not any(field == "id" or field.endswith("_id") for field in fields)
+        assert set(dataset.canonical_key) <= fields
+        assert all(set(constraint) <= fields for constraint in dataset.unique_constraints)
+        assert set(dataset.lookup_fields) <= fields
+        for reference in dataset.references:
+            assert set(reference.columns) <= fields
+            assert len(reference.columns) == len(reference.target_columns)
+
+
+def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
+    object_datasets = tuple(dataset for dataset in DATASETS if dataset.record_type == "object")
     attribute_datasets = tuple(
-        dataset for dataset in DATASETS if dataset.database_table == "core.attribute"
+        dataset for dataset in DATASETS if dataset.record_type == "attribute"
     )
 
     assert tuple(dataset.name for dataset in object_datasets) == (
@@ -104,91 +108,44 @@ def test_zone_datasets_share_physical_tables_without_sharing_paths() -> None:
         "silver_attribute",
         "gold_attribute",
     )
-    assert (
-        len({dataset.data_path for dataset in (*object_datasets, *attribute_datasets)})
-        == 8
-    )
+    assert "attributes" not in object_datasets[0].row_model.model_fields
 
 
-def test_physical_schema_contract_is_closed_and_self_consistent() -> None:
-    assert len(TABLES) == 23
-    assert len({table.database_table for table in TABLES}) == 23
-    tables = {table.database_table: table for table in TABLES}
-    forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
+def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
+    source_object = next(dataset for dataset in DATASETS if dataset.name == "source_object")
+    schema = build_dataset_schema_document(source_object)
 
-    for dataset in DATASETS:
-        table = tables[dataset.database_table]
-        column_names = {column.name for column in table.columns}
-        snapshot_column_names = {column.name for column in table.snapshot_columns}
-        assert forbidden_columns.isdisjoint(snapshot_column_names)
-        assert set(dataset.primary_key) <= column_names
-        assert set(dataset.display_columns) <= column_names
-        assert all(set(group) <= column_names for group in table.unique_column_groups)
-        for foreign_key in table.foreign_keys:
-            assert set(foreign_key.columns) <= column_names
-            referenced_table = tables[foreign_key.references_table]
-            referenced_columns = {column.name for column in referenced_table.columns}
-            assert set(foreign_key.references_columns) <= referenced_columns
-            assert len(foreign_key.columns) == len(foreign_key.references_columns)
-
-
-def test_schema_document_contains_complete_viewer_metadata() -> None:
-    schema = build_schema_document()
-    assert schema["schema_version"] == "2.0"
-    assert schema["snapshot_kind"] == "metadata"
-    datasets = schema["datasets"]
-    assert isinstance(datasets, list)
-    assert len(datasets) == 29
-
-    source_object = next(
-        dataset for dataset in datasets if dataset["name"] == "source_object"
-    )
-    bronze_object = next(
-        dataset for dataset in datasets if dataset["name"] == "bronze_object"
-    )
-    assert source_object == {
-        "name": "source_object",
-        "label": "Source Objects",
-        "database_table": "core.object",
-        "section": "metadata",
-        "change_set_eligible": True,
-        "data_files": ["metadata/core/source_object/rows.jsonl"],
-        "primary_key": ["object_id"],
-        "display_columns": ["object_schema", "object_name"],
-        "unique_column_groups": [
-            ["object_id", "connection_id"],
-            ["object_id", "zone_id"],
-            ["connection_id", "object_schema", "object_name"],
-        ],
-        "columns": [
-            {
-                "name": column.name,
-                "type": column.type,
-                "nullable": column.nullable,
-                "generated": column.generated,
-            }
-            for column in next(
-                table for table in TABLES if table.database_table == "core.object"
-            ).snapshot_columns
-        ],
-        "foreign_keys": [
-            {
-                "columns": ["connection_id"],
-                "references_table": "core.connection",
-                "references_columns": ["connection_id"],
-            },
-            {
-                "columns": ["object_type_id"],
-                "references_table": "reference.object_type",
-                "references_columns": ["object_type_id"],
-            },
-            {
-                "columns": ["zone_id"],
-                "references_table": "reference.zone",
-                "references_columns": ["zone_id"],
-            },
-        ],
-    }
-    assert bronze_object["columns"] == source_object["columns"]
-    assert bronze_object["foreign_keys"] == source_object["foreign_keys"]
-    assert bronze_object["data_files"] == ["metadata/core/bronze_object/rows.jsonl"]
+    assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
+    assert schema["$id"] == "schemas/source_object.schema.json"
+    assert schema["additionalProperties"] is False
+    assert schema["x-gds-canonical-key"] == [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+    ]
+    assert schema["x-gds-unique-constraints"] == [schema["x-gds-canonical-key"]]
+    assert schema["x-gds-references"] == [
+        {
+            "columns": ["tenant_code", "system_code", "connection_code"],
+            "target_record_type": "connection",
+            "target_columns": ["tenant_code", "system_code", "connection_code"],
+            "nullable": False,
+        },
+        {
+            "columns": ["object_type_code"],
+            "target_record_type": "object_type",
+            "target_columns": ["object_type_code"],
+            "nullable": False,
+        },
+        {
+            "columns": ["zone_code"],
+            "target_record_type": "zone",
+            "target_columns": ["zone_code"],
+            "nullable": False,
+        },
+    ]
+    properties = schema["properties"]
+    assert isinstance(properties, dict)
+    assert properties["zone_code"]["const"] == "source"

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 from dataclasses import replace
+from typing import Any, cast
 
 import pytest
 
@@ -24,49 +25,88 @@ def test_root_documents_are_complete_deterministic_and_row_free() -> None:
     second = build_root_documents(tuple(reversed(encoded)))
 
     assert first == second
-    assert first.schema_json.endswith(b"\n")
-    assert first.index_json.endswith(b"\n")
-    schema = json.loads(first.schema_json)
-    index = json.loads(first.index_json)
-    assert len(schema["datasets"]) == 29
-    assert [section["name"] for section in index["sections"]] == [
+    assert first.catalog_json.endswith(b"\n")
+    assert len(first.schemas) == 29
+    assert all(content.endswith(b"\n") for _path, content in first.schemas)
+    catalog = json.loads(first.catalog_json)
+    assert [section["name"] for section in catalog["sections"]] == [
         "foundation",
         "metadata",
     ]
-    assert [len(section["datasets"]) for section in index["sections"]] == [13, 16]
+    assert [len(section["datasets"]) for section in catalog["sections"]] == [13, 16]
     assert all(
         dataset["row_count"] == 0
-        for section in index["sections"]
+        for section in catalog["sections"]
         for dataset in section["datasets"]
     )
-    assert b'"rows"' not in first.schema_json
-    assert b'"rows"' not in first.index_json
-    assert b'"sha256"' not in first.schema_json
-    assert b'"sha256"' not in first.index_json
+    assert b'"rows"' not in first.catalog_json
+    assert b'"sha256"' not in first.catalog_json
 
 
-def test_root_index_contains_agent_navigation_paths() -> None:
-    index = json.loads(build_root_documents(empty_datasets()).index_json)
+def test_catalog_contains_agent_navigation_without_duplicate_rows() -> None:
+    catalog = cast(dict[str, Any], json.loads(build_root_documents(empty_datasets()).catalog_json))
     source_objects = next(
         dataset
-        for section in index["sections"]
+        for section in catalog["sections"]
         for dataset in section["datasets"]
         if dataset["name"] == "source_object"
+    )
+    projects = next(
+        dataset
+        for section in catalog["sections"]
+        for dataset in section["datasets"]
+        if dataset["name"] == "project"
     )
 
     assert source_objects == {
         "name": "source_object",
         "label": "Source Objects",
+        "record_type": "object",
         "row_count": 0,
-        "data_path": "metadata/core/source_object/rows.jsonl",
-        "table_index_path": "metadata/core/source_object/index.jsonl",
-        "primary_key": ["object_id"],
-        "display_columns": ["object_schema", "object_name"],
+        "canonical_key": [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        ],
+        "search_fields": [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+            "object_type_code",
+            "zone_code",
+            "is_locked",
+            "is_active",
+        ],
+        "schema_file": "schemas/source_object.schema.json",
+        "search_file": "data/source_object/lookup.jsonl",
+        "rows_file": "data/source_object/rows.jsonl",
+        "search_result_complete": False,
     }
-    assert index["instructions"] == [
-        "Read manifest.json and index.json first.",
-        "Do not recursively load the snapshot into context.",
-        "Search a dataset's index.jsonl, then read only the located line from rows.jsonl.",
+    assert projects["search_file"] == projects["rows_file"]
+    assert projects["search_result_complete"] is True
+    assert catalog["record_groups"] == [
+        {
+            "name": "objects",
+            "datasets": [
+                "source_object",
+                "bronze_object",
+                "silver_object",
+                "gold_object",
+            ],
+        },
+        {
+            "name": "attributes",
+            "datasets": [
+                "source_attribute",
+                "bronze_attribute",
+                "silver_attribute",
+                "gold_attribute",
+            ],
+        },
     ]
 
 
@@ -87,3 +127,29 @@ def test_root_documents_reject_missing_duplicate_or_changed_datasets() -> None:
                 *encoded[1:],
             )
         )
+
+
+def test_root_documents_reject_an_unresolved_natural_key_reference() -> None:
+    encoded = list(empty_datasets())
+    connection_index = next(
+        index for index, definition in enumerate(DATASETS) if definition.name == "connection"
+    )
+    encoded[connection_index] = encode_dataset(
+        DATASETS[connection_index],
+        [
+            {
+                "tenant_code": "MISSING",
+                "system_code": "MISSING",
+                "connection_code": "SOURCE",
+                "connection_name": "Source",
+                "connection_type_code": "MISSING",
+                "has_foreign_catalog": False,
+                "foreign_catalog": None,
+                "is_global_data_store": False,
+                "is_active": True,
+            }
+        ],
+    )
+
+    with pytest.raises(SnapshotContractError, match="unresolved natural-key reference"):
+        build_root_documents(encoded)

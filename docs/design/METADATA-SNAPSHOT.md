@@ -251,48 +251,26 @@ merely to make the snapshot complete.
 ```text
 metadata-snapshot/
 ├── manifest.json
-├── schema.json
-├── index.json
-├── foundation/
-│   ├── core/
-│   │   ├── project/{index.jsonl,rows.jsonl}
-│   │   ├── tenant/{index.jsonl,rows.jsonl}
-│   │   ├── system/{index.jsonl,rows.jsonl}
-│   │   ├── connection/{index.jsonl,rows.jsonl}
-│   │   └── tenant_metadata_discovery_scope/{index.jsonl,rows.jsonl}
-│   └── reference/
-│       ├── system_type/{index.jsonl,rows.jsonl}
-│       ├── connection_type/{index.jsonl,rows.jsonl}
-│       ├── object_type/{index.jsonl,rows.jsonl}
-│       ├── zone/{index.jsonl,rows.jsonl}
-│       ├── chunk_type/{index.jsonl,rows.jsonl}
-│       ├── file_type/{index.jsonl,rows.jsonl}
-│       ├── data_operation/{index.jsonl,rows.jsonl}
-│       └── process_type/{index.jsonl,rows.jsonl}
-└── metadata/
-    └── core/
-        ├── source_object/{index.jsonl,rows.jsonl}
-        ├── source_attribute/{index.jsonl,rows.jsonl}
-        ├── bronze_object/{index.jsonl,rows.jsonl}
-        ├── bronze_attribute/{index.jsonl,rows.jsonl}
-        ├── silver_object/{index.jsonl,rows.jsonl}
-        ├── silver_attribute/{index.jsonl,rows.jsonl}
-        ├── gold_object/{index.jsonl,rows.jsonl}
-        ├── gold_attribute/{index.jsonl,rows.jsonl}
-        ├── ingestion_object_mapping/{index.jsonl,rows.jsonl}
-        ├── ingestion_attribute_mapping/{index.jsonl,rows.jsonl}
-        ├── copy_group/{index.jsonl,rows.jsonl}
-        ├── member_group/{index.jsonl,rows.jsonl}
-        ├── copy_group_control/{index.jsonl,rows.jsonl}
-        ├── copy/{index.jsonl,rows.jsonl}
-        ├── process_group/{index.jsonl,rows.jsonl}
-        └── process/{index.jsonl,rows.jsonl}
+├── catalog.json
+├── schemas/
+│   └── <dataset>.schema.json
+└── data/
+    └── <dataset>/
+        ├── rows.jsonl
+        └── lookup.jsonl  # only selected wide datasets
 ```
 
 There are 23 physical source tables and 29 logical snapshot datasets. The
 physical `core.object` and `core.attribute` tables become eight Zone-specific
-datasets. Each dataset has exactly one `rows.jsonl` in version 2; no part files
-are generated.
+datasets. Objects and Attributes remain separate; Object rows never contain a
+nested or duplicate Attribute array.
+
+Every dataset has one `rows.jsonl` and one JSON Schema. Only these ten wide
+datasets have `lookup.jsonl`: the four Object datasets, the four Attribute
+datasets, `copy`, and `copy_group_control`. Compact datasets use `rows.jsonl`
+as their search file. This avoids duplicating every row while keeping large
+scripts, transformations, descriptions, and control values out of normal agent
+search output.
 
 Archive member names are constants. Database values never become directory or
 file names. ZIP entries are regular files only, use deterministic ordering and
@@ -301,118 +279,117 @@ symbolic link.
 
 ## JSONL encoding
 
-`rows.jsonl` contains one fixed-projection metadata row per UTF-8 line. Every
-selected business column is present in contract order, including primary keys,
-foreign keys, active state, and lock state. Database audit columns
-(`created_time`, `created_by`, `updated_time`, and `updated_by`) are never
-selected or exported. Rows are sorted by primary key. Newlines inside text
-values are JSON escaped.
+`rows.jsonl` contains one flat, ID-free Pydantic-validated metadata record per
+UTF-8 line. Database IDs and audit columns are never exported. Foreign keys are
+expanded to the target record's natural-key columns. Rows are sorted by their
+canonical natural key. Newlines inside text values are JSON escaped.
 
-`index.jsonl` contains one bounded locator per row: the complete primary key, a
-human-readable label, `file: "rows.jsonl"`, and a one-based line number. It
-does not duplicate full rows or add selection-reason metadata.
+For example, an Object is identified by:
+
+```json
+{
+  "tenant_code": "ACME",
+  "system_code": "ERP",
+  "connection_code": "SOURCE",
+  "object_schema": "sales",
+  "object_name": "orders"
+}
+```
+
+`lookup.jsonl` contains the canonical key, selected small filter fields, and a
+one-based `line`. It contains no file path and no large text fields. The line
+points to the matching line in that dataset's `rows.jsonl`. Archive validation
+proves lookup count, line number, key, and filter values match the full rows.
 
 Wire encodings preserve PostgreSQL values exactly:
 
-- `BIGINT` and `BIGINT[]` elements use canonical decimal strings so a browser's
-  JavaScript JSON parser cannot lose 64-bit precision;
+- non-ID `BIGINT` values use canonical decimal strings so JavaScript cannot
+  lose 64-bit precision;
 - integer types that fit JSON's safe range use JSON numbers;
 - Boolean values use JSON Booleans;
 - `DATE` uses `YYYY-MM-DD`;
 - timestamps use UTC RFC 3339 strings;
-- arrays use JSON arrays;
-- JSON/JSONB values retain their JSON structure;
 - SQL null uses JSON null; and
 - binary, non-finite, cyclic, and unsupported values fail serialization.
 
-A decimal-string database ID remains a persisted ID, not a Local Reference.
-Future Change Sets represent new identities with a separate typed
-`local_ref`, never by placing a prefixed string into an ID column.
+`business_glossary_id`, test batch IDs, and other opaque IDs without an
+ID-free target contract are excluded.
 
 ## Root contracts
 
 ### `manifest.json`
 
-The manifest is the immutable instance and integrity contract. It contains:
+The manifest is the immutable archive instance and integrity contract. It contains:
 
-- schema version, snapshot kind, snapshot ID, Tenant ID, generation time, and
+- schema version, snapshot kind, snapshot ID, Tenant code, generation time, and
   availability time;
-- physical table, logical dataset, row, file, and expanded-byte counts;
+- physical table, logical dataset, lookup file, row, file, and expanded-byte counts;
 - the `foundation` and `metadata` sections;
 - one entry for every non-manifest member with path, SHA-256, byte count, and
   row count when applicable; and
-- direct pointers and digests for `schema.json` and `index.json`.
+- a direct path and digest for `catalog.json` plus the schema directory count.
 
 It contains no full data row. The ZIP SHA-256 and compressed byte count are
 returned by MCP and stored as Blob metadata because a ZIP cannot include its
 own final digest.
 
-### `schema.json`
+### `schemas/<dataset>.schema.json`
 
-The schema is the small, viewer-oriented contract. It does not duplicate
-checksums or rows. Each logical dataset declares:
+Each file is standard JSON Schema Draft 2020-12 generated from the same shared
+Pydantic model used to validate snapshot rows. The future Metadata Change Set
+can import these Pydantic models instead of copying field definitions.
+
+GDS extensions describe relational meaning that JSON Schema cannot express:
 
 ```json
 {
-  "name": "source_object",
-  "label": "Source Objects",
-  "database_table": "core.object",
-  "section": "metadata",
-  "change_set_eligible": true,
-  "data_files": ["metadata/core/source_object/rows.jsonl"],
-  "primary_key": ["object_id"],
-  "display_columns": ["object_schema", "object_name"],
-  "unique_column_groups": [
-    ["connection_id", "object_schema", "object_name"]
+  "x-gds-dataset": "source_object",
+  "x-gds-record-type": "object",
+  "x-gds-canonical-key": [
+    "tenant_code",
+    "system_code",
+    "connection_code",
+    "object_schema",
+    "object_name"
   ],
-  "columns": [
-    {
-      "name": "object_id",
-      "type": "bigint",
-      "nullable": false,
-      "generated": true
-    },
-    {
-      "name": "connection_id",
-      "type": "bigint",
-      "nullable": false,
-      "generated": false
-    }
+  "x-gds-unique-constraints": [
+    [
+      "tenant_code",
+      "system_code",
+      "connection_code",
+      "object_schema",
+      "object_name"
+    ]
   ],
-  "foreign_keys": [
+  "x-gds-references": [
     {
-      "columns": ["connection_id"],
-      "references_table": "core.connection",
-      "references_columns": ["connection_id"]
+      "columns": ["tenant_code", "system_code", "connection_code"],
+      "target_record_type": "connection",
+      "target_columns": ["tenant_code", "system_code", "connection_code"],
+      "nullable": false
     }
   ]
 }
 ```
 
-Column arrays preserve display order. All columns are shown, including raw
-foreign-key IDs. The viewer is not required to resolve IDs to labels.
-`unique_column_groups` identifies the columns participating in each unique
-constraint or unique index; PostgreSQL remains authoritative for expression
-normalization and validation. A unique group belongs to `database_table`, so a
-viewer evaluates it across every Zone dataset backed by the same physical
-table rather than within one JSONL file only.
-
 Foundation and reference datasets declare `change_set_eligible: false`. The 16
 metadata datasets declare `true`.
 
-### `index.json`
+### `catalog.json`
 
-The root index is the small agent navigation guide. It:
+The catalog is the small agent navigation guide. It:
 
-- instructs the agent to read the manifest and root index first;
 - instructs the agent never to recursively load the snapshot;
 - lists both sections and all 29 datasets;
-- gives each dataset's label, row count, data path, table-index path, primary
-  key, and display columns; and
-- tells the agent to search `index.jsonl` and then read only the located line
-  from `rows.jsonl`.
+- groups the four Object and four Attribute datasets for cross-Zone search;
+- gives each dataset's row count, canonical key, search fields, schema file,
+  search file, rows file, and `search_result_complete`; and
+- tells the agent to read a full row only when a lookup result is incomplete.
 
-It contains no complete row and no per-row selection explanation.
+The intended workflow is: read `catalog.json`, select a dataset, search its
+`search_file`, read the exact full row only if needed, then read its schema only
+when field/key/reference meaning is needed. The manifest is for integrity, not
+routine navigation.
 
 ## Metadata Change Set alignment
 
@@ -442,8 +419,8 @@ updated together. This design change does not expose a mutation tool as part of
 the snapshot slice.
 
 Reference rows are never appendable or mutable through a Metadata Change Set.
-Metadata rows may point their foreign-key columns to existing IDs from these
-read-only allowlisted tables:
+Metadata records refer to these rows by their canonical code or name, never by
+database ID:
 
 - `reference.system_type`;
 - `reference.connection_type`;
@@ -494,8 +471,10 @@ MCP call
   -> authorize Tenant Read
   -> open one repeatable-read, read-only transaction
   -> query and validate the bounded relational closure
-  -> write deterministic JSONL, indexes, and schema in a temporary directory
-  -> validate every row count, key, relationship, and archive member
+  -> resolve internal IDs to natural keys
+  -> validate rows with shared Pydantic models
+  -> build deterministic rows, selective lookups, schemas, and catalog
+  -> validate every row count, unique key, lookup, and archive member
   -> write manifest
   -> create deterministic safe ZIP
   -> enforce expanded and compressed limits
@@ -538,13 +517,21 @@ Feature-specific code remains cohesive under one package, split only by its
 stable responsibilities:
 
 ```text
+mcp_server/gds_etl_workbench/domain/
+└── metadata_records.py
+
 mcp_server/gds_etl_workbench/tools/snapshots/metadata/
 ├── contracts.py
 ├── sql.py
+├── projection.py
 ├── archive.py
 ├── storage.py
 └── get_metadata_snapshot.py
 ```
+
+`domain/metadata_records.py` owns the ID-free record shapes so Snapshot and
+future Metadata Change Set code use one field/type contract. Snapshot-specific
+dataset paths, keys, references, and lookup choices remain in `contracts.py`.
 
 Small integration edits are still required in existing boundaries:
 
@@ -572,13 +559,14 @@ The slice must prove:
 - discovery neither proves nor restricts lineage;
 - active and inactive row inclusion;
 - exact four-Zone partitioning and rejection of unsupported Zones;
-- complete columns, IDs, foreign keys, unique groups, and deterministic row
-  order;
+- complete ID-free columns, natural-key references, unique groups, and
+  deterministic row order;
 - all eight allowlisted reference tables and no other reference/Core tables;
-- 29 dataset paths, one index and one rows file per dataset, and no unsafe ZIP
-  members;
-- exact BIGINT string encoding and browser-safe round trips;
-- schema, index, manifest, member digest, ZIP digest, count, and size validation;
+- 29 row files, 29 schemas, exactly ten selective lookup files, and no unsafe
+  ZIP members;
+- exact non-ID BIGINT string encoding and browser-safe round trips;
+- lookup, schema, catalog, manifest, member digest, ZIP digest, count, and size
+  validation;
 - temporary-file cleanup on every failure;
 - create-only Blob upload, private-container assumptions, and lifecycle
   metadata;

@@ -22,7 +22,8 @@ route.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
   generation, Azure storage, MCP binding, and protected download route.
 - `application/`: shared authorization boundary and signed pagination cursor.
-- `domain/`: role and Tool Policy vocabulary plus safe errors.
+- `domain/`: role and Tool Policy vocabulary, safe errors, and shared ID-free
+  metadata Pydantic records used by snapshots and future change sets.
 - `infrastructure/`: shared PostgreSQL pool, readiness, read transactions, and
   bounded append-only audit inserts.
 - Tests live outside this deployable folder in `../tests/mcp/`.
