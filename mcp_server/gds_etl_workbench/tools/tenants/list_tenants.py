@@ -18,7 +18,11 @@ from gds_etl_workbench.application.authorization import (
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import ActorKind, TenantRole, ToolPolicy
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import Database, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import (
+    Database,
+    ReadIsolation,
+    ReadTransaction,
+)
 
 _COLLECTION = "list_tenants"
 POLICY = ToolPolicy.TENANT_READ
@@ -142,7 +146,9 @@ def register_list_tenants_tool(
                 cursor=cursor,
             )
             offset = cursors.decode(request.cursor, collection=_COLLECTION)
-            async with database.read_transaction() as transaction:
+            async with database.read_transaction(
+                isolation=ReadIsolation.REPEATABLE_READ
+            ) as transaction:
                 actor = await authorizer.resolve_principal(transaction, principal)
                 rows = await _query_visible_tenants(
                     transaction,

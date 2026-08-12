@@ -15,6 +15,13 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import Database
+from gds_etl_workbench.tools.catalog.get_object_lineage import (
+    register_get_object_lineage_tool,
+)
+from gds_etl_workbench.tools.catalog.get_objects import register_get_objects_tool
+from gds_etl_workbench.tools.catalog.list_objects import register_list_objects_tool
+from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_tools
+from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     register_get_metadata_snapshot_tool,
     register_metadata_snapshot_download_route,
@@ -22,6 +29,9 @@ from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
 from gds_etl_workbench.tools.snapshots.metadata.storage import (
     AzureMetadataSnapshotStore,
     MetadataSnapshotStore,
+)
+from gds_etl_workbench.tools.tenants.get_tenant_details import (
+    register_get_tenant_details_tool,
 )
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
 
@@ -63,15 +73,61 @@ def create_mcp_server(
         version="0.1.0",
         description="Governed metadata access for GDS ETL Workbench.",
         instructions=(
-            "Check /health/ready before use. Read-only tools list authorized Tenants and "
-            "create protected Metadata Snapshot downloads. Tenant visibility and roles "
-            "are always resolved server-side."
+            "Check /health/ready before use. Start with list_tenants, then use Tenant, "
+            "Object, Copy Group, Process Group, or direct ingestion-lineage reads. Prefer "
+            "these bounded summaries before requesting a protected Metadata Snapshot. "
+            "Tenant visibility and roles are always resolved server-side."
         ),
         lifespan=lifespan,
         middleware=[audit],
     )
 
     register_list_tenants_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_get_tenant_details_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_list_objects_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_get_objects_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_get_object_lineage_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_copy_group_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_process_group_tools(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -123,7 +179,7 @@ def create_mcp_server(
                 "authorization_servers": [
                     f"https://login.microsoftonline.com/{settings.entra_tenant_id}/v2.0"
                 ],
-                "scopes_supported": [f"api://{settings.entra_api_client_id}/workbench.access"],
+                "scopes_supported": [f"{settings.mcp_public_url}/workbench.access"],
                 "bearer_methods_supported": ["header"],
             },
             headers={"Cache-Control": "public, max-age=300"},

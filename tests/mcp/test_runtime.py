@@ -6,7 +6,7 @@ from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
-from typing import Any, LiteralString
+from typing import TYPE_CHECKING, Any, LiteralString
 from uuid import UUID
 
 import httpx2
@@ -37,6 +37,9 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import SnapshotArchive
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
+
+if TYPE_CHECKING:
+    from conftest import DisposablePostgres
 
 
 class FakeReadTransaction:
@@ -106,7 +109,10 @@ class FakeDatabase:
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
     ) -> AsyncIterator[ReadTransaction]:
-        assert isolation is ReadIsolation.READ_COMMITTED
+        assert isolation in {
+            ReadIsolation.READ_COMMITTED,
+            ReadIsolation.REPEATABLE_READ,
+        }
         yield FakeReadTransaction(self)
 
 
@@ -172,10 +178,17 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
 
     assert [tool.name for tool in tools.tools] == [
         "list_tenants",
+        "get_tenant_details",
+        "list_objects",
+        "get_objects",
+        "get_object_lineage",
+        "list_copy_groups",
+        "get_copy_group",
+        "list_process_groups",
+        "get_process_group",
         "get_metadata_snapshot",
     ]
-    assert tools.tools[0].meta == {"gds/toolPolicy": "tenant_read"}
-    assert tools.tools[1].meta == {"gds/toolPolicy": "tenant_read"}
+    assert all(tool.meta == {"gds/toolPolicy": "tenant_read"} for tool in tools.tools)
     assert result.is_error is False
     assert result.structured_content == {
         "schema_version": "1.0",
@@ -335,9 +348,7 @@ def test_oauth_protected_resource_metadata_is_anonymous_and_configured() -> None
         "authorization_servers": [
             "https://login.microsoftonline.com/11111111-1111-1111-1111-111111111111/v2.0"
         ],
-        "scopes_supported": [
-            "api://22222222-2222-2222-2222-222222222222/workbench.access"
-        ],
+        "scopes_supported": ["https://testserver/mcp/workbench.access"],
         "bearer_methods_supported": ["header"],
     }
 
@@ -427,6 +438,140 @@ async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() ->
     assert len(database.audit_records) == 1
     assert database.audit_records[0].principal_id == 41
     assert database.audit_records[0].principal_display_name == "HTTP Human"
+
+
+@pytest.mark.asyncio
+async def test_easy_auth_list_tenants_uses_the_production_postgres_path(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000021")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000021")
+    with postgres_database.connect_owner() as connection:
+        project = connection.execute(
+            """
+            INSERT INTO core.project (project_code, project_name)
+            VALUES ('HTTP_RUNTIME', 'HTTP Runtime Project')
+            RETURNING project_id
+            """
+        ).fetchone()
+        assert project is not None
+        tenant = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog,
+                tenant_visibility
+            )
+            VALUES (%s, 'HTTP_RUNTIME', 'HTTP Runtime Tenant',
+                    'http_runtime', 'http_runtime_admin', 'private')
+            RETURNING tenant_id
+            """,
+            (project["project_id"],),
+        ).fetchone()
+        assert tenant is not None
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                principal_email
+            )
+            VALUES ('user', 'HTTP Runtime Human', 'http.runtime@example.test')
+            RETURNING principal_id
+            """
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'user', %s, %s)
+            """,
+            (principal["principal_id"], entra_tenant_id, entra_object_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO security.tenant_principal_access (
+                tenant_id,
+                principal_id,
+                tenant_role,
+                granted_by_principal_id
+            )
+            VALUES (%s, %s, 'viewer', %s)
+            """,
+            (
+                tenant["tenant_id"],
+                principal["principal_id"],
+                principal["principal_id"],
+            ),
+        )
+
+    settings = replace(
+        development_settings(),
+        environment=Environment.PRODUCTION,
+        auth_mode=AuthMode.AZURE_EASY_AUTH,
+        require_https=True,
+    )
+    database = postgres_database.create_runtime_adapter()
+    application = create_application(settings, database, FakeSnapshotStore())
+    claims = {
+        "auth_typ": "aad",
+        "claims": [
+            {"typ": "tid", "val": str(entra_tenant_id)},
+            {"typ": "oid", "val": str(entra_object_id)},
+            {"typ": "idtyp", "val": "user"},
+            {"typ": "scp", "val": "workbench.access"},
+        ],
+    }
+    principal_header = base64.b64encode(json.dumps(claims).encode()).decode()
+
+    async with (
+        application.router.lifespan_context(application),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=application),
+            base_url="http://testserver",
+            headers={
+                "x-forwarded-proto": "https",
+                "x-ms-client-principal": principal_header,
+            },
+        ) as http_client,
+    ):
+        transport = streamable_http_client(
+            "http://testserver/mcp",
+            http_client=http_client,
+            terminate_on_close=False,
+        )
+        async with Client(transport) as client:
+            result = await client.call_tool("list_tenants", {})
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    returned_tenant = next(
+        item
+        for item in result.structured_content["tenants"]
+        if item["tenant_id"] == tenant["tenant_id"]
+    )
+    assert returned_tenant["effective_role"] == "viewer"
+    with postgres_database.connect_owner() as connection:
+        audit = connection.execute(
+            """
+            SELECT tool_call_status, failure_code
+              FROM mcp.tool_call_log
+             WHERE principal_id = %s
+               AND tool_name = 'list_tenants'
+             ORDER BY tool_call_time DESC
+             LIMIT 1
+            """,
+            (principal["principal_id"],),
+        ).fetchone()
+    assert audit == {"tool_call_status": "succeeded", "failure_code": None}
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

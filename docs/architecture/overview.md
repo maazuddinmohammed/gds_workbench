@@ -34,7 +34,10 @@ mcp_server/
         application/            shared authorization and cursor boundaries
         domain/                 policy vocabulary and safe errors
         infrastructure/         PostgreSQL pool, readiness, expiry worker call
-        tools/tenants/          complete list_tenants vertical slice
+        tools/tenants/          Tenant list and Connection-grain detail reads
+        tools/catalog/          Object visibility, detail, and ingestion lineage
+        tools/ingestion/        Copy Group summary and detail reads
+        tools/processing/       Process Group summary and detail reads
         tools/snapshots/metadata/
                                 complete Metadata Snapshot vertical slice
 tests/mcp/                     all MCP and disposable-database tests
@@ -55,7 +58,9 @@ outputs.
 - Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
 - Protected stateless `/mcp`
 - Protected `GET /metadata-snapshots/{tenant_id}/{snapshot_id}/download`
-- Two read-only MCP tools: `list_tenants`, `get_metadata_snapshot`
+- Ten read-only MCP tools: `list_tenants`, `get_tenant_details`, `list_objects`,
+  `get_objects`, `get_object_lineage`, `list_copy_groups`, `get_copy_group`,
+  `list_process_groups`, `get_process_group`, and `get_metadata_snapshot`
 
 `list_tenants` returns active global Tenants plus private Tenants for which the
 human has active, unexpired Viewer-or-higher access. Registered workload
@@ -67,6 +72,13 @@ closure in a repeatable-read read-only transaction, creates a deterministic ZIP
 in temporary storage, uploads it create-only to private Blob Storage, and
 returns only the protected application URL and bounded descriptor. Download
 requests reauthorize Tenant access before minting a fresh read-only SAS.
+
+The interactive reads use the same server-owned Object closure as the Metadata
+Snapshot. `list_objects` reports why each Object is included and whether an
+ingestion mapping exists. Copy Groups are Tenant-owned. Process Groups are
+resolved through Copy Groups belonging to the requested Tenant. Detail tools
+return bounded safe projections and omit scripts, raw checkpoint values,
+connection values, secret references, transformations, and executable paths.
 
 No write or Tenant Lock MCP tool is registered. The database already exposes
 governed authorization and acquire/renew/release/override/expiry functions for

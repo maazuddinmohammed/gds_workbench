@@ -1,14 +1,24 @@
 # GDS ETL Workbench MCP scaffold
 
-This is the Azure App Service code root. It contains two read-only MCP tools,
-`list_tenants` and `get_metadata_snapshot`, plus health routes and the protected
-Metadata Snapshot download route.
+This is the Azure App Service code root. It contains ten read-only MCP tools:
+
+- `list_tenants`, `get_tenant_details`;
+- `list_objects`, `get_objects`, `get_object_lineage`;
+- `list_copy_groups`, `get_copy_group`;
+- `list_process_groups`, `get_process_group`; and
+- `get_metadata_snapshot`.
+
+It also contains health routes and the protected Metadata Snapshot download
+route.
 
 ## Boundaries
 
 - `adapters/`: Easy Auth, MCP server composition, and centralized tool-call audit.
 - `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
   authorization flow, pagination, and SQL together.
+- `tools/catalog/`: Object visibility, Object detail, and ingestion-lineage reads.
+- `tools/ingestion/`: Tenant-owned Copy Group reads.
+- `tools/processing/`: Process Group reads resolved through Tenant Copy Groups.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
   generation, Azure storage, MCP binding, and protected download route.
 - `application/`: shared authorization boundary and signed pagination cursor.

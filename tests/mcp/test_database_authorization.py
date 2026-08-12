@@ -5,8 +5,21 @@ from uuid import UUID
 
 import pytest
 
-from gds_etl_workbench.application.authorization import ResolvedPrincipal
-from gds_etl_workbench.domain.authorization import ActorKind
+from gds_etl_workbench.application.authorization import (
+    AuthorizationService,
+    ResolvedPrincipal,
+)
+from gds_etl_workbench.domain.authorization import (
+    ActorKind,
+    RequestPrincipal,
+    TenantRole,
+    ToolPolicy,
+)
+from gds_etl_workbench.domain.errors import (
+    AuthorizationDeniedError,
+    TenantNotFoundError,
+)
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_etl_workbench.tools.tenants.list_tenants import _query_visible_tenants
 
 if TYPE_CHECKING:
@@ -51,6 +64,218 @@ def test_modeling_assertion_tables_replace_modeling_evidence_tables(
         "evidence_document": None,
         "evidence_record": None,
     }
+
+
+@pytest.mark.asyncio
+async def test_runtime_resolves_an_active_human_principal(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000011")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000011")
+    with postgres_database.connect_owner() as connection:
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                principal_email
+            )
+            VALUES ('user', 'Runtime Reader', 'runtime.reader@example.test')
+            RETURNING principal_id
+            """
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'user', %s, %s)
+            """,
+            (principal["principal_id"], entra_tenant_id, entra_object_id),
+        )
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        async with database.read_transaction() as transaction:
+            resolved = await AuthorizationService().resolve_principal(
+                transaction,
+                RequestPrincipal(
+                    actor_kind=ActorKind.HUMAN,
+                    entra_tenant_id=entra_tenant_id,
+                    entra_object_id=entra_object_id,
+                ),
+            )
+    finally:
+        await database.close()
+
+    assert resolved == ResolvedPrincipal(
+        principal_id=principal["principal_id"],
+        actor_kind=ActorKind.HUMAN,
+        display_name="Runtime Reader",
+        is_super_admin=False,
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "isolation",
+    [ReadIsolation.READ_COMMITTED, ReadIsolation.REPEATABLE_READ],
+)
+async def test_runtime_authorizes_human_tenant_read_in_a_read_only_transaction(
+    postgres_database: DisposablePostgres,
+    isolation: ReadIsolation,
+) -> None:
+    identity_suffix = 12 if isolation is ReadIsolation.READ_COMMITTED else 15
+    entra_tenant_id = UUID(f"10000000-0000-0000-0000-{identity_suffix:012d}")
+    entra_object_id = UUID(f"20000000-0000-0000-0000-{identity_suffix:012d}")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(
+            connection,
+            f"RUNTIME_TENANT_READ_{isolation.value.upper()}",
+        )
+        principal_id = _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Runtime Tenant Reader",
+            email=f"runtime.tenant.reader.{isolation.value}@example.test",
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            tenant_role="viewer",
+        )
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        async with database.read_transaction(isolation=isolation) as transaction:
+            decision = await AuthorizationService().authorize_tenant(
+                transaction,
+                RequestPrincipal(
+                    actor_kind=ActorKind.HUMAN,
+                    entra_tenant_id=entra_tenant_id,
+                    entra_object_id=entra_object_id,
+                ),
+                tenant_id=tenant_id,
+                policy=ToolPolicy.TENANT_READ,
+            )
+    finally:
+        await database.close()
+
+    assert decision.principal.principal_id == principal_id
+    assert decision.effective_role is TenantRole.VIEWER
+    assert decision.lock_expires_time is None
+
+
+@pytest.mark.asyncio
+async def test_runtime_hides_a_private_tenant_without_access(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000013")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000013")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "RUNTIME_PRIVATE_HIDDEN")
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                principal_email
+            )
+            VALUES ('user', 'Private Outsider', 'private.outsider@example.test')
+            RETURNING principal_id
+            """
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'user', %s, %s)
+            """,
+            (principal["principal_id"], entra_tenant_id, entra_object_id),
+        )
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        with pytest.raises(TenantNotFoundError):
+            async with database.read_transaction() as transaction:
+                await AuthorizationService().authorize_tenant(
+                    transaction,
+                    RequestPrincipal(
+                        actor_kind=ActorKind.HUMAN,
+                        entra_tenant_id=entra_tenant_id,
+                        entra_object_id=entra_object_id,
+                    ),
+                    tenant_id=tenant_id,
+                    policy=ToolPolicy.TENANT_READ,
+                )
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_runtime_denies_a_non_admin_workload_tenant_read(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000014")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000014")
+    application_id = UUID("30000000-0000-0000-0000-000000000014")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "RUNTIME_WORKLOAD_DENIED")
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                service_principal_application_id,
+                service_principal_type,
+                is_super_admin
+            )
+            VALUES ('service_principal', 'Runtime Workflow', %s, 'application', FALSE)
+            RETURNING principal_id
+            """,
+            (application_id,),
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'service_principal', %s, %s)
+            """,
+            (principal["principal_id"], entra_tenant_id, entra_object_id),
+        )
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        with pytest.raises(AuthorizationDeniedError):
+            async with database.read_transaction() as transaction:
+                await AuthorizationService().authorize_tenant(
+                    transaction,
+                    RequestPrincipal(
+                        actor_kind=ActorKind.WORKLOAD,
+                        entra_tenant_id=entra_tenant_id,
+                        entra_object_id=entra_object_id,
+                    ),
+                    tenant_id=tenant_id,
+                    policy=ToolPolicy.TENANT_READ,
+                )
+    finally:
+        await database.close()
 
 
 def test_mcp_schema_owns_change_sets_and_tool_call_log(

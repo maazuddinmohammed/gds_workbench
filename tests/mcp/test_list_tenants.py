@@ -24,6 +24,7 @@ from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
 class RecordingDatabase:
     records: list[dict[str, Any]]
     calls: list[tuple[int, int]] = field(default_factory=list)
+    isolations: list[ReadIsolation] = field(default_factory=list)
     audit_records: list[ToolCallLogRecord] = field(default_factory=list)
 
     async def open(self) -> None: ...
@@ -45,7 +46,7 @@ class RecordingDatabase:
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
     ) -> AsyncIterator[ReadTransaction]:
-        assert isolation is ReadIsolation.READ_COMMITTED
+        self.isolations.append(isolation)
         yield RecordingReadTransaction(self)
 
 
@@ -117,6 +118,12 @@ async def test_list_tenants_pages_with_a_signed_cursor() -> None:
     assert [item.tenant_name for item in second.tenants] == ["Beta"]
     assert second.next_cursor is None
     assert database.calls == [(2, 0), (2, 1)]
+    assert database.isolations == [
+        ReadIsolation.READ_COMMITTED,
+        ReadIsolation.REPEATABLE_READ,
+        ReadIsolation.READ_COMMITTED,
+        ReadIsolation.REPEATABLE_READ,
+    ]
     assert [record.status for record in database.audit_records] == [
         "succeeded",
         "succeeded",

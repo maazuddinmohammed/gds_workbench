@@ -36,6 +36,13 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py",
             "gds_etl_workbench/tools/snapshots/metadata/sql.py",
             "gds_etl_workbench/tools/snapshots/metadata/storage.py",
+            "gds_etl_workbench/tools/catalog/get_object_lineage.py",
+            "gds_etl_workbench/tools/catalog/get_objects.py",
+            "gds_etl_workbench/tools/catalog/list_objects.py",
+            "gds_etl_workbench/tools/catalog/visibility.py",
+            "gds_etl_workbench/tools/ingestion/copy_groups.py",
+            "gds_etl_workbench/tools/processing/process_groups.py",
+            "gds_etl_workbench/tools/tenants/get_tenant_details.py",
         } <= set(names)
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}
