@@ -48,7 +48,9 @@ def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
     foundation = tuple(
         dataset for dataset in DATASETS if dataset.section is SnapshotSection.FOUNDATION
     )
-    metadata = tuple(dataset for dataset in DATASETS if dataset.section is SnapshotSection.METADATA)
+    metadata = tuple(
+        dataset for dataset in DATASETS if dataset.section is SnapshotSection.METADATA
+    )
     assert len(foundation) == 13
     assert len(metadata) == 16
     assert all(not dataset.change_set_eligible for dataset in foundation)
@@ -62,18 +64,24 @@ def test_metadata_snapshot_registry_uses_fixed_safe_paths() -> None:
     assert len(data_paths) == 29
     assert len(index_paths) == 29
     assert data_paths.isdisjoint(index_paths)
-    assert next(dataset for dataset in DATASETS if dataset.name == "project").data_path == (
-        "foundation/core/project/rows.jsonl"
-    )
+    assert next(
+        dataset for dataset in DATASETS if dataset.name == "project"
+    ).data_path == ("foundation/core/project/rows.jsonl")
     assert (
-        next(dataset for dataset in DATASETS if dataset.name == "system_type").index_path
+        next(
+            dataset for dataset in DATASETS if dataset.name == "system_type"
+        ).index_path
         == "foundation/reference/system_type/index.jsonl"
     )
     assert (
-        next(dataset for dataset in DATASETS if dataset.name == "gold_attribute").data_path
+        next(
+            dataset for dataset in DATASETS if dataset.name == "gold_attribute"
+        ).data_path
         == "metadata/core/gold_attribute/rows.jsonl"
     )
-    assert all(".." not in path.split("/") and not path.startswith("/") for path in data_paths)
+    assert all(
+        ".." not in path.split("/") and not path.startswith("/") for path in data_paths
+    )
 
 
 def test_zone_datasets_share_physical_tables_without_sharing_paths() -> None:
@@ -96,17 +104,23 @@ def test_zone_datasets_share_physical_tables_without_sharing_paths() -> None:
         "silver_attribute",
         "gold_attribute",
     )
-    assert len({dataset.data_path for dataset in (*object_datasets, *attribute_datasets)}) == 8
+    assert (
+        len({dataset.data_path for dataset in (*object_datasets, *attribute_datasets)})
+        == 8
+    )
 
 
 def test_physical_schema_contract_is_closed_and_self_consistent() -> None:
     assert len(TABLES) == 23
     assert len({table.database_table for table in TABLES}) == 23
     tables = {table.database_table: table for table in TABLES}
+    forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
 
     for dataset in DATASETS:
         table = tables[dataset.database_table]
         column_names = {column.name for column in table.columns}
+        snapshot_column_names = {column.name for column in table.snapshot_columns}
+        assert forbidden_columns.isdisjoint(snapshot_column_names)
         assert set(dataset.primary_key) <= column_names
         assert set(dataset.display_columns) <= column_names
         assert all(set(group) <= column_names for group in table.unique_column_groups)
@@ -120,14 +134,18 @@ def test_physical_schema_contract_is_closed_and_self_consistent() -> None:
 
 def test_schema_document_contains_complete_viewer_metadata() -> None:
     schema = build_schema_document()
-    assert schema["schema_version"] == "1.0"
+    assert schema["schema_version"] == "2.0"
     assert schema["snapshot_kind"] == "metadata"
     datasets = schema["datasets"]
     assert isinstance(datasets, list)
     assert len(datasets) == 29
 
-    source_object = next(dataset for dataset in datasets if dataset["name"] == "source_object")
-    bronze_object = next(dataset for dataset in datasets if dataset["name"] == "bronze_object")
+    source_object = next(
+        dataset for dataset in datasets if dataset["name"] == "source_object"
+    )
+    bronze_object = next(
+        dataset for dataset in datasets if dataset["name"] == "bronze_object"
+    )
     assert source_object == {
         "name": "source_object",
         "label": "Source Objects",
@@ -151,7 +169,7 @@ def test_schema_document_contains_complete_viewer_metadata() -> None:
             }
             for column in next(
                 table for table in TABLES if table.database_table == "core.object"
-            ).columns
+            ).snapshot_columns
         ],
         "foreign_keys": [
             {

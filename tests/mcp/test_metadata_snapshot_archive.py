@@ -37,10 +37,6 @@ def encoded_datasets(*, include_project: bool = False) -> tuple[EncodedDataset, 
                     "project_name": "Risk Analytics",
                     "project_description": None,
                     "is_active": True,
-                    "created_time": CREATED_TIME,
-                    "created_by": "fixture",
-                    "updated_time": CREATED_TIME,
-                    "updated_by": "fixture",
                 }
             ],
         )
@@ -79,11 +75,15 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         assert all(".." not in name.split("/") and "\\" not in name for name in names)
         assert all(not info.is_dir() for info in infos)
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in infos)
-        assert all(stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos)
+        assert all(
+            stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos
+        )
 
         assert manifest["snapshot_id"] == str(SNAPSHOT_ID)
         assert manifest["tenant_id"] == "123"
-        assert manifest["created_time"] == "2026-08-11T16:00:00Z"
+        assert manifest["schema_version"] == "2.0"
+        assert manifest["generated_at"] == "2026-08-11T16:00:00Z"
+        assert "created_time" not in manifest
         assert manifest["available_until"] == "2026-08-12T16:00:00Z"
         assert manifest["counts"] == {
             "physical_table_count": 23,
@@ -103,11 +103,15 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
             assert member["sha256"] == hashlib.sha256(content).hexdigest()
         assert manifest["schema"] == {
             "path": "schema.json",
-            "sha256": hashlib.sha256(archive.read("metadata-snapshot/schema.json")).hexdigest(),
+            "sha256": hashlib.sha256(
+                archive.read("metadata-snapshot/schema.json")
+            ).hexdigest(),
         }
         assert manifest["index"] == {
             "path": "index.json",
-            "sha256": hashlib.sha256(archive.read("metadata-snapshot/index.json")).hexdigest(),
+            "sha256": hashlib.sha256(
+                archive.read("metadata-snapshot/index.json")
+            ).hexdigest(),
         }
     assert result.expanded_bytes == manifest["counts"]["expanded_bytes"]
 

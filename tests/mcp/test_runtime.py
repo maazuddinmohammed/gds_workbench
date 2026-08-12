@@ -189,6 +189,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_metadata_snapshot",
     ]
     assert all(tool.meta == {"gds/toolPolicy": "tenant_read"} for tool in tools.tools)
+    output_schemas = json.dumps([tool.output_schema for tool in tools.tools])
+    for forbidden_field in ("created_time", "created_by", "updated_time", "updated_by"):
+        assert f'"{forbidden_field}"' not in output_schemas
     assert result.is_error is False
     assert result.structured_content == {
         "schema_version": "1.0",
@@ -260,7 +263,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
 
     assert result.is_error is False
     assert result.structured_content == {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "snapshot_id": str(snapshot_id),
         "snapshot_kind": "metadata",
         "status": "ready",
@@ -289,7 +292,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
     assert database.audit_records[0].tool_name == "get_metadata_snapshot"
     assert database.audit_records[0].tenant_id == 123
     assert database.audit_records[0].input_metadata == {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "tenant_id": 123,
     }
     assert store.closed is True

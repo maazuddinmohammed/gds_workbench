@@ -75,11 +75,11 @@ class MetadataSnapshotContractModel(BaseModel):
 
 class GetMetadataSnapshotRequest(MetadataSnapshotContractModel):
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["2.0"] = "2.0"
 
 
 class GetMetadataSnapshotResult(MetadataSnapshotContractModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["2.0"] = "2.0"
     snapshot_id: UUID
     snapshot_kind: Literal["metadata"] = "metadata"
     status: Literal["ready"] = "ready"
@@ -129,7 +129,7 @@ def register_get_metadata_snapshot_tool(
     async def get_metadata_snapshot(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
-        schema_version: Literal["1.0"] = "1.0",
+        schema_version: Literal["2.0"] = "2.0",
     ) -> GetMetadataSnapshotResult:
         try:
             request = GetMetadataSnapshotRequest(
@@ -191,7 +191,7 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
         else "invalid"
     )
     return {
-        "schema_version": "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid",
+        "schema_version": "2.0" if arguments.get("schema_version", "2.0") == "2.0" else "invalid",
         "tenant_id": tenant_id,
     }
 

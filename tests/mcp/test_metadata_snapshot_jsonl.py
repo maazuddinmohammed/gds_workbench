@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import json
-from datetime import UTC, date, datetime, timedelta, timezone
+from datetime import date
 
 import pytest
 
@@ -9,21 +9,14 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotContractError,
     encode_dataset,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS, DatasetDefinition
+from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+    DATASETS,
+    DatasetDefinition,
+)
 
 
 def dataset(name: str) -> DatasetDefinition:
     return next(definition for definition in DATASETS if definition.name == name)
-
-
-def audit_values(day: int = 1) -> dict[str, object]:
-    timestamp = datetime(2026, 8, day, 12, 30, 45, 123456, tzinfo=UTC)
-    return {
-        "created_time": timestamp,
-        "created_by": "fixture",
-        "updated_time": timestamp,
-        "updated_by": "fixture",
-    }
 
 
 def project_row(project_id: int, name: str) -> dict[str, object]:
@@ -33,7 +26,29 @@ def project_row(project_id: int, name: str) -> dict[str, object]:
         "project_name": name,
         "project_description": None,
         "is_active": True,
-        **audit_values(),
+    }
+
+
+def test_snapshot_rows_exclude_database_audit_columns() -> None:
+    encoded = encode_dataset(
+        dataset("project"),
+        [
+            {
+                "project_id": 1,
+                "project_code": "P1",
+                "project_name": "Finance",
+                "project_description": None,
+                "is_active": True,
+            }
+        ],
+    )
+
+    assert json.loads(encoded.rows_jsonl) == {
+        "project_id": "1",
+        "project_code": "P1",
+        "project_name": "Finance",
+        "project_description": None,
+        "is_active": True,
     }
 
 
@@ -75,17 +90,6 @@ def test_jsonl_preserves_arrays_dates_nulls_and_utc_timestamps() -> None:
         "test_initial_batch_id": 9007199254740995,
         "test_incremental_batch_ids": [9007199254740997, None],
         "is_active": True,
-        "created_time": datetime(
-            2026,
-            8,
-            1,
-            8,
-            0,
-            tzinfo=timezone(timedelta(hours=-4)),
-        ),
-        "created_by": "fixture",
-        "updated_time": datetime(2026, 8, 1, 12, 0, tzinfo=UTC),
-        "updated_by": "fixture",
     }
     encoded = encode_dataset(dataset("connection"), [row])
     payload = json.loads(encoded.rows_jsonl)
@@ -94,7 +98,6 @@ def test_jsonl_preserves_arrays_dates_nulls_and_utc_timestamps() -> None:
     assert payload["test_initial_batch_id"] == "9007199254740995"
     assert payload["test_incremental_batch_ids"] == ["9007199254740997", None]
     assert payload["foreign_catalog"] is None
-    assert payload["created_time"] == "2026-08-01T12:00:00Z"
 
     control_row = {
         "copy_group_control_id": 1,
@@ -105,9 +108,10 @@ def test_jsonl_preserves_arrays_dates_nulls_and_utc_timestamps() -> None:
         "copy_group_control_initial_load_date": date(2026, 8, 1),
         "copy_group_control_last_run_time": None,
         "copy_group_control_last_run_value": None,
-        **audit_values(),
     }
-    control = json.loads(encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl)
+    control = json.loads(
+        encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl
+    )
     assert control["copy_group_control_initial_load_date"] == "2026-08-01"
 
 
@@ -120,11 +124,6 @@ def test_jsonl_rejects_schema_drift_invalid_values_and_duplicate_keys() -> None:
         encode_dataset(dataset("project"), [{**valid, "project_code": None}])
     with pytest.raises(SnapshotContractError, match="must be a BIGINT"):
         encode_dataset(dataset("project"), [{**valid, "project_id": True}])
-    with pytest.raises(SnapshotContractError, match="timezone-aware"):
-        encode_dataset(
-            dataset("project"),
-            [{**valid, "created_time": datetime(2026, 8, 1, 12, 0)}],
-        )
     with pytest.raises(SnapshotContractError, match="duplicate primary key"):
         encode_dataset(dataset("project"), [valid, project_row(1, "Duplicate")])
 

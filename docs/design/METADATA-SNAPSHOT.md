@@ -2,7 +2,7 @@
 
 **Status:** accepted for implementation  
 **Date:** 2026-08-11  
-**Contract version:** 1.0
+**Contract version:** 2.0
 
 ## Purpose
 
@@ -32,7 +32,7 @@ Tenant Read Tool Policy.
 ```python
 get_metadata_snapshot(
     tenant_id: int,
-    schema_version: Literal["1.0"] = "1.0",
+    schema_version: Literal["2.0"] = "2.0",
 )
 ```
 
@@ -44,7 +44,7 @@ Example result:
 
 ```json
 {
-  "schema_version": "1.0",
+  "schema_version": "2.0",
   "snapshot_id": "7d7cc8ad-62b5-44ef-aeb0-c09c770ff233",
   "snapshot_kind": "metadata",
   "status": "ready",
@@ -174,6 +174,8 @@ All scope rows for the requested Tenant, including inactive rows, are exported
 under `foundation` for explanation. Only active valid rows expand discovery.
 An ingestion mapping, Process, or Model Scope may select an Object outside this
 table; that is allowed because this table is not lineage or authorization.
+The table's four database audit columns remain operational in PostgreSQL but
+are not selected into the snapshot.
 
 ## Consistent SQL selection
 
@@ -289,7 +291,7 @@ metadata-snapshot/
 
 There are 23 physical source tables and 29 logical snapshot datasets. The
 physical `core.object` and `core.attribute` tables become eight Zone-specific
-datasets. Each dataset has exactly one `rows.jsonl` in version 1; no part files
+datasets. Each dataset has exactly one `rows.jsonl` in version 2; no part files
 are generated.
 
 Archive member names are constants. Database values never become directory or
@@ -299,10 +301,12 @@ symbolic link.
 
 ## JSONL encoding
 
-`rows.jsonl` contains one complete database row per UTF-8 line. Every selected
-database column is present in DDL order, including primary keys, foreign keys,
-audit columns, active state, and lock state. Rows are sorted by primary key.
-Newlines inside text values are JSON escaped.
+`rows.jsonl` contains one fixed-projection metadata row per UTF-8 line. Every
+selected business column is present in contract order, including primary keys,
+foreign keys, active state, and lock state. Database audit columns
+(`created_time`, `created_by`, `updated_time`, and `updated_by`) are never
+selected or exported. Rows are sorted by primary key. Newlines inside text
+values are JSON escaped.
 
 `index.jsonl` contains one bounded locator per row: the complete primary key, a
 human-readable label, `file: "rows.jsonl"`, and a one-based line number. It
@@ -331,7 +335,7 @@ Future Change Sets represent new identities with a separate typed
 
 The manifest is the immutable instance and integrity contract. It contains:
 
-- schema version, snapshot kind, snapshot ID, Tenant ID, creation time, and
+- schema version, snapshot kind, snapshot ID, Tenant ID, generation time, and
   availability time;
 - physical table, logical dataset, row, file, and expanded-byte counts;
 - the `foundation` and `metadata` sections;

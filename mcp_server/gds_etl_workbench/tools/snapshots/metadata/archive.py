@@ -49,7 +49,7 @@ def build_schema_document() -> dict[str, object]:
                         "nullable": column.nullable,
                         "generated": column.generated,
                     }
-                    for column in table.columns
+                    for column in table.snapshot_columns
                 ],
                 "foreign_keys": [
                     {
@@ -62,7 +62,7 @@ def build_schema_document() -> dict[str, object]:
             }
         )
     return {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "snapshot_kind": "metadata",
         "datasets": datasets,
     }
@@ -105,9 +105,9 @@ def encode_dataset(
 ) -> EncodedDataset:
     """Validate, order, and encode one dataset without filesystem access."""
     table = TABLES_BY_NAME[definition.database_table]
-    expected_columns = tuple(column.name for column in table.columns)
+    expected_columns = tuple(column.name for column in table.snapshot_columns)
     expected_column_set = frozenset(expected_columns)
-    columns_by_name = {column.name: column for column in table.columns}
+    columns_by_name = {column.name: column for column in table.snapshot_columns}
     encoded_rows: list[dict[str, object]] = []
     for row in rows:
         if frozenset(row) != expected_column_set:
@@ -198,7 +198,7 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
         )
 
     index_document = {
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "snapshot_kind": "metadata",
         "instructions": [
             "Read manifest.json and index.json first.",
@@ -284,11 +284,11 @@ def build_snapshot_archive(
     expanded_bytes = non_manifest_bytes
     for _attempt in range(4):
         manifest_document = {
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "snapshot_kind": "metadata",
             "snapshot_id": str(snapshot_id),
             "tenant_id": str(tenant_id),
-            "created_time": created_at,
+            "generated_at": created_at,
             "available_until": available_at,
             "counts": {
                 "physical_table_count": len(TABLES),
@@ -372,7 +372,7 @@ def build_snapshot_archive(
 
 def _validate_encoded_dataset(encoded: EncodedDataset) -> None:
     table = TABLES_BY_NAME[encoded.definition.database_table]
-    expected_columns = [column.name for column in table.columns]
+    expected_columns = [column.name for column in table.snapshot_columns]
     try:
         row_lines = encoded.rows_jsonl.decode("utf-8").splitlines()
         index_lines = encoded.index_jsonl.decode("utf-8").splitlines()

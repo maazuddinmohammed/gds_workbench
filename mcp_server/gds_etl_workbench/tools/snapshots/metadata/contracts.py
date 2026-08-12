@@ -71,6 +71,12 @@ class TableDefinition:
     unique_column_groups: tuple[tuple[str, ...], ...] = ()
     foreign_keys: tuple[ForeignKeyDefinition, ...] = ()
 
+    @property
+    def snapshot_columns(self) -> tuple[ColumnDefinition, ...]:
+        return tuple(column for column in self.columns if column.name not in AUDIT_COLUMN_NAMES)
+
+
+AUDIT_COLUMN_NAMES = frozenset({"created_time", "created_by", "updated_time", "updated_by"})
 
 _AUDIT_COLUMNS = (
     ColumnDefinition("created_time", "timestamptz"),

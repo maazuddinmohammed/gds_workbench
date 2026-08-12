@@ -207,7 +207,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     assert blob.upload["length"] == 7
     assert blob.upload["metadata"] == {
         "snapshot_kind": "metadata",
-        "schema_version": "1.0",
+        "schema_version": "2.0",
         "tenant_id": "123",
         "snapshot_id": str(SNAPSHOT_ID),
         "created_time": "2026-08-11T16:00:00Z",

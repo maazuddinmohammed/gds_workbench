@@ -49,11 +49,21 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         seed = _seed_selection_graph(connection)
 
     encoded = await _select(postgres_database, seed.tenant_id)
-    rows_by_dataset = {dataset.definition.name: _decode_rows(dataset) for dataset in encoded}
+    rows_by_dataset = {
+        dataset.definition.name: _decode_rows(dataset) for dataset in encoded
+    }
 
     assert list(rows_by_dataset) == [dataset.name for dataset in DATASETS]
+    forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
+    assert all(
+        forbidden_columns.isdisjoint(row)
+        for rows in rows_by_dataset.values()
+        for row in rows
+    )
     assert len(rows_by_dataset["project"]) == 1
-    assert {row["tenant_id"] for row in rows_by_dataset["tenant"]} >= {str(seed.tenant_id)}
+    assert {row["tenant_id"] for row in rows_by_dataset["tenant"]} >= {
+        str(seed.tenant_id)
+    }
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
     assert len(rows_by_dataset["tenant_metadata_discovery_scope"]) == 1
@@ -455,7 +465,13 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
     assert requested_connection is not None and global_connection is not None
 
     object_specs = (
-        ("owned_source", "source", requested_connection["connection_id"], "owned", False),
+        (
+            "owned_source",
+            "source",
+            requested_connection["connection_id"],
+            "owned",
+            False,
+        ),
         ("mapped_bronze", "bronze", global_connection["connection_id"], "mapped", True),
         ("mapped_silver", "silver", global_connection["connection_id"], "mapped", True),
         (
@@ -526,7 +542,9 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (list(object_ids.values()),),
     ).fetchall()
-    attribute_id_by_object_id = {row["object_id"]: row["attribute_id"] for row in attribute_rows}
+    attribute_id_by_object_id = {
+        row["object_id"]: row["attribute_id"] for row in attribute_rows
+    }
     first_mapping = connection.execute(
         """
         INSERT INTO core.ingestion_object_mapping (
@@ -584,7 +602,11 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (object_ids["unrelated_bronze"], object_ids["inactive_model_gold"]),
     ).fetchone()
-    assert first_mapping is not None and second_mapping is not None and copy_mapping is not None
+    assert (
+        first_mapping is not None
+        and second_mapping is not None
+        and copy_mapping is not None
+    )
     assert inactive_unreferenced_mapping is not None and unrelated_mapping is not None
     connection.execute(
         """

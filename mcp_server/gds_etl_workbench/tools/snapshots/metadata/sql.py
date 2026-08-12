@@ -150,11 +150,7 @@ SELECT object_id,
        object_type_id,
        zone_id,
        is_locked,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.object
  WHERE object_id = ANY(%s::BIGINT[])
  ORDER BY object_id
@@ -178,11 +174,7 @@ SELECT attribute_id,
        is_mapped,
        is_purge,
        is_locked,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.attribute
  WHERE object_id = ANY(%s::BIGINT[])
  ORDER BY attribute_id
@@ -193,11 +185,7 @@ INGESTION_OBJECT_MAPPING_ROWS_SQL: LiteralString = """
 SELECT ingestion_object_mapping_id,
        source_object_id,
        target_object_id,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.ingestion_object_mapping
  WHERE source_object_id = ANY(%s::BIGINT[])
    AND target_object_id = ANY(%s::BIGINT[])
@@ -211,11 +199,7 @@ SELECT ingestion_attribute_mapping_id,
        target_object_id,
        source_attribute_id,
        target_attribute_id,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.ingestion_attribute_mapping
  WHERE ingestion_object_mapping_id = ANY(%s::BIGINT[])
  ORDER BY ingestion_attribute_mapping_id
@@ -228,11 +212,7 @@ SELECT copy_group_id,
        copy_group_name,
        copy_group_description,
        is_member_group_required,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.copy_group
  WHERE tenant_id = %s
  ORDER BY copy_group_id
@@ -245,11 +225,7 @@ SELECT member_group_id,
        member_group_name,
        member_group_description,
        member_group_initial_load_date,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.member_group
  WHERE tenant_id = %s
  ORDER BY member_group_id
@@ -263,11 +239,7 @@ SELECT copy_group_control_id,
        system_id,
        copy_group_control_initial_load_date,
        copy_group_control_last_run_time,
-       copy_group_control_last_run_value,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       copy_group_control_last_run_value
   FROM core.copy_group_control
  WHERE tenant_id = %s
  ORDER BY copy_group_control_id
@@ -289,11 +261,7 @@ SELECT copy.copy_id,
        copy.copy_source_order,
        copy.source_data_operation_id,
        copy.target_data_operation_id,
-       copy.is_active,
-       copy.created_time,
-       copy.created_by,
-       copy.updated_time,
-       copy.updated_by
+       copy.is_active
   FROM core.copy AS copy
   JOIN core.copy_group AS copy_group
     ON copy_group.copy_group_id = copy.copy_group_id
@@ -309,11 +277,7 @@ SELECT process_group_id,
        process_group_name,
        process_group_description,
        copy_group_id,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.process_group
  WHERE tenant_id = %s
  ORDER BY process_group_id
@@ -328,11 +292,7 @@ SELECT process.process_id,
        process.process_executable,
        process.process_type_id,
        process.process_group_id,
-       process.is_active,
-       process.created_time,
-       process.created_by,
-       process.updated_time,
-       process.updated_by
+       process.is_active
   FROM core.process AS process
   JOIN core.process_group AS process_group
     ON process_group.process_group_id = process.process_group_id
@@ -347,11 +307,7 @@ SELECT tenant_metadata_discovery_scope_id,
        connection_id,
        zone_id,
        object_schema,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.tenant_metadata_discovery_scope
  WHERE tenant_id = %s
  ORDER BY tenant_metadata_discovery_scope_id
@@ -369,11 +325,7 @@ SELECT connection.connection_id,
        connection.is_global_data_store,
        connection.test_initial_batch_id,
        connection.test_incremental_batch_ids,
-       connection.is_active,
-       connection.created_time,
-       connection.created_by,
-       connection.updated_time,
-       connection.updated_by
+       connection.is_active
   FROM core.connection AS connection
  WHERE connection.tenant_id = %s
     OR connection.connection_id = ANY(%s::BIGINT[])
@@ -395,11 +347,7 @@ SELECT tenant_id,
        gds_admin_catalog,
        gds_connection_id,
        tenant_visibility,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.tenant
  WHERE tenant_id = %s
     OR tenant_id = ANY(%s::BIGINT[])
@@ -411,11 +359,7 @@ SELECT project_id,
        project_code,
        project_name,
        project_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.project
  WHERE project_id = ANY(%s::BIGINT[])
  ORDER BY project_id
@@ -427,11 +371,7 @@ SELECT system_id,
        system_name,
        system_description,
        system_type_id,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM core.system
  WHERE system_id = ANY(%s::BIGINT[])
  ORDER BY system_id
@@ -442,11 +382,7 @@ SELECT system_type_id,
        system_type_code,
        system_type_name,
        system_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.system_type
  ORDER BY system_type_id
 """
@@ -456,11 +392,7 @@ SELECT connection_type_id,
        connection_type_code,
        connection_type_name,
        connection_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.connection_type
  ORDER BY connection_type_id
 """
@@ -470,11 +402,7 @@ SELECT object_type_id,
        object_type_code,
        object_type_name,
        object_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.object_type
  ORDER BY object_type_id
 """
@@ -484,11 +412,7 @@ SELECT zone_id,
        zone_code,
        zone_name,
        zone_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.zone
  ORDER BY zone_id
 """
@@ -497,11 +421,7 @@ CHUNK_TYPE_ROWS_SQL: LiteralString = """
 SELECT chunk_type_id,
        chunk_type_name,
        chunk_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.chunk_type
  ORDER BY chunk_type_id
 """
@@ -510,11 +430,7 @@ FILE_TYPE_ROWS_SQL: LiteralString = """
 SELECT file_type_id,
        file_type_name,
        file_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.file_type
  ORDER BY file_type_id
 """
@@ -523,11 +439,7 @@ DATA_OPERATION_ROWS_SQL: LiteralString = """
 SELECT data_operation_id,
        data_operation_name,
        data_operation_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.data_operation
  ORDER BY data_operation_id
 """
@@ -536,11 +448,7 @@ PROCESS_TYPE_ROWS_SQL: LiteralString = """
 SELECT process_type_id,
        process_type_name,
        process_type_description,
-       is_active,
-       created_time,
-       created_by,
-       updated_time,
-       updated_by
+       is_active
   FROM reference.process_type
  ORDER BY process_type_id
 """

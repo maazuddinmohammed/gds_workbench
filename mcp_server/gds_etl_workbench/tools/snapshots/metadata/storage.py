@@ -84,7 +84,7 @@ class AzureMetadataSnapshotStore:
         )
         metadata = {
             "snapshot_kind": "metadata",
-            "schema_version": "1.0",
+            "schema_version": "2.0",
             "tenant_id": str(tenant_id),
             "snapshot_id": str(snapshot_id),
             "created_time": _timestamp(created),
@@ -136,7 +136,7 @@ class AzureMetadataSnapshotStore:
             )
             expected = {
                 "snapshot_kind": "metadata",
-                "schema_version": "1.0",
+                "schema_version": "2.0",
                 "tenant_id": str(tenant_id),
                 "snapshot_id": str(snapshot_id),
                 "size_bytes": str(properties.size),
