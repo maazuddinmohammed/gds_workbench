@@ -195,7 +195,9 @@ def postgres_database() -> Iterator[DisposablePostgres]:
                         DO $create_test_runtime$
                         BEGIN
                             EXECUTE format(
-                                'CREATE ROLE %I LOGIN PASSWORD %L',
+                                'CREATE ROLE %I LOGIN NOINHERIT NOSUPERUSER '
+                                'NOCREATEDB NOCREATEROLE NOREPLICATION '
+                                'NOBYPASSRLS PASSWORD %L',
                                 {},
                                 current_setting('gds.test_runtime_password')
                             );

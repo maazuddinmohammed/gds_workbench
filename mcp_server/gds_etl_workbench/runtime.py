@@ -33,6 +33,7 @@ def create_application(
         pool_max=settings.pool_max,
         pool_timeout_seconds=settings.pool_timeout_seconds,
         require_runtime_role=settings.environment is Environment.PRODUCTION,
+        expected_schema_version=settings.schema_version,
     )
     identity_provider = IdentityProvider(settings.auth_mode)
     server = create_mcp_server(

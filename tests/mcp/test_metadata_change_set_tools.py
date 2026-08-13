@@ -394,6 +394,7 @@ async def test_get_metadata_change_set_returns_counts_or_one_dataset(
     assert counts["copy_group"] == 1
     assert len(counts) == 16
     assert database.audit_records[0].input_metadata["dataset"] == (dataset or "summary")
+    assert database.write_transaction_count == 1
 
 
 @pytest.mark.asyncio

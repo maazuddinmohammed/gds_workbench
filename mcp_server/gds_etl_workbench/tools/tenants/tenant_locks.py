@@ -167,7 +167,10 @@ def register_tenant_lock_tools(
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
             identity_arguments = _identity_arguments(principal)
-            async with database.read_transaction() as transaction:
+            # The governed SQL function takes row-share locks while it reads the
+            # authorization and active-lock state, so this cannot run inside a
+            # PostgreSQL READ ONLY transaction.
+            async with database.write_transaction() as transaction:
                 row = await transaction.fetch_one(
                     _CHECK_SQL,
                     (*identity_arguments, tenant_id),

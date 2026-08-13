@@ -195,6 +195,7 @@ async def test_check_tenant_lock_reports_an_unlocked_tenant() -> None:
     assert len(database.audit_records) == 1
     assert database.audit_records[0].tool_name == "check_tenant_lock"
     assert database.audit_records[0].status == "succeeded"
+    assert database.write_transaction_count == 1
 
 
 @pytest.mark.asyncio

@@ -117,6 +117,40 @@ BEGIN
         RAISE EXCEPTION 'Object lock source is invalid';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'core'
+           AND column_record.table_name = 'tenant_metadata_discovery_scope'
+           AND column_record.column_name = 'gds_connection_id'
+    ) OR EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'core'
+           AND column_record.table_name = 'tenant_metadata_discovery_scope'
+           AND column_record.column_name = 'connection_id'
+    ) THEN
+        RAISE EXCEPTION 'Metadata Discovery Scope Connection identifier is invalid';
+    END IF;
+
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = function_record.pronamespace
+         WHERE namespace_record.nspname = 'mcp'
+           AND function_record.proname = 'runtime_readiness'
+           AND function_record.pronargs = 0
+           AND NOT function_record.prosecdef
+           AND EXISTS (
+                   SELECT 1
+                     FROM unnest(function_record.proconfig) AS setting(value)
+                    WHERE setting.value = 'search_path=pg_catalog'
+               )
+    ) THEN
+        RAISE EXCEPTION 'runtime readiness function posture is invalid';
+    END IF;
+
     SELECT count(*)
       INTO v_security_definer_count
       FROM pg_catalog.pg_proc AS function_record
@@ -253,6 +287,10 @@ BEGIN
     ) OR NOT has_function_privilege(
         'gds_app_write',
         'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.runtime_readiness()',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'runtime function privileges are invalid';

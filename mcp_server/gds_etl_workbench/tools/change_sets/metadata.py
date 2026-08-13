@@ -511,7 +511,10 @@ def register_metadata_change_set_tools(
         del schema_version
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
-            async with database.read_transaction() as transaction:
+            # The governed ownership function calls the centralized
+            # authorization function, which takes row-share locks. It remains
+            # logically read-only but requires a read-write PostgreSQL transaction.
+            async with database.write_transaction() as transaction:
                 row = await transaction.fetch_one(
                     _GET_SQL,
                     (

@@ -90,72 +90,19 @@ class WriteDatabase(Database, Protocol):
     def write_transaction(self) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
-_READINESS_SQL = """
-WITH runtime_role AS (
-    SELECT oid, rolsuper, rolcreatedb, rolcreaterole
-      FROM pg_catalog.pg_roles
-     WHERE rolname = SESSION_USER
-)
+_READINESS_BOOTSTRAP_SQL = """
 SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
-       to_regclass('core.tenant') IS NOT NULL
-       AND to_regclass('security.principal') IS NOT NULL
-       AND to_regclass('security.entra_principal_identity') IS NOT NULL
-       AND to_regclass('security.tenant_principal_access') IS NOT NULL
-       AND to_regclass('mcp.tool_call_log') IS NOT NULL
-       AND to_regprocedure(
-           'security.authorize_tenant_operation(uuid,uuid,varchar,bigint,varchar)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'security.check_tenant_lock(uuid,uuid,varchar,bigint)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'security.acquire_tenant_lock(uuid,uuid,varchar,bigint,integer,varchar)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'security.renew_tenant_lock(uuid,uuid,varchar,bigint,integer)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'security.release_tenant_lock(uuid,uuid,varchar,bigint)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'security.override_tenant_lock(uuid,uuid,varchar,bigint,varchar)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.create_metadata_change_set(uuid,uuid,varchar,bigint,uuid,uuid)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,varchar,jsonb,uuid)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.get_metadata_change_set(uuid,uuid,varchar,bigint,uuid)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.record_metadata_change_set_validation(uuid,uuid,varchar,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.apply_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,character,uuid)'
-       ) IS NOT NULL
-       AND to_regprocedure(
-           'mcp.archive_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,uuid)'
-       ) IS NOT NULL AS schema_shape_ok,
-       CURRENT_USER = 'gds_app_write'
-       AND NOT runtime_role.rolsuper
-       AND NOT runtime_role.rolcreatedb
-       AND NOT runtime_role.rolcreaterole
-       AND (
-           SELECT count(*) = 1
-             FROM pg_catalog.pg_auth_members AS membership
-            WHERE membership.member = runtime_role.oid
-       )
-       AND EXISTS (
-           SELECT 1
-             FROM pg_catalog.pg_auth_members AS membership
-             JOIN pg_catalog.pg_roles AS granted_role
-               ON granted_role.oid = membership.roleid
-            WHERE membership.member = runtime_role.oid
-              AND granted_role.rolname = 'gds_app_write'
-       ) AS runtime_role_ok
-  FROM runtime_role
+       to_regprocedure('mcp.runtime_readiness()') IS NOT NULL AS contract_exists
+"""
+
+_READINESS_SQL = """
+SELECT schema_version,
+       postgres_major,
+       schema_shape_ok,
+       runtime_role_ok,
+       runtime_privileges_ok,
+       runtime_query_contract_ok
+  FROM mcp.runtime_readiness()
 """
 
 _APPEND_TOOL_CALL_LOG_SQL = """
@@ -208,8 +155,10 @@ class PostgresDatabase:
         pool_max: int,
         pool_timeout_seconds: int,
         require_runtime_role: bool,
+        expected_schema_version: str = "1.0.0",
     ) -> None:
         self._require_runtime_role = require_runtime_role
+        self._expected_schema_version = expected_schema_version
         self._pool = AsyncConnectionPool(
             conninfo=dsn,
             min_size=pool_min,
@@ -256,16 +205,33 @@ class PostgresDatabase:
     async def readiness(self) -> ReadinessRecord:
         try:
             async with self._pool.connection() as connection:
+                bootstrap_result = await connection.execute(_READINESS_BOOTSTRAP_SQL)
+                bootstrap = await bootstrap_result.fetchone()
+                if bootstrap is None:
+                    return ReadinessRecord(ready=False, code="database_posture_invalid")
+                if bootstrap["postgres_major"] != 18:
+                    return ReadinessRecord(ready=False, code="database_version_invalid")
+                if not bootstrap["contract_exists"]:
+                    return ReadinessRecord(
+                        ready=False,
+                        code="database_schema_unavailable",
+                    )
                 result = await connection.execute(_READINESS_SQL)
                 row = await result.fetchone()
             if row is None:
                 return ReadinessRecord(ready=False, code="database_posture_invalid")
+            if row["schema_version"] != self._expected_schema_version:
+                return ReadinessRecord(ready=False, code="database_schema_unavailable")
             if row["postgres_major"] != 18:
                 return ReadinessRecord(ready=False, code="database_version_invalid")
             if not row["schema_shape_ok"]:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")
-            if self._require_runtime_role and not row["runtime_role_ok"]:
+            if self._require_runtime_role and (
+                not row["runtime_role_ok"] or not row["runtime_privileges_ok"]
+            ):
                 return ReadinessRecord(ready=False, code="database_role_invalid")
+            if not row["runtime_query_contract_ok"]:
+                return ReadinessRecord(ready=False, code="database_schema_unavailable")
             return ReadinessRecord(ready=True, code="ready")
         except PsycopgError:
             return ReadinessRecord(ready=False, code="database_unavailable")
