@@ -13,9 +13,9 @@ disagree.
 - `/mcp` uses stateless Streamable HTTP.
 - `get_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
   read-only SAS for the exact private Blob.
-- The registered MCP tools are read-only.
-- No Tenant Lock tool is registered yet. The governed database operations exist
-  so a later MCP or FastAPI adapter can use the same rules.
+- Metadata discovery and Snapshot tools are read-only.
+- Five governed Tenant Lock tools are registered: check, acquire, renew, release,
+  and explicit override.
 
 ## Authentication
 
@@ -87,10 +87,12 @@ human versus workload type does not affect ownership.
 - A different owner's lock blocks humans, workloads, Tenant Admins, and Super
   Admins alike.
 - Lock management requires Developer, Architect, Tenant Admin, or Super Admin.
-- Acquire is retry-safe for the existing owner.
+- Acquire succeeds only when the Tenant is unlocked. An existing lock, including
+  the caller's own lock, fails; the owner must use renew instead.
 - Only the owner may renew or release.
-- Override is explicit, replaces only the lock, requires a nonblank reason, and
-  records `force_unlocked`; it does not remove the prior owner's Tenant access.
+- Override is explicit, requires a nonblank reason, and force-releases only a
+  different owner's active lock. It records `force_unlocked`, does not acquire a
+  replacement, and does not remove the prior owner's Tenant access.
 - Default duration is 60 minutes; callers may request 1 through 240 minutes.
 - PostgreSQL `CURRENT_TIMESTAMP` owns acquired and expiry time.
 - Stale locks do not authorize or block writes. Interaction paths record
@@ -114,6 +116,7 @@ tools must call it in the same database transaction as their state change.
 
 Governed lock functions are:
 
+- `security.check_tenant_lock`
 - `security.acquire_tenant_lock`
 - `security.renew_tenant_lock`
 - `security.release_tenant_lock`
@@ -151,6 +154,9 @@ whether a cursor was supplied; it never records the cursor.
 `get_metadata_snapshot` records only schema version and validated requested
 Tenant ID. The middleware
 checks only MCP's `isError` flag and never reads or stores tool output.
+Tenant Lock tools record only Tenant ID, schema version, bounded duration, and
+whether optional purpose or required override reason was supplied. Purpose and
+override reason text are not copied into the MCP tool-call log.
 
 Authentication rejected before MCP execution and identities that do not map to
 an active internal Principal cannot produce a Principal-owned tool-call row.

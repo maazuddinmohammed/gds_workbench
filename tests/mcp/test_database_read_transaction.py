@@ -45,3 +45,22 @@ async def test_read_transaction_preserves_workbench_errors(
                 raise TenantNotFoundError()
     finally:
         await database.close()
+
+
+@pytest.mark.asyncio
+async def test_write_transaction_allows_governed_mutation_functions(
+    postgres_database: DisposablePostgres,
+) -> None:
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        async with database.write_transaction() as transaction:
+            posture = await transaction.fetch_one(
+                """
+                SELECT current_setting('transaction_read_only') AS read_only
+                """
+            )
+    finally:
+        await database.close()
+
+    assert posture == {"read_only": "off"}

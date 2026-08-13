@@ -108,6 +108,7 @@ BEGIN
      WHERE namespace_record.nspname = 'security'
        AND function_record.proname IN (
                'authorize_tenant_operation',
+               'check_tenant_lock',
                'acquire_tenant_lock',
                'override_tenant_lock',
                'renew_tenant_lock',
@@ -121,7 +122,7 @@ BEGIN
                 WHERE setting.value LIKE 'search_path=pg_catalog%'
            );
 
-    IF v_security_definer_count <> 6 THEN
+    IF v_security_definer_count <> 7 THEN
         RAISE EXCEPTION 'security function posture is invalid';
     END IF;
 
@@ -155,6 +156,26 @@ BEGIN
     IF NOT has_function_privilege(
         'gds_app_write',
         'security.authorize_tenant_operation(uuid,uuid,character varying,bigint,character varying)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'security.check_tenant_lock(uuid,uuid,character varying,bigint)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'security.acquire_tenant_lock(uuid,uuid,character varying,bigint,integer,character varying)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'security.renew_tenant_lock(uuid,uuid,character varying,bigint,integer)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'security.release_tenant_lock(uuid,uuid,character varying,bigint)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'security.override_tenant_lock(uuid,uuid,character varying,bigint,character varying)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',

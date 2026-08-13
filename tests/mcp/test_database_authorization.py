@@ -1191,7 +1191,170 @@ def test_developer_acquires_a_default_tenant_lock_with_an_audit_event(
     }
 
 
-def test_explicit_override_replaces_the_lock_and_audits_the_reason(
+def test_developer_checks_an_unlocked_tenant(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000030")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000030")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "AUTH_CHECK_UNLOCKED")
+        _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Checking Developer",
+            email="checking.developer@example.test",
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            tenant_role="developer",
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT *
+              FROM security.check_tenant_lock(
+                  %s::UUID,
+                  %s::UUID,
+                  'user'::VARCHAR,
+                  %s::BIGINT
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+
+    assert result == {
+        "authorized": True,
+        "denial_code": None,
+        "is_locked": False,
+        "owner_display_name": None,
+        "owned_by_current_principal": None,
+        "purpose": None,
+        "acquired_time": None,
+        "expires_time": None,
+    }
+
+
+def test_developer_checks_a_lock_owned_by_another_principal(
+    postgres_database: DisposablePostgres,
+) -> None:
+    owner_tenant_id = UUID("10000000-0000-0000-0000-000000000031")
+    owner_object_id = UUID("20000000-0000-0000-0000-000000000031")
+    checker_tenant_id = UUID("10000000-0000-0000-0000-000000000032")
+    checker_object_id = UUID("20000000-0000-0000-0000-000000000032")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "AUTH_CHECK_LOCKED")
+        _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Lock Owner",
+            email="check.owner@example.test",
+            entra_tenant_id=owner_tenant_id,
+            entra_object_id=owner_object_id,
+            tenant_role="developer",
+        )
+        _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Lock Checker",
+            email="lock.checker@example.test",
+            entra_tenant_id=checker_tenant_id,
+            entra_object_id=checker_object_id,
+            tenant_role="developer",
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        acquired = connection.execute(
+            """
+            SELECT acquired
+              FROM security.acquire_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  30::INTEGER, 'Metadata edit'::VARCHAR
+              )
+            """,
+            (owner_tenant_id, owner_object_id, tenant_id),
+        ).fetchone()
+        assert acquired == {"acquired": True}
+        result = connection.execute(
+            """
+            SELECT authorized,
+                   denial_code,
+                   is_locked,
+                   owner_display_name,
+                   owned_by_current_principal,
+                   purpose,
+                   acquired_time IS NOT NULL AS has_acquired_time,
+                   expires_time > acquired_time AS has_future_expiry
+              FROM security.check_tenant_lock(
+                  %s::UUID,
+                  %s::UUID,
+                  'user'::VARCHAR,
+                  %s::BIGINT
+              )
+            """,
+            (checker_tenant_id, checker_object_id, tenant_id),
+        ).fetchone()
+
+    assert result == {
+        "authorized": True,
+        "denial_code": None,
+        "is_locked": True,
+        "owner_display_name": "Lock Owner",
+        "owned_by_current_principal": False,
+        "purpose": "Metadata edit",
+        "has_acquired_time": True,
+        "has_future_expiry": True,
+    }
+
+
+def test_acquire_fails_when_the_current_principal_already_owns_the_lock(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000033")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000033")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "AUTH_ACQUIRE_STRICT")
+        _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Strict Lock Owner",
+            email="strict.lock.owner@example.test",
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            tenant_role="developer",
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        first = connection.execute(
+            """
+            SELECT acquired
+              FROM security.acquire_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  60::INTEGER, 'First edit'::VARCHAR
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+        second = connection.execute(
+            """
+            SELECT acquired, denial_code, owner_display_name, purpose
+              FROM security.acquire_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  60::INTEGER, 'Second edit'::VARCHAR
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+
+    assert first == {"acquired": True}
+    assert second == {
+        "acquired": False,
+        "denial_code": "tenant_locked",
+        "owner_display_name": "Strict Lock Owner",
+        "purpose": "First edit",
+    }
+
+
+def test_explicit_override_releases_another_principals_lock_and_audits_the_reason(
     postgres_database: DisposablePostgres,
 ) -> None:
     first_tenant_id = UUID("10000000-0000-0000-0000-000000000005")
@@ -1233,26 +1396,37 @@ def test_explicit_override_replaces_the_lock_and_audits_the_reason(
         assert acquired == {"acquired": True}
         overridden = connection.execute(
             """
-            SELECT acquired, denial_code, owner_display_name, purpose
+            SELECT overridden,
+                   denial_code,
+                   previous_owner_display_name,
+                   previous_purpose
               FROM security.override_tenant_lock(
                   %s::UUID,
                   %s::UUID,
                   'user'::VARCHAR,
                   %s::BIGINT,
-                  NULL::INTEGER,
-                  'Second edit'::VARCHAR,
                   'Coordinated handoff'::VARCHAR
+              )
+            """,
+            (second_tenant_id, second_object_id, tenant_id),
+        ).fetchone()
+        checked = connection.execute(
+            """
+            SELECT is_locked
+              FROM security.check_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT
               )
             """,
             (second_tenant_id, second_object_id, tenant_id),
         ).fetchone()
 
     assert overridden == {
-        "acquired": True,
+        "overridden": True,
         "denial_code": None,
-        "owner_display_name": "Second Developer",
-        "purpose": "Second edit",
+        "previous_owner_display_name": "First Developer",
+        "previous_purpose": "First edit",
     }
+    assert checked == {"is_locked": False}
     with postgres_database.connect_owner() as connection:
         events = connection.execute(
             """
@@ -1279,13 +1453,71 @@ def test_explicit_override_replaces_the_lock_and_audits_the_reason(
             "lock_acted_by_principal_id": second_principal_id,
             "tenant_lock_event_reason": "Coordinated handoff",
         },
-        {
-            "tenant_lock_event_type": "acquired",
-            "lock_owner_principal_id": second_principal_id,
-            "lock_acted_by_principal_id": second_principal_id,
-            "tenant_lock_event_reason": None,
-        },
     ]
+
+
+def test_override_does_not_release_the_current_principals_lock(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000034")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000034")
+    with postgres_database.connect_owner() as connection:
+        tenant_id = _seed_private_tenant(connection, "AUTH_OVERRIDE_OWN")
+        _seed_user_actor(
+            connection,
+            tenant_id=tenant_id,
+            display_name="Own Lock Developer",
+            email="own.lock.developer@example.test",
+            entra_tenant_id=entra_tenant_id,
+            entra_object_id=entra_object_id,
+            tenant_role="developer",
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        acquired = connection.execute(
+            """
+            SELECT acquired
+              FROM security.acquire_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  60::INTEGER, 'Own edit'::VARCHAR
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+        assert acquired == {"acquired": True}
+        overridden = connection.execute(
+            """
+            SELECT overridden,
+                   denial_code,
+                   previous_owner_display_name,
+                   previous_owned_by_current_principal
+              FROM security.override_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  'Wrong operation'::VARCHAR
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+        checked = connection.execute(
+            """
+            SELECT is_locked, owned_by_current_principal
+              FROM security.check_tenant_lock(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id),
+        ).fetchone()
+
+    assert overridden == {
+        "overridden": False,
+        "denial_code": "tenant_locked",
+        "previous_owner_display_name": "Own Lock Developer",
+        "previous_owned_by_current_principal": True,
+    }
+    assert checked == {
+        "is_locked": True,
+        "owned_by_current_principal": True,
+    }
 
 
 def test_only_the_owner_can_renew_a_tenant_lock(

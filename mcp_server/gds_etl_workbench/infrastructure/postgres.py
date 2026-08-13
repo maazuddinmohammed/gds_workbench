@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import AsyncIterator, Mapping
+from collections.abc import AsyncGenerator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from dataclasses import dataclass
 from enum import StrEnum
@@ -60,6 +60,10 @@ class ReadTransaction(Protocol):
     ) -> list[dict[str, Any]]: ...
 
 
+class WriteTransaction(ReadTransaction, Protocol):
+    """Small write interface limited to fixed tool-owned SQL calls."""
+
+
 class Database(Protocol):
     """Shared database lifecycle, read, and audit interface."""
 
@@ -94,6 +98,21 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('mcp.tool_call_log') IS NOT NULL
        AND to_regprocedure(
            'security.authorize_tenant_operation(uuid,uuid,varchar,bigint,varchar)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'security.check_tenant_lock(uuid,uuid,varchar,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'security.acquire_tenant_lock(uuid,uuid,varchar,bigint,integer,varchar)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'security.renew_tenant_lock(uuid,uuid,varchar,bigint,integer)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'security.release_tenant_lock(uuid,uuid,varchar,bigint)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'security.override_tenant_lock(uuid,uuid,varchar,bigint,varchar)'
        ) IS NOT NULL AS schema_shape_ok,
        CURRENT_USER = 'gds_app_write'
        AND NOT runtime_role.rolsuper
@@ -189,7 +208,7 @@ class PostgresDatabase:
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncIterator[ReadTransaction]:
+    ) -> AsyncGenerator[ReadTransaction]:
         try:
             async with self._pool.connection() as connection, connection.transaction():
                 if isolation is ReadIsolation.REPEATABLE_READ:
@@ -198,6 +217,14 @@ class PostgresDatabase:
                     )
                 else:
                     await connection.execute("SET TRANSACTION READ ONLY")
+                yield _PostgresReadTransaction(connection)
+        except PsycopgError as exc:
+            raise DependencyUnavailableError() from exc
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
+        try:
+            async with self._pool.connection() as connection, connection.transaction():
                 yield _PostgresReadTransaction(connection)
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc

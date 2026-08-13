@@ -1,12 +1,15 @@
 # GDS ETL Workbench MCP scaffold
 
-This is the Azure App Service code root. It contains ten read-only MCP tools:
+This is the Azure App Service code root. It contains ten read tools and five
+Tenant Lock tools:
 
 - `list_tenants`, `get_tenant_details`;
 - `list_objects`, `get_objects`, `get_object_lineage`;
 - `list_copy_groups`, `get_copy_group`;
 - `list_process_groups`, `get_process_group`; and
-- `get_metadata_snapshot`.
+- `get_metadata_snapshot`; and
+- `check_tenant_lock`, `acquire_tenant_lock`, `renew_tenant_lock`,
+  `release_tenant_lock`, `override_tenant_lock`.
 
 It also contains health routes and private Metadata Snapshot storage.
 
@@ -18,17 +21,19 @@ It also contains health routes and private Metadata Snapshot storage.
 - `tools/catalog/`: Object visibility, Object detail, and ingestion-lineage reads.
 - `tools/ingestion/`: Tenant-owned Copy Group reads.
 - `tools/processing/`: Process Group reads resolved through Tenant Copy Groups.
+- `tools/tenants/tenant_locks.py`: all five governed Tenant Lock contracts and
+  fixed SQL calls in one module.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
   generation, Azure storage, and MCP binding.
 - `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role and Tool Policy vocabulary, safe errors, and shared ID-free
   metadata Pydantic records used by snapshots and future change sets.
-- `infrastructure/`: shared PostgreSQL pool, readiness, read transactions, and
-  bounded append-only audit inserts.
+- `infrastructure/`: shared PostgreSQL pool, readiness, read transactions,
+  governed-function write transactions, and bounded append-only audit inserts.
 - Tests live outside this deployable folder in `../tests/mcp/`.
 
 Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`
-envelope. The request never supplies Principal IDs, Tenant IDs, or roles.
+envelope. Tool requests supply the target Tenant ID, but never Principal IDs or roles.
 PostgreSQL resolves the active Principal and effective Tenant access.
 
 Every completed tool call by an active resolved Principal appends one bounded
@@ -44,7 +49,7 @@ the server-owned Super Admin flag.
 requirement, uses the synthetic display name `Local Developer`, and lists all
 active Tenants. Production derives Easy Auth, HTTPS, and the public host
 allowlist. Tenant Lock, revision, audit, and business invariants remain
-production behavior for future write tools.
+production behavior. Local Development identity cannot own a production lock.
 
 ## Local run
 
@@ -133,6 +138,6 @@ Delegator at account scope. Configure lifecycle deletion for the code-owned
 `metadata/` prefix at or after the configured retention period. The application
 does not create containers, alter roles, or run broad Blob cleanup.
 
-Startup never applies DDL. The only background database mutation is bounded,
-audited expiration of stale Tenant Locks. No Tenant Lock MCP tool is registered
-in this scaffold.
+Startup never applies DDL. Background mutation is limited to bounded, audited
+expiration of stale Tenant Locks. Lock tools can mutate locks only through the
+governed SQL functions; they cannot directly change the lock tables.

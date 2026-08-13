@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from typing import cast
 
 from mcp.server.mcpserver import MCPServer
 from starlette.requests import Request
@@ -33,6 +34,10 @@ from gds_etl_workbench.tools.tenants.get_tenant_details import (
     register_get_tenant_details_tool,
 )
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
+from gds_etl_workbench.tools.tenants.tenant_locks import (
+    TenantLockDatabase,
+    register_tenant_lock_tools,
+)
 
 from .tool_audit import ToolCallAuditMiddleware
 
@@ -75,7 +80,11 @@ def create_mcp_server(
             "Check /health/ready before use. Start with list_tenants, then use Tenant, "
             "Object, Copy Group, Process Group, or direct ingestion-lineage reads. Prefer "
             "these bounded summaries before requesting a protected Metadata Snapshot. "
-            "Tenant visibility and roles are always resolved server-side."
+            "Before metadata changes, check_tenant_lock and then acquire_tenant_lock. "
+            "Use renew_tenant_lock only for your own lock. Release it when finished. "
+            "override_tenant_lock only force-releases another owner's lock; it never "
+            "acquires a replacement. Tenant identity, roles, and lock ownership are "
+            "always resolved server-side."
         ),
         lifespan=lifespan,
         middleware=[audit],
@@ -94,6 +103,12 @@ def create_mcp_server(
         database=database,
         identity_provider=identity_provider,
         authorizer=authorizer,
+        audit=audit,
+    )
+    register_tenant_lock_tools(
+        server,
+        database=cast(TenantLockDatabase, database),
+        identity_provider=identity_provider,
         audit=audit,
     )
     register_list_objects_tool(

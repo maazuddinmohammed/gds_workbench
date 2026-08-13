@@ -402,8 +402,100 @@ BEGIN
 END;
 $authorize_tenant_operation$;
 
--- Acquire is retry-safe for the current owner. A caller-selected duration is
--- bounded to 1..240 minutes; omission uses the server-owned 60-minute default.
+-- Return only the active Tenant Lock state visible to an authorized lock
+-- manager. Expired rows are treated as unlocked and removed by the bounded
+-- expiry worker.
+CREATE FUNCTION security.check_tenant_lock(
+    p_entra_tenant_id UUID,
+    p_entra_object_id UUID,
+    p_expected_principal_type VARCHAR(30),
+    p_tenant_id BIGINT
+)
+RETURNS TABLE (
+    authorized BOOLEAN,
+    denial_code VARCHAR(50),
+    is_locked BOOLEAN,
+    owner_display_name VARCHAR(200),
+    owned_by_current_principal BOOLEAN,
+    purpose VARCHAR(500),
+    acquired_time TIMESTAMPTZ,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, security, core
+AS $check_tenant_lock$
+DECLARE
+    v_decision RECORD;
+    v_existing_lock RECORD;
+BEGIN
+    SELECT *
+      INTO v_decision
+      FROM security.authorize_tenant_operation(
+          p_entra_tenant_id,
+          p_entra_object_id,
+          p_expected_principal_type,
+          p_tenant_id,
+          'tenant_lock_manage'
+      );
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RETURN QUERY SELECT
+            FALSE,
+            coalesce(
+                v_decision.denial_code,
+                'authorization_denied'
+            )::VARCHAR(50),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(200),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT lock_owner.principal_display_name,
+           tenant_lock.locked_by_principal_id = v_decision.principal_id
+               AS owned_by_current_principal,
+           tenant_lock.tenant_lock_purpose,
+           tenant_lock.tenant_lock_acquired_time,
+           tenant_lock.tenant_lock_expires_time
+      INTO v_existing_lock
+      FROM security.tenant_lock AS tenant_lock
+      JOIN security.principal AS lock_owner
+        ON lock_owner.principal_id = tenant_lock.locked_by_principal_id
+     WHERE tenant_lock.tenant_id = p_tenant_id
+       AND tenant_lock.tenant_lock_expires_time > CURRENT_TIMESTAMP
+     FOR SHARE OF tenant_lock, lock_owner;
+
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            TRUE,
+            NULL::VARCHAR(50),
+            FALSE,
+            NULL::VARCHAR(200),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    RETURN QUERY SELECT
+        TRUE,
+        NULL::VARCHAR(50),
+        TRUE,
+        v_existing_lock.principal_display_name::VARCHAR(200),
+        v_existing_lock.owned_by_current_principal::BOOLEAN,
+        v_existing_lock.tenant_lock_purpose::VARCHAR(500),
+        v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
+        v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
+END;
+$check_tenant_lock$;
+
+-- Acquire succeeds only when the Tenant is unlocked. A caller-selected
+-- duration is bounded to 1..240 minutes; omission uses the 60-minute default.
 CREATE FUNCTION security.acquire_tenant_lock(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -514,23 +606,13 @@ BEGIN
     END IF;
 
     IF v_existing_lock IS NOT NULL THEN
-        IF v_existing_lock.locked_by_principal_id = v_decision.principal_id THEN
-            RETURN QUERY SELECT
-                TRUE,
-                NULL::VARCHAR(50),
-                v_existing_lock.principal_display_name::VARCHAR(200),
-                v_existing_lock.tenant_lock_purpose::VARCHAR(500),
-                v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
-                v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
-        ELSE
-            RETURN QUERY SELECT
-                FALSE,
-                'tenant_locked'::VARCHAR(50),
-                v_existing_lock.principal_display_name::VARCHAR(200),
-                v_existing_lock.tenant_lock_purpose::VARCHAR(500),
-                v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
-                v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
-        END IF;
+        RETURN QUERY SELECT
+            FALSE,
+            'tenant_locked'::VARCHAR(50),
+            v_existing_lock.principal_display_name::VARCHAR(200),
+            v_existing_lock.tenant_lock_purpose::VARCHAR(500),
+            v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
+            v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
 
@@ -581,25 +663,23 @@ BEGIN
 END;
 $acquire_tenant_lock$;
 
--- Override is an explicit lock-management operation. It never changes the
--- displaced Principal's Tenant Role; it replaces only the active lock and
--- preserves the reason in the append-only lock event stream.
+-- Override force-releases another Principal's active lock. It never changes
+-- Tenant access and deliberately does not acquire a replacement lock.
 CREATE FUNCTION security.override_tenant_lock(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
     p_expected_principal_type VARCHAR(30),
     p_tenant_id BIGINT,
-    p_requested_duration_minutes INTEGER,
-    p_purpose VARCHAR(500),
     p_reason VARCHAR(2000)
 )
 RETURNS TABLE (
-    acquired BOOLEAN,
+    overridden BOOLEAN,
     denial_code VARCHAR(50),
-    owner_display_name VARCHAR(200),
-    purpose VARCHAR(500),
-    acquired_time TIMESTAMPTZ,
-    expires_time TIMESTAMPTZ
+    previous_owner_display_name VARCHAR(200),
+    previous_owned_by_current_principal BOOLEAN,
+    previous_purpose VARCHAR(500),
+    previous_acquired_time TIMESTAMPTZ,
+    previous_expires_time TIMESTAMPTZ
 )
 LANGUAGE plpgsql
 VOLATILE
@@ -612,14 +692,6 @@ DECLARE
 BEGIN
     IF NOT reference.is_nonblank(p_reason) THEN
         RAISE EXCEPTION 'lock override reason is required' USING ERRCODE = '22023';
-    END IF;
-    IF coalesce(p_requested_duration_minutes, 60) NOT BETWEEN 1 AND 240 THEN
-        RAISE EXCEPTION 'lock duration must be between 1 and 240 minutes'
-            USING ERRCODE = '22023';
-    END IF;
-    IF p_purpose IS NOT NULL AND NOT reference.is_nonblank(p_purpose) THEN
-        RAISE EXCEPTION 'lock purpose must be nonblank when provided'
-            USING ERRCODE = '22023';
     END IF;
 
     PERFORM 1
@@ -644,6 +716,7 @@ BEGIN
                 'authorization_denied'
             )::VARCHAR(50),
             NULL::VARCHAR(200),
+            NULL::BOOLEAN,
             NULL::VARCHAR(500),
             NULL::TIMESTAMPTZ,
             NULL::TIMESTAMPTZ;
@@ -652,14 +725,30 @@ BEGIN
 
     SELECT tenant_lock.tenant_lock_id,
            tenant_lock.locked_by_principal_id,
+           lock_owner.principal_display_name,
+           tenant_lock.tenant_lock_purpose,
            tenant_lock.tenant_lock_acquired_time,
            tenant_lock.tenant_lock_expires_time
       INTO v_existing_lock
       FROM security.tenant_lock AS tenant_lock
+      JOIN security.principal AS lock_owner
+        ON lock_owner.principal_id = tenant_lock.locked_by_principal_id
      WHERE tenant_lock.tenant_id = p_tenant_id
-     FOR UPDATE;
+     FOR UPDATE OF tenant_lock;
 
-    IF FOUND AND v_existing_lock.locked_by_principal_id <> v_decision.principal_id THEN
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'tenant_lock_required'::VARCHAR(50),
+            NULL::VARCHAR(200),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    IF v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP THEN
         INSERT INTO security.tenant_lock_event (
             tenant_id,
             tenant_lock_id,
@@ -672,44 +761,68 @@ BEGIN
         ) VALUES (
             p_tenant_id,
             v_existing_lock.tenant_lock_id,
-            CASE
-                WHEN v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP
-                    THEN 'expired'
-                ELSE 'force_unlocked'
-            END,
+            'expired',
             v_existing_lock.locked_by_principal_id,
-            CASE
-                WHEN v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP
-                    THEN NULL
-                ELSE v_decision.principal_id
-            END,
+            NULL,
             v_existing_lock.tenant_lock_acquired_time,
             v_existing_lock.tenant_lock_expires_time,
-            CASE
-                WHEN v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP
-                    THEN NULL
-                ELSE p_reason
-            END
+            NULL
         );
         DELETE FROM security.tenant_lock AS tenant_lock
          WHERE tenant_lock.tenant_lock_id = v_existing_lock.tenant_lock_id;
+        RETURN QUERY SELECT
+            FALSE,
+            'tenant_lock_required'::VARCHAR(50),
+            NULL::VARCHAR(200),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
     END IF;
 
-    RETURN QUERY
-    SELECT result.acquired,
-           result.denial_code,
-           result.owner_display_name,
-           result.purpose,
-           result.acquired_time,
-           result.expires_time
-      FROM security.acquire_tenant_lock(
-          p_entra_tenant_id,
-          p_entra_object_id,
-          p_expected_principal_type,
-          p_tenant_id,
-          p_requested_duration_minutes,
-          p_purpose
-      ) AS result;
+    IF v_existing_lock.locked_by_principal_id = v_decision.principal_id THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'tenant_locked'::VARCHAR(50),
+            v_existing_lock.principal_display_name::VARCHAR(200),
+            TRUE,
+            v_existing_lock.tenant_lock_purpose::VARCHAR(500),
+            v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
+            v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    INSERT INTO security.tenant_lock_event (
+        tenant_id,
+        tenant_lock_id,
+        tenant_lock_event_type,
+        lock_owner_principal_id,
+        lock_acted_by_principal_id,
+        tenant_lock_acquired_time,
+        tenant_lock_expires_time,
+        tenant_lock_event_reason
+    ) VALUES (
+        p_tenant_id,
+        v_existing_lock.tenant_lock_id,
+        'force_unlocked',
+        v_existing_lock.locked_by_principal_id,
+        v_decision.principal_id,
+        v_existing_lock.tenant_lock_acquired_time,
+        v_existing_lock.tenant_lock_expires_time,
+        p_reason
+    );
+    DELETE FROM security.tenant_lock AS tenant_lock
+     WHERE tenant_lock.tenant_lock_id = v_existing_lock.tenant_lock_id;
+
+    RETURN QUERY SELECT
+        TRUE,
+        NULL::VARCHAR(50),
+        v_existing_lock.principal_display_name::VARCHAR(200),
+        FALSE,
+        v_existing_lock.tenant_lock_purpose::VARCHAR(500),
+        v_existing_lock.tenant_lock_acquired_time::TIMESTAMPTZ,
+        v_existing_lock.tenant_lock_expires_time::TIMESTAMPTZ;
 END;
 $override_tenant_lock$;
 

@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import base64
 import json
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
@@ -25,6 +25,7 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     ToolCallLogRecord,
+    WriteTransaction,
 )
 from gds_etl_workbench.runtime import (
     create_application,
@@ -108,11 +109,15 @@ class FakeDatabase:
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncIterator[ReadTransaction]:
+    ) -> AsyncGenerator[ReadTransaction]:
         assert isolation in {
             ReadIsolation.READ_COMMITTED,
             ReadIsolation.REPEATABLE_READ,
         }
+        yield FakeReadTransaction(self)
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
         yield FakeReadTransaction(self)
 
 
@@ -186,6 +191,11 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert [tool.name for tool in tools.tools] == [
         "list_tenants",
         "get_tenant_details",
+        "check_tenant_lock",
+        "acquire_tenant_lock",
+        "renew_tenant_lock",
+        "release_tenant_lock",
+        "override_tenant_lock",
         "list_objects",
         "get_objects",
         "get_object_lineage",
@@ -195,7 +205,15 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_process_group",
         "get_metadata_snapshot",
     ]
-    assert all(tool.meta == {"gds/toolPolicy": "tenant_read"} for tool in tools.tools)
+    assert all(
+        tool.meta
+        == {
+            "gds/toolPolicy": (
+                "tenant_lock_manage" if "tenant_lock" in tool.name else "tenant_read"
+            )
+        }
+        for tool in tools.tools
+    )
     output_schemas = json.dumps([tool.output_schema for tool in tools.tools])
     for forbidden_field in ("created_time", "created_by", "updated_time", "updated_by"):
         assert f'"{forbidden_field}"' not in output_schemas

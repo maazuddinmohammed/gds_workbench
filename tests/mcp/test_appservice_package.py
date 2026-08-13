@@ -43,6 +43,7 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "gds_etl_workbench/tools/ingestion/copy_groups.py",
             "gds_etl_workbench/tools/processing/process_groups.py",
             "gds_etl_workbench/tools/tenants/get_tenant_details.py",
+            "gds_etl_workbench/tools/tenants/tenant_locks.py",
         } <= set(names)
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}

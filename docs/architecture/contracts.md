@@ -53,6 +53,26 @@ byte count, ZIP SHA-256, and `application/zip` content type. Metadata rows,
 JSONL, indexes, manifest, and ZIP bytes never enter MCP. Tenant Read is
 authorized before the SAS is minted. Tool-call logs never store the URL.
 
+## Tenant Lock tools
+
+Policy: `tenant_lock_manage`
+
+All five tools accept a positive `tenant_id` and schema version `"1.0"`. Identity,
+role, and lock ownership are derived server-side.
+
+| Tool | Additional request fields | Result |
+|---|---|---|
+| `check_tenant_lock` | none | `is_locked`; safe active-lock details or null |
+| `acquire_tenant_lock` | `duration_minutes` 1–240 (default 60); optional nonblank `purpose` up to 500 characters | `acquired=true`; caller-owned lock details |
+| `renew_tenant_lock` | `duration_minutes` 1–240 (default 60) | `renewed=true`; caller-owned lock details |
+| `release_tenant_lock` | none | `released=true`; `is_locked=false` |
+| `override_tenant_lock` | nonblank `reason` up to 2,000 characters | `overridden=true`; `is_locked=false`; previous safe lock details |
+
+Acquire fails for every active lock, including one owned by the caller. Renew and
+release require caller ownership. Override releases only another Principal's lock
+and never acquires a replacement. Lock details contain only owner display name,
+caller-ownership flag, optional purpose, and PostgreSQL-owned timestamps.
+
 ## Health
 
 `/health/live` returns only `{"status":"live"}`. `/health/ready` returns bounded

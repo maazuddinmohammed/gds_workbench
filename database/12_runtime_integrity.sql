@@ -19,6 +19,13 @@ GRANT EXECUTE ON FUNCTION security.authorize_tenant_operation(
     VARCHAR
 ) TO gds_app_write;
 
+GRANT EXECUTE ON FUNCTION security.check_tenant_lock(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT
+) TO gds_app_write;
+
 GRANT EXECUTE ON FUNCTION security.acquire_tenant_lock(
     UUID,
     UUID,
@@ -33,8 +40,6 @@ GRANT EXECUTE ON FUNCTION security.override_tenant_lock(
     UUID,
     VARCHAR,
     BIGINT,
-    INTEGER,
-    VARCHAR,
     VARCHAR
 ) TO gds_app_write;
 
