@@ -364,7 +364,7 @@ async def select_snapshot_datasets(
     )
     required_connection_ids = {
         *(row["connection_id"] for row in object_rows),
-        *(row["connection_id"] for row in discovery_scope_rows),
+        *(row["gds_connection_id"] for row in discovery_scope_rows),
     }
     connection_rows = await transaction.fetch_all(
         FOUNDATION_CONNECTION_ROWS_SQL,
@@ -435,7 +435,7 @@ async def select_snapshot_datasets(
         raise SnapshotContractError("foundation Object relationship is incomplete")
     if any(
         row["tenant_id"] != tenant_id
-        or row["connection_id"] not in connection_by_id
+        or row["gds_connection_id"] not in connection_by_id
         or row["zone_id"] not in reference_ids_by_dataset["zone"]
         for row in discovery_scope_rows
     ):

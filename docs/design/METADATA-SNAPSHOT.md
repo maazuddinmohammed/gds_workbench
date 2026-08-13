@@ -112,7 +112,7 @@ Add this admin-controlled Core table:
 CREATE TABLE core.tenant_metadata_discovery_scope (
     tenant_metadata_discovery_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    connection_id BIGINT NOT NULL,
+    gds_connection_id BIGINT NOT NULL,
     zone_id BIGINT NOT NULL,
     object_schema VARCHAR(400) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -122,7 +122,7 @@ CREATE TABLE core.tenant_metadata_discovery_scope (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_metadata_discovery_scope_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (connection_id)
+    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (gds_connection_id)
         REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
     CONSTRAINT fk_metadata_discovery_scope_zone FOREIGN KEY (zone_id)
         REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
@@ -134,7 +134,7 @@ CREATE TABLE core.tenant_metadata_discovery_scope (
 CREATE UNIQUE INDEX ux_metadata_discovery_scope
     ON core.tenant_metadata_discovery_scope (
         tenant_id,
-        connection_id,
+        gds_connection_id,
         zone_id,
         lower(btrim(object_schema))
     );
@@ -143,7 +143,7 @@ CREATE INDEX ix_metadata_discovery_scope_tenant_active
     ON core.tenant_metadata_discovery_scope (
         tenant_id,
         is_active,
-        connection_id,
+        gds_connection_id,
         zone_id
     );
 ```
@@ -251,6 +251,12 @@ There are 23 physical source tables and 29 logical snapshot datasets. The
 physical `core.object` and `core.attribute` tables become eight Zone-specific
 datasets. Objects and Attributes remain separate; Object rows never contain a
 nested or duplicate Attribute array.
+
+`is_locked` exists only on Object rows. Attribute rows do not duplicate it.
+A locked Object blocks changes to both that Object and its Attributes. Validate
+reports the staged records; Apply locks and rechecks the physical Object rows
+before its first write. Apply remains one PostgreSQL transaction, so any later
+failure rolls back all earlier dataset writes.
 
 The five Foundational datasets are Project, Tenant, System, Connection, and
 Tenant Metadata Discovery Scope. The eight allowlisted `reference.*` datasets

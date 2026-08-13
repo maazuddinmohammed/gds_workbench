@@ -11,7 +11,7 @@ WITH RECURSIVE requested_tenant AS (
 ),
 active_scope_config AS (
     SELECT scope.tenant_metadata_discovery_scope_id,
-           scope.connection_id,
+           scope.gds_connection_id,
            scope.zone_id,
            scope.object_schema,
            connection.is_active AS connection_is_active,
@@ -23,7 +23,7 @@ active_scope_config AS (
         ON scope.tenant_id = requested_tenant.tenant_id
        AND scope.is_active
       LEFT JOIN core.connection AS connection
-        ON connection.connection_id = scope.connection_id
+        ON connection.connection_id = scope.gds_connection_id
       LEFT JOIN reference.zone AS zone
         ON zone.zone_id = scope.zone_id
 ),
@@ -37,7 +37,7 @@ invalid_scope_config AS (
      LIMIT 1
 ),
 valid_scope_config AS (
-    SELECT connection_id, zone_id, object_schema
+    SELECT gds_connection_id, zone_id, object_schema
       FROM active_scope_config
      WHERE connection_is_active
        AND is_global_data_store
@@ -56,7 +56,7 @@ scope_objects AS (
     SELECT object.object_id
       FROM valid_scope_config AS scope
       JOIN core.object AS object
-        ON object.connection_id = scope.connection_id
+        ON object.connection_id = scope.gds_connection_id
        AND object.zone_id = scope.zone_id
        AND lower(btrim(object.object_schema)) = lower(btrim(scope.object_schema))
 ),
@@ -172,7 +172,6 @@ SELECT attribute_id,
        is_masking_required,
        is_mapped,
        is_purge,
-       is_locked,
        is_active
   FROM core.attribute
  WHERE object_id = ANY(%s::BIGINT[])
@@ -303,7 +302,7 @@ SELECT process.process_id,
 DISCOVERY_SCOPE_ROWS_SQL: LiteralString = """
 SELECT tenant_metadata_discovery_scope_id,
        tenant_id,
-       connection_id,
+       gds_connection_id,
        zone_id,
        object_schema,
        is_active

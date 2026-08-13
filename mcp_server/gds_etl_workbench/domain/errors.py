@@ -70,6 +70,14 @@ class MetadataChangeSetNotValidatedError(WorkbenchError):
         )
 
 
+class ObjectLockedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="object_locked",
+            message="Object is locked; neither it nor its Attributes can be changed.",
+        )
+
+
 class CandidateDigestConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

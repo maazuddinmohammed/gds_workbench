@@ -44,7 +44,7 @@ relevant_connection_ids AS (
       FROM requested_tenant
      WHERE requested_tenant.gds_connection_id IS NOT NULL
     UNION
-    SELECT scope.connection_id
+    SELECT scope.gds_connection_id
       FROM requested_tenant
       JOIN core.tenant_metadata_discovery_scope AS scope
         ON scope.tenant_id = requested_tenant.tenant_id
@@ -73,7 +73,7 @@ connection_rows AS (
                SELECT 1
                  FROM core.tenant_metadata_discovery_scope AS scope
                 WHERE scope.tenant_id = requested_tenant.tenant_id
-                  AND scope.connection_id = connection.connection_id
+                  AND scope.gds_connection_id = connection.connection_id
                   AND scope.is_active
            ) AS is_discovery_connection,
            count(object.object_id) FILTER (

@@ -131,7 +131,6 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
         "is_masking_required": False,
         "is_mapped": True,
         "is_purge": False,
-        "is_locked": False,
         "is_active": True,
     }
     return cast(
@@ -188,7 +187,7 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                 {
                     "tenant_metadata_discovery_scope_id": 5,
                     "tenant_id": 2,
-                    "connection_id": 3,
+                    "gds_connection_id": 3,
                     "zone_id": 21,
                     "object_schema": "dbo",
                     "is_active": True,

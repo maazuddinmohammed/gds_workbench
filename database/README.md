@@ -27,7 +27,7 @@ Stop if it fails. Never run fresh-install DDL over existing release schemas.
 Run `01` through `12` exactly once and in order. Each command is atomic:
 
 ```bash
-for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_mcp,11_runtime_account,12_runtime_integrity}.sql
+for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_mcp,11_mcp_metadata_apply,11_runtime_account,12_runtime_integrity}.sql
 do
   psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
     --single-transaction -f "$file" || exit 1

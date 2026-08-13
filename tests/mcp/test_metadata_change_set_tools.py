@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
+from mcp.types import TextContent
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
@@ -553,6 +554,84 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
     assert result.structured_content["status"] == "applied"
     assert result.structured_content["action_count"] == 0
     assert database.write_transaction_count == 1
+
+
+@pytest.mark.asyncio
+async def test_apply_metadata_change_set_returns_safe_locked_object_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    now = datetime(2026, 8, 13, 16, 30, tzinfo=UTC)
+    documents: dict[str, list[dict[str, object]]] = {
+        f"{name}_document": []
+        for name in (
+            "source_object",
+            "source_attribute",
+            "bronze_object",
+            "bronze_attribute",
+            "silver_object",
+            "silver_attribute",
+            "gold_object",
+            "gold_attribute",
+            "ingestion_object_mapping",
+            "ingestion_attribute_mapping",
+            "copy_group",
+            "member_group",
+            "copy_group_control",
+            "copy",
+            "process_group",
+            "process",
+        )
+    }
+    database = FakeDatabase(
+        get_row={
+            "found": True,
+            "denial_code": None,
+            "metadata_change_set_status": "active",
+            "draft_revision": 1,
+            **documents,
+        },
+        validation_row={
+            "recorded": True,
+            "denial_code": None,
+            "metadata_change_set_status": "validated",
+            "draft_revision": 1,
+            "candidate_digest": "a" * 64,
+            "validated_time": now,
+            "expires_time": now,
+        },
+        apply_row={
+            "applied": False,
+            "denial_code": "object_locked",
+            "metadata_change_set_status": "validated",
+            "draft_revision": 1,
+            "applied_time": None,
+            "action_count": 0,
+        },
+    )
+
+    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
+        return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
+
+    monkeypatch.setattr(
+        "gds_etl_workbench.tools.change_sets.metadata.select_snapshot_datasets",
+        select_empty_snapshot,
+    )
+
+    async with Client(_server(database)) as client:
+        result = await client.call_tool(
+            "apply_metadata_change_set",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "expected_draft_revision": 1,
+            },
+        )
+
+    assert result.is_error is True
+    assert isinstance(result.content[0], TextContent)
+    assert result.content[0].text.endswith(
+        "object_locked: Object is locked; neither it nor its Attributes can be changed."
+    )
 
 
 @pytest.mark.asyncio

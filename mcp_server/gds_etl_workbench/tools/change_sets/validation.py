@@ -13,6 +13,7 @@ from pydantic import ValidationError
 from gds_etl_workbench.tools.snapshots.metadata.archive import EncodedDataset
 from gds_etl_workbench.tools.snapshots.metadata.contracts import (
     DATASETS,
+    OBJECT_KEY,
     DatasetDefinition,
     ReferenceDefinition,
 )
@@ -94,6 +95,10 @@ def validate_metadata_documents(
         return _failed("schema", staged_count, issues)
 
     digest = _candidate_digest(staged)
+    issues = _validate_object_locks(current, staged)
+    if issues:
+        return _failed("locks", staged_count, issues, digest)
+
     issues = _validate_tenant_scope(tenant_code, current, staged)
     if issues:
         return _failed("tenant_scope", staged_count, issues, digest)
@@ -180,6 +185,37 @@ def _validate_schemas(
                 if len(issues) >= MAX_VALIDATION_ISSUES:
                     return current, staged, issues
     return current, staged, issues
+
+
+def _validate_object_locks(
+    current: Sequence[_Row],
+    staged: Sequence[_Row],
+) -> list[ValidationIssue]:
+    locked_object_keys = {
+        _normalized_key(OBJECT_KEY, row.values)
+        for row in current
+        if _definition(row.dataset).record_type == "object"
+        and row.values["is_locked"] is True
+    }
+    issues: list[ValidationIssue] = []
+    for row in staged:
+        record_type = _definition(row.dataset).record_type
+        if record_type not in {"object", "attribute"}:
+            continue
+        if _normalized_key(OBJECT_KEY, row.values) not in locked_object_keys:
+            continue
+        issues.append(
+            ValidationIssue(
+                "object_locked",
+                row.dataset,
+                row.record_number,
+                OBJECT_KEY,
+                "Object is locked; neither it nor its Attributes can be changed.",
+            )
+        )
+        if len(issues) >= MAX_VALIDATION_ISSUES:
+            break
+    return issues
 
 
 def _validate_tenant_scope(

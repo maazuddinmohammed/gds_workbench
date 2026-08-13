@@ -13,7 +13,7 @@ if TYPE_CHECKING:
 EXPECTED_COLUMNS = [
     "tenant_metadata_discovery_scope_id",
     "tenant_id",
-    "connection_id",
+    "gds_connection_id",
     "zone_id",
     "object_schema",
     "is_active",
@@ -92,7 +92,7 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
             "CHECK (reference.is_nonblank((object_schema)::text))"
         ),
         "fk_metadata_discovery_scope_connection": (
-            "FOREIGN KEY (connection_id) REFERENCES core.connection(connection_id)"
+            "FOREIGN KEY (gds_connection_id) REFERENCES core.connection(connection_id)"
         ),
         "fk_metadata_discovery_scope_tenant": (
             "FOREIGN KEY (tenant_id) REFERENCES core.tenant(tenant_id)"
@@ -122,14 +122,14 @@ def test_metadata_discovery_scope_uses_normalized_schema_identity(
             """
             INSERT INTO core.tenant_metadata_discovery_scope (
                 tenant_id,
-                connection_id,
+                gds_connection_id,
                 zone_id,
                 object_schema
             )
             VALUES (%s, %s, %s, 'risk_curated')
             RETURNING tenant_metadata_discovery_scope_id,
                       tenant_id,
-                      connection_id,
+                      gds_connection_id,
                       zone_id,
                       object_schema,
                       is_active
@@ -140,7 +140,7 @@ def test_metadata_discovery_scope_uses_normalized_schema_identity(
         assert row is not None
         assert row["tenant_metadata_discovery_scope_id"] > 0
         assert row["tenant_id"] == tenant_id
-        assert row["connection_id"] == connection_id
+        assert row["gds_connection_id"] == connection_id
         assert row["zone_id"] == zone_id
         assert row["object_schema"] == "risk_curated"
         assert row["is_active"] is True
@@ -150,7 +150,7 @@ def test_metadata_discovery_scope_uses_normalized_schema_identity(
                 """
                     INSERT INTO core.tenant_metadata_discovery_scope (
                         tenant_id,
-                        connection_id,
+                        gds_connection_id,
                         zone_id,
                         object_schema
                     )
@@ -164,7 +164,7 @@ def test_metadata_discovery_scope_uses_normalized_schema_identity(
                 """
                     INSERT INTO core.tenant_metadata_discovery_scope (
                         tenant_id,
-                        connection_id,
+                        gds_connection_id,
                         zone_id,
                         object_schema
                     )

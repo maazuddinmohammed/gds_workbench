@@ -101,6 +101,22 @@ BEGIN
         RAISE EXCEPTION 'workflow.mapping_attribute identifier is invalid';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'core'
+           AND column_record.table_name = 'object'
+           AND column_record.column_name = 'is_locked'
+    ) OR EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'core'
+           AND column_record.table_name = 'attribute'
+           AND column_record.column_name = 'is_locked'
+    ) THEN
+        RAISE EXCEPTION 'Object lock source is invalid';
+    END IF;
+
     SELECT count(*)
       INTO v_security_definer_count
       FROM pg_catalog.pg_proc AS function_record

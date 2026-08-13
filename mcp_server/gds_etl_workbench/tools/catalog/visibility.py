@@ -24,7 +24,7 @@ discovery_objects AS (
         ON scope.tenant_id = requested_tenant.tenant_id
        AND scope.is_active
       JOIN core.connection AS connection
-        ON connection.connection_id = scope.connection_id
+        ON connection.connection_id = scope.gds_connection_id
        AND connection.is_active
        AND connection.is_global_data_store
       JOIN reference.zone AS zone
@@ -32,7 +32,7 @@ discovery_objects AS (
        AND zone.is_active
        AND zone.zone_code IN ('bronze', 'silver', 'gold')
       JOIN core.object AS object
-        ON object.connection_id = scope.connection_id
+        ON object.connection_id = scope.gds_connection_id
        AND object.zone_id = scope.zone_id
        AND lower(btrim(object.object_schema)) = lower(btrim(scope.object_schema))
 ),

@@ -634,7 +634,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """
         INSERT INTO core.tenant_metadata_discovery_scope (
             tenant_id,
-            connection_id,
+            gds_connection_id,
             zone_id,
             object_schema
         )

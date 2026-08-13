@@ -138,6 +138,8 @@ def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
         "gold_attribute",
     )
     assert "attributes" not in object_datasets[0].row_model.model_fields
+    assert "is_locked" in object_datasets[0].row_model.model_fields
+    assert "is_locked" not in attribute_datasets[0].row_model.model_fields
 
 
 def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:

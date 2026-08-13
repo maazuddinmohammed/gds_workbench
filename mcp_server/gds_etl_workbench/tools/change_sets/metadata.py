@@ -28,6 +28,7 @@ from gds_etl_workbench.domain.errors import (
     MetadataChangeSetNotActiveError,
     MetadataChangeSetNotFoundError,
     MetadataChangeSetNotValidatedError,
+    ObjectLockedError,
     TenantLockedError,
     TenantLockRequiredError,
     TenantNotFoundError,
@@ -867,6 +868,8 @@ def _raise_governed_denial(row: Mapping[str, Any] | None) -> None:
         raise MetadataChangeSetNotActiveError()
     if denial_code == "metadata_change_set_not_validated":
         raise MetadataChangeSetNotValidatedError()
+    if denial_code == "object_locked":
+        raise ObjectLockedError()
     if denial_code == "candidate_digest_conflict":
         raise CandidateDigestConflictError()
     if denial_code == "draft_revision_conflict":

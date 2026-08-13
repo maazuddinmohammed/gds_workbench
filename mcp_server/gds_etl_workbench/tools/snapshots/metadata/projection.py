@@ -175,7 +175,7 @@ def project_id_free_rows(
             }
         )
     for row in raw_rows["tenant_metadata_discovery_scope"]:
-        scope_connection = connection_key(row["connection_id"])
+        scope_connection = connection_key(row["gds_connection_id"])
         projected["tenant_metadata_discovery_scope"].append(
             {
                 "scope_tenant_code": tenant_code(row["tenant_id"]),

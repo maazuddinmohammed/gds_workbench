@@ -85,7 +85,9 @@ MCP tool failures use safe `code: message` text because the SDK serializes tool
 exceptions. Relevant codes are `authentication_required`,
 `authorization_denied`, `tenant_not_found`, `tenant_lock_required`,
 `tenant_locked`, `invalid_request`, `dependency_unavailable`, and
-`internal_error`.
+`internal_error`. Metadata Change Set validation also returns `object_locked`
+when a staged Object or Attribute belongs to an existing locked Object. Apply
+rechecks the same lock in PostgreSQL before writing.
 
 Future tools must keep their contracts and declared policy beside their handler
 and use shared authorization. They may not accept Principal IDs, roles, actor

@@ -108,7 +108,7 @@ CREATE TABLE core.connection (
 CREATE TABLE core.tenant_metadata_discovery_scope (
     tenant_metadata_discovery_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
-    connection_id BIGINT NOT NULL,
+    gds_connection_id BIGINT NOT NULL,
     zone_id BIGINT NOT NULL,
     object_schema VARCHAR(400) NOT NULL,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
@@ -118,7 +118,7 @@ CREATE TABLE core.tenant_metadata_discovery_scope (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_metadata_discovery_scope_tenant FOREIGN KEY (tenant_id)
         REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (connection_id)
+    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (gds_connection_id)
         REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
     CONSTRAINT fk_metadata_discovery_scope_zone FOREIGN KEY (zone_id)
         REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
@@ -231,7 +231,6 @@ CREATE TABLE core.attribute (
     is_masking_required BOOLEAN NOT NULL DEFAULT FALSE,
     is_mapped BOOLEAN NOT NULL DEFAULT FALSE,
     is_purge BOOLEAN NOT NULL DEFAULT FALSE,
-    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -543,7 +542,7 @@ CREATE UNIQUE INDEX ux_member_group_name_ci
 CREATE UNIQUE INDEX ux_metadata_discovery_scope
     ON core.tenant_metadata_discovery_scope (
         tenant_id,
-        connection_id,
+        gds_connection_id,
         zone_id,
         lower(btrim(object_schema))
     );
@@ -563,7 +562,7 @@ CREATE INDEX ix_metadata_discovery_scope_tenant_active
     ON core.tenant_metadata_discovery_scope (
         tenant_id,
         is_active,
-        connection_id,
+        gds_connection_id,
         zone_id
     );
 CREATE INDEX ix_object_connection_active ON core.object (connection_id, is_active);

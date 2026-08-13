@@ -374,7 +374,6 @@ DATASETS = (
                 lookup_fields=(
                     "attribute_data_type",
                     "is_natural_key",
-                    "is_locked",
                     "is_active",
                 ),
             ),

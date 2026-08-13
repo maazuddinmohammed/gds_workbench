@@ -15,7 +15,7 @@ PHYSICAL_NATURAL_KEYS = {
     "core.connection": ("tenant_id", "system_id", "connection_code"),
     "core.tenant_metadata_discovery_scope": (
         "tenant_id",
-        "connection_id",
+        "gds_connection_id",
         "zone_id",
         "object_schema",
     ),
@@ -52,6 +52,24 @@ PHYSICAL_NATURAL_KEYS = {
         "process_executable",
     ),
 }
+
+
+def test_object_is_the_only_core_object_attribute_lock_source(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        lock_columns = connection.execute(
+            """
+            SELECT table_name, column_name
+              FROM information_schema.columns
+             WHERE table_schema = 'core'
+               AND table_name IN ('object', 'attribute')
+               AND column_name = 'is_locked'
+             ORDER BY table_name
+            """
+        ).fetchall()
+
+    assert lock_columns == [{"table_name": "object", "column_name": "is_locked"}]
 
 
 def test_snapshot_natural_keys_still_have_database_unique_indexes(

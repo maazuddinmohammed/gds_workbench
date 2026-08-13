@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from psycopg.types.json import Jsonb
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -405,7 +406,7 @@ def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
                 entra_object_id,
                 tenant_id,
                 change_set_id,
-                psycopg.types.json.Jsonb(records),
+                Jsonb(records),
                 uuid4(),
             ),
         ).fetchone()
@@ -609,7 +610,7 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
                    validated_time = CURRENT_TIMESTAMP
              WHERE metadata_change_set_id = %s
             """,
-            (psycopg.types.json.Jsonb([record]), digest, change_set_id),
+            (Jsonb([record]), digest, change_set_id),
         )
 
     with postgres_database.connect_runtime() as connection:
@@ -677,6 +678,415 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
     }
 
 
+@pytest.mark.parametrize(
+    ("suffix", "entra_tenant_id", "entra_object_id", "stage_attribute"),
+    (
+        (
+            "LOCKED_OBJECT_APPLY",
+            UUID("10000000-0000-0000-0000-000000000048"),
+            UUID("20000000-0000-0000-0000-000000000048"),
+            False,
+        ),
+        (
+            "LOCKED_ATTRIBUTE_APPLY",
+            UUID("10000000-0000-0000-0000-000000000049"),
+            UUID("20000000-0000-0000-0000-000000000049"),
+            True,
+        ),
+    ),
+)
+def test_apply_rechecks_object_lock_before_object_or_attribute_write(
+    postgres_database: DisposablePostgres,
+    suffix: str,
+    entra_tenant_id: UUID,
+    entra_object_id: UUID,
+    *,
+    stage_attribute: bool,
+) -> None:
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=suffix,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    digest = "f" * 64
+    tenant_code = f"CHANGE_SET_TENANT_{suffix}"
+    system_code = f"CRM_{suffix}"
+    zone_code = f"bronze_{suffix.lower()}"
+    object_record = {
+        "tenant_code": tenant_code,
+        "system_code": system_code,
+        "connection_code": "MAIN",
+        "object_schema": "public",
+        "object_name": "customers",
+        "fc_object_schema": None,
+        "fc_object_name": None,
+        "object_transformation": None,
+        "object_description": "Changed",
+        "batch_attribute_name": None,
+        "object_type_code": f"TABLE_{suffix}",
+        "zone_code": zone_code,
+        "is_locked": False,
+        "is_active": True,
+    }
+    attribute_record = {
+        "tenant_code": tenant_code,
+        "system_code": system_code,
+        "connection_code": "MAIN",
+        "object_schema": "public",
+        "object_name": "customers",
+        "attribute_name": "customer_id",
+        "fc_attribute_name": None,
+        "attribute_ordinal_position": 1,
+        "attribute_description": "Changed",
+        "attribute_data_type": "bigint",
+        "attribute_nullability": False,
+        "attribute_custom_code": None,
+        "is_surrogate_key": False,
+        "is_natural_key": True,
+        "is_meta_data": False,
+        "is_masking_required": False,
+        "is_mapped": True,
+        "is_purge": False,
+        "is_active": True,
+    }
+
+    with postgres_database.connect_owner() as connection:
+        system_type = connection.execute(
+            """
+            INSERT INTO reference.system_type (system_type_code, system_type_name)
+            VALUES (%s, %s)
+            RETURNING system_type_id
+            """,
+            (f"DATABASE_{suffix}", f"Database {suffix}"),
+        ).fetchone()
+        assert system_type is not None
+        system_type_id = system_type["system_type_id"]
+        connection_type = connection.execute(
+            """
+            INSERT INTO reference.connection_type (
+                connection_type_code, connection_type_name
+            ) VALUES (%s, %s)
+            RETURNING connection_type_id
+            """,
+            (f"POSTGRES_{suffix}", f"Postgres {suffix}"),
+        ).fetchone()
+        assert connection_type is not None
+        connection_type_id = connection_type["connection_type_id"]
+        object_type = connection.execute(
+            """
+            INSERT INTO reference.object_type (object_type_code, object_type_name)
+            VALUES (%s, %s)
+            RETURNING object_type_id
+            """,
+            (f"TABLE_{suffix}", f"Table {suffix}"),
+        ).fetchone()
+        assert object_type is not None
+        object_type_id = object_type["object_type_id"]
+        zone = connection.execute(
+            """
+            INSERT INTO reference.zone (zone_code, zone_name)
+            VALUES (%s, %s)
+            RETURNING zone_id
+            """,
+            (zone_code, f"Bronze {suffix}"),
+        ).fetchone()
+        assert zone is not None
+        zone_id = zone["zone_id"]
+        system = connection.execute(
+            """
+            INSERT INTO core.system (system_code, system_name, system_type_id)
+            VALUES (%s, %s, %s)
+            RETURNING system_id
+            """,
+            (system_code, f"CRM {suffix}", system_type_id),
+        ).fetchone()
+        assert system is not None
+        system_id = system["system_id"]
+        connection_row = connection.execute(
+            """
+            INSERT INTO core.connection (
+                tenant_id, system_id, connection_code, connection_name,
+                connection_type_id
+            ) VALUES (%s, %s, 'MAIN', 'Main', %s)
+            RETURNING connection_id
+            """,
+            (tenant_id, system_id, connection_type_id),
+        ).fetchone()
+        assert connection_row is not None
+        connection_id = connection_row["connection_id"]
+        object_row = connection.execute(
+            """
+            INSERT INTO core.object (
+                connection_id, object_schema, object_name, object_description,
+                object_type_id, zone_id, is_locked
+            ) VALUES (%s, 'public', 'customers', 'Original', %s, %s, TRUE)
+            RETURNING object_id
+            """,
+            (connection_id, object_type_id, zone_id),
+        ).fetchone()
+        assert object_row is not None
+        object_id = object_row["object_id"]
+        connection.execute(
+            """
+            INSERT INTO core.attribute (
+                object_id, attribute_name, attribute_ordinal_position,
+                attribute_description, attribute_data_type
+            ) VALUES (%s, 'customer_id', 1, 'Original', 'bigint')
+            """,
+            (object_id,),
+        )
+        if stage_attribute:
+            connection.execute(
+                """
+                UPDATE mcp.metadata_change_set
+                   SET bronze_attribute_document = %s::JSONB,
+                       metadata_change_set_status = 'validated',
+                       candidate_digest = %s,
+                       validation_outcome = '{"valid": true}'::JSONB,
+                       validated_time = CURRENT_TIMESTAMP
+                 WHERE metadata_change_set_id = %s
+                """,
+                (Jsonb([attribute_record]), digest, change_set_id),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE mcp.metadata_change_set
+                   SET bronze_object_document = %s::JSONB,
+                       metadata_change_set_status = 'validated',
+                       candidate_digest = %s,
+                       validation_outcome = '{"valid": true}'::JSONB,
+                       validated_time = CURRENT_TIMESTAMP
+                 WHERE metadata_change_set_id = %s
+                """,
+                (Jsonb([object_record]), digest, change_set_id),
+            )
+
+    with postgres_database.connect_runtime() as connection:
+        applied = connection.execute(
+            """
+            SELECT applied, denial_code, metadata_change_set_status, action_count
+              FROM mcp.apply_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                digest,
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT object.object_description,
+                   attribute.attribute_description
+              FROM core.object AS object
+              JOIN core.attribute AS attribute
+                ON attribute.object_id = object.object_id
+             WHERE object.object_id = %s
+            """,
+            (object_id,),
+        ).fetchone()
+
+    assert applied == {
+        "applied": False,
+        "denial_code": "object_locked",
+        "metadata_change_set_status": "validated",
+        "action_count": 0,
+    }
+    assert stored == {
+        "object_description": "Original",
+        "attribute_description": "Original",
+    }
+
+
+def test_late_copy_failure_rolls_back_earlier_object_insert(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000050")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000050")
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix="ATOMIC_ROLLBACK",
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    digest = "a" * 64
+    tenant_code = "CHANGE_SET_TENANT_ATOMIC_ROLLBACK"
+    object_record = {
+        "tenant_code": tenant_code,
+        "system_code": "CRM_ATOMIC_ROLLBACK",
+        "connection_code": "MAIN",
+        "object_schema": "public",
+        "object_name": "rollback_probe",
+        "fc_object_schema": None,
+        "fc_object_name": None,
+        "object_transformation": None,
+        "object_description": "Must roll back",
+        "batch_attribute_name": None,
+        "object_type_code": "TABLE_ATOMIC_ROLLBACK",
+        "zone_code": "bronze_atomic_rollback",
+        "is_locked": False,
+        "is_active": True,
+    }
+    invalid_copy_record = {
+        "tenant_code": tenant_code,
+        "system_code": "CRM_ATOMIC_ROLLBACK",
+        "copy_group_name": "MISSING",
+        "source_tenant_code": tenant_code,
+        "source_system_code": "CRM_ATOMIC_ROLLBACK",
+        "source_connection_code": "MAIN",
+        "source_object_schema": "public",
+        "source_object_name": "rollback_probe",
+        "target_tenant_code": tenant_code,
+        "target_system_code": "CRM_ATOMIC_ROLLBACK",
+        "target_connection_code": "MAIN",
+        "target_object_schema": "public",
+        "target_object_name": "rollback_probe",
+        "copy_source_record_limit": None,
+        "copy_source_record_limit_attribute": None,
+        "chunk_type_name": None,
+        "copy_source_initial_sql_script": None,
+        "copy_source_incremental_sql_script": None,
+        "copy_source_file_name": None,
+        "copy_source_file_pattern": None,
+        "copy_source_file_delimiter": None,
+        "source_file_type_name": None,
+        "copy_source_order": 1,
+        "source_data_operation_name": "MISSING",
+        "target_data_operation_name": "MISSING",
+        "is_active": True,
+    }
+
+    with postgres_database.connect_owner() as connection:
+        system_type = connection.execute(
+            """
+            INSERT INTO reference.system_type (system_type_code, system_type_name)
+            VALUES ('DATABASE_ATOMIC_ROLLBACK', 'Database Atomic Rollback')
+            RETURNING system_type_id
+            """
+        ).fetchone()
+        assert system_type is not None
+        system_type_id = system_type["system_type_id"]
+        connection_type = connection.execute(
+            """
+            INSERT INTO reference.connection_type (
+                connection_type_code, connection_type_name
+            ) VALUES ('POSTGRES_ATOMIC_ROLLBACK', 'Postgres Atomic Rollback')
+            RETURNING connection_type_id
+            """
+        ).fetchone()
+        assert connection_type is not None
+        connection_type_id = connection_type["connection_type_id"]
+        object_type = connection.execute(
+            """
+            INSERT INTO reference.object_type (object_type_code, object_type_name)
+            VALUES ('TABLE_ATOMIC_ROLLBACK', 'Table Atomic Rollback')
+            RETURNING object_type_id
+            """
+        ).fetchone()
+        assert object_type is not None
+        object_type_id = object_type["object_type_id"]
+        zone = connection.execute(
+            """
+            INSERT INTO reference.zone (zone_code, zone_name)
+            VALUES ('bronze_atomic_rollback', 'Bronze Atomic Rollback')
+            RETURNING zone_id
+            """
+        ).fetchone()
+        assert zone is not None
+        zone_id = zone["zone_id"]
+        system = connection.execute(
+            """
+            INSERT INTO core.system (system_code, system_name, system_type_id)
+            VALUES ('CRM_ATOMIC_ROLLBACK', 'CRM Atomic Rollback', %s)
+            RETURNING system_id
+            """,
+            (system_type_id,),
+        ).fetchone()
+        assert system is not None
+        system_id = system["system_id"]
+        connection.execute(
+            """
+            INSERT INTO core.connection (
+                tenant_id, system_id, connection_code, connection_name,
+                connection_type_id
+            ) VALUES (%s, %s, 'MAIN', 'Main', %s)
+            """,
+            (tenant_id, system_id, connection_type_id),
+        )
+        assert object_type_id > 0 and zone_id > 0
+        connection.execute(
+            """
+            UPDATE mcp.metadata_change_set
+               SET bronze_object_document = %s::JSONB,
+                   copy_document = %s::JSONB,
+                   metadata_change_set_status = 'validated',
+                   candidate_digest = %s,
+                   validation_outcome = '{"valid": true}'::JSONB,
+                   validated_time = CURRENT_TIMESTAMP
+             WHERE metadata_change_set_id = %s
+            """,
+            (
+                Jsonb([object_record]),
+                Jsonb([invalid_copy_record]),
+                digest,
+                change_set_id,
+            ),
+        )
+
+    with pytest.raises(psycopg.errors.SerializationFailure, match="Copy dependency changed"):
+        with postgres_database.connect_runtime() as connection:
+            connection.execute(
+                """
+                SELECT applied
+                  FROM mcp.apply_metadata_change_set(
+                      %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                      %s::UUID, 1::BIGINT, %s::CHAR(64), %s::UUID
+                  )
+                """,
+                (
+                    entra_tenant_id,
+                    entra_object_id,
+                    tenant_id,
+                    change_set_id,
+                    digest,
+                    uuid4(),
+                ),
+            ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT count(*) AS object_count
+              FROM core.object AS object
+              JOIN core.connection AS connection
+                ON connection.connection_id = object.connection_id
+             WHERE connection.tenant_id = %s
+               AND object.object_name = 'rollback_probe'
+            """,
+            (tenant_id,),
+        ).fetchone()
+        status = connection.execute(
+            """
+            SELECT metadata_change_set_status
+              FROM mcp.metadata_change_set
+             WHERE metadata_change_set_id = %s
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert stored == {"object_count": 0}
+    assert status == {"metadata_change_set_status": "validated"}
+
+
 def test_archive_metadata_change_set_requires_ownership_but_not_current_lock(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -740,21 +1150,25 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
     digest = "d" * 64
 
     with postgres_database.connect_owner() as connection:
-        system_type_id = connection.execute(
+        system_type = connection.execute(
             """
             INSERT INTO reference.system_type (system_type_code, system_type_name)
             VALUES ('DATABASE_ALL_APPLY', 'Database All Apply')
             RETURNING system_type_id
             """
-        ).fetchone()["system_type_id"]
-        connection_type_id = connection.execute(
+        ).fetchone()
+        assert system_type is not None
+        system_type_id = system_type["system_type_id"]
+        connection_type = connection.execute(
             """
             INSERT INTO reference.connection_type (
                 connection_type_code, connection_type_name
             ) VALUES ('POSTGRES_ALL_APPLY', 'Postgres All Apply')
             RETURNING connection_type_id
             """
-        ).fetchone()["connection_type_id"]
+        ).fetchone()
+        assert connection_type is not None
+        connection_type_id = connection_type["connection_type_id"]
         connection.execute(
             """
             INSERT INTO reference.object_type (object_type_code, object_type_name)
@@ -786,14 +1200,16 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
             ) VALUES ('NOTEBOOK_ALL_APPLY', NULL)
             """
         )
-        system_id = connection.execute(
+        system = connection.execute(
             """
             INSERT INTO core.system (system_code, system_name, system_type_id)
             VALUES ('CRM_ALL_APPLY', 'CRM All Apply', %s)
             RETURNING system_id
             """,
             (system_type_id,),
-        ).fetchone()["system_id"]
+        ).fetchone()
+        assert system is not None
+        system_id = system["system_id"]
         connection.execute(
             """
             INSERT INTO core.connection (
@@ -829,7 +1245,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
              WHERE metadata_change_set_id = %s
             """,
             (
-                *(psycopg.types.json.Jsonb(documents[name]) for name in (
+                *(Jsonb(documents[name]) for name in (
                     "source_object",
                     "source_attribute",
                     "bronze_object",
@@ -963,11 +1379,13 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
     }
 
     with postgres_database.connect_owner() as connection:
-        project_id = connection.execute(
+        project = connection.execute(
             "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
             (tenant_id,),
-        ).fetchone()["project_id"]
-        global_tenant_id = connection.execute(
+        ).fetchone()
+        assert project is not None
+        project_id = project["project_id"]
+        global_tenant = connection.execute(
             """
             INSERT INTO core.tenant (
                 project_id, tenant_code, tenant_name, tenant_catalog,
@@ -979,29 +1397,37 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
             RETURNING tenant_id
             """,
             (project_id,),
-        ).fetchone()["tenant_id"]
-        system_type_id = connection.execute(
+        ).fetchone()
+        assert global_tenant is not None
+        global_tenant_id = global_tenant["tenant_id"]
+        system_type = connection.execute(
             """
             INSERT INTO reference.system_type (system_type_code, system_type_name)
             VALUES ('DATABASE_SCOPED_APPLY', 'Database Scoped Apply')
             RETURNING system_type_id
             """
-        ).fetchone()["system_type_id"]
-        connection_type_id = connection.execute(
+        ).fetchone()
+        assert system_type is not None
+        system_type_id = system_type["system_type_id"]
+        connection_type = connection.execute(
             """
             INSERT INTO reference.connection_type (
                 connection_type_code, connection_type_name
             ) VALUES ('POSTGRES_SCOPED_APPLY', 'Postgres Scoped Apply')
             RETURNING connection_type_id
             """
-        ).fetchone()["connection_type_id"]
-        object_type_id = connection.execute(
+        ).fetchone()
+        assert connection_type is not None
+        connection_type_id = connection_type["connection_type_id"]
+        object_type = connection.execute(
             """
             INSERT INTO reference.object_type (object_type_code, object_type_name)
             VALUES ('TABLE_SCOPED_APPLY', 'Table Scoped Apply')
             RETURNING object_type_id
             """
-        ).fetchone()["object_type_id"]
+        ).fetchone()
+        assert object_type is not None
+        object_type_id = object_type["object_type_id"]
         zone = connection.execute(
             """
             SELECT zone_id
@@ -1017,16 +1443,19 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
                 RETURNING zone_id
                 """
             ).fetchone()
+        assert zone is not None
         zone_id = zone["zone_id"]
-        system_id = connection.execute(
+        system = connection.execute(
             """
             INSERT INTO core.system (system_code, system_name, system_type_id)
             VALUES ('CRM_SCOPED_APPLY', 'CRM Scoped Apply', %s)
             RETURNING system_id
             """,
             (system_type_id,),
-        ).fetchone()["system_id"]
-        connection_id = connection.execute(
+        ).fetchone()
+        assert system is not None
+        system_id = system["system_id"]
+        connection_row = connection.execute(
             """
             INSERT INTO core.connection (
                 tenant_id, system_id, connection_code, connection_name,
@@ -1035,11 +1464,13 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
             RETURNING connection_id
             """,
             (global_tenant_id, system_id, connection_type_id),
-        ).fetchone()["connection_id"]
+        ).fetchone()
+        assert connection_row is not None
+        connection_id = connection_row["connection_id"]
         connection.execute(
             """
             INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, connection_id, zone_id, object_schema
+                tenant_id, gds_connection_id, zone_id, object_schema
             ) VALUES (%s, %s, %s, 'demo')
             """,
             (tenant_id, connection_id, zone_id),
@@ -1054,7 +1485,7 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
                    validated_time = CURRENT_TIMESTAMP
              WHERE metadata_change_set_id = %s
             """,
-            (psycopg.types.json.Jsonb([record]), digest, change_set_id),
+            (Jsonb([record]), digest, change_set_id),
         )
 
     with postgres_database.connect_runtime() as connection:
@@ -1133,7 +1564,6 @@ def _all_apply_documents(
             "is_masking_required": False,
             "is_mapped": True,
             "is_purge": False,
-            "is_locked": False,
             "is_active": True,
         }
 

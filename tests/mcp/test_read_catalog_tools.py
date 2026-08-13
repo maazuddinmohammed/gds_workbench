@@ -187,7 +187,7 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
         connection.execute(
             """
             INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, connection_id, zone_id, object_schema
+                tenant_id, gds_connection_id, zone_id, object_schema
             )
             VALUES (%s, %s, %s, %s)
             """,

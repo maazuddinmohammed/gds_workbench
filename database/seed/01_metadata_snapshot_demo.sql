@@ -171,7 +171,7 @@ UPDATE core.tenant AS tenant
 
 INSERT INTO core.tenant_metadata_discovery_scope (
     tenant_id,
-    connection_id,
+    gds_connection_id,
     zone_id,
     object_schema
 )

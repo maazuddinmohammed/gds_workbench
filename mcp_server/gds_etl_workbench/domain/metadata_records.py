@@ -190,7 +190,6 @@ class AttributeRecord(MetadataRecord):
     is_masking_required: bool
     is_mapped: bool
     is_purge: bool
-    is_locked: bool
     is_active: bool
 
 

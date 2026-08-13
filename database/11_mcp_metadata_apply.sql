@@ -26,6 +26,7 @@ AS $apply_metadata_change_set$
 DECLARE
     v_decision RECORD;
     v_change_set RECORD;
+    v_touched_object RECORD;
     v_actor VARCHAR(255);
     v_expected_count INTEGER;
     v_affected_count INTEGER;
@@ -99,6 +100,80 @@ BEGIN
             0::INTEGER;
         RETURN;
     END IF;
+
+    FOR v_touched_object IN
+        WITH staged_object_keys AS (
+            SELECT tenant_code,
+                   system_code,
+                   connection_code,
+                   object_schema,
+                   object_name
+              FROM jsonb_to_recordset(
+                  v_change_set.source_object_document
+                  || v_change_set.bronze_object_document
+                  || v_change_set.silver_object_document
+                  || v_change_set.gold_object_document
+              ) AS record (
+                  tenant_code VARCHAR(100),
+                  system_code VARCHAR(100),
+                  connection_code VARCHAR(100),
+                  object_schema VARCHAR(400),
+                  object_name VARCHAR(400)
+              )
+        ),
+        staged_attribute_object_keys AS (
+            SELECT tenant_code,
+                   system_code,
+                   connection_code,
+                   object_schema,
+                   object_name
+              FROM jsonb_to_recordset(
+                  v_change_set.source_attribute_document
+                  || v_change_set.bronze_attribute_document
+                  || v_change_set.silver_attribute_document
+                  || v_change_set.gold_attribute_document
+              ) AS record (
+                  tenant_code VARCHAR(100),
+                  system_code VARCHAR(100),
+                  connection_code VARCHAR(100),
+                  object_schema VARCHAR(400),
+                  object_name VARCHAR(400)
+              )
+        ),
+        touched_object_keys AS (
+            SELECT * FROM staged_object_keys
+            UNION
+            SELECT * FROM staged_attribute_object_keys
+        )
+        SELECT object.object_id,
+               object.is_locked
+          FROM touched_object_keys AS touched
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(touched.tenant_code))
+          JOIN core.system AS system
+            ON lower(btrim(system.system_code)) = lower(btrim(touched.system_code))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = tenant.tenant_id
+           AND connection.system_id = system.system_id
+           AND lower(btrim(connection.connection_code))
+             = lower(btrim(touched.connection_code))
+          JOIN core.object AS object
+            ON object.connection_id = connection.connection_id
+           AND lower(btrim(object.object_schema)) = lower(btrim(touched.object_schema))
+           AND lower(btrim(object.object_name)) = lower(btrim(touched.object_name))
+         FOR UPDATE OF object
+    LOOP
+        IF v_touched_object.is_locked THEN
+            RETURN QUERY SELECT
+                FALSE,
+                'object_locked'::VARCHAR(50),
+                v_change_set.metadata_change_set_status::VARCHAR(20),
+                v_change_set.draft_revision::BIGINT,
+                v_change_set.applied_time::TIMESTAMPTZ,
+                0::INTEGER;
+            RETURN;
+        END IF;
+    END LOOP;
 
     v_actor := ('principal:' || v_decision.principal_id::TEXT)::VARCHAR(255);
     SET CONSTRAINTS
@@ -176,7 +251,7 @@ BEGIN
                 SELECT 1
                   FROM core.tenant_metadata_discovery_scope AS scope
                  WHERE scope.tenant_id = p_tenant_id
-                   AND scope.connection_id = connection.connection_id
+                   AND scope.gds_connection_id = connection.connection_id
                    AND scope.zone_id = zone.zone_id
                    AND lower(btrim(scope.object_schema))
                      = lower(btrim(records.object_schema))
@@ -226,15 +301,14 @@ BEGIN
               attribute_nullability BOOLEAN, attribute_custom_code TEXT,
               is_surrogate_key BOOLEAN, is_natural_key BOOLEAN,
               is_meta_data BOOLEAN, is_masking_required BOOLEAN,
-              is_mapped BOOLEAN, is_purge BOOLEAN, is_locked BOOLEAN,
-              is_active BOOLEAN
+              is_mapped BOOLEAN, is_purge BOOLEAN, is_active BOOLEAN
           )
     )
     INSERT INTO core.attribute AS target (
         object_id, attribute_name, fc_attribute_name, attribute_ordinal_position,
         attribute_description, attribute_data_type, attribute_nullability,
         attribute_custom_code, is_surrogate_key, is_natural_key, is_meta_data,
-        is_masking_required, is_mapped, is_purge, is_locked, is_active,
+        is_masking_required, is_mapped, is_purge, is_active,
         created_by, updated_by
     )
     SELECT object.object_id,
@@ -251,7 +325,6 @@ BEGIN
            records.is_masking_required,
            records.is_mapped,
            records.is_purge,
-           records.is_locked,
            records.is_active,
            v_actor,
            v_actor
@@ -275,7 +348,7 @@ BEGIN
                 SELECT 1
                   FROM core.tenant_metadata_discovery_scope AS scope
                  WHERE scope.tenant_id = p_tenant_id
-                   AND scope.connection_id = connection.connection_id
+                   AND scope.gds_connection_id = connection.connection_id
                    AND scope.zone_id = object.zone_id
                    AND lower(btrim(scope.object_schema))
                      = lower(btrim(records.object_schema))
@@ -295,7 +368,6 @@ BEGIN
         is_masking_required = EXCLUDED.is_masking_required,
         is_mapped = EXCLUDED.is_mapped,
         is_purge = EXCLUDED.is_purge,
-        is_locked = EXCLUDED.is_locked,
         is_active = EXCLUDED.is_active,
         updated_time = CURRENT_TIMESTAMP,
         updated_by = EXCLUDED.updated_by;
@@ -365,7 +437,7 @@ BEGIN
                     SELECT 1
                       FROM core.tenant_metadata_discovery_scope AS scope
                      WHERE scope.tenant_id = p_tenant_id
-                       AND scope.connection_id = target_connection.connection_id
+                       AND scope.gds_connection_id = target_connection.connection_id
                        AND scope.zone_id = target_object.zone_id
                        AND lower(btrim(scope.object_schema))
                          = lower(btrim(records.target_object_schema))
@@ -464,7 +536,7 @@ BEGIN
                     SELECT 1
                       FROM core.tenant_metadata_discovery_scope AS scope
                      WHERE scope.tenant_id = p_tenant_id
-                       AND scope.connection_id = target_connection.connection_id
+                       AND scope.gds_connection_id = target_connection.connection_id
                        AND scope.zone_id = target_object.zone_id
                        AND lower(btrim(scope.object_schema))
                          = lower(btrim(records.target_object_schema))
@@ -727,7 +799,7 @@ BEGIN
                        SELECT 1
                          FROM core.tenant_metadata_discovery_scope AS scope
                         WHERE scope.tenant_id = p_tenant_id
-                          AND scope.connection_id = target_connection.connection_id
+                          AND scope.gds_connection_id = target_connection.connection_id
                           AND scope.zone_id = target_object.zone_id
                           AND lower(btrim(scope.object_schema))
                             = lower(btrim(records.target_object_schema))

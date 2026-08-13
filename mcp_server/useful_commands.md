@@ -13,7 +13,7 @@ az webapp deploy \
 az webapp deploy \
   --resource-group "gds_etl_workbench" \
   --name "gds-test-workbench" \
-  --src-path "mcp_server/dist/gds-mcp-appservice.zip" \
+  --src-path "gds-mcp-appservice.zip" \
   --type zip \
   --restart true \
   --track-status true

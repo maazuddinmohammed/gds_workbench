@@ -149,6 +149,59 @@ def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
     assert denied.phase == "tenant_scope"
 
 
+def test_validation_rejects_change_to_existing_locked_object() -> None:
+    current = _foundation()
+    locked_object = _object_record(object_schema="public", tenant_code="DEMO")
+    locked_object["is_locked"] = True
+    current["bronze_object"] = [locked_object]
+    staged_object = deepcopy(locked_object)
+    staged_object["object_description"] = "Changed"
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={"bronze_object": [staged_object]},
+    )
+
+    assert result.valid is False
+    assert result.phase == "locks"
+    assert result.issues[0].code == "object_locked"
+    assert result.issues[0].dataset == "bronze_object"
+
+
+def test_validation_rejects_attribute_change_under_locked_object() -> None:
+    current = _foundation()
+    locked_object = _object_record(object_schema="public", tenant_code="DEMO")
+    locked_object["is_locked"] = True
+    current["bronze_object"] = [locked_object]
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={"bronze_attribute": [_attribute_record()]},
+    )
+
+    assert result.valid is False
+    assert result.phase == "locks"
+    assert result.issues[0].code == "object_locked"
+    assert result.issues[0].dataset == "bronze_attribute"
+
+
+def test_validation_allows_attribute_change_under_unlocked_object() -> None:
+    current = _foundation()
+    current["bronze_object"] = [
+        _object_record(object_schema="public", tenant_code="DEMO")
+    ]
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={"bronze_attribute": [_attribute_record()]},
+    )
+
+    assert result.valid is True
+
+
 def _foundation() -> dict[str, list[dict[str, object]]]:
     return {
         "project": [
@@ -191,6 +244,43 @@ def _foundation() -> dict[str, list[dict[str, object]]]:
                 "is_active": True,
             }
         ],
+        "connection_type": [
+            {
+                "connection_type_code": "POSTGRES",
+                "connection_type_name": "Postgres",
+                "connection_type_description": None,
+                "is_active": True,
+            }
+        ],
+        "connection": [
+            {
+                "tenant_code": "DEMO",
+                "system_code": "CRM",
+                "connection_code": "GDS",
+                "connection_name": "GDS",
+                "connection_type_code": "POSTGRES",
+                "has_foreign_catalog": False,
+                "foreign_catalog": None,
+                "is_global_data_store": False,
+                "is_active": True,
+            }
+        ],
+        "object_type": [
+            {
+                "object_type_code": "TABLE",
+                "object_type_name": "Table",
+                "object_type_description": None,
+                "is_active": True,
+            }
+        ],
+        "zone": [
+            {
+                "zone_code": "bronze",
+                "zone_name": "Bronze",
+                "zone_description": None,
+                "is_active": True,
+            }
+        ],
     }
 
 
@@ -205,9 +295,9 @@ def _copy_group() -> dict[str, object]:
     }
 
 
-def _object_record(*, object_schema: str) -> dict[str, object]:
+def _object_record(*, object_schema: str, tenant_code: str = "GLOBAL") -> dict[str, object]:
     return {
-        "tenant_code": "GLOBAL",
+        "tenant_code": tenant_code,
         "system_code": "CRM",
         "connection_code": "GDS",
         "object_schema": object_schema,
@@ -220,5 +310,29 @@ def _object_record(*, object_schema: str) -> dict[str, object]:
         "object_type_code": "TABLE",
         "zone_code": "bronze",
         "is_locked": False,
+        "is_active": True,
+    }
+
+
+def _attribute_record() -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "connection_code": "GDS",
+        "object_schema": "public",
+        "object_name": "customers",
+        "attribute_name": "customer_id",
+        "fc_attribute_name": None,
+        "attribute_ordinal_position": 1,
+        "attribute_description": None,
+        "attribute_data_type": "bigint",
+        "attribute_nullability": False,
+        "attribute_custom_code": None,
+        "is_surrogate_key": False,
+        "is_natural_key": True,
+        "is_meta_data": False,
+        "is_masking_required": False,
+        "is_mapped": True,
+        "is_purge": False,
         "is_active": True,
     }

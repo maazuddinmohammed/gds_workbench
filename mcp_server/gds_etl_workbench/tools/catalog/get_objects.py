@@ -71,7 +71,6 @@ SELECT attribute.attribute_id,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
-       attribute.is_locked,
        attribute.is_active
   FROM core.attribute AS attribute
  WHERE attribute.object_id = ANY(%s::BIGINT[])
@@ -111,7 +110,6 @@ class AttributeDetails(ContractModel):
     is_masking_required: bool
     is_mapped: bool
     is_purge: bool
-    is_locked: bool
     is_active: bool
 
 
