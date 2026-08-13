@@ -56,11 +56,11 @@ END;
 $validate_seed_input$;
 
 WITH seed_input AS (
-    SELECT 'cb8ce8f6-afec-44b2-8764-f227c4f8ce08'::UUID AS entra_tenant_id,
-           '432c2e34-e294-4063-92c3-67c54b762b8c'::UUID AS entra_object_id,
-           'Maaz'::VARCHAR(200) AS display_name,
-           'maazuddinmohammed01@gmail.com'::VARCHAR(320) AS login_email,
-           'DEMO_TENANT'::VARCHAR(100) AS tenant_code
+    SELECT '__REPLACE_WITH_ENTRA_TENANT_ID__'::UUID AS entra_tenant_id,
+           '__REPLACE_WITH_ENTRA_OBJECT_ID__'::UUID AS entra_object_id,
+           '__REPLACE_WITH_DISPLAY_NAME__'::VARCHAR(200) AS display_name,
+           '__REPLACE_WITH_LOGIN_EMAIL__'::VARCHAR(320) AS login_email,
+           '__REPLACE_WITH_TENANT_CODE__'::VARCHAR(100) AS tenant_code
 ),
 target_tenant AS (
     SELECT tenant.tenant_id
@@ -122,7 +122,7 @@ SELECT principal.principal_id,
   FROM security.principal AS principal
   JOIN security.tenant_principal_access AS access_record
     ON access_record.principal_id = principal.principal_id
-  JOIN core.tenant AS tenant
+ JOIN core.tenant AS tenant
     ON tenant.tenant_id = access_record.tenant_id
  WHERE lower(btrim(principal.principal_email)) =
-       lower(btrim('maazuddinmohammed01@gmail.com'));
+       lower(btrim('__REPLACE_WITH_LOGIN_EMAIL__'));

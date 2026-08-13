@@ -74,7 +74,9 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         assert all(".." not in name.split("/") and "\\" not in name for name in names)
         assert all(not info.is_dir() for info in infos)
         assert all(info.date_time == (1980, 1, 1, 0, 0, 0) for info in infos)
-        assert all(stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos)
+        assert all(
+            stat.S_IFMT(info.external_attr >> 16) == stat.S_IFREG for info in infos
+        )
 
         assert manifest["snapshot_id"] == str(SNAPSHOT_ID)
         assert manifest["tenant_code"] == "TENANT"
@@ -92,8 +94,9 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
             "expanded_bytes": sum(info.file_size for info in infos),
         }
         assert manifest["sections"] == {
-            "foundation": {"dataset_count": 13, "row_count": 1},
-            "metadata": {"dataset_count": 16, "row_count": 0},
+            "foundational": {"dataset_count": 5, "row_count": 1},
+            "reference": {"dataset_count": 8, "row_count": 0},
+            "operational": {"dataset_count": 16, "row_count": 0},
         }
         assert len(manifest["members"]) == 69
         for member in manifest["members"]:
@@ -102,7 +105,9 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
             assert member["sha256"] == hashlib.sha256(content).hexdigest()
         assert manifest["catalog"] == {
             "path": "catalog.json",
-            "sha256": hashlib.sha256(archive.read("metadata-snapshot/catalog.json")).hexdigest(),
+            "sha256": hashlib.sha256(
+                archive.read("metadata-snapshot/catalog.json")
+            ).hexdigest(),
         }
         assert manifest["schemas"] == {
             "directory": "schemas",

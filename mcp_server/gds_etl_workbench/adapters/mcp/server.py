@@ -24,7 +24,6 @@ from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_to
 from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     register_get_metadata_snapshot_tool,
-    register_metadata_snapshot_download_route,
 )
 from gds_etl_workbench.tools.snapshots.metadata.storage import (
     AzureMetadataSnapshotStore,
@@ -142,16 +141,9 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
         store=snapshot_store,
+        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
         retention_hours=settings.metadata_snapshot_retention_hours,
         max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
-    )
-    register_metadata_snapshot_download_route(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        store=snapshot_store,
-        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
     )
 
     async def live(_request: Request) -> Response:

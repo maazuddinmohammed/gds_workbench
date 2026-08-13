@@ -57,7 +57,6 @@ outputs.
 - Anonymous `GET /health/ready`
 - Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
 - Protected stateless `/mcp`
-- Protected `GET /metadata-snapshots/{tenant_id}/{snapshot_id}/download`
 - Ten read-only MCP tools: `list_tenants`, `get_tenant_details`, `list_objects`,
   `get_objects`, `get_object_lineage`, `list_copy_groups`, `get_copy_group`,
   `list_process_groups`, `get_process_group`, and `get_metadata_snapshot`
@@ -70,8 +69,8 @@ Local dev mode lists all active Tenants.
 `get_metadata_snapshot` authorizes one Tenant, selects a fixed 29-dataset
 closure in a repeatable-read read-only transaction, creates a deterministic ZIP
 in temporary storage, uploads it create-only to private Blob Storage, and
-returns only the protected application URL and bounded descriptor. Download
-requests reauthorize Tenant access before minting a fresh read-only SAS.
+returns a bounded descriptor containing a 15-minute read-only SAS for the exact
+ZIP. Tenant authorization happens before the SAS is minted.
 
 The interactive reads use the same server-owned Object closure as the Metadata
 Snapshot. `list_objects` reports why each Object is included and whether an

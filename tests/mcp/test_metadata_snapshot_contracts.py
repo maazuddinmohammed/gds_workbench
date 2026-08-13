@@ -47,35 +47,60 @@ def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
     assert len({dataset.name for dataset in DATASETS}) == 29
     assert PHYSICAL_TABLE_COUNT == 23
 
-    foundation = tuple(
-        dataset for dataset in DATASETS if dataset.section is SnapshotSection.FOUNDATION
+    foundational = tuple(
+        dataset
+        for dataset in DATASETS
+        if dataset.section is SnapshotSection.FOUNDATIONAL
     )
-    metadata = tuple(dataset for dataset in DATASETS if dataset.section is SnapshotSection.METADATA)
-    assert len(foundation) == 13
-    assert len(metadata) == 16
-    assert all(not dataset.change_set_eligible for dataset in foundation)
-    assert all(dataset.change_set_eligible for dataset in metadata)
+    reference = tuple(
+        dataset for dataset in DATASETS if dataset.section is SnapshotSection.REFERENCE
+    )
+    operational = tuple(
+        dataset
+        for dataset in DATASETS
+        if dataset.section is SnapshotSection.OPERATIONAL
+    )
+    assert len(foundational) == 5
+    assert len(reference) == 8
+    assert len(operational) == 16
+    assert all(
+        not dataset.change_set_eligible for dataset in (*foundational, *reference)
+    )
+    assert all(dataset.change_set_eligible for dataset in operational)
 
 
 def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> None:
     rows_paths = {dataset.rows_path for dataset in DATASETS}
     schema_paths = {dataset.schema_path for dataset in DATASETS}
-    lookup_paths = {dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None}
+    lookup_paths = {
+        dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None
+    }
 
     assert len(rows_paths) == 29
     assert len(schema_paths) == 29
     assert len(lookup_paths) == 10
-    assert next(dataset for dataset in DATASETS if dataset.name == "project").rows_path == (
-        "data/project/rows.jsonl"
+    assert next(
+        dataset for dataset in DATASETS if dataset.name == "project"
+    ).rows_path == ("data/foundational/project/rows.jsonl")
+    assert (
+        next(
+            dataset for dataset in DATASETS if dataset.name == "source_object"
+        ).lookup_path
+        == "data/operational/source_object/lookup.jsonl"
     )
     assert (
-        next(dataset for dataset in DATASETS if dataset.name == "source_object").lookup_path
-        == "data/source_object/lookup.jsonl"
+        next(dataset for dataset in DATASETS if dataset.name == "system_type").rows_path
+        == "data/reference/system_type/rows.jsonl"
     )
     assert (
-        next(dataset for dataset in DATASETS if dataset.name == "system_type").lookup_path is None
+        next(
+            dataset for dataset in DATASETS if dataset.name == "system_type"
+        ).lookup_path
+        is None
     )
-    assert all(".." not in path.split("/") and not path.startswith("/") for path in rows_paths)
+    assert all(
+        ".." not in path.split("/") and not path.startswith("/") for path in rows_paths
+    )
 
 
 def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
@@ -83,7 +108,9 @@ def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
         fields = set(dataset.row_model.model_fields)
         assert not any(field == "id" or field.endswith("_id") for field in fields)
         assert set(dataset.canonical_key) <= fields
-        assert all(set(constraint) <= fields for constraint in dataset.unique_constraints)
+        assert all(
+            set(constraint) <= fields for constraint in dataset.unique_constraints
+        )
         assert set(dataset.lookup_fields) <= fields
         for reference in dataset.references:
             assert set(reference.columns) <= fields
@@ -91,7 +118,9 @@ def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
 
 
 def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
-    object_datasets = tuple(dataset for dataset in DATASETS if dataset.record_type == "object")
+    object_datasets = tuple(
+        dataset for dataset in DATASETS if dataset.record_type == "object"
+    )
     attribute_datasets = tuple(
         dataset for dataset in DATASETS if dataset.record_type == "attribute"
     )
@@ -112,7 +141,9 @@ def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
 
 
 def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
-    source_object = next(dataset for dataset in DATASETS if dataset.name == "source_object")
+    source_object = next(
+        dataset for dataset in DATASETS if dataset.name == "source_object"
+    )
     schema = build_dataset_schema_document(source_object)
 
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"

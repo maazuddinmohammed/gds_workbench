@@ -45,17 +45,13 @@ Request:
 | Field | Contract |
 |---|---|
 | `tenant_id` | positive PostgreSQL BIGINT |
-| `schema_version` | exactly `"1.0"`; default `"1.0"` |
+| `schema_version` | exactly `"2.0"`; default `"2.0"` |
 
 The result contains only schema version, Snapshot UUID, kind/status, Tenant ID,
-protected application download URL, availability time, ZIP byte count, ZIP
-SHA-256, and `application/zip` content type. Metadata rows, JSONL, indexes,
-manifest, ZIP bytes, Blob URL, and SAS never enter MCP.
-
-The protected download route parses canonical path values, reauthorizes current
-Tenant Read, validates immutable Blob metadata and logical expiry, and returns a
-no-store 302 redirect using a fresh read-only user-delegation SAS. Authenticated
-unauthorized, malformed, expired, and missing requests all return the same 404.
+a 15-minute read-only SAS URL for the exact ZIP, `download_url_expires_at`, ZIP
+byte count, ZIP SHA-256, and `application/zip` content type. Metadata rows,
+JSONL, indexes, manifest, and ZIP bytes never enter MCP. Tenant Read is
+authorized before the SAS is minted. Tool-call logs never store the URL.
 
 ## Health
 

@@ -35,8 +35,9 @@ from gds_etl_workbench.domain.metadata_records import (
 
 
 class SnapshotSection(StrEnum):
-    FOUNDATION = "foundation"
-    METADATA = "metadata"
+    FOUNDATIONAL = "foundational"
+    REFERENCE = "reference"
+    OPERATIONAL = "operational"
 
 
 @dataclass(frozen=True, slots=True)
@@ -64,7 +65,7 @@ class DatasetDefinition:
 
     @property
     def data_directory(self) -> PurePosixPath:
-        return PurePosixPath("data", self.name)
+        return PurePosixPath("data", self.section.value, self.name)
 
     @property
     def rows_path(self) -> str:
@@ -172,7 +173,7 @@ DATASETS = (
         "Projects",
         "core.project",
         "project",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.FOUNDATIONAL,
         False,
         ProjectRecord,
         PROJECT_KEY,
@@ -182,7 +183,7 @@ DATASETS = (
         "Tenants",
         "core.tenant",
         "tenant",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.FOUNDATIONAL,
         False,
         TenantRecord,
         TENANT_KEY,
@@ -205,7 +206,7 @@ DATASETS = (
         "Systems",
         "core.system",
         "system",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.FOUNDATIONAL,
         False,
         SystemRecord,
         SYSTEM_KEY,
@@ -216,7 +217,7 @@ DATASETS = (
         "Connections",
         "core.connection",
         "connection",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.FOUNDATIONAL,
         False,
         ConnectionRecord,
         CONNECTION_KEY,
@@ -231,7 +232,7 @@ DATASETS = (
         "Tenant Metadata Discovery Scopes",
         "core.tenant_metadata_discovery_scope",
         "tenant_metadata_discovery_scope",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.FOUNDATIONAL,
         False,
         TenantMetadataDiscoveryScopeRecord,
         (
@@ -257,7 +258,7 @@ DATASETS = (
         "System Types",
         "reference.system_type",
         "system_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         SystemTypeRecord,
         ("system_type_code",),
@@ -267,7 +268,7 @@ DATASETS = (
         "Connection Types",
         "reference.connection_type",
         "connection_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         ConnectionTypeRecord,
         ("connection_type_code",),
@@ -277,7 +278,7 @@ DATASETS = (
         "Object Types",
         "reference.object_type",
         "object_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         ObjectTypeRecord,
         ("object_type_code",),
@@ -287,7 +288,7 @@ DATASETS = (
         "Zones",
         "reference.zone",
         "zone",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         ZoneRecord,
         ("zone_code",),
@@ -298,7 +299,7 @@ DATASETS = (
         "Chunk Types",
         "reference.chunk_type",
         "chunk_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         ChunkTypeRecord,
         ("chunk_type_name",),
@@ -308,7 +309,7 @@ DATASETS = (
         "File Types",
         "reference.file_type",
         "file_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         FileTypeRecord,
         ("file_type_name",),
@@ -318,7 +319,7 @@ DATASETS = (
         "Data Operations",
         "reference.data_operation",
         "data_operation",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         DataOperationRecord,
         ("data_operation_name",),
@@ -328,7 +329,7 @@ DATASETS = (
         "Process Types",
         "reference.process_type",
         "process_type",
-        SnapshotSection.FOUNDATION,
+        SnapshotSection.REFERENCE,
         False,
         ProcessTypeRecord,
         ("process_type_name",),
@@ -347,7 +348,7 @@ DATASETS = (
                 f"{label} Objects",
                 "core.object",
                 "object",
-                SnapshotSection.METADATA,
+                SnapshotSection.OPERATIONAL,
                 True,
                 ObjectRecord,
                 OBJECT_KEY,
@@ -364,7 +365,7 @@ DATASETS = (
                 f"{label} Attributes",
                 "core.attribute",
                 "attribute",
-                SnapshotSection.METADATA,
+                SnapshotSection.OPERATIONAL,
                 True,
                 AttributeRecord,
                 ATTRIBUTE_KEY,
@@ -384,7 +385,7 @@ DATASETS = (
         "Ingestion Object Mappings",
         "core.ingestion_object_mapping",
         "ingestion_object_mapping",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         IngestionObjectMappingRecord,
         OBJECT_MAPPING_KEY,
@@ -398,7 +399,7 @@ DATASETS = (
         "Ingestion Attribute Mappings",
         "core.ingestion_attribute_mapping",
         "ingestion_attribute_mapping",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         IngestionAttributeMappingRecord,
         ATTRIBUTE_MAPPING_KEY,
@@ -413,7 +414,7 @@ DATASETS = (
         "Copy Groups",
         "core.copy_group",
         "copy_group",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         CopyGroupRecord,
         COPY_GROUP_KEY,
@@ -427,7 +428,7 @@ DATASETS = (
         "Member Groups",
         "core.member_group",
         "member_group",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         MemberGroupRecord,
         MEMBER_GROUP_KEY,
@@ -441,7 +442,7 @@ DATASETS = (
         "Copy Group Controls",
         "core.copy_group_control",
         "copy_group_control",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         CopyGroupControlRecord,
         COPY_GROUP_CONTROL_KEY,
@@ -456,7 +457,7 @@ DATASETS = (
         "Copies",
         "core.copy",
         "copy",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         CopyRecord,
         COPY_KEY,
@@ -476,7 +477,7 @@ DATASETS = (
         "Process Groups",
         "core.process_group",
         "process_group",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         ProcessGroupRecord,
         PROCESS_GROUP_KEY,
@@ -492,7 +493,7 @@ DATASETS = (
         "Processes",
         "core.process",
         "process",
-        SnapshotSection.METADATA,
+        SnapshotSection.OPERATIONAL,
         True,
         ProcessRecord,
         PROCESS_KEY,

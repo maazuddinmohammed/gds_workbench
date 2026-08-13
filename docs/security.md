@@ -11,11 +11,9 @@ disagree.
 - `/.well-known/oauth-protected-resource` and its `/mcp` path variant are
   anonymous, cacheable, non-secret OAuth discovery documents.
 - `/mcp` uses stateless Streamable HTTP.
-- `/metadata-snapshots/{tenant_id}/{snapshot_id}/download` is authenticated,
-  reauthorizes Tenant Read, and returns a no-store redirect to a short-lived
-  read-only Blob SAS.
-- The registered MCP tools are read-only `list_tenants` and
-  `get_metadata_snapshot`.
+- `get_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
+  read-only SAS for the exact private Blob.
+- The registered MCP tools are read-only.
 - No Tenant Lock tool is registered yet. The governed database operations exist
   so a later MCP or FastAPI adapter can use the same rules.
 

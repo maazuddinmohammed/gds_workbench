@@ -93,10 +93,5 @@ def _configuration_error_application() -> Starlette:
             Route("/health/live", live, methods=["GET"]),
             Route("/health/ready", unavailable, methods=["GET"]),
             Route("/mcp", unavailable, methods=["GET", "POST", "DELETE"]),
-            Route(
-                "/metadata-snapshots/{tenant_id}/{snapshot_id}/download",
-                unavailable,
-                methods=["GET"],
-            ),
         ]
     )

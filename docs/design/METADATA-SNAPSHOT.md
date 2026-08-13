@@ -49,45 +49,29 @@ Example result:
   "snapshot_kind": "metadata",
   "status": "ready",
   "tenant_id": 123,
-  "download_url": "https://app.example.com/metadata-snapshots/123/7d7cc8ad-62b5-44ef-aeb0-c09c770ff233/download",
-  "available_until": "2026-08-12T16:00:00Z",
+  "download_url": "https://storage.example/metadata/123/7d7cc8ad-62b5-44ef-aeb0-c09c770ff233.zip?<read-only-sas>",
+  "download_url_expires_at": "2026-08-11T16:15:00Z",
   "size_bytes": 1234567,
   "sha256": "64 lowercase hexadecimal characters",
   "content_type": "application/zip"
 }
 ```
 
-The result never contains Blob bytes, data rows, archive members, a SAS token,
-or a SAS-bearing URL.
+The result never contains Blob bytes, data rows, or archive members. It contains
+one temporary SAS URL only after Tenant Read authorization succeeds.
 
-## Authenticated download
+## Temporary download URL
 
-The non-secret result URL identifies this protected route:
+After upload, the tool:
 
-```text
-GET /metadata-snapshots/{tenant_id}/{snapshot_id}/download
-```
+1. validates the exact Blob path, immutable metadata, and logical availability;
+2. creates a read-only user-delegation SAS for that Blob only;
+3. limits the URL to 15 minutes and HTTPS; and
+4. returns it in the authorized MCP response without logging it.
 
-The existing authentication middleware will protect both `/mcp` and
-`/metadata-snapshots/`. The route:
-
-1. parses bounded server-owned path values;
-2. authenticates the current Principal;
-3. reauthorizes Tenant Read for `tenant_id`;
-4. verifies the exact Blob path, immutable Blob metadata, and availability;
-5. creates a fresh, read-only user-delegation SAS;
-6. returns an HTTP 302 redirect with `Cache-Control: no-store`; and
-7. never logs the SAS or `Location` header.
-
-The browser follows the redirect and downloads directly from Blob Storage. An
-interactive user may open the URL manually; App Service Easy Auth prompts for
-Microsoft Entra login when needed. A local helper may perform the same request
-with an Entra token, but is not required.
-
-Unauthenticated requests follow the existing Easy Auth/401 behavior. For an
-authenticated Principal, unauthorized-Tenant, expired, missing, and malformed
-snapshot requests all return 404. This prevents identifier probing from
-revealing snapshot existence.
+Opening the URL downloads directly from private Blob Storage. Anyone holding
+the URL can read that one ZIP until it expires, so the URL must not enter logs,
+audit rows, or documentation.
 
 At upload, the Blob receives:
 
@@ -114,11 +98,11 @@ Tenant ID, snapshot ID, availability time, byte count, and archive SHA-256. It
 contains no row, connection value, secret reference, credential, or Principal
 identity.
 
-Logical availability defaults to 24 hours. The download route rejects an
-expired Blob even if physical lifecycle deletion has not run. The storage
-account must configure lifecycle deletion for the code-owned `metadata/`
-prefix at or after the configured availability window. The App Service does
-not implement a broad Blob cleanup command.
+Logical Blob availability defaults to 24 hours. SAS expiry is the earlier of 15
+minutes or logical Blob expiry. The storage account must configure lifecycle
+deletion for the code-owned `metadata/` prefix at or after the configured
+availability window. The App Service does not implement a broad Blob cleanup
+command.
 
 ## Metadata Discovery Scope
 
@@ -171,7 +155,7 @@ Silver, or Gold. Invalid active scope configuration fails snapshot generation
 safely rather than widening discovery.
 
 All scope rows for the requested Tenant, including inactive rows, are exported
-under `foundation` for explanation. Only active valid rows expand discovery.
+under `foundational` for explanation. Only active valid rows expand discovery.
 An ingestion mapping, Process, or Model Scope may select an Object outside this
 table; that is allowed because this table is not lineage or authorization.
 The table's four database audit columns remain operational in PostgreSQL but
@@ -255,15 +239,22 @@ metadata-snapshot/
 ├── schemas/
 │   └── <dataset>.schema.json
 └── data/
-    └── <dataset>/
-        ├── rows.jsonl
-        └── lookup.jsonl  # only selected wide datasets
+    ├── foundational/
+    │   └── <dataset>/rows.jsonl
+    ├── reference/
+    │   └── <dataset>/rows.jsonl
+    └── operational/
+        └── <dataset>/{rows.jsonl,lookup.jsonl}
 ```
 
 There are 23 physical source tables and 29 logical snapshot datasets. The
 physical `core.object` and `core.attribute` tables become eight Zone-specific
 datasets. Objects and Attributes remain separate; Object rows never contain a
 nested or duplicate Attribute array.
+
+The five Foundational datasets are Project, Tenant, System, Connection, and
+Tenant Metadata Discovery Scope. The eight allowlisted `reference.*` datasets
+are Reference. The remaining 16 change-set-eligible datasets are Operational.
 
 Every dataset has one `rows.jsonl` and one JSON Schema. Only these ten wide
 datasets have `lookup.jsonl`: the four Object datasets, the four Attribute
@@ -324,7 +315,7 @@ The manifest is the immutable archive instance and integrity contract. It contai
 - schema version, snapshot kind, snapshot ID, Tenant code, generation time, and
   availability time;
 - physical table, logical dataset, lookup file, row, file, and expanded-byte counts;
-- the `foundation` and `metadata` sections;
+- the `foundational`, `reference`, and `operational` sections;
 - one entry for every non-manifest member with path, SHA-256, byte count, and
   row count when applicable; and
 - a direct path and digest for `catalog.json` plus the schema directory count.
@@ -372,15 +363,15 @@ GDS extensions describe relational meaning that JSON Schema cannot express:
 }
 ```
 
-Foundation and reference datasets declare `change_set_eligible: false`. The 16
-metadata datasets declare `true`.
+Foundational and Reference datasets declare `change_set_eligible: false`. The
+16 Operational datasets declare `true`.
 
 ### `catalog.json`
 
 The catalog is the small agent navigation guide. It:
 
 - instructs the agent never to recursively load the snapshot;
-- lists both sections and all 29 datasets;
+- lists all three sections and all 29 datasets;
 - groups the four Object and four Attribute datasets for cross-Zone search;
 - gives each dataset's row count, canonical key, search fields, schema file,
   search file, rows file, and `search_result_complete`; and
@@ -495,7 +486,7 @@ Existing bounded public error vocabulary is reused:
 - `invalid_request` for malformed version or Tenant ID;
 - `authentication_required` or `authorization_denied` at the protected MCP
   boundary;
-- `not_found` for a safely hidden Tenant/snapshot absence;
+- `tenant_not_found` for a safely hidden Tenant absence;
 - `payload_too_large` for row, expanded, or archive bounds;
 - `dependency_unavailable` for PostgreSQL, identity, or Azure unavailability;
   and
@@ -504,7 +495,7 @@ Existing bounded public error vocabulary is reused:
 
 The MCP Tool Call Log receives only its existing bounded, server-derived
 summary. Logs and telemetry exclude SQL results, rows, JSONL, indexes,
-manifests, Blob URLs, redirect headers, SAS values, archive members, ZIP bytes,
+manifests, Blob URLs, SAS values, archive members, ZIP bytes,
 checksums from untrusted input, and raw exceptions.
 
 Temporary directories are removed after success and every failure. Snapshot
@@ -537,7 +528,6 @@ Small integration edits are still required in existing boundaries:
 
 - `configuration.py` for validated environment settings;
 - `adapters/mcp/server.py` for registration;
-- `adapters/auth/middleware.py` for the protected download prefix;
 - numbered SQL for Discovery Scope, Change Set alignment, indexes, and runtime
   privileges;
 - the MCP dependency lock/export for Azure Identity and Blob Storage;
@@ -570,12 +560,10 @@ The slice must prove:
 - temporary-file cleanup on every failure;
 - create-only Blob upload, private-container assumptions, and lifecycle
   metadata;
-- the MCP response remains small and contains no row, archive member, bytes,
-  base64, SAS, or secret;
-- authenticated browser/helper redirects reauthorize Tenant access and mint
-  read-only short-lived SAS values outside MCP;
-- unauthenticated downloads follow Easy Auth/401, while authenticated
-  unauthorized, expired, malformed, and missing downloads return 404;
+- the MCP response remains small and contains no row, archive member, bytes, or
+  base64, and contains only the intended temporary SAS credential;
+- Tenant authorization happens before a blob-specific, read-only, 15-minute SAS
+  enters the MCP result;
 - SAS values and snapshot contents never reach logs; and
 - package/configuration checks include the new source and dependencies without
   including tests, local snapshots, or secrets.
@@ -590,8 +578,7 @@ Implement and verify one change at a time:
 4. Pure snapshot contracts, JSONL, schema, index, manifest, and ZIP tests.
 5. Fixed SQL selection and disposable-PostgreSQL tests.
 6. Blob upload with Azure fakes.
-7. Authenticated download redirect with identity/Azure fakes.
+7. Direct SAS result with identity/Azure fakes.
 8. MCP registration, audit, response-isolation, and package tests.
-9. Optional local helper and targeted-use documentation.
 
 No later step begins while the preceding step's focused tests fail.

@@ -117,8 +117,16 @@ class FakeDatabase:
 
 
 class FakeSnapshotStore:
-    def __init__(self) -> None:
+    def __init__(
+        self,
+        read_url: str = (
+            "https://snapshot.blob.core.windows.net/snapshots/metadata/123/"
+            "7d7cc8ad-62b5-44ef-aeb0-c09c770ff233.zip?sp=r&sig=fake"
+        ),
+    ) -> None:
         self.closed = False
+        self.read_url = read_url
+        self.read_url_calls: list[tuple[int, UUID, datetime, int]] = []
 
     async def close(self) -> None:
         self.closed = True
@@ -144,9 +152,8 @@ class FakeSnapshotStore:
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
-        raise AssertionError(
-            "MCP must return the protected application URL, not a SAS URL"
-        )
+        self.read_url_calls.append((tenant_id, snapshot_id, now, ttl_seconds))
+        return self.read_url
 
 
 def development_settings() -> RuntimeSettings:
@@ -219,7 +226,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     snapshot_id = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
-    created_at = datetime(2026, 8, 11, 16, 0, tzinfo=UTC)
+    created_at = datetime.now(UTC)
     database = FakeDatabase()
     store = FakeSnapshotStore()
 
@@ -262,16 +269,18 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
             )
 
     assert result.is_error is False
-    assert result.structured_content == {
+    assert result.structured_content is not None
+    descriptor = dict(result.structured_content)
+    download_available_until = datetime.fromisoformat(
+        descriptor.pop("download_url_expires_at").replace("Z", "+00:00")
+    )
+    assert descriptor == {
         "schema_version": "2.0",
         "snapshot_id": str(snapshot_id),
         "snapshot_kind": "metadata",
         "status": "ready",
         "tenant_id": 123,
-        "download_url": (
-            f"http://testserver/metadata-snapshots/123/{snapshot_id}/download"
-        ),
-        "available_until": "2026-08-12T16:00:00Z",
+        "download_url": store.read_url,
         "size_bytes": 4567,
         "sha256": "a" * 64,
         "content_type": "application/zip",
@@ -283,7 +292,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
         "status",
         "tenant_id",
         "download_url",
-        "available_until",
+        "download_url_expires_at",
         "size_bytes",
         "sha256",
         "content_type",
@@ -296,6 +305,12 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
         "tenant_id": 123,
     }
     assert store.closed is True
+    assert len(store.read_url_calls) == 1
+    assert store.read_url_calls[0][0:2] == (123, snapshot_id)
+    assert store.read_url_calls[0][3] == 900
+    assert download_available_until == store.read_url_calls[0][2] + timedelta(
+        seconds=900
+    )
 
 
 @pytest.mark.asyncio
@@ -376,16 +391,9 @@ def test_production_mcp_rejects_missing_easy_auth_envelope() -> None:
 
     with TestClient(application) as client:
         response = client.post("/mcp", headers={"x-forwarded-proto": "https"}, json={})
-        download = client.get(
-            "/metadata-snapshots/123/7d7cc8ad-62b5-44ef-aeb0-c09c770ff233/download",
-            headers={"x-forwarded-proto": "https"},
-            follow_redirects=False,
-        )
 
     assert response.status_code == 401
     assert response.json()["error"]["code"] == "authentication_required"
-    assert download.status_code == 401
-    assert download.json()["error"]["code"] == "authentication_required"
 
 
 @pytest.mark.asyncio

@@ -164,8 +164,9 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
     _validate_snapshot_references(encoded_by_name)
     sections: list[dict[str, object]] = []
     for section, label in (
-        (SnapshotSection.FOUNDATION, "Foundation"),
-        (SnapshotSection.METADATA, "Metadata"),
+        (SnapshotSection.FOUNDATIONAL, "Foundational"),
+        (SnapshotSection.REFERENCE, "Reference"),
+        (SnapshotSection.OPERATIONAL, "Operational"),
     ):
         sections.append(
             {

@@ -8,8 +8,7 @@ This is the Azure App Service code root. It contains ten read-only MCP tools:
 - `list_process_groups`, `get_process_group`; and
 - `get_metadata_snapshot`.
 
-It also contains health routes and the protected Metadata Snapshot download
-route.
+It also contains health routes and private Metadata Snapshot storage.
 
 ## Boundaries
 
@@ -20,7 +19,7 @@ route.
 - `tools/ingestion/`: Tenant-owned Copy Group reads.
 - `tools/processing/`: Process Group reads resolved through Tenant Copy Groups.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
-  generation, Azure storage, MCP binding, and protected download route.
+  generation, Azure storage, and MCP binding.
 - `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role and Tool Policy vocabulary, safe errors, and shared ID-free
   metadata Pydantic records used by snapshots and future change sets.
@@ -75,24 +74,11 @@ Gunicorn workers, and request timeout are checked-in runtime policy. They are
 not environment overrides.
 
 Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result
-contains a protected application download URL, availability time, byte count,
-and SHA-256. It never contains snapshot rows, ZIP bytes, a Blob URL, or a SAS.
-Opening the returned URL downloads the ZIP after current Tenant Read
-reauthorization. In production, an interactive browser follows the normal Easy
-Auth sign-in flow.
-
-An optional CLI helper is available when browser download is inconvenient:
-
-```bash
-uv run --project mcp_server python mcp_server/download_metadata_snapshot.py \
-  "<download_url>" \
-  --scope "api://<application-id>/.default" \
-  --output ./metadata-snapshot.zip
-```
-
-The helper obtains a developer Entra token through `DefaultAzureCredential`,
-sends it only to App Service, and downloads the redirected Blob in a separate
-request without that bearer token. It refuses to overwrite the output file.
+contains a 15-minute read-only SAS URL for the exact ZIP, URL expiry time, byte
+count, and SHA-256. It never contains snapshot rows or ZIP bytes. Tenant Read is
+authorized before the URL is created. Opening the URL downloads directly from
+the private Blob container. The SAS URL is returned only in the MCP result and
+must not be logged.
 
 ## Tests
 
@@ -138,9 +124,8 @@ anonymous:
 /.well-known/oauth-protected-resource/mcp
 ```
 
-`/mcp` and Metadata Snapshot downloads remain protected. The database login
-must have exactly one direct membership: `gds_app_write`; the pool activates
-that `NOINHERIT` role.
+`/mcp` remains protected. The database login must have exactly one direct
+membership: `gds_app_write`; the pool activates that `NOINHERIT` role.
 
 The configured Blob container must already exist and remain private. Grant the
 App Service identity narrowly scoped Blob create/read access and Storage Blob

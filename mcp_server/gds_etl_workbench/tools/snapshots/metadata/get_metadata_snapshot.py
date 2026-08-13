@@ -9,14 +9,11 @@ from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated, Any, Literal
-from urllib.parse import urlsplit
 from uuid import UUID, uuid4
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
-from starlette.requests import Request
-from starlette.responses import JSONResponse, RedirectResponse, Response
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
@@ -92,7 +89,7 @@ class GetMetadataSnapshotResult(MetadataSnapshotContractModel):
     status: Literal["ready"] = "ready"
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     download_url: str = Field(min_length=1, max_length=2048)
-    available_until: datetime
+    download_url_expires_at: datetime
     size_bytes: int = Field(gt=0)
     sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
     content_type: Literal["application/zip"] = "application/zip"
@@ -110,6 +107,7 @@ def register_get_metadata_snapshot_tool(
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
     store: MetadataSnapshotStore,
+    download_ttl_seconds: int,
     retention_hours: int,
     max_archive_bytes: int,
     clock: Callable[[], datetime] | None = None,
@@ -120,7 +118,7 @@ def register_get_metadata_snapshot_tool(
     tool_registration = server.tool(
         description=(
             "Create an immutable Metadata Snapshot for one authorized Tenant. Returns "
-            "only a protected download URL and bounded archive metadata; snapshot rows "
+            "only a temporary read-only download URL and bounded archive metadata; snapshot rows "
             "never enter the MCP response."
         ),
         annotations=ToolAnnotations(
@@ -155,16 +153,23 @@ def register_get_metadata_snapshot_tool(
                 max_archive_bytes=max_archive_bytes,
                 created_at=current_time(),
             )
-            download_url = _absolute_download_url(
-                http_request,
+            download_created_at = current_time()
+            download_url = await store.create_read_url(
                 tenant_id=ready.tenant_id,
                 snapshot_id=ready.snapshot_id,
+                now=download_created_at,
+                ttl_seconds=download_ttl_seconds,
             )
+            if download_url is None:
+                raise DependencyUnavailableError()
             return GetMetadataSnapshotResult(
                 snapshot_id=ready.snapshot_id,
                 tenant_id=ready.tenant_id,
                 download_url=download_url,
-                available_until=ready.available_until,
+                download_url_expires_at=min(
+                    ready.available_until,
+                    download_created_at + timedelta(seconds=download_ttl_seconds),
+                ),
                 size_bytes=ready.size_bytes,
                 sha256=ready.sha256,
             )
@@ -201,128 +206,6 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
         "schema_version": "2.0" if arguments.get("schema_version", "2.0") == "2.0" else "invalid",
         "tenant_id": tenant_id,
     }
-
-
-def _absolute_download_url(
-    request: object | None,
-    *,
-    tenant_id: int,
-    snapshot_id: UUID,
-) -> str:
-    if not isinstance(request, Request):
-        raise SnapshotContractError("snapshot creation requires an HTTP request context")
-    base_url = str(request.base_url).rstrip("/")
-    parsed = urlsplit(base_url)
-    if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-        raise SnapshotContractError("snapshot download origin is invalid")
-    download_url = f"{base_url}/metadata-snapshots/{tenant_id}/{snapshot_id}/download"
-    if len(download_url) > 2048:
-        raise SnapshotContractError("snapshot download URL is too long")
-    return download_url
-
-
-def register_metadata_snapshot_download_route(
-    server: MCPServer[None],
-    *,
-    database: Database,
-    identity_provider: IdentityProvider,
-    authorizer: AuthorizationService,
-    store: MetadataSnapshotStore,
-    download_ttl_seconds: int,
-    clock: Callable[[], datetime] | None = None,
-) -> None:
-    """Register the reauthorizing, non-disclosing browser download boundary."""
-    current_time = clock or (lambda: datetime.now(UTC))
-
-    async def download(request: Request) -> Response:
-        identity = _download_identity(request)
-        if identity is None:
-            return _snapshot_not_found()
-        tenant_id, snapshot_id = identity
-        try:
-            principal = identity_provider.request_principal(request)
-            async with database.read_transaction() as transaction:
-                await authorizer.authorize_tenant(
-                    transaction,
-                    principal,
-                    tenant_id=tenant_id,
-                    policy=ToolPolicy.TENANT_READ,
-                )
-            read_url = await store.create_read_url(
-                tenant_id=tenant_id,
-                snapshot_id=snapshot_id,
-                now=current_time(),
-                ttl_seconds=download_ttl_seconds,
-            )
-            if read_url is None:
-                return _snapshot_not_found()
-            return RedirectResponse(
-                read_url,
-                status_code=302,
-                headers={"Cache-Control": "no-store"},
-            )
-        except AuthenticationError as error:
-            return JSONResponse(
-                {
-                    "error": {
-                        "code": error.public_code,
-                        "message": error.message,
-                        "retryable": False,
-                    }
-                },
-                status_code=error.http_status,
-                headers={"Cache-Control": "no-store"},
-            )
-        except DependencyUnavailableError:
-            return JSONResponse(
-                {
-                    "error": {
-                        "code": "dependency_unavailable",
-                        "message": "A required dependency is unavailable.",
-                        "retryable": True,
-                    }
-                },
-                status_code=503,
-                headers={"Cache-Control": "no-store"},
-            )
-        except (WorkbenchError, SnapshotContractError):
-            return _snapshot_not_found()
-
-    server.custom_route(
-        "/metadata-snapshots/{tenant_id}/{snapshot_id}/download",
-        methods=["GET"],
-    )(download)
-
-
-def _download_identity(request: Request) -> tuple[int, UUID] | None:
-    raw_tenant_id = request.path_params.get("tenant_id", "")
-    raw_snapshot_id = request.path_params.get("snapshot_id", "")
-    if not raw_tenant_id.isascii() or not raw_tenant_id.isdecimal() or len(raw_tenant_id) > 19:
-        return None
-    tenant_id = int(raw_tenant_id)
-    if tenant_id <= 0 or tenant_id > 9_223_372_036_854_775_807 or str(tenant_id) != raw_tenant_id:
-        return None
-    try:
-        snapshot_id = UUID(raw_snapshot_id)
-    except ValueError:
-        return None
-    if snapshot_id.version != 4 or str(snapshot_id) != raw_snapshot_id:
-        return None
-    return tenant_id, snapshot_id
-
-
-def _snapshot_not_found() -> JSONResponse:
-    return JSONResponse(
-        {
-            "error": {
-                "code": "not_found",
-                "message": "Snapshot was not found.",
-                "retryable": False,
-            }
-        },
-        status_code=404,
-        headers={"Cache-Control": "no-store"},
-    )
 
 
 async def select_snapshot_datasets(

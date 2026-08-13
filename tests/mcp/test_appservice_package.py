@@ -50,7 +50,6 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             for name in names
         )
         assert all("tests/" not in name and ".env" not in name for name in names)
-        assert "download_metadata_snapshot.py" not in names
         assert all(
             info.date_time == (1980, 1, 1, 0, 0, 0) for info in archive.infolist()
         )
