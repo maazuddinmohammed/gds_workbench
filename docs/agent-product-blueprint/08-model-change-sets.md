@@ -130,10 +130,30 @@ advances the revision by one. A valid no-change apply keeps it unchanged.
 ## Tenant Metadata Change Sets
 
 `mcp.metadata_change_set` uses the same draft lifecycle for Tenant-owned
-Core metadata. Its twelve documents are Source/Bronze/Silver/Gold Object and
-Attribute pairs, Copy Group, Copy, Process Group, and Process. One
-`base_metadata_digest` fences the complete current Tenant metadata snapshot.
-Events, apply receipts, and local-reference mappings are append-only.
+Core metadata. Its sixteen list-shaped documents are Source/Bronze/Silver/Gold
+Object and Attribute pairs, both Ingestion Mappings, Copy Group, Member Group,
+Copy Group Control, Copy, Process Group, and Process. Current Tenant Lock
+ownership protects creation, staging, validation, and apply. Events are
+append-only; archived drafts remain stored as terminal history.
+
+The installed metadata workflow is:
+
+1. check/acquire the Tenant Lock;
+2. create a fresh Metadata Snapshot and inspect only needed files;
+3. create or resume the Principal's one ongoing Change Set;
+4. stage one complete ID-free dataset list at a time using `draft_revision`;
+5. get counts or one selected dataset without loading all documents into chat;
+6. validate shared Pydantic schemas, Tenant scope, natural-key uniqueness, and
+   references; then fix the first failed phase; and
+7. apply, which repeats validation and natural-key resolution in the same
+   PostgreSQL transaction.
+
+`archive_metadata_change_set` retains an abandoned active/validated draft.
+Get and archive enforce Tenant access plus creator ownership but do not require
+a current Tenant Lock. An empty staged list clears that pending dataset; it does
+not delete applied metadata. Apply performs upserts only. Lifecycle changes use
+full records with `is_active=false`. Object changes are limited to connections
+owned by the locked Tenant or active global discovery scopes owned by it.
 
 ## Concurrency, expiry, and replay
 

@@ -61,12 +61,74 @@ GRANT EXECUTE ON FUNCTION security.release_tenant_lock(
 GRANT EXECUTE ON FUNCTION security.expire_tenant_locks(INTEGER)
 TO gds_app_write;
 
+GRANT EXECUTE ON FUNCTION mcp.create_metadata_change_set(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID,
+    UUID
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.stage_metadata_change_set(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID,
+    BIGINT,
+    VARCHAR,
+    JSONB,
+    UUID
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.get_metadata_change_set(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.record_metadata_change_set_validation(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID,
+    BIGINT,
+    BOOLEAN,
+    CHAR,
+    JSONB,
+    UUID,
+    UUID
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.apply_metadata_change_set(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID,
+    BIGINT,
+    CHAR,
+    UUID
+) TO gds_app_write;
+
+GRANT EXECUTE ON FUNCTION mcp.archive_metadata_change_set(
+    UUID,
+    UUID,
+    VARCHAR,
+    BIGINT,
+    UUID,
+    BIGINT,
+    UUID
+) TO gds_app_write;
+
 GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
     TO gds_app_write;
 REVOKE SELECT ON core.connection_value FROM gds_app_write;
 GRANT SELECT ON
-    mcp.metadata_change_set,
-    mcp.metadata_change_set_event,
     mcp.model_change_set,
     mcp.model_change_set_event
 TO gds_app_write;
@@ -104,12 +166,10 @@ GRANT INSERT, UPDATE ON
     workflow.logical_relationship,
     workflow.logical_submodel,
     workflow.mapping_source_system_dependency,
-    mcp.metadata_change_set,
     mcp.model_change_set,
     workflow.mapping_object
 TO gds_app_write;
 GRANT INSERT ON
-    mcp.metadata_change_set_event,
     mcp.model_change_set_event
 TO gds_app_write;
 

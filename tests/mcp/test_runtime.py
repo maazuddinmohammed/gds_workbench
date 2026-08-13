@@ -196,6 +196,12 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "renew_tenant_lock",
         "release_tenant_lock",
         "override_tenant_lock",
+        "create_metadata_change_set",
+        "stage_metadata_change_set",
+        "get_metadata_change_set",
+        "validate_metadata_change_set",
+        "apply_metadata_change_set",
+        "archive_metadata_change_set",
         "list_objects",
         "get_objects",
         "get_object_lineage",
@@ -209,7 +215,19 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         tool.meta
         == {
             "gds/toolPolicy": (
-                "tenant_lock_manage" if "tenant_lock" in tool.name else "tenant_read"
+                "tenant_metadata_write"
+                if tool.name
+                in {
+                    "create_metadata_change_set",
+                    "stage_metadata_change_set",
+                    "validate_metadata_change_set",
+                    "apply_metadata_change_set",
+                }
+                else "tenant_lock_manage"
+                if "tenant_lock" in tool.name
+                or tool.name
+                in {"get_metadata_change_set", "archive_metadata_change_set"}
+                else "tenant_read"
             )
         }
         for tool in tools.tools

@@ -240,7 +240,8 @@ CREATE TABLE core.attribute (
     CONSTRAINT fk_attribute_object FOREIGN KEY (object_id)
         REFERENCES core.object (object_id) ON DELETE NO ACTION,
     CONSTRAINT uq_attribute_object_ordinal
-        UNIQUE (object_id, attribute_ordinal_position),
+        UNIQUE (object_id, attribute_ordinal_position)
+        DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT uq_attribute_id_object UNIQUE (attribute_id, object_id),
     CONSTRAINT ck_attribute_name CHECK (reference.is_nonblank(attribute_name)),
     CONSTRAINT ck_attribute_ordinal CHECK (attribute_ordinal_position > 0)
@@ -438,6 +439,7 @@ CREATE TABLE core.copy (
         UNIQUE (copy_group_id, ingestion_object_mapping_id),
     CONSTRAINT uq_copy_group_order
         UNIQUE (copy_group_id, copy_source_order)
+        DEFERRABLE INITIALLY IMMEDIATE
 );
 
 CREATE TABLE core.process_group (

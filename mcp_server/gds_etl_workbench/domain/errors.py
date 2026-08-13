@@ -46,6 +46,46 @@ class TenantLockedError(WorkbenchError):
         )
 
 
+class MetadataChangeSetNotFoundError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="metadata_change_set_not_found",
+            message="Metadata Change Set was not found for the current Principal and Tenant.",
+        )
+
+
+class MetadataChangeSetNotActiveError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="metadata_change_set_not_active",
+            message="Metadata Change Set is no longer active.",
+        )
+
+
+class MetadataChangeSetNotValidatedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="metadata_change_set_not_validated",
+            message="Metadata Change Set must pass validation before it can be applied.",
+        )
+
+
+class CandidateDigestConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="candidate_digest_conflict",
+            message="Validated Metadata Change Set content changed before apply.",
+        )
+
+
+class DraftRevisionConflictError(WorkbenchError):
+    def __init__(self, current_revision: int) -> None:
+        super().__init__(
+            code="draft_revision_conflict",
+            message=f"Draft revision changed; current revision is {current_revision}.",
+        )
+
+
 class DependencyUnavailableError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

@@ -144,10 +144,22 @@ to `active`, clear validation, and refresh activity/expiry. Validation seals a
 digest/outcome without advancing the draft revision. Terminal payloads are
 retained and immutable. Event sequences are unique and append-only.
 
-Tenant-owned Metadata Change Sets store twelve bounded documents for
-Source/Bronze/Silver/Gold Objects and Attributes, Copy Group, Copy, Process
-Group, and Process. Their `base_metadata_digest` fences stale drafts; their
-events are append-only.
+Tenant-owned Metadata Change Sets store sixteen bounded list-shaped documents:
+Source/Bronze/Silver/Gold Objects and Attributes, both Ingestion Mappings, Copy
+Group, Member Group, Copy Group Control, Copy, Process Group, and Process. One
+ongoing draft is allowed per Tenant and creating Principal. Tenant Lock ownership
+is the current concurrency boundary. Their events are append-only, and archive is
+a retained terminal state rather than a row move or delete.
+
+Six governed functions back the MCP Metadata Change Set tools. Create, stage,
+validate, and apply require the caller-owned Tenant Lock. Get and archive require
+creator ownership but no current lock. Stage replaces one complete JSON list and
+uses optimistic `draft_revision`. Validation shares the Snapshot Pydantic
+schemas, canonical keys, uniqueness constraints, and reference definitions.
+Apply repeats validation, resolves natural keys to IDs, and upserts all 16
+eligible Core datasets atomically. The runtime role has no direct SELECT or DML
+on Metadata Change Set or event tables. Object mutation is restricted to the
+locked Tenant's connections or its active global Metadata Discovery Scopes.
 
 The `ChangeSetsFeature` draft-expiry worker asks the repository to select one
 bounded batch. In
@@ -172,9 +184,9 @@ Registered workload identities map directly to active Super Admin Principals.
 The fresh cluster defines two non-login, non-superuser group roles:
 
 - `gds_migration`: schema creation plus all release objects;
-- `gds_app_write`: safe reads, constrained Model/workflow/MCP DML,
+- `gds_app_write`: safe reads, constrained Model/workflow DML,
   sequence use, the pure `CHECK` validator, centralized authorization,
-  and governed Tenant Lock functions.
+  governed Tenant Lock functions, and governed Metadata Change Set functions.
 
 `gds_mcp_runtime` is the LOGIN used by App Service. It has exactly one direct
 membership, `gds_app_write`, and activates that group with `SET ROLE`.

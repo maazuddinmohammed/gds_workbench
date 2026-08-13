@@ -7,6 +7,7 @@ DECLARE
     v_group_role_count INTEGER;
     v_membership_count INTEGER;
     v_security_definer_count INTEGER;
+    v_metadata_change_set_function_count INTEGER;
 BEGIN
     IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
         RAISE EXCEPTION 'PostgreSQL 18 is required';
@@ -126,6 +127,31 @@ BEGIN
         RAISE EXCEPTION 'security function posture is invalid';
     END IF;
 
+    SELECT count(*)
+      INTO v_metadata_change_set_function_count
+      FROM pg_catalog.pg_proc AS function_record
+      JOIN pg_catalog.pg_namespace AS namespace_record
+        ON namespace_record.oid = function_record.pronamespace
+     WHERE namespace_record.nspname = 'mcp'
+       AND function_record.proname IN (
+               'create_metadata_change_set',
+               'stage_metadata_change_set',
+               'get_metadata_change_set',
+               'record_metadata_change_set_validation',
+               'apply_metadata_change_set',
+               'archive_metadata_change_set'
+           )
+       AND function_record.prosecdef
+       AND EXISTS (
+               SELECT 1
+                 FROM unnest(function_record.proconfig) AS setting(value)
+                WHERE setting.value LIKE 'search_path=pg_catalog%'
+           );
+
+    IF v_metadata_change_set_function_count <> 6 THEN
+        RAISE EXCEPTION 'Metadata Change Set function posture is invalid';
+    END IF;
+
     IF EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
@@ -149,7 +175,14 @@ BEGIN
        OR NOT has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'INSERT')
        OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'SELECT')
        OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'UPDATE')
-       OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'DELETE') THEN
+       OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'DELETE')
+       OR has_table_privilege('gds_app_write', 'mcp.metadata_change_set', 'SELECT')
+       OR has_table_privilege(
+           'gds_app_write', 'mcp.metadata_change_set', 'INSERT,UPDATE,DELETE'
+       )
+       OR has_table_privilege(
+           'gds_app_write', 'mcp.metadata_change_set_event', 'INSERT'
+       ) THEN
         RAISE EXCEPTION 'runtime table privileges are invalid';
     END IF;
 
@@ -180,6 +213,30 @@ BEGIN
     ) OR NOT has_function_privilege(
         'gds_app_write',
         'security.expire_tenant_locks(integer)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying,jsonb,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
         'EXECUTE'
     ) THEN
         RAISE EXCEPTION 'runtime function privileges are invalid';

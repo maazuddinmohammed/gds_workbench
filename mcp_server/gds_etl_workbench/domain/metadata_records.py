@@ -1,4 +1,4 @@
-"""ID-free metadata records shared by snapshots and future change sets."""
+"""ID-free metadata records shared by snapshots and Metadata Change Sets."""
 
 from __future__ import annotations
 

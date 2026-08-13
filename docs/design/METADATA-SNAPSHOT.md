@@ -384,9 +384,8 @@ routine navigation.
 
 ## Metadata Change Set alignment
 
-The current 12-document `mcp.metadata_change_set` design expands to 16
-documents so every metadata dataset marked eligible has a governed future
-write path:
+`mcp.metadata_change_set` has 16 list-shaped documents so every metadata
+dataset marked eligible has a governed write path:
 
 1. Source Object
 2. Source Attribute
@@ -405,9 +404,17 @@ write path:
 15. Process Group
 16. Process
 
-The database JSONB columns, size checks, and event Section allowlist will be
-updated together. This design change does not expose a mutation tool as part of
-the snapshot slice.
+The database JSONB columns, size checks, event Section allowlist, shared
+Pydantic record models, and apply logic use this exact registry. The Stage tool
+publishes a discriminated input schema for all 16 datasets through MCP
+`tools/list`, so the agent knows every required field before calling it.
+
+Stage replaces one complete pending dataset list and advances one global draft
+revision. Get returns either 16 counts or only one requested list. Validate and
+Apply load the current Snapshot closure internally; rows never enter tool
+output. Validation stops after the first failed phase and returns at most 100
+small errors. Apply reruns validation in one transaction and resolves natural
+keys to PostgreSQL IDs server-side.
 
 Reference rows are never appendable or mutable through a Metadata Change Set.
 Metadata records refer to these rows by their canonical code or name, never by

@@ -1,0 +1,500 @@
+"""Metadata Change Set validation using the shared Snapshot contract registry."""
+
+from __future__ import annotations
+
+import hashlib
+import json
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
+from typing import cast
+
+from pydantic import ValidationError
+
+from gds_etl_workbench.tools.snapshots.metadata.archive import EncodedDataset
+from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+    DATASETS,
+    DatasetDefinition,
+    ReferenceDefinition,
+)
+
+MAX_VALIDATION_ISSUES = 100
+
+
+@dataclass(frozen=True, slots=True)
+class ValidationIssue:
+    code: str
+    dataset: str
+    record_number: int | None
+    fields: tuple[str, ...]
+    message: str
+
+    def as_document(self) -> dict[str, object]:
+        return {
+            "code": self.code,
+            "dataset": self.dataset,
+            "record_number": self.record_number,
+            "fields": list(self.fields),
+            "message": self.message,
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class MetadataChangeSetValidation:
+    valid: bool
+    phase: str
+    candidate_digest: str | None
+    staged_record_count: int
+    issues: tuple[ValidationIssue, ...]
+
+    def outcome_document(self) -> dict[str, object]:
+        return {
+            "schema_version": "1.0",
+            "valid": self.valid,
+            "phase": self.phase,
+            "staged_record_count": self.staged_record_count,
+            "error_count": len(self.issues),
+            "errors": [issue.as_document() for issue in self.issues],
+        }
+
+
+@dataclass(frozen=True, slots=True)
+class _Row:
+    dataset: str
+    record_number: int
+    values: dict[str, object]
+    staged: bool
+
+
+def rows_from_snapshot(
+    encoded_datasets: Sequence[EncodedDataset],
+) -> dict[str, list[dict[str, object]]]:
+    """Decode already-validated Snapshot JSONL without exposing it through MCP."""
+    return {
+        encoded.definition.name: [
+            cast(dict[str, object], json.loads(line))
+            for line in encoded.rows_jsonl.decode("utf-8").splitlines()
+        ]
+        for encoded in encoded_datasets
+    }
+
+
+def validate_metadata_documents(
+    *,
+    tenant_code: str,
+    current_rows_by_dataset: Mapping[str, Sequence[Mapping[str, object]]],
+    staged_rows_by_dataset: Mapping[str, Sequence[Mapping[str, object]]],
+) -> MetadataChangeSetValidation:
+    """Validate one full pending document set, stopping after the first failed phase."""
+    staged_count = sum(len(rows) for rows in staged_rows_by_dataset.values())
+    current, staged, issues = _validate_schemas(
+        current_rows_by_dataset,
+        staged_rows_by_dataset,
+    )
+    if issues:
+        return _failed("schema", staged_count, issues)
+
+    digest = _candidate_digest(staged)
+    issues = _validate_tenant_scope(tenant_code, current, staged)
+    if issues:
+        return _failed("tenant_scope", staged_count, issues, digest)
+
+    issues = _validate_staged_uniqueness(staged)
+    if issues:
+        return _failed("uniqueness", staged_count, issues, digest)
+
+    effective = _overlay_rows(current, staged)
+    issues = _validate_effective_uniqueness(effective)
+    if issues:
+        return _failed("uniqueness", staged_count, issues, digest)
+
+    issues = _validate_references(effective)
+    if issues:
+        return _failed("references", staged_count, issues, digest)
+
+    return MetadataChangeSetValidation(
+        valid=True,
+        phase="complete",
+        candidate_digest=digest,
+        staged_record_count=staged_count,
+        issues=(),
+    )
+
+
+def _validate_schemas(
+    current_rows_by_dataset: Mapping[str, Sequence[Mapping[str, object]]],
+    staged_rows_by_dataset: Mapping[str, Sequence[Mapping[str, object]]],
+) -> tuple[list[_Row], list[_Row], list[ValidationIssue]]:
+    current: list[_Row] = []
+    staged: list[_Row] = []
+    issues: list[ValidationIssue] = []
+    for definition in DATASETS:
+        for is_staged, source, target in (
+            (False, current_rows_by_dataset.get(definition.name, ()), current),
+            (True, staged_rows_by_dataset.get(definition.name, ()), staged),
+        ):
+            if is_staged and not definition.change_set_eligible and source:
+                issues.append(
+                    ValidationIssue(
+                        "dataset_not_changeable",
+                        definition.name,
+                        None,
+                        (),
+                        "Dataset cannot be changed through a Metadata Change Set.",
+                    )
+                )
+                continue
+            for record_number, raw in enumerate(source, start=1):
+                try:
+                    values = definition.row_model.model_validate(raw).model_dump(mode="json")
+                except ValidationError as error:
+                    first = error.errors(include_url=False, include_input=False)[0]
+                    fields = tuple(str(part) for part in first["loc"])
+                    issues.append(
+                        ValidationIssue(
+                            "schema_invalid",
+                            definition.name,
+                            record_number,
+                            fields,
+                            str(first["msg"]),
+                        )
+                    )
+                    if len(issues) >= MAX_VALIDATION_ISSUES:
+                        return current, staged, issues
+                    continue
+                invalid_fixed = tuple(
+                    field
+                    for field, expected in definition.fixed_values
+                    if values[field] != expected
+                )
+                if invalid_fixed:
+                    issues.append(
+                        ValidationIssue(
+                            "fixed_value_invalid",
+                            definition.name,
+                            record_number,
+                            invalid_fixed,
+                            "Record does not match the selected dataset.",
+                        )
+                    )
+                target.append(_Row(definition.name, record_number, values, is_staged))
+                if len(issues) >= MAX_VALIDATION_ISSUES:
+                    return current, staged, issues
+    return current, staged, issues
+
+
+def _validate_tenant_scope(
+    tenant_code: str,
+    current: Sequence[_Row],
+    staged: Sequence[_Row],
+) -> list[ValidationIssue]:
+    normalized_tenant = tenant_code.strip().casefold()
+    owned_connections = {
+        _normalized_key(
+            ("tenant_code", "system_code", "connection_code"),
+            row.values,
+        )
+        for row in current
+        if row.dataset == "connection"
+        and str(row.values["tenant_code"]).strip().casefold() == normalized_tenant
+    }
+    discovery_scopes = {
+        _normalized_key(
+            (
+                "connection_tenant_code",
+                "connection_system_code",
+                "connection_code",
+                "zone_code",
+                "object_schema",
+            ),
+            row.values,
+        )
+        for row in current
+        if row.dataset == "tenant_metadata_discovery_scope"
+        and str(row.values["scope_tenant_code"]).strip().casefold() == normalized_tenant
+        and row.values["is_active"] is True
+    }
+    effective_objects: dict[tuple[object, ...], Mapping[str, object]] = {}
+    for row in (*current, *staged):
+        if _definition(row.dataset).record_type == "object":
+            effective_objects[
+                _normalized_key(_definition(row.dataset).canonical_key, row.values)
+            ] = row.values
+
+    issues: list[ValidationIssue] = []
+    for row in staged:
+        owner_fields = _tenant_owner_fields(row.dataset)
+        mismatched_owner = tuple(
+            field
+            for field in owner_fields
+            if str(row.values[field]).strip().casefold() != normalized_tenant
+        )
+        if mismatched_owner:
+            issues.append(
+                ValidationIssue(
+                    "tenant_scope_mismatch",
+                    row.dataset,
+                    row.record_number,
+                    mismatched_owner,
+                    "Record is not owned by the locked Tenant.",
+                )
+            )
+            continue
+        object_values = _mutated_object_values(row, effective_objects)
+        if object_values is not None and not _object_is_mutable(
+            object_values,
+            owned_connections,
+            discovery_scopes,
+        ):
+            issues.append(
+                ValidationIssue(
+                    "tenant_scope_mismatch",
+                    row.dataset,
+                    row.record_number,
+                    (
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                    ),
+                    "Object is outside the Tenant's connections and discovery scopes.",
+                )
+            )
+        if len(issues) >= MAX_VALIDATION_ISSUES:
+            break
+    return issues
+
+
+def _tenant_owner_fields(dataset: str) -> tuple[str, ...]:
+    if dataset in {
+        "copy_group",
+        "member_group",
+        "copy_group_control",
+        "process_group",
+        "process",
+    }:
+        return ("tenant_code",)
+    if dataset == "copy":
+        return ("tenant_code",)
+    return ()
+
+
+def _mutated_object_values(
+    row: _Row,
+    effective_objects: Mapping[tuple[object, ...], Mapping[str, object]],
+) -> Mapping[str, object] | None:
+    record_type = _definition(row.dataset).record_type
+    if record_type == "object":
+        return row.values
+    if record_type == "attribute":
+        key = _normalized_key(
+            ("tenant_code", "system_code", "connection_code", "object_schema", "object_name"),
+            row.values,
+        )
+        return effective_objects.get(key)
+    if row.dataset in {
+        "ingestion_object_mapping",
+        "ingestion_attribute_mapping",
+        "copy",
+    }:
+        key = tuple(
+            _normalize_key_value(column, row.values[f"target_{column}"])
+            for column in (
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+            )
+        )
+        return effective_objects.get(key)
+    return None
+
+
+def _object_is_mutable(
+    values: Mapping[str, object],
+    owned_connections: set[tuple[object, ...]],
+    discovery_scopes: set[tuple[object, ...]],
+) -> bool:
+    connection_key = _normalized_key(
+        ("tenant_code", "system_code", "connection_code"),
+        values,
+    )
+    if connection_key in owned_connections:
+        return True
+    scope_key = _normalized_key(
+        ("tenant_code", "system_code", "connection_code", "zone_code", "object_schema"),
+        values,
+    )
+    return scope_key in discovery_scopes
+
+
+def _validate_staged_uniqueness(rows: Sequence[_Row]) -> list[ValidationIssue]:
+    return _find_duplicate_constraints(rows, staged_only=True)
+
+
+def _validate_effective_uniqueness(rows: Sequence[_Row]) -> list[ValidationIssue]:
+    return _find_duplicate_constraints(rows, staged_only=False)
+
+
+def _find_duplicate_constraints(
+    rows: Sequence[_Row],
+    *,
+    staged_only: bool,
+) -> list[ValidationIssue]:
+    issues: list[ValidationIssue] = []
+    for record_type, definitions in _definitions_by_record_type().items():
+        relevant = [row for row in rows if _definition(row.dataset).record_type == record_type]
+        constraints = tuple(
+            dict.fromkeys(
+                constraint
+                for definition in definitions
+                for constraint in definition.unique_constraints
+            )
+        )
+        for constraint in constraints:
+            seen: dict[tuple[object, ...], _Row] = {}
+            for row in relevant:
+                key = _normalized_key(constraint, row.values)
+                first = seen.get(key)
+                if first is None:
+                    seen[key] = row
+                    continue
+                report = row if row.staged else first if first.staged else None
+                if report is None and not staged_only:
+                    continue
+                if report is None:
+                    report = row
+                issues.append(
+                    ValidationIssue(
+                        "duplicate_unique_key",
+                        report.dataset,
+                        report.record_number,
+                        constraint,
+                        "Unique key is duplicated in the effective metadata.",
+                    )
+                )
+                if len(issues) >= MAX_VALIDATION_ISSUES:
+                    return issues
+    return issues
+
+
+def _overlay_rows(current: Sequence[_Row], staged: Sequence[_Row]) -> list[_Row]:
+    effective: dict[tuple[str, tuple[object, ...]], _Row] = {}
+    for row in (*current, *staged):
+        definition = _definition(row.dataset)
+        key = (definition.record_type, _normalized_key(definition.canonical_key, row.values))
+        effective[key] = row
+    return list(effective.values())
+
+
+def _validate_references(rows: Sequence[_Row]) -> list[ValidationIssue]:
+    keys_by_record_type: dict[str, set[tuple[object, ...]]] = {}
+    for row in rows:
+        definition = _definition(row.dataset)
+        keys_by_record_type.setdefault(definition.record_type, set()).add(
+            _normalized_key(definition.canonical_key, row.values)
+        )
+
+    issues: list[ValidationIssue] = []
+    for row in rows:
+        for reference in _definition(row.dataset).references:
+            issue = _reference_issue(row, reference, keys_by_record_type)
+            if issue is not None:
+                issues.append(issue)
+                if len(issues) >= MAX_VALIDATION_ISSUES:
+                    return issues
+    return issues
+
+
+def _reference_issue(
+    row: _Row,
+    reference: ReferenceDefinition,
+    keys_by_record_type: Mapping[str, set[tuple[object, ...]]],
+) -> ValidationIssue | None:
+    values = tuple(row.values[column] for column in reference.columns)
+    if reference.nullable and all(value is None for value in values):
+        return None
+    if any(value is None for value in values):
+        return ValidationIssue(
+            "reference_incomplete",
+            row.dataset,
+            row.record_number,
+            reference.columns,
+            "Natural-key reference is only partially populated.",
+        )
+    target_key = tuple(
+        _normalize_key_value(column, value)
+        for column, value in zip(reference.target_columns, values, strict=True)
+    )
+    if target_key in keys_by_record_type.get(reference.target_record_type, set()):
+        return None
+    return ValidationIssue(
+        "reference_not_found",
+        row.dataset,
+        row.record_number,
+        reference.columns,
+        f"Referenced {reference.target_record_type} was not found.",
+    )
+
+
+def _candidate_digest(rows: Sequence[_Row]) -> str:
+    documents: dict[str, list[dict[str, object]]] = {
+        definition.name: [] for definition in DATASETS if definition.change_set_eligible
+    }
+    for row in rows:
+        documents[row.dataset].append(row.values)
+    for dataset, document in documents.items():
+        definition = _definition(dataset)
+        document.sort(key=lambda item: _normalized_key(definition.canonical_key, item))
+    payload = json.dumps(
+        documents,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(payload).hexdigest()
+
+
+def _failed(
+    phase: str,
+    staged_count: int,
+    issues: Sequence[ValidationIssue],
+    digest: str | None = None,
+) -> MetadataChangeSetValidation:
+    return MetadataChangeSetValidation(
+        valid=False,
+        phase=phase,
+        candidate_digest=digest,
+        staged_record_count=staged_count,
+        issues=tuple(issues[:MAX_VALIDATION_ISSUES]),
+    )
+
+
+def _definition(dataset: str) -> DatasetDefinition:
+    for definition in DATASETS:
+        if definition.name == dataset:
+            return definition
+    raise KeyError(dataset)
+
+
+def _definitions_by_record_type() -> dict[str, tuple[DatasetDefinition, ...]]:
+    grouped: dict[str, list[DatasetDefinition]] = {}
+    for definition in DATASETS:
+        grouped.setdefault(definition.record_type, []).append(definition)
+    return {name: tuple(definitions) for name, definitions in grouped.items()}
+
+
+def _normalized_key(
+    columns: tuple[str, ...],
+    row: Mapping[str, object],
+) -> tuple[object, ...]:
+    return tuple(_normalize_key_value(column, row[column]) for column in columns)
+
+
+def _normalize_key_value(column: str, value: object) -> object:
+    if isinstance(value, str) and (
+        column.endswith("_code") or column.endswith("_name") or column.endswith("_schema")
+    ):
+        return value.strip().casefold()
+    return value

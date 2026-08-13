@@ -15,12 +15,15 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import Database
+from gds_etl_workbench.infrastructure.postgres import Database, WriteDatabase
 from gds_etl_workbench.tools.catalog.get_object_lineage import (
     register_get_object_lineage_tool,
 )
 from gds_etl_workbench.tools.catalog.get_objects import register_get_objects_tool
 from gds_etl_workbench.tools.catalog.list_objects import register_list_objects_tool
+from gds_etl_workbench.tools.change_sets.metadata import (
+    register_metadata_change_set_tools,
+)
 from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_tools
 from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
@@ -34,10 +37,7 @@ from gds_etl_workbench.tools.tenants.get_tenant_details import (
     register_get_tenant_details_tool,
 )
 from gds_etl_workbench.tools.tenants.list_tenants import register_list_tenants_tool
-from gds_etl_workbench.tools.tenants.tenant_locks import (
-    TenantLockDatabase,
-    register_tenant_lock_tools,
-)
+from gds_etl_workbench.tools.tenants.tenant_locks import register_tenant_lock_tools
 
 from .tool_audit import ToolCallAuditMiddleware
 
@@ -81,6 +81,10 @@ def create_mcp_server(
             "Object, Copy Group, Process Group, or direct ingestion-lineage reads. Prefer "
             "these bounded summaries before requesting a protected Metadata Snapshot. "
             "Before metadata changes, check_tenant_lock and then acquire_tenant_lock. "
+            "Then get_metadata_snapshot, create_metadata_change_set, stage complete "
+            "ID-free dataset lists, and validate_metadata_change_set. Apply only after "
+            "review; apply_metadata_change_set revalidates atomically. Archive abandoned "
+            "drafts. get and archive enforce ownership but do not require a current lock. "
             "Use renew_tenant_lock only for your own lock. Release it when finished. "
             "override_tenant_lock only force-releases another owner's lock; it never "
             "acquires a replacement. Tenant identity, roles, and lock ownership are "
@@ -107,8 +111,15 @@ def create_mcp_server(
     )
     register_tenant_lock_tools(
         server,
-        database=cast(TenantLockDatabase, database),
+        database=cast(WriteDatabase, database),
         identity_provider=identity_provider,
+        audit=audit,
+    )
+    register_metadata_change_set_tools(
+        server,
+        database=cast(WriteDatabase, database),
+        identity_provider=identity_provider,
+        authorizer=authorizer,
         audit=audit,
     )
     register_list_objects_tool(

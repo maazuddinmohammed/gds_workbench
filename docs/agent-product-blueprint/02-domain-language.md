@@ -26,7 +26,7 @@ Use these names consistently. They encode ownership and workflow boundaries.
 | Modeling Assertion | Model-owned document metadata and structured factual Assertion Records that may persist as artifact support | Modeling Evidence, fact |
 | Section | One versioned part of a Model: Assertion, Analysis, Conceptual, Logical, Dimensional, or Mapping | Patch, payload type |
 | Model Change Set | Model-owned eight-document draft that validates one future graph and applies atomically | Patch, transaction draft |
-| Metadata Change Set | Tenant-owned twelve-document draft for physical metadata and Copy/Process configuration | Model Change Set |
+| Metadata Change Set | Tenant-owned sixteen-document draft for physical metadata and Copy/Process configuration | Model Change Set |
 | Candidate | Uncommitted workflow result that may become one or more draft Sections | Agent answer |
 | Apply Receipt | Immutable result binding a change set to its digest, generated IDs, revision, and replay outcome | Apply response only |
 

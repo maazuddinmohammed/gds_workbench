@@ -6,9 +6,8 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from contextlib import AbstractAsyncContextManager
 from datetime import datetime
-from typing import Annotated, Any, Literal, LiteralString, Protocol
+from typing import Annotated, Any, Literal, LiteralString
 from uuid import UUID
 
 from mcp.server.mcpserver import Context, MCPServer
@@ -26,7 +25,7 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
     WorkbenchError,
 )
-from gds_etl_workbench.infrastructure.postgres import Database, WriteTransaction
+from gds_etl_workbench.infrastructure.postgres import WriteDatabase
 
 POLICY = ToolPolicy.TENANT_LOCK_MANAGE
 _CHECK_TOOL = "check_tenant_lock"
@@ -140,16 +139,10 @@ class TenantLockToolError(Exception):
     """A bounded tool failure safe for MCP serialization."""
 
 
-class TenantLockDatabase(Database, Protocol):
-    """Database capabilities needed only by governed Tenant Lock tools."""
-
-    def write_transaction(self) -> AbstractAsyncContextManager[WriteTransaction]: ...
-
-
 def register_tenant_lock_tools(
     server: MCPServer[None],
     *,
-    database: TenantLockDatabase,
+    database: WriteDatabase,
     identity_provider: IdentityProvider,
     audit: ToolCallAuditMiddleware,
 ) -> None:

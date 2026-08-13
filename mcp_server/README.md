@@ -1,7 +1,7 @@
 # GDS ETL Workbench MCP scaffold
 
-This is the Azure App Service code root. It contains ten read tools and five
-Tenant Lock tools:
+This is the Azure App Service code root. It contains ten read tools, five
+Tenant Lock tools, and six Metadata Change Set tools:
 
 - `list_tenants`, `get_tenant_details`;
 - `list_objects`, `get_objects`, `get_object_lineage`;
@@ -9,7 +9,10 @@ Tenant Lock tools:
 - `list_process_groups`, `get_process_group`; and
 - `get_metadata_snapshot`; and
 - `check_tenant_lock`, `acquire_tenant_lock`, `renew_tenant_lock`,
-  `release_tenant_lock`, `override_tenant_lock`.
+  `release_tenant_lock`, `override_tenant_lock`; and
+- `create_metadata_change_set`, `stage_metadata_change_set`,
+  `get_metadata_change_set`, `validate_metadata_change_set`,
+  `apply_metadata_change_set`, `archive_metadata_change_set`.
 
 It also contains health routes and private Metadata Snapshot storage.
 
@@ -23,11 +26,13 @@ It also contains health routes and private Metadata Snapshot storage.
 - `tools/processing/`: Process Group reads resolved through Tenant Copy Groups.
 - `tools/tenants/tenant_locks.py`: all five governed Tenant Lock contracts and
   fixed SQL calls in one module.
+- `tools/change_sets/`: all six Metadata Change Set contracts, shared validation,
+  and fixed governed SQL calls.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
   generation, Azure storage, and MCP binding.
 - `application/`: shared authorization boundary and signed pagination cursor.
 - `domain/`: role and Tool Policy vocabulary, safe errors, and shared ID-free
-  metadata Pydantic records used by snapshots and future change sets.
+  metadata Pydantic records used by snapshots and Metadata Change Sets.
 - `infrastructure/`: shared PostgreSQL pool, readiness, read transactions,
   governed-function write transactions, and bounded append-only audit inserts.
 - Tests live outside this deployable folder in `../tests/mcp/`.

@@ -84,6 +84,12 @@ class Database(Protocol):
     ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
+class WriteDatabase(Database, Protocol):
+    """Database boundary for fixed, governed write operations."""
+
+    def write_transaction(self) -> AbstractAsyncContextManager[WriteTransaction]: ...
+
+
 _READINESS_SQL = """
 WITH runtime_role AS (
     SELECT oid, rolsuper, rolcreatedb, rolcreaterole
@@ -113,6 +119,24 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        ) IS NOT NULL
        AND to_regprocedure(
            'security.override_tenant_lock(uuid,uuid,varchar,bigint,varchar)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.create_metadata_change_set(uuid,uuid,varchar,bigint,uuid,uuid)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,varchar,jsonb,uuid)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.get_metadata_change_set(uuid,uuid,varchar,bigint,uuid)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.record_metadata_change_set_validation(uuid,uuid,varchar,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.apply_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,character,uuid)'
+       ) IS NOT NULL
+       AND to_regprocedure(
+           'mcp.archive_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,uuid)'
        ) IS NOT NULL AS schema_shape_ok,
        CURRENT_USER = 'gds_app_write'
        AND NOT runtime_role.rolsuper

@@ -139,7 +139,7 @@ targets Gold.
 | Tables | Meaning |
 |---|---|
 | `model_change_set`, `model_change_set_event` | Eight-document Model draft, validation seal, expiry, and append-only activity |
-| `metadata_change_set`, `metadata_change_set_event` | Twelve-document Tenant metadata draft and append-only activity |
+| `metadata_change_set`, `metadata_change_set_event` | Sixteen-list Tenant metadata draft, validation seal, retained terminal state, and append-only activity |
 | `tool_call_log` | Append-only bounded audit of completed MCP tool calls |
 
 ## Applied graph rules
@@ -166,8 +166,8 @@ requirements and rejecting tests are finalized.
 ## Database roles
 
 - `gds_migration`: creates and owns release objects.
-- `gds_app_write`: safe reads, constrained Model/workflow/MCP DML, and the pure
-  `CHECK` validator.
+- `gds_app_write`: safe reads, constrained Model/workflow DML, governed
+  Metadata Change Set functions, and the pure `CHECK` validator.
 
 `PUBLIC` has no release-schema, table, or function rights. The application role
 cannot read `core.connection_value`, update/delete append-only records, write
