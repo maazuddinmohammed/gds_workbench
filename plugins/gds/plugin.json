@@ -1,0 +1,14 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gds",
+  "version": "1.0.0",
+  "description": "Guides agents through GDS concepts and governed GDS workflows.",
+  "keywords": [
+    "gds",
+    "metadata",
+    "modeling",
+    "mcp",
+    "change-set",
+    "data-engineering"
+  ]
+}
