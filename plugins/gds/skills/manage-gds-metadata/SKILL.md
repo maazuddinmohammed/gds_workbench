@@ -51,9 +51,10 @@ Read [references/change-sets.md](references/change-sets.md) before staging.
    For an update/deactivation, start from the exact existing full row. Use the
    local upsert helper to merge by canonical key; never hand-append blindly.
    Do not invent fields or database IDs.
-9. Run the schema-aware local validator. Show all reviewed dataset names/counts
-   and ask once before staging. Stage in dependency order with complete lists;
-   record each returned revision and reviewed hash with the local state updater.
+9. Run local validation, prepare the Stage review, and require it to be fresh.
+   Resolve no-change items with the local removal helper. Show action counts and
+   affected natural keys, then ask once before staging. Stage complete lists in dependency order; record
+   each returned revision and reviewed hash with the local state updater.
 10. Call `get_metadata_change_set` without a dataset to compare counts. Request
     one dataset only when reconciling a conflict or uncertain server state.
 11. Require every local dataset to show staged, then call server validation at
@@ -74,6 +75,8 @@ Read [references/change-sets.md](references/change-sets.md) before staging.
   `override_tenant_lock`. Override only releases the old lock; recheck and
   acquire separately.
 - Require explicit user confirmation immediately before Apply.
+- A generated Stage review is not approval. Never Stage until the user approves
+  its exact Tenant, datasets, actions, and counts.
 - Never apply on a revision conflict. Fetch and reconcile; repeat review if the intended result changed.
 - Never restage an existing or conflicted dataset until its current server list
   has been fetched and merged into the complete local list.

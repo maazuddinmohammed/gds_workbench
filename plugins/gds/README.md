@@ -53,7 +53,12 @@ gds/
             ├── initialize-metadata-change-set.sh
             ├── initialize-gds-workspace.ps1
             ├── initialize-gds-workspace.sh
+            ├── build-stage-review.js
             ├── metadata-schema.ps1
+            ├── prepare-metadata-stage-review.ps1
+            ├── prepare-metadata-stage-review.sh
+            ├── remove-local-metadata-record.ps1
+            ├── remove-local-metadata-record.sh
             ├── upsert-local-metadata-record.ps1
             ├── upsert-local-metadata-record.sh
             ├── validate-local-change-set.ps1

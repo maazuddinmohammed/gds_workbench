@@ -292,3 +292,131 @@ function Merge-GdsRecord {
         Records = [object[]]$Merged
     }
 }
+
+function Test-GdsRecordsEqual {
+    param(
+        [object]$Left,
+        [object]$Right,
+        [object]$Schema
+    )
+    foreach ($Field in $Schema.properties.PSObject.Properties.Name) {
+        $LeftProperty = $Left.PSObject.Properties[$Field]
+        $RightProperty = $Right.PSObject.Properties[$Field]
+        if (
+            $null -eq $LeftProperty -or $null -eq $RightProperty -or
+            -not (Test-GdsScalarEqual $LeftProperty.Value $RightProperty.Value)
+        ) {
+            return $false
+        }
+    }
+    return $true
+}
+
+function Get-GdsRecordAction {
+    param(
+        [object]$Record,
+        [AllowNull()]
+        [object]$Existing,
+        [object]$Schema
+    )
+    if ($null -eq $Existing) {
+        return "insert"
+    }
+    if (Test-GdsRecordsEqual $Record $Existing $Schema) {
+        return "no_change"
+    }
+    $CurrentActive = $Existing.PSObject.Properties["is_active"]
+    $IntendedActive = $Record.PSObject.Properties["is_active"]
+    if ($null -ne $CurrentActive -and $null -ne $IntendedActive) {
+        if ($CurrentActive.Value -ceq $true -and $IntendedActive.Value -ceq $false) {
+            return "deactivate"
+        }
+        if ($CurrentActive.Value -ceq $false -and $IntendedActive.Value -ceq $true) {
+            return "reactivate"
+        }
+    }
+    return "update"
+}
+
+function Get-GdsCanonicalKeyObject {
+    param(
+        [object]$Record,
+        [object[]]$Columns
+    )
+    $Key = [ordered]@{}
+    foreach ($ColumnValue in $Columns) {
+        $Column = [string]$ColumnValue
+        $Property = $Record.PSObject.Properties[$Column]
+        if ($null -eq $Property) {
+            throw "Record is missing a canonical-key field."
+        }
+        $Key[$Column] = $Property.Value
+    }
+    return [PSCustomObject]$Key
+}
+
+function Assert-GdsCanonicalKey {
+    param(
+        [object]$KeyRecord,
+        [object]$Schema
+    )
+    if ($KeyRecord -isnot [PSCustomObject]) {
+        throw "Canonical key input must be one JSON object."
+    }
+    $Columns = @($Schema.'x-gds-canonical-key')
+    if (@($KeyRecord.PSObject.Properties.Name).Count -ne $Columns.Count) {
+        throw "Canonical key input must contain exactly its schema fields."
+    }
+    foreach ($ColumnValue in $Columns) {
+        $Column = [string]$ColumnValue
+        $Property = $KeyRecord.PSObject.Properties[$Column]
+        $FieldRule = $Schema.properties.PSObject.Properties[$Column]
+        if (
+            $null -eq $Property -or $null -eq $FieldRule -or
+            -not (Test-GdsSchemaValue $Property.Value $FieldRule.Value)
+        ) {
+            throw "Canonical key input does not match its schema."
+        }
+    }
+    foreach ($Field in $KeyRecord.PSObject.Properties.Name) {
+        if ($Columns -cnotcontains $Field) {
+            throw "Canonical key input contains an unknown field."
+        }
+    }
+}
+
+function Remove-GdsRecord {
+    param(
+        [object[]]$Records,
+        [object]$KeyRecord,
+        [object]$Schema
+    )
+    Assert-GdsDataset $Records $Schema
+    Assert-GdsCanonicalKey $KeyRecord $Schema
+    $Columns = @($Schema.'x-gds-canonical-key')
+    $WantedKey = Get-GdsNormalizedKey $KeyRecord $Columns
+    $Found = $false
+    $Remaining = @()
+    foreach ($Record in $Records) {
+        if ((Get-GdsNormalizedKey $Record $Columns) -ceq $WantedKey) {
+            if ($Found) {
+                throw "Dataset contains duplicate canonical keys."
+            }
+            $Found = $true
+        }
+        else {
+            $Remaining += $Record
+        }
+    }
+    if (-not $Found) {
+        return [PSCustomObject]@{
+            Action = "not_found"
+            Records = [object[]]$Records
+        }
+    }
+    Assert-GdsDataset $Remaining $Schema
+    return [PSCustomObject]@{
+        Action = "removed"
+        Records = [object[]]$Remaining
+    }
+}

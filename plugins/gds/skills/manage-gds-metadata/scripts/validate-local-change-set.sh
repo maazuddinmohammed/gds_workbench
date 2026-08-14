@@ -8,15 +8,21 @@ fail() {
     exit 2
 }
 
-[ "$#" -eq 3 ] || [ "$#" -eq 4 ] || fail 'Usage: validate-local-change-set.sh <change-set-path> <expected-change-set-id> <expected-draft-revision> [--require-staged].'
+[ "$#" -ge 3 ] || fail 'Usage: validate-local-change-set.sh <change-set-path> <expected-change-set-id> <expected-draft-revision> [--require-staged] [--require-reviewed].'
 change_set_input=$1
 expected_change_set_id=$2
 expected_draft_revision=$3
+shift 3
 require_staged=false
-if [ "$#" -eq 4 ]; then
-    [ "$4" = '--require-staged' ] || fail 'Unknown local validation option.'
-    require_staged=true
-fi
+require_reviewed=false
+while [ "$#" -gt 0 ]; do
+    case "$1" in
+        --require-staged) require_staged=true ;;
+        --require-reviewed) require_reviewed=true ;;
+        *) fail 'Unknown local validation option.' ;;
+    esac
+    shift
+done
 case "$expected_draft_revision" in ''|*[!0-9]*|0) fail 'Expected draft revision must be a positive integer.' ;; esac
 command -v plutil >/dev/null 2>&1 || fail 'macOS plutil is required.'
 command -v osascript >/dev/null 2>&1 || fail 'macOS osascript is required.'
@@ -44,7 +50,7 @@ for root_entry in "$change_set"/* "$change_set"/.[!.]* "$change_set"/..?*; do
         continue
     fi
     case "$(basename "$root_entry")" in
-        change-set.json|datasets) ;;
+        change-set.json|datasets|review.json) ;;
         *) fail 'Local change-set contains an unexpected root entry.' ;;
     esac
 done
@@ -100,6 +106,32 @@ manifest_snapshot=$(plutil -extract snapshot_id raw "$manifest" 2>/dev/null) || 
 [ "$manifest_tenant" = "$tenant_code" ] || fail 'Snapshot Tenant does not match local Change Set.'
 [ "$manifest_snapshot" = "$snapshot_id" ] || fail 'Snapshot ID does not match local Change Set.'
 
+review=$change_set/review.json
+review_matches=false
+review_dataset_count=0
+if [ -e "$review" ] || [ -L "$review" ]; then
+    [ -f "$review" ] && [ ! -L "$review" ] || fail 'Stage review is unsafe.'
+    plutil -convert json -o /dev/null "$review" >/dev/null 2>&1 || fail 'Stage review is not valid JSON.'
+    [ "$(plutil -extract format_version raw "$review" 2>/dev/null)" = '1.0' ] || fail 'Stage review format is invalid.'
+    [ "$(plutil -type datasets "$review" 2>/dev/null)" = 'dictionary' ] || fail 'Stage review datasets are invalid.'
+    review_change_set_id=$(plutil -extract server_change_set.metadata_change_set_id raw "$review" 2>/dev/null) || fail 'Stage review Change Set ID is missing.'
+    review_revision=$(plutil -extract server_change_set.draft_revision raw "$review" 2>/dev/null) || fail 'Stage review revision is missing.'
+    review_snapshot_id=$(plutil -extract snapshot_id raw "$review" 2>/dev/null) || fail 'Stage review Snapshot ID is missing.'
+    review_tenant_id=$(plutil -extract tenant.tenant_id raw "$review" 2>/dev/null) || fail 'Stage review Tenant ID is missing.'
+    review_tenant_code=$(plutil -extract tenant.tenant_code raw "$review" 2>/dev/null) || fail 'Stage review Tenant code is missing.'
+    if [ "$review_change_set_id" = "$change_set_id" ] && [ "$review_revision" = "$draft_revision" ] && [ "$review_snapshot_id" = "$snapshot_id" ] && [ "$review_tenant_id" = "$tenant_id" ] && [ "$review_tenant_code" = "$tenant_code" ]; then
+        review_matches=true
+    fi
+    review_dataset_names=$(plutil -extract datasets raw "$review" 2>/dev/null) || fail 'Stage review datasets cannot be read.'
+    for review_name in $review_dataset_names; do
+        case "$review_name" in
+            source_object|source_attribute|bronze_object|bronze_attribute|silver_object|silver_attribute|gold_object|gold_attribute|ingestion_object_mapping|ingestion_attribute_mapping|copy_group|member_group|copy_group_control|copy|process_group|process) ;;
+            *) fail 'Stage review contains an unknown dataset.' ;;
+        esac
+        review_dataset_count=$((review_dataset_count + 1))
+    done
+fi
+
 dataset_count=0
 summary_lines=''
 for dataset_file in "$datasets"/* "$datasets"/.[!.]* "$datasets"/..?*; do
@@ -124,6 +156,18 @@ for dataset_file in "$datasets"/* "$datasets"/.[!.]* "$datasets"/..?*; do
     case "$count_line" in record_count=*) record_count=${count_line#record_count=} ;; *) fail "Dataset validator output is invalid: $dataset_name." ;; esac
     case "$record_count" in ''|*[!0-9]*) fail "Dataset record count is invalid: $dataset_name." ;; esac
     dataset_hash=$(shasum -a 256 "$dataset_file" | awk '{print $1}')
+    if [ "$review_matches" = true ]; then
+        if plutil -type "datasets.$dataset_name" "$review" >/dev/null 2>&1; then
+            review_file=$(plutil -extract "datasets.$dataset_name.file" raw "$review" 2>/dev/null) || fail "Stage review dataset path is missing: $dataset_name."
+            review_count=$(plutil -extract "datasets.$dataset_name.record_count" raw "$review" 2>/dev/null) || fail "Stage review dataset count is missing: $dataset_name."
+            review_hash=$(plutil -extract "datasets.$dataset_name.sha256" raw "$review" 2>/dev/null) || fail "Stage review dataset SHA-256 is missing: $dataset_name."
+            if [ "$review_file" != "datasets/$dataset_name.json" ] || [ "$review_count" != "$record_count" ] || [ "$review_hash" != "$dataset_hash" ]; then
+                review_matches=false
+            fi
+        else
+            review_matches=false
+        fi
+    fi
     staged=false
     staged_revision=''
     if plutil -type "datasets.$dataset_name" "$state" >/dev/null 2>&1; then
@@ -148,6 +192,12 @@ for dataset_file in "$datasets"/* "$datasets"/.[!.]* "$datasets"/..?*; do
     dataset_count=$((dataset_count + 1))
 done
 [ "$dataset_count" -le 16 ] || fail 'Local Change Set contains too many datasets.'
+if [ "$review_dataset_count" -ne "$dataset_count" ]; then
+    review_matches=false
+fi
+if [ "$require_reviewed" = true ] && [ "$review_matches" = false ]; then
+    fail 'Stage review is missing or stale; prepare it again before asking for Stage approval.'
+fi
 
 printf '%s' "$summary_lines"
 printf '%s\n' 'ok=true'
@@ -160,3 +210,4 @@ printf 'metadata_change_set_id=%s\n' "$change_set_id"
 printf 'draft_revision=%s\n' "$draft_revision"
 printf 'server_status=%s\n' "$server_status"
 printf 'dataset_count=%s\n' "$dataset_count"
+printf 'reviewed=%s\n' "$review_matches"

@@ -221,6 +221,29 @@ function validateDataset(records, schema) {
     }
 }
 
+function validateCanonicalKey(keyRecord, schema) {
+    if (!isObject(keyRecord)) {
+        throw new Error("Canonical key input must be one JSON object.");
+    }
+    const columns = schema["x-gds-canonical-key"];
+    const fields = Object.keys(keyRecord);
+    if (fields.length !== columns.length) {
+        throw new Error("Canonical key input must contain exactly its schema fields.");
+    }
+    for (let index = 0; index < columns.length; index += 1) {
+        const field = columns[index];
+        if (!own(keyRecord, field) ||
+            !matchesValueSchema(keyRecord[field], schema.properties[field])) {
+            throw new Error("Canonical key input does not match its schema.");
+        }
+    }
+    for (let index = 0; index < fields.length; index += 1) {
+        if (columns.indexOf(fields[index]) === -1) {
+            throw new Error("Canonical key input contains an unknown field.");
+        }
+    }
+}
+
 function writeDataset(path, records) {
     const text = JSON.stringify(records, null, 2) + "\n";
     const data = $(text).dataUsingEncoding($.NSUTF8StringEncoding);
@@ -233,7 +256,8 @@ function writeDataset(path, records) {
 }
 
 function run(arguments) {
-    if (arguments.length !== 3 && arguments.length !== 5) {
+    if (arguments.length !== 3 && arguments.length !== 5 &&
+        !(arguments.length === 6 && arguments[5] === "remove")) {
         throw new Error("Invalid dataset helper arguments.");
     }
     const schema = readJson(arguments[0], "Snapshot dataset schema");
@@ -247,13 +271,37 @@ function run(arguments) {
         return "record_count=" + records.length;
     }
 
-    const record = readJson(arguments[3], "Input record JSON");
-    validateRecord(record, schema);
     let records = [];
     if ($.NSFileManager.defaultManager.fileExistsAtPath($(datasetPath))) {
         records = readJson(datasetPath, "Dataset JSON");
         validateDataset(records, schema);
     }
+
+    if (arguments.length === 6) {
+        const keyRecord = readJson(arguments[3], "Canonical key JSON");
+        validateCanonicalKey(keyRecord, schema);
+        const wantedKey = normalizedKey(
+            keyRecord,
+            schema["x-gds-canonical-key"]
+        );
+        let matchedIndex = -1;
+        for (let index = 0; index < records.length; index += 1) {
+            if (normalizedKey(records[index], schema["x-gds-canonical-key"]) === wantedKey) {
+                matchedIndex = index;
+                break;
+            }
+        }
+        if (matchedIndex === -1) {
+            return "action=not_found\nrecord_count=" + records.length;
+        }
+        records.splice(matchedIndex, 1);
+        validateDataset(records, schema);
+        writeDataset(arguments[4], records);
+        return "action=removed\nrecord_count=" + records.length;
+    }
+
+    const record = readJson(arguments[3], "Input record JSON");
+    validateRecord(record, schema);
     const canonicalKey = schema["x-gds-canonical-key"];
     const wanted = normalizedKey(record, canonicalKey);
     let matchedIndex = -1;

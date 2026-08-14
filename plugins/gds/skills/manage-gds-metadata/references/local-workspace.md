@@ -9,6 +9,7 @@ Change Set. Keep it in the user's current project, not inside this plugin.
 gds-workspace/
 ├── .gitignore
 ├── record-input.json       # optional reusable full-record input
+├── record-key.json         # optional reusable canonical-key input
 ├── metadata-snapshot/
 │   ├── manifest.json
 │   ├── catalog.json
@@ -16,6 +17,7 @@ gds-workspace/
 │   └── data/
 └── change-set/
     ├── change-set.json
+    ├── review.json          # generated pre-Stage review
     └── datasets/<dataset>.json
 ```
 
@@ -154,6 +156,35 @@ Direct editors, including the future HTML utility, may write the complete
 `datasets/<dataset>.json` array instead. They must not patch only part of a row;
 run the same local validator afterward.
 
+## Remove one local pending record
+
+Use this only to remove one record from a local accumulated dataset. Put exactly
+the canonical-key fields from the live schema in `gds-workspace/record-key.json`.
+The helper rejects missing, extra, invalid, or unmatched keys.
+
+PowerShell 5.1:
+
+```powershell
+powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\remove-local-metadata-record.ps1" `
+    -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" `
+    -Dataset "source_object" `
+    -KeyPath "$((Get-Location).Path)\gds-workspace\record-key.json"
+```
+
+macOS:
+
+```sh
+"<plugin>/skills/manage-gds-metadata/scripts/remove-local-metadata-record.sh" \
+  --change-set "$PWD/gds-workspace/change-set" \
+  --dataset "source_object" \
+  --key-file "$PWD/gds-workspace/record-key.json"
+```
+
+Completion criterion: `action=removed` and the expected remaining count. An
+empty result remains as `[]`; it does not delete the dataset file. This never
+calls MCP, never changes PostgreSQL, and never deletes applied metadata. Any
+existing Stage review becomes stale; validate and prepare it again.
+
 ## Validate the local Change Set
 
 Before staging, validate every dataset against its matching Snapshot schema.
@@ -183,6 +214,42 @@ A Stage call replaces that one pending server dataset, so send the complete
 accumulated local array every time. An empty array clears that pending dataset;
 it does not delete applied metadata. Any edit after review requires another
 local validation and review.
+
+## Prepare the Stage review
+
+Run this after local validation and before asking for Stage approval.
+
+PowerShell 5.1:
+
+```powershell
+powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\prepare-metadata-stage-review.ps1" `
+    -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" `
+    -MetadataChangeSetId "<change-set-id>" `
+    -ExpectedDraftRevision <revision>
+```
+
+macOS:
+
+```sh
+"<plugin>/skills/manage-gds-metadata/scripts/prepare-metadata-stage-review.sh" \
+  --change-set "$PWD/gds-workspace/change-set" \
+  --change-set-id "<change-set-id>" \
+  --expected-draft-revision <revision>
+```
+
+The command writes `review.json`. Chat output contains only dataset/action
+counts and hashes. The local file contains action plus canonical-key values,
+not full rows. Read it selectively; do not paste hundreds of keys into chat.
+
+Run the local validator again with `-RequireReviewed` on PowerShell or append
+`--require-reviewed` on macOS. Completion criterion: `reviewed=true`. Resolve
+`no_change` items, regenerate after any edit, then show the compact review and
+ask for explicit Stage approval. The script cannot grant or record approval.
+
+A successful expected Stage changes the global revision but does not change the
+approved dataset hashes. Continue the approved sequence using the latest Stage
+revision. A conflict, reconciliation, local edit, or changed intended result
+requires a new review and approval.
 
 ## Record successful Stage results
 

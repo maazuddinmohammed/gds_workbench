@@ -4,7 +4,8 @@ param(
     [string]$ExpectedMetadataChangeSetId,
     [Parameter(Mandatory = $true)]
     [long]$ExpectedDraftRevision,
-    [switch]$RequireStaged
+    [switch]$RequireStaged,
+    [switch]$RequireReviewed
 )
 
 $ErrorActionPreference = "Stop"
@@ -63,7 +64,7 @@ try {
     }
     $RootEntries = @(Get-ChildItem -LiteralPath $Root -Force)
     foreach ($RootEntry in $RootEntries) {
-        if ($RootEntry.Name -cnotin @("change-set.json", "datasets")) {
+        if ($RootEntry.Name -cnotin @("change-set.json", "datasets", "review.json")) {
             Write-Failure "Local change-set contains an unexpected root entry."
         }
     }
@@ -122,6 +123,34 @@ try {
         Write-Failure "Snapshot ID does not match local Change Set."
     }
 
+    $ReviewPath = Join-Path $Root "review.json"
+    $Review = $null
+    $ReviewMatches = $false
+    $ReviewDatasetCount = 0
+    if (Test-Path -LiteralPath $ReviewPath) {
+        $ReviewItem = Get-Item -LiteralPath $ReviewPath
+        if ($ReviewItem.PSIsContainer -or ($ReviewItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Failure "Stage review is unsafe."
+        }
+        try {
+            $Review = [System.IO.File]::ReadAllText($ReviewPath) | ConvertFrom-Json
+        }
+        catch {
+            Write-Failure "Stage review is not valid JSON."
+        }
+        if (([string]$Review.format_version) -cne "1.0" -or $Review.datasets -isnot [PSCustomObject]) {
+            Write-Failure "Stage review format is invalid."
+        }
+        $ReviewDatasetCount = @($Review.datasets.PSObject.Properties.Name).Count
+        $ReviewMatches = (
+            ([string]$Review.server_change_set.metadata_change_set_id) -ceq ([string]$State.server_change_set.metadata_change_set_id) -and
+            [long]$Review.server_change_set.draft_revision -eq [long]$State.server_change_set.draft_revision -and
+            ([string]$Review.snapshot_id) -ceq ([string]$State.snapshot.snapshot_id) -and
+            [long]$Review.tenant.tenant_id -eq [long]$State.tenant.tenant_id -and
+            ([string]$Review.tenant.tenant_code) -ceq ([string]$State.tenant.tenant_code)
+        )
+    }
+
     $AllowedDatasets = @(
         "source_object", "source_attribute", "bronze_object", "bronze_attribute",
         "silver_object", "silver_attribute", "gold_object", "gold_attribute",
@@ -174,6 +203,22 @@ try {
             Write-Failure "Dataset does not match its schema or uniqueness rules: $DatasetName."
         }
         $DatasetHash = (Get-FileHash -LiteralPath $DatasetFile.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
+        if ($ReviewMatches) {
+            $ReviewedDatasetProperty = $Review.datasets.PSObject.Properties[$DatasetName]
+            if ($null -eq $ReviewedDatasetProperty) {
+                $ReviewMatches = $false
+            }
+            else {
+                $ReviewedDataset = $ReviewedDatasetProperty.Value
+                if (
+                    ([string]$ReviewedDataset.file) -cne "datasets/$DatasetName.json" -or
+                    [long]$ReviewedDataset.record_count -ne $Records.Count -or
+                    ([string]$ReviewedDataset.sha256) -cne $DatasetHash
+                ) {
+                    $ReviewMatches = $false
+                }
+            }
+        }
         $Staged = $false
         $StagedRevision = ""
         $StagedProperty = $State.datasets.PSObject.Properties[$DatasetName]
@@ -205,6 +250,12 @@ try {
         $StagedText = $Staged.ToString().ToLowerInvariant()
         $Summaries += "dataset=$DatasetName|$($Records.Count)|$($DatasetFile.Length)|$DatasetHash|$StagedText|$StagedRevision"
     }
+    if ($ReviewDatasetCount -ne $DatasetFiles.Count) {
+        $ReviewMatches = $false
+    }
+    if ($RequireReviewed -and -not $ReviewMatches) {
+        Write-Failure "Stage review is missing or stale; prepare it again before asking for Stage approval."
+    }
 
     foreach ($Summary in $Summaries) {
         [Console]::Out.WriteLine($Summary)
@@ -219,6 +270,7 @@ try {
     [Console]::Out.WriteLine("draft_revision=$($State.server_change_set.draft_revision)")
     [Console]::Out.WriteLine("server_status=$($State.server_change_set.status)")
     [Console]::Out.WriteLine("dataset_count=$($DatasetFiles.Count)")
+    [Console]::Out.WriteLine("reviewed=$($ReviewMatches.ToString().ToLowerInvariant())")
     exit 0
 }
 catch {

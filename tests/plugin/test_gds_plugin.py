@@ -67,6 +67,18 @@ POWERSHELL_LOCAL_RECORD_UPSERTER = (
 POWERSHELL_SCHEMA_HELPER = (
     METADATA_SKILL / "scripts" / "metadata-schema.ps1"
 )
+SHELL_STAGE_REVIEWER = (
+    METADATA_SKILL / "scripts" / "prepare-metadata-stage-review.sh"
+)
+POWERSHELL_STAGE_REVIEWER = (
+    METADATA_SKILL / "scripts" / "prepare-metadata-stage-review.ps1"
+)
+SHELL_LOCAL_RECORD_REMOVER = (
+    METADATA_SKILL / "scripts" / "remove-local-metadata-record.sh"
+)
+POWERSHELL_LOCAL_RECORD_REMOVER = (
+    METADATA_SKILL / "scripts" / "remove-local-metadata-record.ps1"
+)
 SNAPSHOT_ID = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
 CHANGE_SET_ID = UUID("4a4d40a7-7fc9-48ab-b1dc-c14e23ee64ad")
 
@@ -140,7 +152,12 @@ def _line_output(stdout: str) -> dict[str, str]:
     return values
 
 
-def _build_snapshot(workspace: Path, *, include_project: bool = False) -> Path:
+def _build_snapshot(
+    workspace: Path,
+    *,
+    include_project: bool = False,
+    dataset_rows: dict[str, list[dict[str, Any]]] | None = None,
+) -> Path:
     archive_path = workspace / "snapshot.zip"
     encoded_datasets = []
     for dataset in DATASETS:
@@ -154,6 +171,8 @@ def _build_snapshot(workspace: Path, *, include_project: bool = False) -> Path:
                     "is_active": True,
                 }
             )
+        if dataset_rows and dataset.name in dataset_rows:
+            rows.extend(dataset_rows[dataset.name])
         encoded_datasets.append(encode_dataset(dataset, rows))
     build_snapshot_archive(
         archive_path,
@@ -248,6 +267,7 @@ def _run_local_change_set_validator(
     *,
     revision: int = 1,
     require_staged: bool = False,
+    require_reviewed: bool = False,
 ) -> subprocess.CompletedProcess[str]:
     arguments = [
         str(SHELL_LOCAL_CHANGE_SET_VALIDATOR),
@@ -257,6 +277,8 @@ def _run_local_change_set_validator(
     ]
     if require_staged:
         arguments.append("--require-staged")
+    if require_reviewed:
+        arguments.append("--require-reviewed")
     return subprocess.run(
         arguments,
         cwd=change_set.parent,
@@ -317,6 +339,52 @@ def _run_local_record_upserter(
             dataset,
             "--record-file",
             str(record_file),
+        ],
+        cwd=change_set.parent,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+
+
+def _run_stage_reviewer(
+    change_set: Path,
+    *,
+    revision: int = 1,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            str(SHELL_STAGE_REVIEWER),
+            "--change-set",
+            str(change_set),
+            "--change-set-id",
+            str(CHANGE_SET_ID),
+            "--expected-draft-revision",
+            str(revision),
+        ],
+        cwd=change_set.parent,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+
+def _run_local_record_remover(
+    change_set: Path,
+    dataset: str,
+    key_file: Path,
+) -> subprocess.CompletedProcess[str]:
+    return subprocess.run(
+        [
+            str(SHELL_LOCAL_RECORD_REMOVER),
+            "--change-set",
+            str(change_set),
+            "--dataset",
+            dataset,
+            "--key-file",
+            str(key_file),
         ],
         cwd=change_set.parent,
         text=True,
@@ -1130,6 +1198,378 @@ def test_powershell_record_upserter_has_5_1_static_contract() -> None:
     assert "ConvertTo-Json -InputObject" in script
     assert "-Depth 20" in script
     assert "action=" in script
+    for unsupported in (
+        "ConvertFrom-Json -AsHashtable",
+        "ForEach-Object -Parallel",
+        "??",
+        "?.",
+    ):
+        assert unsupported not in bundle
+
+
+def test_macos_record_remover_removes_exact_canonical_key_and_stales_review(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "gds-workspace"
+    workspace.mkdir()
+    _build_snapshot(workspace)
+    assert _run_change_set_initializer(workspace).returncode == 0
+    change_set = workspace / "change-set"
+    dataset_file = change_set / "datasets" / "source_object.json"
+    records = [
+        _source_object_record(
+            object_name="customer",
+            object_description="REMOVE-ME-SENSITIVE",
+        ),
+        _source_object_record(object_name="orders"),
+    ]
+    dataset_file.write_text(json.dumps(records), encoding="utf-8")
+    assert _run_stage_reviewer(change_set).returncode == 0
+    key_file = workspace / "record-key.json"
+    key_file.write_text(
+        json.dumps(
+            {
+                "tenant_code": " tenant ",
+                "system_code": "system",
+                "connection_code": "Connection",
+                "object_schema": "DBO",
+                "object_name": "Customer",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    removed = _run_local_record_remover(
+        change_set,
+        "source_object",
+        key_file,
+    )
+    assert removed.returncode == 0, removed.stderr
+    output = _line_output(removed.stdout)
+    assert output["action"] == "removed"
+    assert output["record_count"] == "1"
+    assert output["dataset_empty"] == "false"
+    assert "REMOVE-ME-SENSITIVE" not in removed.stdout + removed.stderr
+    assert json.loads(dataset_file.read_text(encoding="utf-8")) == [records[1]]
+
+    stale = _run_local_change_set_validator(
+        change_set,
+        require_reviewed=True,
+    )
+    assert stale.returncode == 2
+    assert "review is missing or stale" in stale.stderr.casefold()
+
+    key_file.write_text(
+        json.dumps(
+            {
+                "tenant_code": "TENANT",
+                "system_code": "SYSTEM",
+                "connection_code": "CONNECTION",
+                "object_schema": "dbo",
+                "object_name": "orders",
+            }
+        ),
+        encoding="utf-8",
+    )
+    emptied = _run_local_record_remover(
+        change_set,
+        "source_object",
+        key_file,
+    )
+    assert emptied.returncode == 0, emptied.stderr
+    assert _line_output(emptied.stdout)["dataset_empty"] == "true"
+    assert json.loads(dataset_file.read_text(encoding="utf-8")) == []
+    assert _run_local_change_set_validator(change_set).returncode == 0
+
+
+def test_record_remover_rejects_inexact_or_missing_key_without_changes(
+    tmp_path: Path,
+) -> None:
+    workspace = tmp_path / "gds-workspace"
+    workspace.mkdir()
+    _build_snapshot(workspace)
+    assert _run_change_set_initializer(workspace).returncode == 0
+    change_set = workspace / "change-set"
+    dataset_file = change_set / "datasets" / "source_object.json"
+    dataset_file.write_text(
+        json.dumps([_source_object_record()]),
+        encoding="utf-8",
+    )
+    original = dataset_file.read_bytes()
+    key_file = workspace / "record-key.json"
+    key_file.write_text(
+        json.dumps(
+            {
+                "tenant_code": "TENANT",
+                "system_code": "SYSTEM",
+                "connection_code": "CONNECTION",
+                "object_schema": "dbo",
+                "object_name": "missing",
+                "unexpected": "SENSITIVE-KEY-VALUE",
+            }
+        ),
+        encoding="utf-8",
+    )
+    invalid = _run_local_record_remover(
+        change_set,
+        "source_object",
+        key_file,
+    )
+    assert invalid.returncode == 2
+    assert "canonical key" in invalid.stderr.casefold()
+    assert "SENSITIVE-KEY-VALUE" not in invalid.stdout + invalid.stderr
+    assert dataset_file.read_bytes() == original
+
+    key_file.write_text(
+        json.dumps(
+            {
+                "tenant_code": "TENANT",
+                "system_code": "SYSTEM",
+                "connection_code": "CONNECTION",
+                "object_schema": "dbo",
+                "object_name": "not-present",
+            }
+        ),
+        encoding="utf-8",
+    )
+    missing = _run_local_record_remover(
+        change_set,
+        "source_object",
+        key_file,
+    )
+    assert missing.returncode == 2
+    assert "not present" in missing.stderr.casefold()
+    assert dataset_file.read_bytes() == original
+
+
+def test_powershell_record_remover_has_5_1_static_contract() -> None:
+    script = POWERSHELL_LOCAL_RECORD_REMOVER.read_text(encoding="utf-8")
+    helper = POWERSHELL_SCHEMA_HELPER.read_text(encoding="utf-8")
+    bundle = script + helper
+    assert "$PSVersionTable.PSVersion.Major -lt 5" in script
+    assert "Remove-GdsRecord" in bundle
+    assert "x-gds-canonical-key" in bundle
+    assert "dataset_empty=" in script
+    assert "ConvertTo-Json -InputObject" in script
+    for unsupported in (
+        "ConvertFrom-Json -AsHashtable",
+        "ForEach-Object -Parallel",
+        "??",
+        "?.",
+    ):
+        assert unsupported not in bundle
+
+
+def test_macos_stage_review_classifies_actions_without_exposing_full_rows(
+    tmp_path: Path,
+) -> None:
+    baseline = [
+        _source_object_record(
+            object_name="customer",
+            object_description="BASELINE-CUSTOMER-SENSITIVE",
+        ),
+        _source_object_record(object_name="old_table", is_active=True),
+        _source_object_record(object_name="dormant", is_active=False),
+        _source_object_record(object_name="unchanged"),
+    ]
+    local = [
+        _source_object_record(
+            object_name="customer",
+            object_description="UPDATED-CUSTOMER-SENSITIVE",
+        ),
+        _source_object_record(object_name="old_table", is_active=False),
+        _source_object_record(object_name="dormant", is_active=True),
+        _source_object_record(object_name="new_table"),
+        _source_object_record(object_name="unchanged"),
+    ]
+    workspace = tmp_path / "gds-workspace"
+    workspace.mkdir()
+    _build_snapshot(
+        workspace,
+        dataset_rows={
+            "project": [
+                {
+                    "project_code": "PROJECT",
+                    "project_name": "Project",
+                    "project_description": None,
+                    "is_active": True,
+                }
+            ],
+            "tenant": [
+                {
+                    "tenant_code": "TENANT",
+                    "project_code": "PROJECT",
+                    "tenant_name": "Tenant",
+                    "tenant_description": None,
+                    "tenant_catalog": "tenant_catalog",
+                    "gds_admin_catalog": "admin_catalog",
+                    "gds_connection_tenant_code": None,
+                    "gds_connection_system_code": None,
+                    "gds_connection_code": None,
+                    "tenant_visibility": "private",
+                    "is_active": True,
+                }
+            ],
+            "system_type": [
+                {
+                    "system_type_code": "TYPE",
+                    "system_type_name": "Type",
+                    "system_type_description": None,
+                    "is_active": True,
+                }
+            ],
+            "system": [
+                {
+                    "system_code": "SYSTEM",
+                    "system_name": "System",
+                    "system_description": None,
+                    "system_type_code": "TYPE",
+                    "is_active": True,
+                }
+            ],
+            "connection_type": [
+                {
+                    "connection_type_code": "TYPE",
+                    "connection_type_name": "Type",
+                    "connection_type_description": None,
+                    "is_active": True,
+                }
+            ],
+            "connection": [
+                {
+                    "tenant_code": "TENANT",
+                    "system_code": "SYSTEM",
+                    "connection_code": "CONNECTION",
+                    "connection_name": "Connection",
+                    "connection_type_code": "TYPE",
+                    "has_foreign_catalog": False,
+                    "foreign_catalog": None,
+                    "is_global_data_store": False,
+                    "is_active": True,
+                }
+            ],
+            "object_type": [
+                {
+                    "object_type_code": "TABLE",
+                    "object_type_name": "Table",
+                    "object_type_description": None,
+                    "is_active": True,
+                }
+            ],
+            "zone": [
+                {
+                    "zone_code": "source",
+                    "zone_name": "Source",
+                    "zone_description": None,
+                    "is_active": True,
+                }
+            ],
+            "source_object": baseline,
+        },
+    )
+    assert _run_change_set_initializer(workspace).returncode == 0
+    change_set = workspace / "change-set"
+    dataset_file = change_set / "datasets" / "source_object.json"
+    dataset_file.write_text(json.dumps(local), encoding="utf-8")
+
+    result = _run_stage_reviewer(change_set)
+    assert result.returncode == 0, result.stderr
+    output = _line_output(result.stdout)
+    assert output["ok"] == "true"
+    assert output["dataset_count"] == "1"
+    assert output["record_count"] == "5"
+    assert output["insert_count"] == "1"
+    assert output["update_count"] == "1"
+    assert output["deactivate_count"] == "1"
+    assert output["reactivate_count"] == "1"
+    assert output["no_change_count"] == "1"
+    assert "SENSITIVE" not in result.stdout + result.stderr
+
+    review = _json(change_set / "review.json")
+    assert review["format_version"] == "1.0"
+    assert review["tenant"] == {"tenant_id": 1, "tenant_code": "TENANT"}
+    assert review["server_change_set"] == {
+        "metadata_change_set_id": str(CHANGE_SET_ID),
+        "draft_revision": 1,
+    }
+    source_review = review["datasets"]["source_object"]
+    assert source_review["record_count"] == 5
+    assert source_review["actions"] == {
+        "insert": 1,
+        "update": 1,
+        "deactivate": 1,
+        "reactivate": 1,
+        "no_change": 1,
+    }
+    assert source_review["canonical_key"] == [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+    ]
+    assert {item["action"] for item in source_review["records"]} == {
+        "insert",
+        "update",
+        "deactivate",
+        "reactivate",
+        "no_change",
+    }
+    serialized_review = json.dumps(review)
+    assert "BASELINE-CUSTOMER-SENSITIVE" not in serialized_review
+    assert "UPDATED-CUSTOMER-SENSITIVE" not in serialized_review
+
+
+def test_review_freshness_gate_rejects_changes_after_review(tmp_path: Path) -> None:
+    workspace = tmp_path / "gds-workspace"
+    workspace.mkdir()
+    _build_snapshot(workspace)
+    assert _run_change_set_initializer(workspace).returncode == 0
+    change_set = workspace / "change-set"
+    dataset_file = change_set / "datasets" / "source_object.json"
+    dataset_file.write_text(
+        json.dumps([_source_object_record(object_name="new_table")]),
+        encoding="utf-8",
+    )
+    prepared = _run_stage_reviewer(change_set)
+    assert prepared.returncode == 0, prepared.stderr
+
+    reviewed = _run_local_change_set_validator(
+        change_set,
+        require_reviewed=True,
+    )
+    assert reviewed.returncode == 0, reviewed.stderr
+    assert _line_output(reviewed.stdout)["reviewed"] == "true"
+
+    dataset_file.write_text(
+        json.dumps(
+            [
+                _source_object_record(
+                    object_name="new_table",
+                    object_description="changed after review",
+                )
+            ]
+        ),
+        encoding="utf-8",
+    )
+    stale = _run_local_change_set_validator(
+        change_set,
+        require_reviewed=True,
+    )
+    assert stale.returncode == 2
+    assert "review is missing or stale" in stale.stderr.casefold()
+
+
+def test_powershell_stage_reviewer_has_5_1_static_contract() -> None:
+    script = POWERSHELL_STAGE_REVIEWER.read_text(encoding="utf-8")
+    helper = POWERSHELL_SCHEMA_HELPER.read_text(encoding="utf-8")
+    bundle = script + helper
+    assert "$PSVersionTable.PSVersion.Major -lt 5" in script
+    assert "Get-Content -LiteralPath" in script
+    assert "Get-GdsNormalizedKey" in bundle
+    assert "review.json" in script
+    assert "no_change_count=" in script
+    assert "Get-FileHash" in script
     for unsupported in (
         "ConvertFrom-Json -AsHashtable",
         "ForEach-Object -Parallel",

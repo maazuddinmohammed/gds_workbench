@@ -32,6 +32,15 @@ dataset counts/hashes. It checks the live Snapshot schema, required and unknown
 fields, scalar types and limits, fixed values, and unique constraints. Server
 validation remains authoritative for references, Tenant scope, and Object locks.
 
+Prepare `review.json` using the local Stage reviewer. It compares local canonical
+keys with the Snapshot baseline and classifies each record as `insert`, `update`,
+`deactivate`, `reactivate`, or `no_change`. Resolve every `no_change`, require the
+review to remain fresh, then show the user the Tenant, Change Set/revision,
+dataset/action counts, and affected natural keys. Stage only after explicit
+approval. Use the local canonical-key removal helper for unwanted pending
+records. It edits only the local list; it never deletes applied metadata.
+Generating the review file is not approval.
+
 A stage call contains:
 
 - Tenant ID and Change Set ID as control identifiers;
