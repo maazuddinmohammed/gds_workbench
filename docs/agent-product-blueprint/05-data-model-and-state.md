@@ -140,7 +140,7 @@ targets Gold.
 |---|---|
 | `model_change_set`, `model_change_set_event` | Eight-document Model draft, validation seal, expiry, and append-only activity |
 | `metadata_change_set`, `metadata_change_set_event` | Sixteen-list Tenant metadata draft, validation seal, retained terminal state, and append-only activity |
-| `tool_call_log` | Append-only bounded audit of completed MCP tool calls |
+| `tool_call_log` | Append-only safe-input audit of completed MCP tool calls |
 
 ## Applied graph rules
 

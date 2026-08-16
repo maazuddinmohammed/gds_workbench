@@ -1,9 +1,14 @@
+[CmdletBinding(DefaultParameterSetName = "FullRecord")]
 param(
-    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "gds-workspace\change-set"),
+    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "GDS\change-set"),
     [Parameter(Mandatory = $true)]
     [string]$Dataset,
-    [Parameter(Mandatory = $true)]
-    [string]$RecordPath
+    [Parameter(Mandatory = $true, ParameterSetName = "FullRecord")]
+    [string]$RecordPath,
+    [Parameter(Mandatory = $true, ParameterSetName = "FieldEdit")]
+    [string]$KeyPath,
+    [Parameter(Mandatory = $true, ParameterSetName = "FieldEdit")]
+    [string]$ChangesPath
 )
 
 $ErrorActionPreference = "Stop"
@@ -46,8 +51,8 @@ try {
         Write-Failure "Local directory must be named change-set."
     }
     $Workspace = [System.IO.Directory]::GetParent($Root)
-    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "gds-workspace") {
-        Write-Failure "Local change-set must be directly under gds-workspace."
+    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "GDS") {
+        Write-Failure "Local change-set must be directly under GDS."
     }
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
         Write-Failure "Local change-set does not exist."
@@ -103,28 +108,6 @@ try {
         Write-Failure "Snapshot dataset schema contract is invalid."
     }
 
-    $FullRecordPath = [System.IO.Path]::GetFullPath($RecordPath)
-    if (-not (Test-Path -LiteralPath $FullRecordPath -PathType Leaf)) {
-        Write-Failure "Input record must be a regular JSON file."
-    }
-    $RecordItem = Get-Item -LiteralPath $FullRecordPath
-    if (($RecordItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
-        Write-Failure "Input record cannot be a reparse point."
-    }
-    if ($RecordItem.Length -gt 16777216) {
-        Write-Failure "Input record exceeds the 16 MiB Stage limit."
-    }
-    $RecordText = [System.IO.File]::ReadAllText($FullRecordPath)
-    if (-not $RecordText.TrimStart().StartsWith("{")) {
-        Write-Failure "Input record file must contain one full JSON object."
-    }
-    try {
-        $Record = $RecordText | ConvertFrom-Json
-    }
-    catch {
-        Write-Failure "Input record file is not valid JSON."
-    }
-
     $DatasetPath = Join-Path $DatasetsPath "$Dataset.json"
     $Records = @()
     if (Test-Path -LiteralPath $DatasetPath) {
@@ -147,11 +130,96 @@ try {
         }
     }
 
-    try {
-        $Merged = Merge-GdsRecord $Records $Record $Schema
+    if ($PSCmdlet.ParameterSetName -ceq "FieldEdit") {
+        $FullKeyPath = [System.IO.Path]::GetFullPath($KeyPath)
+        $FullChangesPath = [System.IO.Path]::GetFullPath($ChangesPath)
+        foreach ($InputPath in @($FullKeyPath, $FullChangesPath)) {
+            if (-not (Test-Path -LiteralPath $InputPath -PathType Leaf)) {
+                Write-Failure "Canonical key and field changes must be regular JSON files."
+            }
+            $InputItem = Get-Item -LiteralPath $InputPath
+            if (($InputItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0 -or $InputItem.Length -gt 16777216) {
+                Write-Failure "Canonical key or field changes file is unsafe or too large."
+            }
+        }
+        try {
+            $KeyRecord = [System.IO.File]::ReadAllText($FullKeyPath) | ConvertFrom-Json
+            $Changes = [System.IO.File]::ReadAllText($FullChangesPath) | ConvertFrom-Json
+        }
+        catch {
+            Write-Failure "Canonical key or field changes file is not valid JSON."
+        }
+        $SnapshotRowsPath = Join-Path $SnapshotPath "data\operational\$Dataset\rows.jsonl"
+        if (-not (Test-Path -LiteralPath $SnapshotRowsPath -PathType Leaf)) {
+            Write-Failure "Snapshot dataset rows are missing."
+        }
+        $SnapshotRowsItem = Get-Item -LiteralPath $SnapshotRowsPath
+        if (($SnapshotRowsItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Failure "Snapshot dataset rows cannot be a reparse point."
+        }
+        try {
+            $SnapshotRecords = @(
+                [System.IO.File]::ReadLines($SnapshotRowsPath) |
+                    Where-Object { -not [string]::IsNullOrWhiteSpace($_) } |
+                    ForEach-Object { $_ | ConvertFrom-Json }
+            )
+            $Merged = Edit-GdsRecord $Records $SnapshotRecords $KeyRecord $Changes $Schema
+        }
+        catch {
+            Write-Failure "Field edit does not match the Snapshot schema, key, or uniqueness rules: $Dataset."
+        }
+        $Mode = "field-edit"
     }
-    catch {
-        Write-Failure "Record or accumulated dataset does not match the Snapshot schema or uniqueness rules: $Dataset."
+    else {
+        $FullRecordPath = [System.IO.Path]::GetFullPath($RecordPath)
+        if (-not (Test-Path -LiteralPath $FullRecordPath -PathType Leaf)) {
+            Write-Failure "Input record must be a regular JSON file."
+        }
+        $RecordItem = Get-Item -LiteralPath $FullRecordPath
+        if (($RecordItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Failure "Input record cannot be a reparse point."
+        }
+        if ($RecordItem.Length -gt 16777216) {
+            Write-Failure "Input record exceeds the 16 MiB Stage limit."
+        }
+        $RecordText = [System.IO.File]::ReadAllText($FullRecordPath)
+        if (-not $RecordText.TrimStart().StartsWith("{")) {
+            Write-Failure "Input record file must contain one full JSON object."
+        }
+        try {
+            $Record = $RecordText | ConvertFrom-Json
+            $Merged = Merge-GdsRecord $Records $Record $Schema
+        }
+        catch {
+            Write-Failure "Record or accumulated dataset does not match the Snapshot schema or uniqueness rules: $Dataset."
+        }
+        $Mode = "full-record"
+    }
+
+    if ($Merged.Action -ceq "no_change") {
+        $DatasetBytes = if (Test-Path -LiteralPath $DatasetPath) {
+            [System.IO.File]::ReadAllBytes($DatasetPath)
+        }
+        else {
+            [byte[]]@()
+        }
+        $DatasetHash = if (Test-Path -LiteralPath $DatasetPath) {
+            (Get-FileHash -LiteralPath $DatasetPath -Algorithm SHA256).Hash.ToLowerInvariant()
+        }
+        else {
+            "none"
+        }
+        [Console]::Out.WriteLine("ok=true")
+        [Console]::Out.WriteLine("dataset=$Dataset")
+        [Console]::Out.WriteLine("mode=$Mode")
+        [Console]::Out.WriteLine("base=$($Merged.Base)")
+        [Console]::Out.WriteLine("action=no_change")
+        [Console]::Out.WriteLine("changed_field_count=$($Merged.ChangedFieldCount)")
+        [Console]::Out.WriteLine("record_count=$($Merged.Records.Count)")
+        [Console]::Out.WriteLine("bytes=$($DatasetBytes.Length)")
+        [Console]::Out.WriteLine("sha256=$DatasetHash")
+        [Console]::Out.WriteLine("review_stale=false")
+        exit 0
     }
     $DatasetJson = ConvertTo-Json -InputObject ([object[]]$Merged.Records) -Depth 20
     $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -171,10 +239,16 @@ try {
 
     [Console]::Out.WriteLine("ok=true")
     [Console]::Out.WriteLine("dataset=$Dataset")
+    [Console]::Out.WriteLine("mode=$Mode")
+    if ($Mode -ceq "field-edit") {
+        [Console]::Out.WriteLine("base=$($Merged.Base)")
+        [Console]::Out.WriteLine("changed_field_count=$($Merged.ChangedFieldCount)")
+    }
     [Console]::Out.WriteLine("action=$($Merged.Action)")
     [Console]::Out.WriteLine("record_count=$($Merged.Records.Count)")
     [Console]::Out.WriteLine("bytes=$($DatasetBytes.Length)")
     [Console]::Out.WriteLine("sha256=$DatasetHash")
+    [Console]::Out.WriteLine("review_stale=true")
     exit 0
 }
 catch {

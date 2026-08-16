@@ -34,7 +34,11 @@ from gds_etl_workbench.runtime import (
 from gds_etl_workbench.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
-from gds_etl_workbench.tools.snapshots.metadata.archive import SnapshotArchive
+from gds_etl_workbench.tools.snapshots.metadata.archive import (
+    SnapshotArchive,
+    build_dataset_document,
+)
+from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
@@ -140,7 +144,9 @@ class FakeSnapshotStore:
         self,
         archive: SnapshotArchive,
         *,
-        tenant_id: int,
+        snapshot_kind: str,
+        scope_id: int,
+        schema_version: str,
         snapshot_id: UUID,
         created_at: datetime,
         available_until: datetime,
@@ -152,12 +158,16 @@ class FakeSnapshotStore:
     async def create_read_url(
         self,
         *,
-        tenant_id: int,
+        snapshot_kind: str,
+        scope_id: int,
+        schema_version: str,
         snapshot_id: UUID,
         now: datetime,
         ttl_seconds: int,
     ) -> str | None:
-        self.read_url_calls.append((tenant_id, snapshot_id, now, ttl_seconds))
+        assert snapshot_kind == "metadata"
+        assert schema_version == "2.0"
+        self.read_url_calls.append((scope_id, snapshot_id, now, ttl_seconds))
         return self.read_url
 
 
@@ -191,6 +201,8 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert [tool.name for tool in tools.tools] == [
         "list_tenants",
         "get_tenant_details",
+        "get_model",
+        "get_model_scope",
         "check_tenant_lock",
         "acquire_tenant_lock",
         "renew_tenant_lock",
@@ -202,6 +214,12 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "validate_metadata_change_set",
         "apply_metadata_change_set",
         "archive_metadata_change_set",
+        "create_model_change_set",
+        "stage_model_change_set",
+        "get_model_change_set",
+        "validate_model_change_set",
+        "apply_model_change_set",
+        "archive_model_change_set",
         "list_objects",
         "get_objects",
         "get_object_lineage",
@@ -209,8 +227,44 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_copy_group",
         "list_process_groups",
         "get_process_group",
+        "get_model_profiling",
+        "get_model_analysis",
+        "get_modeling_assertion_documents",
+        "get_modeling_assertion_records",
+        "get_model_conceptual_objects",
+        "get_model_conceptual_relationships",
+        "get_model_logical_submodels",
+        "get_model_logical_entities",
+        "get_model_logical_attributes",
+        "get_model_logical_relationships",
+        "get_model_dimensional_submodels",
+        "get_model_dimensional_entities",
+        "get_model_dimensional_attributes",
+        "get_model_dimensional_relationships",
+        "get_model_mapping_dependencies",
+        "get_model_object_mappings",
+        "get_model_attribute_mappings",
+        "execute_databricks_sql",
+        "describe_model_dataset",
+        "get_model_snapshot",
+        "get_model_dbml",
+        "describe_metadata_dataset",
         "get_metadata_snapshot",
     ]
+    tools_by_name = {tool.name: tool for tool in tools.tools}
+    assert tools_by_name["validate_model_change_set"].annotations is not None
+    assert (
+        tools_by_name["validate_model_change_set"].annotations.idempotent_hint
+        is False
+    )
+    assert tools_by_name["apply_model_change_set"].annotations is not None
+    assert tools_by_name["apply_model_change_set"].annotations.destructive_hint is True
+    assert tools_by_name["archive_model_change_set"].annotations is not None
+    assert tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
+    assert tools_by_name["get_model_snapshot"].annotations is not None
+    assert tools_by_name["get_model_snapshot"].annotations.idempotent_hint is False
+    assert tools_by_name["get_model_dbml"].annotations is not None
+    assert tools_by_name["get_model_dbml"].annotations.idempotent_hint is False
     assert all(
         tool.meta
         == {
@@ -223,10 +277,21 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                     "validate_metadata_change_set",
                     "apply_metadata_change_set",
                 }
+                else "tenant_model_write"
+                if tool.name
+                in {
+                    "create_model_change_set",
+                    "stage_model_change_set",
+                    "validate_model_change_set",
+                    "apply_model_change_set",
+                }
                 else "tenant_lock_manage"
                 if "tenant_lock" in tool.name
                 or tool.name
-                in {"get_metadata_change_set", "archive_metadata_change_set"}
+                in {
+                    "get_metadata_change_set",
+                    "archive_metadata_change_set",
+                }
                 else "tenant_read"
             )
         }
@@ -255,6 +320,56 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert len(database.audit_records) == 1
     assert database.audit_records[0].principal_display_name == "Local Developer"
     assert database.audit_records[0].status == "succeeded"
+
+
+@pytest.mark.asyncio
+async def test_describe_metadata_dataset_returns_the_exact_generated_contract() -> None:
+    settings = development_settings()
+    database = FakeDatabase()
+    server = create_mcp_server(settings, database, IdentityProvider(settings.auth_mode))
+
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "describe_metadata_dataset",
+            {"dataset": "copy_group"},
+        )
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    dataset_schema = build_dataset_document(DATASETS_BY_NAME["copy_group"]).schema
+    assert result.structured_content == {
+        "schema_version": "1.0",
+        "dataset": "copy_group",
+        "record_type": "copy_group",
+        "section": "operational",
+        "change_set_eligible": True,
+        "natural_key": ["tenant_code", "system_code", "copy_group_name"],
+        "references": [
+            {
+                "columns": ["tenant_code"],
+                "target_record_type": "tenant",
+                "target_columns": ["tenant_code"],
+                "nullable": False,
+            },
+            {
+                "columns": ["system_code"],
+                "target_record_type": "system",
+                "target_columns": ["system_code"],
+                "nullable": False,
+            },
+        ],
+        "dependencies": [
+            {"record_type": "tenant", "datasets": ["tenant"]},
+            {"record_type": "system", "datasets": ["system"]},
+        ],
+        "population_rules": dataset_schema["x-gds-population-rules"],
+        "columns": dataset_schema["x-gds-columns"],
+        "dataset_schema": dataset_schema,
+    }
+    assert database.audit_records[0].input_metadata == {
+        "schema_version": "1.0",
+        "dataset": "copy_group",
+    }
 
 
 @pytest.mark.asyncio

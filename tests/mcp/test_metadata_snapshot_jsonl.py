@@ -115,7 +115,9 @@ def test_jsonl_preserves_dates_timestamps_and_bigint_text() -> None:
         "copy_group_control_last_run_time": datetime(2026, 8, 2, tzinfo=UTC),
         "copy_group_control_last_run_value": None,
     }
-    control = json.loads(encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl)
+    control = json.loads(
+        encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl
+    )
     assert control["copy_group_control_initial_load_date"] == "2026-08-01"
     assert control["copy_group_control_last_run_time"] == "2026-08-02T00:00:00Z"
 
@@ -133,7 +135,35 @@ def test_jsonl_rejects_schema_drift_invalid_values_and_normalized_duplicates() -
             [valid, project_row(" p1 ", "Duplicate")],
         )
     with pytest.raises(SnapshotContractError, match="fixed dataset values"):
-        encode_dataset(dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}])
+        encode_dataset(
+            dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}]
+        )
+
+
+def test_jsonl_keeps_identity_natural_key_strings_case_sensitive() -> None:
+    process = {
+        "tenant_code": "TENANT",
+        "system_code": "SYSTEM",
+        "zone_code": "bronze",
+        "process_group_name": "LOAD",
+        "process_execution_order": 1,
+        "process_location": "/Workspace/Load",
+        "process_executable": "run.py",
+        "object_tenant_code": "TENANT",
+        "object_system_code": "SYSTEM",
+        "object_connection_code": "CONNECTION",
+        "object_schema": "dbo",
+        "object_name": "customer",
+        "process_type_name": "NOTEBOOK",
+        "is_active": True,
+    }
+
+    encoded = encode_dataset(
+        dataset("process"),
+        [process, {**process, "process_location": "/workspace/load"}],
+    )
+
+    assert encoded.row_count == 2
 
 
 def test_empty_dataset_writes_only_its_declared_files() -> None:

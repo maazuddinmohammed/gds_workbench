@@ -15,7 +15,11 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.infrastructure.postgres import Database, WriteDatabase
+from gds_etl_workbench.infrastructure.postgres import (
+    Database,
+    DatabricksConnectionDatabase,
+    WriteDatabase,
+)
 from gds_etl_workbench.tools.catalog.get_object_lineage import (
     register_get_object_lineage_tool,
 )
@@ -24,15 +28,44 @@ from gds_etl_workbench.tools.catalog.list_objects import register_list_objects_t
 from gds_etl_workbench.tools.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
+from gds_etl_workbench.tools.change_sets.model import register_model_change_set_tools
+from gds_etl_workbench.tools.databricks.execute_sql import (
+    register_execute_databricks_sql_tool,
+)
+from gds_etl_workbench.tools.databricks.executor import (
+    ConnectorDatabricksSqlExecutor,
+    DatabricksSqlExecutor,
+)
 from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_tools
+from gds_etl_workbench.tools.modeling.assertions import (
+    register_modeling_assertion_tools,
+)
+from gds_etl_workbench.tools.modeling.conceptual import register_conceptual_tools
+from gds_etl_workbench.tools.modeling.dimensional import register_dimensional_tools
+from gds_etl_workbench.tools.modeling.logical import register_logical_tools
+from gds_etl_workbench.tools.modeling.mapping import register_mapping_tools
+from gds_etl_workbench.tools.modeling.model_details import register_get_model_tool
+from gds_etl_workbench.tools.modeling.model_scope import register_get_model_scope_tool
+from gds_etl_workbench.tools.modeling.profiling_analysis import (
+    register_profiling_analysis_tools,
+)
 from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
+from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
+    register_get_model_dbml_tool,
+)
+from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import (
+    register_describe_metadata_dataset_tool,
+)
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     register_get_metadata_snapshot_tool,
 )
-from gds_etl_workbench.tools.snapshots.metadata.storage import (
-    AzureMetadataSnapshotStore,
-    MetadataSnapshotStore,
+from gds_etl_workbench.tools.snapshots.model.describe_model_dataset import (
+    register_describe_model_dataset_tool,
 )
+from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
+    register_get_model_snapshot_tool,
+)
+from gds_etl_workbench.tools.snapshots.storage import AzureSnapshotStore, SnapshotStore
 from gds_etl_workbench.tools.tenants.get_tenant_details import (
     register_get_tenant_details_tool,
 )
@@ -46,9 +79,11 @@ def create_mcp_server(
     settings: RuntimeSettings,
     database: Database,
     identity_provider: IdentityProvider,
-    metadata_snapshot_store: MetadataSnapshotStore | None = None,
+    snapshot_store: SnapshotStore | None = None,
+    databricks_executor: DatabricksSqlExecutor | None = None,
 ) -> MCPServer[None]:
-    snapshot_store = metadata_snapshot_store or AzureMetadataSnapshotStore(settings)
+    shared_snapshot_store = snapshot_store or AzureSnapshotStore(settings)
+    sql_executor = databricks_executor or ConnectorDatabricksSqlExecutor()
 
     @asynccontextmanager
     async def lifespan(_server: MCPServer[None]) -> AsyncGenerator[None, None]:
@@ -62,7 +97,7 @@ def create_mcp_server(
             expiry_task.cancel()
             with suppress(asyncio.CancelledError):
                 await expiry_task
-            await snapshot_store.close()
+            await shared_snapshot_store.close()
             await database.close()
 
     authorizer = AuthorizationService()
@@ -80,15 +115,30 @@ def create_mcp_server(
             "Check /health/ready before use. Start with list_tenants, then use Tenant, "
             "Object, Copy Group, Process Group, or direct ingestion-lineage reads. Prefer "
             "these bounded summaries before requesting a protected Metadata Snapshot. "
-            "Before metadata changes, check_tenant_lock and then acquire_tenant_lock. "
-            "Then get_metadata_snapshot, create_metadata_change_set, stage complete "
-            "ID-free dataset lists, and validate_metadata_change_set. Apply only after "
+            "Snapshots and local drafting need no Tenant Lock. For a metadata change, "
+            "first get_metadata_snapshot and build and review the complete local draft. "
+            "Only when it is ready for server work, check_tenant_lock and ask before "
+            "acquire_tenant_lock. Then create_metadata_change_set, describe only needed "
+            "dataset contracts, stage complete ID-free dataset lists atomically, and call "
+            "validate_metadata_change_set. If create returns an existing "
+            "Change Set, review every nonempty pending dataset before continuing. Apply only after "
             "review; apply_metadata_change_set revalidates atomically. Archive abandoned "
-            "drafts. get and archive enforce ownership but do not require a current lock. "
+            "drafts. For modeling, use the focused Profiling, Analysis, Assertion, "
+            "Conceptual, Logical, Dimensional, and Mapping reads when database IDs help "
+            "navigation. Use get_model_snapshot for the complete ID-free state, or "
+            "get_model_dbml for a governed conceptual, logical, dimensional, or full "
+            "DBML archive with optional Submodel files. Before "
+            "staging a Model dataset, call describe_model_dataset for its exact shared "
+            "Snapshot/Change-Set schema. Then create, stage, validate, and apply the "
+            "Model Change Set under an Architect-owned Tenant Lock. Each supplied Model "
+            "dataset replaces only that pending dataset; omitted datasets remain untouched. "
+            "Metadata get and archive enforce ownership but do not require a current lock. "
             "Use renew_tenant_lock only for your own lock. Release it when finished. "
             "override_tenant_lock only force-releases another owner's lock; it never "
             "acquires a replacement. Tenant identity, roles, and lock ownership are "
-            "always resolved server-side."
+            "always resolved server-side. execute_databricks_sql accepts only reads and "
+            "unqualified temporary views/tables on an active global Connection; it "
+            "rejects DML and persistent DDL."
         ),
         lifespan=lifespan,
         middleware=[audit],
@@ -109,6 +159,20 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
     )
+    register_get_model_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_get_model_scope_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
     register_tenant_lock_tools(
         server,
         database=cast(WriteDatabase, database),
@@ -116,6 +180,13 @@ def create_mcp_server(
         audit=audit,
     )
     register_metadata_change_set_tools(
+        server,
+        database=cast(WriteDatabase, database),
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_model_change_set_tools(
         server,
         database=cast(WriteDatabase, database),
         identity_provider=identity_provider,
@@ -160,13 +231,103 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
+    register_profiling_analysis_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_modeling_assertion_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_conceptual_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_logical_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_dimensional_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_mapping_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_execute_databricks_sql_tool(
+        server,
+        database=cast(DatabricksConnectionDatabase, database),
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        executor=sql_executor,
+        max_rows=settings.databricks_sql_max_rows,
+        timeout_seconds=settings.databricks_sql_timeout_seconds,
+    )
+    register_describe_model_dataset_tool(
+        server,
+        identity_provider=identity_provider,
+        audit=audit,
+    )
+    register_get_model_snapshot_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        store=shared_snapshot_store,
+        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
+        retention_hours=settings.metadata_snapshot_retention_hours,
+        max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
+    )
+    register_get_model_dbml_tool(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+        store=shared_snapshot_store,
+        download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
+        retention_hours=settings.metadata_snapshot_retention_hours,
+        max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
+    )
+    register_describe_metadata_dataset_tool(
+        server,
+        identity_provider=identity_provider,
+        audit=audit,
+    )
     register_get_metadata_snapshot_tool(
         server,
         database=database,
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
-        store=snapshot_store,
+        store=shared_snapshot_store,
         download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
         retention_hours=settings.metadata_snapshot_retention_hours,
         max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,

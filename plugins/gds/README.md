@@ -1,10 +1,13 @@
 # GDS Agent Plugin
 
-Portable Agent Plugin 1.0 for VS Code. It connects to the GDS Workbench MCP
-server and teaches an agent GDS concepts and governed workflows. The current
-package includes general GDS guidance and metadata read/change guidance.
+Portable Agent Plugins 1.0 package. It connects compatible agent clients to the
+GDS Workbench MCP server and teaches GDS concepts and governed workflows. The
+package also includes a local browser Data Workbench for Metadata and Model
+Snapshots; that utility is not a VS Code webview and does not depend on an editor.
+Model workflows cover Model Details/Scope, Profiling, Analysis, Assertions,
+Conceptual, Logical, Dimensional, and Mapping records as one governed graph.
 
-## Install from this folder
+## Install in VS Code
 
 1. Open VS Code Settings (JSON).
 2. Enable Agent Plugins and register the extracted plugin directory:
@@ -22,15 +25,22 @@ package includes general GDS guidance and metadata read/change guidance.
 4. Run `Chat: Open Customizations` and confirm `gds` appears.
 5. Run `MCP: List Servers`, start `gds-workbench`, and complete the Entra
    browser sign-in if VS Code requests it.
-6. Run `Chat: Configure Skills` and confirm `understand-gds` and
-   `manage-gds-metadata` appear.
-7. In Agent chat, invoke `/gds:understand-gds` or
-   `/gds:manage-gds-metadata`. The agent can also select either skill from the
-   request.
+6. Run `Chat: Configure Skills` and confirm these skills appear:
 
-If this workspace already registers the remote server directly or through a
-bridge in `.vscode/mcp.json`, disable those registrations while using the
-plugin connection. Multiple registrations expose duplicate tool names.
+   ```text
+   understand-gds                 manage-gds-metadata
+   open-gds-metadata-workbench    author-model-metadata
+   build-conceptual-model         build-logical-model
+   build-dimensional-model        build-data-mapping
+   grill-data-model               run-data-modeling-goal
+   ```
+
+7. In Agent chat, invoke a skill such as `/gds:build-logical-model` or describe
+   the matching task naturally.
+
+If this workspace already registers the remote server in `.vscode/mcp.json`,
+disable that registration while using the plugin connection. Multiple
+registrations expose duplicate tool names.
 
 ## What is packaged
 
@@ -39,35 +49,52 @@ gds/
 ├── plugin.json
 ├── mcp.json
 ├── README.md
+├── references/
+│   ├── model-tools.md
+│   ├── model-datasets.md
+│   ├── governed-model-workflow.md
+│   ├── modeling-method.md
+│   └── decision-record.md
 └── skills/
+    ├── build-conceptual-model/{SKILL.md,agents/openai.yaml}
+    ├── build-logical-model/{SKILL.md,agents/openai.yaml}
+    ├── build-dimensional-model/{SKILL.md,agents/openai.yaml}
+    ├── build-data-mapping/{SKILL.md,agents/openai.yaml}
+    ├── author-model-metadata/{SKILL.md,agents/openai.yaml}
+    ├── grill-data-model/{SKILL.md,agents/openai.yaml,references/}
+    ├── run-data-modeling-goal/{SKILL.md,agents/openai.yaml,references/}
     ├── understand-gds/
     │   ├── SKILL.md
     │   └── references/gds-overview.md
-    └── manage-gds-metadata/
+    ├── manage-gds-metadata/
+    │   ├── SKILL.md
+    │   ├── references/
+    │   └── scripts/
+    │       ├── inspect-metadata-catalog.ps1
+    │       ├── inspect-metadata-catalog.sh
+    │       ├── initialize-metadata-change-set.ps1
+    │       ├── initialize-metadata-change-set.sh
+    │       ├── initialize-gds-workspace.ps1
+    │       ├── initialize-gds-workspace.sh
+    │       ├── build-stage-review.js
+    │       ├── metadata-schema.ps1
+    │       ├── prepare-metadata-stage-review.ps1
+    │       ├── prepare-metadata-stage-review.sh
+    │       ├── remove-local-metadata-record.ps1
+    │       ├── remove-local-metadata-record.sh
+    │       ├── upsert-local-metadata-record.ps1
+    │       ├── upsert-local-metadata-record.sh
+    │       ├── validate-local-change-set.ps1
+    │       ├── validate-local-change-set.sh
+    │       ├── validate-metadata-dataset.js
+    │       ├── validate-metadata-snapshot.ps1
+    │       ├── validate-metadata-snapshot.sh
+    │       ├── update-local-change-set-state.ps1
+    │       └── update-local-change-set-state.sh
+    └── open-gds-metadata-workbench/
         ├── SKILL.md
-        ├── references/
-        └── scripts/
-            ├── inspect-metadata-catalog.ps1
-            ├── inspect-metadata-catalog.sh
-            ├── initialize-metadata-change-set.ps1
-            ├── initialize-metadata-change-set.sh
-            ├── initialize-gds-workspace.ps1
-            ├── initialize-gds-workspace.sh
-            ├── build-stage-review.js
-            ├── metadata-schema.ps1
-            ├── prepare-metadata-stage-review.ps1
-            ├── prepare-metadata-stage-review.sh
-            ├── remove-local-metadata-record.ps1
-            ├── remove-local-metadata-record.sh
-            ├── upsert-local-metadata-record.ps1
-            ├── upsert-local-metadata-record.sh
-            ├── validate-local-change-set.ps1
-            ├── validate-local-change-set.sh
-            ├── validate-metadata-dataset.js
-            ├── validate-metadata-snapshot.ps1
-            ├── validate-metadata-snapshot.sh
-            ├── update-local-change-set-state.ps1
-            └── update-local-change-set-state.sh
+        ├── scripts/{open-gds-metadata-workbench.ps1,open-gds-metadata-workbench.sh}
+        └── assets/workbench/{index.html,styles.css,logic.js,app.js}
 ```
 
 `mcp.json` contains only the HTTPS endpoint. It contains no token, client
@@ -85,3 +112,21 @@ List the GDS Tenants I can access. Do not make any changes.
 Then confirm it uses `list_tenants` without acquiring a lock. For a change
 request, confirm it checks/acquires the Tenant Lock and stops before Apply for
 explicit approval.
+
+To prepare a bounded modeling goal without starting it, ask:
+
+```text
+Use run-data-modeling-goal to give me a paste-ready goal prompt for a validated
+Logical model. Do not start the goal.
+```
+
+To open the local utility, ask:
+
+```text
+Open the GDS Data Workbench.
+```
+
+The utility opens in the default browser. Direct local folder editing requires
+current Chrome or Edge. It reads `GDS/metadata-snapshot` or
+`GDS/model-snapshot` and writes only the matching local Change Set folder; it
+never calls MCP or PostgreSQL.

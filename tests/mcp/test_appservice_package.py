@@ -31,11 +31,15 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "startup.sh",
             "requirements.txt",
             "BUILD_MANIFEST.json",
+            "gds_etl_workbench/tools/snapshots/dataset_description.py",
+            "gds_etl_workbench/tools/snapshots/service.py",
+            "gds_etl_workbench/tools/snapshots/storage.py",
             "gds_etl_workbench/tools/snapshots/metadata/archive.py",
             "gds_etl_workbench/tools/snapshots/metadata/contracts.py",
             "gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py",
+            "gds_etl_workbench/tools/snapshots/metadata/guidance.py",
             "gds_etl_workbench/tools/snapshots/metadata/sql.py",
-            "gds_etl_workbench/tools/snapshots/metadata/storage.py",
+            "gds_etl_workbench/tools/snapshots/model/selection.py",
             "gds_etl_workbench/tools/catalog/get_object_lineage.py",
             "gds_etl_workbench/tools/catalog/get_objects.py",
             "gds_etl_workbench/tools/catalog/list_objects.py",
@@ -45,6 +49,7 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
             "gds_etl_workbench/tools/tenants/get_tenant_details.py",
             "gds_etl_workbench/tools/tenants/tenant_locks.py",
         } <= set(names)
+        assert "gds_etl_workbench/tools/snapshots/metadata/storage.py" not in names
         assert all(
             name in {"app.py", "startup.sh", "requirements.txt", "BUILD_MANIFEST.json"}
             or name.startswith("gds_etl_workbench/")

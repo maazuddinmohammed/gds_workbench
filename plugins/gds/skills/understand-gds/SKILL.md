@@ -1,6 +1,6 @@
 ---
 name: understand-gds
-description: Explains the GDS ETL Workbench, its governed metadata and modeling concepts, and how its workflows fit together. Use when the user asks what GDS does, how GDS concepts relate, or which GDS workflow applies.
+description: Explain GDS concepts and route users to a governed workflow. Use only for conceptual questions about what GDS is, how its metadata, modeling, and governance concepts relate, or which GDS workflow to choose; do not use to execute metadata reads or changes or to open the local Metadata Workbench.
 ---
 
 # Understand GDS

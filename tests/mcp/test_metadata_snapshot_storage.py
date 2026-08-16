@@ -10,7 +10,7 @@ import pytest
 
 from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-from gds_etl_workbench.tools.snapshots.metadata import storage as storage_module
+from gds_etl_workbench.tools.snapshots import storage as storage_module
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotArchive,
     encode_dataset,
@@ -19,9 +19,7 @@ from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     build_and_upload_metadata_snapshot,
 )
-from gds_etl_workbench.tools.snapshots.metadata.storage import (
-    AzureMetadataSnapshotStore,
-)
+from gds_etl_workbench.tools.snapshots.storage import AzureSnapshotStore
 
 SNAPSHOT_ID = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
 CREATED_AT = datetime(2026, 8, 11, 16, 0, tzinfo=UTC)
@@ -91,14 +89,18 @@ class RecordingStore:
         self,
         archive: SnapshotArchive,
         *,
-        tenant_id: int,
+        snapshot_kind: str,
+        scope_id: int,
+        schema_version: str,
         snapshot_id: UUID,
         created_at: datetime,
         available_until: datetime,
     ) -> None:
         self.archive_path = archive.path
         assert archive.path.is_file()
-        assert tenant_id == 123
+        assert snapshot_kind == "metadata"
+        assert scope_id == 123
+        assert schema_version == "2.0"
         assert snapshot_id == SNAPSHOT_ID
         assert created_at == CREATED_AT
         assert available_until == AVAILABLE_UNTIL
@@ -109,7 +111,9 @@ class RecordingStore:
     async def create_read_url(
         self,
         *,
-        tenant_id: int,
+        snapshot_kind: str,
+        scope_id: int,
+        schema_version: str,
         snapshot_id: UUID,
         now: datetime,
         ttl_seconds: int,
@@ -171,7 +175,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     blob = FakeBlob()
     service = FakeBlobService(blob)
     sas_arguments: dict[str, Any] = {}
-    monkeypatch.setattr(storage_module, "DefaultAzureCredential", lambda **_kwargs: credential)
+    monkeypatch.setattr(
+        storage_module, "DefaultAzureCredential", lambda **_kwargs: credential
+    )
     monkeypatch.setattr(storage_module, "BlobServiceClient", lambda **_kwargs: service)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
@@ -180,7 +186,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
 
     monkeypatch.setattr(storage_module, "generate_blob_sas", fake_generate_blob_sas)
     settings = _settings()
-    store = AzureMetadataSnapshotStore(settings)
+    store = AzureSnapshotStore(settings)
     archive_path = tmp_path / "snapshot.zip"
     archive_path.write_bytes(b"archive")
     archive = SnapshotArchive(
@@ -193,7 +199,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
 
     await store.upload_archive(
         archive,
-        tenant_id=123,
+        snapshot_kind="metadata",
+        scope_id=123,
+        schema_version="2.0",
         snapshot_id=SNAPSHOT_ID,
         created_at=CREATED_AT,
         available_until=AVAILABLE_UNTIL,
@@ -226,11 +234,15 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         size=7,
         content_settings=SimpleNamespace(
             content_type="application/zip",
-            content_disposition=(f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'),
+            content_disposition=(
+                f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'
+            ),
         ),
     )
     read_url = await store.create_read_url(
-        tenant_id=123,
+        snapshot_kind="metadata",
+        scope_id=123,
+        schema_version="2.0",
         snapshot_id=SNAPSHOT_ID,
         now=CREATED_AT,
         ttl_seconds=900,
@@ -249,7 +261,9 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     }
     assert (
         await store.create_read_url(
-            tenant_id=123,
+            snapshot_kind="metadata",
+            scope_id=123,
+            schema_version="2.0",
             snapshot_id=SNAPSHOT_ID,
             now=CREATED_AT,
             ttl_seconds=900,

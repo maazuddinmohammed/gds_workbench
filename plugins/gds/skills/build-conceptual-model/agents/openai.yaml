@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Conceptual Model"
+  short_description: "Build a governed business-level conceptual model"
+  default_prompt: "Use $build-conceptual-model to design and govern a conceptual data model."

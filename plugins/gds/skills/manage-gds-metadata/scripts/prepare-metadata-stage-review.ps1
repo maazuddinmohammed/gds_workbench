@@ -1,5 +1,5 @@
 param(
-    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "gds-workspace\change-set"),
+    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "GDS\change-set"),
     [Parameter(Mandatory = $true)]
     [string]$MetadataChangeSetId,
     [Parameter(Mandatory = $true)]
@@ -45,8 +45,8 @@ try {
         Write-Failure "Local directory must be named change-set."
     }
     $Workspace = [System.IO.Directory]::GetParent($Root)
-    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "gds-workspace") {
-        Write-Failure "Local change-set must be directly under gds-workspace."
+    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "GDS") {
+        Write-Failure "Local change-set must be directly under GDS."
     }
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
         Write-Failure "Local change-set does not exist."
@@ -142,7 +142,7 @@ try {
         $CanonicalColumns = @($Schema.'x-gds-canonical-key')
         $WantedKeys = New-Object 'System.Collections.Generic.HashSet[string]'
         foreach ($Record in $Records) {
-            [void]$WantedKeys.Add((Get-GdsNormalizedKey $Record $CanonicalColumns))
+            [void]$WantedKeys.Add((Get-GdsNormalizedKey $Record $CanonicalColumns $Schema))
         }
         $Baseline = @{}
         try {
@@ -151,7 +151,7 @@ try {
                     continue
                 }
                 $SnapshotRecord = $Line | ConvertFrom-Json
-                $SnapshotKey = Get-GdsNormalizedKey $SnapshotRecord $CanonicalColumns
+                $SnapshotKey = Get-GdsNormalizedKey $SnapshotRecord $CanonicalColumns $Schema
                 if ($WantedKeys.Contains($SnapshotKey)) {
                     if ($Baseline.ContainsKey($SnapshotKey)) {
                         throw "duplicate baseline key"
@@ -173,7 +173,7 @@ try {
         }
         $WrappedRecords = @()
         foreach ($Record in $Records) {
-            $NormalizedKey = Get-GdsNormalizedKey $Record $CanonicalColumns
+            $NormalizedKey = Get-GdsNormalizedKey $Record $CanonicalColumns $Schema
             $Existing = $null
             if ($Baseline.ContainsKey($NormalizedKey)) {
                 $Existing = $Baseline[$NormalizedKey]

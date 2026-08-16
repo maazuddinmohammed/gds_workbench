@@ -2,14 +2,12 @@
 
 from __future__ import annotations
 
-import asyncio
 from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, datetime, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
-from tempfile import TemporaryDirectory
 from typing import Annotated, Any, Literal
-from uuid import UUID, uuid4
+from uuid import UUID
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
@@ -19,15 +17,18 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
-from gds_etl_workbench.domain.errors import (
-    DependencyUnavailableError,
-    TenantNotFoundError,
-    WorkbenchError,
-)
+from gds_etl_workbench.domain.errors import TenantNotFoundError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
+from gds_etl_workbench.tools.snapshots.service import (
+    build_and_upload_snapshot,
+    create_snapshot_download,
+    create_snapshot_window,
+)
+from gds_etl_workbench.tools.snapshots.storage import SnapshotStore
 
 from .archive import (
     EncodedDataset,
+    SnapshotArchive,
     SnapshotContractError,
     SnapshotPayloadTooLargeError,
     build_snapshot_archive,
@@ -54,7 +55,6 @@ from .sql import (
     PROCESS_ROWS_SQL,
     REFERENCE_ROWS_SQL,
 )
-from .storage import MetadataSnapshotStore
 
 
 @dataclass(frozen=True, slots=True)
@@ -106,7 +106,7 @@ def register_get_metadata_snapshot_tool(
     identity_provider: IdentityProvider,
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
-    store: MetadataSnapshotStore,
+    store: SnapshotStore,
     download_ttl_seconds: int,
     retention_hours: int,
     max_archive_bytes: int,
@@ -154,22 +154,21 @@ def register_get_metadata_snapshot_tool(
                 created_at=current_time(),
             )
             download_created_at = current_time()
-            download_url = await store.create_read_url(
-                tenant_id=ready.tenant_id,
+            download = await create_snapshot_download(
+                store,
+                snapshot_kind="metadata",
+                scope_id=ready.tenant_id,
+                schema_version="2.0",
                 snapshot_id=ready.snapshot_id,
+                available_until=ready.available_until,
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
             )
-            if download_url is None:
-                raise DependencyUnavailableError()
             return GetMetadataSnapshotResult(
                 snapshot_id=ready.snapshot_id,
                 tenant_id=ready.tenant_id,
-                download_url=download_url,
-                download_url_expires_at=min(
-                    ready.available_until,
-                    download_created_at + timedelta(seconds=download_ttl_seconds),
-                ),
+                download_url=download.url,
+                download_url_expires_at=download.expires_at,
                 size_bytes=ready.size_bytes,
                 sha256=ready.sha256,
             )
@@ -191,6 +190,7 @@ def register_get_metadata_snapshot_tool(
         "get_metadata_snapshot",
         policy=ToolPolicy.TENANT_READ,
         summarize_input=_audit_input_metadata,
+        retain_arguments={"tenant_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 
@@ -493,7 +493,7 @@ async def select_snapshot_datasets(
 
 async def create_metadata_snapshot(
     database: Database,
-    store: MetadataSnapshotStore,
+    store: SnapshotStore,
     *,
     tenant_id: int,
     request_principal: RequestPrincipal,
@@ -504,14 +504,11 @@ async def create_metadata_snapshot(
     snapshot_id: UUID | None = None,
 ) -> ReadyMetadataSnapshot:
     """Select, archive, upload, and clean up one immutable Metadata Snapshot."""
-    requested_creation_time = created_at or datetime.now(UTC)
-    identifier = snapshot_id or uuid4()
-    if requested_creation_time.utcoffset() is None or identifier.version != 4:
-        raise SnapshotContractError("snapshot creation identity is invalid")
-    created = requested_creation_time.astimezone(UTC)
-    if not 1 <= retention_hours <= 168:
-        raise SnapshotContractError("snapshot retention is invalid")
-    available_until = created + timedelta(hours=retention_hours)
+    window = create_snapshot_window(
+        retention_hours=retention_hours,
+        created_at=created_at,
+        snapshot_id=snapshot_id,
+    )
 
     async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
         selected = await select_snapshot_datasets(
@@ -526,16 +523,16 @@ async def create_metadata_snapshot(
         store,
         tenant_id=tenant_id,
         tenant_code=selected.tenant_code,
-        snapshot_id=identifier,
-        created_at=created,
-        available_until=available_until,
+        snapshot_id=window.snapshot_id,
+        created_at=window.created_at,
+        available_until=window.available_until,
         max_archive_bytes=max_archive_bytes,
     )
 
 
 async def build_and_upload_metadata_snapshot(
     encoded_datasets: Sequence[EncodedDataset],
-    store: MetadataSnapshotStore,
+    store: SnapshotStore,
     *,
     tenant_id: int,
     tenant_code: str,
@@ -544,11 +541,11 @@ async def build_and_upload_metadata_snapshot(
     available_until: datetime,
     max_archive_bytes: int,
 ) -> ReadyMetadataSnapshot:
-    """Build in a private temporary directory and retain no local snapshot files."""
-    with TemporaryDirectory(prefix="gds-metadata-snapshot-") as temporary_directory:
-        archive = await asyncio.to_thread(
-            build_snapshot_archive,
-            Path(temporary_directory) / "metadata-snapshot.zip",
+    """Build and upload through the shared governed Snapshot service."""
+
+    def build_archive(output: Path) -> SnapshotArchive:
+        return build_snapshot_archive(
+            output,
             tenant_code=tenant_code,
             snapshot_id=snapshot_id,
             created_time=created_at,
@@ -556,18 +553,22 @@ async def build_and_upload_metadata_snapshot(
             encoded_datasets=encoded_datasets,
             max_archive_bytes=max_archive_bytes,
         )
-        await store.upload_archive(
-            archive,
-            tenant_id=tenant_id,
-            snapshot_id=snapshot_id,
-            created_at=created_at,
-            available_until=available_until,
-        )
-        return ReadyMetadataSnapshot(
-            snapshot_id=snapshot_id,
-            tenant_id=tenant_id,
-            created_at=created_at,
-            available_until=available_until,
-            size_bytes=archive.size_bytes,
-            sha256=archive.sha256,
-        )
+
+    ready = await build_and_upload_snapshot(
+        store,
+        snapshot_kind="metadata",
+        scope_id=tenant_id,
+        schema_version="2.0",
+        snapshot_id=snapshot_id,
+        created_at=created_at,
+        available_until=available_until,
+        build_archive=build_archive,
+    )
+    return ReadyMetadataSnapshot(
+        snapshot_id=ready.snapshot_id,
+        tenant_id=ready.scope_id,
+        created_at=ready.created_at,
+        available_until=ready.available_until,
+        size_bytes=ready.size_bytes,
+        sha256=ready.sha256,
+    )

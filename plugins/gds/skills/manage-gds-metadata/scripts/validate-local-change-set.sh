@@ -38,7 +38,7 @@ esac
 [ "$(basename "$change_set_candidate")" = 'change-set' ] || fail 'Local directory must be named change-set.'
 [ -d "$change_set_candidate" ] && [ ! -L "$change_set_candidate" ] || fail 'Local change-set is missing or unsafe.'
 workspace=$(cd "$(dirname "$change_set_candidate")" && pwd -P)
-[ "$(basename "$workspace")" = 'gds-workspace' ] || fail 'Local change-set must be directly under gds-workspace.'
+[ "$(basename "$workspace")" = 'GDS' ] || fail 'Local change-set must be directly under GDS.'
 change_set=$workspace/change-set
 state=$change_set/change-set.json
 datasets=$change_set/datasets

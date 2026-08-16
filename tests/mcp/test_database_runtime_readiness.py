@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, LiteralString, cast
 
 import pytest
 
@@ -18,7 +18,9 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        connection.execute(RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"))
+        connection.execute(
+            cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"))
+        )
 
     with postgres_database.connect_runtime() as connection:
         contract = connection.execute(

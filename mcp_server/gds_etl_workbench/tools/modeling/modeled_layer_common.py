@@ -1,0 +1,804 @@
+"""Shared query and read-card machinery for Logical and Dimensional layers."""
+
+# Immutable Pydantic read cards intentionally specialize nested write-record fields with IDs.
+# pyright: reportIncompatibleVariableOverride=false
+
+from __future__ import annotations
+
+from collections.abc import Mapping
+from dataclasses import dataclass
+from typing import LiteralString, cast
+
+from pydantic import Field
+
+from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.cursor import CursorCodec
+from gds_etl_workbench.domain.authorization import RequestPrincipal
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import (
+    AssertionRecordKey,
+    AttributeAssertionSourceRecord,
+    AttributePhysicalSourceRecord,
+    DimensionalAssertionSourceRecord,
+    DimensionalObjectSourceRecord,
+    LogicalAssertionSourceRecord,
+    LogicalObjectSourceRecord,
+    PhysicalAttributeKey,
+    PhysicalObjectKey,
+    SubmodelMembershipRecord,
+)
+from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
+
+from .common import (
+    MAX_OBJECT_FILTER,
+    ModelReadContext,
+    authorize_model_read,
+    validate_model_object_selection,
+)
+
+MAX_PAGE_SIZE = 200
+MAX_ID_FILTER = MAX_OBJECT_FILTER
+
+
+@dataclass(frozen=True, slots=True)
+class LayerConfig:
+    layer: str
+    submodel_fields: tuple[str, ...]
+    entity_fields: tuple[str, ...]
+    attribute_fields: tuple[str, ...]
+    relationship_fields: tuple[str, ...]
+    entity_source_role_column: str | None
+
+    @property
+    def submodel_table(self) -> str:
+        return f"workflow.{self.layer}_submodel"
+
+    @property
+    def entity_table(self) -> str:
+        return f"workflow.{self.layer}_entity"
+
+    @property
+    def membership_table(self) -> str:
+        return f"workflow.{self.layer}_entity_submodel"
+
+    @property
+    def attribute_table(self) -> str:
+        return f"workflow.{self.layer}_attribute"
+
+    @property
+    def entity_source_table(self) -> str:
+        return f"workflow.{self.layer}_entity_source_mapping"
+
+    @property
+    def attribute_source_table(self) -> str:
+        return f"workflow.{self.layer}_attribute_source_mapping"
+
+    @property
+    def relationship_table(self) -> str:
+        return f"workflow.{self.layer}_relationship"
+
+    @property
+    def submodel_id(self) -> str:
+        return f"{self.layer}_submodel_id"
+
+    @property
+    def entity_id(self) -> str:
+        return f"{self.layer}_entity_id"
+
+    @property
+    def attribute_id(self) -> str:
+        return f"{self.layer}_attribute_id"
+
+    @property
+    def relationship_id(self) -> str:
+        return f"{self.layer}_relationship_id"
+
+
+LOGICAL = LayerConfig(
+    layer="logical",
+    submodel_fields=(
+        "logical_submodel_name",
+        "logical_submodel_definition",
+        "logical_submodel_status",
+        "logical_submodel_is_locked",
+    ),
+    entity_fields=(
+        "logical_entity_name",
+        "logical_entity_definition",
+        "logical_entity_type",
+        "logical_entity_type_detail",
+        "logical_entity_grain",
+        "logical_entity_dependency_order",
+        "logical_entity_confidence",
+        "logical_entity_status",
+        "logical_entity_is_locked",
+    ),
+    attribute_fields=(
+        "logical_attribute_name",
+        "logical_attribute_definition",
+        "logical_attribute_data_type",
+        "logical_attribute_is_nullable",
+        "logical_attribute_is_primary_key",
+        "logical_attribute_is_natural_key",
+        "logical_attribute_is_surrogate_key",
+        "logical_attribute_ordinal_position",
+        "logical_attribute_is_audit_column",
+        "logical_attribute_status",
+        "logical_attribute_is_locked",
+    ),
+    relationship_fields=(
+        "logical_relationship_name",
+        "logical_relationship_definition",
+        "logical_relationship_cardinality",
+        "logical_relationship_confidence",
+        "logical_relationship_basis",
+        "logical_relationship_cardinality_basis",
+        "logical_relationship_status",
+        "logical_relationship_is_locked",
+    ),
+    entity_source_role_column=None,
+)
+
+DIMENSIONAL = LayerConfig(
+    layer="dimensional",
+    submodel_fields=(
+        "dimensional_submodel_name",
+        "dimensional_submodel_definition",
+        "dimensional_submodel_status",
+        "dimensional_submodel_is_locked",
+    ),
+    entity_fields=(
+        "dimensional_entity_name",
+        "dimensional_entity_definition",
+        "dimensional_entity_type",
+        "dimensional_fact_type",
+        "dimensional_entity_grain_definition",
+        "dimensional_entity_dependency_order",
+        "dimensional_entity_confidence",
+        "dimensional_entity_status",
+        "dimensional_entity_is_locked",
+    ),
+    attribute_fields=(
+        "dimensional_attribute_name",
+        "dimensional_attribute_definition",
+        "dimensional_attribute_data_type",
+        "dimensional_attribute_is_nullable",
+        "dimensional_attribute_ordinal_position",
+        "dimensional_attribute_role",
+        "dimensional_attribute_key_role",
+        "dimensional_attribute_is_grain_component",
+        "dimensional_attribute_additivity",
+        "dimensional_attribute_default_aggregation",
+        "dimensional_attribute_aggregation_basis",
+        "dimensional_attribute_change_behavior",
+        "dimensional_attribute_is_audit_column",
+        "dimensional_attribute_confidence",
+        "dimensional_attribute_status",
+        "dimensional_attribute_is_locked",
+    ),
+    relationship_fields=(
+        "dimensional_relationship_name",
+        "dimensional_relationship_definition",
+        "dimensional_relationship_kind",
+        "dimensional_relationship_cardinality",
+        "dimensional_relationship_role_name",
+        "dimensional_relationship_confidence",
+        "dimensional_relationship_basis",
+        "dimensional_relationship_cardinality_basis",
+        "dimensional_relationship_status",
+        "dimensional_relationship_is_locked",
+    ),
+    entity_source_role_column="dimensional_entity_source_role",
+)
+
+
+class ReadPhysicalObjectKey(PhysicalObjectKey):
+    object_id: int = Field(gt=0)
+
+
+class ReadPhysicalAttributeKey(PhysicalAttributeKey):
+    object_id: int = Field(gt=0)
+    attribute_id: int = Field(gt=0)
+
+
+class ReadAssertionRecordKey(AssertionRecordKey):
+    modeling_assertion_record_id: int = Field(gt=0)
+
+
+class SubmodelMembershipResult(SubmodelMembershipRecord):
+    submodel_id: int = Field(gt=0)
+    entity_submodel_id: int = Field(gt=0)
+
+
+class LogicalObjectSourceResult(LogicalObjectSourceRecord):
+    entity_source_mapping_id: int = Field(gt=0)
+    source_object: ReadPhysicalObjectKey
+
+
+class LogicalAssertionSourceResult(LogicalAssertionSourceRecord):
+    entity_source_mapping_id: int = Field(gt=0)
+    assertion_record: ReadAssertionRecordKey
+
+
+class DimensionalObjectSourceResult(DimensionalObjectSourceRecord):
+    entity_source_mapping_id: int = Field(gt=0)
+    source_object: ReadPhysicalObjectKey
+
+
+class DimensionalAssertionSourceResult(DimensionalAssertionSourceRecord):
+    entity_source_mapping_id: int = Field(gt=0)
+    assertion_record: ReadAssertionRecordKey
+
+
+class AttributePhysicalSourceResult(AttributePhysicalSourceRecord):
+    attribute_source_mapping_id: int = Field(gt=0)
+    entity_source_mapping_id: int = Field(gt=0)
+    source_attribute: ReadPhysicalAttributeKey
+
+
+class AttributeAssertionSourceResult(AttributeAssertionSourceRecord):
+    attribute_source_mapping_id: int = Field(gt=0)
+    assertion_record: ReadAssertionRecordKey
+
+
+class LayerToolError(Exception):
+    """A bounded modeled-layer read failure safe for MCP serialization."""
+
+
+@dataclass(frozen=True, slots=True)
+class ReadPage:
+    model: ModelReadContext
+    rows: list[dict[str, object]]
+    next_cursor: str | None
+
+
+async def read_submodels(
+    *,
+    database: Database,
+    authorizer: AuthorizationService,
+    principal: RequestPrincipal,
+    cursors: CursorCodec,
+    config: LayerConfig,
+    model_id: int,
+    page_size: int,
+    cursor: str | None,
+) -> ReadPage:
+    collection = f"get_model_{config.layer}_submodels:{model_id}:{page_size}"
+    offset = cursors.decode(cursor, collection=collection)
+    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
+        model = await authorize_model_read(
+            transaction,
+            authorizer=authorizer,
+            principal=principal,
+            model_id=model_id,
+        )
+        rows = await transaction.fetch_all(
+            submodels_sql(config),
+            (model.model_id, page_size + 1, offset),
+        )
+    return ReadPage(
+        model=model,
+        rows=rows[:page_size],
+        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
+    )
+
+
+async def read_entities(
+    *,
+    database: Database,
+    authorizer: AuthorizationService,
+    principal: RequestPrincipal,
+    cursors: CursorCodec,
+    config: LayerConfig,
+    model_id: int,
+    supporting_object_ids: tuple[int, ...],
+    page_size: int,
+    cursor: str | None,
+) -> ReadPage:
+    validate_ids(supporting_object_ids)
+    collection = _collection(
+        f"get_model_{config.layer}_entities",
+        model_id,
+        supporting_object_ids,
+        page_size,
+    )
+    offset = cursors.decode(cursor, collection=collection)
+    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
+        model = await authorize_model_read(
+            transaction,
+            authorizer=authorizer,
+            principal=principal,
+            model_id=model_id,
+        )
+        await validate_model_object_selection(
+            transaction,
+            model_id=model.model_id,
+            object_ids=supporting_object_ids,
+        )
+        rows = await transaction.fetch_all(
+            entities_sql(config),
+            (
+                model.model_id,
+                list(supporting_object_ids),
+                list(supporting_object_ids),
+                page_size + 1,
+                offset,
+            ),
+        )
+    return ReadPage(
+        model=model,
+        rows=rows[:page_size],
+        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
+    )
+
+
+async def read_attributes(
+    *,
+    database: Database,
+    authorizer: AuthorizationService,
+    principal: RequestPrincipal,
+    cursors: CursorCodec,
+    config: LayerConfig,
+    model_id: int,
+    entity_ids: tuple[int, ...],
+    page_size: int,
+    cursor: str | None,
+) -> ReadPage:
+    validate_ids(entity_ids)
+    collection = _collection(
+        f"get_model_{config.layer}_attributes", model_id, entity_ids, page_size
+    )
+    offset = cursors.decode(cursor, collection=collection)
+    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
+        model = await authorize_model_read(
+            transaction,
+            authorizer=authorizer,
+            principal=principal,
+            model_id=model_id,
+        )
+        await validate_entity_selection(
+            transaction,
+            config=config,
+            model_id=model.model_id,
+            entity_ids=entity_ids,
+        )
+        rows = await transaction.fetch_all(
+            attributes_sql(config),
+            (
+                model.model_id,
+                list(entity_ids),
+                list(entity_ids),
+                page_size + 1,
+                offset,
+            ),
+        )
+    return ReadPage(
+        model=model,
+        rows=rows[:page_size],
+        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
+    )
+
+
+async def read_relationships(
+    *,
+    database: Database,
+    authorizer: AuthorizationService,
+    principal: RequestPrincipal,
+    cursors: CursorCodec,
+    config: LayerConfig,
+    model_id: int,
+    entity_ids: tuple[int, ...],
+    page_size: int,
+    cursor: str | None,
+) -> ReadPage:
+    validate_ids(entity_ids)
+    collection = _collection(
+        f"get_model_{config.layer}_relationships", model_id, entity_ids, page_size
+    )
+    offset = cursors.decode(cursor, collection=collection)
+    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
+        model = await authorize_model_read(
+            transaction,
+            authorizer=authorizer,
+            principal=principal,
+            model_id=model_id,
+        )
+        await validate_entity_selection(
+            transaction,
+            config=config,
+            model_id=model.model_id,
+            entity_ids=entity_ids,
+        )
+        rows = await transaction.fetch_all(
+            relationships_sql(config),
+            (
+                model.model_id,
+                list(entity_ids),
+                list(entity_ids),
+                list(entity_ids),
+                page_size + 1,
+                offset,
+            ),
+        )
+    return ReadPage(
+        model=model,
+        rows=rows[:page_size],
+        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
+    )
+
+
+async def validate_entity_selection(
+    transaction: ReadTransaction,
+    *,
+    config: LayerConfig,
+    model_id: int,
+    entity_ids: tuple[int, ...],
+) -> None:
+    if not entity_ids:
+        return
+    query = cast(
+        LiteralString,
+        f"""
+SELECT count(*) AS entity_count
+  FROM {config.entity_table}
+ WHERE model_id = %s
+   AND {config.entity_id} = ANY(%s::BIGINT[])
+""",
+    )
+    row = await transaction.fetch_one(query, (model_id, list(entity_ids)))
+    if row is None or row["entity_count"] != len(entity_ids):
+        raise InvalidRequestError(
+            f"One or more {config.layer.title()} Entities are not in the Model."
+        )
+
+
+def validate_ids(ids: tuple[int, ...]) -> None:
+    if any(identifier <= 0 for identifier in ids) or len(set(ids)) != len(ids):
+        raise InvalidRequestError("IDs must be unique positive integers.")
+
+
+def audit_input(
+    arguments: Mapping[str, object], id_argument: str | None = None
+) -> dict[str, str | int | bool]:
+    model_id = arguments.get("model_id")
+    page_size = arguments.get("page_size", 50)
+    result: dict[str, str | int | bool] = {
+        "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
+        "model_id": model_id if type(model_id) is int and model_id > 0 else "invalid",
+        "page_size": (
+            page_size if type(page_size) is int and 1 <= page_size <= MAX_PAGE_SIZE else "invalid"
+        ),
+        "cursor_provided": arguments.get("cursor") is not None,
+    }
+    if id_argument is not None:
+        ids = arguments.get(id_argument, [])
+        result["selected_id_count"] = (
+            len(cast(list[object], ids)) if isinstance(ids, list) else "invalid"
+        )
+    return result
+
+
+def submodels_sql(config: LayerConfig) -> LiteralString:
+    selected = _select_fields("submodel", config.submodel_fields)
+    return cast(
+        LiteralString,
+        f"""
+SELECT submodel.{config.submodel_id},
+       {selected},
+       count(DISTINCT membership.{config.entity_id}) FILTER (
+           WHERE membership.{config.layer}_entity_submodel_status
+               IN ('active', 'needs_review')
+       ) AS entity_count
+  FROM {config.submodel_table} AS submodel
+  LEFT JOIN {config.membership_table} AS membership
+    ON membership.model_id = submodel.model_id
+   AND membership.{config.submodel_id} = submodel.{config.submodel_id}
+ WHERE submodel.model_id = %s
+ GROUP BY submodel.{config.submodel_id}
+ ORDER BY lower(submodel.{config.layer}_submodel_name), submodel.{config.submodel_id}
+ LIMIT %s OFFSET %s
+""",
+    )
+
+
+def entities_sql(config: LayerConfig) -> LiteralString:
+    selected = _select_fields("entity", config.entity_fields)
+    role_field = (
+        f"'source_role', source.{config.entity_source_role_column},"
+        if config.entity_source_role_column is not None
+        else ""
+    )
+    return cast(
+        LiteralString,
+        f"""
+SELECT entity.{config.entity_id},
+       {selected},
+       COALESCE((
+           SELECT jsonb_agg(jsonb_build_object(
+                      'entity_submodel_id', membership.{config.layer}_entity_submodel_id,
+                      'submodel_id', submodel.{config.submodel_id},
+                      'submodel_name', submodel.{config.layer}_submodel_name,
+                      'membership_status',
+                          membership.{config.layer}_entity_submodel_status,
+                      'membership_is_locked',
+                          membership.{config.layer}_entity_submodel_is_locked
+                  ) ORDER BY lower(submodel.{config.layer}_submodel_name))
+             FROM {config.membership_table} AS membership
+             JOIN {config.submodel_table} AS submodel
+               ON submodel.model_id = membership.model_id
+              AND submodel.{config.submodel_id} = membership.{config.submodel_id}
+            WHERE membership.model_id = entity.model_id
+              AND membership.{config.entity_id} = entity.{config.entity_id}
+       ), '[]'::JSONB) AS submodels,
+       COALESCE((
+           SELECT jsonb_agg(
+                      CASE source.support_source_type
+                          WHEN 'object' THEN jsonb_build_object(
+                              'entity_source_mapping_id',
+                                  source.{config.layer}_entity_source_mapping_id,
+                              'support_source_type', 'object',
+                              'source_object', jsonb_build_object(
+                                  'object_id', source_object.object_id,
+                                  'tenant_code', source_tenant.tenant_code,
+                                  'system_code', source_system.system_code,
+                                  'connection_code', source_connection.connection_code,
+                                  'object_schema', source_object.object_schema,
+                                  'object_name', source_object.object_name
+                              ),
+                              {role_field}
+                              'source_order',
+                                  source.{config.layer}_entity_source_mapping_order,
+                              'rationale',
+                                  source.{config.layer}_entity_source_mapping_rationale,
+                              'status',
+                                  source.{config.layer}_entity_source_mapping_status,
+                              'is_locked',
+                                  source.{config.layer}_entity_source_mapping_is_locked
+                          )
+                          ELSE jsonb_build_object(
+                              'entity_source_mapping_id',
+                                  source.{config.layer}_entity_source_mapping_id,
+                              'support_source_type', 'assertion',
+                              'assertion_record', jsonb_build_object(
+                                  'modeling_assertion_record_id',
+                                      assertion_record.modeling_assertion_record_id,
+                                  'modeling_assertion_record_key',
+                                      assertion_record.modeling_assertion_record_key
+                              ),
+                              {role_field}
+                              'source_order',
+                                  source.{config.layer}_entity_source_mapping_order,
+                              'rationale',
+                                  source.{config.layer}_entity_source_mapping_rationale,
+                              'status',
+                                  source.{config.layer}_entity_source_mapping_status,
+                              'is_locked',
+                                  source.{config.layer}_entity_source_mapping_is_locked
+                          )
+                      END ORDER BY source.{config.layer}_entity_source_mapping_id
+                  )
+             FROM {config.entity_source_table} AS source
+             LEFT JOIN core.object AS source_object
+               ON source_object.object_id = source.source_object_id
+             LEFT JOIN core.connection AS source_connection
+               ON source_connection.connection_id = source_object.connection_id
+             LEFT JOIN core.tenant AS source_tenant
+               ON source_tenant.tenant_id = source_connection.tenant_id
+             LEFT JOIN core.system AS source_system
+               ON source_system.system_id = source_connection.system_id
+             LEFT JOIN model.modeling_assertion_record AS assertion_record
+               ON assertion_record.modeling_assertion_record_id
+                    = source.modeling_assertion_record_id
+              AND assertion_record.model_id = source.model_id
+            WHERE source.model_id = entity.model_id
+              AND source.{config.entity_id} = entity.{config.entity_id}
+              AND (
+                  source.support_source_type <> 'object'
+                  OR EXISTS (
+                      SELECT 1
+                        FROM model.model_scope AS active_scope
+                       WHERE active_scope.model_id = source.model_id
+                         AND active_scope.object_id = source.source_object_id
+                         AND active_scope.is_active
+                  )
+              )
+       ), '[]'::JSONB) AS sources
+  FROM {config.entity_table} AS entity
+ WHERE entity.model_id = %s
+   AND (
+       cardinality(%s::BIGINT[]) = 0
+       OR EXISTS (
+           SELECT 1
+             FROM {config.entity_source_table} AS selected_source
+            WHERE selected_source.model_id = entity.model_id
+              AND selected_source.{config.entity_id} = entity.{config.entity_id}
+              AND selected_source.support_source_type = 'object'
+              AND selected_source.source_object_id = ANY(%s::BIGINT[])
+       )
+   )
+ ORDER BY entity.{config.layer}_entity_dependency_order,
+          lower(entity.{config.layer}_entity_name),
+          entity.{config.entity_id}
+ LIMIT %s OFFSET %s
+""",
+    )
+
+
+def attributes_sql(config: LayerConfig) -> LiteralString:
+    selected = _select_fields("attribute", config.attribute_fields)
+    return cast(
+        LiteralString,
+        f"""
+SELECT attribute.{config.attribute_id},
+       attribute.{config.entity_id},
+       entity.{config.layer}_entity_name,
+       {selected},
+       COALESCE((
+           SELECT jsonb_agg(
+                      CASE source.support_source_type
+                          WHEN 'attribute' THEN jsonb_build_object(
+                              'attribute_source_mapping_id',
+                                  source.{config.layer}_attribute_source_mapping_id,
+                              'entity_source_mapping_id',
+                                  source.{config.layer}_entity_source_mapping_id,
+                              'support_source_type', 'attribute',
+                              'source_attribute', jsonb_build_object(
+                                  'object_id', source_object.object_id,
+                                  'attribute_id', source_attribute.attribute_id,
+                                  'tenant_code', source_tenant.tenant_code,
+                                  'system_code', source_system.system_code,
+                                  'connection_code', source_connection.connection_code,
+                                  'object_schema', source_object.object_schema,
+                                  'object_name', source_object.object_name,
+                                  'attribute_name', source_attribute.attribute_name
+                              ),
+                              'source_order',
+                                  source.{config.layer}_attribute_source_mapping_order,
+                              'rationale',
+                                  source.{config.layer}_attribute_source_mapping_rationale,
+                              'status',
+                                  source.{config.layer}_attribute_source_mapping_status,
+                              'is_locked',
+                                  source.{config.layer}_attribute_source_mapping_is_locked
+                          )
+                          ELSE jsonb_build_object(
+                              'attribute_source_mapping_id',
+                                  source.{config.layer}_attribute_source_mapping_id,
+                              'support_source_type', 'assertion',
+                              'assertion_record', jsonb_build_object(
+                                  'modeling_assertion_record_id',
+                                      assertion_record.modeling_assertion_record_id,
+                                  'modeling_assertion_record_key',
+                                      assertion_record.modeling_assertion_record_key
+                              ),
+                              'source_order',
+                                  source.{config.layer}_attribute_source_mapping_order,
+                              'rationale',
+                                  source.{config.layer}_attribute_source_mapping_rationale,
+                              'status',
+                                  source.{config.layer}_attribute_source_mapping_status,
+                              'is_locked',
+                                  source.{config.layer}_attribute_source_mapping_is_locked
+                          )
+                      END ORDER BY source.{config.layer}_attribute_source_mapping_id
+                  )
+             FROM {config.attribute_source_table} AS source
+             LEFT JOIN core.object AS source_object
+               ON source_object.object_id = source.source_object_id
+             LEFT JOIN core.attribute AS source_attribute
+               ON source_attribute.attribute_id = source.source_attribute_id
+              AND source_attribute.object_id = source.source_object_id
+             LEFT JOIN core.connection AS source_connection
+               ON source_connection.connection_id = source_object.connection_id
+             LEFT JOIN core.tenant AS source_tenant
+               ON source_tenant.tenant_id = source_connection.tenant_id
+             LEFT JOIN core.system AS source_system
+               ON source_system.system_id = source_connection.system_id
+             LEFT JOIN model.modeling_assertion_record AS assertion_record
+               ON assertion_record.modeling_assertion_record_id
+                    = source.modeling_assertion_record_id
+              AND assertion_record.model_id = source.model_id
+            WHERE source.model_id = attribute.model_id
+              AND source.{config.attribute_id} = attribute.{config.attribute_id}
+              AND (
+                  source.support_source_type <> 'attribute'
+                  OR EXISTS (
+                      SELECT 1
+                        FROM model.model_scope AS active_scope
+                       WHERE active_scope.model_id = source.model_id
+                         AND active_scope.object_id = source.source_object_id
+                         AND active_scope.is_active
+                  )
+              )
+       ), '[]'::JSONB) AS sources
+  FROM {config.attribute_table} AS attribute
+  JOIN {config.entity_table} AS entity
+    ON entity.{config.entity_id} = attribute.{config.entity_id}
+   AND entity.model_id = attribute.model_id
+ WHERE attribute.model_id = %s
+   AND (
+       cardinality(%s::BIGINT[]) = 0
+       OR attribute.{config.entity_id} = ANY(%s::BIGINT[])
+   )
+ ORDER BY lower(entity.{config.layer}_entity_name),
+          attribute.{config.layer}_attribute_ordinal_position,
+          attribute.{config.attribute_id}
+ LIMIT %s OFFSET %s
+""",
+    )
+
+
+def relationships_sql(config: LayerConfig) -> LiteralString:
+    selected = _select_fields("relationship", config.relationship_fields)
+    return cast(
+        LiteralString,
+        f"""
+SELECT relationship.{config.relationship_id},
+       relationship.{config.layer}_relationship_from_entity_id
+           AS from_{config.layer}_entity_id,
+       from_entity.{config.layer}_entity_name AS from_{config.layer}_entity_name,
+       relationship.{config.layer}_relationship_from_attribute_id
+           AS from_{config.layer}_attribute_id,
+       from_attribute.{config.layer}_attribute_name
+           AS from_{config.layer}_attribute_name,
+       relationship.{config.layer}_relationship_to_entity_id
+           AS to_{config.layer}_entity_id,
+       to_entity.{config.layer}_entity_name AS to_{config.layer}_entity_name,
+       relationship.{config.layer}_relationship_to_attribute_id
+           AS to_{config.layer}_attribute_id,
+       to_attribute.{config.layer}_attribute_name AS to_{config.layer}_attribute_name,
+       {selected}
+  FROM {config.relationship_table} AS relationship
+  JOIN {config.entity_table} AS from_entity
+    ON from_entity.{config.entity_id}
+        = relationship.{config.layer}_relationship_from_entity_id
+   AND from_entity.model_id = relationship.model_id
+  JOIN {config.attribute_table} AS from_attribute
+    ON from_attribute.{config.attribute_id}
+        = relationship.{config.layer}_relationship_from_attribute_id
+   AND from_attribute.{config.entity_id}
+        = relationship.{config.layer}_relationship_from_entity_id
+   AND from_attribute.model_id = relationship.model_id
+  JOIN {config.entity_table} AS to_entity
+    ON to_entity.{config.entity_id}
+        = relationship.{config.layer}_relationship_to_entity_id
+   AND to_entity.model_id = relationship.model_id
+  JOIN {config.attribute_table} AS to_attribute
+    ON to_attribute.{config.attribute_id}
+        = relationship.{config.layer}_relationship_to_attribute_id
+   AND to_attribute.{config.entity_id}
+        = relationship.{config.layer}_relationship_to_entity_id
+   AND to_attribute.model_id = relationship.model_id
+ WHERE relationship.model_id = %s
+   AND (
+       cardinality(%s::BIGINT[]) = 0
+       OR relationship.{config.layer}_relationship_from_entity_id = ANY(%s::BIGINT[])
+       OR relationship.{config.layer}_relationship_to_entity_id = ANY(%s::BIGINT[])
+   )
+ ORDER BY relationship.{config.layer}_relationship_from_entity_id,
+          relationship.{config.layer}_relationship_to_entity_id,
+          lower(relationship.{config.layer}_relationship_name),
+          relationship.{config.relationship_id}
+ LIMIT %s OFFSET %s
+""",
+    )
+
+
+def _select_fields(alias: str, fields: tuple[str, ...]) -> str:
+    return ",\n       ".join(f"{alias}.{field}" for field in fields)
+
+
+def _collection(tool: str, model_id: int, ids: tuple[int, ...], page_size: int) -> str:
+    return f"{tool}:{model_id}:{','.join(str(identifier) for identifier in ids)}:{page_size}"
+
+
+def _next_cursor(
+    cursors: CursorCodec,
+    collection: str,
+    offset: int,
+    page_size: int,
+    row_count: int,
+) -> str | None:
+    if row_count <= page_size:
+        return None
+    return cursors.encode(collection=collection, offset=offset + page_size)

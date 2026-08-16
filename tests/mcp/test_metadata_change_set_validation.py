@@ -18,6 +18,80 @@ def test_validation_accepts_full_id_free_record_with_resolved_natural_keys() -> 
     assert result.issues == ()
 
 
+def test_validation_returns_authoritative_action_review() -> None:
+    current = _foundation()
+    update = _copy_group()
+    deactivate = _copy_group()
+    deactivate["copy_group_name"] = "DEACTIVATE"
+    unchanged = _copy_group()
+    unchanged["copy_group_name"] = "UNCHANGED"
+    reactivate = _copy_group()
+    reactivate["copy_group_name"] = "REACTIVATE"
+    reactivate["is_active"] = False
+    current["copy_group"] = [update, deactivate, unchanged, reactivate]
+
+    updated = deepcopy(update)
+    updated["copy_group_description"] = "changed"
+    deactivated = deepcopy(deactivate)
+    deactivated["is_active"] = False
+    inserted = _copy_group()
+    inserted["copy_group_name"] = "INSERTED"
+    reactivated = deepcopy(reactivate)
+    reactivated["is_active"] = True
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={
+            "copy_group": [updated, deactivated, unchanged, inserted, reactivated]
+        },
+    )
+
+    assert result.valid is True
+    assert len(result.action_review) == 1
+    summary = result.action_review[0]
+    assert summary.dataset == "copy_group"
+    assert (
+        summary.insert_count,
+        summary.update_count,
+        summary.deactivate_count,
+        summary.reactivate_count,
+        summary.no_change_count,
+    ) == (1, 1, 1, 1, 1)
+    assert [item.action for item in summary.keys] == [
+        "update",
+        "deactivate",
+        "no_change",
+        "insert",
+        "reactivate",
+    ]
+    assert summary.keys[0].natural_key == {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "copy_group_name": "CUSTOMERS",
+    }
+    assert summary.keys_truncated is False
+
+
+def test_action_review_limits_natural_keys_but_keeps_counts() -> None:
+    records = []
+    for index in range(101):
+        record = _copy_group()
+        record["copy_group_name"] = f"GROUP_{index:03d}"
+        records.append(record)
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={"copy_group": records},
+    )
+
+    assert result.valid is True
+    assert result.action_review[0].insert_count == 101
+    assert len(result.action_review[0].keys) == 100
+    assert result.action_review[0].keys_truncated is True
+
+
 def test_validation_stops_at_duplicate_unique_keys() -> None:
     duplicate = _copy_group()
     duplicate["copy_group_description"] = "second"
@@ -31,6 +105,21 @@ def test_validation_stops_at_duplicate_unique_keys() -> None:
     assert result.valid is False
     assert result.phase == "uniqueness"
     assert result.issues[0].code == "duplicate_unique_key"
+
+
+def test_validation_uses_published_unicode_lowercase_without_case_folding() -> None:
+    first = _copy_group()
+    first["copy_group_name"] = "Straße"
+    second = _copy_group()
+    second["copy_group_name"] = "STRASSE"
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=_foundation(),
+        staged_rows_by_dataset={"copy_group": [first, second]},
+    )
+
+    assert result.valid is True
 
 
 def test_validation_rejects_cross_tenant_changes_before_references() -> None:
@@ -62,6 +151,45 @@ def test_validation_reports_missing_natural_key_reference() -> None:
     assert result.phase == "references"
     assert result.issues[0].code == "reference_not_found"
     assert result.issues[0].fields == ("system_code",)
+
+
+def test_validation_allows_copy_group_control_without_optional_member_group() -> None:
+    current = _foundation()
+    current["copy_group"] = [_copy_group()]
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={
+            "copy_group_control": [
+                {
+                    "tenant_code": "DEMO",
+                    "system_code": "CRM",
+                    "copy_group_name": "CUSTOMERS",
+                    "member_group_name": None,
+                    "copy_group_control_initial_load_date": None,
+                    "copy_group_control_last_run_time": None,
+                    "copy_group_control_last_run_value": None,
+                }
+            ]
+        },
+    )
+
+    assert result.valid is True
+
+
+def test_validation_still_rejects_partially_populated_nullable_connection_key() -> None:
+    current = _foundation()
+    current["tenant"][0]["gds_connection_tenant_code"] = "DEMO"
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={"copy_group": [_copy_group()]},
+    )
+
+    assert result.valid is False
+    assert result.phase == "schema"
 
 
 def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
@@ -295,7 +423,9 @@ def _copy_group() -> dict[str, object]:
     }
 
 
-def _object_record(*, object_schema: str, tenant_code: str = "GLOBAL") -> dict[str, object]:
+def _object_record(
+    *, object_schema: str, tenant_code: str = "GLOBAL"
+) -> dict[str, object]:
     return {
         "tenant_code": tenant_code,
         "system_code": "CRM",

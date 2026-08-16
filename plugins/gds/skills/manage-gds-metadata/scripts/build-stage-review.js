@@ -4,6 +4,10 @@ function own(object, name) {
     return Object.prototype.hasOwnProperty.call(object, name);
 }
 
+function isObject(value) {
+    return value !== null && !Array.isArray(value) && typeof value === "object";
+}
+
 function readText(path, label) {
     const data = $.NSData.dataWithContentsOfFile($(path));
     const text = $.NSString.alloc.initWithDataEncoding(
@@ -24,7 +28,23 @@ function readJson(path, label) {
     }
 }
 
-function normalizedKey(record, columns) {
+function normalizationContract(schema) {
+    const normalization = schema && schema["x-gds-key-normalization"];
+    if (!isObject(normalization) || normalization.version !== "1.0" ||
+        !Array.isArray(normalization.string_field_suffixes) ||
+        normalization.string_field_suffixes.join("\u001f") !== "_code\u001f_name\u001f_schema" ||
+        !Array.isArray(normalization.trim_code_points) ||
+        normalization.trim_code_points.join("\u001f") !== "U+0020" ||
+        normalization.case !== "unicode-lowercase" ||
+        normalization.unicode_normalization !== "none" ||
+        normalization.other_values !== "identity") {
+        throw new Error("Snapshot key-normalization contract is invalid.");
+    }
+    return normalization;
+}
+
+function normalizedKey(record, columns, schema) {
+    const normalization = normalizationContract(schema);
     const values = [];
     for (let index = 0; index < columns.length; index += 1) {
         const field = columns[index];
@@ -35,7 +55,13 @@ function normalizedKey(record, columns) {
         if (value === null) {
             values.push(["null", null]);
         } else if (typeof value === "string") {
-            values.push(["string", value.trim().toLowerCase()]);
+            const normalizeString = normalization.string_field_suffixes.some(
+                function (suffix) { return field.endsWith(suffix); }
+            );
+            values.push([
+                "string",
+                normalizeString ? value.replace(/^ +| +$/g, "").toLowerCase() : value
+            ]);
         } else if (typeof value === "number" || typeof value === "boolean") {
             values.push([typeof value, value]);
         } else {
@@ -77,7 +103,7 @@ function snapshotMatches(path, wanted) {
         } catch (_error) {
             throw new Error("Snapshot rows contain invalid JSON.");
         }
-        const key = normalizedKey(row, wanted.columns);
+        const key = normalizedKey(row, wanted.columns, wanted.schema);
         if (own(wanted.keys, key)) {
             if (own(result, key)) {
                 throw new Error("Snapshot contains a duplicate canonical key.");
@@ -138,9 +164,10 @@ function run(arguments) {
         if (!Array.isArray(records) || !Array.isArray(columns)) {
             throw new Error("Stage-review dataset contract is invalid.");
         }
-        const wanted = {columns: columns, keys: {}};
+        normalizationContract(schema);
+        const wanted = {columns: columns, keys: {}, schema: schema};
         for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
-            wanted.keys[normalizedKey(records[recordIndex], columns)] = true;
+            wanted.keys[normalizedKey(records[recordIndex], columns, schema)] = true;
         }
         const baseline = snapshotMatches(
             snapshotPath + "/data/operational/" + name + "/rows.jsonl",
@@ -156,7 +183,7 @@ function run(arguments) {
         const reviewedRecords = [];
         for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
             const record = records[recordIndex];
-            const normalized = normalizedKey(record, columns);
+            const normalized = normalizedKey(record, columns, schema);
             const existing = baseline[normalized];
             let action = "insert";
             if (existing) {

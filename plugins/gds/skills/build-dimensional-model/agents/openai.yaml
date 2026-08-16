@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Dimensional Model"
+  short_description: "Build a governed dimensional analytics model"
+  default_prompt: "Use $build-dimensional-model to design and govern a dimensional data model."

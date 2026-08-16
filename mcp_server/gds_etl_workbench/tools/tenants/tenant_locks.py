@@ -204,6 +204,7 @@ def register_tenant_lock_tools(
         _CHECK_TOOL,
         policy=POLICY,
         summarize_input=_tenant_audit,
+        retain_arguments={"tenant_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 
@@ -261,6 +262,7 @@ def register_tenant_lock_tools(
         _ACQUIRE_TOOL,
         policy=POLICY,
         summarize_input=_acquire_audit,
+        retain_arguments={"tenant_id", "duration_minutes", "schema_version"},
         tenant_argument="tenant_id",
     )
 
@@ -310,6 +312,7 @@ def register_tenant_lock_tools(
         _RENEW_TOOL,
         policy=POLICY,
         summarize_input=_renew_audit,
+        retain_arguments={"tenant_id", "duration_minutes", "schema_version"},
         tenant_argument="tenant_id",
     )
 
@@ -354,6 +357,7 @@ def register_tenant_lock_tools(
         _RELEASE_TOOL,
         policy=POLICY,
         summarize_input=_tenant_audit,
+        retain_arguments={"tenant_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 
@@ -411,6 +415,7 @@ def register_tenant_lock_tools(
         _OVERRIDE_TOOL,
         policy=POLICY,
         summarize_input=_override_audit,
+        retain_arguments={"tenant_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 

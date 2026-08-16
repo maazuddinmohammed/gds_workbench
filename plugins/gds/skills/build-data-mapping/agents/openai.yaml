@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build Data Mapping"
+  short_description: "Build governed source-to-model mapping records"
+  default_prompt: "Use $build-data-mapping to derive and govern source-to-model mappings."

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable, Mapping
+from collections.abc import Callable, Collection, Mapping
 from dataclasses import dataclass
 from typing import Any, Literal, cast
 from uuid import uuid4
@@ -21,19 +21,42 @@ from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ToolCallLogRecord
 
-type InputMetadata = Mapping[str, str | int | bool | None]
+type InputMetadata = Mapping[str, Any]
 type InputMetadataBuilder = Callable[[Mapping[str, Any]], InputMetadata]
+
+_SUMMARIZED_ARGUMENT_NAMES = frozenset({"changes", "cursor", "purpose", "reason"})
+_PROHIBITED_ARGUMENT_NAMES = frozenset(
+    {
+        "authorization",
+        "connection_string",
+        "connection_value",
+        "connection_values",
+        "content",
+        "credentials",
+        "document",
+        "documents",
+        "dsn",
+        "output",
+        "payload",
+        "prompt",
+        "records",
+        "result",
+        "rows",
+    }
+)
+_PROHIBITED_NAME_PARTS = frozenset({"api_key", "password", "secret", "token"})
 
 
 @dataclass(frozen=True, slots=True)
 class ToolAuditSpec:
     policy: ToolPolicy
     summarize_input: InputMetadataBuilder
+    retained_arguments: frozenset[str]
     tenant_argument: str | None
 
 
 class ToolCallAuditMiddleware:
-    """Append one bounded record after each configured MCP tool finishes."""
+    """Append one safe-input record after each configured MCP tool finishes."""
 
     def __init__(
         self,
@@ -53,6 +76,7 @@ class ToolCallAuditMiddleware:
         *,
         policy: ToolPolicy,
         summarize_input: InputMetadataBuilder,
+        retain_arguments: Collection[str] = (),
         tenant_argument: str | None = None,
     ) -> None:
         if name in self._tools:
@@ -60,6 +84,7 @@ class ToolCallAuditMiddleware:
         self._tools[name] = ToolAuditSpec(
             policy=policy,
             summarize_input=summarize_input,
+            retained_arguments=frozenset(retain_arguments),
             tenant_argument=tenant_argument,
         )
 
@@ -79,7 +104,11 @@ class ToolCallAuditMiddleware:
         safe_arguments: Mapping[str, Any] = (
             cast(Mapping[str, Any], arguments) if isinstance(arguments, Mapping) else {}
         )
-        input_metadata = spec.summarize_input(safe_arguments)
+        input_metadata = _retain_safe_arguments(
+            safe_arguments,
+            retained_arguments=spec.retained_arguments,
+        )
+        input_metadata.update(spec.summarize_input(safe_arguments))
         tenant_id = None
         if spec.tenant_argument is not None:
             raw_tenant_id: Any = safe_arguments.get(spec.tenant_argument)
@@ -163,3 +192,35 @@ def _protocol_failure_code(error: Exception) -> str:
     if isinstance(error, MCPError) and error.code == INVALID_PARAMS:
         return "invalid_request"
     return "internal_error"
+
+
+def _retain_safe_arguments(
+    arguments: Mapping[str, Any],
+    *,
+    retained_arguments: frozenset[str] | None = None,
+) -> dict[str, Any]:
+    return {
+        name: _retain_safe_value(value)
+        for name, value in arguments.items()
+        if isinstance(name, str)
+        and (retained_arguments is None or name in retained_arguments)
+        and not _prohibited_argument_name(name)
+    }
+
+
+def _retain_safe_value(value: Any) -> Any:
+    if isinstance(value, Mapping):
+        return _retain_safe_arguments(value)
+    if isinstance(value, list):
+        return [_retain_safe_value(item) for item in value]
+    return value
+
+
+def _prohibited_argument_name(name: str) -> bool:
+    normalized = name.casefold().replace("-", "_")
+    if normalized in _SUMMARIZED_ARGUMENT_NAMES or normalized in _PROHIBITED_ARGUMENT_NAMES:
+        return True
+    return any(
+        normalized == part or normalized.startswith(f"{part}_") or normalized.endswith(f"_{part}")
+        for part in _PROHIBITED_NAME_PARTS
+    )

@@ -37,12 +37,16 @@ DATABASE_POOL_TIMEOUT_SECONDS = 10
 DATABASE_CONNECTION_BUDGET = 100
 DATABASE_CONNECTION_HEADROOM = 20
 WEB_CONCURRENCY = 2
+DATABRICKS_SQL_MAX_ROWS = 50
+DATABRICKS_SQL_TIMEOUT_SECONDS = 120
 
 
 _EXPECTED_KEYS = frozenset(
     {
         "GDS_CURSOR_SIGNING_KEY",
         "GDS_DATABASE_DSN",
+        "GDS_DATABRICKS_SQL_MAX_ROWS",
+        "GDS_DATABRICKS_SQL_TIMEOUT_SECONDS",
         "GDS_ENTRA_API_CLIENT_ID",
         "GDS_ENTRA_TENANT_ID",
         "GDS_ENVIRONMENT",
@@ -77,6 +81,8 @@ class RuntimeSettings:
     metadata_snapshot_retention_hours: int
     metadata_snapshot_max_archive_bytes: int
     metadata_snapshot_managed_identity_client_id: UUID | None
+    databricks_sql_max_rows: int = DATABRICKS_SQL_MAX_ROWS
+    databricks_sql_timeout_seconds: int = DATABRICKS_SQL_TIMEOUT_SECONDS
 
     @classmethod
     def from_environment(cls, values: Mapping[str, str] | None = None) -> RuntimeSettings:
@@ -208,6 +214,21 @@ class RuntimeSettings:
                 "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID must be a UUID"
             ) from exc
 
+        databricks_sql_max_rows = _bounded_integer(
+            source,
+            "GDS_DATABRICKS_SQL_MAX_ROWS",
+            default=DATABRICKS_SQL_MAX_ROWS,
+            minimum=1,
+            maximum=50,
+        )
+        databricks_sql_timeout_seconds = _bounded_integer(
+            source,
+            "GDS_DATABRICKS_SQL_TIMEOUT_SECONDS",
+            default=DATABRICKS_SQL_TIMEOUT_SECONDS,
+            minimum=1,
+            maximum=600,
+        )
+
         if DATABASE_POOL_MIN > DATABASE_POOL_MAX:
             raise ConfigurationError("database pool minimum cannot exceed maximum")
         if DATABASE_CONNECTION_HEADROOM >= DATABASE_CONNECTION_BUDGET:
@@ -233,6 +254,8 @@ class RuntimeSettings:
             pool_min=DATABASE_POOL_MIN,
             pool_max=DATABASE_POOL_MAX,
             pool_timeout_seconds=DATABASE_POOL_TIMEOUT_SECONDS,
+            databricks_sql_max_rows=databricks_sql_max_rows,
+            databricks_sql_timeout_seconds=databricks_sql_timeout_seconds,
             metadata_snapshot_storage_account_url=account_url,
             metadata_snapshot_storage_container=storage_container,
             metadata_snapshot_download_ttl_seconds=SNAPSHOT_DOWNLOAD_TTL_SECONDS,
@@ -246,6 +269,26 @@ def _required(source: Mapping[str, str], key: str) -> str:
     value = source.get(key, "").strip()
     if not value:
         raise ConfigurationError(f"{key} is required")
+    return value
+
+
+def _bounded_integer(
+    source: Mapping[str, str],
+    key: str,
+    *,
+    default: int,
+    minimum: int,
+    maximum: int,
+) -> int:
+    raw = source.get(key, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise ConfigurationError(f"{key} must be an integer") from exc
+    if not minimum <= value <= maximum:
+        raise ConfigurationError(f"{key} must be between {minimum} and {maximum}")
     return value
 
 

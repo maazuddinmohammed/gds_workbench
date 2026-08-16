@@ -50,7 +50,8 @@ The governed metadata aggregate that contains scope, policy, effective Sections,
 _Avoid_: Project, workspace model
 
 **Model Scope**:
-The server-owned set of source Objects and Attributes that a Model can use.
+The server-owned active set of physical Objects that a Model can use. Membership
+is added, reactivated, or archived only through a governed Model Change Set.
 _Avoid_: Selection, source list
 
 **Modeling Assertion**:
@@ -118,10 +119,6 @@ _Avoid_: Modeling layer, inferred Connection type
 **Verified Model Graph**:
 The typed and indexed in-memory form of a verified Model Snapshot.
 _Avoid_: Projection input, document map
-
-**Profiling Run**:
-The bounded execution and atomic-publication aggregate for Attribute profiles and failures.
-_Avoid_: Profile job
 
 **Mapping Package**:
 The complete normalized Mapping result for the approved target Object and source System pairs.

@@ -1829,16 +1829,18 @@ def _seed_model_assertion(
         INSERT INTO model.modeling_assertion_record (
             model_id,
             modeling_assertion_document_id,
+            modeling_assertion_record_key,
             modeling_assertion_record_type,
             modeling_assertion_text,
             modeling_assertion_applicable_layers
         )
-        VALUES (%s, %s, 'business_rule', %s, %s)
+        VALUES (%s, %s, %s, 'business_rule', %s, %s)
         RETURNING modeling_assertion_record_id
         """,
         (
             model_id,
             document["modeling_assertion_document_id"],
+            f"assertion-{tenant_code}",
             assertion_text,
             [applicable_layer],
         ),

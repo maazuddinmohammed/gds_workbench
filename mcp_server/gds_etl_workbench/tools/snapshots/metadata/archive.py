@@ -4,31 +4,55 @@ from __future__ import annotations
 
 import hashlib
 import json
-import stat
-import zipfile
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
-from datetime import UTC, date, datetime
-from pathlib import Path, PurePosixPath
+from datetime import date, datetime
+from pathlib import Path
 from typing import cast
 from uuid import UUID
 
 from pydantic import ValidationError
+
+from gds_etl_workbench.tools.snapshots.archive import (
+    SnapshotArchive,
+    SnapshotContractError,
+    SnapshotMember,
+    SnapshotPayloadTooLargeError,
+    write_snapshot_archive,
+)
+from gds_etl_workbench.tools.snapshots.archive import (
+    json_document as _json_document,
+)
+from gds_etl_workbench.tools.snapshots.archive import (
+    json_line as _json_line,
+)
+from gds_etl_workbench.tools.snapshots.archive import (
+    utc_timestamp as _utc_timestamp,
+)
+from gds_etl_workbench.tools.snapshots.dataset_description import DatasetDescription
 
 from .contracts import (
     DATASETS,
     PHYSICAL_TABLE_COUNT,
     DatasetDefinition,
     SnapshotSection,
+    natural_key_normalization_document,
+    normalize_natural_key_value,
 )
+from .guidance import build_metadata_dataset_description
 
-
-class SnapshotContractError(ValueError):
-    """A safe failure caused by invalid snapshot input or schema drift."""
-
-
-class SnapshotPayloadTooLargeError(SnapshotContractError):
-    """The validated expanded or compressed snapshot exceeds its fixed limit."""
+__all__ = [
+    "EncodedDataset",
+    "RootDocuments",
+    "SnapshotArchive",
+    "SnapshotContractError",
+    "SnapshotPayloadTooLargeError",
+    "MetadataDatasetDocument",
+    "build_dataset_document",
+    "build_root_documents",
+    "build_snapshot_archive",
+    "encode_dataset",
+]
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,15 +70,12 @@ class RootDocuments:
 
 
 @dataclass(frozen=True, slots=True)
-class SnapshotArchive:
-    path: Path
-    size_bytes: int
-    expanded_bytes: int
-    row_count: int
-    sha256: str
+class MetadataDatasetDocument:
+    schema: dict[str, object]
+    description: DatasetDescription
 
 
-def build_dataset_schema_document(definition: DatasetDefinition) -> dict[str, object]:
+def build_dataset_document(definition: DatasetDefinition) -> MetadataDatasetDocument:
     """Build one standard JSON Schema plus GDS key/reference metadata."""
     generated = definition.row_model.model_json_schema(mode="serialization")
     properties = generated.get("properties")
@@ -69,23 +90,42 @@ def build_dataset_schema_document(definition: DatasetDefinition) -> dict[str, ob
             )
         cast(dict[str, object], raw_property)["const"] = expected_value
 
-    return {
+    raw_required = generated.get("required", [])
+    if not isinstance(raw_required, list):
+        raise SnapshotContractError(
+            f"{definition.name} generated invalid required-field metadata"
+        )
+    required_items = cast(list[object], raw_required)
+    if not all(isinstance(field, str) for field in required_items):
+        raise SnapshotContractError(
+            f"{definition.name} generated invalid required-field metadata"
+        )
+    required = cast(list[str], required_items)
+    required_fields = set(required)
+    description = build_metadata_dataset_description(
+        definition,
+        typed_properties,
+        required_fields,
+    )
+    description_document = description.model_dump(mode="json")
+
+    schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": definition.schema_path,
         "title": definition.label,
         "description": (
             f"One flat, ID-free {definition.record_type} record. "
-            "Named key strings compare after trimming and case folding."
+            "Named key strings compare using x-gds-key-normalization."
         ),
         "type": "object",
         "additionalProperties": False,
         "properties": typed_properties,
-        "required": generated.get("required", []),
+        "required": required,
         "x-gds-dataset": definition.name,
         "x-gds-record-type": definition.record_type,
         "x-gds-change-set-eligible": definition.change_set_eligible,
         "x-gds-canonical-key": list(definition.canonical_key),
-        "x-gds-key-comparison": "named-fields-case-insensitive-trimmed",
+        "x-gds-key-normalization": natural_key_normalization_document(),
         "x-gds-unique-constraints": [
             list(constraint) for constraint in definition.unique_constraints
         ],
@@ -99,7 +139,10 @@ def build_dataset_schema_document(definition: DatasetDefinition) -> dict[str, ob
             for reference in definition.references
         ],
         "x-gds-fixed-values": dict(definition.fixed_values),
+        "x-gds-population-rules": description_document["population_rules"],
+        "x-gds-columns": description_document["columns"],
     }
+    return MetadataDatasetDocument(schema=schema, description=description)
 
 
 def encode_dataset(
@@ -228,7 +271,7 @@ def build_root_documents(encoded_datasets: Sequence[EncodedDataset]) -> RootDocu
     schemas = tuple(
         (
             definition.schema_path,
-            _json_document(build_dataset_schema_document(definition)),
+            _json_document(build_dataset_document(definition).schema),
         )
         for definition in DATASETS
     )
@@ -251,44 +294,29 @@ def build_snapshot_archive(
         raise SnapshotContractError("tenant_code is invalid")
     if snapshot_id.version != 4:
         raise SnapshotContractError("snapshot_id must be a UUID version 4")
-    if max_archive_bytes <= 0:
-        raise SnapshotContractError("max_archive_bytes must be positive")
     created_at = _utc_timestamp("created_time", created_time)
     available_at = _utc_timestamp("available_until", available_until)
     if available_until <= created_time:
         raise SnapshotContractError("available_until must be after created_time")
-    if output.exists():
-        raise FileExistsError(f"refusing to overwrite existing archive: {output.name}")
-
     roots = build_root_documents(encoded_datasets)
     encoded_by_name = {encoded.definition.name: encoded for encoded in encoded_datasets}
-    members: list[tuple[str, bytes, int | None]] = [("catalog.json", roots.catalog_json, None)]
-    members.extend((path, content, None) for path, content in roots.schemas)
+    members = [SnapshotMember("catalog.json", roots.catalog_json)]
+    members.extend(SnapshotMember(path, content) for path, content in roots.schemas)
     for definition in DATASETS:
         encoded = encoded_by_name[definition.name]
         _validate_encoded_dataset(encoded)
-        members.append((definition.rows_path, encoded.rows_jsonl, encoded.row_count))
+        members.append(SnapshotMember(definition.rows_path, encoded.rows_jsonl, encoded.row_count))
         if definition.lookup_path is not None:
             if encoded.lookup_jsonl is None:
                 raise SnapshotContractError(f"{definition.name} lookup file is missing")
-            members.append((definition.lookup_path, encoded.lookup_jsonl, encoded.row_count))
+            members.append(
+                SnapshotMember(
+                    definition.lookup_path,
+                    encoded.lookup_jsonl,
+                    encoded.row_count,
+                )
+            )
 
-    member_paths = [path for path, _content, _row_count in members]
-    if len(member_paths) != len(set(member_paths)):
-        raise SnapshotContractError("snapshot contains duplicate archive member paths")
-    for member_path in member_paths:
-        _validate_member_path(member_path)
-
-    member_records = [
-        {
-            "path": member_path,
-            "sha256": hashlib.sha256(content).hexdigest(),
-            "size_bytes": len(content),
-            **({"row_count": row_count} if row_count is not None else {}),
-        }
-        for member_path, content, row_count in members
-    ]
-    non_manifest_bytes = sum(len(content) for _path, content, _row_count in members)
     row_count = sum(encoded.row_count for encoded in encoded_datasets)
     section_counts = {
         section.value: {
@@ -302,10 +330,11 @@ def build_snapshot_archive(
         for section in SnapshotSection
     }
 
-    manifest_json = b""
-    expanded_bytes = non_manifest_bytes
-    for _attempt in range(4):
-        manifest = {
+    def build_manifest(
+        member_records: tuple[dict[str, object], ...],
+        expanded_bytes: int,
+    ) -> Mapping[str, object]:
+        return {
             "schema_version": "2.0",
             "snapshot_kind": "metadata",
             "snapshot_id": str(snapshot_id),
@@ -334,66 +363,15 @@ def build_snapshot_archive(
             },
             "members": member_records,
         }
-        manifest_json = _json_document(manifest)
-        next_expanded_bytes = non_manifest_bytes + len(manifest_json)
-        if next_expanded_bytes == expanded_bytes:
-            break
-        expanded_bytes = next_expanded_bytes
-    else:
-        raise SnapshotContractError("manifest expanded-byte count did not stabilize")
 
-    if expanded_bytes > max_archive_bytes:
-        raise SnapshotPayloadTooLargeError("snapshot expanded size exceeds the configured limit")
-
-    archive_members = [("manifest.json", manifest_json, None), *members]
-    archive_root = PurePosixPath("metadata-snapshot")
-    created_output = False
-    try:
-        output.parent.mkdir(parents=True, exist_ok=True)
-        with zipfile.ZipFile(
-            output,
-            "x",
-            compression=zipfile.ZIP_DEFLATED,
-            compresslevel=9,
-        ) as archive:
-            created_output = True
-            for member_path, content, _row_count in archive_members:
-                archive_path = (archive_root / member_path).as_posix()
-                info = zipfile.ZipInfo(archive_path, date_time=(1980, 1, 1, 0, 0, 0))
-                info.compress_type = zipfile.ZIP_DEFLATED
-                info.create_system = 3
-                info.external_attr = (stat.S_IFREG | 0o644) << 16
-                archive.writestr(info, content, compresslevel=9)
-
-        size_bytes = output.stat().st_size
-        if size_bytes > max_archive_bytes:
-            raise SnapshotPayloadTooLargeError("snapshot archive size exceeds the configured limit")
-
-        expected_names = [
-            (archive_root / member_path).as_posix()
-            for member_path, _content, _row_count in archive_members
-        ]
-        with zipfile.ZipFile(output, "r") as archive:
-            if archive.namelist() != expected_names:
-                raise SnapshotContractError("snapshot archive member validation failed")
-            for member_path, content, _row_count in archive_members:
-                archive_path = (archive_root / member_path).as_posix()
-                if archive.read(archive_path) != content:
-                    raise SnapshotContractError("snapshot archive content validation failed")
-
-        with output.open("rb") as archive_file:
-            archive_sha256 = hashlib.file_digest(archive_file, "sha256").hexdigest()
-        return SnapshotArchive(
-            path=output,
-            size_bytes=size_bytes,
-            expanded_bytes=expanded_bytes,
-            row_count=row_count,
-            sha256=archive_sha256,
-        )
-    except Exception:
-        if created_output and output.is_file() and not output.is_symlink():
-            output.unlink()
-        raise
+    return write_snapshot_archive(
+        output,
+        archive_root="metadata-snapshot",
+        members=members,
+        row_count=row_count,
+        max_archive_bytes=max_archive_bytes,
+        build_manifest=build_manifest,
+    )
 
 
 def _complete_encoded_registry(
@@ -546,11 +524,7 @@ def _normalized_key(
 
 
 def _normalize_key_value(column: str, value: object) -> object:
-    if isinstance(value, str) and (
-        column.endswith("_code") or column.endswith("_name") or column.endswith("_schema")
-    ):
-        return value.strip().casefold()
-    return value
+    return normalize_natural_key_value(column, value)
 
 
 def _key_sort_value(
@@ -570,45 +544,3 @@ def _key_sort_value(
         else:
             key.append((4, str(value)))
     return tuple(key)
-
-
-def _validate_member_path(member_path: str) -> None:
-    path = PurePosixPath(member_path)
-    if (
-        not member_path
-        or "\\" in member_path
-        or path.is_absolute()
-        or any(part in {"", ".", ".."} for part in path.parts)
-        or path.parts[0].endswith(":")
-    ):
-        raise SnapshotContractError("snapshot contains an unsafe archive member path")
-
-
-def _utc_timestamp(field_name: str, value: datetime) -> str:
-    if value.utcoffset() is None:
-        raise SnapshotContractError(f"{field_name} must be timezone-aware")
-    return value.astimezone(UTC).isoformat().replace("+00:00", "Z")
-
-
-def _json_line(value: object) -> str:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            allow_nan=False,
-            separators=(",", ":"),
-        )
-        + "\n"
-    )
-
-
-def _json_document(value: object) -> bytes:
-    return (
-        json.dumps(
-            value,
-            ensure_ascii=False,
-            allow_nan=False,
-            indent=2,
-        ).encode("utf-8")
-        + b"\n"
-    )

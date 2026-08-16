@@ -44,6 +44,7 @@ CREATE TABLE model.model_scope (
     model_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     model_scope_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -154,6 +155,7 @@ CREATE TABLE model.modeling_assertion_record (
     modeling_assertion_record_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     modeling_assertion_document_id BIGINT NOT NULL,
+    modeling_assertion_record_key VARCHAR(100) NOT NULL,
     modeling_assertion_record_type VARCHAR(100) NOT NULL,
     modeling_assertion_text TEXT NOT NULL,
     modeling_assertion_details JSONB NOT NULL DEFAULT '{}'::JSONB,
@@ -178,6 +180,9 @@ CREATE TABLE model.modeling_assertion_record (
     ) ON DELETE NO ACTION,
     CONSTRAINT uq_assertion_record_id_model
         UNIQUE (modeling_assertion_record_id, model_id),
+    CONSTRAINT ck_assertion_record_key CHECK (
+        modeling_assertion_record_key ~ '^[A-Za-z][A-Za-z0-9_.-]{0,99}$'
+    ),
     CONSTRAINT ck_assertion_record_type CHECK (
         reference.is_nonblank(modeling_assertion_record_type)
     ),
@@ -227,6 +232,11 @@ CREATE UNIQUE INDEX ux_assertion_document_model_name_ci
     ON model.modeling_assertion_document (
         model_id,
         lower(btrim(modeling_assertion_document_name))
+    );
+CREATE UNIQUE INDEX ux_assertion_record_model_key_ci
+    ON model.modeling_assertion_record (
+        model_id,
+        lower(btrim(modeling_assertion_record_key))
     );
 
 CREATE INDEX ix_model_tenant_active ON model.model (tenant_id, is_active);

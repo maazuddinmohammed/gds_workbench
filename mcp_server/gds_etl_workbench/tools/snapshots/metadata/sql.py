@@ -95,6 +95,7 @@ model_scope_objects AS (
        AND model.is_active
       JOIN model.model_scope AS model_scope
         ON model_scope.model_id = model.model_id
+       AND model_scope.is_active
 ),
 seed_objects AS (
     SELECT object_id FROM owned_objects

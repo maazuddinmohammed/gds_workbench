@@ -166,3 +166,35 @@ async def test_tampered_cursor_is_rejected_before_database_access() -> None:
         "page_size": 1,
         "cursor_provided": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_audit_omits_unregistered_and_secret_arguments() -> None:
+    database = RecordingDatabase([tenant(1, "Alpha")])
+    runtime_settings = settings()
+    server = create_mcp_server(
+        runtime_settings,
+        database,
+        IdentityProvider(runtime_settings.auth_mode),
+    )
+
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "list_tenants",
+            {
+                "page_size": 1,
+                "request_label": "must-not-appear",
+                "access_token": "credential-must-not-appear",
+            },
+        )
+
+    assert result.is_error is False
+    assert len(database.audit_records) == 1
+    rendered_audit = repr(database.audit_records[0].input_metadata)
+    assert "must-not-appear" not in rendered_audit
+    assert "credential-must-not-appear" not in rendered_audit
+    assert database.audit_records[0].input_metadata == {
+        "schema_version": "1.0",
+        "page_size": 1,
+        "cursor_provided": False,
+    }

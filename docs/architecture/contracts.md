@@ -73,6 +73,37 @@ release require caller ownership. Override releases only another Principal's loc
 and never acquires a replacement. Lock details contain only owner display name,
 caller-ownership flag, optional purpose, and PostgreSQL-owned timestamps.
 
+## `execute_databricks_sql`
+
+Policy: `tenant_read`
+
+Annotations: non-read-only because temporary objects may be created,
+non-destructive, non-idempotent, open-world.
+
+Request:
+
+| Field | Contract |
+|---|---|
+| `connection_id` | positive ID of an active global Connection |
+| `sql` | 1–100,000 characters; at most 25 semicolon-separated statements |
+| `schema_version` | exactly `"1.0"`; default `"1.0"` |
+
+The server resolves the Connection's Tenant and authorizes Tenant Read before
+retrieving connection values. Exactly one active Environment must contain all
+three required parameter codes: `databricks_host_name`,
+`databricks_http_path`, and `databricks_token`.
+
+Allowed statements are reads and `CREATE [OR REPLACE] TEMP VIEW/TABLE` with an
+unqualified temporary-object name. DML, persistent DDL, commands, `SELECT INTO`,
+secret-returning functions, and external/location-backed temporary objects are
+rejected before connection.
+Statements execute sequentially in one Databricks session. Only the final
+statement's result is returned, with at most 50 rows and 500 columns. The result
+reports row/cell truncation. Connection values never enter the result or audit
+log. The complete submitted SQL and its character count enter the append-only
+tool-call audit record, but not application logs. Callers must never place
+credentials in SQL.
+
 ## Health
 
 `/health/live` returns only `{"status":"live"}`. `/health/ready` returns bounded
@@ -89,6 +120,11 @@ exceptions. Relevant codes are `authentication_required`,
 when a staged Object or Attribute belongs to an existing locked Object. Apply
 rechecks the same lock in PostgreSQL before writing.
 
+Databricks-specific codes distinguish missing/ambiguous/invalid connection
+configuration, connection failure, failing statement index, and an oversized
+bounded result. Messages never contain connector exception text or credentials.
+
 Future tools must keep their contracts and declared policy beside their handler
 and use shared authorization. They may not accept Principal IDs, roles, actor
-kind, Tool Policy, lock ownership, or arbitrary SQL from the client.
+kind, Tool Policy, or lock ownership from the client. Arbitrary SQL is forbidden
+except through the governed `execute_databricks_sql` contract above.

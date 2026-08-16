@@ -1,0 +1,21 @@
+name: GDS plugin Windows smoke
+
+on:
+  pull_request:
+  push:
+    paths:
+      - "plugins/gds/**"
+      - "tests/plugin/windows_plugin_smoke.ps1"
+      - ".github/workflows/plugin-windows.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  powershell-51:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Parse and run PowerShell 5.1 helpers
+        shell: cmd
+        run: powershell.exe -NoProfile -File tests\plugin\windows_plugin_smoke.ps1

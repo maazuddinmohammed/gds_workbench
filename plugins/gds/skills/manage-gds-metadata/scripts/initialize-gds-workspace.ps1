@@ -1,5 +1,5 @@
 param(
-    [string]$Root = (Join-Path (Get-Location).Path "gds-workspace")
+    [string]$Root = (Join-Path (Get-Location).Path "GDS")
 )
 
 $ErrorActionPreference = "Stop"
@@ -22,8 +22,8 @@ try {
         [System.IO.Path]::AltDirectorySeparatorChar
     )
     $TrimmedRoot = $FullRoot.TrimEnd($TrimCharacters)
-    if ([System.IO.Path]::GetFileName($TrimmedRoot) -cne "gds-workspace") {
-        Write-Failure "Workspace directory must be named gds-workspace."
+    if ([System.IO.Path]::GetFileName($TrimmedRoot) -cne "GDS") {
+        Write-Failure "Workspace directory must be named GDS."
     }
 
     $Parent = [System.IO.Directory]::GetParent($TrimmedRoot)

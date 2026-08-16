@@ -8,6 +8,7 @@ DECLARE
     v_membership_count INTEGER;
     v_security_definer_count INTEGER;
     v_metadata_change_set_function_count INTEGER;
+    v_databricks_function_count INTEGER;
 BEGIN
     IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
         RAISE EXCEPTION 'PostgreSQL 18 is required';
@@ -202,6 +203,24 @@ BEGIN
         RAISE EXCEPTION 'Metadata Change Set function posture is invalid';
     END IF;
 
+    SELECT count(*)
+      INTO v_databricks_function_count
+      FROM pg_catalog.pg_proc AS function_record
+      JOIN pg_catalog.pg_namespace AS namespace_record
+        ON namespace_record.oid = function_record.pronamespace
+     WHERE namespace_record.nspname = 'mcp'
+       AND function_record.proname = 'get_databricks_sql_connection_values'
+       AND function_record.prosecdef
+       AND EXISTS (
+               SELECT 1
+                 FROM unnest(function_record.proconfig) AS setting(value)
+                WHERE setting.value LIKE 'search_path=pg_catalog%'
+           );
+
+    IF v_databricks_function_count <> 1 THEN
+        RAISE EXCEPTION 'Databricks connection function posture is invalid';
+    END IF;
+
     IF EXISTS (
         SELECT 1
           FROM unnest(ARRAY[
@@ -270,7 +289,7 @@ BEGIN
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',
-        'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying,jsonb,uuid)',
+        'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',
@@ -287,6 +306,10 @@ BEGIN
     ) OR NOT has_function_privilege(
         'gds_app_write',
         'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_app_write',
+        'mcp.get_databricks_sql_connection_values(bigint)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',

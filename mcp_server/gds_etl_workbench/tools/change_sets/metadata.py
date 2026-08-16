@@ -12,9 +12,8 @@ from typing import Annotated, Any, Literal, LiteralString, cast
 from uuid import UUID, uuid4
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import Field, ValidationError
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
@@ -34,24 +33,14 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
     WorkbenchError,
 )
-from gds_etl_workbench.domain.metadata_records import (
-    AttributeRecord,
-    CopyGroupControlRecord,
-    CopyGroupRecord,
-    CopyRecord,
-    IngestionAttributeMappingRecord,
-    IngestionObjectMappingRecord,
-    MemberGroupRecord,
-    ObjectRecord,
-    ProcessGroupRecord,
-    ProcessRecord,
-)
 from gds_etl_workbench.infrastructure.postgres import WriteDatabase, WriteTransaction
 from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     select_snapshot_datasets,
 )
 
+from .common import ChangeSetContractModel as ContractModel
+from .common import change_set_annotations as _annotations
 from .validation import (
     MetadataChangeSetValidation,
     rows_from_snapshot,
@@ -116,9 +105,9 @@ _STAGE_SQL: LiteralString = """
 SELECT staged,
        denial_code,
        draft_revision,
-       record_count,
+       dataset_counts,
        expires_time
-  FROM mcp.stage_metadata_change_set(%s, %s, %s, %s, %s, %s, %s, %s, %s)
+  FROM mcp.stage_metadata_change_set(%s, %s, %s, %s, %s, %s, %s, %s)
 """
 
 _GET_SQL: LiteralString = """
@@ -166,10 +155,6 @@ SELECT archived,
 """
 
 
-class ContractModel(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True)
-
-
 class CreateMetadataChangeSetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
@@ -181,114 +166,22 @@ class CreateMetadataChangeSetResult(ContractModel):
     expires_at: datetime
 
 
-class SourceObjectChange(ContractModel):
-    dataset: Literal["source_object"]
-    records: Annotated[list[ObjectRecord], Field(max_length=50_000)]
+class StageChange(ContractModel):
+    dataset: ChangeSetDataset
+    records: Annotated[list[dict[str, object]], Field(max_length=50_000)]
 
 
-class SourceAttributeChange(ContractModel):
-    dataset: Literal["source_attribute"]
-    records: Annotated[list[AttributeRecord], Field(max_length=50_000)]
-
-
-class BronzeObjectChange(ContractModel):
-    dataset: Literal["bronze_object"]
-    records: Annotated[list[ObjectRecord], Field(max_length=50_000)]
-
-
-class BronzeAttributeChange(ContractModel):
-    dataset: Literal["bronze_attribute"]
-    records: Annotated[list[AttributeRecord], Field(max_length=50_000)]
-
-
-class SilverObjectChange(ContractModel):
-    dataset: Literal["silver_object"]
-    records: Annotated[list[ObjectRecord], Field(max_length=50_000)]
-
-
-class SilverAttributeChange(ContractModel):
-    dataset: Literal["silver_attribute"]
-    records: Annotated[list[AttributeRecord], Field(max_length=50_000)]
-
-
-class GoldObjectChange(ContractModel):
-    dataset: Literal["gold_object"]
-    records: Annotated[list[ObjectRecord], Field(max_length=50_000)]
-
-
-class GoldAttributeChange(ContractModel):
-    dataset: Literal["gold_attribute"]
-    records: Annotated[list[AttributeRecord], Field(max_length=50_000)]
-
-
-class IngestionObjectMappingChange(ContractModel):
-    dataset: Literal["ingestion_object_mapping"]
-    records: Annotated[list[IngestionObjectMappingRecord], Field(max_length=50_000)]
-
-
-class IngestionAttributeMappingChange(ContractModel):
-    dataset: Literal["ingestion_attribute_mapping"]
-    records: Annotated[list[IngestionAttributeMappingRecord], Field(max_length=50_000)]
-
-
-class CopyGroupChange(ContractModel):
-    dataset: Literal["copy_group"]
-    records: Annotated[list[CopyGroupRecord], Field(max_length=50_000)]
-
-
-class MemberGroupChange(ContractModel):
-    dataset: Literal["member_group"]
-    records: Annotated[list[MemberGroupRecord], Field(max_length=50_000)]
-
-
-class CopyGroupControlChange(ContractModel):
-    dataset: Literal["copy_group_control"]
-    records: Annotated[list[CopyGroupControlRecord], Field(max_length=50_000)]
-
-
-class CopyChange(ContractModel):
-    dataset: Literal["copy"]
-    records: Annotated[list[CopyRecord], Field(max_length=50_000)]
-
-
-class ProcessGroupChange(ContractModel):
-    dataset: Literal["process_group"]
-    records: Annotated[list[ProcessGroupRecord], Field(max_length=50_000)]
-
-
-class ProcessChange(ContractModel):
-    dataset: Literal["process"]
-    records: Annotated[list[ProcessRecord], Field(max_length=50_000)]
-
-
-type StageChange = Annotated[
-    SourceObjectChange
-    | SourceAttributeChange
-    | BronzeObjectChange
-    | BronzeAttributeChange
-    | SilverObjectChange
-    | SilverAttributeChange
-    | GoldObjectChange
-    | GoldAttributeChange
-    | IngestionObjectMappingChange
-    | IngestionAttributeMappingChange
-    | CopyGroupChange
-    | MemberGroupChange
-    | CopyGroupControlChange
-    | CopyChange
-    | ProcessGroupChange
-    | ProcessChange,
-    Field(discriminator="dataset"),
-]
+class StagedMetadataChangeSetDataset(ContractModel):
+    dataset: ChangeSetDataset
+    record_count: int = Field(ge=0)
 
 
 class StageMetadataChangeSetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     metadata_change_set_id: UUID
-    dataset: str
     staged: Literal[True] = True
-    record_count: int = Field(ge=0)
+    datasets: list[StagedMetadataChangeSetDataset] = Field(min_length=1, max_length=16)
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
     expires_at: datetime
@@ -326,6 +219,22 @@ class MetadataChangeSetValidationError(ContractModel):
     message: str
 
 
+class MetadataChangeSetActionKey(ContractModel):
+    action: Literal["insert", "update", "deactivate", "reactivate", "no_change"]
+    natural_key: dict[str, str | int | bool | None]
+
+
+class MetadataChangeSetActionReview(ContractModel):
+    dataset: ChangeSetDataset
+    insert_count: int = Field(ge=0)
+    update_count: int = Field(ge=0)
+    deactivate_count: int = Field(ge=0)
+    reactivate_count: int = Field(ge=0)
+    no_change_count: int = Field(ge=0)
+    keys: list[MetadataChangeSetActionKey] = Field(max_length=100)
+    keys_truncated: bool
+
+
 class ValidateMetadataChangeSetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
@@ -338,6 +247,7 @@ class ValidateMetadataChangeSetResult(ContractModel):
     staged_record_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
     errors: list[MetadataChangeSetValidationError]
+    action_review: list[MetadataChangeSetActionReview]
     validated_at: datetime | None
     expires_at: datetime
 
@@ -356,6 +266,7 @@ class ApplyMetadataChangeSetResult(ContractModel):
     action_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
     errors: list[MetadataChangeSetValidationError]
+    action_review: list[MetadataChangeSetActionReview]
     applied_at: datetime | None
 
 
@@ -428,13 +339,15 @@ def register_metadata_change_set_tools(
         "create_metadata_change_set",
         policy=POLICY,
         summarize_input=_tenant_audit,
+        retain_arguments={"tenant_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 
     @server.tool(
         description=(
-            "Replace one complete pending Metadata Change Set dataset. Every item must "
-            "be a full ID-free record matching the selected Snapshot dataset schema."
+            "Replace one or more complete pending Metadata Change Set datasets in one "
+            "transaction and increment the draft revision once. Use "
+            "describe_metadata_dataset for each full ID-free record schema."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -445,12 +358,12 @@ def register_metadata_change_set_tools(
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         metadata_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        change: StageChange,
+        changes: Annotated[list[StageChange], Field(min_length=1, max_length=16)],
         schema_version: Literal["1.0"] = "1.0",
     ) -> StageMetadataChangeSetResult:
         del schema_version
         try:
-            records = _stage_document(change)
+            documents = _stage_documents(changes)
             principal = identity_provider.request_principal(ctx.request_context.request)
             identity_arguments = _identity_arguments(principal)
             async with database.write_transaction() as transaction:
@@ -461,18 +374,25 @@ def register_metadata_change_set_tools(
                         tenant_id,
                         metadata_change_set_id,
                         expected_draft_revision,
-                        change.dataset,
-                        Jsonb(records),
+                        Jsonb(documents),
                         uuid4(),
                     ),
                 )
             _raise_governed_denial(row)
             assert row is not None
+            raw_counts = row["dataset_counts"]
+            if not isinstance(raw_counts, Mapping):
+                raise InvalidRequestError("Stored dataset counts are invalid.")
             return StageMetadataChangeSetResult(
                 tenant_id=tenant_id,
                 metadata_change_set_id=metadata_change_set_id,
-                dataset=change.dataset,
-                record_count=row["record_count"],
+                datasets=[
+                    StagedMetadataChangeSetDataset(
+                        dataset=cast(ChangeSetDataset, dataset),
+                        record_count=_staged_record_count(raw_counts, dataset),
+                    )
+                    for dataset in documents
+                ],
                 draft_revision=row["draft_revision"],
                 expires_at=row["expires_time"],
             )
@@ -489,6 +409,12 @@ def register_metadata_change_set_tools(
         "stage_metadata_change_set",
         policy=POLICY,
         summarize_input=_stage_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 
@@ -563,6 +489,12 @@ def register_metadata_change_set_tools(
         "get_metadata_change_set",
         policy=READ_POLICY,
         summarize_input=_get_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "dataset",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 
@@ -614,6 +546,7 @@ def register_metadata_change_set_tools(
                     )
                     for issue in validation.issues
                 ],
+                action_review=_action_review(validation),
                 validated_at=persisted["validated_time"],
                 expires_at=persisted["expires_time"],
             )
@@ -630,6 +563,12 @@ def register_metadata_change_set_tools(
         "validate_metadata_change_set",
         policy=POLICY,
         summarize_input=_revision_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 
@@ -701,6 +640,7 @@ def register_metadata_change_set_tools(
                     )
                     for issue in validation.issues
                 ],
+                action_review=_action_review(validation),
                 applied_at=applied_row["applied_time"] if applied_row else None,
             )
         except AuthenticationError as error:
@@ -716,6 +656,12 @@ def register_metadata_change_set_tools(
         "apply_metadata_change_set",
         policy=POLICY,
         summarize_input=_revision_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 
@@ -770,6 +716,12 @@ def register_metadata_change_set_tools(
         "archive_metadata_change_set",
         policy=READ_POLICY,
         summarize_input=_revision_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 
@@ -780,17 +732,23 @@ def register_metadata_change_set_tools(
     )
     def work_with_metadata_change_set(tenant_id: int) -> str:
         return (
-            f"Work with Tenant ID {tenant_id}. First check_tenant_lock, then acquire it "
-            "if unlocked. Create a fresh get_metadata_snapshot and download the ZIP. Read "
+            f"Work with Tenant ID {tenant_id}. Create a fresh get_metadata_snapshot and "
+            "download the ZIP without acquiring a Tenant Lock. Read "
             "catalog.json first; search only needed lookup/rows files and read a dataset "
             "schema only when needed. Never load the whole ZIP into chat. Then call "
-            "create_metadata_change_set. stage_metadata_change_set accepts one complete "
-            "ID-free dataset list whose record schema is published in that tool's input "
-            "schema; sending an empty list clears that pending dataset. Always pass the "
-            "latest draft_revision. Use get_metadata_change_set without a dataset for "
-            "counts, or with one dataset for its records. Validate, fix the reported first "
-            "failed phase, and repeat. Apply only after review; apply revalidates inside the "
-            "same transaction. Archive an abandoned draft, then release the Tenant Lock."
+            "check_tenant_lock and ask before acquire_tenant_lock when the reviewed local "
+            "draft is ready for server work. Then call create_metadata_change_set. If it "
+            "returns an existing Change Set, fetch its summary and every dataset with a "
+            "nonzero count; import and review all of them before continuing. "
+            "Use describe_metadata_dataset only for datasets you will edit. "
+            "stage_metadata_change_set accepts 1-16 unique complete ID-free dataset lists "
+            "and replaces all supplied pending datasets atomically with one new revision; "
+            "an empty records list clears that one pending dataset. Always pass the latest "
+            "draft_revision. Use get_metadata_change_set without a dataset for counts, or "
+            "with one dataset for its records. Validate, fix the reported first failed phase, "
+            "and repeat. Review the server's authoritative action_review before Apply. Apply "
+            "only after approval; it revalidates inside the same transaction. Archive an "
+            "abandoned draft, then release the Tenant Lock."
         )
 
 
@@ -799,6 +757,30 @@ def _identity_arguments(principal: RequestPrincipal) -> tuple[UUID, UUID, str]:
         raise AuthorizationDeniedError()
     expected_type = "user" if principal.actor_kind is ActorKind.HUMAN else "service_principal"
     return principal.entra_tenant_id, principal.entra_object_id, expected_type
+
+
+def _action_review(
+    validation: MetadataChangeSetValidation,
+) -> list[MetadataChangeSetActionReview]:
+    return [
+        MetadataChangeSetActionReview(
+            dataset=cast(ChangeSetDataset, summary.dataset),
+            insert_count=summary.insert_count,
+            update_count=summary.update_count,
+            deactivate_count=summary.deactivate_count,
+            reactivate_count=summary.reactivate_count,
+            no_change_count=summary.no_change_count,
+            keys=[
+                MetadataChangeSetActionKey(
+                    action=key.action,
+                    natural_key=cast(dict[str, str | int | bool | None], key.natural_key),
+                )
+                for key in summary.keys
+            ],
+            keys_truncated=summary.keys_truncated,
+        )
+        for summary in validation.action_review
+    ]
 
 
 async def _validate_and_persist(
@@ -884,7 +866,29 @@ def _raise_governed_denial(row: Mapping[str, Any] | None) -> None:
 
 def _stage_document(change: StageChange) -> list[dict[str, object]]:
     definition = DATASETS_BY_NAME[change.dataset]
-    records = [record.model_dump(mode="json") for record in change.records]
+    records: list[dict[str, object]] = []
+    for record_number, raw_record in enumerate(change.records, start=1):
+        try:
+            record = definition.row_model.model_validate(raw_record)
+        except ValidationError as error:
+            first_error = error.errors(
+                include_url=False,
+                include_context=False,
+                include_input=False,
+            )[0]
+            field = next(
+                (
+                    part
+                    for part in first_error["loc"]
+                    if isinstance(part, str) and part in definition.row_model.model_fields
+                ),
+                "unknown_field" if first_error["type"] == "extra_forbidden" else "record",
+            )
+            raise InvalidRequestError(
+                f"{change.dataset} record {record_number} field {field} "
+                "does not match its published schema."
+            ) from None
+        records.append(record.model_dump(mode="json"))
     for field_name, expected_value in definition.fixed_values:
         if any(record[field_name] != expected_value for record in records):
             raise InvalidRequestError(
@@ -894,6 +898,32 @@ def _stage_document(change: StageChange) -> list[dict[str, object]]:
     if len(encoded) > 16_777_216:
         raise InvalidRequestError("The staged dataset exceeds 16 MiB.")
     return records
+
+
+def _stage_documents(
+    changes: list[StageChange],
+) -> dict[str, list[dict[str, object]]]:
+    documents: dict[str, list[dict[str, object]]] = {}
+    for change in changes:
+        if change.dataset in documents:
+            raise InvalidRequestError("A dataset can appear only once in a Stage request.")
+        documents[change.dataset] = _stage_document(change)
+    encoded = json.dumps(
+        documents,
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    if len(encoded) > 16_777_216:
+        raise InvalidRequestError("The Stage request exceeds 16 MiB.")
+    return documents
+
+
+def _staged_record_count(counts: Mapping[object, object], dataset: str) -> int:
+    value = counts.get(dataset)
+    if type(value) is not int or value < 0:
+        raise InvalidRequestError("Stored dataset counts are invalid.")
+    return value
 
 
 def _read_document(
@@ -948,24 +978,36 @@ def _tenant_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
 
 def _stage_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     summary = _tenant_audit(arguments)
-    raw_change = arguments.get("change")
-    change: Mapping[str, Any] = (
-        cast(Mapping[str, Any], raw_change) if isinstance(raw_change, Mapping) else {}
-    )
-    raw_dataset = change.get("dataset")
-    summary["dataset"] = (
-        raw_dataset
-        if isinstance(raw_dataset, str) and raw_dataset in DATASETS_BY_NAME
-        else "invalid"
-    )
-    raw_records = change.get("records")
-    summary["record_count"] = (
-        len(cast(list[object], raw_records)) if isinstance(raw_records, list) else "invalid"
-    )
     raw_revision = arguments.get("expected_draft_revision")
     summary["expected_draft_revision"] = (
         raw_revision if type(raw_revision) is int and raw_revision > 0 else "invalid"
     )
+    raw_changes = arguments.get("changes")
+    if not isinstance(raw_changes, list):
+        summary["dataset_count"] = "invalid"
+        summary["record_count"] = "invalid"
+        return summary
+    datasets: set[str] = set()
+    record_count = 0
+    valid = True
+    for raw_change in raw_changes:
+        if not isinstance(raw_change, Mapping):
+            valid = False
+            continue
+        dataset = raw_change.get("dataset")
+        records = raw_change.get("records")
+        if (
+            not isinstance(dataset, str)
+            or dataset not in DATASETS_BY_NAME
+            or dataset in datasets
+            or not isinstance(records, list)
+        ):
+            valid = False
+            continue
+        datasets.add(dataset)
+        record_count += len(records)
+    summary["dataset_count"] = len(datasets) if valid else "invalid"
+    summary["record_count"] = record_count if valid else "invalid"
     return summary
 
 
@@ -989,17 +1031,3 @@ def _revision_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
         raw_revision if type(raw_revision) is int and raw_revision > 0 else "invalid"
     )
     return summary
-
-
-def _annotations(
-    *,
-    read_only: bool,
-    destructive: bool,
-    idempotent: bool,
-) -> ToolAnnotations:
-    return ToolAnnotations(
-        read_only_hint=read_only,
-        destructive_hint=destructive,
-        idempotent_hint=idempotent,
-        open_world_hint=False,
-    )

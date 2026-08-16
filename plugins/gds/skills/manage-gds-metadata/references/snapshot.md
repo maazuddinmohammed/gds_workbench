@@ -3,13 +3,16 @@
 Use a snapshot for broad metadata discovery or as the base for a change. It is
 an immutable, ID-free view; it is not the Change Set.
 
+Commands assume this skill directory is the process working directory and
+`<absolute-GDS-path>` is resolved before execution.
+
 ## Obtain and place it
 
 1. Call `get_metadata_snapshot(tenant_id, schema_version="2.0")`.
 2. Do not repeat its `download_url`. The full SAS query string is a temporary
    read credential for one private Blob.
 3. Ask the user to use the original link, extract the ZIP, and place its
-   `metadata-snapshot` folder directly under `gds-workspace`.
+   `metadata-snapshot` folder directly under `GDS`.
 4. Wait until the user says the folder is ready. Do not create, move, replace,
    delete, or repair it.
 5. If the ZIP file is locally available, compare its byte count and SHA-256 with
@@ -21,13 +24,13 @@ Resolve the validator from this skill's `scripts` directory. Pass the exact
 Tenant code and Snapshot ID returned by the MCP tool. On Windows PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\validate-metadata-snapshot.ps1" -SnapshotPath "$((Get-Location).Path)\gds-workspace\metadata-snapshot" -ExpectedTenantCode "<tenant-code>" -ExpectedSnapshotId "<snapshot-id>"
+powershell.exe -NoProfile -File ".\scripts\validate-metadata-snapshot.ps1" -SnapshotPath "<absolute-GDS-path>\metadata-snapshot" -ExpectedTenantCode "<tenant-code>" -ExpectedSnapshotId "<snapshot-id>"
 ```
 
 On macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/validate-metadata-snapshot.sh" "$PWD/gds-workspace/metadata-snapshot" "<tenant-code>" "<snapshot-id>"
+"./scripts/validate-metadata-snapshot.sh" "<absolute-GDS-path>/metadata-snapshot" "<tenant-code>" "<snapshot-id>"
 ```
 
 Completion criterion: the validator exits successfully with `ok=true`, the
@@ -90,5 +93,6 @@ The JSON Schema contains normal field validation plus:
 - `x-gds-fixed-values`: values fixed by the logical dataset, such as Zone.
 
 Rows are flat and ID-free. Foreign references use the target's natural-key
-columns. Key comparisons trim text and compare it case-insensitively. Use
+columns. Apply the schema's `x-gds-key-normalization`; only `_code`, `_name`,
+and `_schema` string fields trim U+0020 spaces and lowercase. Use
 [datasets.md](datasets.md) for business meaning and dependency direction.

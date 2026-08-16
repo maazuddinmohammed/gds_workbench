@@ -297,12 +297,21 @@ def register_process_group_tools(
         _LIST_TOOL,
         policy=POLICY,
         summarize_input=_list_audit,
+        retain_arguments={
+            "tenant_id",
+            "system_id",
+            "zone",
+            "active_state",
+            "page_size",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
     audit.register_tool(
         _GET_TOOL,
         policy=POLICY,
         summarize_input=_get_audit,
+        retain_arguments={"tenant_id", "process_group_id", "schema_version"},
         tenant_argument="tenant_id",
     )
 

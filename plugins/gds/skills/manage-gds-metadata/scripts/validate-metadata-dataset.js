@@ -4,7 +4,7 @@ function own(object, name) {
     return Object.prototype.hasOwnProperty.call(object, name);
 }
 
-function readJson(path, label) {
+function readText(path, label) {
     const data = $.NSData.dataWithContentsOfFile($(path));
     if (!data) {
         throw new Error(label + " cannot be read.");
@@ -16,8 +16,12 @@ function readJson(path, label) {
     if (!nativeText) {
         throw new Error(label + " must be UTF-8.");
     }
+    return ObjC.unwrap(nativeText);
+}
+
+function readJson(path, label) {
     try {
-        return JSON.parse(ObjC.unwrap(nativeText));
+        return JSON.parse(readText(path, label));
     } catch (_error) {
         throw new Error(label + " is not valid JSON.");
     }
@@ -136,13 +140,22 @@ function matchesValueSchema(value, rule) {
 }
 
 function validateSchema(schema, expectedDataset) {
+    const normalization = schema && schema["x-gds-key-normalization"];
     if (!isObject(schema) || schema.type !== "object" ||
         schema.additionalProperties !== false || !isObject(schema.properties) ||
         !Array.isArray(schema.required) ||
         schema["x-gds-dataset"] !== expectedDataset ||
         schema["x-gds-change-set-eligible"] !== true ||
         !Array.isArray(schema["x-gds-canonical-key"]) ||
-        !Array.isArray(schema["x-gds-unique-constraints"])) {
+        !Array.isArray(schema["x-gds-unique-constraints"]) ||
+        !isObject(normalization) || normalization.version !== "1.0" ||
+        !Array.isArray(normalization.string_field_suffixes) ||
+        normalization.string_field_suffixes.join("\u001f") !== "_code\u001f_name\u001f_schema" ||
+        !Array.isArray(normalization.trim_code_points) ||
+        normalization.trim_code_points.join("\u001f") !== "U+0020" ||
+        normalization.case !== "unicode-lowercase" ||
+        normalization.unicode_normalization !== "none" ||
+        normalization.other_values !== "identity") {
         throw new Error("Snapshot dataset schema contract is invalid.");
     }
 }
@@ -173,7 +186,8 @@ function validateRecord(record, schema) {
     }
 }
 
-function normalizedKey(record, columns) {
+function normalizedKey(record, columns, schema) {
+    const normalization = schema["x-gds-key-normalization"];
     const values = [];
     for (let index = 0; index < columns.length; index += 1) {
         const field = columns[index];
@@ -184,7 +198,13 @@ function normalizedKey(record, columns) {
         if (value === null) {
             values.push(["null", null]);
         } else if (typeof value === "string") {
-            values.push(["string", value.trim().toLowerCase()]);
+            const normalizeString = normalization.string_field_suffixes.some(
+                function (suffix) { return field.endsWith(suffix); }
+            );
+            values.push([
+                "string",
+                normalizeString ? value.replace(/^ +| +$/g, "").toLowerCase() : value
+            ]);
         } else if (typeof value === "number" || typeof value === "boolean") {
             values.push([typeof value, value]);
         } else {
@@ -212,7 +232,7 @@ function validateDataset(records, schema) {
         }
         const seen = {};
         for (let recordIndex = 0; recordIndex < records.length; recordIndex += 1) {
-            const key = normalizedKey(records[recordIndex], columns);
+            const key = normalizedKey(records[recordIndex], columns, schema);
             if (own(seen, key)) {
                 throw new Error("Dataset contains a duplicate unique constraint.");
             }
@@ -244,6 +264,72 @@ function validateCanonicalKey(keyRecord, schema) {
     }
 }
 
+function readJsonLines(path) {
+    const text = readText(path, "Snapshot rows");
+    const records = [];
+    const lines = text.split(/\r?\n/);
+    for (let index = 0; index < lines.length; index += 1) {
+        if (!lines[index].trim()) {
+            continue;
+        }
+        let record;
+        try {
+            record = JSON.parse(lines[index]);
+        } catch (_error) {
+            throw new Error("Snapshot rows contain invalid JSON.");
+        }
+        if (!isObject(record)) {
+            throw new Error("Snapshot row must be a JSON object.");
+        }
+        records.push(record);
+    }
+    return records;
+}
+
+function matchingRecord(records, keyRecord, schema, label) {
+    const columns = schema["x-gds-canonical-key"];
+    const wanted = normalizedKey(keyRecord, columns, schema);
+    let found = null;
+    for (let index = 0; index < records.length; index += 1) {
+        if (normalizedKey(records[index], columns, schema) !== wanted) {
+            continue;
+        }
+        if (found !== null) {
+            throw new Error(label + " contains duplicate canonical keys.");
+        }
+        found = records[index];
+    }
+    return found;
+}
+
+function validateChanges(changes, schema) {
+    if (!isObject(changes) || Object.keys(changes).length === 0) {
+        throw new Error("Field changes must be one nonempty JSON object.");
+    }
+    const canonical = schema["x-gds-canonical-key"];
+    Object.keys(changes).forEach(function (field) {
+        const normalized = field.toLowerCase();
+        if (normalized === "id" || normalized.endsWith("_id")) {
+            throw new Error("Database ID fields are forbidden.");
+        }
+        if (canonical.indexOf(field) !== -1) {
+            throw new Error("Field changes cannot modify the canonical key.");
+        }
+        if (!own(schema.properties, field)) {
+            throw new Error("Field changes contain an unknown schema field.");
+        }
+        if (!matchesValueSchema(changes[field], schema.properties[field])) {
+            throw new Error("Changed field does not match the schema.");
+        }
+    });
+}
+
+function recordsEqual(left, right, schema) {
+    return Object.keys(schema.properties).every(function (field) {
+        return JSON.stringify(left[field]) === JSON.stringify(right[field]);
+    });
+}
+
 function writeDataset(path, records) {
     const text = JSON.stringify(records, null, 2) + "\n";
     const data = $(text).dataUsingEncoding($.NSUTF8StringEncoding);
@@ -257,7 +343,8 @@ function writeDataset(path, records) {
 
 function run(arguments) {
     if (arguments.length !== 3 && arguments.length !== 5 &&
-        !(arguments.length === 6 && arguments[5] === "remove")) {
+        !(arguments.length === 6 && arguments[5] === "remove") &&
+        !(arguments.length === 8 && arguments[7] === "edit")) {
         throw new Error("Invalid dataset helper arguments.");
     }
     const schema = readJson(arguments[0], "Snapshot dataset schema");
@@ -277,16 +364,62 @@ function run(arguments) {
         validateDataset(records, schema);
     }
 
+    if (arguments.length === 8) {
+        const keyRecord = readJson(arguments[3], "Canonical key JSON");
+        const changes = readJson(arguments[4], "Field changes JSON");
+        validateCanonicalKey(keyRecord, schema);
+        validateChanges(changes, schema);
+        const snapshotRecords = readJsonLines(arguments[5]);
+        validateDataset(snapshotRecords, schema);
+        const snapshotRecord = matchingRecord(snapshotRecords, keyRecord, schema, "Snapshot");
+        if (snapshotRecord === null) {
+            throw new Error("Snapshot has no record matching the canonical key.");
+        }
+        const pendingRecord = matchingRecord(records, keyRecord, schema, "Local dataset");
+        const base = pendingRecord === null ? snapshotRecord : pendingRecord;
+        const proposed = JSON.parse(JSON.stringify(base));
+        Object.keys(changes).forEach(function (field) {
+            proposed[field] = changes[field];
+        });
+        validateRecord(proposed, schema);
+        if (recordsEqual(proposed, base, schema)) {
+            return "mode=field-edit\nbase=" + (pendingRecord === null ? "snapshot" : "pending") +
+                "\naction=no_change\nchanged_field_count=" + Object.keys(changes).length +
+                "\nrecord_count=" + records.length + "\nreview_stale=false";
+        }
+        const canonicalKey = schema["x-gds-canonical-key"];
+        const wanted = normalizedKey(proposed, canonicalKey, schema);
+        let matchedIndex = -1;
+        for (let index = 0; index < records.length; index += 1) {
+            if (normalizedKey(records[index], canonicalKey, schema) === wanted) {
+                matchedIndex = index;
+                break;
+            }
+        }
+        const action = matchedIndex === -1 ? "inserted" : "replaced";
+        if (matchedIndex === -1) {
+            records.push(proposed);
+        } else {
+            records[matchedIndex] = proposed;
+        }
+        validateDataset(records, schema);
+        writeDataset(arguments[6], records);
+        return "mode=field-edit\nbase=" + (pendingRecord === null ? "snapshot" : "pending") +
+            "\naction=" + action + "\nchanged_field_count=" + Object.keys(changes).length +
+            "\nrecord_count=" + records.length + "\nreview_stale=true";
+    }
+
     if (arguments.length === 6) {
         const keyRecord = readJson(arguments[3], "Canonical key JSON");
         validateCanonicalKey(keyRecord, schema);
         const wantedKey = normalizedKey(
             keyRecord,
-            schema["x-gds-canonical-key"]
+            schema["x-gds-canonical-key"],
+            schema
         );
         let matchedIndex = -1;
         for (let index = 0; index < records.length; index += 1) {
-            if (normalizedKey(records[index], schema["x-gds-canonical-key"]) === wantedKey) {
+            if (normalizedKey(records[index], schema["x-gds-canonical-key"], schema) === wantedKey) {
                 matchedIndex = index;
                 break;
             }
@@ -303,10 +436,10 @@ function run(arguments) {
     const record = readJson(arguments[3], "Input record JSON");
     validateRecord(record, schema);
     const canonicalKey = schema["x-gds-canonical-key"];
-    const wanted = normalizedKey(record, canonicalKey);
+    const wanted = normalizedKey(record, canonicalKey, schema);
     let matchedIndex = -1;
     for (let index = 0; index < records.length; index += 1) {
-        if (normalizedKey(records[index], canonicalKey) === wanted) {
+        if (normalizedKey(records[index], canonicalKey, schema) === wanted) {
             if (matchedIndex !== -1) {
                 throw new Error("Dataset contains duplicate canonical keys.");
             }
@@ -322,5 +455,6 @@ function run(arguments) {
     }
     validateDataset(records, schema);
     writeDataset(arguments[4], records);
-    return "action=" + action + "\nrecord_count=" + records.length;
+    return "mode=full-record\naction=" + action + "\nrecord_count=" + records.length +
+        "\nreview_stale=true";
 }

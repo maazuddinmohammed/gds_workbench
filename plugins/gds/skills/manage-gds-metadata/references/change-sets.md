@@ -41,22 +41,29 @@ approval. Use the local canonical-key removal helper for unwanted pending
 records. It edits only the local list; it never deletes applied metadata.
 Generating the review file is not approval.
 
-A stage call contains:
+A Stage call contains:
 
 - Tenant ID and Change Set ID as control identifiers;
 - `expected_draft_revision` as a concurrency fence; and
-- one discriminated change containing a dataset name and a JSON list of full,
-  ID-free records.
+- `changes`, a list of one to 16 unique discriminated entries, each containing
+  a dataset name and a JSON list of full, ID-free records.
 
-Stage **replaces the complete pending list for exactly one dataset**. Therefore:
+Each entry **replaces that dataset's complete pending list**. Therefore:
 
 - Keep the accumulated list locally.
 - Merge a new edit into that list by canonical natural key.
-- Restage the entire list, including earlier pending records.
+- Include the entire list, including earlier pending records.
 - Never send only the newest item unless it is truly the dataset's only pending
   record.
 - An empty list clears pending records for that dataset; it does not delete
   applied database rows.
+
+For one affected dataset, send `changes` with one entry. For two or more, send
+all approved unique entries in one call, ordered by the dependency list below.
+The server replaces all supplied lists atomically and increments the global
+revision once; never make one Stage call per dataset for the same approved
+batch. The combined serialized input must remain within the tool's 16 MiB
+limit.
 
 Stage parents before children:
 
@@ -69,10 +76,10 @@ Stage parents before children:
 7. Process Groups.
 8. Processes.
 
-Every successful stage increments one global `draft_revision` and returns the
-new value. Immediately record the dataset's reviewed SHA/count and returned
-revision with the local state updater before the next Stage. It also makes an
-earlier validation stale.
+Every successful Stage increments one global `draft_revision` once and returns
+the new value plus every supplied dataset/count. Immediately record all fresh
+reviewed hashes/counts at that returned revision with one local state updater
+call. Stage also makes an earlier validation stale.
 
 ## Revision conflicts
 
@@ -97,14 +104,18 @@ Fix the reported phase, update the complete local dataset, stage it, then run
 validation again. The server returns at most 100 compact errors per run.
 Before every server validation, run local validation with `RequireStaged`.
 
-Current server caveat: the snapshot schema allows
-`copy_group_control.member_group_name` to be null, but the current reference
-validator rejects that null composite reference. If encountered, report the
-schema/validator mismatch; do not invent a Member Group merely to pass it.
+On successful complete validation, use `action_review` as the authoritative
+pre-Apply review. It provides complete insert/update/deactivate/reactivate/
+no-change counts per staged dataset plus at most 100 natural keys across the
+response. `keys_truncated=true` means counts remain complete but some keys were
+omitted. Reconcile any difference from the local review and re-review after a
+change; do not treat truncated keys as a complete record list.
 
 ## Apply
 
-Before Apply, show a compact record-level review and get explicit confirmation.
+Before Apply, show the validated server `action_review` and get explicit
+confirmation. Apply returns its revalidated `action_review` for outcome
+reporting; that response cannot substitute for pre-Apply approval.
 Apply rechecks authorization, lock ownership, revision, validation, candidate
 digest, and Object locks. It resolves natural keys to database IDs and performs
 natural-key upserts:
@@ -126,6 +137,8 @@ not acquire.
 
 `create_metadata_change_set` can return the caller's existing active/validated
 draft instead of creating another. When `created=false`, get its summary first
-and fetch every dataset you will edit before building the local accumulated
-list. `archive_metadata_change_set` is for an abandoned draft. Release the
-Tenant Lock after Apply or Archive; ask before releasing unfinished work.
+and fetch every dataset whose server count is nonzero. Import and review all of
+those records, even when a dataset is outside the new request. Before validation
+or Apply, require every nonempty server dataset count to match its reviewed local
+list. `archive_metadata_change_set` is for an abandoned draft. Release the Tenant
+Lock after Apply or Archive; ask before releasing unfinished work.

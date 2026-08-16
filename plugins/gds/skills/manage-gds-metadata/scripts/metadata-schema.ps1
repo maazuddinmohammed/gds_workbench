@@ -156,6 +156,8 @@ function Assert-GdsSchema {
         [object]$Schema,
         [string]$ExpectedDataset
     )
+    $Normalization = $Schema.'x-gds-key-normalization'
+    $Separator = [string][char]0x1f
     if (
         $Schema -isnot [PSCustomObject] -or
         [string]$Schema.type -cne "object" -or
@@ -165,7 +167,14 @@ function Assert-GdsSchema {
         [string]$Schema.'x-gds-dataset' -cne $ExpectedDataset -or
         $Schema.'x-gds-change-set-eligible' -cne $true -or
         $null -eq $Schema.'x-gds-canonical-key' -or
-        $null -eq $Schema.'x-gds-unique-constraints'
+        $null -eq $Schema.'x-gds-unique-constraints' -or
+        $null -eq $Normalization -or
+        [string]$Normalization.version -cne "1.0" -or
+        (@($Normalization.string_field_suffixes) -join $Separator) -cne ("_code" + $Separator + "_name" + $Separator + "_schema") -or
+        (@($Normalization.trim_code_points) -join $Separator) -cne "U+0020" -or
+        [string]$Normalization.case -cne "unicode-lowercase" -or
+        [string]$Normalization.unicode_normalization -cne "none" -or
+        [string]$Normalization.other_values -cne "identity"
     ) {
         throw "Snapshot dataset schema contract is invalid."
     }
@@ -202,7 +211,8 @@ function Assert-GdsRecord {
 function Get-GdsNormalizedKey {
     param(
         [object]$Record,
-        [object[]]$Columns
+        [object[]]$Columns,
+        [object]$Schema
     )
     $Builder = New-Object System.Text.StringBuilder
     foreach ($ColumnValue in $Columns) {
@@ -216,7 +226,19 @@ function Get-GdsNormalizedKey {
             [void]$Builder.Append("N;")
         }
         elseif ($Value -is [string]) {
-            $Normalized = $Value.Trim().ToLowerInvariant()
+            $NormalizeString = $false
+            foreach ($Suffix in @($Schema.'x-gds-key-normalization'.string_field_suffixes)) {
+                if ($Column.EndsWith([string]$Suffix, [System.StringComparison]::Ordinal)) {
+                    $NormalizeString = $true
+                    break
+                }
+            }
+            $Normalized = if ($NormalizeString) {
+                $Value.Trim([char[]]@([char]0x20)).ToLowerInvariant()
+            }
+            else {
+                $Value
+            }
             [void]$Builder.Append("S$($Normalized.Length):$Normalized;")
         }
         elseif ($Value -is [bool]) {
@@ -250,7 +272,7 @@ function Assert-GdsDataset {
         }
         $Seen = New-Object 'System.Collections.Generic.HashSet[string]'
         foreach ($Record in $Records) {
-            $Key = Get-GdsNormalizedKey $Record $Columns
+            $Key = Get-GdsNormalizedKey $Record $Columns $Schema
             if (-not $Seen.Add($Key)) {
                 throw "Dataset contains a duplicate unique constraint."
             }
@@ -267,10 +289,10 @@ function Merge-GdsRecord {
     Assert-GdsRecord $Record $Schema
     Assert-GdsDataset $Records $Schema
     $CanonicalColumns = @($Schema.'x-gds-canonical-key')
-    $WantedKey = Get-GdsNormalizedKey $Record $CanonicalColumns
+    $WantedKey = Get-GdsNormalizedKey $Record $CanonicalColumns $Schema
     $MatchedIndex = -1
     for ($Index = 0; $Index -lt $Records.Count; $Index += 1) {
-        if ((Get-GdsNormalizedKey $Records[$Index] $CanonicalColumns) -ceq $WantedKey) {
+        if ((Get-GdsNormalizedKey $Records[$Index] $CanonicalColumns $Schema) -ceq $WantedKey) {
             if ($MatchedIndex -ne -1) {
                 throw "Dataset contains duplicate canonical keys."
             }
@@ -290,6 +312,98 @@ function Merge-GdsRecord {
     return [PSCustomObject]@{
         Action = $Action
         Records = [object[]]$Merged
+    }
+}
+
+function Find-GdsRecordByKey {
+    param(
+        [object[]]$Records,
+        [object]$KeyRecord,
+        [object]$Schema,
+        [string]$Label
+    )
+    Assert-GdsCanonicalKey $KeyRecord $Schema
+    $Columns = @($Schema.'x-gds-canonical-key')
+    $WantedKey = Get-GdsNormalizedKey $KeyRecord $Columns $Schema
+    $Found = $null
+    foreach ($Record in $Records) {
+        if ((Get-GdsNormalizedKey $Record $Columns $Schema) -cne $WantedKey) {
+            continue
+        }
+        if ($null -ne $Found) {
+            throw "$Label contains duplicate canonical keys."
+        }
+        $Found = $Record
+    }
+    return $Found
+}
+
+function Edit-GdsRecord {
+    param(
+        [object[]]$Records,
+        [object[]]$SnapshotRecords,
+        [object]$KeyRecord,
+        [object]$Changes,
+        [object]$Schema
+    )
+    Assert-GdsDataset $Records $Schema
+    Assert-GdsDataset $SnapshotRecords $Schema
+    Assert-GdsCanonicalKey $KeyRecord $Schema
+    if ($Changes -isnot [PSCustomObject] -or @($Changes.PSObject.Properties).Count -eq 0) {
+        throw "Field changes must be one nonempty JSON object."
+    }
+    $CanonicalColumns = @($Schema.'x-gds-canonical-key')
+    foreach ($Property in $Changes.PSObject.Properties) {
+        $NormalizedName = $Property.Name.ToLowerInvariant()
+        if ($NormalizedName -ceq "id" -or $NormalizedName.EndsWith("_id")) {
+            throw "Database ID fields are forbidden."
+        }
+        if ($CanonicalColumns -ccontains $Property.Name) {
+            throw "Field changes cannot modify the canonical key."
+        }
+        $FieldRule = $Schema.properties.PSObject.Properties[$Property.Name]
+        if ($null -eq $FieldRule) {
+            throw "Field changes contain an unknown schema field."
+        }
+        if (-not (Test-GdsSchemaValue $Property.Value $FieldRule.Value)) {
+            throw "Changed field does not match the schema."
+        }
+    }
+
+    $SnapshotRecord = Find-GdsRecordByKey $SnapshotRecords $KeyRecord $Schema "Snapshot"
+    if ($null -eq $SnapshotRecord) {
+        throw "Snapshot has no record matching the canonical key."
+    }
+    $PendingRecord = Find-GdsRecordByKey $Records $KeyRecord $Schema "Local dataset"
+    $BaseRecord = if ($null -eq $PendingRecord) { $SnapshotRecord } else { $PendingRecord }
+    $ProposedValues = [ordered]@{}
+    foreach ($Field in $Schema.properties.PSObject.Properties.Name) {
+        $BaseProperty = $BaseRecord.PSObject.Properties[$Field]
+        if ($null -ne $BaseProperty) {
+            $ProposedValues[$Field] = $BaseProperty.Value
+        }
+    }
+    foreach ($Property in $Changes.PSObject.Properties) {
+        $ProposedValues[$Property.Name] = $Property.Value
+    }
+    $Proposed = [PSCustomObject]$ProposedValues
+    Assert-GdsRecord $Proposed $Schema
+    if (Test-GdsRecordsEqual $Proposed $BaseRecord $Schema) {
+        return [PSCustomObject]@{
+            Action = "no_change"
+            Base = $(if ($null -eq $PendingRecord) { "snapshot" } else { "pending" })
+            ChangedFieldCount = @($Changes.PSObject.Properties).Count
+            ReviewStale = $false
+            Records = [object[]]$Records
+        }
+    }
+    $Merged = Merge-GdsRecord $Records $Proposed $Schema
+    return [PSCustomObject]@{
+        Action = $Merged.Action
+        Base = $(if ($null -eq $PendingRecord) { "snapshot" } else { "pending" })
+        ChangedFieldCount = @($Changes.PSObject.Properties).Count
+        ReviewStale = $true
+        Records = [object[]]$Merged.Records
     }
 }
 
@@ -394,11 +508,11 @@ function Remove-GdsRecord {
     Assert-GdsDataset $Records $Schema
     Assert-GdsCanonicalKey $KeyRecord $Schema
     $Columns = @($Schema.'x-gds-canonical-key')
-    $WantedKey = Get-GdsNormalizedKey $KeyRecord $Columns
+    $WantedKey = Get-GdsNormalizedKey $KeyRecord $Columns $Schema
     $Found = $false
     $Remaining = @()
     foreach ($Record in $Records) {
-        if ((Get-GdsNormalizedKey $Record $Columns) -ceq $WantedKey) {
+        if ((Get-GdsNormalizedKey $Record $Columns $Schema) -ceq $WantedKey) {
             if ($Found) {
                 throw "Dataset contains duplicate canonical keys."
             }

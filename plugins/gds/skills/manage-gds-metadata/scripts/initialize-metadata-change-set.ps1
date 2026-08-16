@@ -1,5 +1,5 @@
 param(
-    [string]$WorkspacePath = (Join-Path (Get-Location).Path "gds-workspace"),
+    [string]$WorkspacePath = (Join-Path (Get-Location).Path "GDS"),
     [Parameter(Mandatory = $true)]
     [long]$TenantId,
     [Parameter(Mandatory = $true)]
@@ -63,8 +63,8 @@ try {
         [System.IO.Path]::AltDirectorySeparatorChar
     )
     $Workspace = $Workspace.TrimEnd($TrimCharacters)
-    if ([System.IO.Path]::GetFileName($Workspace) -cne "gds-workspace") {
-        Write-Failure "Workspace directory must be named gds-workspace."
+    if ([System.IO.Path]::GetFileName($Workspace) -cne "GDS") {
+        Write-Failure "Workspace directory must be named GDS."
     }
     if (-not (Test-Path -LiteralPath $Workspace -PathType Container)) {
         Write-Failure "Workspace directory does not exist."
@@ -93,11 +93,68 @@ try {
     }
 
     $ChangeSetPath = Join-Path $Workspace "change-set"
+    $AdoptedLocalDraft = $false
     if (Test-Path -LiteralPath $ChangeSetPath) {
-        Write-Failure "Local change-set already exists; stop and ask whether to reuse it."
+        $ChangeSetItem = Get-Item -LiteralPath $ChangeSetPath
+        if (-not $ChangeSetItem.PSIsContainer -or ($ChangeSetItem.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+            Write-Failure "Local change-set is unsafe."
+        }
+        $StatePath = Join-Path $ChangeSetPath "change-set.json"
+        $DatasetsPath = Join-Path $ChangeSetPath "datasets"
+        if (-not (Test-Path -LiteralPath $StatePath -PathType Leaf) -or -not (Test-Path -LiteralPath $DatasetsPath -PathType Container)) {
+            Write-Failure "Existing local draft structure is incomplete."
+        }
+        foreach ($Entry in @(Get-ChildItem -LiteralPath $ChangeSetPath -Force -Recurse)) {
+            if (($Entry.Attributes -band [System.IO.FileAttributes]::ReparsePoint) -ne 0) {
+                Write-Failure "Existing local draft cannot contain reparse points."
+            }
+        }
+        foreach ($RootEntry in @(Get-ChildItem -LiteralPath $ChangeSetPath -Force)) {
+            if ($RootEntry.Name -cnotin @("change-set.json", "datasets")) {
+                Write-Failure "Existing local draft contains an unexpected root entry."
+            }
+        }
+        try {
+            $LocalState = [System.IO.File]::ReadAllText($StatePath) | ConvertFrom-Json
+        }
+        catch {
+            Write-Failure "Existing local draft state is not valid JSON."
+        }
+        if (([string]$LocalState.format_version) -cne "1.0") {
+            Write-Failure "Existing local draft format is invalid."
+        }
+        if (([string]$LocalState.tenant.tenant_code) -cne $TenantCode) {
+            Write-Failure "Existing local draft Tenant does not match."
+        }
+        if (([string]$LocalState.snapshot.snapshot_id) -cne $SnapshotId -or ([string]$LocalState.snapshot.path) -cne "../metadata-snapshot") {
+            Write-Failure "Existing local draft Snapshot does not match."
+        }
+        if (([string]$LocalState.server_change_set.status) -cne "local") {
+            Write-Failure "Local change-set already exists; stop and ask whether to reuse it."
+        }
+        if (([string]$LocalState.snapshot.usage) -cne "local" -or $LocalState.snapshot.outdated_snapshot_warning_acknowledged -cne $false) {
+            Write-Failure "Existing local draft Snapshot state is invalid."
+        }
+        if ($null -eq $LocalState.datasets -or $LocalState.datasets -isnot [PSCustomObject] -or @($LocalState.datasets.PSObject.Properties).Count -ne 0) {
+            Write-Failure "Existing local draft contains server Stage state."
+        }
+        $AllowedDatasets = @(
+            "source_object", "source_attribute", "bronze_object", "bronze_attribute",
+            "silver_object", "silver_attribute", "gold_object", "gold_attribute",
+            "ingestion_object_mapping", "ingestion_attribute_mapping", "copy_group",
+            "member_group", "copy_group_control", "copy", "process_group", "process"
+        )
+        foreach ($DatasetFile in @(Get-ChildItem -LiteralPath $DatasetsPath -Force)) {
+            if ($DatasetFile.PSIsContainer -or $DatasetFile.Extension -cne ".json" -or $AllowedDatasets -cnotcontains $DatasetFile.BaseName) {
+                Write-Failure "Existing local draft contains an ineligible dataset."
+            }
+        }
+        $AdoptedLocalDraft = $true
     }
-    New-Item -ItemType Directory -Path $ChangeSetPath | Out-Null
-    New-Item -ItemType Directory -Path (Join-Path $ChangeSetPath "datasets") | Out-Null
+    else {
+        New-Item -ItemType Directory -Path $ChangeSetPath | Out-Null
+        New-Item -ItemType Directory -Path (Join-Path $ChangeSetPath "datasets") | Out-Null
+    }
 
     $State = [ordered]@{
         format_version = "1.0"
@@ -123,7 +180,7 @@ try {
     $StateJson = $State | ConvertTo-Json -Depth 5
     $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     [System.IO.File]::WriteAllText($TemporaryStatePath, $StateJson + "`n", $Utf8NoBom)
-    Move-Item -LiteralPath $TemporaryStatePath -Destination $StatePath
+    Move-Item -LiteralPath $TemporaryStatePath -Destination $StatePath -Force
 
     [Console]::Out.WriteLine("ok=true")
     [Console]::Out.WriteLine("change_set=$ChangeSetPath")
@@ -134,6 +191,7 @@ try {
     [Console]::Out.WriteLine("metadata_change_set_id=$MetadataChangeSetId")
     [Console]::Out.WriteLine("draft_revision=$DraftRevision")
     [Console]::Out.WriteLine("server_status=$ServerStatus")
+    [Console]::Out.WriteLine("adopted_local_draft=$($AdoptedLocalDraft.ToString().ToLowerInvariant())")
     exit 0
 }
 catch {

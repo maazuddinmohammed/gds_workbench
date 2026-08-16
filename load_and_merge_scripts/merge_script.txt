@@ -1,0 +1,1361 @@
+- FileName: MasterConfigData
+  SheetName: Main
+  Values:
+    - TableName: connection_parameter
+      SheetName: ConnectionParameter
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.ConnectionParameterName AS connection_parameter_name,
+            a.ConnectionParameterDescription AS connection_parameter_description,
+            CAST(a.IsKeyVault AS BOOLEAN) AS is_key_vault,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.connection_parameter AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.connection_parameter_name)) = TRIM(LOWER(s.connection_parameter_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            connection_parameter_description = s.connection_parameter_description,
+            is_key_vault = s.is_key_vault,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            connection_parameter_name,
+            connection_parameter_description,
+            is_key_vault,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.connection_parameter_name,
+            s.connection_parameter_description,
+            s.is_key_vault,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: connection_type
+      SheetName: ConnectionType
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.ConnectionTypeName AS connection_type_name,
+            a.ConnectionTypeDescription AS connection_type_description,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.connection_type AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.connection_type_name)) = TRIM(LOWER(s.connection_type_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            connection_type_description = s.connection_type_description,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            connection_type_name,
+            connection_type_description,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.connection_type_name,
+            s.connection_type_description,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: object_type
+      SheetName: ObjectType
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.ObjectTypeName AS object_type_name,
+            a.ObjectTypeDescription AS object_type_description
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.object_type AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.object_type_name)) = TRIM(LOWER(s.object_type_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            object_type_description = s.object_type_description,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            object_type_name,
+            object_type_description,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.object_type_name,
+            s.object_type_description,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: system_type
+      SheetName: SystemType
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.SystemTypeName AS system_type_name,
+            a.SystemTypeDescription AS system_type_description,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.system_type AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.system_type_name)) = TRIM(LOWER(s.system_type_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            system_type_description = s.system_type_description,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            system_type_name,
+            system_type_description,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.system_type_name,
+            s.system_type_description,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: zone
+      SheetName: Zone
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.ZoneName AS zone_name,
+            a.ZoneDescription AS zone_description,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.zone AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.zone_name)) = TRIM(LOWER(s.zone_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            zone_description = s.zone_description,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            zone_name,
+            zone_description,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.zone_name,
+            s.zone_description,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: project
+      SheetName: Project
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            a.ProjectCode AS project_code,
+            a.ProjectName AS project_name,
+            a.ProjectDescription AS project_description,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.project AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.project_code)) = TRIM(LOWER(s.project_code))
+        WHEN MATCHED THEN
+          UPDATE SET
+            project_name = s.project_name,
+            project_description = s.project_description,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            project_code,
+            project_name,
+            project_description,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.project_code,
+            s.project_name,
+            s.project_description,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: tenant
+      SheetName: Tenant
+      TableSchema: core
+      DependencyOrder: 2
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            b.project_id,
+            TRIM(a.TenantName) AS tenant_name,
+            TRIM(a.TenantDescription) AS tenant_description,
+            TRIM(a.TenantCatalog) AS tenant_catalog,
+            TRIM(a.GDSAdminCatalog) AS gds_admin_catalog,
+            c.connection_id AS gds_connection_id
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          JOIN
+            core.project AS b
+            ON TRIM(LOWER(a.ProjectCode)) = TRIM(LOWER(b.project_code))
+          LEFT JOIN
+            core.tenant AS t
+            ON TRIM(LOWER(t.tenant_name)) = TRIM(LOWER(a.GDSTenantName))
+          LEFT JOIN
+            core.system AS s
+            ON TRIM(LOWER(s.system_code)) = TRIM(LOWER(a.GDSSystemCode))
+          LEFT JOIN
+            core.connection AS c
+            ON TRIM(LOWER(c.connection_code)) = TRIM(LOWER(a.GDSConnectionCode))
+            AND c.tenant_id = t.tenant_id
+            AND c.system_id = s.system_id
+        )
+        MERGE INTO core.tenant AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.tenant_name)) = TRIM(LOWER(s.tenant_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            tenant_description = s.tenant_description,
+            tenant_catalog = s.tenant_catalog,
+            gds_admin_catalog = s.gds_admin_catalog,
+            gds_connection_id = s.gds_connection_id,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            project_id,
+            tenant_name,
+            tenant_description,
+            tenant_catalog,
+            gds_admin_catalog,
+            gds_connection_id,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.project_id,
+            s.tenant_name,
+            s.tenant_description,
+            s.tenant_catalog,
+            s.gds_admin_catalog,
+            s.gds_connection_id,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: model
+      SheetName: Model
+      TableSchema: model
+      DependencyOrder: 2
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.ModelName) AS model_name,
+            t.tenant_id AS tenant_id,
+            TRIM(a.ModelDescription) AS model_description,
+            CAST(SilverModelNamingTemplate AS JSONB) AS silver_model_naming_template,
+            CAST(SilverModelAuditColumnsTemplate AS JSONB) AS silver_model_audit_columns_template,
+            CAST(GoldModelNamingTemplate AS JSONB) AS gold_model_naming_template,
+            CAST(GoldModelAuditColumnsTemplate AS JSONB) AS gold_model_audit_columns_template,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN
+            core.tenant AS t
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(t.tenant_name))
+        )
+        MERGE INTO model.model AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.model_name)) = TRIM(LOWER(s.model_name))
+          AND t.tenant_id = s.tenant_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            model_description = s.model_description,
+            silver_model_naming_template = s.silver_model_naming_template,
+            silver_model_audit_columns_template = s.silver_model_audit_columns_template,
+            gold_model_naming_template = s.gold_model_naming_template,
+            gold_model_audit_columns_template = s.gold_model_audit_columns_template,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            model_name,
+            tenant_id,
+            model_description,
+            silver_model_naming_template,
+            silver_model_audit_columns_template,
+            gold_model_naming_template,
+            gold_model_audit_columns_template,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.model_name,
+            s.tenant_id,
+            s.model_description,
+            s.silver_model_naming_template,
+            s.silver_model_audit_columns_template,
+            s.gold_model_naming_template,
+            s.gold_model_audit_columns_template,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: system
+      SheetName: System
+      TableSchema: core
+      DependencyOrder: 3
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.SystemCode) AS system_code,
+            TRIM(a.SystemName) AS system_name,
+            b.system_type_id,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.system_type AS b
+            ON TRIM(LOWER(a.SystemTypeName)) = TRIM(LOWER(b.system_type_name))
+        )
+        MERGE INTO core.system AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.system_code)) = TRIM(LOWER(s.system_code))
+        WHEN MATCHED THEN
+          UPDATE SET
+            system_name = s.system_name,
+            system_type_id = s.system_type_id,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            system_code,
+            system_name,
+            system_type_id,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.system_code,
+            s.system_name,
+            s.system_type_id,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+          
+    - TableName: connection
+      SheetName: Connection
+      TableSchema: core
+      DependencyOrder: 4
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            b.tenant_id,
+            c.system_id,
+            TRIM(a.ConnectionCode) AS connection_code,
+            TRIM(a.ConnectionName) AS connection_name,
+            d.connection_type_id,
+            TRIM(a.ForeignCatalog) AS foreign_catalog,
+            CAST(a.HasForeignCatalog AS BOOLEAN) AS has_foreign_catalog,
+            CAST(a.IsGlobalDataStore AS BOOLEAN) AS is_global_data_store,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS b
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(b.tenant_name))
+          LEFT JOIN core.system AS c
+            ON TRIM(LOWER(a.SystemCode)) = TRIM(LOWER(c.system_code))
+          LEFT JOIN core.connection_type AS d
+            ON TRIM(LOWER(a.ConnectionTypeName)) = TRIM(LOWER(d.connection_type_name))
+        )
+        MERGE INTO core.connection AS t
+        USING SourceView AS s
+          ON t.tenant_id = s.tenant_id
+          AND t.system_id = s.system_id
+          AND TRIM(LOWER(t.connection_code)) = TRIM(LOWER(s.connection_code))
+        WHEN MATCHED THEN
+          UPDATE SET
+            connection_name = s.connection_name,
+            connection_type_id = s.connection_type_id,
+            foreign_catalog = s.foreign_catalog,
+            has_foreign_catalog = s.has_foreign_catalog,
+            is_global_data_store = s.is_global_data_store,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            tenant_id,
+            system_id,
+            connection_code,
+            connection_name,
+            connection_type_id,
+            foreign_catalog,
+            has_foreign_catalog,
+            is_global_data_store,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.tenant_id,
+            s.system_id,
+            s.connection_code,
+            s.connection_name,
+            s.connection_type_id,
+            s.foreign_catalog,
+            s.has_foreign_catalog,
+            s.is_global_data_store,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: connection_value
+      SheetName: ConnectionValue
+      TableSchema: core
+      DependencyOrder: 5
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            d.connection_id,
+            e.connection_parameter_id,
+            TRIM(a.ConnectionValue) AS connection_value
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS b
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(b.tenant_name))
+          LEFT JOIN core.system AS c
+            ON TRIM(LOWER(a.SystemCode)) = TRIM(LOWER(c.system_code))
+          LEFT JOIN core.connection AS d
+            ON b.tenant_id = d.tenant_id
+            AND c.system_id = d.system_id
+            AND TRIM(LOWER(a.ConnectionCode)) = TRIM(LOWER(d.connection_code))
+          LEFT JOIN core.connection_parameter AS e
+            ON TRIM(LOWER(a.ConnectionParameterName)) = TRIM(LOWER(e.connection_parameter_name))
+        )
+        MERGE INTO core.connection_value AS t
+        USING SourceView AS s
+          ON t.connection_id = s.connection_id
+          AND t.connection_parameter_id = s.connection_parameter_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            connection_value = s.connection_value,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            connection_id,
+            connection_parameter_id,
+            connection_value,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.connection_id,
+            s.connection_parameter_id,
+            s.connection_value,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: object
+      SheetName: Object
+      TableSchema: core
+      DependencyOrder: 6
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT DISTINCT
+            c.connection_id,
+            TRIM(a.ObjectSchema) AS object_schema,
+            TRIM(a.ObjectName) AS object_name,
+            LOWER(TRIM(a.ObjectSchema)) AS fc_object_schema,
+            LOWER(TRIM(a.ObjectName)) AS fc_object_name,
+            TRIM(a.ObjectTransformation) AS object_transformation,
+            TRIM(a.ObjectDescription) AS object_description,
+            TRIM(a.BatchAttributeName) AS batch_attribute_name,
+            ot.object_type_id,
+            z.zone_id,
+            CAST('1' AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS t
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(t.tenant_name))
+          LEFT JOIN core.system AS b
+            ON TRIM(LOWER(a.SystemCode)) = TRIM(LOWER(b.system_code))
+          LEFT JOIN core.connection AS c
+            ON t.tenant_id = c.tenant_id
+            AND b.system_id = c.system_id
+            AND TRIM(LOWER(a.ConnectionCode)) = TRIM(LOWER(c.connection_code))
+          LEFT JOIN core.zone AS z
+            ON TRIM(LOWER(z.zone_name)) = TRIM(LOWER(a.ZoneName))
+          LEFT JOIN core.object_type AS ot
+            ON TRIM(LOWER(a.ObjectTypeName)) = TRIM(LOWER(ot.object_type_name))
+        )
+        MERGE INTO core.object AS t
+        USING SourceView AS s
+          ON t.connection_id = s.connection_id
+          AND TRIM(LOWER(t.object_schema)) = TRIM(LOWER(s.object_schema))
+          AND TRIM(LOWER(t.object_name)) = TRIM(LOWER(s.object_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            fc_object_schema = s.fc_object_schema,
+            fc_object_name = s.fc_object_name,
+            object_transformation = s.object_transformation,
+            object_description = s.object_description,
+            batch_attribute_name = s.batch_attribute_name,
+            object_type_id = s.object_type_id,
+            zone_id = s.zone_id,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            connection_id,
+            object_schema,
+            object_name,
+            fc_object_schema,
+            fc_object_name,
+            object_transformation,
+            object_description,
+            batch_attribute_name,
+            object_type_id,
+            zone_id,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.connection_id,
+            s.object_schema,
+            s.object_name,
+            s.fc_object_schema,
+            s.fc_object_name,
+            s.object_transformation,
+            s.object_description,
+            s.batch_attribute_name,
+            s.object_type_id,
+            s.zone_id,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: attribute
+      SheetName: Attribute
+      TableSchema: core
+      DependencyOrder: 7
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            b.object_id,
+            TRIM(a.AttributeName) AS attribute_name,
+            LOWER(TRIM(a.FCAttributeName)) AS fc_attribute_name,
+            CAST(a.AttributeOrdinalPosition AS INTEGER) AS attribute_ordinal_position,
+            TRIM(a.AttributeDescription) AS attribute_description,
+            TRIM(a.AttributeDataType) AS attribute_data_type,
+            CAST(TRIM(a.AttributeNullability) AS BOOLEAN) AS attribute_nullability,
+            TRIM(a.AttributeCustomCode) AS attribute_custom_code,
+            -1 AS business_glossary_id,
+            CAST(a.IsSurrogateKey AS BOOLEAN) AS is_surrogate_key,
+            CAST(a.IsNaturalKey AS BOOLEAN) AS is_natural_key,
+            CAST(a.IsMetadata AS BOOLEAN) AS is_meta_data,
+            CAST(a.IsMaskingRequired AS BOOLEAN) AS is_masking_required,
+            CAST(a.IsMapped AS BOOLEAN) AS is_mapped,
+            CAST(a.IsPurge AS BOOLEAN) AS is_purge
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS t
+            ON TRIM(LOWER(t.tenant_name)) = TRIM(LOWER(a.TenantName))
+          LEFT JOIN core.system AS s
+            ON TRIM(LOWER(s.system_code)) = TRIM(LOWER(a.SystemCode))
+          LEFT JOIN core.connection AS conn
+            ON t.tenant_id = conn.tenant_id
+            AND s.system_id = conn.system_id
+            AND TRIM(LOWER(conn.connection_code)) = TRIM(LOWER(a.ConnectionCode))
+          LEFT JOIN core.object AS b
+            ON b.connection_id = conn.connection_id
+            AND TRIM(LOWER(a.ObjectSchema)) = TRIM(LOWER(b.object_schema))
+            AND TRIM(LOWER(a.ObjectName)) = TRIM(LOWER(b.object_name))
+          WHERE
+            TRIM(a.AttributeName) <> ''
+            AND LOWER(TRIM(a.AttributeName)) <> 'na'
+        )
+        MERGE INTO core.attribute AS t
+        USING SourceView AS s
+          ON t.object_id = s.object_id
+          AND TRIM(LOWER(t.attribute_name)) = TRIM(LOWER(s.attribute_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            fc_attribute_name = s.fc_attribute_name,
+            attribute_ordinal_position = s.attribute_ordinal_position,
+            attribute_description = s.attribute_description,
+            attribute_data_type = s.attribute_data_type,
+            attribute_nullability = s.attribute_nullability,
+            attribute_custom_code = s.attribute_custom_code,
+            business_glossary_id = s.business_glossary_id,
+            is_surrogate_key = s.is_surrogate_key,
+            is_natural_key = s.is_natural_key,
+            is_meta_data = s.is_meta_data,
+            is_masking_required = s.is_masking_required,
+            is_mapped = s.is_mapped,
+            is_purge = s.is_purge,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            object_id,
+            attribute_name,
+            fc_attribute_name,
+            attribute_ordinal_position,
+            attribute_description,
+            attribute_data_type,
+            attribute_nullability,
+            attribute_custom_code,
+            business_glossary_id,
+            is_surrogate_key,
+            is_natural_key,
+            is_meta_data,
+            is_masking_required,
+            is_mapped,
+            is_purge,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.object_id,
+            s.attribute_name,
+            s.fc_attribute_name,
+            s.attribute_ordinal_position,
+            s.attribute_description,
+            s.attribute_data_type,
+            s.attribute_nullability,
+            s.attribute_custom_code,
+            s.business_glossary_id,
+            s.is_surrogate_key,
+            s.is_natural_key,
+            s.is_meta_data,
+            s.is_masking_required,
+            s.is_mapped,
+            s.is_purge,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+
+    - TableName: object_mapping
+      SheetName: ObjectMapping
+      TableSchema: core
+      DependencyOrder: 8
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            so.object_id AS source_object_id,
+            tgo.object_id AS target_object_id,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS st
+            ON TRIM(LOWER(a.SourceTenantName)) = TRIM(LOWER(st.tenant_name))
+          LEFT JOIN core.system AS ss
+            ON TRIM(LOWER(a.SourceSystemCode)) = TRIM(LOWER(ss.system_code))
+          LEFT JOIN core.connection AS sc
+            ON st.tenant_id = sc.tenant_id
+            AND ss.system_id = sc.system_id
+            AND TRIM(LOWER(a.SourceConnectionCode)) = TRIM(LOWER(sc.connection_code))
+          LEFT JOIN core.object AS so
+            ON so.connection_id = sc.connection_id
+            AND TRIM(LOWER(a.SourceObjectSchema)) = TRIM(LOWER(so.object_schema))
+            AND TRIM(LOWER(a.SourceObjectName)) = TRIM(LOWER(so.object_name))
+          LEFT JOIN core.tenant AS tt
+            ON TRIM(LOWER(a.TargetTenantName)) = TRIM(LOWER(tt.tenant_name))
+          LEFT JOIN core.system AS ts
+            ON TRIM(LOWER(a.TargetSystemCode)) = TRIM(LOWER(ts.system_code))
+          LEFT JOIN core.connection AS tc
+            ON tt.tenant_id = tc.tenant_id
+            AND ts.system_id = tc.system_id
+            AND TRIM(LOWER(a.TargetConnectionCode)) = TRIM(LOWER(tc.connection_code))
+          LEFT JOIN core.object AS tgo
+            ON tgo.connection_id = tc.connection_id
+            AND TRIM(LOWER(a.TargetObjectSchema)) = TRIM(LOWER(tgo.object_schema))
+            AND TRIM(LOWER(a.TargetObjectName)) = TRIM(LOWER(tgo.object_name))
+        )
+        MERGE INTO core.object_mapping AS t
+        USING SourceView AS s
+          ON t.source_object_id = s.source_object_id
+          AND t.target_object_id = s.target_object_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            source_object_id,
+            target_object_id,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.source_object_id,
+            s.target_object_id,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: attribute_mapping
+      SheetName: AttributeMapping
+      TableSchema: core
+      DependencyOrder: 9
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            om.object_mapping_id,
+            sa.attribute_id AS source_attribute_id,
+            ta.attribute_id AS target_attribute_id,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS st
+            ON TRIM(LOWER(a.SourceTenantName)) = TRIM(LOWER(st.tenant_name))
+          LEFT JOIN core.system AS ss
+            ON TRIM(LOWER(a.SourceSystemCode)) = TRIM(LOWER(ss.system_code))
+          LEFT JOIN core.connection AS sc
+            ON st.tenant_id = sc.tenant_id
+            AND ss.system_id = sc.system_id
+            AND TRIM(LOWER(a.SourceConnectionCode)) = TRIM(LOWER(sc.connection_code))
+          LEFT JOIN core.object AS so
+            ON so.connection_id = sc.connection_id
+            AND TRIM(LOWER(a.SourceObjectSchema)) = TRIM(LOWER(so.object_schema))
+            AND TRIM(LOWER(a.SourceObjectName)) = TRIM(LOWER(so.object_name))
+          LEFT JOIN core.attribute AS sa
+            ON sa.object_id = so.object_id
+            AND TRIM(LOWER(a.SourceAttributeName)) = TRIM(LOWER(sa.attribute_name))
+          LEFT JOIN core.tenant AS tt
+            ON TRIM(LOWER(a.TargetTenantName)) = TRIM(LOWER(tt.tenant_name))
+          LEFT JOIN core.system AS ts
+            ON TRIM(LOWER(a.TargetSystemCode)) = TRIM(LOWER(ts.system_code))
+          LEFT JOIN core.connection AS tc
+            ON tt.tenant_id = tc.tenant_id
+            AND ts.system_id = tc.system_id
+            AND TRIM(LOWER(a.TargetConnectionCode)) = TRIM(LOWER(tc.connection_code))
+          LEFT JOIN core.object AS tgo
+            ON tgo.connection_id = tc.connection_id
+            AND TRIM(LOWER(a.TargetObjectSchema)) = TRIM(LOWER(tgo.object_schema))
+            AND TRIM(LOWER(a.TargetObjectName)) = TRIM(LOWER(tgo.object_name))
+          LEFT JOIN core.attribute AS ta
+            ON ta.object_id = tgo.object_id
+            AND TRIM(LOWER(a.TargetAttributeName)) = TRIM(LOWER(ta.attribute_name))
+          LEFT JOIN core.object_mapping AS om
+            ON om.source_object_id = so.object_id
+            AND om.target_object_id = tgo.object_id
+        )
+        MERGE INTO core.attribute_mapping AS t
+        USING SourceView AS s
+          ON t.source_attribute_id = s.source_attribute_id
+          AND t.target_attribute_id = s.target_attribute_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            object_mapping_id = s.object_mapping_id,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            object_mapping_id,
+            source_attribute_id,
+            target_attribute_id,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.object_mapping_id,
+            s.source_attribute_id,
+            s.target_attribute_id,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: model_scope
+      SheetName: ModelScope
+      TableSchema: model
+      DependencyOrder: 10
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            m.model_id,
+            o.object_id
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN model.model AS m
+            ON TRIM(LOWER(a.ModelName)) = TRIM(LOWER(m.model_name))
+            AND m.is_active
+          LEFT JOIN core.tenant AS t
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(t.tenant_name))
+            AND t.is_active
+          LEFT JOIN core.system AS s
+            ON TRIM(LOWER(a.SystemCode)) = TRIM(LOWER(s.system_code))
+            AND s.is_active
+          LEFT JOIN core.connection AS conn
+            ON t.tenant_id = conn.tenant_id
+            AND s.system_id = conn.system_id
+            AND TRIM(LOWER(a.ConnectionCode)) = TRIM(LOWER(conn.connection_code))
+            AND conn.is_active
+          LEFT JOIN core.object AS o
+            ON o.connection_id = conn.connection_id
+            AND TRIM(LOWER(a.ObjectSchema)) = TRIM(LOWER(o.object_schema))
+            AND TRIM(LOWER(a.ObjectName)) = TRIM(LOWER(o.object_name))
+            AND o.is_active
+        )
+        MERGE INTO model.model_scope AS t
+        USING SourceView AS s
+          ON t.model_id = s.model_id
+          AND t.object_id = s.object_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            is_active = TRUE,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            model_id,
+            object_id,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.model_id,
+            s.object_id,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: analysis_level
+      SheetName: AnalysisLevel
+      TableSchema: analysis
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.AnalysisLevel) AS analysis_level,
+            CAST(a.AnalysisLevelNumber AS INTEGER) AS analysis_level_number
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO analysis.analysis_level AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.analysis_level)) = TRIM(LOWER(s.analysis_level))
+        WHEN MATCHED THEN
+          UPDATE SET
+            analysis_level_number = s.analysis_level_number,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            analysis_level,
+            analysis_level_number,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.analysis_level,
+            s.analysis_level_number,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: analysis_template
+      SheetName: AnalysisTemplate
+      TableSchema: analysis
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.AnalysisTemplateName) AS analysis_template_name,
+            a.AnalysisTemplateDetails AS analysis_template_details,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO analysis.analysis_template AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.analysis_template_name)) = TRIM(LOWER(s.analysis_template_name))
+        WHEN MATCHED THEN
+          UPDATE SET
+            analysis_template_details = s.analysis_template_details,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            analysis_template_name,
+            analysis_template_details,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.analysis_template_name,
+            s.analysis_template_details,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: analysis_item
+      SheetName: AnalysisItem
+      TableSchema: analysis
+      DependencyOrder: 2
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.AnalysisItem) AS analysis_item,
+            a.AnalysisItemDescription AS analysis_item_description,
+            CAST(a.AnalysisItemFields AS JSONB) AS analysis_item_fields,
+            CAST(a.AnalysisRubricFields AS JSONB) AS analysis_rubric_fields,
+            arl.analysis_level_id AS analysis_run_level_id,
+            arsl.analysis_level_id AS analysis_result_level_id,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN analysis.analysis_level AS arl
+            ON TRIM(LOWER(a.AnalysisRunLevel)) = TRIM(LOWER(arl.analysis_level))
+          LEFT JOIN analysis.analysis_level AS arsl
+            ON TRIM(LOWER(a.AnalysisResultLevel)) = TRIM(LOWER(arsl.analysis_level))
+        )
+        MERGE INTO analysis.analysis_item AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.analysis_item)) = TRIM(LOWER(s.analysis_item))
+        WHEN MATCHED THEN
+          UPDATE SET
+            analysis_item_description = s.analysis_item_description,
+            analysis_item_fields = s.analysis_item_fields,
+            analysis_rubric_fields = s.analysis_rubric_fields,
+            analysis_run_level_id = s.analysis_run_level_id,
+            analysis_result_level_id = s.analysis_result_level_id,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            analysis_item,
+            analysis_item_description,
+            analysis_item_fields,
+            analysis_rubric_fields,
+            analysis_run_level_id,
+            analysis_result_level_id,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.analysis_item,
+            s.analysis_item_description,
+            s.analysis_item_fields,
+            s.analysis_rubric_fields,
+            s.analysis_run_level_id,
+            s.analysis_result_level_id,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: analysis_ledger
+      SheetName: AnalysisLedger
+      TableSchema: analysis
+      DependencyOrder: 3
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            at.analysis_template_id,
+            ai.analysis_item_id,
+            CAST(a.PhaseNumber AS INTEGER) AS phase_number,
+            STRING_TO_ARRAY(a.MandatoryToolExecutionList, ',') AS mandatory_tool_list,
+            CAST(a.ContextDeliveryMode AS analysis.delivery_mode) AS context_delivery_mode,
+            CAST(a.PriorResultDeliveryMode AS analysis.delivery_mode) AS prior_result_delivery_mode,
+            a.CustomInstruction AS custom_instruction,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN analysis.analysis_template AS at
+            ON TRIM(LOWER(a.AnalysisTemplate)) = TRIM(LOWER(at.analysis_template_name))
+          LEFT JOIN analysis.analysis_item AS ai
+            ON TRIM(LOWER(a.AnalysisItem)) = TRIM(LOWER(ai.analysis_item))
+        )
+        MERGE INTO analysis.analysis_ledger AS t
+        USING SourceView AS s
+          ON t.analysis_template_id = s.analysis_template_id
+          AND t.analysis_item_id = s.analysis_item_id
+          AND t.phase_number = s.phase_number
+        WHEN MATCHED THEN
+          UPDATE SET
+            mandatory_tool_list = s.mandatory_tool_list,
+            context_delivery_mode = s.context_delivery_mode,
+            prior_result_delivery_mode = s.prior_result_delivery_mode,
+            custom_instruction = s.custom_instruction,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            analysis_template_id,
+            analysis_item_id,
+            phase_number,
+            mandatory_tool_list,
+            context_delivery_mode,
+            prior_result_delivery_mode,
+            custom_instruction,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.analysis_template_id,
+            s.analysis_item_id,
+            s.phase_number,
+            s.mandatory_tool_list,
+            s.context_delivery_mode,
+            s.prior_result_delivery_mode,
+            s.custom_instruction,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: environment
+      SheetName: Environment
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            TRIM(a.environment_code) AS environment_code,
+            TRIM(a.environment_name) AS environment_name,
+            a.environment_description,
+            CAST(a.is_active AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.environment AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.environment_code)) = TRIM(LOWER(s.environment_code))
+        WHEN MATCHED THEN
+          UPDATE SET
+            environment_name = s.environment_name,
+            environment_description = s.environment_description,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            environment_code,
+            environment_name,
+            environment_description,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.environment_code,
+            s.environment_name,
+            s.environment_description,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: user_account
+      SheetName: UserAccount
+      TableSchema: core
+      DependencyOrder: 1
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            LOWER(TRIM(a.user_email)) AS user_email,
+            TRIM(a.user_display_name) AS user_display_name,
+            CAST(a.is_active AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+        )
+        MERGE INTO core.user_account AS t
+        USING SourceView AS s
+          ON TRIM(LOWER(t.user_email)) = TRIM(LOWER(s.user_email))
+        WHEN MATCHED THEN
+          UPDATE SET
+            user_display_name = s.user_display_name,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            user_email,
+            user_display_name,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.user_email,
+            s.user_display_name,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: tenant_user_access
+      SheetName: TenantUserAccess
+      TableSchema: core
+      DependencyOrder: 3
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            t.tenant_id,
+            u.user_account_id,
+            TRIM(a.TenantAccessLevel) AS tenant_access_level,
+            CAST(a.IsActive AS BOOLEAN) AS is_active
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN core.tenant AS t
+            ON TRIM(LOWER(a.TenantName)) = TRIM(LOWER(t.tenant_name))
+          LEFT JOIN core.user_account AS u
+            ON TRIM(LOWER(a.UserEmail)) = TRIM(LOWER(u.user_email))
+        )
+        MERGE INTO core.tenant_user_access AS tua
+        USING SourceView AS s
+          ON tua.tenant_id = s.tenant_id
+          AND tua.user_account_id = s.user_account_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            tenant_access_level = s.tenant_access_level,
+            is_active = s.is_active,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            tenant_id,
+            user_account_id,
+            tenant_access_level,
+            is_active,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.tenant_id,
+            s.user_account_id,
+            s.tenant_access_level,
+            s.is_active,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );
+
+    - TableName: model_environment_target
+      SheetName: ModelEnvironmentTarget
+      TableSchema: model
+      DependencyOrder: 3
+      MergeSQLString: |
+        WITH SourceView AS (
+          SELECT
+            m.model_id,
+            e.environment_id,
+            TRIM(a.SilverCatalog) AS silver_catalog,
+            TRIM(a.SilverSchema) AS silver_schema,
+            TRIM(a.GoldCatalog) AS gold_catalog,
+            TRIM(a.GoldSchema) AS gold_schema
+          FROM
+            {temp_schema}.{temp_table_name} AS a
+          LEFT JOIN model.model AS m
+            ON TRIM(LOWER(a.ModelName)) = TRIM(LOWER(m.model_name))
+          LEFT JOIN core.environment AS e
+            ON TRIM(LOWER(a.EnvironmentName)) = TRIM(LOWER(e.environment_name))
+        )
+        MERGE INTO model.model_environment_target AS t
+        USING SourceView AS s
+          ON t.model_id = s.model_id
+          AND t.environment_id = s.environment_id
+        WHEN MATCHED THEN
+          UPDATE SET
+            silver_catalog = s.silver_catalog,
+            silver_schema = s.silver_schema,
+            gold_catalog = s.gold_catalog,
+            gold_schema = s.gold_schema,
+            updated_time = CURRENT_TIMESTAMP,
+            updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN
+          INSERT (
+            model_id,
+            environment_id,
+            silver_catalog,
+            silver_schema,
+            gold_catalog,
+            gold_schema,
+            created_time,
+            created_by,
+            updated_time,
+            updated_by
+          )
+          VALUES (
+            s.model_id,
+            s.environment_id,
+            s.silver_catalog,
+            s.silver_schema,
+            s.gold_catalog,
+            s.gold_schema,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER,
+            CURRENT_TIMESTAMP,
+            CURRENT_USER
+          );

@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run Data Modeling Goal"
+  short_description: "Prepare or start a verifiable modeling goal"
+  default_prompt: "Use $run-data-modeling-goal to prepare a paste-ready /goal prompt without starting it."

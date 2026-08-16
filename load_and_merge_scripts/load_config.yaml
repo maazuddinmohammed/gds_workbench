@@ -1,0 +1,2440 @@
+version: 1
+loads:
+  - workbook: foundational.xlsx
+    sheet: Environment
+    schema: reference
+    table: environment
+    dependency_order: 10
+    columns:
+      - environment_code
+      - environment_name
+      - environment_description
+      - is_active
+    required_columns: [environment_code, environment_name]
+    source_key: [environment_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.environment AS target
+        USING (
+          SELECT
+            btrim(staged.environment_code::text) AS environment_code,
+            btrim(staged.environment_name::text) AS environment_name,
+            NULLIF(btrim(staged.environment_description::text), '') AS environment_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.environment_code)) = lower(source.environment_code)
+        WHEN MATCHED THEN UPDATE SET
+          environment_name = source.environment_name,
+          environment_description = source.environment_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          environment_code, environment_name, environment_description, is_active
+        ) VALUES (
+          source.environment_code, source.environment_name,
+          source.environment_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: SystemType
+    schema: reference
+    table: system_type
+    dependency_order: 20
+    columns:
+      - system_type_code
+      - system_type_name
+      - system_type_description
+      - is_active
+    required_columns: [system_type_code, system_type_name]
+    source_key: [system_type_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.system_type AS target
+        USING (
+          SELECT
+            btrim(staged.system_type_code::text) AS system_type_code,
+            btrim(staged.system_type_name::text) AS system_type_name,
+            NULLIF(btrim(staged.system_type_description::text), '') AS system_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.system_type_code)) = lower(source.system_type_code)
+        WHEN MATCHED THEN UPDATE SET
+          system_type_name = source.system_type_name,
+          system_type_description = source.system_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          system_type_code, system_type_name, system_type_description, is_active
+        ) VALUES (
+          source.system_type_code, source.system_type_name,
+          source.system_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: Zone
+    schema: reference
+    table: zone
+    dependency_order: 30
+    columns:
+      - zone_code
+      - zone_name
+      - zone_description
+      - is_active
+    required_columns: [zone_code, zone_name]
+    source_key: [zone_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.zone AS target
+        USING (
+          SELECT
+            btrim(staged.zone_code::text) AS zone_code,
+            btrim(staged.zone_name::text) AS zone_name,
+            NULLIF(btrim(staged.zone_description::text), '') AS zone_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.zone_code)) = lower(source.zone_code)
+        WHEN MATCHED THEN UPDATE SET
+          zone_name = source.zone_name,
+          zone_description = source.zone_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          zone_code, zone_name, zone_description, is_active
+        ) VALUES (
+          source.zone_code, source.zone_name, source.zone_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: ConnectionType
+    schema: reference
+    table: connection_type
+    dependency_order: 40
+    columns:
+      - connection_type_code
+      - connection_type_name
+      - connection_type_description
+      - is_active
+    required_columns: [connection_type_code, connection_type_name]
+    source_key: [connection_type_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.connection_type AS target
+        USING (
+          SELECT
+            btrim(staged.connection_type_code::text) AS connection_type_code,
+            btrim(staged.connection_type_name::text) AS connection_type_name,
+            NULLIF(btrim(staged.connection_type_description::text), '') AS connection_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.connection_type_code)) = lower(source.connection_type_code)
+        WHEN MATCHED THEN UPDATE SET
+          connection_type_name = source.connection_type_name,
+          connection_type_description = source.connection_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          connection_type_code, connection_type_name,
+          connection_type_description, is_active
+        ) VALUES (
+          source.connection_type_code, source.connection_type_name,
+          source.connection_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: ObjectType
+    schema: reference
+    table: object_type
+    dependency_order: 50
+    columns:
+      - object_type_code
+      - object_type_name
+      - object_type_description
+      - is_active
+    required_columns: [object_type_code, object_type_name]
+    source_key: [object_type_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.object_type AS target
+        USING (
+          SELECT
+            btrim(staged.object_type_code::text) AS object_type_code,
+            btrim(staged.object_type_name::text) AS object_type_name,
+            NULLIF(btrim(staged.object_type_description::text), '') AS object_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.object_type_code)) = lower(source.object_type_code)
+        WHEN MATCHED THEN UPDATE SET
+          object_type_name = source.object_type_name,
+          object_type_description = source.object_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          object_type_code, object_type_name, object_type_description, is_active
+        ) VALUES (
+          source.object_type_code, source.object_type_name,
+          source.object_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: ConnectionParameter
+    schema: reference
+    table: connection_parameter
+    dependency_order: 60
+    columns:
+      - connection_parameter_code
+      - connection_parameter_name
+      - connection_parameter_description
+      - is_key_vault
+      - is_active
+    required_columns: [connection_parameter_code, connection_parameter_name]
+    source_key: [connection_parameter_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.connection_parameter AS target
+        USING (
+          SELECT
+            btrim(staged.connection_parameter_code::text) AS connection_parameter_code,
+            btrim(staged.connection_parameter_name::text) AS connection_parameter_name,
+            NULLIF(btrim(staged.connection_parameter_description::text), '') AS connection_parameter_description,
+            COALESCE(NULLIF(btrim(staged.is_key_vault::text), '')::boolean, FALSE) AS is_key_vault,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.connection_parameter_code)) = lower(source.connection_parameter_code)
+        WHEN MATCHED THEN UPDATE SET
+          connection_parameter_name = source.connection_parameter_name,
+          connection_parameter_description = source.connection_parameter_description,
+          is_key_vault = source.is_key_vault,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          connection_parameter_code, connection_parameter_name,
+          connection_parameter_description, is_key_vault, is_active
+        ) VALUES (
+          source.connection_parameter_code, source.connection_parameter_name,
+          source.connection_parameter_description, source.is_key_vault, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: PurgePolicy
+    schema: reference
+    table: purge_policy
+    dependency_order: 70
+    columns:
+      - purge_policy_name
+      - purge_policy_description
+    required_columns: [purge_policy_name]
+    source_key: [purge_policy_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.purge_policy AS target
+        USING (
+          SELECT
+            btrim(staged.purge_policy_name::text) AS purge_policy_name,
+            NULLIF(btrim(staged.purge_policy_description::text), '') AS purge_policy_description
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.purge_policy_name)) = lower(source.purge_policy_name)
+        WHEN MATCHED THEN UPDATE SET
+          purge_policy_description = source.purge_policy_description,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          purge_policy_name, purge_policy_description
+        ) VALUES (
+          source.purge_policy_name, source.purge_policy_description
+        );
+
+  - workbook: foundational.xlsx
+    sheet: SystemNotebook
+    schema: reference
+    table: system_notebook
+    dependency_order: 80
+    columns:
+      - system_notebook_name
+      - system_notebook_description
+      - is_active
+    required_columns: [system_notebook_name]
+    source_key: [system_notebook_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.system_notebook AS target
+        USING (
+          SELECT
+            btrim(staged.system_notebook_name::text) AS system_notebook_name,
+            NULLIF(btrim(staged.system_notebook_description::text), '') AS system_notebook_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.system_notebook_name)) = lower(source.system_notebook_name)
+        WHEN MATCHED THEN UPDATE SET
+          system_notebook_description = source.system_notebook_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          system_notebook_name, system_notebook_description, is_active
+        ) VALUES (
+          source.system_notebook_name, source.system_notebook_description,
+          source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: LocationType
+    schema: reference
+    table: location_type
+    dependency_order: 90
+    columns:
+      - location_type_name
+      - location_type_description
+      - is_active
+    required_columns: [location_type_name]
+    source_key: [location_type_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.location_type AS target
+        USING (
+          SELECT
+            btrim(staged.location_type_name::text) AS location_type_name,
+            NULLIF(btrim(staged.location_type_description::text), '') AS location_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.location_type_name)) = lower(source.location_type_name)
+        WHEN MATCHED THEN UPDATE SET
+          location_type_description = source.location_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          location_type_name, location_type_description, is_active
+        ) VALUES (
+          source.location_type_name, source.location_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: FileType
+    schema: reference
+    table: file_type
+    dependency_order: 100
+    columns:
+      - file_type_name
+      - file_type_description
+      - is_active
+    required_columns: [file_type_name]
+    source_key: [file_type_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.file_type AS target
+        USING (
+          SELECT
+            btrim(staged.file_type_name::text) AS file_type_name,
+            NULLIF(btrim(staged.file_type_description::text), '') AS file_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.file_type_name)) = lower(source.file_type_name)
+        WHEN MATCHED THEN UPDATE SET
+          file_type_description = source.file_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          file_type_name, file_type_description, is_active
+        ) VALUES (
+          source.file_type_name, source.file_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: Domain
+    schema: reference
+    table: domain
+    dependency_order: 110
+    columns:
+      - domain_name
+      - domain_description
+    required_columns: [domain_name]
+    source_key: [domain_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.domain AS target
+        USING (
+          SELECT
+            btrim(staged.domain_name::text) AS domain_name,
+            NULLIF(btrim(staged.domain_description::text), '') AS domain_description
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.domain_name)) = lower(source.domain_name)
+        WHEN MATCHED THEN UPDATE SET
+          domain_description = source.domain_description,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (domain_name, domain_description)
+        VALUES (source.domain_name, source.domain_description);
+
+  - workbook: foundational.xlsx
+    sheet: DataOperation
+    schema: reference
+    table: data_operation
+    dependency_order: 120
+    columns:
+      - data_operation_name
+      - data_operation_description
+      - is_active
+    required_columns: [data_operation_name]
+    source_key: [data_operation_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.data_operation AS target
+        USING (
+          SELECT
+            btrim(staged.data_operation_name::text) AS data_operation_name,
+            NULLIF(btrim(staged.data_operation_description::text), '') AS data_operation_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.data_operation_name)) = lower(source.data_operation_name)
+        WHEN MATCHED THEN UPDATE SET
+          data_operation_description = source.data_operation_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          data_operation_name, data_operation_description, is_active
+        ) VALUES (
+          source.data_operation_name, source.data_operation_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: ChunkType
+    schema: reference
+    table: chunk_type
+    dependency_order: 130
+    columns:
+      - chunk_type_name
+      - chunk_type_description
+      - is_active
+    required_columns: [chunk_type_name]
+    source_key: [chunk_type_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.chunk_type AS target
+        USING (
+          SELECT
+            btrim(staged.chunk_type_name::text) AS chunk_type_name,
+            NULLIF(btrim(staged.chunk_type_description::text), '') AS chunk_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.chunk_type_name)) = lower(source.chunk_type_name)
+        WHEN MATCHED THEN UPDATE SET
+          chunk_type_description = source.chunk_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          chunk_type_name, chunk_type_description, is_active
+        ) VALUES (
+          source.chunk_type_name, source.chunk_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: Pipeline
+    schema: reference
+    table: pipeline
+    dependency_order: 140
+    columns:
+      - pipeline_name
+      - pipeline_description
+      - parent_pipeline_name
+    required_columns: [pipeline_name]
+    source_key: [pipeline_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.pipeline AS target
+        USING (
+          SELECT
+            btrim(staged.pipeline_name::text) AS pipeline_name,
+            NULLIF(btrim(staged.pipeline_description::text), '') AS pipeline_description
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.pipeline_name)) = lower(source.pipeline_name)
+        WHEN MATCHED THEN UPDATE SET
+          pipeline_description = source.pipeline_description,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          pipeline_name, pipeline_description, parent_pipeline_name
+        ) VALUES (
+          source.pipeline_name, source.pipeline_description, NULL
+        );
+    deferred_statements:
+      - |
+        MERGE INTO reference.pipeline AS target
+        USING (
+          SELECT
+            btrim(staged.pipeline_name::text) AS pipeline_name,
+            CASE
+              WHEN NULLIF(btrim(staged.parent_pipeline_name::text), '') IS NULL
+                THEN NULL
+              WHEN parent.pipeline_id IS NOT NULL
+                THEN parent.pipeline_name
+              ELSE '<unresolved-parent>'
+            END AS parent_pipeline_name
+          FROM {staging_table} AS staged
+          LEFT JOIN reference.pipeline AS parent
+            ON NULLIF(btrim(staged.parent_pipeline_name::text), '') IS NOT NULL
+           AND lower(btrim(parent.pipeline_name)) = lower(btrim(staged.parent_pipeline_name::text))
+        ) AS source
+        ON lower(btrim(target.pipeline_name)) = lower(source.pipeline_name)
+        WHEN MATCHED THEN UPDATE SET
+          parent_pipeline_name = source.parent_pipeline_name,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER;
+
+  - workbook: foundational.xlsx
+    sheet: ProcessType
+    schema: reference
+    table: process_type
+    dependency_order: 150
+    columns:
+      - process_type_name
+      - process_type_description
+      - is_active
+    required_columns: [process_type_name]
+    source_key: [process_type_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.process_type AS target
+        USING (
+          SELECT
+            btrim(staged.process_type_name::text) AS process_type_name,
+            NULLIF(btrim(staged.process_type_description::text), '') AS process_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.process_type_name)) = lower(source.process_type_name)
+        WHEN MATCHED THEN UPDATE SET
+          process_type_description = source.process_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          process_type_name, process_type_description, is_active
+        ) VALUES (
+          source.process_type_name, source.process_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: Currency
+    schema: reference
+    table: currency
+    dependency_order: 160
+    columns:
+      - currency_code
+      - currency_name
+    required_columns: [currency_code, currency_name]
+    source_key: [currency_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.currency AS target
+        USING (
+          SELECT
+            btrim(staged.currency_code::text) AS currency_code,
+            btrim(staged.currency_name::text) AS currency_name
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.currency_code)) = lower(source.currency_code)
+        WHEN MATCHED THEN UPDATE SET
+          currency_name = source.currency_name,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (currency_code, currency_name)
+        VALUES (source.currency_code, source.currency_name);
+
+  - workbook: foundational.xlsx
+    sheet: JobType
+    schema: reference
+    table: job_type
+    dependency_order: 170
+    columns:
+      - job_type_name
+      - job_type_description
+      - is_active
+    required_columns: [job_type_name]
+    source_key: [job_type_name]
+    merge_statements:
+      - |
+        MERGE INTO reference.job_type AS target
+        USING (
+          SELECT
+            btrim(staged.job_type_name::text) AS job_type_name,
+            NULLIF(btrim(staged.job_type_description::text), '') AS job_type_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.job_type_name)) = lower(source.job_type_name)
+        WHEN MATCHED THEN UPDATE SET
+          job_type_description = source.job_type_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          job_type_name, job_type_description, is_active
+        ) VALUES (
+          source.job_type_name, source.job_type_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: Lane
+    schema: reference
+    table: lane
+    dependency_order: 180
+    columns:
+      - lane_code
+      - lane_name
+      - lane_description
+    required_columns: [lane_code, lane_name]
+    source_key: [lane_code]
+    merge_statements:
+      - |
+        MERGE INTO reference.lane AS target
+        USING (
+          SELECT
+            btrim(staged.lane_code::text) AS lane_code,
+            btrim(staged.lane_name::text) AS lane_name,
+            NULLIF(btrim(staged.lane_description::text), '') AS lane_description
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.lane_code)) = lower(source.lane_code)
+        WHEN MATCHED THEN UPDATE SET
+          lane_name = source.lane_name,
+          lane_description = source.lane_description,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (lane_code, lane_name, lane_description)
+        VALUES (source.lane_code, source.lane_name, source.lane_description);
+
+  - workbook: foundational.xlsx
+    sheet: Project
+    schema: core
+    table: project
+    dependency_order: 190
+    columns:
+      - project_code
+      - project_name
+      - project_description
+      - is_active
+    required_columns: [project_code, project_name]
+    source_key: [project_code]
+    merge_statements:
+      - |
+        MERGE INTO core.project AS target
+        USING (
+          SELECT
+            btrim(staged.project_code::text) AS project_code,
+            btrim(staged.project_name::text) AS project_name,
+            NULLIF(btrim(staged.project_description::text), '') AS project_description,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON lower(btrim(target.project_code)) = lower(source.project_code)
+        WHEN MATCHED THEN UPDATE SET
+          project_name = source.project_name,
+          project_description = source.project_description,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          project_code, project_name, project_description, is_active
+        ) VALUES (
+          source.project_code, source.project_name,
+          source.project_description, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: System
+    schema: core
+    table: system
+    dependency_order: 200
+    columns:
+      - system_code
+      - system_name
+      - system_description
+      - system_type_code
+      - is_active
+    required_columns: [system_code, system_name, system_type_code]
+    source_key: [system_code]
+    merge_statements:
+      - |
+        MERGE INTO core.system AS target
+        USING (
+          SELECT
+            btrim(staged.system_code::text) AS system_code,
+            btrim(staged.system_name::text) AS system_name,
+            NULLIF(btrim(staged.system_description::text), '') AS system_description,
+            system_type.system_type_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN reference.system_type AS system_type
+            ON lower(btrim(system_type.system_type_code)) =
+               lower(btrim(staged.system_type_code::text))
+        ) AS source
+        ON lower(btrim(target.system_code)) = lower(source.system_code)
+        WHEN MATCHED THEN UPDATE SET
+          system_name = source.system_name,
+          system_description = source.system_description,
+          system_type_id = source.system_type_id,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          system_code, system_name, system_description, system_type_id, is_active
+        ) VALUES (
+          source.system_code, source.system_name, source.system_description,
+          source.system_type_id, source.is_active
+        );
+
+  - workbook: foundational.xlsx
+    sheet: SystemNotebookPath
+    schema: core
+    table: system_notebook_path
+    dependency_order: 210
+    columns:
+      - system_code
+      - system_notebook_name
+      - system_notebook_path
+    required_columns: [system_code, system_notebook_name, system_notebook_path]
+    source_key: [system_code, system_notebook_name]
+    merge_statements:
+      - |
+        MERGE INTO core.system_notebook_path AS target
+        USING (
+          SELECT
+            system_record.system_id,
+            notebook.system_notebook_id,
+            staged.system_notebook_path::text AS system_notebook_path
+          FROM {staging_table} AS staged
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) =
+               lower(btrim(staged.system_code::text))
+          JOIN reference.system_notebook AS notebook
+            ON lower(btrim(notebook.system_notebook_name)) =
+               lower(btrim(staged.system_notebook_name::text))
+        ) AS source
+        ON target.system_id = source.system_id
+        AND target.system_notebook_id = source.system_notebook_id
+        WHEN MATCHED THEN UPDATE SET
+          system_notebook_path = source.system_notebook_path,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          system_id, system_notebook_id, system_notebook_path
+        ) VALUES (
+          source.system_id, source.system_notebook_id, source.system_notebook_path
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Tenant
+    schema: core
+    table: tenant
+    dependency_order: 220
+    columns:
+      - project_code
+      - tenant_code
+      - tenant_name
+      - tenant_description
+      - tenant_catalog
+      - gds_admin_catalog
+      - gds_connection_tenant_code
+      - gds_connection_system_code
+      - gds_connection_code
+      - tenant_visibility
+      - is_active
+    required_columns:
+      - project_code
+      - tenant_code
+      - tenant_name
+      - tenant_catalog
+      - gds_admin_catalog
+    source_key: [tenant_code]
+    merge_statements:
+      - |
+        MERGE INTO core.tenant AS target
+        USING (
+          SELECT
+            project.project_id,
+            btrim(staged.tenant_code::text) AS tenant_code,
+            btrim(staged.tenant_name::text) AS tenant_name,
+            NULLIF(btrim(staged.tenant_description::text), '') AS tenant_description,
+            btrim(staged.tenant_catalog::text) AS tenant_catalog,
+            btrim(staged.gds_admin_catalog::text) AS gds_admin_catalog,
+            COALESCE(NULLIF(btrim(staged.tenant_visibility::text), ''), 'private') AS tenant_visibility,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.project AS project
+            ON lower(btrim(project.project_code)) = lower(btrim(staged.project_code::text))
+        ) AS source
+        ON lower(btrim(target.tenant_code)) = lower(source.tenant_code)
+        WHEN MATCHED THEN UPDATE SET
+          project_id = source.project_id,
+          tenant_name = source.tenant_name,
+          tenant_description = source.tenant_description,
+          tenant_catalog = source.tenant_catalog,
+          gds_admin_catalog = source.gds_admin_catalog,
+          tenant_visibility = source.tenant_visibility,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          project_id, tenant_code, tenant_name, tenant_description,
+          tenant_catalog, gds_admin_catalog, tenant_visibility, is_active
+        ) VALUES (
+          source.project_id, source.tenant_code, source.tenant_name,
+          source.tenant_description, source.tenant_catalog,
+          source.gds_admin_catalog, source.tenant_visibility, source.is_active
+        );
+    deferred_statements:
+      - |
+        MERGE INTO core.tenant AS target
+        USING (
+          SELECT
+            btrim(staged.tenant_code::text) AS tenant_code,
+            CASE
+              WHEN NULLIF(btrim(staged.gds_connection_tenant_code::text), '') IS NULL
+               AND NULLIF(btrim(staged.gds_connection_system_code::text), '') IS NULL
+               AND NULLIF(btrim(staged.gds_connection_code::text), '') IS NULL
+                THEN NULL
+              WHEN connection.connection_id IS NOT NULL
+                THEN connection.connection_id
+              ELSE ('unresolved_reference_' || staged.tenant_code::text)::bigint
+            END AS gds_connection_id
+          FROM {staging_table} AS staged
+          LEFT JOIN core.tenant AS connection_tenant
+            ON NULLIF(btrim(staged.gds_connection_tenant_code::text), '') IS NOT NULL
+           AND lower(btrim(connection_tenant.tenant_code)) =
+               lower(btrim(staged.gds_connection_tenant_code::text))
+          LEFT JOIN core.system AS connection_system
+            ON NULLIF(btrim(staged.gds_connection_system_code::text), '') IS NOT NULL
+           AND lower(btrim(connection_system.system_code)) =
+               lower(btrim(staged.gds_connection_system_code::text))
+          LEFT JOIN core.connection AS connection
+            ON connection.tenant_id = connection_tenant.tenant_id
+           AND connection.system_id = connection_system.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.gds_connection_code::text))
+        ) AS source
+        ON lower(btrim(target.tenant_code)) = lower(source.tenant_code)
+        WHEN MATCHED THEN UPDATE SET
+          gds_connection_id = source.gds_connection_id,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER;
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Connection
+    schema: core
+    table: connection
+    dependency_order: 230
+    columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - connection_name
+      - connection_type_code
+      - has_foreign_catalog
+      - foreign_catalog
+      - is_global_data_store
+      - test_initial_batch_id
+      - test_incremental_batch_ids
+      - is_active
+    required_columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - connection_name
+      - connection_type_code
+    source_key: [tenant_code, system_code, connection_code]
+    merge_statements:
+      - |
+        MERGE INTO core.connection AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            system_record.system_id,
+            btrim(staged.connection_code::text) AS connection_code,
+            btrim(staged.connection_name::text) AS connection_name,
+            connection_type.connection_type_id,
+            COALESCE(NULLIF(btrim(staged.has_foreign_catalog::text), '')::boolean, FALSE) AS has_foreign_catalog,
+            NULLIF(btrim(staged.foreign_catalog::text), '') AS foreign_catalog,
+            COALESCE(NULLIF(btrim(staged.is_global_data_store::text), '')::boolean, FALSE) AS is_global_data_store,
+            NULLIF(btrim(staged.test_initial_batch_id::text), '')::bigint AS test_initial_batch_id,
+            NULLIF(btrim(staged.test_incremental_batch_ids::text), '')::bigint[] AS test_incremental_batch_ids,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN reference.connection_type AS connection_type
+            ON lower(btrim(connection_type.connection_type_code)) =
+               lower(btrim(staged.connection_type_code::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.system_id = source.system_id
+        AND lower(btrim(target.connection_code)) = lower(source.connection_code)
+        WHEN MATCHED THEN UPDATE SET
+          connection_name = source.connection_name,
+          connection_type_id = source.connection_type_id,
+          has_foreign_catalog = source.has_foreign_catalog,
+          foreign_catalog = source.foreign_catalog,
+          is_global_data_store = source.is_global_data_store,
+          test_initial_batch_id = source.test_initial_batch_id,
+          test_incremental_batch_ids = source.test_incremental_batch_ids,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, system_id, connection_code, connection_name,
+          connection_type_id, has_foreign_catalog, foreign_catalog,
+          is_global_data_store, test_initial_batch_id,
+          test_incremental_batch_ids, is_active
+        ) VALUES (
+          source.tenant_id, source.system_id, source.connection_code,
+          source.connection_name, source.connection_type_id,
+          source.has_foreign_catalog, source.foreign_catalog,
+          source.is_global_data_store, source.test_initial_batch_id,
+          source.test_incremental_batch_ids, source.is_active
+        );
+
+  # The DDL has no unique key on service_principal_application_id. These MERGEs
+  # assume it is unique for service principals; duplicates must fail preflight.
+  - workbook: users_security.xlsx
+    sheet: Principal
+    schema: security
+    table: principal
+    dependency_order: 240
+    columns:
+      - principal_type
+      - principal_display_name
+      - principal_description
+      - principal_email
+      - service_principal_application_id
+      - service_principal_type
+      - is_super_admin
+      - is_active
+    required_columns: [principal_type, principal_display_name]
+    source_key:
+      - principal_type
+      - principal_email
+      - service_principal_application_id
+    merge_statements:
+      - |
+        MERGE INTO security.principal AS target
+        USING (
+          SELECT
+            lower(btrim(staged.principal_type::text)) AS principal_type,
+            btrim(staged.principal_display_name::text) AS principal_display_name,
+            NULLIF(btrim(staged.principal_description::text), '') AS principal_description,
+            NULLIF(btrim(staged.principal_email::text), '') AS principal_email,
+            NULLIF(btrim(staged.service_principal_application_id::text), '')::uuid AS service_principal_application_id,
+            NULLIF(btrim(staged.service_principal_type::text), '') AS service_principal_type,
+            COALESCE(NULLIF(btrim(staged.is_super_admin::text), '')::boolean, FALSE) AS is_super_admin,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+        ) AS source
+        ON (
+          source.principal_type = 'user'
+          AND target.principal_type = 'user'
+          AND lower(btrim(target.principal_email)) = lower(source.principal_email)
+        ) OR (
+          source.principal_type = 'service_principal'
+          AND target.principal_type = 'service_principal'
+          AND target.service_principal_application_id = source.service_principal_application_id
+        )
+        WHEN MATCHED THEN UPDATE SET
+          principal_display_name = source.principal_display_name,
+          principal_description = source.principal_description,
+          principal_email = source.principal_email,
+          service_principal_application_id = source.service_principal_application_id,
+          service_principal_type = source.service_principal_type,
+          is_super_admin = source.is_super_admin,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          principal_type, principal_display_name, principal_description,
+          principal_email, service_principal_application_id,
+          service_principal_type, is_super_admin, is_active
+        ) VALUES (
+          source.principal_type, source.principal_display_name,
+          source.principal_description, source.principal_email,
+          source.service_principal_application_id, source.service_principal_type,
+          source.is_super_admin, source.is_active
+        );
+
+  - workbook: users_security.xlsx
+    sheet: EntraPrincipalIdentity
+    schema: security
+    table: entra_principal_identity
+    dependency_order: 250
+    columns:
+      - principal_type
+      - principal_email
+      - service_principal_application_id
+      - entra_tenant_id
+      - entra_object_id
+      - is_active
+    required_columns: [principal_type, entra_tenant_id, entra_object_id]
+    source_key: [entra_tenant_id, entra_object_id]
+    merge_statements:
+      - |
+        MERGE INTO security.entra_principal_identity AS target
+        USING (
+          SELECT
+            principal.principal_id,
+            principal.principal_type,
+            btrim(staged.entra_tenant_id::text)::uuid AS entra_tenant_id,
+            btrim(staged.entra_object_id::text)::uuid AS entra_object_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN security.principal AS principal
+            ON (
+              lower(btrim(staged.principal_type::text)) = 'user'
+              AND principal.principal_type = 'user'
+              AND lower(btrim(principal.principal_email)) =
+                  lower(btrim(staged.principal_email::text))
+            ) OR (
+              lower(btrim(staged.principal_type::text)) = 'service_principal'
+              AND principal.principal_type = 'service_principal'
+              AND principal.service_principal_application_id =
+                  NULLIF(btrim(staged.service_principal_application_id::text), '')::uuid
+            )
+        ) AS source
+        ON target.entra_tenant_id = source.entra_tenant_id
+        AND target.entra_object_id = source.entra_object_id
+        WHEN MATCHED THEN UPDATE SET
+          principal_id = source.principal_id,
+          principal_type = source.principal_type,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          principal_id, principal_type, entra_tenant_id, entra_object_id, is_active
+        ) VALUES (
+          source.principal_id, source.principal_type, source.entra_tenant_id,
+          source.entra_object_id, source.is_active
+        );
+
+  - workbook: users_security.xlsx
+    sheet: TenantPrincipalAccess
+    schema: security
+    table: tenant_principal_access
+    dependency_order: 260
+    columns:
+      - tenant_code
+      - principal_type
+      - principal_email
+      - service_principal_application_id
+      - tenant_role
+      - granted_by_principal_type
+      - granted_by_principal_email
+      - granted_by_service_principal_application_id
+      - granted_time
+      - access_expires_time
+      - is_active
+    required_columns:
+      - tenant_code
+      - principal_type
+      - tenant_role
+      - granted_by_principal_type
+    source_key:
+      - tenant_code
+      - principal_type
+      - principal_email
+      - service_principal_application_id
+    merge_statements:
+      - |
+        MERGE INTO security.tenant_principal_access AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            principal.principal_id,
+            lower(btrim(staged.tenant_role::text)) AS tenant_role,
+            grantor.principal_id AS granted_by_principal_id,
+            NULLIF(btrim(staged.granted_time::text), '')::timestamptz AS granted_time,
+            NULLIF(btrim(staged.access_expires_time::text), '')::timestamptz AS access_expires_time,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN security.principal AS principal
+            ON (
+              lower(btrim(staged.principal_type::text)) = 'user'
+              AND principal.principal_type = 'user'
+              AND lower(btrim(principal.principal_email)) =
+                  lower(btrim(staged.principal_email::text))
+            ) OR (
+              lower(btrim(staged.principal_type::text)) = 'service_principal'
+              AND principal.principal_type = 'service_principal'
+              AND principal.service_principal_application_id =
+                  NULLIF(btrim(staged.service_principal_application_id::text), '')::uuid
+            )
+          JOIN security.principal AS grantor
+            ON (
+              lower(btrim(staged.granted_by_principal_type::text)) = 'user'
+              AND grantor.principal_type = 'user'
+              AND lower(btrim(grantor.principal_email)) =
+                  lower(btrim(staged.granted_by_principal_email::text))
+            ) OR (
+              lower(btrim(staged.granted_by_principal_type::text)) = 'service_principal'
+              AND grantor.principal_type = 'service_principal'
+              AND grantor.service_principal_application_id =
+                  NULLIF(btrim(staged.granted_by_service_principal_application_id::text), '')::uuid
+            )
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.principal_id = source.principal_id
+        WHEN MATCHED THEN UPDATE SET
+          tenant_role = source.tenant_role,
+          granted_by_principal_id = source.granted_by_principal_id,
+          granted_time = COALESCE(source.granted_time, target.granted_time),
+          access_expires_time = source.access_expires_time,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, principal_id, tenant_role, granted_by_principal_id,
+          granted_time, access_expires_time, is_active
+        ) VALUES (
+          source.tenant_id, source.principal_id, source.tenant_role,
+          source.granted_by_principal_id,
+          COALESCE(source.granted_time, CURRENT_TIMESTAMP),
+          source.access_expires_time, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: TenantMetadataDiscoveryScope
+    schema: core
+    table: tenant_metadata_discovery_scope
+    dependency_order: 270
+    columns:
+      - scope_tenant_code
+      - connection_tenant_code
+      - connection_system_code
+      - connection_code
+      - zone_code
+      - object_schema
+      - is_active
+    required_columns:
+      - scope_tenant_code
+      - connection_tenant_code
+      - connection_system_code
+      - connection_code
+      - zone_code
+      - object_schema
+    source_key:
+      - scope_tenant_code
+      - connection_tenant_code
+      - connection_system_code
+      - connection_code
+      - zone_code
+      - object_schema
+    merge_statements:
+      - |
+        MERGE INTO core.tenant_metadata_discovery_scope AS target
+        USING (
+          SELECT
+            scope_tenant.tenant_id,
+            connection.connection_id AS gds_connection_id,
+            zone.zone_id,
+            btrim(staged.object_schema::text) AS object_schema,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS scope_tenant
+            ON lower(btrim(scope_tenant.tenant_code)) =
+               lower(btrim(staged.scope_tenant_code::text))
+          JOIN core.tenant AS connection_tenant
+            ON lower(btrim(connection_tenant.tenant_code)) =
+               lower(btrim(staged.connection_tenant_code::text))
+          JOIN core.system AS connection_system
+            ON lower(btrim(connection_system.system_code)) =
+               lower(btrim(staged.connection_system_code::text))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = connection_tenant.tenant_id
+           AND connection.system_id = connection_system.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.connection_code::text))
+          JOIN reference.zone AS zone
+            ON lower(btrim(zone.zone_code)) = lower(btrim(staged.zone_code::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.gds_connection_id = source.gds_connection_id
+        AND target.zone_id = source.zone_id
+        AND lower(btrim(target.object_schema)) = lower(source.object_schema)
+        WHEN MATCHED THEN UPDATE SET
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, gds_connection_id, zone_id, object_schema, is_active
+        ) VALUES (
+          source.tenant_id, source.gds_connection_id, source.zone_id,
+          source.object_schema, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: ConnectionLocation
+    schema: core
+    table: connection_location
+    dependency_order: 280
+    columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - location_type_name
+      - environment_code
+      - connection_location_storage_account
+      - connection_location_secret_reference
+      - connection_location_container
+      - connection_location_path
+    required_columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - location_type_name
+      - environment_code
+      - connection_location_storage_account
+      - connection_location_secret_reference
+      - connection_location_container
+      - connection_location_path
+    source_key:
+      - tenant_code
+      - system_code
+      - connection_code
+      - location_type_name
+      - environment_code
+    merge_statements:
+      - |
+        MERGE INTO core.connection_location AS target
+        USING (
+          SELECT
+            connection.connection_id,
+            location_type.location_type_id,
+            environment.environment_id,
+            btrim(staged.connection_location_storage_account::text) AS connection_location_storage_account,
+            staged.connection_location_secret_reference::text AS connection_location_secret_reference,
+            btrim(staged.connection_location_container::text) AS connection_location_container,
+            staged.connection_location_path::text AS connection_location_path
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = tenant.tenant_id
+           AND connection.system_id = system_record.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.connection_code::text))
+          JOIN reference.location_type AS location_type
+            ON lower(btrim(location_type.location_type_name)) =
+               lower(btrim(staged.location_type_name::text))
+          JOIN reference.environment AS environment
+            ON lower(btrim(environment.environment_code)) =
+               lower(btrim(staged.environment_code::text))
+        ) AS source
+        ON target.connection_id = source.connection_id
+        AND target.location_type_id = source.location_type_id
+        AND target.environment_id = source.environment_id
+        WHEN MATCHED THEN UPDATE SET
+          connection_location_storage_account = source.connection_location_storage_account,
+          connection_location_secret_reference = source.connection_location_secret_reference,
+          connection_location_container = source.connection_location_container,
+          connection_location_path = source.connection_location_path,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          connection_id, location_type_id, environment_id,
+          connection_location_storage_account,
+          connection_location_secret_reference,
+          connection_location_container, connection_location_path
+        ) VALUES (
+          source.connection_id, source.location_type_id, source.environment_id,
+          source.connection_location_storage_account,
+          source.connection_location_secret_reference,
+          source.connection_location_container, source.connection_location_path
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: ConnectionValue
+    schema: core
+    table: connection_value
+    dependency_order: 290
+    columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - environment_code
+      - connection_parameter_code
+      - connection_value
+    required_columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - environment_code
+      - connection_parameter_code
+    source_key:
+      - tenant_code
+      - system_code
+      - connection_code
+      - environment_code
+      - connection_parameter_code
+    merge_statements:
+      - |
+        MERGE INTO core.connection_value AS target
+        USING (
+          SELECT
+            environment.environment_id,
+            connection.connection_id,
+            parameter.connection_parameter_id,
+            NULLIF(staged.connection_value::text, '') AS connection_value
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = tenant.tenant_id
+           AND connection.system_id = system_record.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.connection_code::text))
+          JOIN reference.environment AS environment
+            ON lower(btrim(environment.environment_code)) =
+               lower(btrim(staged.environment_code::text))
+          JOIN reference.connection_parameter AS parameter
+            ON lower(btrim(parameter.connection_parameter_code)) =
+               lower(btrim(staged.connection_parameter_code::text))
+        ) AS source
+        ON target.connection_id = source.connection_id
+        AND target.environment_id = source.environment_id
+        AND target.connection_parameter_id = source.connection_parameter_id
+        WHEN MATCHED THEN UPDATE SET
+          connection_value = source.connection_value,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          environment_id, connection_id, connection_parameter_id, connection_value
+        ) VALUES (
+          source.environment_id, source.connection_id,
+          source.connection_parameter_id, source.connection_value
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Object
+    schema: core
+    table: object
+    dependency_order: 300
+    columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+      - fc_object_schema
+      - fc_object_name
+      - object_transformation
+      - object_description
+      - batch_attribute_name
+      - object_type_code
+      - zone_code
+      - is_active
+    required_columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+      - object_type_code
+      - zone_code
+    source_key:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+    merge_statements:
+      - |
+        MERGE INTO core.object AS target
+        USING (
+          SELECT
+            connection.connection_id,
+            btrim(staged.object_schema::text) AS object_schema,
+            btrim(staged.object_name::text) AS object_name,
+            NULLIF(btrim(staged.fc_object_schema::text), '') AS fc_object_schema,
+            NULLIF(btrim(staged.fc_object_name::text), '') AS fc_object_name,
+            NULLIF(staged.object_transformation::text, '') AS object_transformation,
+            NULLIF(btrim(staged.object_description::text), '') AS object_description,
+            NULLIF(btrim(staged.batch_attribute_name::text), '') AS batch_attribute_name,
+            object_type.object_type_id,
+            zone.zone_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = tenant.tenant_id
+           AND connection.system_id = system_record.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.connection_code::text))
+          JOIN reference.object_type AS object_type
+            ON lower(btrim(object_type.object_type_code)) =
+               lower(btrim(staged.object_type_code::text))
+          JOIN reference.zone AS zone
+            ON lower(btrim(zone.zone_code)) = lower(btrim(staged.zone_code::text))
+          LEFT JOIN core.object AS existing_object
+            ON existing_object.connection_id = connection.connection_id
+           AND lower(btrim(existing_object.object_schema)) =
+               lower(btrim(staged.object_schema::text))
+           AND lower(btrim(existing_object.object_name)) =
+               lower(btrim(staged.object_name::text))
+          WHERE NOT COALESCE(existing_object.is_locked, FALSE)
+        ) AS source
+        ON target.connection_id = source.connection_id
+        AND lower(btrim(target.object_schema)) = lower(source.object_schema)
+        AND lower(btrim(target.object_name)) = lower(source.object_name)
+        WHEN MATCHED THEN UPDATE SET
+          fc_object_schema = source.fc_object_schema,
+          fc_object_name = source.fc_object_name,
+          object_transformation = source.object_transformation,
+          object_description = source.object_description,
+          batch_attribute_name = source.batch_attribute_name,
+          object_type_id = source.object_type_id,
+          zone_id = source.zone_id,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          connection_id, object_schema, object_name, fc_object_schema,
+          fc_object_name, object_transformation, object_description,
+          batch_attribute_name, object_type_id, zone_id, is_active
+        ) VALUES (
+          source.connection_id, source.object_schema, source.object_name,
+          source.fc_object_schema, source.fc_object_name,
+          source.object_transformation, source.object_description,
+          source.batch_attribute_name, source.object_type_id,
+          source.zone_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Attribute
+    schema: core
+    table: attribute
+    dependency_order: 310
+    columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+      - attribute_name
+      - fc_attribute_name
+      - attribute_ordinal_position
+      - attribute_description
+      - attribute_data_type
+      - attribute_nullability
+      - attribute_custom_code
+      - business_glossary_id
+      - is_surrogate_key
+      - is_natural_key
+      - is_meta_data
+      - is_masking_required
+      - is_mapped
+      - is_purge
+      - is_active
+    required_columns:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+      - attribute_name
+      - attribute_ordinal_position
+      - attribute_data_type
+    source_key:
+      - tenant_code
+      - system_code
+      - connection_code
+      - object_schema
+      - object_name
+      - attribute_name
+    merge_statements:
+      - |
+        MERGE INTO core.attribute AS target
+        USING (
+          SELECT
+            object_record.object_id,
+            btrim(staged.attribute_name::text) AS attribute_name,
+            NULLIF(btrim(staged.fc_attribute_name::text), '') AS fc_attribute_name,
+            btrim(staged.attribute_ordinal_position::text)::integer AS attribute_ordinal_position,
+            NULLIF(btrim(staged.attribute_description::text), '') AS attribute_description,
+            btrim(staged.attribute_data_type::text) AS attribute_data_type,
+            COALESCE(NULLIF(btrim(staged.attribute_nullability::text), '')::boolean, TRUE) AS attribute_nullability,
+            NULLIF(staged.attribute_custom_code::text, '') AS attribute_custom_code,
+            NULLIF(btrim(staged.business_glossary_id::text), '')::bigint AS business_glossary_id,
+            COALESCE(NULLIF(btrim(staged.is_surrogate_key::text), '')::boolean, FALSE) AS is_surrogate_key,
+            COALESCE(NULLIF(btrim(staged.is_natural_key::text), '')::boolean, FALSE) AS is_natural_key,
+            COALESCE(NULLIF(btrim(staged.is_meta_data::text), '')::boolean, FALSE) AS is_meta_data,
+            COALESCE(NULLIF(btrim(staged.is_masking_required::text), '')::boolean, FALSE) AS is_masking_required,
+            COALESCE(NULLIF(btrim(staged.is_mapped::text), '')::boolean, FALSE) AS is_mapped,
+            COALESCE(NULLIF(btrim(staged.is_purge::text), '')::boolean, FALSE) AS is_purge,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = tenant.tenant_id
+           AND connection.system_id = system_record.system_id
+           AND lower(btrim(connection.connection_code)) =
+               lower(btrim(staged.connection_code::text))
+          JOIN core.object AS object_record
+            ON object_record.connection_id = connection.connection_id
+           AND lower(btrim(object_record.object_schema)) =
+               lower(btrim(staged.object_schema::text))
+           AND lower(btrim(object_record.object_name)) =
+               lower(btrim(staged.object_name::text))
+          WHERE NOT object_record.is_locked
+        ) AS source
+        ON target.object_id = source.object_id
+        AND lower(btrim(target.attribute_name)) = lower(source.attribute_name)
+        WHEN MATCHED THEN UPDATE SET
+          fc_attribute_name = source.fc_attribute_name,
+          attribute_ordinal_position = source.attribute_ordinal_position,
+          attribute_description = source.attribute_description,
+          attribute_data_type = source.attribute_data_type,
+          attribute_nullability = source.attribute_nullability,
+          attribute_custom_code = source.attribute_custom_code,
+          business_glossary_id = source.business_glossary_id,
+          is_surrogate_key = source.is_surrogate_key,
+          is_natural_key = source.is_natural_key,
+          is_meta_data = source.is_meta_data,
+          is_masking_required = source.is_masking_required,
+          is_mapped = source.is_mapped,
+          is_purge = source.is_purge,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          object_id, attribute_name, fc_attribute_name,
+          attribute_ordinal_position, attribute_description,
+          attribute_data_type, attribute_nullability, attribute_custom_code,
+          business_glossary_id, is_surrogate_key, is_natural_key,
+          is_meta_data, is_masking_required, is_mapped, is_purge, is_active
+        ) VALUES (
+          source.object_id, source.attribute_name, source.fc_attribute_name,
+          source.attribute_ordinal_position, source.attribute_description,
+          source.attribute_data_type, source.attribute_nullability,
+          source.attribute_custom_code, source.business_glossary_id,
+          source.is_surrogate_key, source.is_natural_key, source.is_meta_data,
+          source.is_masking_required, source.is_mapped, source.is_purge,
+          source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: IngestionObjectMapping
+    schema: core
+    table: ingestion_object_mapping
+    dependency_order: 320
+    columns:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - is_active
+    required_columns:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+    source_key:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+    merge_statements:
+      - |
+        MERGE INTO core.ingestion_object_mapping AS target
+        USING (
+          SELECT
+            source_object.object_id AS source_object_id,
+            target_object.object_id AS target_object_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS source_tenant
+            ON lower(btrim(source_tenant.tenant_code)) =
+               lower(btrim(staged.source_tenant_code::text))
+          JOIN core.system AS source_system
+            ON lower(btrim(source_system.system_code)) =
+               lower(btrim(staged.source_system_code::text))
+          JOIN core.connection AS source_connection
+            ON source_connection.tenant_id = source_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
+           AND lower(btrim(source_connection.connection_code)) =
+               lower(btrim(staged.source_connection_code::text))
+          JOIN core.object AS source_object
+            ON source_object.connection_id = source_connection.connection_id
+           AND lower(btrim(source_object.object_schema)) =
+               lower(btrim(staged.source_object_schema::text))
+           AND lower(btrim(source_object.object_name)) =
+               lower(btrim(staged.source_object_name::text))
+          JOIN core.tenant AS target_tenant
+            ON lower(btrim(target_tenant.tenant_code)) =
+               lower(btrim(staged.target_tenant_code::text))
+          JOIN core.system AS target_system
+            ON lower(btrim(target_system.system_code)) =
+               lower(btrim(staged.target_system_code::text))
+          JOIN core.connection AS target_connection
+            ON target_connection.tenant_id = target_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
+           AND lower(btrim(target_connection.connection_code)) =
+               lower(btrim(staged.target_connection_code::text))
+          JOIN core.object AS target_object
+            ON target_object.connection_id = target_connection.connection_id
+           AND lower(btrim(target_object.object_schema)) =
+               lower(btrim(staged.target_object_schema::text))
+           AND lower(btrim(target_object.object_name)) =
+               lower(btrim(staged.target_object_name::text))
+        ) AS source
+        ON target.source_object_id = source.source_object_id
+        AND target.target_object_id = source.target_object_id
+        WHEN MATCHED THEN UPDATE SET
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          source_object_id, target_object_id, is_active
+        ) VALUES (
+          source.source_object_id, source.target_object_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: IngestionAttributeMapping
+    schema: core
+    table: ingestion_attribute_mapping
+    dependency_order: 330
+    columns:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - source_attribute_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - target_attribute_name
+      - is_active
+    required_columns:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - source_attribute_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - target_attribute_name
+    source_key:
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - source_attribute_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - target_attribute_name
+    merge_statements:
+      - |
+        MERGE INTO core.ingestion_attribute_mapping AS target
+        USING (
+          SELECT
+            object_mapping.ingestion_object_mapping_id,
+            source_object.object_id AS source_object_id,
+            target_object.object_id AS target_object_id,
+            source_attribute.attribute_id AS source_attribute_id,
+            target_attribute.attribute_id AS target_attribute_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS source_tenant
+            ON lower(btrim(source_tenant.tenant_code)) =
+               lower(btrim(staged.source_tenant_code::text))
+          JOIN core.system AS source_system
+            ON lower(btrim(source_system.system_code)) =
+               lower(btrim(staged.source_system_code::text))
+          JOIN core.connection AS source_connection
+            ON source_connection.tenant_id = source_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
+           AND lower(btrim(source_connection.connection_code)) =
+               lower(btrim(staged.source_connection_code::text))
+          JOIN core.object AS source_object
+            ON source_object.connection_id = source_connection.connection_id
+           AND lower(btrim(source_object.object_schema)) =
+               lower(btrim(staged.source_object_schema::text))
+           AND lower(btrim(source_object.object_name)) =
+               lower(btrim(staged.source_object_name::text))
+          JOIN core.attribute AS source_attribute
+            ON source_attribute.object_id = source_object.object_id
+           AND lower(btrim(source_attribute.attribute_name)) =
+               lower(btrim(staged.source_attribute_name::text))
+          JOIN core.tenant AS target_tenant
+            ON lower(btrim(target_tenant.tenant_code)) =
+               lower(btrim(staged.target_tenant_code::text))
+          JOIN core.system AS target_system
+            ON lower(btrim(target_system.system_code)) =
+               lower(btrim(staged.target_system_code::text))
+          JOIN core.connection AS target_connection
+            ON target_connection.tenant_id = target_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
+           AND lower(btrim(target_connection.connection_code)) =
+               lower(btrim(staged.target_connection_code::text))
+          JOIN core.object AS target_object
+            ON target_object.connection_id = target_connection.connection_id
+           AND lower(btrim(target_object.object_schema)) =
+               lower(btrim(staged.target_object_schema::text))
+           AND lower(btrim(target_object.object_name)) =
+               lower(btrim(staged.target_object_name::text))
+          JOIN core.attribute AS target_attribute
+            ON target_attribute.object_id = target_object.object_id
+           AND lower(btrim(target_attribute.attribute_name)) =
+               lower(btrim(staged.target_attribute_name::text))
+          JOIN core.ingestion_object_mapping AS object_mapping
+            ON object_mapping.source_object_id = source_object.object_id
+           AND object_mapping.target_object_id = target_object.object_id
+        ) AS source
+        ON target.ingestion_object_mapping_id = source.ingestion_object_mapping_id
+        AND target.source_attribute_id = source.source_attribute_id
+        AND target.target_attribute_id = source.target_attribute_id
+        WHEN MATCHED THEN UPDATE SET
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          ingestion_object_mapping_id, source_object_id, target_object_id,
+          source_attribute_id, target_attribute_id, is_active
+        ) VALUES (
+          source.ingestion_object_mapping_id, source.source_object_id,
+          source.target_object_id, source.source_attribute_id,
+          source.target_attribute_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: CopyGroup
+    schema: core
+    table: copy_group
+    dependency_order: 340
+    columns:
+      - tenant_code
+      - system_code
+      - copy_group_name
+      - copy_group_description
+      - is_member_group_required
+      - is_active
+    required_columns: [tenant_code, system_code, copy_group_name]
+    source_key: [tenant_code, system_code, copy_group_name]
+    merge_statements:
+      - |
+        MERGE INTO core.copy_group AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            system_record.system_id,
+            btrim(staged.copy_group_name::text) AS copy_group_name,
+            NULLIF(btrim(staged.copy_group_description::text), '') AS copy_group_description,
+            COALESCE(NULLIF(btrim(staged.is_member_group_required::text), '')::boolean, FALSE) AS is_member_group_required,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.system_id = source.system_id
+        AND lower(btrim(target.copy_group_name)) = lower(source.copy_group_name)
+        WHEN MATCHED THEN UPDATE SET
+          copy_group_description = source.copy_group_description,
+          is_member_group_required = source.is_member_group_required,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, system_id, copy_group_name, copy_group_description,
+          is_member_group_required, is_active
+        ) VALUES (
+          source.tenant_id, source.system_id, source.copy_group_name,
+          source.copy_group_description, source.is_member_group_required,
+          source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: MemberGroup
+    schema: core
+    table: member_group
+    dependency_order: 350
+    columns:
+      - tenant_code
+      - system_code
+      - member_group_name
+      - member_group_description
+      - member_group_initial_load_date
+      - is_active
+    required_columns: [tenant_code, system_code, member_group_name]
+    source_key: [tenant_code, system_code, member_group_name]
+    merge_statements:
+      - |
+        MERGE INTO core.member_group AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            system_record.system_id,
+            btrim(staged.member_group_name::text) AS member_group_name,
+            NULLIF(btrim(staged.member_group_description::text), '') AS member_group_description,
+            NULLIF(btrim(staged.member_group_initial_load_date::text), '')::date AS member_group_initial_load_date,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.system_id = source.system_id
+        AND lower(btrim(target.member_group_name)) = lower(source.member_group_name)
+        WHEN MATCHED THEN UPDATE SET
+          member_group_description = source.member_group_description,
+          member_group_initial_load_date = source.member_group_initial_load_date,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, system_id, member_group_name, member_group_description,
+          member_group_initial_load_date, is_active
+        ) VALUES (
+          source.tenant_id, source.system_id, source.member_group_name,
+          source.member_group_description, source.member_group_initial_load_date,
+          source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: CopyGroupControl
+    schema: core
+    table: copy_group_control
+    dependency_order: 360
+    columns:
+      - tenant_code
+      - system_code
+      - copy_group_name
+      - member_group_name
+      - copy_group_control_initial_load_date
+      - copy_group_control_last_run_time
+      - copy_group_control_last_run_value
+    required_columns: [tenant_code, system_code, copy_group_name]
+    source_key: [tenant_code, system_code, copy_group_name, member_group_name]
+    merge_statements:
+      - |
+        MERGE INTO core.copy_group_control AS target
+        USING (
+          SELECT
+            copy_group.copy_group_id,
+            member_group.member_group_id,
+            tenant.tenant_id,
+            system_record.system_id,
+            NULLIF(btrim(staged.copy_group_control_initial_load_date::text), '')::date AS copy_group_control_initial_load_date,
+            NULLIF(btrim(staged.copy_group_control_last_run_time::text), '')::timestamptz AS copy_group_control_last_run_time,
+            NULLIF(staged.copy_group_control_last_run_value::text, '') AS copy_group_control_last_run_value
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.copy_group AS copy_group
+            ON copy_group.tenant_id = tenant.tenant_id
+           AND copy_group.system_id = system_record.system_id
+           AND lower(btrim(copy_group.copy_group_name)) =
+               lower(btrim(staged.copy_group_name::text))
+          LEFT JOIN core.member_group AS member_group
+            ON NULLIF(btrim(staged.member_group_name::text), '') IS NOT NULL
+           AND member_group.tenant_id = tenant.tenant_id
+           AND member_group.system_id = system_record.system_id
+           AND lower(btrim(member_group.member_group_name)) =
+               lower(btrim(staged.member_group_name::text))
+          WHERE NULLIF(btrim(staged.member_group_name::text), '') IS NULL
+             OR member_group.member_group_id IS NOT NULL
+        ) AS source
+        ON target.copy_group_id = source.copy_group_id
+        AND target.member_group_id IS NOT DISTINCT FROM source.member_group_id
+        WHEN MATCHED THEN UPDATE SET
+          tenant_id = source.tenant_id,
+          system_id = source.system_id,
+          copy_group_control_initial_load_date = source.copy_group_control_initial_load_date,
+          copy_group_control_last_run_time = source.copy_group_control_last_run_time,
+          copy_group_control_last_run_value = source.copy_group_control_last_run_value,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          copy_group_id, member_group_id, tenant_id, system_id,
+          copy_group_control_initial_load_date,
+          copy_group_control_last_run_time, copy_group_control_last_run_value
+        ) VALUES (
+          source.copy_group_id, source.member_group_id, source.tenant_id,
+          source.system_id, source.copy_group_control_initial_load_date,
+          source.copy_group_control_last_run_time,
+          source.copy_group_control_last_run_value
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Copy
+    schema: core
+    table: copy
+    dependency_order: 370
+    columns:
+      - tenant_code
+      - system_code
+      - copy_group_name
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - copy_source_record_limit
+      - copy_source_record_limit_attribute
+      - chunk_type_name
+      - copy_source_initial_sql_script
+      - copy_source_incremental_sql_script
+      - copy_source_file_name
+      - copy_source_file_pattern
+      - copy_source_file_delimiter
+      - source_file_type_name
+      - copy_source_order
+      - source_data_operation_name
+      - target_data_operation_name
+      - is_active
+    required_columns:
+      - tenant_code
+      - system_code
+      - copy_group_name
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+      - copy_source_order
+      - source_data_operation_name
+      - target_data_operation_name
+    source_key:
+      - tenant_code
+      - system_code
+      - copy_group_name
+      - source_tenant_code
+      - source_system_code
+      - source_connection_code
+      - source_object_schema
+      - source_object_name
+      - target_tenant_code
+      - target_system_code
+      - target_connection_code
+      - target_object_schema
+      - target_object_name
+    merge_statements:
+      - |
+        MERGE INTO core.copy AS target
+        USING (
+          SELECT
+            copy_group.copy_group_id,
+            object_mapping.ingestion_object_mapping_id,
+            NULLIF(btrim(staged.copy_source_record_limit::text), '')::bigint AS copy_source_record_limit,
+            NULLIF(btrim(staged.copy_source_record_limit_attribute::text), '') AS copy_source_record_limit_attribute,
+            chunk_type.chunk_type_id,
+            NULLIF(staged.copy_source_initial_sql_script::text, '') AS copy_source_initial_sql_script,
+            NULLIF(staged.copy_source_incremental_sql_script::text, '') AS copy_source_incremental_sql_script,
+            NULLIF(staged.copy_source_file_name::text, '') AS copy_source_file_name,
+            NULLIF(staged.copy_source_file_pattern::text, '') AS copy_source_file_pattern,
+            NULLIF(staged.copy_source_file_delimiter::text, '') AS copy_source_file_delimiter,
+            file_type.file_type_id AS source_file_type_id,
+            btrim(staged.copy_source_order::text)::integer AS copy_source_order,
+            source_operation.data_operation_id AS source_data_operation_id,
+            target_operation.data_operation_id AS target_data_operation_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS copy_tenant
+            ON lower(btrim(copy_tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS copy_system
+            ON lower(btrim(copy_system.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN core.copy_group AS copy_group
+            ON copy_group.tenant_id = copy_tenant.tenant_id
+           AND copy_group.system_id = copy_system.system_id
+           AND lower(btrim(copy_group.copy_group_name)) =
+               lower(btrim(staged.copy_group_name::text))
+          JOIN core.tenant AS source_tenant
+            ON lower(btrim(source_tenant.tenant_code)) =
+               lower(btrim(staged.source_tenant_code::text))
+          JOIN core.system AS source_system
+            ON lower(btrim(source_system.system_code)) =
+               lower(btrim(staged.source_system_code::text))
+          JOIN core.connection AS source_connection
+            ON source_connection.tenant_id = source_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
+           AND lower(btrim(source_connection.connection_code)) =
+               lower(btrim(staged.source_connection_code::text))
+          JOIN core.object AS source_object
+            ON source_object.connection_id = source_connection.connection_id
+           AND lower(btrim(source_object.object_schema)) =
+               lower(btrim(staged.source_object_schema::text))
+           AND lower(btrim(source_object.object_name)) =
+               lower(btrim(staged.source_object_name::text))
+          JOIN core.tenant AS target_tenant
+            ON lower(btrim(target_tenant.tenant_code)) =
+               lower(btrim(staged.target_tenant_code::text))
+          JOIN core.system AS target_system
+            ON lower(btrim(target_system.system_code)) =
+               lower(btrim(staged.target_system_code::text))
+          JOIN core.connection AS target_connection
+            ON target_connection.tenant_id = target_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
+           AND lower(btrim(target_connection.connection_code)) =
+               lower(btrim(staged.target_connection_code::text))
+          JOIN core.object AS target_object
+            ON target_object.connection_id = target_connection.connection_id
+           AND lower(btrim(target_object.object_schema)) =
+               lower(btrim(staged.target_object_schema::text))
+           AND lower(btrim(target_object.object_name)) =
+               lower(btrim(staged.target_object_name::text))
+          JOIN core.ingestion_object_mapping AS object_mapping
+            ON object_mapping.source_object_id = source_object.object_id
+           AND object_mapping.target_object_id = target_object.object_id
+          LEFT JOIN reference.chunk_type AS chunk_type
+            ON NULLIF(btrim(staged.chunk_type_name::text), '') IS NOT NULL
+           AND lower(btrim(chunk_type.chunk_type_name)) =
+               lower(btrim(staged.chunk_type_name::text))
+          LEFT JOIN reference.file_type AS file_type
+            ON NULLIF(btrim(staged.source_file_type_name::text), '') IS NOT NULL
+           AND lower(btrim(file_type.file_type_name)) =
+               lower(btrim(staged.source_file_type_name::text))
+          JOIN reference.data_operation AS source_operation
+            ON lower(btrim(source_operation.data_operation_name)) =
+               lower(btrim(staged.source_data_operation_name::text))
+          JOIN reference.data_operation AS target_operation
+            ON lower(btrim(target_operation.data_operation_name)) =
+               lower(btrim(staged.target_data_operation_name::text))
+          WHERE (
+            NULLIF(btrim(staged.chunk_type_name::text), '') IS NULL
+            OR chunk_type.chunk_type_id IS NOT NULL
+          ) AND (
+            NULLIF(btrim(staged.source_file_type_name::text), '') IS NULL
+            OR file_type.file_type_id IS NOT NULL
+          )
+        ) AS source
+        ON target.copy_group_id = source.copy_group_id
+        AND target.ingestion_object_mapping_id = source.ingestion_object_mapping_id
+        WHEN MATCHED THEN UPDATE SET
+          copy_source_record_limit = source.copy_source_record_limit,
+          copy_source_record_limit_attribute = source.copy_source_record_limit_attribute,
+          chunk_type_id = source.chunk_type_id,
+          copy_source_initial_sql_script = source.copy_source_initial_sql_script,
+          copy_source_incremental_sql_script = source.copy_source_incremental_sql_script,
+          copy_source_file_name = source.copy_source_file_name,
+          copy_source_file_pattern = source.copy_source_file_pattern,
+          copy_source_file_delimiter = source.copy_source_file_delimiter,
+          source_file_type_id = source.source_file_type_id,
+          copy_source_order = source.copy_source_order,
+          source_data_operation_id = source.source_data_operation_id,
+          target_data_operation_id = source.target_data_operation_id,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          copy_group_id, ingestion_object_mapping_id,
+          copy_source_record_limit, copy_source_record_limit_attribute,
+          chunk_type_id, copy_source_initial_sql_script,
+          copy_source_incremental_sql_script, copy_source_file_name,
+          copy_source_file_pattern, copy_source_file_delimiter,
+          source_file_type_id, copy_source_order, source_data_operation_id,
+          target_data_operation_id, is_active
+        ) VALUES (
+          source.copy_group_id, source.ingestion_object_mapping_id,
+          source.copy_source_record_limit,
+          source.copy_source_record_limit_attribute, source.chunk_type_id,
+          source.copy_source_initial_sql_script,
+          source.copy_source_incremental_sql_script,
+          source.copy_source_file_name, source.copy_source_file_pattern,
+          source.copy_source_file_delimiter, source.source_file_type_id,
+          source.copy_source_order, source.source_data_operation_id,
+          source.target_data_operation_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: ProcessGroup
+    schema: core
+    table: process_group
+    dependency_order: 380
+    columns:
+      - tenant_code
+      - system_code
+      - zone_code
+      - process_group_name
+      - process_group_description
+      - copy_group_name
+      - is_active
+    required_columns:
+      - tenant_code
+      - system_code
+      - zone_code
+      - process_group_name
+      - copy_group_name
+    source_key: [tenant_code, system_code, zone_code, process_group_name]
+    merge_statements:
+      - |
+        MERGE INTO core.process_group AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            system_record.system_id,
+            zone.zone_id,
+            btrim(staged.process_group_name::text) AS process_group_name,
+            NULLIF(btrim(staged.process_group_description::text), '') AS process_group_description,
+            copy_group.copy_group_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.system AS system_record
+            ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
+          JOIN reference.zone AS zone
+            ON lower(btrim(zone.zone_code)) = lower(btrim(staged.zone_code::text))
+          JOIN core.copy_group AS copy_group
+            ON copy_group.tenant_id = tenant.tenant_id
+           AND copy_group.system_id = system_record.system_id
+           AND lower(btrim(copy_group.copy_group_name)) =
+               lower(btrim(staged.copy_group_name::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND target.system_id = source.system_id
+        AND target.zone_id = source.zone_id
+        AND lower(btrim(target.process_group_name)) = lower(source.process_group_name)
+        WHEN MATCHED THEN UPDATE SET
+          process_group_description = source.process_group_description,
+          copy_group_id = source.copy_group_id,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, system_id, zone_id, process_group_name,
+          process_group_description, copy_group_id, is_active
+        ) VALUES (
+          source.tenant_id, source.system_id, source.zone_id,
+          source.process_group_name, source.process_group_description,
+          source.copy_group_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Process
+    schema: core
+    table: process
+    dependency_order: 390
+    columns:
+      - process_group_tenant_code
+      - process_group_system_code
+      - process_group_zone_code
+      - process_group_name
+      - object_tenant_code
+      - object_system_code
+      - object_connection_code
+      - object_schema
+      - object_name
+      - process_execution_order
+      - process_location
+      - process_executable
+      - process_type_name
+      - is_active
+    required_columns:
+      - process_group_tenant_code
+      - process_group_system_code
+      - process_group_zone_code
+      - process_group_name
+      - object_tenant_code
+      - object_system_code
+      - object_connection_code
+      - object_schema
+      - object_name
+      - process_execution_order
+      - process_location
+      - process_executable
+      - process_type_name
+    source_key:
+      - process_group_tenant_code
+      - process_group_system_code
+      - process_group_zone_code
+      - process_group_name
+      - process_execution_order
+      - process_location
+      - process_executable
+    case_sensitive_key_columns:
+      - process_location
+      - process_executable
+    merge_statements:
+      - |
+        MERGE INTO core.process AS target
+        USING (
+          SELECT
+            object_connection.connection_id,
+            object_record.object_id,
+            btrim(staged.process_execution_order::text)::integer AS process_execution_order,
+            staged.process_location::text AS process_location,
+            staged.process_executable::text AS process_executable,
+            process_type.process_type_id,
+            process_group.process_group_id,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS group_tenant
+            ON lower(btrim(group_tenant.tenant_code)) =
+               lower(btrim(staged.process_group_tenant_code::text))
+          JOIN core.system AS group_system
+            ON lower(btrim(group_system.system_code)) =
+               lower(btrim(staged.process_group_system_code::text))
+          JOIN reference.zone AS group_zone
+            ON lower(btrim(group_zone.zone_code)) =
+               lower(btrim(staged.process_group_zone_code::text))
+          JOIN core.process_group AS process_group
+            ON process_group.tenant_id = group_tenant.tenant_id
+           AND process_group.system_id = group_system.system_id
+           AND process_group.zone_id = group_zone.zone_id
+           AND lower(btrim(process_group.process_group_name)) =
+               lower(btrim(staged.process_group_name::text))
+          JOIN core.tenant AS object_tenant
+            ON lower(btrim(object_tenant.tenant_code)) =
+               lower(btrim(staged.object_tenant_code::text))
+          JOIN core.system AS object_system
+            ON lower(btrim(object_system.system_code)) =
+               lower(btrim(staged.object_system_code::text))
+          JOIN core.connection AS object_connection
+            ON object_connection.tenant_id = object_tenant.tenant_id
+           AND object_connection.system_id = object_system.system_id
+           AND lower(btrim(object_connection.connection_code)) =
+               lower(btrim(staged.object_connection_code::text))
+          JOIN core.object AS object_record
+            ON object_record.connection_id = object_connection.connection_id
+           AND lower(btrim(object_record.object_schema)) =
+               lower(btrim(staged.object_schema::text))
+           AND lower(btrim(object_record.object_name)) =
+               lower(btrim(staged.object_name::text))
+          JOIN reference.process_type AS process_type
+            ON lower(btrim(process_type.process_type_name)) =
+               lower(btrim(staged.process_type_name::text))
+        ) AS source
+        ON target.process_group_id = source.process_group_id
+        AND target.process_execution_order = source.process_execution_order
+        AND target.process_location = source.process_location
+        AND target.process_executable = source.process_executable
+        WHEN MATCHED THEN UPDATE SET
+          connection_id = source.connection_id,
+          object_id = source.object_id,
+          process_type_id = source.process_type_id,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          connection_id, object_id, process_execution_order, process_location,
+          process_executable, process_type_id, process_group_id, is_active
+        ) VALUES (
+          source.connection_id, source.object_id, source.process_execution_order,
+          source.process_location, source.process_executable,
+          source.process_type_id, source.process_group_id, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: Model
+    schema: model
+    table: model
+    dependency_order: 400
+    columns:
+      - tenant_code
+      - model_name
+      - model_description
+      - silver_model_naming_template
+      - silver_model_audit_columns_template
+      - gold_model_naming_template
+      - gold_model_technical_columns_template
+      - gold_model_audit_columns_template
+      - is_active
+    required_columns: [tenant_code, model_name]
+    source_key: [tenant_code, model_name]
+    merge_statements:
+      - |
+        MERGE INTO model.model AS target
+        USING (
+          SELECT
+            tenant.tenant_id,
+            btrim(staged.model_name::text) AS model_name,
+            NULLIF(btrim(staged.model_description::text), '') AS model_description,
+            NULLIF(btrim(staged.silver_model_naming_template::text), '')::jsonb AS silver_model_naming_template,
+            NULLIF(btrim(staged.silver_model_audit_columns_template::text), '')::jsonb AS silver_model_audit_columns_template,
+            NULLIF(btrim(staged.gold_model_naming_template::text), '')::jsonb AS gold_model_naming_template,
+            NULLIF(btrim(staged.gold_model_technical_columns_template::text), '')::jsonb AS gold_model_technical_columns_template,
+            NULLIF(btrim(staged.gold_model_audit_columns_template::text), '')::jsonb AS gold_model_audit_columns_template,
+            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS tenant
+            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+        ) AS source
+        ON target.tenant_id = source.tenant_id
+        AND lower(btrim(target.model_name)) = lower(source.model_name)
+        WHEN MATCHED THEN UPDATE SET
+          model_description = source.model_description,
+          silver_model_naming_template = source.silver_model_naming_template,
+          silver_model_audit_columns_template = source.silver_model_audit_columns_template,
+          gold_model_naming_template = source.gold_model_naming_template,
+          gold_model_technical_columns_template = source.gold_model_technical_columns_template,
+          gold_model_audit_columns_template = source.gold_model_audit_columns_template,
+          is_active = source.is_active,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (
+          tenant_id, model_name, model_description,
+          silver_model_naming_template, silver_model_audit_columns_template,
+          gold_model_naming_template, gold_model_technical_columns_template,
+          gold_model_audit_columns_template, is_active
+        ) VALUES (
+          source.tenant_id, source.model_name, source.model_description,
+          source.silver_model_naming_template,
+          source.silver_model_audit_columns_template,
+          source.gold_model_naming_template,
+          source.gold_model_technical_columns_template,
+          source.gold_model_audit_columns_template, source.is_active
+        );
+
+  - workbook: tenant_modeling.xlsx
+    sheet: ModelScope
+    schema: model
+    table: model_scope
+    dependency_order: 410
+    columns:
+      - model_tenant_code
+      - model_name
+      - object_tenant_code
+      - object_system_code
+      - object_connection_code
+      - object_schema
+      - object_name
+    required_columns:
+      - model_tenant_code
+      - model_name
+      - object_tenant_code
+      - object_system_code
+      - object_connection_code
+      - object_schema
+      - object_name
+    source_key:
+      - model_tenant_code
+      - model_name
+      - object_tenant_code
+      - object_system_code
+      - object_connection_code
+      - object_schema
+      - object_name
+    merge_statements:
+      - |
+        MERGE INTO model.model_scope AS target
+        USING (
+          SELECT
+            model_record.model_id,
+            object_record.object_id
+          FROM {staging_table} AS staged
+          JOIN core.tenant AS model_tenant
+            ON lower(btrim(model_tenant.tenant_code)) =
+               lower(btrim(staged.model_tenant_code::text))
+           AND model_tenant.is_active
+          JOIN model.model AS model_record
+            ON model_record.tenant_id = model_tenant.tenant_id
+           AND lower(btrim(model_record.model_name)) =
+               lower(btrim(staged.model_name::text))
+           AND model_record.is_active
+          JOIN core.tenant AS object_tenant
+            ON lower(btrim(object_tenant.tenant_code)) =
+               lower(btrim(staged.object_tenant_code::text))
+           AND object_tenant.is_active
+          JOIN core.system AS object_system
+            ON lower(btrim(object_system.system_code)) =
+               lower(btrim(staged.object_system_code::text))
+           AND object_system.is_active
+          JOIN core.connection AS object_connection
+            ON object_connection.tenant_id = object_tenant.tenant_id
+           AND object_connection.system_id = object_system.system_id
+           AND lower(btrim(object_connection.connection_code)) =
+               lower(btrim(staged.object_connection_code::text))
+           AND object_connection.is_active
+          JOIN core.object AS object_record
+            ON object_record.connection_id = object_connection.connection_id
+           AND lower(btrim(object_record.object_schema)) =
+               lower(btrim(staged.object_schema::text))
+           AND lower(btrim(object_record.object_name)) =
+               lower(btrim(staged.object_name::text))
+           AND object_record.is_active
+        ) AS source
+        ON target.model_id = source.model_id
+        AND target.object_id = source.object_id
+        WHEN MATCHED THEN UPDATE SET
+          is_active = TRUE,
+          updated_time = CURRENT_TIMESTAMP,
+          updated_by = CURRENT_USER
+        WHEN NOT MATCHED THEN INSERT (model_id, object_id)
+        VALUES (source.model_id, source.object_id);

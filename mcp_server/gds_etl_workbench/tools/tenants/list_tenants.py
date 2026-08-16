@@ -185,6 +185,7 @@ def register_list_tenants_tool(
         _COLLECTION,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
+        retain_arguments={"schema_version", "page_size"},
     )
 
 

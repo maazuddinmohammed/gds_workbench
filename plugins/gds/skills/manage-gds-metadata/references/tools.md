@@ -16,8 +16,8 @@ invent record fields. Unless noted, `schema_version` is optional and defaults to
   `apply_metadata_change_set` or `override_tenant_lock`. Validation is not approval.
 - `override_tenant_lock` only releases another Principal's lock. It never acquires a
   replacement. Check again and acquire normally before continuing.
-- Treat opaque cursors and UUIDs as values, not SQL. Never send SQL; these tools expose
-  fixed governed operations only.
+- Treat opaque cursors and UUIDs as values. Send SQL only to
+  `execute_databricks_sql`; every other tool exposes a fixed governed operation.
 
 ## Read and discover
 
@@ -39,6 +39,25 @@ active Source/Bronze/Silver/Gold Object counts.
 `connections_truncated`.
 **Safe/error:** If truncated, use the narrower catalog tools; do not assume omitted
 Connections are absent. Stop on `tenant_not_found` or `authorization_denied`.
+
+### `get_model`
+
+**Purpose:** Read active Model headers and naming/audit policy templates for one Tenant.
+**Inputs:** `tenant_id`.
+**Returns:** Up to 200 Models with IDs, names, descriptions, revisions, policy templates,
+and Model Scope Object counts, plus the complete count and a truncation flag.
+**Safe/error:** If truncated, report that the result is incomplete. Created/updated audit
+fields are intentionally omitted.
+
+### `get_model_scope`
+
+**Purpose:** Read active physical Objects currently included in one Model Scope.
+**Inputs:** `model_id` returned by `get_model`.
+**Returns:** Up to 2,000 Scope Objects with Model Scope/Object IDs plus expanded Tenant,
+System, Connection, Object Type, Zone, lock state, and physical names.
+**Safe/error:** Only active Scope and catalog records are returned. If truncated, report
+that the result is incomplete. Use Model Change Sets for add/reactivate/archive; there
+is no direct Model Scope mutation tool.
 
 ### `list_objects`
 
@@ -121,6 +140,33 @@ lookup/row files and open schemas on demand; never load the whole ZIP into chat.
 new Snapshot if the URL expires. Stop on `payload_too_large` or
 `dependency_unavailable`; do not weaken bounds.
 
+### `execute_databricks_sql`
+
+**Purpose:** Run governed analysis SQL on the Databricks SQL Warehouse selected
+by an active global Connection.
+**Inputs:** Positive `connection_id`; `sql` containing 1-25 semicolon-separated
+statements and at most 100,000 characters.
+**Returns:** Columns and at most 50 rows from only the final statement, plus
+statement count and row/cell truncation flags.
+**Safe/error:** Use reads or unqualified `CREATE [OR REPLACE] TEMP VIEW/TABLE`
+only. Never send INSERT, UPDATE, DELETE, MERGE, COPY, persistent DDL, secrets, or
+connection values. The complete submitted SQL is retained in the append-only
+tool-call audit log, so never place credentials in SQL. Secret-returning SQL
+functions are rejected. Statements share one session and run in order; a failure
+stops the batch. Do not claim rollback of earlier temporary DDL. Report safe
+connection/configuration/statement error codes without seeking credentials or
+exposing raw connector details.
+
+### `describe_metadata_dataset`
+
+**Purpose:** Read the current contract for one Snapshot dataset without reading rows.
+**Inputs:** Exact dataset name from `catalog.json`.
+**Returns:** Section, Change Set eligibility, natural key, references, dependencies, and
+the exact JSON Schema generated from the same server contract used by Snapshot creation
+and Stage validation.
+**Safe/error:** Call it only for a dataset you need to edit when its extracted Snapshot
+schema is unavailable or uncertain. Do not request all dataset schemas preemptively.
+
 ## Tenant Lock
 
 ### `check_tenant_lock`
@@ -178,9 +224,10 @@ ingestion_object_mapping, ingestion_attribute_mapping, copy_group,
 member_group, copy_group_control, copy, process_group, process
 ```
 
-Use complete ID-free records from the Snapshot and the current
-`stage_metadata_change_set` input schema. Reference relationships by natural keys, never
-database IDs.
+Use complete ID-free records from the extracted Snapshot schema or
+`describe_metadata_dataset`. The Stage input stays intentionally generic to keep the MCP
+tool list small; the server still validates every record against that exact contract.
+Reference relationships by natural keys, never database IDs.
 
 ### `create_metadata_change_set`
 
@@ -194,16 +241,19 @@ blindly.
 
 ### `stage_metadata_change_set`
 
-**Purpose:** Replace one complete pending dataset list in the Change Set.
+**Purpose:** Atomically replace one to 16 complete pending dataset lists in the
+Change Set.
 **Inputs:** `tenant_id`, `metadata_change_set_id`, latest positive
-`expected_draft_revision`, and `change={"dataset": <name>, "records": [...]}`. Maximum
-50,000 full records and 16 MiB serialized per dataset.
-**Returns:** Dataset name, record count, incremented `draft_revision`, `active` status,
-and expiry.
-**Safe/error:** This is replacement, not append or patch. Keep the complete candidate
-list locally and restage it after each edit. An empty list clears that pending dataset; it
-does not delete applied metadata. Use full records with `is_active=false` for lifecycle
-changes. On `draft_revision_conflict`, get the Change Set and reconcile before retrying.
+`expected_draft_revision`, and `changes=[{"dataset": <name>, "records": [...]}, ...]`
+with one to 16 unique dataset names. Maximum 50,000 full records per entry and
+16 MiB serialized for the call.
+**Returns:** Every supplied dataset/count, one incremented `draft_revision`, `active`
+status, and expiry.
+**Safe/error:** Use one entry for one dataset and one atomic call for multiple approved
+datasets. Each entry is replacement, not append or patch. Keep each complete candidate
+list locally. An empty list clears only that pending dataset; it does not delete applied
+metadata. Use full records with `is_active=false` for lifecycle changes. On
+`draft_revision_conflict`, get the Change Set and reconcile before retrying.
 
 ### `get_metadata_change_set`
 
@@ -222,7 +272,9 @@ scope, natural keys, uniqueness, references, and Object locks.
 **Inputs:** `tenant_id`, `metadata_change_set_id`, latest positive
 `expected_draft_revision`.
 **Returns:** `valid`, validation phase, `active|validated` status, revision, candidate
-digest when valid, staged count, bounded structured errors, validation time, and expiry.
+digest when valid, staged count, bounded structured errors, validation time, expiry, and
+authoritative `action_review` when validation completes. Review entries contain complete
+action counts, up to 100 natural keys across the response, and `keys_truncated`.
 **Safe/error:** `valid=false` is a normal result and writes no effective metadata. Fix the
 reported phase locally, restage complete affected lists, use the new revision, and validate
 again. On `object_locked`, do not alter that Object or its Attributes. On revision conflict,
@@ -235,7 +287,7 @@ keys to PostgreSQL IDs.
 **Inputs:** `tenant_id`, `metadata_change_set_id`, latest positive
 `expected_draft_revision`.
 **Returns:** `valid`, `applied`, phase, `active|applied` status, digest, staged/action/error
-counts, structured errors, and applied time.
+counts, structured errors, revalidated `action_review`, and applied time.
 **Safe/error:** First show the user the validated revision, digest, dataset counts, and
 planned effect; obtain explicit approval immediately before calling. Apply revalidates in
 the same transaction. If invalid, it returns `applied=false` and performs no effective
@@ -262,3 +314,7 @@ an applied Change Set.
   apply then needs fresh explicit approval.
 - `dependency_unavailable` / `internal_error`: report the safe code, preserve local work,
   and retry only when the dependency/server is healthy. Never expose raw exception output.
+- `databricks_connection_*`: confirm the selected global Connection or ask an
+  administrator to correct its stored values; never request those values.
+- `databricks_statement_failed`: report the returned statement index and correct
+  only the SQL. Never expose or infer credentials.

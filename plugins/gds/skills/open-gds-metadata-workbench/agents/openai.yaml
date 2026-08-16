@@ -1,0 +1,4 @@
+interface:
+  display_name: "Open GDS Metadata Workbench"
+  short_description: "Open the local GDS metadata table editor"
+  default_prompt: "Use $open-gds-metadata-workbench to open the local GDS Metadata Workbench."

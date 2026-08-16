@@ -19,13 +19,15 @@ from gds_etl_workbench.configuration import (
     RuntimeSettings,
 )
 from gds_etl_workbench.infrastructure.postgres import Database, PostgresDatabase
-from gds_etl_workbench.tools.snapshots.metadata.storage import MetadataSnapshotStore
+from gds_etl_workbench.tools.databricks.executor import DatabricksSqlExecutor
+from gds_etl_workbench.tools.snapshots.storage import SnapshotStore
 
 
 def create_application(
     settings: RuntimeSettings,
     database: Database | None = None,
-    metadata_snapshot_store: MetadataSnapshotStore | None = None,
+    snapshot_store: SnapshotStore | None = None,
+    databricks_executor: DatabricksSqlExecutor | None = None,
 ) -> Starlette:
     runtime_database = database or PostgresDatabase(
         dsn=settings.database_dsn,
@@ -40,7 +42,8 @@ def create_application(
         settings,
         runtime_database,
         identity_provider,
-        metadata_snapshot_store,
+        snapshot_store,
+        databricks_executor,
     )
     transport_security = TransportSecuritySettings(
         allowed_hosts=list(settings.allowed_hosts),

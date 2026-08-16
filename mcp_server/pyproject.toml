@@ -4,11 +4,13 @@ version = "0.1.0"
 description = "GDS ETL Workbench MCP App Service"
 requires-python = ">=3.12,<3.13"
 dependencies = [
+    "databricks-sql-connector==4.4.0",
     "gunicorn==26.0.0",
     "mcp==2.0.0",
     "psycopg[binary]==3.3.4",
     "psycopg-pool==3.3.1",
     "pydantic==2.13.4",
+    "sqlglot==30.13.0",
     "uvicorn==0.51.0",
     "uvicorn-worker==0.4.0",
     "aiohttp==3.14.3",

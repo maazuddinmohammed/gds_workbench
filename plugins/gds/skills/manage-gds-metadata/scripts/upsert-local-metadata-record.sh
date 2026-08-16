@@ -12,9 +12,11 @@ fail() {
 change_set_input=''
 dataset_name=''
 record_input=''
+key_input=''
+changes_input=''
 while [ "$#" -gt 0 ]; do
     case "$1" in
-        --change-set|--dataset|--record-file)
+        --change-set|--dataset|--record-file|--key-file|--changes-file)
             [ "$#" -ge 2 ] || fail "Missing value for $1."
             option=$1
             value=$2
@@ -23,6 +25,8 @@ while [ "$#" -gt 0 ]; do
                 --change-set) change_set_input=$value ;;
                 --dataset) dataset_name=$value ;;
                 --record-file) record_input=$value ;;
+                --key-file) key_input=$value ;;
+                --changes-file) changes_input=$value ;;
             esac
             ;;
         *) fail "Unknown option: $1." ;;
@@ -30,7 +34,13 @@ while [ "$#" -gt 0 ]; do
 done
 
 [ -n "$change_set_input" ] || fail 'Local Change Set path is required.'
-[ -n "$record_input" ] || fail 'One full-record JSON file is required.'
+if [ -n "$record_input" ]; then
+    [ -z "$key_input" ] && [ -z "$changes_input" ] || fail 'Choose full-record or field-edit mode, not both.'
+    edit_mode=false
+else
+    [ -n "$key_input" ] && [ -n "$changes_input" ] || fail 'Field-edit mode requires key and changes JSON files.'
+    edit_mode=true
+fi
 case "$dataset_name" in
     source_object|source_attribute|bronze_object|bronze_attribute|silver_object|silver_attribute|gold_object|gold_attribute|ingestion_object_mapping|ingestion_attribute_mapping|copy_group|member_group|copy_group_control|copy|process_group|process) ;;
     *) fail 'Dataset is not Change Set eligible.' ;;
@@ -49,7 +59,7 @@ esac
 [ "$(basename "$change_set_candidate")" = 'change-set' ] || fail 'Local directory must be named change-set.'
 [ -d "$change_set_candidate" ] && [ ! -L "$change_set_candidate" ] || fail 'Local change-set is missing or unsafe.'
 workspace=$(cd "$(dirname "$change_set_candidate")" && pwd -P)
-[ "$(basename "$workspace")" = 'gds-workspace' ] || fail 'Local change-set must be directly under gds-workspace.'
+[ "$(basename "$workspace")" = 'GDS' ] || fail 'Local change-set must be directly under GDS.'
 change_set=$workspace/change-set
 state=$change_set/change-set.json
 datasets=$change_set/datasets
@@ -72,25 +82,40 @@ manifest_snapshot=$(plutil -extract snapshot_id raw "$manifest" 2>/dev/null) || 
 [ "$manifest_tenant" = "$tenant_code" ] || fail 'Snapshot Tenant does not match local Change Set.'
 [ "$manifest_snapshot" = "$snapshot_id" ] || fail 'Snapshot ID does not match local Change Set.'
 
-case "$record_input" in
-    /*) record_file=$record_input ;;
-    *) record_file=$PWD/$record_input ;;
-esac
-[ -f "$record_file" ] && [ ! -L "$record_file" ] || fail 'Input record must be a regular, non-symbolic-link JSON file.'
-record_size=$(stat -f '%z' "$record_file" 2>/dev/null) || fail 'Input record size cannot be read.'
-[ "$record_size" -le 16777216 ] || fail 'Input record exceeds the 16 MiB Stage limit.'
-
 dataset_file=$datasets/$dataset_name.json
 if [ -e "$dataset_file" ] || [ -L "$dataset_file" ]; then
     [ -f "$dataset_file" ] && [ ! -L "$dataset_file" ] || fail 'Existing dataset file is unsafe.'
 fi
-merge_output=$(osascript -l JavaScript "$dataset_helper" "$schema" "$dataset_file" "$dataset_name" "$record_file" "$dataset_file" 2>/dev/null) || fail "Record or accumulated dataset does not match the Snapshot schema or uniqueness rules: $dataset_name."
+if [ "$edit_mode" = true ]; then
+    case "$key_input" in /*) key_file=$key_input ;; *) key_file=$PWD/$key_input ;; esac
+    case "$changes_input" in /*) changes_file=$changes_input ;; *) changes_file=$PWD/$changes_input ;; esac
+    [ -f "$key_file" ] && [ ! -L "$key_file" ] || fail 'Canonical key must be a regular, non-symbolic-link JSON file.'
+    [ -f "$changes_file" ] && [ ! -L "$changes_file" ] || fail 'Field changes must be a regular, non-symbolic-link JSON file.'
+    key_size=$(stat -f '%z' "$key_file" 2>/dev/null) || fail 'Canonical key size cannot be read.'
+    changes_size=$(stat -f '%z' "$changes_file" 2>/dev/null) || fail 'Field changes size cannot be read.'
+    [ "$key_size" -le 16777216 ] || fail 'Canonical key exceeds the 16 MiB limit.'
+    [ "$changes_size" -le 16777216 ] || fail 'Field changes exceed the 16 MiB limit.'
+    snapshot_rows=$snapshot/data/operational/$dataset_name/rows.jsonl
+    [ -f "$snapshot_rows" ] && [ ! -L "$snapshot_rows" ] || fail 'Snapshot dataset rows are missing or unsafe.'
+    merge_output=$(osascript -l JavaScript "$dataset_helper" "$schema" "$dataset_file" "$dataset_name" "$key_file" "$changes_file" "$snapshot_rows" "$dataset_file" edit 2>/dev/null) || fail "Field edit does not match the Snapshot schema, key, or uniqueness rules: $dataset_name."
+else
+    case "$record_input" in /*) record_file=$record_input ;; *) record_file=$PWD/$record_input ;; esac
+    [ -f "$record_file" ] && [ ! -L "$record_file" ] || fail 'Input record must be a regular, non-symbolic-link JSON file.'
+    record_size=$(stat -f '%z' "$record_file" 2>/dev/null) || fail 'Input record size cannot be read.'
+    [ "$record_size" -le 16777216 ] || fail 'Input record exceeds the 16 MiB Stage limit.'
+    merge_output=$(osascript -l JavaScript "$dataset_helper" "$schema" "$dataset_file" "$dataset_name" "$record_file" "$dataset_file" 2>/dev/null) || fail "Record or accumulated dataset does not match the Snapshot schema or uniqueness rules: $dataset_name."
+fi
 case "$merge_output" in
-    action=inserted*|action=replaced*) ;;
+    mode=full-record*|mode=field-edit*) ;;
     *) fail 'Dataset helper output is invalid.' ;;
 esac
-dataset_size=$(stat -f '%z' "$dataset_file" 2>/dev/null) || fail 'Resulting dataset size cannot be read.'
-dataset_hash=$(shasum -a 256 "$dataset_file" | awk '{print $1}')
+if [ -f "$dataset_file" ]; then
+    dataset_size=$(stat -f '%z' "$dataset_file" 2>/dev/null) || fail 'Resulting dataset size cannot be read.'
+    dataset_hash=$(shasum -a 256 "$dataset_file" | awk '{print $1}')
+else
+    dataset_size=0
+    dataset_hash=none
+fi
 
 printf '%s\n' 'ok=true'
 printf 'dataset=%s\n' "$dataset_name"

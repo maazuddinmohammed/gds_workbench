@@ -16,8 +16,11 @@ and references.
 - `MG`: Tenant + System + Member Group name.
 - `PG`: Tenant + System + Zone + Process Group name.
 
-Keys are ID-free. Text key values compare after trimming and ignoring case.
-Always confirm the expanded key and references in the live dataset schema.
+Keys are ID-free. Trust the live schema's `x-gds-key-normalization`. Only
+string fields ending `_code`, `_name`, or `_schema` trim U+0020 spaces and
+lowercase. Other key values are exact; notably, `process_location` and
+`process_executable` remain case-sensitive. Always confirm the expanded key and
+references in the live dataset schema.
 
 ## Foundational datasets
 

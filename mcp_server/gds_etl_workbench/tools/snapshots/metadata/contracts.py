@@ -33,6 +33,27 @@ from gds_etl_workbench.domain.metadata_records import (
     ZoneRecord,
 )
 
+NATURAL_KEY_STRING_FIELD_SUFFIXES = ("_code", "_name", "_schema")
+
+
+def natural_key_normalization_document() -> dict[str, object]:
+    """Return the portable normalization contract published with every dataset."""
+    return {
+        "version": "1.0",
+        "string_field_suffixes": list(NATURAL_KEY_STRING_FIELD_SUFFIXES),
+        "trim_code_points": ["U+0020"],
+        "case": "unicode-lowercase",
+        "unicode_normalization": "none",
+        "other_values": "identity",
+    }
+
+
+def normalize_natural_key_value(column: str, value: object) -> object:
+    """Apply the Snapshot's published natural-key normalization contract."""
+    if isinstance(value, str) and column.endswith(NATURAL_KEY_STRING_FIELD_SUFFIXES):
+        return value.strip(" ").lower()
+    return value
+
 
 class SnapshotSection(StrEnum):
     FOUNDATIONAL = "foundational"

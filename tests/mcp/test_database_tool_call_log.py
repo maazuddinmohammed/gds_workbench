@@ -88,7 +88,7 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
 
 
 @pytest.mark.asyncio
-async def test_runtime_adapter_can_append_a_bounded_tool_call_log(
+async def test_runtime_adapter_can_append_a_tool_call_log(
     postgres_database: DisposablePostgres,
 ) -> None:
     tool_call_id = UUID("40000000-0000-0000-0000-000000000001")
@@ -184,6 +184,54 @@ async def test_runtime_adapter_can_append_a_bounded_tool_call_log(
     assert privileges == {"can_insert": True, "can_mutate": False}
 
 
+@pytest.mark.asyncio
+async def test_runtime_adapter_retains_complete_databricks_sql(
+    postgres_database: DisposablePostgres,
+) -> None:
+    tool_call_id = UUID("40000000-0000-0000-0000-000000000004")
+    sql = "SELECT '" + ("x" * 99_991) + "'"
+    assert len(sql) == 100_000
+
+    database = postgres_database.create_runtime_adapter()
+    await database.open()
+    try:
+        await database.append_tool_call_log(
+            ToolCallLogRecord(
+                tool_call_id=tool_call_id,
+                principal_id=None,
+                principal_display_name="Local Developer",
+                actor_kind=ActorKind.DEVELOPMENT,
+                tool_name="execute_databricks_sql",
+                tool_policy=ToolPolicy.TENANT_READ,
+                tenant_id=None,
+                input_metadata={
+                    "schema_version": "1.0",
+                    "connection_id": 42,
+                    "sql": sql,
+                    "sql_character_count": len(sql),
+                },
+                status="succeeded",
+                failure_code=None,
+            )
+        )
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        row = connection.execute(
+            """
+            SELECT input_metadata
+              FROM mcp.tool_call_log
+             WHERE tool_call_id = %s
+            """,
+            (tool_call_id,),
+        ).fetchone()
+
+    assert row is not None
+    assert row["input_metadata"]["sql"] == sql
+    assert row["input_metadata"]["sql_character_count"] == 100_000
+
+
 def test_tool_call_log_rejects_update_and_delete(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -240,9 +288,10 @@ def test_tool_call_log_rejects_update_and_delete(
         )
 
 
-def test_tool_call_log_rejects_unbounded_input_shapes(
+def test_tool_call_log_requires_an_object_without_a_byte_ceiling(
     postgres_database: DisposablePostgres,
 ) -> None:
+    large_value = "x" * 1_100_000
     with (
         pytest.raises(psycopg.errors.CheckViolation),
         postgres_database.connect_owner() as connection,
@@ -269,3 +318,37 @@ def test_tool_call_log_rejects_unbounded_input_shapes(
             )
             """
         )
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            INSERT INTO mcp.tool_call_log (
+                tool_call_id,
+                principal_display_name,
+                actor_kind,
+                tool_name,
+                tool_policy,
+                input_metadata,
+                tool_call_status
+            )
+            VALUES (
+                '40000000-0000-0000-0000-000000000005',
+                'Local Developer',
+                'development',
+                'list_tenants',
+                'tenant_read',
+                jsonb_build_object('value', %s::TEXT),
+                'succeeded'
+            )
+            """,
+            (large_value,),
+        )
+        row = connection.execute(
+            """
+            SELECT input_metadata ->> 'value' AS value
+              FROM mcp.tool_call_log
+             WHERE tool_call_id = '40000000-0000-0000-0000-000000000005'
+            """
+        ).fetchone()
+
+    assert row == {"value": large_value}

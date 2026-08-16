@@ -9,7 +9,7 @@ fail() {
     exit 2
 }
 
-root_input=${1:-"$PWD/gds-workspace"}
+root_input=${1:-"$PWD/GDS"}
 case "$root_input" in
     /*) root_candidate=$root_input ;;
     *) root_candidate=$PWD/$root_input ;;
@@ -17,12 +17,12 @@ esac
 
 parent_candidate=$(dirname "$root_candidate")
 leaf=$(basename "$root_candidate")
-[ "$leaf" = "gds-workspace" ] || fail 'Workspace directory must be named gds-workspace.'
+[ "$leaf" = "GDS" ] || fail 'Workspace directory must be named GDS.'
 [ -d "$parent_candidate" ] || fail 'Workspace parent directory does not exist.'
 [ ! -L "$parent_candidate" ] || fail 'Workspace parent cannot be a symbolic link.'
 
 parent=$(cd "$parent_candidate" && pwd -P)
-root=$parent/gds-workspace
+root=$parent/GDS
 created=false
 
 if [ -e "$root" ] || [ -L "$root" ]; then

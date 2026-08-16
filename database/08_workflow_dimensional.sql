@@ -132,8 +132,6 @@ CREATE TABLE workflow.dimensional_entity_submodel (
         model_id
     ) REFERENCES workflow.dimensional_submodel (dimensional_submodel_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_entity_submodel_id_model
-        UNIQUE (dimensional_entity_submodel_id, model_id),
     CONSTRAINT ck_dimensional_entity_submodel_status CHECK (
         dimensional_entity_submodel_status IN (
             'active', 'needs_review', 'inactive', 'deprecated'
@@ -278,8 +276,10 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         model_id
     ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT fk_dimensional_entity_source_object FOREIGN KEY (source_object_id)
-        REFERENCES core.object (object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_dimensional_entity_source_scope FOREIGN KEY (
+        model_id,
+        source_object_id
+    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -287,8 +287,6 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         modeling_assertion_record_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_entity_source_id_model
-        UNIQUE (dimensional_entity_source_mapping_id, model_id),
     CONSTRAINT uq_dimensional_entity_source_witness UNIQUE (
         dimensional_entity_source_mapping_id,
         dimensional_entity_id,
@@ -390,8 +388,6 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
         modeling_assertion_record_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_attribute_source_id_model
-        UNIQUE (dimensional_attribute_source_mapping_id, model_id),
     CONSTRAINT ck_dimensional_attribute_source_typed_source CHECK (
         (
             support_source_type = 'attribute'
@@ -489,8 +485,6 @@ CREATE TABLE workflow.dimensional_relationship (
         dimensional_entity_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_dimensional_relationship_id_model
-        UNIQUE (dimensional_relationship_id, model_id),
     CONSTRAINT ck_dimensional_relationship_distinct_endpoints CHECK (
         (
             dimensional_relationship_from_entity_id,

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import AsyncGenerator, Mapping
 from contextlib import AbstractAsyncContextManager, asynccontextmanager
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from enum import StrEnum
 from typing import Any, Literal, LiteralString, Protocol
 from uuid import UUID
@@ -34,7 +34,7 @@ class ReadinessRecord:
 
 @dataclass(frozen=True, slots=True)
 class ToolCallLogRecord:
-    """One server-derived, bounded MCP tool-call audit record."""
+    """One server-derived MCP tool-call audit record."""
 
     tool_call_id: UUID
     principal_id: int | None
@@ -46,6 +46,15 @@ class ToolCallLogRecord:
     input_metadata: Mapping[str, Any]
     status: Literal["succeeded", "failed"]
     failure_code: str | None
+
+
+@dataclass(frozen=True, slots=True)
+class DatabricksConnectionValuesRecord:
+    tenant_id: int | None
+    failure_code: str | None
+    server_hostname: str | None = field(repr=False)
+    http_path: str | None = field(repr=False)
+    access_token: str | None = field(repr=False)
 
 
 class ReadTransaction(Protocol):
@@ -84,6 +93,15 @@ class Database(Protocol):
     ) -> AbstractAsyncContextManager[ReadTransaction]: ...
 
 
+class DatabricksConnectionDatabase(Database, Protocol):
+    """Database boundary for the exact governed Databricks secret lookup."""
+
+    async def read_databricks_connection_values(
+        self,
+        connection_id: int,
+    ) -> DatabricksConnectionValuesRecord: ...
+
+
 class WriteDatabase(Database, Protocol):
     """Database boundary for fixed, governed write operations."""
 
@@ -119,6 +137,15 @@ INSERT INTO mcp.tool_call_log (
     failure_code
 )
 VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+_READ_DATABRICKS_CONNECTION_VALUES_SQL = """
+SELECT connection_tenant_id,
+       failure_code,
+       databricks_host_name,
+       databricks_http_path,
+       databricks_token
+  FROM mcp.get_databricks_sql_connection_values(%s)
 """
 
 
@@ -266,5 +293,29 @@ class PostgresDatabase:
                         record.failure_code,
                     ),
                 )
+        except PsycopgError as exc:
+            raise DependencyUnavailableError() from exc
+
+    async def read_databricks_connection_values(
+        self,
+        connection_id: int,
+    ) -> DatabricksConnectionValuesRecord:
+        try:
+            async with self._pool.connection() as connection, connection.transaction():
+                await connection.execute("SET TRANSACTION READ ONLY")
+                result = await connection.execute(
+                    _READ_DATABRICKS_CONNECTION_VALUES_SQL,
+                    (connection_id,),
+                )
+                row = await result.fetchone()
+            if row is None:
+                raise DependencyUnavailableError()
+            return DatabricksConnectionValuesRecord(
+                tenant_id=row["connection_tenant_id"],
+                failure_code=row["failure_code"],
+                server_hostname=row["databricks_host_name"],
+                http_path=row["databricks_http_path"],
+                access_token=row["databricks_token"],
+            )
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc

@@ -105,7 +105,6 @@ CREATE TABLE workflow.analysis_result (
         to_attribute_id,
         to_object_id
     ) REFERENCES core.attribute (attribute_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_analysis_result_id_model UNIQUE (analysis_result_id, model_id),
     CONSTRAINT uq_analysis_result_identity UNIQUE (
         model_id,
         from_attribute_id,

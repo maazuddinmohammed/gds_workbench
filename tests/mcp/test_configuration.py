@@ -5,12 +5,12 @@ from uuid import UUID
 import pytest
 
 from gds_etl_workbench.configuration import (
-    AuthMode,
-    ConfigurationError,
     DATABASE_CONNECTION_BUDGET,
     DATABASE_CONNECTION_HEADROOM,
     DATABASE_POOL_MAX,
     WEB_CONCURRENCY,
+    AuthMode,
+    ConfigurationError,
     RuntimeSettings,
 )
 
@@ -122,6 +122,37 @@ def test_fixed_pool_policy_stays_within_connection_budget() -> None:
     assert WEB_CONCURRENCY * DATABASE_POOL_MAX <= (
         DATABASE_CONNECTION_BUDGET - DATABASE_CONNECTION_HEADROOM
     )
+
+
+def test_databricks_sql_settings_use_bounded_defaults_and_overrides() -> None:
+    defaults = RuntimeSettings.from_environment(settings_values())
+    overrides = RuntimeSettings.from_environment(
+        settings_values(
+            GDS_DATABRICKS_SQL_MAX_ROWS="25",
+            GDS_DATABRICKS_SQL_TIMEOUT_SECONDS="90",
+        )
+    )
+
+    assert defaults.databricks_sql_max_rows == 50
+    assert defaults.databricks_sql_timeout_seconds == 120
+    assert overrides.databricks_sql_max_rows == 25
+    assert overrides.databricks_sql_timeout_seconds == 90
+
+
+@pytest.mark.parametrize(
+    ("key", "value"),
+    [
+        ("GDS_DATABRICKS_SQL_MAX_ROWS", "0"),
+        ("GDS_DATABRICKS_SQL_MAX_ROWS", "51"),
+        ("GDS_DATABRICKS_SQL_MAX_ROWS", "invalid"),
+        ("GDS_DATABRICKS_SQL_TIMEOUT_SECONDS", "0"),
+        ("GDS_DATABRICKS_SQL_TIMEOUT_SECONDS", "601"),
+        ("GDS_DATABRICKS_SQL_TIMEOUT_SECONDS", "invalid"),
+    ],
+)
+def test_databricks_sql_settings_reject_invalid_bounds(key: str, value: str) -> None:
+    with pytest.raises(ConfigurationError, match=key):
+        RuntimeSettings.from_environment(settings_values(**{key: value}))
 
 
 @pytest.mark.parametrize(

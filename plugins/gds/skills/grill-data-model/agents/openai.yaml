@@ -1,0 +1,4 @@
+interface:
+  display_name: "Grill My Data Model"
+  short_description: "Run a bounded data-modeling decision interview"
+  default_prompt: "Use $grill-data-model to question this modeling brief one decision at a time."

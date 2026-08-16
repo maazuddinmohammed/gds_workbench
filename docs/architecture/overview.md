@@ -47,7 +47,7 @@ Each tool keeps its MCP binding, strict request/result contracts, declared
 `ToolPolicy`, pagination, and tool-specific SQL in one module. Shared
 authentication, authorization interpretation, PostgreSQL transaction mechanics,
 central tool-call audit, safe errors, and cursor signing remain architectural
-boundaries. Each tool also declares its bounded audit-input summary beside its
+boundaries. Each tool also declares its retained safe inputs and audit summary beside its
 handler; the shared middleware appends the result without storing raw inputs or
 outputs.
 

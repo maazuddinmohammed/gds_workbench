@@ -9,7 +9,7 @@ fail() {
     exit 2
 }
 
-workspace_input=$PWD/gds-workspace
+workspace_input=$PWD/GDS
 tenant_id=''
 tenant_code=''
 snapshot_id=''
@@ -64,10 +64,10 @@ case "$workspace_input" in
     /*) workspace_candidate=$workspace_input ;;
     *) workspace_candidate=$PWD/$workspace_input ;;
 esac
-[ "$(basename "$workspace_candidate")" = 'gds-workspace' ] || fail 'Workspace directory must be named gds-workspace.'
+[ "$(basename "$workspace_candidate")" = 'GDS' ] || fail 'Workspace directory must be named GDS.'
 [ -d "$workspace_candidate" ] && [ ! -L "$workspace_candidate" ] || fail 'Workspace directory is missing or unsafe.'
 workspace_parent=$(cd "$(dirname "$workspace_candidate")" && pwd -P)
-workspace=$workspace_parent/gds-workspace
+workspace=$workspace_parent/GDS
 snapshot=$workspace/metadata-snapshot
 manifest=$snapshot/manifest.json
 [ -f "$manifest" ] && [ ! -L "$manifest" ] || fail 'Validated metadata-snapshot is required.'
@@ -77,11 +77,48 @@ manifest_snapshot=$(plutil -extract snapshot_id raw "$manifest" 2>/dev/null) || 
 [ "$manifest_snapshot" = "$snapshot_id" ] || fail 'Snapshot ID does not match the selected Snapshot.'
 
 change_set=$workspace/change-set
+adopted_local_draft=false
 if [ -e "$change_set" ] || [ -L "$change_set" ]; then
-    fail 'Local change-set already exists; stop and ask whether to reuse it.'
+    [ -d "$change_set" ] && [ ! -L "$change_set" ] || fail 'Local change-set is unsafe.'
+    state=$change_set/change-set.json
+    datasets=$change_set/datasets
+    [ -f "$state" ] && [ ! -L "$state" ] || fail 'Existing local draft state is missing or unsafe.'
+    [ -d "$datasets" ] && [ ! -L "$datasets" ] || fail 'Existing local draft datasets are missing or unsafe.'
+    [ -z "$(find "$change_set" -type l -print -quit)" ] || fail 'Existing local draft cannot contain symbolic links.'
+    for root_entry in "$change_set"/* "$change_set"/.[!.]* "$change_set"/..?*; do
+        if [ ! -e "$root_entry" ] && [ ! -L "$root_entry" ]; then
+            continue
+        fi
+        case "$(basename "$root_entry")" in
+            change-set.json|datasets) ;;
+            *) fail 'Existing local draft contains an unexpected root entry.' ;;
+        esac
+    done
+    plutil -convert json -o /dev/null "$state" >/dev/null 2>&1 || fail 'Existing local draft state is not valid JSON.'
+    [ "$(plutil -extract format_version raw "$state" 2>/dev/null)" = '1.0' ] || fail 'Existing local draft format is invalid.'
+    [ "$(plutil -extract tenant.tenant_code raw "$state" 2>/dev/null)" = "$tenant_code" ] || fail 'Existing local draft Tenant does not match.'
+    [ "$(plutil -extract snapshot.snapshot_id raw "$state" 2>/dev/null)" = "$snapshot_id" ] || fail 'Existing local draft Snapshot does not match.'
+    [ "$(plutil -extract snapshot.path raw "$state" 2>/dev/null)" = '../metadata-snapshot' ] || fail 'Existing local draft Snapshot path is invalid.'
+    [ "$(plutil -extract server_change_set.status raw "$state" 2>/dev/null)" = 'local' ] || fail 'Local change-set already exists; stop and ask whether to reuse it.'
+    [ "$(plutil -extract snapshot.usage raw "$state" 2>/dev/null)" = 'local' ] || fail 'Existing local draft usage is invalid.'
+    [ "$(plutil -extract snapshot.outdated_snapshot_warning_acknowledged raw "$state" 2>/dev/null)" = 'false' ] || fail 'Existing local draft warning state is invalid.'
+    [ "$(plutil -type datasets "$state" 2>/dev/null)" = 'dictionary' ] || fail 'Existing local draft dataset state is invalid.'
+    [ -z "$(plutil -extract datasets raw "$state" 2>/dev/null)" ] || fail 'Existing local draft contains server Stage state.'
+    for dataset_file in "$datasets"/* "$datasets"/.[!.]* "$datasets"/..?*; do
+        if [ ! -e "$dataset_file" ] && [ ! -L "$dataset_file" ]; then
+            continue
+        fi
+        [ -f "$dataset_file" ] && [ ! -L "$dataset_file" ] || fail 'Existing local draft datasets must be regular files.'
+        case "$(basename "$dataset_file")" in
+            source_object.json|source_attribute.json|bronze_object.json|bronze_attribute.json|silver_object.json|silver_attribute.json|gold_object.json|gold_attribute.json|ingestion_object_mapping.json|ingestion_attribute_mapping.json|copy_group.json|member_group.json|copy_group_control.json|copy.json|process_group.json|process.json) ;;
+            *) fail 'Existing local draft contains an ineligible dataset.' ;;
+        esac
+    done
+    adopted_local_draft=true
+else
+    mkdir "$change_set"
+    mkdir "$change_set/datasets"
 fi
-mkdir "$change_set"
-mkdir "$change_set/datasets"
 
 state=$change_set/change-set.json
 state_temporary=$change_set/change-set.tmp.json
@@ -112,3 +149,4 @@ printf 'snapshot_usage=%s\n' "$snapshot_usage"
 printf 'metadata_change_set_id=%s\n' "$change_set_id"
 printf 'draft_revision=%s\n' "$draft_revision"
 printf 'server_status=%s\n' "$server_status"
+printf 'adopted_local_draft=%s\n' "$adopted_local_draft"

@@ -16,9 +16,17 @@ from gds_etl_workbench.tools.snapshots.metadata.contracts import (
     OBJECT_KEY,
     DatasetDefinition,
     ReferenceDefinition,
+    normalize_natural_key_value,
+)
+
+from .action_review import (
+    ActionReviewKey,
+    DatasetActionReview,
+    classify_record_action,
 )
 
 MAX_VALIDATION_ISSUES = 100
+MAX_REVIEW_KEYS = 100
 
 
 @dataclass(frozen=True, slots=True)
@@ -46,6 +54,7 @@ class MetadataChangeSetValidation:
     candidate_digest: str | None
     staged_record_count: int
     issues: tuple[ValidationIssue, ...]
+    action_review: tuple[DatasetActionReview, ...]
 
     def outcome_document(self) -> dict[str, object]:
         return {
@@ -55,6 +64,7 @@ class MetadataChangeSetValidation:
             "staged_record_count": self.staged_record_count,
             "error_count": len(self.issues),
             "errors": [issue.as_document() for issue in self.issues],
+            "action_review": [summary.as_document() for summary in self.action_review],
         }
 
 
@@ -122,7 +132,66 @@ def validate_metadata_documents(
         candidate_digest=digest,
         staged_record_count=staged_count,
         issues=(),
+        action_review=_build_action_review(current, staged),
     )
+
+
+def _build_action_review(
+    current: Sequence[_Row],
+    staged: Sequence[_Row],
+) -> tuple[DatasetActionReview, ...]:
+    current_by_key: dict[tuple[str, tuple[object, ...]], _Row] = {}
+    for row in current:
+        definition = _definition(row.dataset)
+        current_by_key[
+            (definition.record_type, _normalized_key(definition.canonical_key, row.values))
+        ] = row
+
+    remaining_keys = MAX_REVIEW_KEYS
+    summaries: list[DatasetActionReview] = []
+    for definition in DATASETS:
+        dataset_rows = [row for row in staged if row.dataset == definition.name]
+        if not dataset_rows:
+            continue
+        counts = {name: 0 for name in ("insert", "update", "deactivate", "reactivate", "no_change")}
+        keys: list[ActionReviewKey] = []
+        for row in dataset_rows:
+            key = _normalized_key(definition.canonical_key, row.values)
+            existing = current_by_key.get((definition.record_type, key))
+            action = classify_record_action(
+                existing.values if existing is not None else None,
+                row.values,
+                active_state=_metadata_active_state,
+            )
+            counts[action] += 1
+            if remaining_keys > 0:
+                keys.append(
+                    ActionReviewKey(
+                        action=action,
+                        natural_key={
+                            column: row.values[column] for column in definition.canonical_key
+                        },
+                    )
+                )
+                remaining_keys -= 1
+        summaries.append(
+            DatasetActionReview(
+                dataset=definition.name,
+                insert_count=counts["insert"],
+                update_count=counts["update"],
+                deactivate_count=counts["deactivate"],
+                reactivate_count=counts["reactivate"],
+                no_change_count=counts["no_change"],
+                keys=tuple(keys),
+                keys_truncated=len(keys) < len(dataset_rows),
+            )
+        )
+    return tuple(summaries)
+
+
+def _metadata_active_state(values: Mapping[str, object]) -> bool | None:
+    active = values.get("is_active")
+    return active if isinstance(active, bool) else None
 
 
 def _validate_schemas(
@@ -194,8 +263,7 @@ def _validate_object_locks(
     locked_object_keys = {
         _normalized_key(OBJECT_KEY, row.values)
         for row in current
-        if _definition(row.dataset).record_type == "object"
-        and row.values["is_locked"] is True
+        if _definition(row.dataset).record_type == "object" and row.values["is_locked"] is True
     }
     issues: list[ValidationIssue] = []
     for row in staged:
@@ -223,7 +291,7 @@ def _validate_tenant_scope(
     current: Sequence[_Row],
     staged: Sequence[_Row],
 ) -> list[ValidationIssue]:
-    normalized_tenant = tenant_code.strip().casefold()
+    normalized_tenant = normalize_natural_key_value("tenant_code", tenant_code)
     owned_connections = {
         _normalized_key(
             ("tenant_code", "system_code", "connection_code"),
@@ -231,7 +299,8 @@ def _validate_tenant_scope(
         )
         for row in current
         if row.dataset == "connection"
-        and str(row.values["tenant_code"]).strip().casefold() == normalized_tenant
+        and normalize_natural_key_value("tenant_code", row.values["tenant_code"])
+        == normalized_tenant
     }
     discovery_scopes = {
         _normalized_key(
@@ -246,7 +315,8 @@ def _validate_tenant_scope(
         )
         for row in current
         if row.dataset == "tenant_metadata_discovery_scope"
-        and str(row.values["scope_tenant_code"]).strip().casefold() == normalized_tenant
+        and normalize_natural_key_value("scope_tenant_code", row.values["scope_tenant_code"])
+        == normalized_tenant
         and row.values["is_active"] is True
     }
     effective_objects: dict[tuple[object, ...], Mapping[str, object]] = {}
@@ -262,7 +332,7 @@ def _validate_tenant_scope(
         mismatched_owner = tuple(
             field
             for field in owner_fields
-            if str(row.values[field]).strip().casefold() != normalized_tenant
+            if normalize_natural_key_value(field, row.values[field]) != normalized_tenant
         )
         if mismatched_owner:
             issues.append(
@@ -449,7 +519,7 @@ def _reference_issue(
     keys_by_record_type: Mapping[str, set[tuple[object, ...]]],
 ) -> ValidationIssue | None:
     values = tuple(row.values[column] for column in reference.columns)
-    if reference.nullable and all(value is None for value in values):
+    if reference.nullable and any(value is None for value in values):
         return None
     if any(value is None for value in values):
         return ValidationIssue(
@@ -504,6 +574,7 @@ def _failed(
         candidate_digest=digest,
         staged_record_count=staged_count,
         issues=tuple(issues[:MAX_VALIDATION_ISSUES]),
+        action_review=(),
     )
 
 
@@ -529,8 +600,4 @@ def _normalized_key(
 
 
 def _normalize_key_value(column: str, value: object) -> object:
-    if isinstance(value, str) and (
-        column.endswith("_code") or column.endswith("_name") or column.endswith("_schema")
-    ):
-        return value.strip().casefold()
-    return value
+    return normalize_natural_key_value(column, value)

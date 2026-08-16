@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'self'; style-src 'self'; connect-src 'none'; img-src data:; object-src 'none'; base-uri 'none'; form-action 'none'">
+  <title>GDS Data Workbench</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body data-view="snapshot">
+  <header class="topbar">
+    <div class="brand">
+      <span class="brand-mark" aria-hidden="true">G</span>
+      <div>
+        <strong>GDS</strong>
+        <span>Data Workbench</span>
+      </div>
+    </div>
+    <div class="connection-summary" id="connectionSummary" aria-live="polite">
+      <span class="status-dot"></span>
+      <span>No GDS workspace connected</span>
+    </div>
+    <div class="top-actions">
+      <button class="button quiet" id="reloadButton" hidden>Reload files</button>
+      <button class="button primary" id="connectButton">Choose workspace</button>
+    </div>
+  </header>
+
+  <main class="welcome" id="welcome">
+    <section class="welcome-copy">
+      <p class="eyebrow">Local governed data utility</p>
+      <h1>Read the Snapshot.<br>Shape the Change Set.</h1>
+      <p class="lede">Browse verified Metadata or Model Snapshots. Every edit stays in the matching local Change Set.</p>
+      <div class="welcome-controls">
+        <label class="workspace-kind-picker">
+          <span>Workspace type</span>
+          <select id="snapshotKindSelect">
+            <option value="auto">Detect automatically</option>
+            <option value="metadata">Metadata</option>
+            <option value="model">Model</option>
+          </select>
+        </label>
+        <button class="button primary large" id="welcomeConnectButton">Choose GDS workspace</button>
+      </div>
+      <p class="browser-note" id="browserNote">Chrome or Edge is required for direct local folder access.</p>
+    </section>
+    <section class="welcome-map" aria-label="GDS workspace model">
+      <div class="map-line snapshot-line">
+        <span class="map-label">metadata / model snapshot</span>
+        <strong>Read only</strong>
+        <small>Catalog, exact schemas, and verified JSONL rows</small>
+      </div>
+      <div class="transfer-mark" aria-hidden="true">↓</div>
+      <div class="map-line change-line">
+        <span class="map-label">matching change set</span>
+        <strong>Local draft</strong>
+        <small>Complete ID-free records and proposed model export</small>
+      </div>
+    </section>
+  </main>
+
+  <main class="app-shell" id="appShell" hidden>
+    <aside class="dataset-sidebar">
+      <div class="sidebar-heading">
+        <span>Datasets</span>
+        <span id="datasetTotal">0</span>
+      </div>
+      <label class="search-box compact">
+        <span class="sr-only">Filter datasets</span>
+        <input id="datasetSearch" type="search" placeholder="Filter datasets" autocomplete="off">
+      </label>
+      <nav id="datasetNav" aria-label="GDS datasets"></nav>
+    </aside>
+
+    <section class="workspace">
+      <header class="workspace-heading">
+        <div>
+          <div class="dataset-context" id="datasetContext">Operational</div>
+          <h1 id="datasetTitle">Choose a dataset</h1>
+          <p id="datasetDescription"></p>
+        </div>
+        <div class="mode-switch" role="group" aria-label="Data source">
+          <button class="mode-tab active" id="snapshotTab" aria-pressed="true">
+            <span class="mode-dot snapshot-dot"></span>
+            <span><strong>Snapshot</strong><small>Read only</small></span>
+          </button>
+          <button class="mode-tab" id="changeSetTab" aria-pressed="false">
+            <span class="mode-dot change-dot"></span>
+            <span><strong>Change Set</strong><small>Local draft</small></span>
+          </button>
+        </div>
+      </header>
+
+      <div class="state-banner snapshot-banner" id="stateBanner">
+        <strong>Immutable Snapshot</strong>
+        <span>Rows are verified against the Snapshot manifest and cannot be edited here.</span>
+      </div>
+
+      <div class="review-strip" id="reviewStrip" aria-live="polite">
+        <div>
+          <strong id="reviewTitle">No local draft</strong>
+          <span id="reviewSummary">Browse the verified Snapshot. A draft is created only after your first accepted edit.</span>
+        </div>
+        <button class="button quiet small" id="reviewButton">Review &amp; hand off</button>
+      </div>
+
+      <div class="table-toolbar">
+        <label class="search-box">
+          <span class="sr-only">Search rows</span>
+          <input id="rowSearch" type="search" placeholder="Search all visible fields" autocomplete="off">
+        </label>
+        <span class="row-summary" id="rowSummary">0 rows</span>
+        <button class="button quiet" id="schemaButton">Schema</button>
+        <button class="button quiet" id="newRowButton" hidden>Add record</button>
+        <button class="button quiet" id="exportModelSnapshotButton" hidden>Export proposed model</button>
+        <button class="button primary change-action" id="saveButton" hidden disabled>Save Change Set</button>
+      </div>
+
+      <div class="selection-actions" id="selectionActions" hidden aria-live="polite">
+        <span id="selectionSummary">No rows selected</span>
+        <div>
+          <button class="button quiet small" id="selectPageButton">Select page</button>
+          <button class="button quiet small" id="clearSelectionButton">Clear</button>
+          <button class="button change-action small" id="bulkCopyButton" hidden>Edit one field</button>
+          <button class="button change-action small" id="bulkDeactivateButton" hidden>Deactivate selected</button>
+        </div>
+      </div>
+
+      <div class="table-frame" id="tableFrame">
+        <div class="loading-state" id="loadingState" role="status">Choose a dataset to load its rows.</div>
+        <table id="dataTable" hidden>
+          <caption class="sr-only">GDS records</caption>
+          <thead></thead>
+          <tbody></tbody>
+        </table>
+      </div>
+      <footer class="table-footer">
+        <span id="pageLabel">Page 1 of 1</span>
+        <div>
+          <button class="button quiet small" id="previousPage" disabled>Previous</button>
+          <button class="button quiet small" id="nextPage" disabled>Next</button>
+        </div>
+      </footer>
+    </section>
+
+    <aside class="inspector" id="inspector">
+      <div class="inspector-empty">
+        <span class="inspector-glyph" aria-hidden="true">⌁</span>
+        <strong>Select a row</strong>
+        <p>Inspect its canonical key and move eligible records into the Change Set.</p>
+      </div>
+    </aside>
+  </main>
+
+  <dialog id="recordDialog" class="record-dialog" aria-labelledby="dialogTitle">
+    <form method="dialog" id="recordForm">
+      <header>
+        <div>
+          <span class="dialog-kicker" id="dialogKicker">Change Set record</span>
+          <h2 id="dialogTitle">Add record</h2>
+        </div>
+        <button class="icon-button" type="button" data-dialog-close aria-label="Close">×</button>
+      </header>
+      <div class="form-errors" id="formErrors" role="alert" hidden></div>
+      <div class="diff-preview" id="diffPreview" aria-live="polite"></div>
+      <div class="field-grid" id="fieldGrid"></div>
+      <footer>
+        <button class="button quiet" type="button" data-dialog-close>Cancel</button>
+        <button class="button primary change-action" type="submit" id="recordSubmitButton">Add to Change Set</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <dialog id="schemaDialog" class="schema-dialog" aria-labelledby="schemaDialogTitle">
+    <form method="dialog">
+      <header>
+        <div>
+          <span class="dialog-kicker">Snapshot contract</span>
+          <h2 id="schemaDialogTitle">Dataset schema</h2>
+        </div>
+        <button class="icon-button" type="submit" value="cancel" aria-label="Close">×</button>
+      </header>
+      <div id="schemaContent"></div>
+      <footer><button class="button primary" value="cancel">Done</button></footer>
+    </form>
+  </dialog>
+
+  <dialog id="reviewDialog" class="schema-dialog" aria-labelledby="reviewDialogTitle">
+    <form method="dialog">
+      <header>
+        <div>
+          <span class="dialog-kicker">Local-only receipt</span>
+          <h2 id="reviewDialogTitle">Review Change Set</h2>
+        </div>
+        <button class="icon-button" type="submit" value="cancel" aria-label="Close">×</button>
+      </header>
+      <div id="reviewContent" class="review-content" role="status"></div>
+      <footer>
+        <button class="button quiet" value="cancel">Done</button>
+        <button class="button primary change-action" type="button" id="copyHandoffButton" disabled>Copy handoff</button>
+      </footer>
+    </form>
+  </dialog>
+
+  <div class="toast-region" id="toastRegion" aria-live="polite" aria-atomic="true"></div>
+  <script src="logic.js"></script>
+  <script src="app.js"></script>
+</body>
+</html>

@@ -207,6 +207,14 @@ def register_list_objects_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
+        retain_arguments={
+            "tenant_id",
+            "zone",
+            "connection_id",
+            "active_state",
+            "page_size",
+            "schema_version",
+        },
         tenant_argument="tenant_id",
     )
 

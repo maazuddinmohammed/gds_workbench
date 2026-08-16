@@ -33,8 +33,14 @@ DATABASE_PREFLIGHT_FILE = DATABASE_ROOT / "00_preflight.sql"
 DATABASE_VERIFY_FILE = DATABASE_ROOT / "13_verify_install.sql"
 FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
     {
+        "APP_POSTGRES_DB",
+        "APP_POSTGRES_HOST",
+        "APP_POSTGRES_PASSWORD_KEY",
+        "APP_POSTGRES_PORT",
+        "APP_POSTGRES_USER",
         "DATABASE_URL",
         "GDS_DATABASE_DSN",
+        "GDS_LOADER_DSN",
         "PGDATABASE",
         "PGHOST",
         "PGHOSTADDR",

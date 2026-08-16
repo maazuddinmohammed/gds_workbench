@@ -1,5 +1,5 @@
 param(
-    [string]$SnapshotPath = (Join-Path (Get-Location).Path "gds-workspace\metadata-snapshot"),
+    [string]$SnapshotPath = (Join-Path (Get-Location).Path "GDS\metadata-snapshot"),
     [string]$Dataset = ""
 )
 

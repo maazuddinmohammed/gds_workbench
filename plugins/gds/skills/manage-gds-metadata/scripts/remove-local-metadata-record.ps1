@@ -1,5 +1,5 @@
 param(
-    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "gds-workspace\change-set"),
+    [string]$ChangeSetPath = (Join-Path (Get-Location).Path "GDS\change-set"),
     [Parameter(Mandatory = $true)]
     [string]$Dataset,
     [Parameter(Mandatory = $true)]
@@ -45,8 +45,8 @@ try {
         Write-Failure "Local directory must be named change-set."
     }
     $Workspace = [System.IO.Directory]::GetParent($Root)
-    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "gds-workspace") {
-        Write-Failure "Local change-set must be directly under gds-workspace."
+    if ($null -eq $Workspace -or [System.IO.Path]::GetFileName($Workspace.FullName) -cne "GDS") {
+        Write-Failure "Local change-set must be directly under GDS."
     }
     if (-not (Test-Path -LiteralPath $Root -PathType Container)) {
         Write-Failure "Local change-set does not exist."

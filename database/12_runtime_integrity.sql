@@ -77,7 +77,6 @@ GRANT EXECUTE ON FUNCTION mcp.stage_metadata_change_set(
     BIGINT,
     UUID,
     BIGINT,
-    VARCHAR,
     JSONB,
     UUID
 ) TO gds_app_write;
@@ -125,8 +124,11 @@ GRANT EXECUTE ON FUNCTION mcp.archive_metadata_change_set(
     UUID
 ) TO gds_app_write;
 
+GRANT EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT)
+TO gds_app_write;
+
 -- One runtime-owned readiness contract for the exact database surface used by
--- the 21 MCP tools. The function performs no writes and returns only posture
+-- the registered MCP tools. The function performs no writes and returns only posture
 -- booleans; it never returns physical rows, identities, or configuration.
 CREATE OR REPLACE FUNCTION mcp.runtime_readiness()
 RETURNS TABLE (
@@ -200,6 +202,7 @@ BEGIN
                        ('core.object', 'object_schema'),
                        ('core.object', 'object_name'),
                        ('core.object', 'is_locked'),
+                       ('model.model_scope', 'is_active'),
                        ('core.attribute', 'object_id'),
                        ('core.attribute', 'attribute_name'),
                        ('mcp.metadata_change_set', 'created_by_principal_id'),
@@ -240,11 +243,12 @@ BEGIN
                    'security.override_tenant_lock(uuid,uuid,character varying,bigint,character varying)',
                    'security.expire_tenant_locks(integer)',
                    'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
-                   'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying,jsonb,uuid)',
+                   'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                    'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
                    'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
                    'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
-                   'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)'
+                   'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                   'mcp.get_databricks_sql_connection_values(bigint)'
                ]) AS required_function(signature)
          WHERE to_regprocedure(required_function.signature) IS NULL
     ) AND NOT EXISTS (
@@ -334,11 +338,12 @@ BEGIN
                    'security.override_tenant_lock(uuid,uuid,character varying,bigint,character varying)',
                    'security.expire_tenant_locks(integer)',
                    'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
-                   'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character varying,jsonb,uuid)',
+                   'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
                    'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
                    'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
                    'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
-                   'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)'
+                   'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                   'mcp.get_databricks_sql_connection_values(bigint)'
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
                    'gds_app_write', executable_function.signature, 'EXECUTE'
@@ -446,6 +451,9 @@ BEGIN
                   '00000000-0000-0000-0000-000000000000'::UUID
               );
 
+            PERFORM 1
+              FROM mcp.get_databricks_sql_connection_values(9223372036854775807);
+
             runtime_query_contract_ok := TRUE;
         EXCEPTION WHEN OTHERS THEN
             runtime_query_contract_ok := FALSE;
@@ -474,8 +482,9 @@ TO gds_app_write;
 GRANT INSERT ON mcp.tool_call_log TO gds_app_write;
 
 -- The application mutates only the normalized artifact and workflow state used
--- by PostgresRepository.  Foundational Model/Scope/target rows, audit rows, and
--- every DELETE operation remain deployment-owner capabilities.
+-- by governed Change Sets. Foundational target rows, audit rows, and every
+-- DELETE operation remain deployment-owner capabilities. Model and Model Scope
+-- receive only the columns required by the Model Change Set materializer.
 GRANT INSERT, UPDATE ON
     model.modeling_assertion_document,
     model.modeling_assertion_record,
@@ -503,6 +512,22 @@ GRANT INSERT, UPDATE ON
     mcp.model_change_set,
     workflow.mapping_object
 TO gds_app_write;
+GRANT UPDATE (
+    model_name,
+    model_description,
+    model_revision,
+    silver_model_naming_template,
+    silver_model_audit_columns_template,
+    gold_model_naming_template,
+    gold_model_technical_columns_template,
+    gold_model_audit_columns_template,
+    updated_time,
+    updated_by
+)
+    ON model.model TO gds_app_write;
+GRANT INSERT (model_id, object_id, model_scope_is_locked, is_active),
+      UPDATE (model_scope_is_locked, is_active, updated_time, updated_by)
+    ON model.model_scope TO gds_app_write;
 GRANT INSERT ON
     mcp.model_change_set_event
 TO gds_app_write;
@@ -532,10 +557,17 @@ BEGIN
            AND dependency.refclassid = 'pg_class'::REGCLASS
            AND dependency.deptype IN ('a', 'i')
            AND table_namespace.nspname IN ('model', 'workflow', 'mcp')
-           AND has_table_privilege(
-                'gds_app_write',
-                table_relation.oid,
-                'INSERT'
+           AND (
+               has_table_privilege(
+                   'gds_app_write',
+                   table_relation.oid,
+                   'INSERT'
+               )
+               OR has_any_column_privilege(
+                   'gds_app_write',
+                   table_relation.oid,
+                   'INSERT'
+               )
            )
     LOOP
         EXECUTE format(

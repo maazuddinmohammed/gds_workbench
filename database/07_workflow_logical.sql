@@ -100,8 +100,6 @@ CREATE TABLE workflow.logical_entity_submodel (
         model_id
     ) REFERENCES workflow.logical_submodel (logical_submodel_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_entity_submodel_id_model
-        UNIQUE (logical_entity_submodel_id, model_id),
     CONSTRAINT uq_logical_entity_submodel_identity
         UNIQUE (model_id, logical_entity_id, logical_submodel_id),
     CONSTRAINT ck_logical_entity_submodel_status CHECK (
@@ -212,8 +210,6 @@ CREATE TABLE workflow.logical_entity_source_mapping (
         modeling_assertion_record_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_entity_source_id_model
-        UNIQUE (logical_entity_source_mapping_id, model_id),
     CONSTRAINT uq_logical_entity_source_witness UNIQUE (
         logical_entity_source_mapping_id,
         logical_entity_id,
@@ -310,8 +306,6 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
         modeling_assertion_record_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_attribute_source_id_model
-        UNIQUE (logical_attribute_source_mapping_id, model_id),
     CONSTRAINT ck_logical_attribute_source_typed_source CHECK (
         (
             support_source_type = 'attribute'
@@ -405,8 +399,6 @@ CREATE TABLE workflow.logical_relationship (
         logical_entity_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_logical_relationship_id_model
-        UNIQUE (logical_relationship_id, model_id),
     CONSTRAINT ck_logical_relationship_distinct_endpoints CHECK (
         (logical_relationship_from_entity_id, logical_relationship_from_attribute_id)
         <> (logical_relationship_to_entity_id, logical_relationship_to_attribute_id)

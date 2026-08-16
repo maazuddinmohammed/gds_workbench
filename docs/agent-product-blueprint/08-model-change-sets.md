@@ -41,8 +41,8 @@ stateDiagram-v2
 ```
 
 Applied, expired, discarded, and superseded drafts are terminal and immutable.
-The v1 registry has no public discard or supersede tool; the durable states do
-not imply another MCP surface.
+`archive_model_change_set` moves a caller-owned active/validated draft to the
+retained `discarded` state without deleting it. There is no public supersede tool.
 
 ## Create
 

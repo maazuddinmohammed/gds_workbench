@@ -86,6 +86,30 @@ class CandidateDigestConflictError(WorkbenchError):
         )
 
 
+class ModelChangeSetNotFoundError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_change_set_not_found",
+            message="Model Change Set was not found for the current Principal and Model.",
+        )
+
+
+class ModelChangeSetNotActiveError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_change_set_not_active",
+            message="Model Change Set is no longer active.",
+        )
+
+
+class ModelChangeSetNotValidatedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="model_change_set_not_validated",
+            message="Model Change Set must pass validation before it can be applied.",
+        )
+
+
 class DraftRevisionConflictError(WorkbenchError):
     def __init__(self, current_revision: int) -> None:
         super().__init__(
@@ -99,4 +123,60 @@ class DependencyUnavailableError(WorkbenchError):
         super().__init__(
             code="dependency_unavailable",
             message="A required dependency is unavailable.",
+        )
+
+
+class DatabricksConnectionNotFoundError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="databricks_connection_not_found",
+            message="An active global Databricks Connection was not found.",
+        )
+
+
+class DatabricksConnectionConfigurationError(WorkbenchError):
+    def __init__(self, reason: str) -> None:
+        messages = {
+            "missing": (
+                "The Connection is missing a complete Databricks host, HTTP path, "
+                "and token configuration."
+            ),
+            "ambiguous": (
+                "The Connection has complete Databricks values for more than one Environment."
+            ),
+            "invalid": "The Connection has invalid Databricks configuration values.",
+        }
+        super().__init__(
+            code=f"databricks_connection_configuration_{reason}",
+            message=messages.get(reason, messages["invalid"]),
+        )
+
+
+class DatabricksConnectionFailedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="databricks_connection_failed",
+            message=(
+                "The Databricks SQL Warehouse connection failed. Check the configured "
+                "host, HTTP path, token, Warehouse state, and network access."
+            ),
+        )
+
+
+class DatabricksStatementFailedError(WorkbenchError):
+    def __init__(self, statement_index: int) -> None:
+        super().__init__(
+            code="databricks_statement_failed",
+            message=(
+                f"Databricks rejected statement {statement_index}. Check its syntax, "
+                "object names, permissions, and temporary-object support."
+            ),
+        )
+
+
+class DatabricksResultTooLargeError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="databricks_result_too_large",
+            message="The bounded Databricks result is too large to return safely.",
         )

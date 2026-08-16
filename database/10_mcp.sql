@@ -434,15 +434,14 @@ CREATE FUNCTION mcp.stage_metadata_change_set(
     p_tenant_id BIGINT,
     p_metadata_change_set_id UUID,
     p_expected_draft_revision BIGINT,
-    p_section_name VARCHAR(30),
-    p_document JSONB,
+    p_documents JSONB,
     p_correlation_id UUID
 )
 RETURNS TABLE (
     staged BOOLEAN,
     denial_code VARCHAR(50),
     draft_revision BIGINT,
-    record_count INTEGER,
+    dataset_counts JSONB,
     expires_time TIMESTAMPTZ
 )
 LANGUAGE plpgsql
@@ -455,27 +454,32 @@ DECLARE
     v_change_set RECORD;
     v_new_revision BIGINT;
     v_expires_time TIMESTAMPTZ;
+    v_dataset_counts JSONB;
     v_record_count INTEGER;
     v_event_sequence BIGINT;
 BEGIN
     IF p_expected_draft_revision < 1
-       OR p_section_name NOT IN (
-           'source_object', 'source_attribute',
-           'bronze_object', 'bronze_attribute',
-           'silver_object', 'silver_attribute',
-           'gold_object', 'gold_attribute',
-           'ingestion_object_mapping', 'ingestion_attribute_mapping',
-           'copy_group', 'member_group', 'copy_group_control', 'copy',
-           'process_group', 'process'
-       )
-       OR jsonb_typeof(p_document) <> 'array'
-       OR octet_length(p_document::TEXT) > 16777216 THEN
+       OR jsonb_typeof(p_documents) <> 'object'
+       OR p_documents = '{}'::JSONB
+       OR octet_length(p_documents::TEXT) > 16777216
+       OR EXISTS (
+           SELECT 1
+             FROM jsonb_each(p_documents) AS document(name, records)
+            WHERE document.name NOT IN (
+                'source_object', 'source_attribute',
+                'bronze_object', 'bronze_attribute',
+                'silver_object', 'silver_attribute',
+                'gold_object', 'gold_attribute',
+                'ingestion_object_mapping', 'ingestion_attribute_mapping',
+                'copy_group', 'member_group', 'copy_group_control', 'copy',
+                'process_group', 'process'
+            )
+               OR jsonb_typeof(document.records) <> 'array'
+               OR jsonb_array_length(document.records) > 50000
+       ) THEN
         RETURN QUERY SELECT
-            FALSE,
-            'invalid_request'::VARCHAR(50),
-            NULL::BIGINT,
-            NULL::INTEGER,
-            NULL::TIMESTAMPTZ;
+            FALSE, 'invalid_request'::VARCHAR(50), NULL::BIGINT,
+            NULL::JSONB, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
 
@@ -492,35 +496,13 @@ BEGIN
         RETURN QUERY SELECT
             FALSE,
             coalesce(v_decision.denial_code, 'authorization_denied')::VARCHAR(50),
-            NULL::BIGINT,
-            NULL::INTEGER,
-            NULL::TIMESTAMPTZ;
+            NULL::BIGINT, NULL::JSONB, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
 
     SELECT change_set.metadata_change_set_status,
            change_set.draft_revision,
-           change_set.expires_time,
-           CASE p_section_name
-               WHEN 'source_object' THEN change_set.source_object_document
-               WHEN 'source_attribute' THEN change_set.source_attribute_document
-               WHEN 'bronze_object' THEN change_set.bronze_object_document
-               WHEN 'bronze_attribute' THEN change_set.bronze_attribute_document
-               WHEN 'silver_object' THEN change_set.silver_object_document
-               WHEN 'silver_attribute' THEN change_set.silver_attribute_document
-               WHEN 'gold_object' THEN change_set.gold_object_document
-               WHEN 'gold_attribute' THEN change_set.gold_attribute_document
-               WHEN 'ingestion_object_mapping'
-                   THEN change_set.ingestion_object_mapping_document
-               WHEN 'ingestion_attribute_mapping'
-                   THEN change_set.ingestion_attribute_mapping_document
-               WHEN 'copy_group' THEN change_set.copy_group_document
-               WHEN 'member_group' THEN change_set.member_group_document
-               WHEN 'copy_group_control' THEN change_set.copy_group_control_document
-               WHEN 'copy' THEN change_set.copy_document
-               WHEN 'process_group' THEN change_set.process_group_document
-               WHEN 'process' THEN change_set.process_document
-           END AS current_document
+           change_set.expires_time
       INTO v_change_set
       FROM mcp.metadata_change_set AS change_set
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
@@ -529,97 +511,63 @@ BEGIN
      FOR UPDATE;
     IF NOT FOUND THEN
         RETURN QUERY SELECT
-            FALSE,
-            'metadata_change_set_not_found'::VARCHAR(50),
-            NULL::BIGINT,
-            NULL::INTEGER,
-            NULL::TIMESTAMPTZ;
+            FALSE, 'metadata_change_set_not_found'::VARCHAR(50), NULL::BIGINT,
+            NULL::JSONB, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
     IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
         RETURN QUERY SELECT
-            FALSE,
-            'metadata_change_set_not_active'::VARCHAR(50),
-            v_change_set.draft_revision::BIGINT,
-            jsonb_array_length(v_change_set.current_document)::INTEGER,
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50),
+            v_change_set.draft_revision::BIGINT, NULL::JSONB,
             v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
     IF v_change_set.draft_revision <> p_expected_draft_revision THEN
         RETURN QUERY SELECT
-            FALSE,
-            'draft_revision_conflict'::VARCHAR(50),
-            v_change_set.draft_revision::BIGINT,
-            jsonb_array_length(v_change_set.current_document)::INTEGER,
+            FALSE, 'draft_revision_conflict'::VARCHAR(50),
+            v_change_set.draft_revision::BIGINT, NULL::JSONB,
             v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
 
     UPDATE mcp.metadata_change_set AS change_set
-       SET source_object_document = CASE
-               WHEN p_section_name = 'source_object' THEN p_document
-               ELSE change_set.source_object_document
-           END,
-           source_attribute_document = CASE
-               WHEN p_section_name = 'source_attribute' THEN p_document
-               ELSE change_set.source_attribute_document
-           END,
-           bronze_object_document = CASE
-               WHEN p_section_name = 'bronze_object' THEN p_document
-               ELSE change_set.bronze_object_document
-           END,
-           bronze_attribute_document = CASE
-               WHEN p_section_name = 'bronze_attribute' THEN p_document
-               ELSE change_set.bronze_attribute_document
-           END,
-           silver_object_document = CASE
-               WHEN p_section_name = 'silver_object' THEN p_document
-               ELSE change_set.silver_object_document
-           END,
-           silver_attribute_document = CASE
-               WHEN p_section_name = 'silver_attribute' THEN p_document
-               ELSE change_set.silver_attribute_document
-           END,
-           gold_object_document = CASE
-               WHEN p_section_name = 'gold_object' THEN p_document
-               ELSE change_set.gold_object_document
-           END,
-           gold_attribute_document = CASE
-               WHEN p_section_name = 'gold_attribute' THEN p_document
-               ELSE change_set.gold_attribute_document
-           END,
+       SET source_object_document = CASE WHEN p_documents ? 'source_object'
+               THEN p_documents -> 'source_object' ELSE change_set.source_object_document END,
+           source_attribute_document = CASE WHEN p_documents ? 'source_attribute'
+               THEN p_documents -> 'source_attribute' ELSE change_set.source_attribute_document END,
+           bronze_object_document = CASE WHEN p_documents ? 'bronze_object'
+               THEN p_documents -> 'bronze_object' ELSE change_set.bronze_object_document END,
+           bronze_attribute_document = CASE WHEN p_documents ? 'bronze_attribute'
+               THEN p_documents -> 'bronze_attribute' ELSE change_set.bronze_attribute_document END,
+           silver_object_document = CASE WHEN p_documents ? 'silver_object'
+               THEN p_documents -> 'silver_object' ELSE change_set.silver_object_document END,
+           silver_attribute_document = CASE WHEN p_documents ? 'silver_attribute'
+               THEN p_documents -> 'silver_attribute' ELSE change_set.silver_attribute_document END,
+           gold_object_document = CASE WHEN p_documents ? 'gold_object'
+               THEN p_documents -> 'gold_object' ELSE change_set.gold_object_document END,
+           gold_attribute_document = CASE WHEN p_documents ? 'gold_attribute'
+               THEN p_documents -> 'gold_attribute' ELSE change_set.gold_attribute_document END,
            ingestion_object_mapping_document = CASE
-               WHEN p_section_name = 'ingestion_object_mapping' THEN p_document
-               ELSE change_set.ingestion_object_mapping_document
-           END,
+               WHEN p_documents ? 'ingestion_object_mapping'
+               THEN p_documents -> 'ingestion_object_mapping'
+               ELSE change_set.ingestion_object_mapping_document END,
            ingestion_attribute_mapping_document = CASE
-               WHEN p_section_name = 'ingestion_attribute_mapping' THEN p_document
-               ELSE change_set.ingestion_attribute_mapping_document
-           END,
-           copy_group_document = CASE
-               WHEN p_section_name = 'copy_group' THEN p_document
-               ELSE change_set.copy_group_document
-           END,
-           member_group_document = CASE
-               WHEN p_section_name = 'member_group' THEN p_document
-               ELSE change_set.member_group_document
-           END,
-           copy_group_control_document = CASE
-               WHEN p_section_name = 'copy_group_control' THEN p_document
-               ELSE change_set.copy_group_control_document
-           END,
-           copy_document = CASE
-               WHEN p_section_name = 'copy' THEN p_document
-               ELSE change_set.copy_document
-           END,
-           process_group_document = CASE
-               WHEN p_section_name = 'process_group' THEN p_document
-               ELSE change_set.process_group_document
-           END,
-           process_document = CASE
-               WHEN p_section_name = 'process' THEN p_document
-               ELSE change_set.process_document
-           END,
+               WHEN p_documents ? 'ingestion_attribute_mapping'
+               THEN p_documents -> 'ingestion_attribute_mapping'
+               ELSE change_set.ingestion_attribute_mapping_document END,
+           copy_group_document = CASE WHEN p_documents ? 'copy_group'
+               THEN p_documents -> 'copy_group' ELSE change_set.copy_group_document END,
+           member_group_document = CASE WHEN p_documents ? 'member_group'
+               THEN p_documents -> 'member_group' ELSE change_set.member_group_document END,
+           copy_group_control_document = CASE WHEN p_documents ? 'copy_group_control'
+               THEN p_documents -> 'copy_group_control'
+               ELSE change_set.copy_group_control_document END,
+           copy_document = CASE WHEN p_documents ? 'copy'
+               THEN p_documents -> 'copy' ELSE change_set.copy_document END,
+           process_group_document = CASE WHEN p_documents ? 'process_group'
+               THEN p_documents -> 'process_group' ELSE change_set.process_group_document END,
+           process_document = CASE WHEN p_documents ? 'process'
+               THEN p_documents -> 'process' ELSE change_set.process_document END,
            metadata_change_set_status = 'active',
            draft_revision = change_set.draft_revision + 1,
            candidate_digest = NULL,
@@ -631,39 +579,25 @@ BEGIN
     RETURNING change_set.draft_revision, change_set.expires_time
          INTO v_new_revision, v_expires_time;
 
-    v_record_count := jsonb_array_length(p_document);
+    SELECT jsonb_object_agg(document.name, jsonb_array_length(document.records)),
+           sum(jsonb_array_length(document.records))::INTEGER
+      INTO v_dataset_counts, v_record_count
+      FROM jsonb_each(p_documents) AS document(name, records);
     SELECT coalesce(max(event.event_sequence), 0) + 1
       INTO v_event_sequence
       FROM mcp.metadata_change_set_event AS event
      WHERE event.metadata_change_set_id = p_metadata_change_set_id;
     INSERT INTO mcp.metadata_change_set_event (
-        metadata_change_set_id,
-        tenant_id,
-        event_sequence,
-        event_type,
-        draft_revision,
-        section_name,
-        action_count,
-        outcome,
-        correlation_id
+        metadata_change_set_id, tenant_id, event_sequence, event_type,
+        draft_revision, action_count, outcome, event_metadata, correlation_id
     ) VALUES (
-        p_metadata_change_set_id,
-        p_tenant_id,
-        v_event_sequence,
-        'section_put',
-        v_new_revision,
-        p_section_name,
-        v_record_count,
-        'accepted',
-        p_correlation_id
+        p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'section_put',
+        v_new_revision, v_record_count, 'accepted',
+        jsonb_build_object('dataset_counts', v_dataset_counts), p_correlation_id
     );
 
     RETURN QUERY SELECT
-        TRUE,
-        NULL::VARCHAR(50),
-        v_new_revision,
-        v_record_count,
-        v_expires_time;
+        TRUE, NULL::VARCHAR(50), v_new_revision, v_dataset_counts, v_expires_time;
 END;
 $stage_metadata_change_set$;
 
@@ -1064,8 +998,115 @@ BEGIN
 END;
 $archive_metadata_change_set$;
 
--- One immutable row per completed MCP tool call. input_metadata is a bounded,
--- server-created summary; it must never contain raw prompts, rows, output, or secrets.
+-- Exact secret-bearing lookup for the governed Databricks SQL tool. The
+-- runtime role never receives table-wide access to core.connection_value.
+CREATE FUNCTION mcp.get_databricks_sql_connection_values(
+    p_connection_id BIGINT
+)
+RETURNS TABLE (
+    connection_tenant_id BIGINT,
+    failure_code VARCHAR(50),
+    databricks_host_name TEXT,
+    databricks_http_path TEXT,
+    databricks_token TEXT
+)
+LANGUAGE plpgsql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog
+AS $get_databricks_sql_connection_values$
+DECLARE
+    v_tenant_id BIGINT;
+    v_complete_environment_count INTEGER;
+    v_host_name TEXT;
+    v_http_path TEXT;
+    v_token TEXT;
+BEGIN
+    IF p_connection_id < 1 THEN
+        RETURN QUERY SELECT
+            NULL::BIGINT, 'invalid_request'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    SELECT connection_record.tenant_id
+      INTO v_tenant_id
+      FROM core.connection AS connection_record
+     WHERE connection_record.connection_id = p_connection_id
+       AND connection_record.is_active
+       AND connection_record.is_global_data_store;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            NULL::BIGINT, 'connection_not_found'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    WITH environment_values AS (
+        SELECT connection_value.environment_id,
+               max(connection_value.connection_value) FILTER (
+                   WHERE lower(btrim(parameter.connection_parameter_code)) =
+                         'databricks_host_name'
+               ) AS host_name,
+               max(connection_value.connection_value) FILTER (
+                   WHERE lower(btrim(parameter.connection_parameter_code)) =
+                         'databricks_http_path'
+               ) AS http_path,
+               max(connection_value.connection_value) FILTER (
+                   WHERE lower(btrim(parameter.connection_parameter_code)) =
+                         'databricks_token'
+               ) AS token
+          FROM core.connection_value AS connection_value
+          JOIN reference.connection_parameter AS parameter
+            ON parameter.connection_parameter_id =
+               connection_value.connection_parameter_id
+           AND parameter.is_active
+          JOIN reference.environment AS environment_record
+            ON environment_record.environment_id = connection_value.environment_id
+           AND environment_record.is_active
+         WHERE connection_value.connection_id = p_connection_id
+           AND lower(btrim(parameter.connection_parameter_code)) IN (
+               'databricks_host_name',
+               'databricks_http_path',
+               'databricks_token'
+           )
+         GROUP BY connection_value.environment_id
+    ), complete_environments AS (
+        SELECT environment_values.host_name,
+               environment_values.http_path,
+               environment_values.token
+          FROM environment_values
+         WHERE environment_values.host_name IS NOT NULL
+           AND environment_values.http_path IS NOT NULL
+           AND environment_values.token IS NOT NULL
+    )
+    SELECT count(*)::INTEGER,
+           min(complete_environments.host_name),
+           min(complete_environments.http_path),
+           min(complete_environments.token)
+      INTO v_complete_environment_count, v_host_name, v_http_path, v_token
+      FROM complete_environments;
+
+    IF v_complete_environment_count = 0 THEN
+        RETURN QUERY SELECT
+            v_tenant_id, 'connection_values_missing'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+    IF v_complete_environment_count > 1 THEN
+        RETURN QUERY SELECT
+            v_tenant_id, 'connection_values_ambiguous'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    RETURN QUERY SELECT
+        v_tenant_id, NULL::VARCHAR(50), v_host_name, v_http_path, v_token;
+END;
+$get_databricks_sql_connection_values$;
+
+-- One immutable row per completed MCP tool call. input_metadata is server-created.
+-- PostgreSQL imposes no application-specific byte ceiling on the JSON object.
 CREATE TABLE mcp.tool_call_log (
     tool_call_id UUID PRIMARY KEY,
     principal_id BIGINT,
@@ -1110,7 +1151,6 @@ CREATE TABLE mcp.tool_call_log (
     ),
     CONSTRAINT ck_mcp_tool_call_input_metadata CHECK (
         jsonb_typeof(input_metadata) = 'object'
-        AND octet_length(input_metadata::TEXT) <= 16384
     ),
     CONSTRAINT ck_mcp_tool_call_status CHECK (
         tool_call_status IN ('succeeded', 'failed')

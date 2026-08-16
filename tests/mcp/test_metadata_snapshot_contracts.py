@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
-    build_dataset_schema_document,
+    build_dataset_document,
 )
 from gds_etl_workbench.tools.snapshots.metadata.contracts import (
     DATASETS,
@@ -146,7 +146,7 @@ def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
     source_object = next(
         dataset for dataset in DATASETS if dataset.name == "source_object"
     )
-    schema = build_dataset_schema_document(source_object)
+    schema = build_dataset_document(source_object).schema
 
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
     assert schema["$id"] == "schemas/source_object.schema.json"
@@ -159,6 +159,14 @@ def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
         "object_name",
     ]
     assert schema["x-gds-unique-constraints"] == [schema["x-gds-canonical-key"]]
+    assert schema["x-gds-key-normalization"] == {
+        "version": "1.0",
+        "string_field_suffixes": ["_code", "_name", "_schema"],
+        "trim_code_points": ["U+0020"],
+        "case": "unicode-lowercase",
+        "unicode_normalization": "none",
+        "other_values": "identity",
+    }
     assert schema["x-gds-references"] == [
         {
             "columns": ["tenant_code", "system_code", "connection_code"],
@@ -182,3 +190,86 @@ def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
     properties = schema["properties"]
     assert isinstance(properties, dict)
     assert properties["zone_code"]["const"] == "source"
+
+
+def test_all_dataset_columns_publish_complete_authoring_guidance() -> None:
+    accepted_kinds = {"fixed", "literal", "reference", "constrained", "freeform"}
+
+    for dataset in DATASETS:
+        schema = build_dataset_document(dataset).schema
+        properties = schema["properties"]
+        columns = schema["x-gds-columns"]
+        assert isinstance(properties, dict)
+        assert isinstance(columns, list)
+        assert [column["name"] for column in columns] == list(
+            dataset.row_model.model_fields
+        )
+        assert schema["x-gds-population-rules"]
+
+        for column in columns:
+            name = column["name"]
+            assert column["description"]
+            assert column["population_guidance"]
+            assert column["accepted_values"]["kind"] in accepted_kinds
+            assert properties[name]["description"] == column["description"]
+            assert (
+                properties[name]["x-gds-population-guidance"]
+                == column["population_guidance"]
+            )
+            assert (
+                properties[name]["x-gds-accepted-values"]
+                == column["accepted_values"]
+            )
+
+
+def test_column_guidance_distinguishes_fixed_literal_reference_and_constraints() -> None:
+    source_object = build_dataset_document(
+        next(dataset for dataset in DATASETS if dataset.name == "source_object")
+    ).schema
+    source_columns = {
+        column["name"]: column for column in source_object["x-gds-columns"]
+    }
+
+    assert source_columns["zone_code"]["accepted_values"] == {
+        "kind": "fixed",
+        "values": ["source"],
+        "references": [
+            {
+                "record_type": "zone",
+                "datasets": ["zone"],
+                "column": "zone_code",
+                "composite_columns": ["zone_code"],
+                "target_columns": ["zone_code"],
+                "nullable": False,
+            }
+        ],
+        "constraints": {},
+    }
+    assert source_columns["object_type_code"]["accepted_values"]["kind"] == (
+        "reference"
+    )
+    assert source_columns["is_active"]["accepted_values"]["values"] == [False, True]
+
+    tenant = build_dataset_document(
+        next(dataset for dataset in DATASETS if dataset.name == "tenant")
+    ).schema
+    tenant_columns = {column["name"]: column for column in tenant["x-gds-columns"]}
+    assert tenant_columns["tenant_visibility"]["accepted_values"]["values"] == [
+        "global",
+        "private",
+    ]
+    assert any(
+        "must be populated together" in rule
+        for rule in tenant["x-gds-population-rules"]
+    )
+
+    copy_dataset = build_dataset_document(
+        next(dataset for dataset in DATASETS if dataset.name == "copy")
+    ).schema
+    copy_columns = {
+        column["name"]: column for column in copy_dataset["x-gds-columns"]
+    }
+    assert copy_columns["copy_source_record_limit"]["accepted_values"]["kind"] == (
+        "constrained"
+    )
+    assert copy_columns["copy_source_record_limit"]["accepted_values"]["constraints"]

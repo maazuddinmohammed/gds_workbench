@@ -3,25 +3,6 @@
     "gds_workbench_v1": {
       "type": "http",
       "url": "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp"
-    },
-    "gds_workbench_agent_bridge": {
-      "type": "stdio",
-      "command": "${workspaceFolder}/mcp_bridge/.venv/bin/python",
-      "args": ["-m", "gds_workbench_bridge"],
-      "cwd": "${workspaceFolder}",
-      "env": {
-        "GDS_BRIDGE_MCP_URL": "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp",
-        "GDS_BRIDGE_ENTRA_CLIENT_ID": "${input:gds-bridge-entra-client-id}",
-        "GDS_BRIDGE_REDIRECT_URI": "http://localhost:8400"
-      }
     }
-  },
-  "inputs": [
-    {
-      "type": "promptString",
-      "id": "gds-bridge-entra-client-id",
-      "description": "Application (client) ID of the GDS Workbench MCP Bridge Entra desktop app",
-      "password": false
-    }
-  ]
+  }
 }

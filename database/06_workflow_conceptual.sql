@@ -172,8 +172,6 @@ CREATE TABLE workflow.conceptual_support (
         modeling_assertion_record_id,
         model_id
     ) ON DELETE NO ACTION,
-    CONSTRAINT uq_conceptual_support_id_model
-        UNIQUE (conceptual_support_id, model_id),
     CONSTRAINT ck_conceptual_support_typed_parent CHECK (
         (
             supported_artifact_type = 'conceptual_object'

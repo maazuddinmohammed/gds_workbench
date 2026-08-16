@@ -3,19 +3,22 @@
 Use this only after the Snapshot validator returns `ok=true`. The catalog is a
 map; it is not metadata row content.
 
+Commands assume this skill directory is the process working directory and
+`<absolute-GDS-path>` is resolved before execution.
+
 ## List available datasets
 
 Resolve the script from this skill's `scripts` directory. Windows PowerShell
 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\inspect-metadata-catalog.ps1" -SnapshotPath "$((Get-Location).Path)\gds-workspace\metadata-snapshot"
+powershell.exe -NoProfile -File ".\scripts\inspect-metadata-catalog.ps1" -SnapshotPath "<absolute-GDS-path>\metadata-snapshot"
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/inspect-metadata-catalog.sh" "$PWD/gds-workspace/metadata-snapshot"
+"./scripts/inspect-metadata-catalog.sh" "<absolute-GDS-path>/metadata-snapshot"
 ```
 
 Completion criterion: `ok=true`, `dataset_count=29`, and one compact line per
@@ -29,13 +32,13 @@ Pass one exact catalog dataset name. Do not guess a path.
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\inspect-metadata-catalog.ps1" -SnapshotPath "$((Get-Location).Path)\gds-workspace\metadata-snapshot" -Dataset "source_object"
+powershell.exe -NoProfile -File ".\scripts\inspect-metadata-catalog.ps1" -SnapshotPath "<absolute-GDS-path>\metadata-snapshot" -Dataset "source_object"
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/inspect-metadata-catalog.sh" "$PWD/gds-workspace/metadata-snapshot" "source_object"
+"./scripts/inspect-metadata-catalog.sh" "<absolute-GDS-path>/metadata-snapshot" "source_object"
 ```
 
 The result gives the exact canonical key, search fields, schema file, search
@@ -59,8 +62,11 @@ macOS:
 grep -i -F -- "<key-value>" "<search-file>" | head -n 20
 ```
 
-Compare every canonical-key component after trimming text and ignoring case.
-Do not select a row from a partial name match alone.
+Compare canonical-key components using the live schema's
+`x-gds-key-normalization`. Only string fields ending `_code`, `_name`, or
+`_schema` trim U+0020 spaces and lowercase; other fields, including Process
+location and executable, compare exactly. Do not select a row from a partial
+name match alone.
 
 - `search_result_complete=true`: each match is already the full row.
 - `search_result_complete=false`: each match is a compact lookup containing a

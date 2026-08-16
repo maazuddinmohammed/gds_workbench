@@ -14,6 +14,9 @@ disagree.
 - `get_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
   read-only SAS for the exact private Blob.
 - Metadata discovery and Snapshot tools are read-only.
+- `execute_databricks_sql` is the sole SQL exception. It accepts reads and
+  unqualified temporary views/tables for an authorized active global Connection;
+  it rejects all DML and persistent DDL.
 - Five governed Tenant Lock tools are registered: check, acquire, renew, release,
   and explicit override.
 
@@ -133,30 +136,46 @@ Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
 not exist. Registered workloads authenticate and authorize directly as active
 service Principals.
 
+`mcp.get_databricks_sql_connection_values(bigint)` is a fixed-search-path,
+`SECURITY DEFINER` function and the only runtime path to the three Databricks
+connection values. It returns values only when exactly one active Environment
+has a complete host, HTTP path, and token set for an active global Connection.
+The runtime role still has no table-wide `SELECT` on `core.connection_value`.
+
 ## MCP tool-call log
 
 `mcp.tool_call_log` stores one row after each completed MCP tool call by
 an active server-resolved Principal.
 It records the server-generated call ID, server-resolved Principal snapshot,
-Actor Kind, Tool Policy, optional Tenant, bounded input metadata, safe outcome,
+Actor Kind, Tool Policy, optional Tenant, safe input metadata, safe outcome,
 safe failure code, and one PostgreSQL timestamp.
 
 The table is append-only. The runtime role may insert but cannot select, update,
 delete, or truncate it. A database trigger also rejects update, delete, and
 truncate attempts by more privileged callers. Input metadata must be a JSON
-object no larger than 16 KiB and must never contain raw prompts, physical rows,
-tool output, bearer tokens, secrets, connection values, or exception text.
+object. PostgreSQL applies no application-specific byte ceiling; normal network
+tool calls remain subject to the MCP server's 1 MiB request-body limit. Input
+metadata never contains signed cursors, lock purpose/reason text, staged physical
+records, prompts, tool output, bearer tokens, Databricks connection values, or
+exception text. Callers must never place credentials in submitted SQL.
 
 Central MCP middleware performs the append after the tool returns. Each tool
-registers its server-owned Tool Policy and a small input summarizer beside its
-handler. `list_tenants` records only schema version, bounded page size, and
-whether a cursor was supplied; it never records the cursor.
-`get_metadata_snapshot` records only schema version and validated requested
-Tenant ID. The middleware
-checks only MCP's `isError` flag and never reads or stores tool output.
+registers its server-owned Tool Policy, exact safe argument names to retain, and
+a summarizer for prohibited payloads beside its handler. Unregistered and
+secret-bearing fields are dropped. `list_tenants` retains schema version and page
+size and records only whether a cursor was supplied; it never records the cursor.
+`get_metadata_snapshot` retains schema version and requested Tenant ID. The
+middleware checks only MCP's `isError` flag and never reads or stores tool output.
 Tenant Lock tools record only Tenant ID, schema version, bounded duration, and
 whether optional purpose or required override reason was supplied. Purpose and
 override reason text are not copied into the MCP tool-call log.
+Metadata Change Set tools retain their safe identifiers, dataset selection, and
+expected revision. Stage records only dataset/record counts; complete staged
+physical records are not copied into the tool-call log.
+`execute_databricks_sql` records schema version, Connection ID, the complete
+submitted SQL, and its character count. SQL is retained only in the append-only
+database audit record, not application logs. Returned rows, host, HTTP path,
+token, and connector exception text are never logged.
 
 Authentication rejected before MCP execution and identities that do not map to
 an active internal Principal cannot produce a Principal-owned tool-call row.
@@ -170,3 +189,8 @@ Stable public codes include `authentication_required`, `authorization_denied`,
 `payload_too_large`, and `dependency_unavailable`. Unexpected exceptions become a bounded
 `internal_error`; raw SQL, connection values, claims, and exception text are not
 returned.
+
+Databricks failures use stable codes for a missing global Connection,
+missing/ambiguous/invalid connection configuration, Warehouse connection
+failure, rejected statement index, or oversized bounded result. No underlying
+connector message is returned.

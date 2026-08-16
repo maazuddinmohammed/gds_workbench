@@ -95,26 +95,17 @@ or cache entry does not grant access.
 
 ### Model Snapshot workspace layout
 
-A Model Snapshot ZIP is both immutable workflow input and a transport-neutral
-human authoring workspace. It contains:
+A Model Snapshot ZIP is immutable workflow input. Under `model-snapshot/` it
+contains `manifest.json`, `catalog.json`, one JSON Schema per dataset under
+`schemas/model/`, and 17 ID-free JSONL datasets under
+`data/{section}/{dataset}/rows.jsonl`.
 
-- `input/manifest.json`, `input/model.json`, `input/source-catalog.json`, and
-  `input/modeling-assertions.json`;
-- `output/change-set.json` and one output file for each of the eight documents;
-- `output/_workbench/activity.jsonl` and `latest-validation.json`; and
-- an allowlisted `contract/` directory with common schemas, examples, the
-  source-catalog schema, and the Mapping profile schema.
-
-The manifest binds every listed member, Model revision, source-context digest,
-Assertion digest, and total size. ZIP entries are deterministically ordered with
-fixed metadata. The activity and validation mirrors never enter a Candidate
-digest.
-
-The current public `get_model_snapshot` request selects only Model and optional
-expected revision, so its output workspace starts empty. A human reads an
-existing draft through `get_model_change_set`. The feature's unused internal
-draft-overlay argument is not a public contract and must not be exposed without
-an explicit compatibility decision.
+The manifest binds every member, Model revision, retention time, expanded size,
+and SHA-256. ZIP entries are deterministically ordered with fixed metadata.
+`get_model_snapshot` accepts Model ID and schema version `2.0`, then returns only
+a temporary read-only URL, expiry, byte count, and archive SHA-256. Snapshot rows
+and ZIP bytes never enter the MCP response. Existing draft records remain
+available through `get_model_change_set`.
 
 ## Contract rules
 

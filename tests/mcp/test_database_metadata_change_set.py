@@ -91,7 +91,10 @@ def test_metadata_change_set_has_exact_sixteen_documents(
     assert event_section_check is not None
     for column_name in DOCUMENT_COLUMNS:
         assert f"jsonb_typeof({column_name})" in document_check["definition"]
-        assert f"octet_length(({column_name})::text) <= 16777216" in document_check["definition"]
+        assert (
+            f"octet_length(({column_name})::text) <= 16777216"
+            in document_check["definition"]
+        )
     for section_name in NEW_SECTION_NAMES:
         assert section_name in event_section_check["definition"]
 
@@ -118,7 +121,7 @@ def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions
                    )
                    AND has_function_privilege(
                        'gds_app_write',
-                       'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,varchar,jsonb,uuid)',
+                       'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,jsonb,uuid)',
                        'EXECUTE'
                    )
                    AND has_function_privilege(
@@ -140,7 +143,13 @@ def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions
                        'gds_app_write',
                        'mcp.archive_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,uuid)',
                        'EXECUTE'
-                   ) AS governed_execute
+                   ) AS governed_execute,
+                   to_regprocedure(
+                       'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,jsonb,uuid)'
+                   ) IS NOT NULL AS multi_dataset_stage_exists,
+                   to_regprocedure(
+                       'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,varchar,jsonb,uuid)'
+                   ) IS NULL AS single_dataset_stage_removed
             """
         ).fetchone()
 
@@ -149,6 +158,8 @@ def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions
         "direct_mutation": False,
         "direct_event_insert": False,
         "governed_execute": True,
+        "multi_dataset_stage_exists": True,
+        "single_dataset_stage_removed": True,
     }
 
 
@@ -156,7 +167,9 @@ def test_metadata_change_set_enforces_new_document_and_event_contract(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        tenant_id, principal_id = _seed_change_set_parents(connection, suffix="DOCUMENTS")
+        tenant_id, principal_id = _seed_change_set_parents(
+            connection, suffix="DOCUMENTS"
+        )
         change_set_id = uuid4()
         correlation_id = uuid4()
         documents = connection.execute(
@@ -369,7 +382,7 @@ def test_create_metadata_change_set_requires_owned_lock_and_reuses_ongoing_draft
     }
 
 
-def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
+def test_stage_metadata_change_set_replaces_multiple_documents_with_one_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
     entra_tenant_id = UUID("10000000-0000-0000-0000-000000000041")
@@ -380,7 +393,7 @@ def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
     )
-    records = [
+    copy_groups = [
         {
             "tenant_code": "CHANGE_SET_TENANT_STAGE",
             "system_code": "CRM",
@@ -390,15 +403,29 @@ def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
             "is_active": True,
         }
     ]
+    process_groups = [
+        {
+            "tenant_code": "CHANGE_SET_TENANT_STAGE",
+            "system_code": "CRM",
+            "zone_code": "bronze",
+            "process_group_name": "LOAD_CUSTOMERS",
+            "process_group_description": None,
+            "copy_group_name": "CUSTOMERS",
+            "is_active": True,
+        }
+    ]
+    documents = {
+        "copy_group": copy_groups,
+        "process_group": process_groups,
+    }
 
     with postgres_database.connect_runtime() as connection:
         staged = connection.execute(
             """
-            SELECT staged, denial_code, draft_revision, record_count
+            SELECT staged, denial_code, draft_revision, dataset_counts
               FROM mcp.stage_metadata_change_set(
                   %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
-                  %s::UUID, 1::BIGINT, 'copy_group'::VARCHAR,
-                  %s::JSONB, %s::UUID
+                  %s::UUID, 1::BIGINT, %s::JSONB, %s::UUID
               )
             """,
             (
@@ -406,17 +433,17 @@ def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
                 entra_object_id,
                 tenant_id,
                 change_set_id,
-                Jsonb(records),
+                Jsonb(documents),
                 uuid4(),
             ),
         ).fetchone()
         conflict = connection.execute(
             """
-            SELECT staged, denial_code, draft_revision, record_count
+            SELECT staged, denial_code, draft_revision, dataset_counts
               FROM mcp.stage_metadata_change_set(
                   %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
-                  %s::UUID, 1::BIGINT, 'copy_group'::VARCHAR,
-                  '[]'::JSONB, %s::UUID
+                  %s::UUID, 1::BIGINT,
+                  '{"copy_group": []}'::JSONB, %s::UUID
               )
             """,
             (entra_tenant_id, entra_object_id, tenant_id, change_set_id, uuid4()),
@@ -424,26 +451,112 @@ def test_stage_metadata_change_set_replaces_one_document_and_checks_revision(
     with postgres_database.connect_owner() as connection:
         stored = connection.execute(
             """
-            SELECT copy_group_document
+            SELECT draft_revision, copy_group_document, process_group_document
               FROM mcp.metadata_change_set
              WHERE metadata_change_set_id = %s
             """,
             (change_set_id,),
         ).fetchone()
+        stage_events = connection.execute(
+            """
+            SELECT draft_revision, section_name, action_count, event_metadata
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type = 'section_put'
+             ORDER BY event_sequence
+            """,
+            (change_set_id,),
+        ).fetchall()
 
     assert staged == {
         "staged": True,
         "denial_code": None,
         "draft_revision": 2,
-        "record_count": 1,
+        "dataset_counts": {"copy_group": 1, "process_group": 1},
     }
     assert conflict == {
         "staged": False,
         "denial_code": "draft_revision_conflict",
         "draft_revision": 2,
-        "record_count": 1,
+        "dataset_counts": None,
     }
-    assert stored == {"copy_group_document": records}
+    assert stored == {
+        "draft_revision": 2,
+        "copy_group_document": copy_groups,
+        "process_group_document": process_groups,
+    }
+    assert stage_events == [
+        {
+            "draft_revision": 2,
+            "section_name": None,
+            "action_count": 2,
+            "event_metadata": {"dataset_counts": {"copy_group": 1, "process_group": 1}},
+        }
+    ]
+
+
+def test_stage_metadata_change_set_rejects_the_whole_invalid_request(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000051")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000051")
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix="STAGE_INVALID",
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    documents = {
+        "copy_group": [],
+        "not_a_dataset": [],
+    }
+
+    with postgres_database.connect_runtime() as connection:
+        rejected = connection.execute(
+            """
+            SELECT staged, denial_code, draft_revision, dataset_counts
+              FROM mcp.stage_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::JSONB, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                Jsonb(documents),
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT draft_revision, copy_group_document
+              FROM mcp.metadata_change_set
+             WHERE metadata_change_set_id = %s
+            """,
+            (change_set_id,),
+        ).fetchone()
+        stage_event_count = connection.execute(
+            """
+            SELECT count(*) AS count
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type = 'section_put'
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert rejected == {
+        "staged": False,
+        "denial_code": "invalid_request",
+        "draft_revision": None,
+        "dataset_counts": None,
+    }
+    assert stored == {"draft_revision": 1, "copy_group_document": []}
+    assert stage_event_count == {"count": 0}
 
 
 def test_get_metadata_change_set_requires_ownership_but_not_current_lock(
@@ -1042,7 +1155,9 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
             ),
         )
 
-    with pytest.raises(psycopg.errors.SerializationFailure, match="Copy dependency changed"):
+    with pytest.raises(
+        psycopg.errors.SerializationFailure, match="Copy dependency changed"
+    ):
         with postgres_database.connect_runtime() as connection:
             connection.execute(
                 """
@@ -1245,24 +1360,27 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
              WHERE metadata_change_set_id = %s
             """,
             (
-                *(Jsonb(documents[name]) for name in (
-                    "source_object",
-                    "source_attribute",
-                    "bronze_object",
-                    "bronze_attribute",
-                    "silver_object",
-                    "silver_attribute",
-                    "gold_object",
-                    "gold_attribute",
-                    "ingestion_object_mapping",
-                    "ingestion_attribute_mapping",
-                    "copy_group",
-                    "member_group",
-                    "copy_group_control",
-                    "copy",
-                    "process_group",
-                    "process",
-                )),
+                *(
+                    Jsonb(documents[name])
+                    for name in (
+                        "source_object",
+                        "source_attribute",
+                        "bronze_object",
+                        "bronze_attribute",
+                        "silver_object",
+                        "silver_attribute",
+                        "gold_object",
+                        "gold_attribute",
+                        "ingestion_object_mapping",
+                        "ingestion_attribute_mapping",
+                        "copy_group",
+                        "member_group",
+                        "copy_group_control",
+                        "copy",
+                        "process_group",
+                        "process",
+                    )
+                ),
                 digest,
                 change_set_id,
             ),

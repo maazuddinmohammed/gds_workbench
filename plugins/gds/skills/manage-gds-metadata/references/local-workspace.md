@@ -3,10 +3,14 @@
 The local workspace separates the immutable metadata Snapshot from the editable
 Change Set. Keep it in the user's current project, not inside this plugin.
 
+Commands below assume this skill directory is the process working directory.
+Resolve `<absolute-GDS-path>` to the user's absolute project `GDS` directory
+before execution; never pass that token literally.
+
 ## Layout
 
 ```text
-gds-workspace/
+GDS/
 ├── .gitignore
 ├── record-input.json       # optional reusable full-record input
 ├── record-key.json         # optional reusable canonical-key input
@@ -31,13 +35,13 @@ Resolve the script from this skill's `scripts` directory. On Windows PowerShell
 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\initialize-gds-workspace.ps1" -Root "$((Get-Location).Path)\gds-workspace"
+powershell.exe -NoProfile -File ".\scripts\initialize-gds-workspace.ps1" -Root "<absolute-GDS-path>"
 ```
 
 On macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/initialize-gds-workspace.sh" "$PWD/gds-workspace"
+"./scripts/initialize-gds-workspace.sh" "<absolute-GDS-path>"
 ```
 
 Completion criterion: output starts with `ok=true`, and `workspace` is the
@@ -47,17 +51,47 @@ If `metadata_snapshot_exists=true` or `change_set_exists=true`, stop and ask
 whether the user wants to reuse it. If not, ask the user to remove it or rename
 it clearly, then wait. Never perform that operation for the user.
 
-## Create a local Change Set
+## Unbound local draft
 
-Create this only after the validated Snapshot is present and the server returns
-the Metadata Change Set ID, status, and current revision. The initializer
-refuses an existing local `change-set`.
+The bundled Metadata Workbench may create `change-set` before a Tenant Lock or
+server Change Set exists. This is only a local draft:
+
+```json
+{
+  "format_version": "1.0",
+  "tenant": { "tenant_id": null, "tenant_code": "DEMO" },
+  "snapshot": {
+    "snapshot_id": "<uuid>",
+    "path": "../metadata-snapshot",
+    "usage": "local",
+    "outdated_snapshot_warning_acknowledged": false
+  },
+  "server_change_set": {
+    "metadata_change_set_id": null,
+    "draft_revision": null,
+    "status": "local"
+  },
+  "datasets": {}
+}
+```
+
+Dataset files may be built and saved in this state. Local status does not mean
+authorized, Staged, server-validated, or applied. Do not call Stage until the
+draft is bound.
+
+## Bind or create a local Change Set
+
+After the user approves the Tenant Lock and the server returns the Metadata
+Change Set ID, status, and revision, run the initializer below. It creates a
+new bound local Change Set when none exists. When a matching unbound Workbench
+draft exists, it atomically replaces only `change-set.json` and preserves every
+`datasets/*.json` file. It refuses an existing bound or mismatched draft.
 
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\initialize-metadata-change-set.ps1" `
-    -WorkspacePath "$((Get-Location).Path)\gds-workspace" `
+powershell.exe -NoProfile -File ".\scripts\initialize-metadata-change-set.ps1" `
+    -WorkspacePath "<absolute-GDS-path>" `
     -TenantId <tenant-id> -TenantCode "<tenant-code>" `
     -SnapshotId "<snapshot-id>" -SnapshotUsage "fresh" `
     -MetadataChangeSetId "<change-set-id>" `
@@ -67,16 +101,17 @@ powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\ini
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/initialize-metadata-change-set.sh" \
-  --workspace "$PWD/gds-workspace" \
+"./scripts/initialize-metadata-change-set.sh" \
+  --workspace "<absolute-GDS-path>" \
   --tenant-id <tenant-id> --tenant-code "<tenant-code>" \
   --snapshot-id "<snapshot-id>" --snapshot-usage fresh \
   --change-set-id "<change-set-id>" \
   --server-status "<active-or-validated>" --draft-revision <revision>
 ```
 
-Completion criterion: `ok=true` and the Tenant, Snapshot, Change Set ID,
-revision, and status match the MCP results. For a user-approved reused Snapshot,
+Completion criterion: `ok=true`; the Tenant, Snapshot, Change Set ID, revision,
+and status match the MCP results; and `adopted_local_draft` reports whether the
+unbound draft was bound. For a user-approved reused Snapshot,
 set usage to `reused` and add `-AcknowledgeOutdatedSnapshot` on PowerShell or
 `--acknowledge-outdated-snapshot` on macOS.
 
@@ -111,73 +146,101 @@ workflow state; dataset records remain in separate files.
 
 Each `datasets/<dataset>.json` is the complete local pending JSON array for one
 of the 16 change-eligible datasets. It is the shared format for agent edits and
-the future HTML utility. Do not duplicate Snapshot schemas or business
+the bundled Metadata Workbench. Do not duplicate Snapshot schemas or business
 definitions in the Change Set; read them from the Snapshot and skill references.
 
-## Build and merge one full record
+## Update or deactivate an existing record
 
 Read `schemas/<dataset>.schema.json` before authoring. Use `properties` and
 `required` for the complete shape, `x-gds-canonical-key` for merge identity,
 `x-gds-unique-constraints` for conflicts, `x-gds-fixed-values` for constants,
 and `x-gds-references` to identify parents.
 
-- Update or deactivate: copy the exact existing full Snapshot/server row, then
-  change only the user-approved fields. Preserve every other field.
-- Insert: provide every required field with its correct JSON type. Never invent
-  reference codes; select existing parents from the Snapshot.
-- Keep one full object temporarily in `gds-workspace/record-input.json`. This
-  path is ignored by Git. The helper never prints its values or deletes it.
+Put exactly the canonical-key fields in `GDS/record-key.json`. Put only the
+user-approved non-key fields in `GDS/record-changes.json`. The helper finds the
+exact Snapshot row, uses an existing pending row as its base when present,
+applies the fields, validates the complete record and accumulated dataset, then
+writes atomically. It never prints the key, changes, or hydrated row.
 
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\upsert-local-metadata-record.ps1" `
-    -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" `
+powershell.exe -NoProfile -File ".\scripts\upsert-local-metadata-record.ps1" `
+    -ChangeSetPath "<absolute-GDS-path>\change-set" `
     -Dataset "source_object" `
-    -RecordPath "$((Get-Location).Path)\gds-workspace\record-input.json"
+    -KeyPath "<absolute-GDS-path>\record-key.json" `
+    -ChangesPath "<absolute-GDS-path>\record-changes.json"
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/upsert-local-metadata-record.sh" \
-  --change-set "$PWD/gds-workspace/change-set" \
+"./scripts/upsert-local-metadata-record.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
   --dataset "source_object" \
-  --record-file "$PWD/gds-workspace/record-input.json"
+  --key-file "<absolute-GDS-path>/record-key.json" \
+  --changes-file "<absolute-GDS-path>/record-changes.json"
 ```
 
-Completion criterion: `ok=true`, the expected dataset, `action=inserted` or
-`action=replaced`, and the expected accumulated count. Matching strings in the
-canonical key are trimmed and compared without case. The helper validates the
-new full record, the previous accumulated list, and every resulting unique
-constraint before writing atomically. It never stages anything.
+Completion criterion: `ok=true`, `mode=field-edit`, the expected dataset/action,
+and `review_stale=true` when bytes changed. `action=no_change` leaves bytes
+unchanged. It never stages anything.
 
-Direct editors, including the future HTML utility, may write the complete
+## Insert one complete record
+
+For a new natural key, provide every required field with its correct JSON type.
+Never invent reference codes; select existing parents from the Snapshot. Keep
+the object temporarily in `GDS/record-input.json`, then run the same helper with
+`-RecordPath` on PowerShell or `--record-file` on macOS.
+
+PowerShell 5.1:
+
+```powershell
+powershell.exe -NoProfile -File ".\scripts\upsert-local-metadata-record.ps1" `
+    -ChangeSetPath "<absolute-GDS-path>\change-set" `
+    -Dataset "source_object" `
+    -RecordPath "<absolute-GDS-path>\record-input.json"
+```
+
+macOS:
+
+```sh
+"./scripts/upsert-local-metadata-record.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
+  --dataset "source_object" \
+  --record-file "<absolute-GDS-path>/record-input.json"
+```
+
+Completion requires `mode=full-record` and `action=inserted`. Matching and
+uniqueness use the exact `x-gds-key-normalization` rules from the Snapshot
+schema.
+
+Direct editors, including the bundled Metadata Workbench, may write the complete
 `datasets/<dataset>.json` array instead. They must not patch only part of a row;
 run the same local validator afterward.
 
 ## Remove one local pending record
 
 Use this only to remove one record from a local accumulated dataset. Put exactly
-the canonical-key fields from the live schema in `gds-workspace/record-key.json`.
+the canonical-key fields from the live schema in `GDS/record-key.json`.
 The helper rejects missing, extra, invalid, or unmatched keys.
 
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\remove-local-metadata-record.ps1" `
-    -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" `
+powershell.exe -NoProfile -File ".\scripts\remove-local-metadata-record.ps1" `
+    -ChangeSetPath "<absolute-GDS-path>\change-set" `
     -Dataset "source_object" `
-    -KeyPath "$((Get-Location).Path)\gds-workspace\record-key.json"
+    -KeyPath "<absolute-GDS-path>\record-key.json"
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/remove-local-metadata-record.sh" \
-  --change-set "$PWD/gds-workspace/change-set" \
+"./scripts/remove-local-metadata-record.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
   --dataset "source_object" \
-  --key-file "$PWD/gds-workspace/record-key.json"
+  --key-file "<absolute-GDS-path>/record-key.json"
 ```
 
 Completion criterion: `action=removed` and the expected remaining count. An
@@ -194,13 +257,13 @@ Object locks; server validation remains required.
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\validate-local-change-set.ps1" -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" -ExpectedMetadataChangeSetId "<change-set-id>" -ExpectedDraftRevision <revision>
+powershell.exe -NoProfile -File ".\scripts\validate-local-change-set.ps1" -ChangeSetPath "<absolute-GDS-path>\change-set" -ExpectedMetadataChangeSetId "<change-set-id>" -ExpectedDraftRevision <revision>
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/validate-local-change-set.sh" "$PWD/gds-workspace/change-set" "<change-set-id>" "<revision>"
+"./scripts/validate-local-change-set.sh" "<absolute-GDS-path>/change-set" "<change-set-id>" "<revision>"
 ```
 
 Completion criterion: `ok=true`, matching control identity, and one compact
@@ -210,10 +273,11 @@ fixed-value violations, duplicate unique constraints, database ID fields, more
 than 50,000 records, and files over the 16 MiB Stage limit. It never prints
 record contents.
 
-A Stage call replaces that one pending server dataset, so send the complete
-accumulated local array every time. An empty array clears that pending dataset;
-it does not delete applied metadata. Any edit after review requires another
-local validation and review.
+A Stage call accepts one to 16 unique dataset changes. Each entry replaces that
+dataset's complete pending server list, so send each complete accumulated local
+array. The whole call is atomic and increments the revision once. An empty
+array clears only that pending dataset; it does not delete applied metadata.
+Any edit after review requires another local validation and review.
 
 ## Prepare the Stage review
 
@@ -222,8 +286,8 @@ Run this after local validation and before asking for Stage approval.
 PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\prepare-metadata-stage-review.ps1" `
-    -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" `
+powershell.exe -NoProfile -File ".\scripts\prepare-metadata-stage-review.ps1" `
+    -ChangeSetPath "<absolute-GDS-path>\change-set" `
     -MetadataChangeSetId "<change-set-id>" `
     -ExpectedDraftRevision <revision>
 ```
@@ -231,8 +295,8 @@ powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\pre
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/prepare-metadata-stage-review.sh" \
-  --change-set "$PWD/gds-workspace/change-set" \
+"./scripts/prepare-metadata-stage-review.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
   --change-set-id "<change-set-id>" \
   --expected-draft-revision <revision>
 ```
@@ -246,34 +310,61 @@ Run the local validator again with `-RequireReviewed` on PowerShell or append
 `no_change` items, regenerate after any edit, then show the compact review and
 ask for explicit Stage approval. The script cannot grant or record approval.
 
-A successful expected Stage changes the global revision but does not change the
-approved dataset hashes. Continue the approved sequence using the latest Stage
-revision. A conflict, reconciliation, local edit, or changed intended result
-requires a new review and approval.
+A successful expected Stage changes the global revision once but does not
+change approved dataset hashes. A conflict, reconciliation, local edit, or
+changed intended result requires a new review and approval.
 
 ## Record successful Stage results
 
-Immediately after each successful Stage, record the returned revision against
-the exact reviewed SHA-256. PowerShell 5.1:
+Immediately after a successful Stage, compare every returned dataset/count with
+the approved call, then record its one returned revision against every exact
+SHA-256 from the fresh local review. For one dataset, PowerShell 5.1:
 
 ```powershell
-powershell.exe -NoProfile -File "<plugin>\skills\manage-gds-metadata\scripts\update-local-change-set-state.ps1" -ChangeSetPath "$((Get-Location).Path)\gds-workspace\change-set" -MetadataChangeSetId "<change-set-id>" -ExpectedCurrentRevision <sent-revision> -ServerRevision <returned-revision> -ServerStatus "active" -StagedDataset "<dataset>" -StagedSha256 "<reviewed-sha256>"
+powershell.exe -NoProfile -File ".\scripts\update-local-change-set-state.ps1" -ChangeSetPath "<absolute-GDS-path>\change-set" -MetadataChangeSetId "<change-set-id>" -ExpectedCurrentRevision <sent-revision> -ServerRevision <returned-revision> -ServerStatus "active" -StagedDataset "<dataset>" -StagedSha256 "<reviewed-sha256>"
 ```
 
 macOS:
 
 ```sh
-"<plugin>/skills/manage-gds-metadata/scripts/update-local-change-set-state.sh" \
-  --change-set "$PWD/gds-workspace/change-set" \
+"./scripts/update-local-change-set-state.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
   --change-set-id "<change-set-id>" \
   --expected-current-revision <sent-revision> \
   --server-revision <returned-revision> --server-status active \
   --staged-dataset "<dataset>" --staged-sha256 "<reviewed-sha256>"
 ```
 
-Completion criterion: `stage_recorded=true`, matching dataset/hash/count, and
-the local revision equals the Stage result. The helper fails if the file changed
-after review or the Stage revision did not increment by exactly one.
+For multiple datasets, pass all pairs to one updater invocation. PowerShell 5.1
+uses one comma-delimited `dataset=sha256` value:
+
+```powershell
+powershell.exe -NoProfile -File ".\scripts\update-local-change-set-state.ps1" `
+    -ChangeSetPath "<absolute-GDS-path>\change-set" `
+    -MetadataChangeSetId "<change-set-id>" `
+    -ExpectedCurrentRevision <sent-revision> `
+    -ServerRevision <returned-revision> -ServerStatus "active" `
+    -StagedPairs "source_object=<reviewed-sha256>,source_attribute=<reviewed-sha256>"
+```
+
+macOS uses one repeated `--staged-pair` per dataset:
+
+```sh
+"./scripts/update-local-change-set-state.sh" \
+  --change-set "<absolute-GDS-path>/change-set" \
+  --change-set-id "<change-set-id>" \
+  --expected-current-revision <sent-revision> \
+  --server-revision <returned-revision> --server-status active \
+  --staged-pair "source_object=<reviewed-sha256>" \
+  --staged-pair "source_attribute=<reviewed-sha256>"
+```
+
+Completion criterion: `stage_recorded=true`, `staged_dataset_count` equals the
+Stage result, every compact `staged_dataset=name|count|sha256` line matches the
+fresh review, and the local revision equals the Stage result. The helper checks
+all files first and writes all staged markers atomically at the same revision.
+It fails if any file changed after review or the Stage revision did not
+increment by exactly one.
 
 The helper owns each staged-state entry; do not hand-edit it:
 

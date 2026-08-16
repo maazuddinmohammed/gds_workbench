@@ -205,6 +205,7 @@ def register_get_object_lineage_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
+        retain_arguments={"tenant_id", "object_id", "direction", "schema_version"},
         tenant_argument="tenant_id",
     )
 

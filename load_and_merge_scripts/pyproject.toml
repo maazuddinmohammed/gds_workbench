@@ -1,0 +1,25 @@
+[project]
+name = "gds-workbench-excel-loader"
+version = "0.1.0"
+description = "Manual Excel-to-PostgreSQL staging and merge loader"
+requires-python = ">=3.12,<3.13"
+dependencies = [
+    "openpyxl>=3.1,<4",
+    "psycopg[binary]==3.3.4",
+    "python-dotenv>=1,<2",
+    "PyYAML>=6,<7",
+]
+
+[dependency-groups]
+dev = ["pytest>=9,<10", "ruff==0.15.22"]
+
+[tool.pytest.ini_options]
+pythonpath = ["."]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py312"
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "N", "UP", "B", "SIM"]
