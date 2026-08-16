@@ -32,7 +32,6 @@ psql "host=<POSTGRES_HOST> port=5432 dbname=meta_ai user=<ADMIN_USER> sslmode=re
 
 psql "host=gds-etl-workbench.postgres.database.azure.com port=5432 dbname=meta_ai user=gdsadmin sslmode=require"
 
-psql host=gds-etl-workbench.postgres.database.azure.com user=gdsadmin sslmode=require
 
 ```
 
