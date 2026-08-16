@@ -50,13 +50,13 @@ uv run python loader.py --list
 Validate one sheet without connecting:
 
 ```bash
-uv run python loader.py --workbook foundational.xlsx --sheet Environment
+uv run python loader.py --workbook reference.xlsx --sheet Environment
 ```
 
 Execute after the dry run passes:
 
 ```bash
-uv run python loader.py --workbook foundational.xlsx --sheet Environment --execute
+uv run python loader.py --workbook reference.xlsx --sheet Environment --execute
 ```
 
 To use the sample's uncomment-and-run style, uncomment entries in
@@ -67,12 +67,13 @@ Omitting `--sheet` loads one whole workbook atomically. Any failure rolls back
 every selected sheet. Missing sheets, wrong headers, blank required values, and
 duplicate source keys fail instead of being skipped.
 
-Whole-workbook order is `foundational.xlsx`, `tenant_modeling.xlsx`, then
-`users_security.xlsx`. Run `locks.xlsx` separately. Manual selections spanning
-data files are sorted automatically; one `--workbook` run cannot load
-prerequisites from a different file.
+Whole-workbook order is `reference.xlsx`, `foundational.xlsx`,
+`operational.xlsx`, then `model.xlsx`. Run `users_security.xlsx` after
+`foundational.xlsx`; it can run before or after `operational.xlsx`. Run
+`locks.xlsx` separately. Manual selections spanning data files are sorted
+automatically; one `--workbook` run cannot load prerequisites from another file.
 
-All four workbooks must remain under `load_and_merge_scripts/data/`. CLI options
+All six workbooks must remain under `load_and_merge_scripts/data/`. CLI options
 use workbook filenames, not paths.
 
 ## Staging
@@ -83,9 +84,11 @@ connection closes, so no `DROP`, `TRUNCATE`, or cleanup helper is needed.
 
 ## Included data
 
-- `foundational.xlsx`: Reference data, Project, System, notebook paths.
+- `reference.xlsx`: Reference-schema data.
+- `foundational.xlsx`: Project, System, notebook paths, Tenant, Connection.
 - `users_security.xlsx`: Principal, Entra identity, Tenant access.
-- `tenant_modeling.xlsx`: Tenant/Core configuration, Model, Model Scope.
+- `operational.xlsx`: Durable tenant/Core configuration.
+- `model.xlsx`: Model and Model Scope.
 - `locks.xlsx`: allowlisted lock columns only.
 
 Workflow/MCP tables, workflow Mapping, Tenant Lock leases/events, Model event

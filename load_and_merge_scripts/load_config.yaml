@@ -1,6 +1,6 @@
 version: 1
 loads:
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Environment
     schema: reference
     table: environment
@@ -37,7 +37,7 @@ loads:
           source.environment_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: SystemType
     schema: reference
     table: system_type
@@ -74,7 +74,7 @@ loads:
           source.system_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Zone
     schema: reference
     table: zone
@@ -110,7 +110,7 @@ loads:
           source.zone_code, source.zone_name, source.zone_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: ConnectionType
     schema: reference
     table: connection_type
@@ -148,7 +148,7 @@ loads:
           source.connection_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: ObjectType
     schema: reference
     table: object_type
@@ -185,7 +185,7 @@ loads:
           source.object_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: ConnectionParameter
     schema: reference
     table: connection_parameter
@@ -226,7 +226,7 @@ loads:
           source.connection_parameter_description, source.is_key_vault, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: PurgePolicy
     schema: reference
     table: purge_policy
@@ -256,7 +256,7 @@ loads:
           source.purge_policy_name, source.purge_policy_description
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: SystemNotebook
     schema: reference
     table: system_notebook
@@ -290,7 +290,7 @@ loads:
           source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: LocationType
     schema: reference
     table: location_type
@@ -323,7 +323,7 @@ loads:
           source.location_type_name, source.location_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: FileType
     schema: reference
     table: file_type
@@ -356,7 +356,7 @@ loads:
           source.file_type_name, source.file_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Domain
     schema: reference
     table: domain
@@ -383,7 +383,7 @@ loads:
         WHEN NOT MATCHED THEN INSERT (domain_name, domain_description)
         VALUES (source.domain_name, source.domain_description);
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: DataOperation
     schema: reference
     table: data_operation
@@ -416,7 +416,7 @@ loads:
           source.data_operation_name, source.data_operation_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: ChunkType
     schema: reference
     table: chunk_type
@@ -449,7 +449,7 @@ loads:
           source.chunk_type_name, source.chunk_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Pipeline
     schema: reference
     table: pipeline
@@ -503,7 +503,7 @@ loads:
           updated_time = CURRENT_TIMESTAMP,
           updated_by = CURRENT_USER;
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: ProcessType
     schema: reference
     table: process_type
@@ -536,7 +536,7 @@ loads:
           source.process_type_name, source.process_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Currency
     schema: reference
     table: currency
@@ -563,7 +563,7 @@ loads:
         WHEN NOT MATCHED THEN INSERT (currency_code, currency_name)
         VALUES (source.currency_code, source.currency_name);
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: JobType
     schema: reference
     table: job_type
@@ -596,7 +596,7 @@ loads:
           source.job_type_name, source.job_type_description, source.is_active
         );
 
-  - workbook: foundational.xlsx
+  - workbook: reference.xlsx
     sheet: Lane
     schema: reference
     table: lane
@@ -745,7 +745,7 @@ loads:
           source.system_id, source.system_notebook_id, source.system_notebook_path
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: foundational.xlsx
     sheet: Tenant
     schema: core
     table: tenant
@@ -841,7 +841,7 @@ loads:
           updated_time = CURRENT_TIMESTAMP,
           updated_by = CURRENT_USER;
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: foundational.xlsx
     sheet: Connection
     schema: core
     table: connection
@@ -1123,7 +1123,7 @@ loads:
           source.access_expires_time, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: TenantMetadataDiscoveryScope
     schema: core
     table: tenant_metadata_discovery_scope
@@ -1193,7 +1193,7 @@ loads:
           source.object_schema, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: ConnectionLocation
     schema: core
     table: connection_location
@@ -1275,7 +1275,7 @@ loads:
           source.connection_location_container, source.connection_location_path
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: ConnectionValue
     schema: core
     table: connection_value
@@ -1339,7 +1339,7 @@ loads:
           source.connection_parameter_id, source.connection_value
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: Object
     schema: core
     table: object
@@ -1437,7 +1437,7 @@ loads:
           source.zone_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: Attribute
     schema: core
     table: attribute
@@ -1553,7 +1553,7 @@ loads:
           source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: IngestionObjectMapping
     schema: core
     table: ingestion_object_mapping
@@ -1648,7 +1648,7 @@ loads:
           source.source_object_id, source.target_object_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: IngestionAttributeMapping
     schema: core
     table: ingestion_attribute_mapping
@@ -1767,7 +1767,7 @@ loads:
           source.target_attribute_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: CopyGroup
     schema: core
     table: copy_group
@@ -1816,7 +1816,7 @@ loads:
           source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: MemberGroup
     schema: core
     table: member_group
@@ -1865,7 +1865,7 @@ loads:
           source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: CopyGroupControl
     schema: core
     table: copy_group_control
@@ -1932,7 +1932,7 @@ loads:
           source.copy_group_control_last_run_value
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: Copy
     schema: core
     table: copy
@@ -2122,7 +2122,7 @@ loads:
           source.target_data_operation_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: ProcessGroup
     schema: core
     table: process_group
@@ -2186,7 +2186,7 @@ loads:
           source.copy_group_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: operational.xlsx
     sheet: Process
     schema: core
     table: process
@@ -2301,7 +2301,7 @@ loads:
           source.process_type_id, source.process_group_id, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: model.xlsx
     sheet: Model
     schema: model
     table: model
@@ -2362,7 +2362,7 @@ loads:
           source.gold_model_audit_columns_template, source.is_active
         );
 
-  - workbook: tenant_modeling.xlsx
+  - workbook: model.xlsx
     sheet: ModelScope
     schema: model
     table: model_scope

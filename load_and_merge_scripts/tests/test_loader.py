@@ -42,7 +42,7 @@ def _definition(
         f"USING {{staging_table}} AS source ON TRUE WHEN MATCHED THEN DO NOTHING"
     )
     return loader.LoadDefinition(
-        workbook="foundational.xlsx",
+        workbook="reference.xlsx",
         sheet=sheet,
         schema="reference",
         table=table,
@@ -62,7 +62,7 @@ def _write_config(path: Path, statement: str) -> None:
                 "version": 1,
                 "loads": [
                     {
-                        "workbook": "foundational.xlsx",
+                        "workbook": "reference.xlsx",
                         "sheet": "Environment",
                         "schema": "reference",
                         "table": "environment",
@@ -210,6 +210,69 @@ def test_read_config_accepts_one_allowlisted_merge(tmp_path: Path) -> None:
 
     assert len(definitions) == 1
     assert definitions[0].target == "reference.environment"
+
+
+def test_complete_config_uses_approved_workbook_split() -> None:
+    definitions = loader.read_config()
+    sheets_by_workbook = {
+        workbook: {
+            definition.sheet
+            for definition in definitions
+            if definition.workbook == workbook
+        }
+        for workbook in loader._ALLOWED_WORKBOOKS
+    }
+
+    assert sheets_by_workbook == {
+        "reference.xlsx": {
+            "Environment",
+            "SystemType",
+            "Zone",
+            "ConnectionType",
+            "ObjectType",
+            "ConnectionParameter",
+            "PurgePolicy",
+            "SystemNotebook",
+            "LocationType",
+            "FileType",
+            "Domain",
+            "DataOperation",
+            "ChunkType",
+            "Pipeline",
+            "ProcessType",
+            "Currency",
+            "JobType",
+            "Lane",
+        },
+        "foundational.xlsx": {
+            "Project",
+            "System",
+            "SystemNotebookPath",
+            "Tenant",
+            "Connection",
+        },
+        "users_security.xlsx": {
+            "Principal",
+            "EntraPrincipalIdentity",
+            "TenantPrincipalAccess",
+        },
+        "operational.xlsx": {
+            "TenantMetadataDiscoveryScope",
+            "ConnectionLocation",
+            "ConnectionValue",
+            "Object",
+            "Attribute",
+            "IngestionObjectMapping",
+            "IngestionAttributeMapping",
+            "CopyGroup",
+            "MemberGroup",
+            "CopyGroupControl",
+            "Copy",
+            "ProcessGroup",
+            "Process",
+        },
+        "model.xlsx": {"Model", "ModelScope"},
+    }
 
 
 @pytest.mark.parametrize(

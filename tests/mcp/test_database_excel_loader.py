@@ -276,7 +276,7 @@ def test_all_configured_merges_parse_and_environment_is_idempotent(
         environment = next(
             definition
             for definition in definitions
-            if definition.selection == ("foundational.xlsx", "Environment")
+            if definition.selection == ("reference.xlsx", "Environment")
         )
         row_by_column = {
             "environment_code": "INTEGRATION_TEST",
