@@ -1,13 +1,5 @@
 -- GDS ETL Workbench Release 1: canonical Reference data.
 -- Fresh-install DDL only. Execute numbered files exactly once in numeric order.
-
---DROP SCHEMA model CASCADE;
---DROP SCHEMA core CASCADE;
---DROP SCHEMA mcp CASCADE;
---DROP SCHEMA reference CASCADE;
---DROP SCHEMA security CASCADE;
---DROP SCHEMA workflow CASCADE;
-
 CREATE SCHEMA reference;
 
 CREATE FUNCTION reference.is_nonblank(value TEXT)

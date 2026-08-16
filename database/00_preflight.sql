@@ -1,6 +1,18 @@
 -- Read-only preflight for a new PostgreSQL 18 database.
 -- This intentionally fails if the target is not empty for this release.
 
+--DROP SCHEMA model CASCADE;
+--DROP SCHEMA core CASCADE;
+--DROP SCHEMA mcp CASCADE;
+--DROP SCHEMA reference CASCADE;
+--DROP SCHEMA security CASCADE;
+--DROP SCHEMA workflow CASCADE;
+
+--DROP ROLE gds_app_write ;
+--DROP ROLE gds_migration;
+--DROP OWNED BY gds_mcp_runtime CASCADE;
+--DROP ROLE gds_mcp_runtime ;
+
 DO $preflight$
 DECLARE
     v_existing_schema TEXT;
