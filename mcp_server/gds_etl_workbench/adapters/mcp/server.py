@@ -92,7 +92,7 @@ def create_mcp_server(
     sql_executor = databricks_executor or ConnectorDatabricksSqlExecutor()
 
     @asynccontextmanager
-    async def lifespan(_server: MCPServer[None]) -> AsyncGenerator[None, None]:
+    async def lifespan(_server: MCPServer[None]) -> AsyncGenerator[None]:
         await database.open()
         with suppress(DependencyUnavailableError):
             await database.expire_tenant_locks()

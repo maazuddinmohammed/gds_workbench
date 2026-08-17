@@ -9,8 +9,9 @@ Release 1 has three independently deployed parts:
 3. one immutable Databricks source release containing the jobs library and
    seven separate notebooks.
 
-Both Python runtimes use the `3.12.*` release line with exact locked production
-dependencies. PostgreSQL is the pinned 18 release line.
+The MCP App Service uses the `3.14.*` release line. The independent jobs runtime
+uses the `3.12.*` release line. Both have exact locked production dependencies.
+PostgreSQL is the pinned 18 release line.
 
 The database is installed by a deployment identity before the application
 starts. App Service startup never applies DDL. The jobs release never contains

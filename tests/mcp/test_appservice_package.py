@@ -10,6 +10,7 @@ from pathlib import Path
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
 PROJECT_FILE = BUILD_SCRIPT.with_name("pyproject.toml")
+LOCK_FILE = BUILD_SCRIPT.with_name("uv.lock")
 
 
 def build_zip(output: Path) -> subprocess.CompletedProcess[str]:
@@ -63,6 +64,7 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         )
 
         manifest = json.loads(archive.read("BUILD_MANIFEST.json"))
+        assert manifest["python_version"] == "3.14"
         for item in manifest["files"]:
             content = archive.read(item["path"])
             assert len(content) == item["size"]
@@ -135,3 +137,40 @@ assert MCP_SERVER_VERSION == sys.argv[1]
     )
 
     assert import_check.returncode == 0, import_check.stderr
+
+
+def test_runtime_configuration_targets_python_314() -> None:
+    project = tomllib.loads(PROJECT_FILE.read_text())
+    lock = tomllib.loads(LOCK_FILE.read_text())
+
+    assert project["project"]["requires-python"] == ">=3.14,<3.15"
+    assert project["tool"]["ruff"]["target-version"] == "py314"
+    assert project["tool"]["pyright"]["pythonVersion"] == "3.14"
+    assert lock["requires-python"] == "==3.14.*"
+
+
+def test_lock_contains_python_314_windows_wheels() -> None:
+    lock = tomllib.loads(LOCK_FILE.read_text())
+    compiled_dependencies = {
+        "aiohttp",
+        "cffi",
+        "frozenlist",
+        "lz4",
+        "multidict",
+        "numpy",
+        "pandas",
+        "propcache",
+        "psycopg-binary",
+        "pydantic-core",
+        "pywin32",
+        "rpds-py",
+        "thrift",
+        "yarl",
+    }
+    packages = {package["name"]: package for package in lock["package"]}
+
+    for dependency in compiled_dependencies:
+        wheel_urls = [wheel["url"] for wheel in packages[dependency]["wheels"]]
+        assert any("cp314" in url and "win_amd64.whl" in url for url in wheel_urls), (
+            dependency
+        )

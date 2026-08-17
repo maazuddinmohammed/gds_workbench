@@ -92,10 +92,21 @@ production behavior. Local Development identity cannot own a production lock.
 4. Run:
 
 ```bash
-uv sync --project mcp_server --frozen
+uv sync --project mcp_server --frozen --python 3.14
 cd mcp_server
 ./startup.sh
 ```
+
+On Windows PowerShell, run this from the repository root after setting the same
+environment variables:
+
+```powershell
+uv sync --project mcp_server --frozen --python 3.14
+uv run --project mcp_server --frozen python -m uvicorn --app-dir mcp_server app:app --host 127.0.0.1 --port 8000
+```
+
+`startup.sh` and Gunicorn are for the Linux Azure host. Windows local development
+uses Uvicorn directly.
 
 Connect an MCP client to `http://localhost:8000/mcp`.
 
@@ -180,7 +191,7 @@ The ZIP places `app.py`, `startup.sh`, `requirements.txt`, and
 `.venv`, SQL, caches, and documentation. It refuses to overwrite an existing
 artifact.
 
-Azure App Service must use Python 3.12, build automation
+Azure App Service must use Python 3.14, build automation
 (`SCM_DO_BUILD_DURING_DEPLOYMENT=1`), and startup command `startup.sh`. Configure
 Easy Auth to require authentication, reject unauthenticated requests with 401,
 and accept only the intended Entra tenant/audience. Human tokens need delegated

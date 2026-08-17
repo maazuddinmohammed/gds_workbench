@@ -2,7 +2,7 @@
 name = "gds-etl-workbench-mcp"
 version = "0.2.0"
 description = "GDS ETL Workbench MCP App Service"
-requires-python = ">=3.12,<3.13"
+requires-python = ">=3.14,<3.15"
 dependencies = [
     "databricks-sql-connector==4.4.0",
     "gunicorn==26.0.0",
@@ -33,14 +33,14 @@ testpaths = ["../tests/mcp"]
 
 [tool.ruff]
 line-length = 100
-target-version = "py312"
+target-version = "py314"
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
 
 [tool.pyright]
 include = ["gds_etl_workbench", "../tests/mcp"]
-pythonVersion = "3.12"
+pythonVersion = "3.14"
 typeCheckingMode = "strict"
 
 [build-system]

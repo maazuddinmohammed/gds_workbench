@@ -51,7 +51,7 @@ def build_zip(output: Path) -> Path:
             {
                 "schema_version": "1.0",
                 "artifact": "gds-etl-workbench-mcp-appservice",
-                "python_version": "3.12",
+                "python_version": "3.14",
                 "files": manifest_files,
             },
             indent=2,

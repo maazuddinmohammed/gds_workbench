@@ -13,7 +13,7 @@ fresh-install schema, not migrations.
 |---|---|
 | Resource group | Holds the Azure resources |
 | Azure Database for PostgreSQL Flexible Server 18 | GDS application database |
-| Linux Azure App Service plan and web app | Runs the Python 3.12 MCP server |
+| Linux Azure App Service plan and web app | Runs the Python 3.14 MCP server |
 | Azure Key Vault | Holds the database DSN and cursor-signing key |
 | Azure Storage account and private Blob container | Stores temporary Metadata, Model, and DBML ZIP snapshots |
 | Microsoft Entra app registration and App Service Authentication | Authenticates VS Code and other MCP clients |
@@ -29,7 +29,7 @@ You need:
 2. Permission to create Azure resources and role assignments.
 3. Permission to create/configure a Microsoft Entra app registration.
 4. This repository checked out locally.
-5. Azure CLI, `psql`, Python 3.12, `uv`, and VS Code with GitHub Copilot Chat.
+5. Azure CLI, `psql`, Python 3.14, `uv`, and VS Code with GitHub Copilot Chat.
 6. The current deployment ZIPs:
 
    ```text
@@ -212,7 +212,7 @@ host=<POSTGRES_SERVER>.postgres.database.azure.com port=5432 dbname=gds_workbenc
 ### Step 8: create the Linux web app
 
 1. Create **Web App**.
-2. Choose **Code**, **Linux**, and **Python 3.12**.
+2. Choose **Code**, **Linux**, and **Python 3.14**.
 3. Create/select the App Service plan. B1 is adequate for a small development
    deployment; size production from actual load.
 4. Create the web app.
@@ -523,7 +523,7 @@ az webapp create \
   --resource-group "$GDS_RG" \
   --plan "$GDS_PLAN" \
   --name "$GDS_WEB_APP" \
-  --runtime "PYTHON:3.12" \
+  --runtime "PYTHON:3.14" \
   --startup-file "startup.sh" \
   --assign-identity "[system]" \
   --https-only true \
@@ -614,7 +614,7 @@ az webapp config appsettings set \
 az webapp config set \
   --resource-group "$GDS_RG" \
   --name "$GDS_WEB_APP" \
-  --linux-fx-version "PYTHON|3.12" \
+  --linux-fx-version "PYTHON|3.14" \
   --startup-file "startup.sh" \
   --always-on true \
   --output none

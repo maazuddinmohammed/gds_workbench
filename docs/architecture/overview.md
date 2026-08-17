@@ -1,6 +1,6 @@
 # Current MCP scaffold architecture
 
-The deployed unit is one stateless Python 3.12 MCP application on Azure App
+The deployed unit is one stateless Python 3.14 MCP application on Azure App
 Service backed by PostgreSQL 18.
 
 ```text
