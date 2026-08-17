@@ -2,6 +2,7 @@
 .venv/
 .pytest_cache/
 .ruff_cache/
-dist/
+dist/*
+!dist/gds-mcp-appservice.zip
 __pycache__/
 *.pyc
