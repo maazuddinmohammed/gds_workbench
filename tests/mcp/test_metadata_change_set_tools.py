@@ -854,12 +854,14 @@ async def test_metadata_change_set_prompt_teaches_context_bounded_workflow() -> 
     ]
     content = result.messages[0].content
     assert content.type == "text"
-    assert "Never load the whole ZIP into chat" in content.text
+    assert "requested boundary" in content.text
+    assert "Read-only inspection" in content.text
+    assert "without a Snapshot or lock" in content.text
+    assert "Reuse a validated local Snapshot" in content.text
     assert "describe_metadata_dataset only for datasets you will edit" in content.text
     assert "stage_metadata_change_set" in content.text
-    assert "atomically with one new revision" in content.text
     assert "authoritative action_review" in content.text
-    assert content.text.index("get_metadata_snapshot") < content.text.index(
-        "check_tenant_lock"
-    )
     assert "every dataset with a nonzero count" in content.text
+    assert "fresh approval immediately before apply_metadata_change_set" in content.text
+    assert "Never advance beyond it" in content.text
+    assert len(content.text.split()) <= 190

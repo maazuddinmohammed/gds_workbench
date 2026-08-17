@@ -97,11 +97,14 @@
       </div>
 
       <div class="review-strip" id="reviewStrip" aria-live="polite">
-        <div>
+        <div class="review-copy">
           <strong id="reviewTitle">No local draft</strong>
           <span id="reviewSummary">Browse the verified Snapshot. A draft is created only after your first accepted edit.</span>
         </div>
-        <button class="button quiet small" id="reviewButton">Review &amp; hand off</button>
+        <div class="review-actions">
+          <button class="button primary change-action small" id="saveButton" disabled>Save Change Set</button>
+          <button class="button quiet small" id="reviewButton">Review &amp; hand off</button>
+        </div>
       </div>
 
       <div class="table-toolbar">
@@ -113,7 +116,6 @@
         <button class="button quiet" id="schemaButton">Schema</button>
         <button class="button quiet" id="newRowButton" hidden>Add record</button>
         <button class="button quiet" id="exportModelSnapshotButton" hidden>Export proposed model</button>
-        <button class="button primary change-action" id="saveButton" hidden disabled>Save Change Set</button>
       </div>
 
       <div class="selection-actions" id="selectionActions" hidden aria-live="polite">
@@ -121,7 +123,7 @@
         <div>
           <button class="button quiet small" id="selectPageButton">Select page</button>
           <button class="button quiet small" id="clearSelectionButton">Clear</button>
-          <button class="button change-action small" id="bulkCopyButton" hidden>Edit one field</button>
+          <button class="button change-action small" id="bulkAddButton" hidden>Copy to Change Set</button>
           <button class="button change-action small" id="bulkDeactivateButton" hidden>Deactivate selected</button>
         </div>
       </div>
@@ -147,7 +149,7 @@
       <div class="inspector-empty">
         <span class="inspector-glyph" aria-hidden="true">⌁</span>
         <strong>Select a row</strong>
-        <p>Inspect its canonical key and move eligible records into the Change Set.</p>
+        <p>Inspect its canonical key and copy eligible records into the Change Set.</p>
       </div>
     </aside>
   </main>
@@ -159,14 +161,16 @@
           <span class="dialog-kicker" id="dialogKicker">Change Set record</span>
           <h2 id="dialogTitle">Add record</h2>
         </div>
-        <button class="icon-button" type="button" data-dialog-close aria-label="Close">×</button>
+        <div class="dialog-header-actions">
+          <button class="button primary change-action" type="submit" id="recordSubmitButton">Add to Change Set</button>
+          <button class="icon-button" type="button" data-dialog-close aria-label="Close">×</button>
+        </div>
       </header>
       <div class="form-errors" id="formErrors" role="alert" hidden></div>
       <div class="diff-preview" id="diffPreview" aria-live="polite"></div>
       <div class="field-grid" id="fieldGrid"></div>
       <footer>
         <button class="button quiet" type="button" data-dialog-close>Cancel</button>
-        <button class="button primary change-action" type="submit" id="recordSubmitButton">Add to Change Set</button>
       </footer>
     </form>
   </dialog>

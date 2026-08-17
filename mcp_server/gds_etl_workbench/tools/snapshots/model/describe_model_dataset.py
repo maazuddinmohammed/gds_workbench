@@ -6,23 +6,27 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
-from pydantic import Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 
 from ...modeling.common import POLICY, ContractModel
-from .contracts import DATASETS_BY_NAME, ModelSection, build_model_dataset_schema
+from .contracts import (
+    DATASETS_BY_NAME,
+    ModelDataset,
+    ModelSection,
+    build_model_dataset_schema,
+)
 
 
 class DescribeModelDatasetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
-    dataset: str
+    dataset: ModelDataset
     section: ModelSection
     change_set_eligible: Literal[True] = True
     database_ids_included: Literal[False] = False
@@ -57,7 +61,7 @@ def register_describe_model_dataset_tool(
     )
     async def describe_model_dataset(
         ctx: Context[None],
-        dataset: Annotated[str, Field(min_length=1, max_length=50)],
+        dataset: ModelDataset,
         schema_version: Literal["1.0"] = "1.0",
     ) -> DescribeModelDatasetResult:
         del schema_version

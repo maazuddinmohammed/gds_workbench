@@ -1,0 +1,4 @@
+interface:
+  display_name: "Build / Manage Metadata Change Set"
+  short_description: "Inspect and govern GDS Metadata Change Sets"
+  default_prompt: "Use $manage-gds-metadata to inspect metadata or prepare and govern one Metadata Change Set."

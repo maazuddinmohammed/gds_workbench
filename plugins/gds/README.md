@@ -29,6 +29,7 @@ Conceptual, Logical, Dimensional, and Mapping records as one governed graph.
 
    ```text
    understand-gds                 manage-gds-metadata
+   manage-gds-model
    open-gds-metadata-workbench    author-model-metadata
    build-conceptual-model         build-logical-model
    build-dimensional-model        build-data-mapping
@@ -48,6 +49,7 @@ registrations expose duplicate tool names.
 gds/
 ├── plugin.json
 ├── mcp.json
+├── tool-contract.json
 ├── README.md
 ├── references/
 │   ├── model-tools.md
@@ -61,13 +63,16 @@ gds/
     ├── build-dimensional-model/{SKILL.md,agents/openai.yaml}
     ├── build-data-mapping/{SKILL.md,agents/openai.yaml}
     ├── author-model-metadata/{SKILL.md,agents/openai.yaml}
+    ├── manage-gds-model/{SKILL.md,agents/openai.yaml}
     ├── grill-data-model/{SKILL.md,agents/openai.yaml,references/}
     ├── run-data-modeling-goal/{SKILL.md,agents/openai.yaml,references/}
     ├── understand-gds/
     │   ├── SKILL.md
+    │   ├── agents/openai.yaml
     │   └── references/gds-overview.md
     ├── manage-gds-metadata/
     │   ├── SKILL.md
+    │   ├── agents/openai.yaml
     │   ├── references/
     │   └── scripts/
     │       ├── inspect-metadata-catalog.ps1
@@ -100,8 +105,16 @@ gds/
 `mcp.json` contains only the HTTPS endpoint. It contains no token, client
 secret, password, or authorization header. VS Code owns client authentication;
 the MCP server derives the Principal and Tenant authorization server-side.
+`tool-contract.json` records the exact 51-tool schema fingerprint expected by
+this release; `/health/ready` exposes the deployed fingerprint for parity checks.
 
 ## Quick smoke test
+
+There is no `build_metadata_change_set` MCP tool. Use
+`/gds:manage-gds-metadata` to build a local draft; the governed server lifecycle is
+`create_metadata_change_set` → `stage_metadata_change_set` →
+`validate_metadata_change_set` → `apply_metadata_change_set`. Use
+`/gds:manage-gds-model` for the corresponding Model lifecycle.
 
 Ask the agent:
 

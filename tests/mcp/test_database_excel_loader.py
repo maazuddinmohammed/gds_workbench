@@ -262,8 +262,9 @@ def _grant_target_sequences(
 
 
 def test_all_configured_merges_parse_and_environment_is_idempotent(
-    postgres_database: DisposablePostgres,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
+    postgres_database = bootstrap_postgres_database
     definitions = _configured_definitions()
     role_name = f"gds_excel_loader_{secrets.token_hex(8)}"
     connection = _connect_as_loader(postgres_database, role_name, definitions)
@@ -314,8 +315,9 @@ def test_all_configured_merges_parse_and_environment_is_idempotent(
 
 
 def test_lock_control_uses_database_role_owned_lock_and_revision_cas(
-    postgres_database: DisposablePostgres,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
+    postgres_database = bootstrap_postgres_database
     definitions = _configured_definitions()
     role_name = f"excel.lock.{secrets.token_hex(8)}@example.test"
     connection = _connect_as_loader(postgres_database, role_name, definitions)

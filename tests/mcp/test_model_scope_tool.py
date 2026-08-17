@@ -77,7 +77,8 @@ class FakeReadTransaction:
     ) -> list[dict[str, Any]]:
         assert "model_scope.is_active" in query
         self.database.calls.append(parameters)
-        return self.database.scope_rows[: parameters[-1]]
+        limit, offset = parameters[-2:]
+        return self.database.scope_rows[offset : offset + limit]
 
 
 def _server(database: FakeDatabase) -> MCPServer[None]:
@@ -95,6 +96,7 @@ def _server(database: FakeDatabase) -> MCPServer[None]:
         identity_provider=identity,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     return server
 
@@ -140,8 +142,129 @@ async def test_get_model_scope_returns_expanded_active_objects() -> None:
     assert result.objects[0].object_name == "orders"
     assert result.objects[0].zone_code == "model_tool_raw"
     assert result.objects[0].is_active is True
-    assert database.calls == [(7, 2001)]
+    assert database.calls == [(7, 2001, 0)]
     assert database.audit_records[0].input_metadata == {
         "model_id": 7,
         "schema_version": "1.0",
+        "page_size": 2000,
+        "cursor_provided": False,
     }
+
+
+@pytest.mark.asyncio
+async def test_get_model_scope_recovers_every_object_across_pages() -> None:
+    rows = [
+        {
+            **_scope_row(),
+            "model_scope_id": object_id,
+            "object_id": object_id,
+            "object_name": f"object_{object_id}",
+            "total_object_count": 3,
+        }
+        for object_id in range(1, 4)
+    ]
+    database = FakeDatabase(scope_rows=rows)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 1},
+        )
+        first = GetModelScopeResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        second_call = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 1, "cursor": first.next_cursor},
+        )
+        second = GetModelScopeResult.model_validate(second_call.structured_content)
+        assert second.next_cursor is not None
+        third_call = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 1, "cursor": second.next_cursor},
+        )
+        third = GetModelScopeResult.model_validate(third_call.structured_content)
+
+    assert [item.object_id for item in first.objects] == [1]
+    assert [item.object_id for item in second.objects] == [2]
+    assert [item.object_id for item in third.objects] == [3]
+    assert third.next_cursor is None
+    assert database.calls == [(7, 2, 0), (7, 2, 1), (7, 2, 2)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_scope_rejects_a_tampered_cursor_before_querying_scope() -> None:
+    rows = [
+        {**_scope_row(), "object_id": object_id, "total_object_count": 2}
+        for object_id in range(1, 3)
+    ]
+    database = FakeDatabase(scope_rows=rows)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 1},
+        )
+        first = GetModelScopeResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        replacement = "A" if first.next_cursor[0] != "A" else "B"
+        rejected = await client.call_tool(
+            "get_model_scope",
+            {
+                "model_id": 7,
+                "page_size": 1,
+                "cursor": f"{replacement}{first.next_cursor[1:]}",
+            },
+        )
+
+    assert rejected.is_error is True
+    assert database.calls == [(7, 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_scope_cursor_is_bound_to_model_and_page_size() -> None:
+    rows = [
+        {**_scope_row(), "object_id": object_id, "total_object_count": 2}
+        for object_id in range(1, 3)
+    ]
+    database = FakeDatabase(scope_rows=rows)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 1},
+        )
+        first = GetModelScopeResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        wrong_model = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 8, "page_size": 1, "cursor": first.next_cursor},
+        )
+        wrong_page_size = await client.call_tool(
+            "get_model_scope",
+            {"model_id": 7, "page_size": 2, "cursor": first.next_cursor},
+        )
+
+    assert wrong_model.is_error is True
+    assert wrong_page_size.is_error is True
+    assert database.calls == [(7, 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_scope_advertises_bounded_pagination_inputs() -> None:
+    async with Client(_server(FakeDatabase(scope_rows=[]))) as client:
+        tools = await client.list_tools()
+
+    schema = next(
+        tool.input_schema for tool in tools.tools if tool.name == "get_model_scope"
+    )
+    assert schema["properties"]["page_size"] == {
+        "default": 2000,
+        "maximum": 2000,
+        "minimum": 1,
+        "title": "Page Size",
+        "type": "integer",
+    }
+    assert schema["properties"]["cursor"]["anyOf"] == [
+        {"maxLength": 2048, "type": "string"},
+        {"type": "null"},
+    ]

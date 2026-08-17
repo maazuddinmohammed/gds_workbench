@@ -6,11 +6,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal
+from typing import Any, Literal
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
@@ -21,7 +21,7 @@ from gds_etl_workbench.tools.snapshots.dataset_description import (
 )
 
 from .archive import build_dataset_document
-from .contracts import DATASETS, DATASETS_BY_NAME
+from .contracts import DATASETS, DATASETS_BY_NAME, MetadataDataset
 
 
 class ContractModel(BaseModel):
@@ -42,7 +42,7 @@ class MetadataDatasetDependency(ContractModel):
 
 class DescribeMetadataDatasetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
-    dataset: str
+    dataset: MetadataDataset
     record_type: str
     section: Literal["foundational", "reference", "operational"]
     change_set_eligible: bool
@@ -82,7 +82,7 @@ def register_describe_metadata_dataset_tool(
     )
     async def describe_metadata_dataset(
         ctx: Context[None],
-        dataset: Annotated[str, Field(min_length=1, max_length=50)],
+        dataset: MetadataDataset,
         schema_version: Literal["1.0"] = "1.0",
     ) -> DescribeMetadataDatasetResult:
         del schema_version

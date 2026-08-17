@@ -73,7 +73,8 @@ class FakeReadTransaction:
     ) -> list[dict[str, Any]]:
         assert "FROM model.model AS model" in query
         self.database.calls.append(parameters)
-        return self.database.models[: parameters[-1]]
+        limit, offset = parameters[-2:]
+        return self.database.models[offset : offset + limit]
 
 
 def _server(database: FakeDatabase) -> MCPServer[None]:
@@ -91,6 +92,7 @@ def _server(database: FakeDatabase) -> MCPServer[None]:
         identity_provider=identity,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     return server
 
@@ -129,10 +131,12 @@ async def test_get_model_returns_headers_and_policy_without_audit_columns() -> N
     rendered = repr(call.structured_content)
     for forbidden in ("created_time", "created_by", "updated_time", "updated_by"):
         assert forbidden not in rendered
-    assert database.calls == [(3, 201)]
+    assert database.calls == [(3, 201, 0)]
     assert database.audit_records[0].input_metadata == {
         "tenant_id": 3,
         "schema_version": "1.0",
+        "page_size": 200,
+        "cursor_provided": False,
     }
 
 
@@ -150,3 +154,111 @@ async def test_get_model_reports_bounded_truncation() -> None:
     assert len(result.models) == 200
     assert result.model_count == 201
     assert result.models_truncated is True
+
+
+@pytest.mark.asyncio
+async def test_get_model_recovers_every_model_across_pages() -> None:
+    models = [_model(model_id) for model_id in range(1, 4)]
+    for row in models:
+        row["total_model_count"] = 3
+    database = FakeDatabase(models=models)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 1},
+        )
+        first = GetModelResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        second_call = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 1, "cursor": first.next_cursor},
+        )
+        second = GetModelResult.model_validate(second_call.structured_content)
+        assert second.next_cursor is not None
+        third_call = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 1, "cursor": second.next_cursor},
+        )
+        third = GetModelResult.model_validate(third_call.structured_content)
+
+    assert [model.model_id for model in first.models] == [1]
+    assert [model.model_id for model in second.models] == [2]
+    assert [model.model_id for model in third.models] == [3]
+    assert third.next_cursor is None
+    assert database.calls == [(3, 2, 0), (3, 2, 1), (3, 2, 2)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_rejects_a_tampered_cursor_before_querying_models() -> None:
+    models = [_model(model_id) for model_id in range(1, 3)]
+    for row in models:
+        row["total_model_count"] = 2
+    database = FakeDatabase(models=models)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 1},
+        )
+        first = GetModelResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        replacement = "A" if first.next_cursor[0] != "A" else "B"
+        rejected = await client.call_tool(
+            "get_model",
+            {
+                "tenant_id": 3,
+                "page_size": 1,
+                "cursor": f"{replacement}{first.next_cursor[1:]}",
+            },
+        )
+
+    assert rejected.is_error is True
+    assert database.calls == [(3, 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_cursor_is_bound_to_tenant_and_page_size() -> None:
+    models = [_model(model_id) for model_id in range(1, 3)]
+    for row in models:
+        row["total_model_count"] = 2
+    database = FakeDatabase(models=models)
+
+    async with Client(_server(database)) as client:
+        first_call = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 1},
+        )
+        first = GetModelResult.model_validate(first_call.structured_content)
+        assert first.next_cursor is not None
+        wrong_tenant = await client.call_tool(
+            "get_model",
+            {"tenant_id": 4, "page_size": 1, "cursor": first.next_cursor},
+        )
+        wrong_page_size = await client.call_tool(
+            "get_model",
+            {"tenant_id": 3, "page_size": 2, "cursor": first.next_cursor},
+        )
+
+    assert wrong_tenant.is_error is True
+    assert wrong_page_size.is_error is True
+    assert database.calls == [(3, 2, 0)]
+
+
+@pytest.mark.asyncio
+async def test_get_model_advertises_bounded_pagination_inputs() -> None:
+    async with Client(_server(FakeDatabase(models=[]))) as client:
+        tools = await client.list_tools()
+
+    schema = next(tool.input_schema for tool in tools.tools if tool.name == "get_model")
+    assert schema["properties"]["page_size"] == {
+        "default": 200,
+        "maximum": 200,
+        "minimum": 1,
+        "title": "Page Size",
+        "type": "integer",
+    }
+    assert schema["properties"]["cursor"]["anyOf"] == [
+        {"maxLength": 2048, "type": "string"},
+        {"type": "null"},
+    ]

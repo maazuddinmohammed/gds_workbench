@@ -133,6 +133,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     register_get_model_scope_tool(
         server,
@@ -140,6 +141,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=b"development-only-key-32-bytes-long",
     )
     register_get_model_snapshot_tool(
         server,

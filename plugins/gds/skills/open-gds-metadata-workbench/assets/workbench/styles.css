@@ -253,7 +253,8 @@ button { color: inherit; }
   border-bottom: 1px solid var(--line);
   background: #fafbfc;
 }
-.review-strip div { min-width: 0; display: flex; align-items: baseline; gap: 0.55rem; }
+.review-copy { min-width: 0; display: flex; align-items: baseline; gap: 0.55rem; }
+.review-actions { display: flex; align-items: center; justify-content: flex-end; gap: 0.4rem; flex: none; }
 .review-strip strong { white-space: nowrap; font-size: 0.76rem; }
 .review-strip span { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--muted); font-size: 0.72rem; }
 
@@ -323,6 +324,7 @@ dialog header { border-bottom: 1px solid var(--line); }
 dialog footer { border-top: 1px solid var(--line); justify-content: flex-end; }
 dialog h2 { margin: 0.12rem 0 0; font-size: 1.18rem; letter-spacing: -0.025em; }
 .dialog-kicker { color: var(--change); font-size: 0.65rem; font-weight: 750; letter-spacing: 0.08em; text-transform: uppercase; }
+.dialog-header-actions { display: flex; align-items: center; gap: 0.55rem; flex: none; }
 .icon-button { border: 0; background: transparent; width: 2.2rem; height: 2.2rem; border-radius: 999px; color: var(--muted); font-size: 1.45rem; cursor: pointer; }
 .icon-button:hover { background: #eef1f4; color: var(--ink); }
 .field-grid { padding: 1.1rem; overflow: auto; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.9rem; }
@@ -393,7 +395,8 @@ dialog h2 { margin: 0.12rem 0 0; font-size: 1.18rem; letter-spacing: -0.025em; }
   .table-toolbar .search-box { flex: 1 1 100%; min-width: 0; }
   .state-banner span { white-space: normal; }
   .review-strip, .selection-actions { align-items: flex-start; flex-direction: column; }
-  .review-strip div { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
+  .review-copy { align-items: flex-start; flex-direction: column; gap: 0.15rem; }
+  .review-actions { width: 100%; justify-content: flex-start; flex-wrap: wrap; }
   .review-strip span { white-space: normal; }
   .selection-actions > div { justify-content: flex-start; }
   .field-grid { grid-template-columns: 1fr; }

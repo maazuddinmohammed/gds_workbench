@@ -67,6 +67,41 @@ const rejectedBatch = logic.mergeRecords(
 assert.equal(rejectedBatch.action, "rejected");
 assert.equal(rejectedBatch.rows.length, 1);
 
+const pendingEdit = { ...first, description: "Keep this pending edit" };
+const snapshotCustomer = { ...first, object_name: "Customer" };
+const copied = logic.copyMissingRecords(
+  [pendingEdit],
+  [first, snapshotCustomer],
+  schema,
+  "source_object"
+);
+assert.equal(copied.action, "copied");
+assert.equal(copied.copiedCount, 1);
+assert.equal(copied.skippedCount, 1);
+assert.equal(copied.rows.length, 2);
+assert.equal(copied.rows[0].description, "Keep this pending edit");
+assert.deepEqual([...copied.indexes], [0, 1]);
+
+const normalizedCollision = logic.copyMissingRecords(
+  [pendingEdit],
+  [{ ...first, tenant_code: " tenant ", object_name: " order " }],
+  schema,
+  "source_object"
+);
+assert.equal(normalizedCollision.copiedCount, 0);
+assert.equal(normalizedCollision.skippedCount, 1);
+assert.equal(normalizedCollision.rows[0].description, "Keep this pending edit");
+
+const rejectedCopy = logic.copyMissingRecords(
+  [pendingEdit],
+  [snapshotCustomer, { ...first, object_name: "Product", object_id: 10 }],
+  schema,
+  "source_object"
+);
+assert.equal(rejectedCopy.action, "rejected");
+assert.equal(rejectedCopy.rows.length, 1);
+assert.equal(rejectedCopy.rows[0].description, "Keep this pending edit");
+
 const nullKeySchema = {
   ...schema,
   properties: { ...schema.properties, description: { anyOf: [{ type: "string" }, { type: "null" }] } },

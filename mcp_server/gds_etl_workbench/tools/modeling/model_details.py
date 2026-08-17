@@ -1,5 +1,8 @@
 """Bounded Model headers and policy templates for one authorized Tenant."""
 
+# Pyright cannot see that @server.tool registers this nested handler.
+# pyright: reportUnusedFunction=false
+
 from __future__ import annotations
 
 from collections.abc import Mapping
@@ -12,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
@@ -40,7 +44,7 @@ SELECT model.model_id,
    AND model.is_active
  GROUP BY model.model_id
  ORDER BY lower(model.model_name), model.model_id
- LIMIT %s
+ LIMIT %s OFFSET %s
 """
 
 
@@ -67,6 +71,7 @@ class GetModelResult(ContractModel):
     model_count: int = Field(ge=0)
     models: tuple[ModelDetails, ...] = Field(max_length=_MAX_MODELS)
     models_truncated: bool
+    next_cursor: str | None = Field(default=None, max_length=2048)
 
 
 class SafeToolError(Exception):
@@ -80,7 +85,10 @@ def register_get_model_tool(
     identity_provider: IdentityProvider,
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
+    cursor_signing_key: bytes,
 ) -> None:
+    cursors = CursorCodec(cursor_signing_key)
+
     @server.tool(
         description=(
             "Get active Model details for one authorized Tenant, including revision, "
@@ -98,11 +106,15 @@ def register_get_model_tool(
     async def get_model(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
+        page_size: Annotated[int, Field(ge=1, le=_MAX_MODELS)] = _MAX_MODELS,
+        cursor: Annotated[str | None, Field(max_length=2048)] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> GetModelResult:
         del schema_version
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
+            collection = f"{_TOOL_NAME}:{tenant_id}:{page_size}"
+            offset = cursors.decode(cursor, collection=collection)
             async with database.read_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
@@ -114,9 +126,14 @@ def register_get_model_tool(
                 )
                 rows = await transaction.fetch_all(
                     _MODELS_SQL,
-                    (tenant_id, _MAX_MODELS + 1),
+                    (tenant_id, page_size + 1, offset),
                 )
             model_count = 0 if not rows else int(rows[0]["total_model_count"])
+            next_cursor = (
+                cursors.encode(collection=collection, offset=offset + page_size)
+                if len(rows) > page_size
+                else None
+            )
             return GetModelResult(
                 tenant_id=tenant_id,
                 model_count=model_count,
@@ -128,9 +145,10 @@ def register_get_model_tool(
                             if name != "total_model_count"
                         }
                     )
-                    for row in rows[:_MAX_MODELS]
+                    for row in rows[:page_size]
                 ),
-                models_truncated=model_count > _MAX_MODELS,
+                models_truncated=len(rows) > page_size,
+                next_cursor=next_cursor,
             )
         except AuthenticationError as error:
             raise SafeToolError(f"{error.public_code}: {error.message}") from None
@@ -143,16 +161,23 @@ def register_get_model_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
-        retain_arguments={"tenant_id", "schema_version"},
+        retain_arguments={"tenant_id", "page_size", "schema_version"},
         tenant_argument="tenant_id",
     )
 
 
-def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:
     tenant_id = arguments.get("tenant_id")
+    page_size = arguments.get("page_size", _MAX_MODELS)
     return {
         "schema_version": (
             "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"
         ),
         "tenant_id": tenant_id if type(tenant_id) is int and tenant_id > 0 else "invalid",
+        "page_size": (
+            page_size
+            if type(page_size) is int and 1 <= page_size <= _MAX_MODELS
+            else "invalid"
+        ),
+        "cursor_provided": arguments.get("cursor") is not None,
     }

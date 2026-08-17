@@ -5,89 +5,75 @@ description: "Build or revise a governed GDS Dimensional model using business pr
 
 # Build Dimensional Model
 
-Design an analytics-ready Dimensional layer while keeping business decisions,
-source feasibility, naming policy, and GDS governance explicit.
+Build an analytics-ready Dimensional layer with explicit business decisions and source
+evidence. Read [modeling method](../../references/modeling-method.md) only for
+full-layer design, method ambiguity, or a requested stress test. Read
+[model datasets](../../references/model-datasets.md) for exact keys only when needed.
+Read [model tools](../../references/model-tools.md) around unfamiliar calls.
+Read the [governed workflow](../../references/governed-model-workflow.md) only for a
+server draft or Apply.
+Use `get_model_dimensional_submodels`, `get_model_dimensional_entities`,
+`get_model_dimensional_attributes`, and `get_model_dimensional_relationships` for
+focused current-state reads.
 
-Read these only when needed:
+## Route by intent
 
-- [modeling method](../../references/modeling-method.md) for the dimensional method;
-- [model datasets](../../references/model-datasets.md) for record rules and keys;
-- [model tools](../../references/model-tools.md) for exact MCP contracts; and
-- [governed workflow](../../references/governed-model-workflow.md) before a write.
+Choose the least-committed boundary from the user's verbs and context:
 
-## Establish the brief and baseline
+- **Inspect:** use focused reads and answer; do not draft or write.
+- **Proposal:** return a compact design or diff; do not write.
+- **Local draft:** for add, edit, retire, or “move to Change Set,” update only
+  `GDS/model-change-set` through `$open-gds-metadata-workbench` when available. Keep
+  the Snapshot immutable. Never call MCP, lock, Stage, Validate, or Apply.
+- **Server draft:** use `$manage-gds-model` for generic create, resume, inspect, or
+  archive intent; enter the governed workflow only when the user asks to Stage or Validate.
+- **Apply:** show the authoritative `action_review` and obtain fresh explicit approval
+  immediately before `apply_model_change_set`.
 
-Confirm or discover Tenant, existing Model, measurable business process, users,
-owner/steward, source systems, requirements, and stopping point. If grain, history,
-sources, and ownership require a structured interview, offer `$grill-data-model`.
+Do not ask for the boundary when it is clear. Never advance beyond it. If a required
+local workspace is absent, stop at a proposal and ask only for that missing choice.
+Use `$grill-data-model` only when the user explicitly asks for a grill or stress test.
+Otherwise ask at most one smallest material question and continue with stated,
+non-blocking assumptions.
 
-Use `get_model` and existing Dimensional/Logical/Conceptual reads. Inspect Model
-Scope, physical catalog, profiling/analysis, Assertions, and Model Mapping only as
-needed. Read current naming templates and get an explicit preserve/adopt/replace
-decision. Replace templates only through a full `model_details` record, preserve
-unchanged values, and preview sample Fact, Dimension, and Attribute names.
+Use `get_model` only when Model identity, revision, or policy is needed. Preserve
+current naming templates and established names by default; use their established
+patterns for new names. Do not ask a naming question or author `model_details` unless
+the user explicitly requests a naming/template change.
 
-## Use the four design decisions in order
+Read only requested records and direct dependencies. Call `describe_model_dataset`
+only for affected datasets whose records will be authored. Reading a related dataset
+does not make it affected.
 
-1. Select one measurable business process.
-2. Declare the atomic Fact grain in one sentence: exactly what one row represents.
-3. Identify Dimensions that are single-valued at that grain.
-4. Identify Facts/measures that are true at that exact grain.
+## Design the affected dimensional records
 
-Do not choose measures before grain. Use separate Fact Entities for distinct grains.
-If a Dimension can have multiple values for one Fact row, change the grain, omit the
-Dimension, or design an explicit bridge.
+Make decisions in order: select the measurable process, declare one atomic Fact grain,
+identify Dimensions single-valued at that grain, then identify Facts/measures true at
+that grain. Separate distinct grains. Use a bridge only for an explicit multivalued
+relationship.
 
-For each proposed Entity and Attribute, decide:
+For affected Entities/Attributes, preserve Fact/Dimension/bridge type, keys,
+descriptors, measure roles, additivity/default aggregation, history behavior,
+conformance, audit roles, lifecycle, confidence, and exact source support. Semi- or
+non-additive measures require an aggregation basis. Keep measure-only fields null on
+non-measures. Do not invent structured fields for policies represented only in
+definitions, Assertions, decisions, or mapping documents.
 
-- Entity type fact, dimension, or bridge; Fact type transaction, periodic snapshot,
-  accumulating snapshot, or factless; explicit grain for Facts/bridges; and Dimension
-  row grain when it is knowable;
-- keys, descriptors, measures, degenerate Dimensions, bridge weights, technical and
-  audit Attributes;
-- additive, semi-additive, or non-additive behavior, default aggregation, and the
-  aggregation basis required for semi/non-additive measures;
-- conformed Dimensions/measures and role-playing Dimension names;
-- fixed, overwrite, or historize behavior per descriptive Attribute, with a named
-  steward decision;
-- unknown/not-applicable members, late facts, late/inferred Dimension context, and
-  effective periods where required; and
-- source lineage, dependency order, confidence, lifecycle, and unresolved quality
-  risks.
+## Author affected records
 
-Keep non-measure fields' measure-only properties null. Ensure audit flags and roles
-agree. Do not use a generic abstraction when distinct business meanings or Attribute
-sets would be clearer.
+Describe only authored Dimensional datasets. An Attribute-only change affects
+`dimensional_attribute`; include its Entity or submodel only when that parent is new or
+changed. A Relationship-only change affects `dimensional_relationship`. Draft complete,
+ID-free records with exact nullable and nested-source shapes.
 
-Only change behavior and relationship role have dedicated structured fields for part
-of this policy. Record conformance, unknown/default members, late-arrival handling,
-and effective-period decisions in truthful existing definitions, an authorized
-decision record or Modeling Assertion, and permitted mapping documents as
-appropriate. Never invent JSON properties or claim those decisions are structurally
-enforced when the live schema has no field for them.
+A canonical-key change inserts a new record; retire the old key only when requested.
+For server work, follow the governed workflow, reconcile resumed pending work, keep
+Stage and Apply approvals separate, verify with focused reads/DBML, and release the
+lock.
 
-## Build and govern exact records
+## Report
 
-Call `describe_model_dataset` for `dimensional_submodel`, `dimensional_entity`,
-`dimensional_attribute`, and `dimensional_relationship`, plus approved supporting
-datasets. Draft complete ID-free records, including required nullable fields and exact
-nested source shapes.
-
-Preview process/grain, Fact and Dimension inventory, measures/additivity, conformance,
-SCD/history, bridges, late-arrival behavior, naming, source feasibility, canonical-key
-effects, and local schema issues. A name/key change is an insert unless the old record
-is explicitly retired.
-
-Stop after a checked handoff when the user requested only design. For a server draft
-or applied model, use the governed workflow. Reconcile resumed work, Stage complete
-pending datasets, use server Validate as authoritative, show its action review, and
-obtain a fresh Apply approval. Verify with focused reads and Dimensional DBML, then
-release the Tenant Lock.
-
-## Completion check
-
-Report business process, atomic grain, Facts, Dimensions, measures and additivity,
-conformance, SCD/history decisions, default/late-arrival patterns, mappings/evidence,
-naming posture, affected datasets, validation/apply status, verified Model revision,
-and open issues. Missing grain or source feasibility is a blocker, not a detail to
-invent.
+Normally report no more than three bullets and 120 words: outcome, affected
+datasets/counts, and blocker or next boundary. Do not echo unchanged records, full
+schemas, checklists, or raw tool output unless asked. Never omit conflicts, truncation,
+validation warnings, or the authoritative Apply review.

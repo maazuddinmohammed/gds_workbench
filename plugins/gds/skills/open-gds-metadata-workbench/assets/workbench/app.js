@@ -58,7 +58,7 @@
     recordSubmitButton: $("#recordSubmitButton"), diffPreview: $("#diffPreview"),
     selectionActions: $("#selectionActions"), selectionSummary: $("#selectionSummary"),
     selectPageButton: $("#selectPageButton"), clearSelectionButton: $("#clearSelectionButton"),
-    bulkEditButton: $("#bulkCopyButton"), bulkDeactivateButton: $("#bulkDeactivateButton"),
+    bulkAddButton: $("#bulkAddButton"), bulkDeactivateButton: $("#bulkDeactivateButton"),
     reviewStrip: $("#reviewStrip"), reviewTitle: $("#reviewTitle"), reviewSummary: $("#reviewSummary"),
     reviewButton: $("#reviewButton"), reviewDialog: $("#reviewDialog"), reviewContent: $("#reviewContent"),
     copyHandoffButton: $("#copyHandoffButton"), schemaDialog: $("#schemaDialog"),
@@ -96,6 +96,11 @@
     elements.welcomeConnectButton.disabled = busy;
     elements.reloadButton.disabled = busy;
     elements.exportModelSnapshotButton.disabled = busy;
+    elements.saveButton.disabled = busy || !hasDirtyChanges();
+    elements.reviewButton.disabled = busy || localDatasetNames().length === 0;
+    [elements.bulkAddButton, elements.bulkDeactivateButton,
+      elements.newRowButton].forEach((button) => { button.disabled = busy; });
+    if (busy) elements.copyHandoffButton.disabled = true;
     if (busy && !elements.appShell.hidden) {
       elements.loadingState.hidden = false;
       elements.loadingState.textContent = message;
@@ -423,7 +428,7 @@
         count.textContent = pending === undefined ? String(dataset.row_count ?? 0) : String(pending);
         count.title = pending === undefined ? "Snapshot rows" : "Local Change Set records";
         button.append(label, count);
-        button.addEventListener("click", () => selectDataset(dataset.name));
+        button.addEventListener("click", () => { if (!state.busy) void selectDataset(dataset.name); });
         section.appendChild(button);
       });
       elements.datasetNav.appendChild(section);
@@ -466,14 +471,14 @@
     return text;
   }
 
-  async function loadSnapshotRecord(datasetName, searchIndex) {
+  async function loadSnapshotRecord(datasetName, searchIndex, suppliedLines = null) {
     const dataset = state.datasetByName.get(datasetName);
     const searchRows = await loadSnapshotSearchRows(datasetName);
     const searchRecord = searchRows[searchIndex];
     if (!searchRecord) return null;
     let record = searchRecord;
     if (dataset.search_result_complete === false) {
-      const lines = (await snapshotRowsText(datasetName)).split(/\r?\n/);
+      const lines = suppliedLines || (await snapshotRowsText(datasetName)).split(/\r?\n/);
       const raw = lines[searchRecord.line - 1];
       if (!raw) throw new Error(`${datasetName} row line is outside the verified rows file.`);
       record = logic.parseJson(raw, `${dataset.rows_file} line ${searchRecord.line}`);
@@ -607,14 +612,12 @@
       elements.stateBanner.className = "state-banner snapshot-banner";
       elements.stateBanner.replaceChildren(textNode("strong", "Immutable Snapshot"), textNode("span", "Rows are verified against the Snapshot manifest and cannot be edited here."));
       elements.newRowButton.hidden = true;
-      elements.saveButton.hidden = true;
     } else {
       const control = state.localControl.server_change_set;
       const status = control.status === "local" ? "Not bound to a server Change Set" : `Bound to revision ${control.draft_revision}`;
       elements.stateBanner.className = "state-banner change-banner";
       elements.stateBanner.replaceChildren(textNode("strong", "Editable local Change Set"), textNode("span", `${status}. Saving here never Stages or Applies ${state.profile.kind === "model" ? "the model" : "metadata"}.`));
       elements.newRowButton.hidden = false;
-      elements.saveButton.hidden = false;
     }
     updateSaveButton();
     renderTable();
@@ -642,11 +645,14 @@
       ? (searchable.length ? searchable : Object.keys(schema.properties || {}))
       : Object.keys(schema.properties || {});
     const keyColumns = new Set(logic.canonicalColumns(schema));
+    const selectable = isChangeEligible(dataset, schema);
     const headRow = document.createElement("tr");
-    const selectionHeading = document.createElement("th");
-    selectionHeading.className = "selection-column";
-    selectionHeading.textContent = "Select";
-    headRow.appendChild(selectionHeading);
+    if (selectable) {
+      const selectionHeading = document.createElement("th");
+      selectionHeading.className = "selection-column";
+      selectionHeading.textContent = "Select";
+      headRow.appendChild(selectionHeading);
+    }
     const numberHeading = document.createElement("th");
     numberHeading.textContent = "#";
     numberHeading.className = "row-number";
@@ -664,20 +670,22 @@
       const tr = document.createElement("tr");
       if (state.selectedIndex === index) tr.classList.add("selected");
       tr.tabIndex = 0;
-      const selectionCell = document.createElement("td");
-      selectionCell.className = "selection-column";
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.checked = state.selectedIndexes.has(index);
-      checkbox.setAttribute("aria-label", `Select row ${index + 1}`);
-      checkbox.addEventListener("click", (event) => event.stopPropagation());
-      checkbox.addEventListener("change", () => {
-        if (checkbox.checked) state.selectedIndexes.add(index);
-        else state.selectedIndexes.delete(index);
-        renderSelectionActions(pageRows);
-      });
-      selectionCell.appendChild(checkbox);
-      tr.appendChild(selectionCell);
+      if (selectable) {
+        const selectionCell = document.createElement("td");
+        selectionCell.className = "selection-column";
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.checked = state.selectedIndexes.has(index);
+        checkbox.setAttribute("aria-label", `Select row ${index + 1}`);
+        checkbox.addEventListener("click", (event) => event.stopPropagation());
+        checkbox.addEventListener("change", () => {
+          if (checkbox.checked) state.selectedIndexes.add(index);
+          else state.selectedIndexes.delete(index);
+          renderSelectionActions(pageRows);
+        });
+        selectionCell.appendChild(checkbox);
+        tr.appendChild(selectionCell);
+      }
       const number = document.createElement("td");
       number.className = "row-number";
       number.textContent = String(index + 1);
@@ -727,7 +735,7 @@
   function inspectorEmpty() {
     const wrapper = document.createElement("div");
     wrapper.className = "inspector-empty";
-    wrapper.append(textNode("span", "⌁"), textNode("strong", "Select a row"), textNode("p", "Inspect its canonical identity and move eligible records into the Change Set."));
+    wrapper.append(textNode("span", "⌁"), textNode("strong", "Select a row"), textNode("p", "Inspect its canonical identity and copy eligible records into the Change Set."));
     wrapper.firstChild.className = "inspector-glyph";
     return wrapper;
   }
@@ -744,14 +752,14 @@
     const count = state.selectedIndexes.size;
     elements.selectionSummary.textContent = count
       ? `${count.toLocaleString()} row${count === 1 ? "" : "s"} selected`
-      : "Select rows for a bulk change";
+      : state.view === "snapshot" ? "Select Snapshot rows to copy" : "Select Change Set rows to edit";
     elements.selectPageButton.textContent = pageRows.length && pageRows.every(({ index }) => state.selectedIndexes.has(index))
       ? "Unselect page"
       : "Select page";
     elements.clearSelectionButton.disabled = count === 0;
-    elements.bulkEditButton.hidden = count === 0;
-    elements.bulkEditButton.textContent = `Edit one field (${count})`;
-    elements.bulkDeactivateButton.hidden = count === 0 || !modelStatusField(schema);
+    elements.bulkAddButton.hidden = count === 0 || state.view !== "snapshot";
+    elements.bulkAddButton.textContent = `Copy to Change Set (${count})`;
+    elements.bulkDeactivateButton.hidden = count === 0 || state.view === "snapshot" || !modelStatusField(schema);
     elements.bulkDeactivateButton.textContent = `Deactivate (${count})`;
   }
 
@@ -784,6 +792,8 @@
   }
 
   async function applyBulkField(field, value) {
+    if (state.busy) return;
+    if (state.view !== "change-set") throw new Error("Copy Snapshot records into the Change Set before editing them.");
     const schema = await loadSchema(state.activeDataset);
     if (!Object.prototype.hasOwnProperty.call(schema.properties || {}, field)) throw new Error(`${field} is not a dataset field.`);
     if (logic.canonicalColumns(schema).includes(field)) throw new Error("Canonical-key fields cannot be bulk edited.");
@@ -811,30 +821,8 @@
     toast("Bulk change prepared", `${proposed.length} ${state.activeDataset} record${proposed.length === 1 ? "" : "s"} updated locally. Save when ready.`, "success");
   }
 
-  async function editSelectedField() {
-    const schema = state.schemaCache.get(state.activeDataset);
-    const blocked = new Set(logic.canonicalColumns(schema));
-    const fields = Object.entries(schema.properties || {})
-      .filter(([name, property]) => !blocked.has(name) && !Object.prototype.hasOwnProperty.call(property, "const"))
-      .map(([name]) => name);
-    const field = window.prompt(`Field to update:\n${fields.join(", ")}`);
-    if (field === null) return;
-    if (!fields.includes(field)) {
-      toast("Bulk edit stopped", "Choose one exact editable field name from the list.", "error");
-      return;
-    }
-    const raw = window.prompt(`JSON value for ${field} (strings need quotes; null is allowed only when the schema allows it):`);
-    if (raw === null) return;
-    try {
-      const value = logic.parseJson(raw, field);
-      if (!window.confirm(`Set ${field}=${displayValue(value)} on ${state.selectedIndexes.size} selected record${state.selectedIndexes.size === 1 ? "" : "s"}?`)) return;
-      await applyBulkField(field, value);
-    } catch (error) {
-      toast("Bulk edit stopped", error.message, "error");
-    }
-  }
-
   async function deactivateSelectedRecords() {
+    if (state.busy) return;
     const count = state.selectedIndexes.size;
     const schema = state.schemaCache.get(state.activeDataset);
     const field = modelStatusField(schema);
@@ -868,13 +856,13 @@
 
     const action = document.createElement("section");
     action.className = "inspector-section";
-    action.appendChild(labelNode(state.view === "snapshot" ? "Move to Change Set" : "Local draft action"));
+    action.appendChild(labelNode(state.view === "snapshot" ? "Copy to Change Set" : "Local draft action"));
     const actionArea = document.createElement("div");
     actionArea.className = "inspector-actions";
     if (state.view === "snapshot") {
       if (isChangeEligible(dataset, schema)) {
-        const add = actionButton("Create change", "button change-action", openSelectedSnapshotChange);
-        actionArea.append(add, paragraph("Edit a proposed copy beside the immutable current record."));
+        const add = actionButton("Copy to Change Set", "button change-action", copySelectedSnapshotRecord);
+        actionArea.append(add, paragraph("Copy this immutable record, then edit it in the local Change Set."));
       } else {
         actionArea.append(paragraph("This record is available for context only. It cannot enter this Change Set."));
       }
@@ -912,20 +900,67 @@
     );
   }
 
-  async function openSelectedSnapshotChange() {
-    const baseline = state.selectedRecord;
-    if (!baseline) return;
+  async function copyRecordsToChangeSet(datasetName, records = [], searchIndexes = []) {
+    if (state.busy) return;
+    setBusy(true, `Copying ${datasetName} to the local Change Set…`);
     try {
-      const entry = await loadChangeRows(state.activeDataset);
-      const schema = await loadSchema(state.activeDataset);
-      const pendingIndex = entry.rows.findIndex((record) => sameNaturalKey(record, baseline, schema));
-      await openRecordDialog("snapshot-edit", pendingIndex, baseline);
+      const schema = await loadSchema(datasetName);
+      const dataset = state.datasetByName.get(datasetName);
+      if (state.activeDataset !== datasetName || state.view !== "snapshot" || !isChangeEligible(dataset, schema)) {
+        throw new Error("Only eligible records from the current Snapshot dataset can be copied.");
+      }
+      const selected = records.map(logic.clone);
+      const snapshotLines = searchIndexes.length && dataset.search_result_complete === false
+        ? (await snapshotRowsText(datasetName)).split(/\r?\n/)
+        : null;
+      for (const index of searchIndexes) {
+        const record = await loadSnapshotRecord(datasetName, index, snapshotLines);
+        if (record) selected.push(logic.clone(record));
+      }
+      const entry = await loadChangeRows(datasetName);
+      const result = logic.copyMissingRecords(entry.rows, selected, schema, datasetName);
+      if (result.errors.length) throw new Error(result.errors[0].message || "Selected records could not be copied.");
+      await loadSnapshotRows(datasetName);
+      if (result.copiedCount) await ensureWritableDraft();
+      if (state.activeDataset !== datasetName || state.view !== "snapshot") {
+        throw new Error("The active Snapshot dataset changed before copying finished.");
+      }
+      entry.rows = result.rows;
+      entry.errors = [];
+      entry.dirty = entry.dirty || result.copiedCount > 0;
+      state.pendingCounts.set(datasetName, entry.rows.length);
+      state.view = "change-set";
+      state.query = "";
+      elements.rowSearch.value = "";
+      state.selectedIndexes = new Set(result.indexes);
+      state.selectedIndex = result.indexes.length === 1 ? result.indexes[0] : null;
+      state.selectedRecord = state.selectedIndex === null ? null : entry.rows[state.selectedIndex];
+      state.page = result.indexes.length ? Math.floor(result.indexes[0] / PAGE_SIZE) + 1 : 1;
+      renderDatasetNav();
+      const preserved = result.skippedCount ? ` ${result.skippedCount} existing pending record${result.skippedCount === 1 ? " was" : "s were"} preserved.` : "";
+      toast(result.copiedCount ? "Copied to local Change Set" : "Already in local Change Set", `${result.copiedCount} record${result.copiedCount === 1 ? "" : "s"} copied.${preserved} Edit here, then Save.`, "success");
     } catch (error) {
-      toast("Could not prepare change", error.message, "error");
+      toast("Could not copy records", error.message, "error");
+    } finally {
+      setBusy(false);
+      if (state.activeDataset) renderWorkspace();
     }
   }
 
+  function copySelectedSnapshotRecord() {
+    const datasetName = state.activeDataset;
+    const record = state.selectedRecord;
+    if (datasetName && record) void copyRecordsToChangeSet(datasetName, [record]);
+  }
+
+  function copySelectedRowsToChangeSet() {
+    const datasetName = state.activeDataset;
+    const indexes = [...state.selectedIndexes].sort((left, right) => left - right);
+    if (datasetName) void copyRecordsToChangeSet(datasetName, [], indexes);
+  }
+
   function removeSelectedLocalRecord() {
+    if (state.busy) return;
     const entry = state.changeCache.get(state.activeDataset);
     const record = entry?.rows[state.selectedIndex];
     if (!record || !window.confirm(`Remove this record from the local draft? This does not delete the applied ${state.profile.kind}.`)) return;
@@ -993,18 +1028,14 @@
     return new Map([...suggestions].map(([field, values]) => [field, [...values].sort()]));
   }
 
-  async function openRecordDialog(mode, index = null, suppliedBaseline = null) {
+  async function openRecordDialog(mode, index = null) {
+    if (state.busy) return;
     const schema = state.schemaCache.get(state.activeDataset);
     const entry = state.changeCache.get(state.activeDataset);
     if (!schema || !entry) return;
     state.formMode = mode; state.formIndex = index;
     let record;
-    if (mode === "snapshot-edit") {
-      state.formBaseline = logic.clone(suppliedBaseline);
-      record = index === null || index < 0
-        ? logic.clone(suppliedBaseline)
-        : logic.clone(entry.rows[index]);
-    } else if (mode === "edit") {
+    if (mode === "edit") {
       record = logic.clone(entry.rows[index]);
       const snapshotRows = state.snapshotCache.get(state.activeDataset) || [];
       state.formBaseline = logic.clone(
@@ -1021,8 +1052,8 @@
       toast("Reference suggestions unavailable", error.message, "warning");
     }
     elements.dialogKicker.textContent = state.activeDataset;
-    elements.dialogTitle.textContent = mode === "add" ? "Add new record" : "Review proposed change";
-    elements.recordSubmitButton.textContent = mode === "add" ? "Add to Change Set" : "Save proposed change";
+    elements.dialogTitle.textContent = mode === "add" ? "Add new record" : "Edit proposed record";
+    elements.recordSubmitButton.textContent = mode === "add" ? "Add to Change Set" : "Save changes";
     elements.formErrors.hidden = true;
     elements.formErrors.textContent = "";
     elements.fieldGrid.replaceChildren();
@@ -1176,6 +1207,7 @@
 
   async function submitRecordForm(event) {
     event.preventDefault();
+    if (state.busy) return;
     if (event.submitter !== elements.recordSubmitButton) { elements.recordDialog.close(); return; }
     const schema = state.schemaCache.get(state.activeDataset);
     const entry = state.changeCache.get(state.activeDataset);
@@ -1193,7 +1225,7 @@
       if (state.formMode === "add") {
         const snapshotRows = state.snapshotCache.get(state.activeDataset) || [];
         if (snapshotRows.some((candidate) => sameNaturalKey(candidate, record, schema))) {
-          showFormErrors([{ field: "$", message: "That natural key already exists in the Snapshot. Select it there and choose Create change." }]);
+          showFormErrors([{ field: "$", message: "That natural key already exists in the Snapshot. Select it there and choose Copy to Change Set." }]);
           return;
         }
       }
@@ -1223,7 +1255,7 @@
 
   function updateSaveButton() {
     const dirty = [...state.changeCache.values()].filter((entry) => entry.dirty).length;
-    elements.saveButton.disabled = dirty === 0;
+    elements.saveButton.disabled = state.busy || dirty === 0;
     elements.saveButton.textContent = dirty ? `Save Change Set (${dirty})` : "Save Change Set";
     updateReviewStrip();
   }
@@ -1248,7 +1280,7 @@
     }
     elements.reviewTitle.textContent = dirtyCount ? `${dirtyCount} unsaved dataset${dirtyCount === 1 ? "" : "s"}` : "Local draft saved";
     elements.reviewSummary.textContent = `${names.length} dataset${names.length === 1 ? "" : "s"} · ${recordCount.toLocaleString()} record${recordCount === 1 ? "" : "s"} · not Staged`;
-    elements.reviewButton.disabled = names.length === 0;
+    elements.reviewButton.disabled = state.busy || names.length === 0;
   }
 
   async function saveChanges() {
@@ -1379,8 +1411,9 @@
   }
 
   async function openReview() {
-    if (!localDatasetNames().length) return;
-    elements.reviewButton.disabled = true;
+    if (state.busy || !localDatasetNames().length) return;
+    setBusy(true, "Building local Change Set review…");
+    state.handoffText = "";
     try {
       const review = await buildLocalReview();
       elements.reviewContent.replaceChildren();
@@ -1422,12 +1455,13 @@
     } catch (error) {
       toast("Review could not be built", error.message, "error");
     } finally {
-      updateReviewStrip();
+      setBusy(false);
+      renderWorkspace();
     }
   }
 
   async function copyHandoff() {
-    if (!state.handoffText) return;
+    if (state.busy || !state.handoffText) return;
     await copyText(state.handoffText, "Handoff copied", "Only counts, hashes, IDs, and workflow status were copied; row values were excluded.");
   }
 
@@ -1549,7 +1583,7 @@
   elements.nextPage.addEventListener("click", () => { state.page++; renderTable(); });
   elements.selectPageButton.addEventListener("click", togglePageSelection);
   elements.clearSelectionButton.addEventListener("click", () => { state.selectedIndexes.clear(); renderTable(); });
-  elements.bulkEditButton.addEventListener("click", () => { void editSelectedField(); });
+  elements.bulkAddButton.addEventListener("click", () => { void copySelectedRowsToChangeSet(); });
   elements.bulkDeactivateButton.addEventListener("click", () => { void deactivateSelectedRecords(); });
   elements.newRowButton.addEventListener("click", () => { void openRecordDialog("add"); });
   elements.saveButton.addEventListener("click", saveChanges);
@@ -1558,12 +1592,14 @@
   elements.copyHandoffButton.addEventListener("click", () => { void copyHandoff(); });
   elements.schemaButton.addEventListener("click", showSchema);
   elements.recordForm.addEventListener("submit", submitRecordForm);
-  elements.fieldGrid.addEventListener("input", () => {
+  const refreshRecordForm = () => {
     const schema = state.schemaCache.get(state.activeDataset);
     if (!schema || !elements.recordDialog.open) return;
     try { renderFormDiff(readFormRecord(schema), schema); }
     catch (_error) { elements.recordSubmitButton.disabled = true; }
-  });
+  };
+  elements.fieldGrid.addEventListener("input", refreshRecordForm);
+  elements.fieldGrid.addEventListener("change", refreshRecordForm);
   elements.recordDialog.querySelectorAll("[data-dialog-close]").forEach((button) => {
     button.addEventListener("click", () => elements.recordDialog.close());
   });

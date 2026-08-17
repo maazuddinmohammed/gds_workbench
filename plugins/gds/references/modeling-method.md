@@ -12,7 +12,8 @@ Before choosing records, establish:
 - model layer(s) and intended consumers;
 - source systems, physical scope, profiling evidence, and known quality limits;
 - business vocabulary, owners/stewards, security boundaries, and refresh needs;
-- current naming templates and the user's adopt/preserve/change decision;
+- Preserve current naming templates and established names by default; ask only when
+  the user requests a naming/template change or a real conflict prevents progress;
 - decisions already made, open questions, and measurable acceptance checks.
 
 Use existing Model records as the baseline. Preserve traceability with physical source

@@ -5,85 +5,77 @@ description: "Build or revise a governed GDS Logical data model with entities, a
 
 # Build Logical Model
 
-Produce a platform-independent, normalized Logical layer tied to business meaning and
-source evidence. Preserve GDS locking, revisions, and separate Apply approval.
+Build a platform-independent Logical layer tied to business meaning and source
+evidence. Read [modeling method](../../references/modeling-method.md) only for
+full-layer design, method ambiguity, or a requested stress test. Read
+[model datasets](../../references/model-datasets.md) for exact keys only when needed.
+Read [model tools](../../references/model-tools.md) around unfamiliar calls.
+Read the [governed workflow](../../references/governed-model-workflow.md) only for a
+server draft or Apply.
+Use `get_model_logical_submodels`, `get_model_logical_entities`,
+`get_model_logical_attributes`, and `get_model_logical_relationships` for focused
+current-state reads.
 
-Read these only when needed:
+## Route by intent
 
-- [modeling method](../../references/modeling-method.md) for Logical design checks;
-- [model datasets](../../references/model-datasets.md) for exact semantics and keys;
-- [model tools](../../references/model-tools.md) for current MCP contracts; and
-- [governed workflow](../../references/governed-model-workflow.md) before a write.
+Choose the least-committed boundary from the user's verbs and context:
 
-## Establish the brief and baseline
+- **Inspect:** use focused reads and answer; do not draft or write.
+- **Proposal:** return a compact design or diff; do not write.
+- **Local draft:** for add, edit, retire, or “move to Change Set,” update only
+  `GDS/model-change-set` through `$open-gds-metadata-workbench` when available. Keep
+  the Snapshot immutable. Never call MCP, lock, Stage, Validate, or Apply.
+- **Server draft:** use `$manage-gds-model` for generic create, resume, inspect, or
+  archive intent; enter the governed workflow only when the user asks to Stage or Validate.
+- **Apply:** show the authoritative `action_review` and obtain fresh explicit approval
+  immediately before `apply_model_change_set`.
 
-Confirm or discover Tenant, existing Model, business domain/process, consumers,
-owner, sources, current Conceptual vocabulary, and stopping point: proposal,
-validated draft, or applied change. Use `$grill-data-model` when the user wants a
-bounded decision interview. Do not ask for information available through safe reads.
+Do not ask for the boundary when it is clear. Never advance beyond it. If a required
+local workspace is absent, stop at a proposal and ask only for that missing choice.
+Use `$grill-data-model` only when the user explicitly asks for a grill or stress test.
+Otherwise ask at most one smallest material question and continue with stated,
+non-blocking assumptions.
 
-Use `get_model` first. Read current naming templates and ask whether to preserve,
-adopt, or replace them. A replacement is one complete `model_details` record with all
-unchanged values retained and valid template groups. Preview Entity and Attribute
-names; the server does not enforce template-generated names.
+Use `get_model` only when Model identity, revision, or policy is needed. Preserve
+current naming templates and established names by default; use their established
+patterns for new names. Do not ask a naming question or author `model_details` unless
+the user explicitly requests a naming/template change.
 
-Read existing Logical submodels, Entities, Attributes, and Relationships. Use
-Conceptual reads, Model Scope, physical catalog, profiling/analysis, Modeling
-Assertions, and current mappings only as needed. Track whether each statement is a
-user decision, a governed assertion, observed source evidence, or an assumption.
+Read only requested records and direct dependencies. Call `describe_model_dataset`
+only for affected datasets whose records will be authored. Reading a related dataset
+does not make it affected.
 
-## Design the Logical layer
+## Design the affected logical records
 
-For every `logical_entity`, define:
+Give each Entity one meaning, explicit row grain, type/detail, dependency order,
+submodel, confidence, lifecycle, and exact physical or Assertion sources. Normalize
+repeating groups and mixed grains; document deliberate denormalization.
 
-- business-readable name and definition;
-- one explicit row/instance grain;
-- type and required-nullable `logical_entity_type_detail`, which is non-null only for
-  `logical_entity_type="other"`;
-- dependency order and submodel membership;
-- confidence, lifecycle status, lock state; and
-- physical or Assertion sources with rationale.
+For affected Attributes, preserve meaning, logical type, ordinal, nullability,
+identifier/audit roles, lifecycle, and source traceability. Key Attributes are
+non-nullable. Natural and surrogate key flags are mutually exclusive. Do not infer a
+durable business key from apparent uniqueness alone.
 
-For every `logical_attribute`, define meaning, logical data type, ordinal,
-nullability, identifier roles, audit role, lifecycle, and source traceability. A key
-Attribute is non-nullable. Natural and surrogate key flags are mutually exclusive.
-Do not infer a durable business key from apparent uniqueness alone.
+For affected Relationships, use existing Attribute endpoints and record direction,
+cardinality, basis, confidence, and lifecycle. The cardinality enum does not encode
+minimum participation; capture optionality truthfully in its basis without claiming
+structural enforcement.
 
-Normalize repeating groups and mixed-grain values. Separate facts about different
-business subjects. Record deliberate denormalization only as an explicit decision
-with a reason and acceptance check.
+## Author affected records
 
-For every `logical_relationship`, use existing Attribute endpoints and record name,
-definition, direction, `logical_relationship_cardinality`, basis, confidence, and
-lifecycle. The cardinality enum records one/many direction only; it has no zero/minimum
-participation value. Capture optionality truthfully in
-`logical_relationship_cardinality_basis` and the authorized decision record or
-Modeling Assertion, and label it descriptive rather than structured or enforced.
-Check that endpoints differ, each parent exists, and the relationship matches the
-declared grains and identifiers.
+Describe only authored Logical datasets. An Attribute-only change affects
+`logical_attribute`; a Relationship-only change affects `logical_relationship`.
+Include `logical_entity` or `logical_submodel` only when that parent is new or changed.
+Draft complete, ID-free records with required nullable and nested-source fields.
 
-## Build and govern exact records
+A canonical-key change inserts a new record; retire the old key only when requested.
+For server work, follow the governed workflow, reconcile resumed pending work, keep
+Stage and Apply approvals separate, verify with focused reads/DBML, and release the
+lock.
 
-Call `describe_model_dataset` for `logical_submodel`, `logical_entity`,
-`logical_attribute`, and `logical_relationship`, plus any approved supporting dataset.
-Draft complete ID-free records with every required nullable field and exact nested
-source shape. Do not copy database IDs into staged records.
+## Report
 
-Prepare complete pending dataset lists. Preview canonical-key effects, normalization
-decisions, source lineage, naming, references, assumptions, and local validation.
-Changing a canonical key inserts a new record; retire the old key explicitly when
-that is the approved intent.
-
-For proposal-only work, stop with a schema-checked handoff. Otherwise follow the
-governed workflow: lock only after local review, reconcile a resumed Change Set,
-Stage exact dataset replacements with the current revision, Validate and repair,
-show the authoritative action review, and ask again immediately before Apply.
-Verify the resulting Logical records/DBML and release the lock.
-
-## Completion check
-
-Report scope, naming posture, submodels, Entity grains, identifiers, key/optional
-relationships, normalization decisions, source coverage, affected datasets,
-validation/apply state, verified Model revision when applied, and open issues. Do not
-declare completion while identifier, cardinality, ownership, or source decisions
-needed by the requested scope remain unresolved.
+Normally report no more than three bullets and 120 words: outcome, affected
+datasets/counts, and blocker or next boundary. Do not echo unchanged records, full
+schemas, checklists, or raw tool output unless asked. Never omit conflicts, truncation,
+validation warnings, or the authoritative Apply review.

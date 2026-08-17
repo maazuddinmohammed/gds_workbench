@@ -5,82 +5,74 @@ description: "Build or revise a governed GDS Conceptual data model from business
 
 # Build Conceptual Model
 
-Build a business-readable Conceptual layer while preserving GDS governance,
-traceability, naming policy, revision fencing, and explicit Apply approval.
+Build a business-readable Conceptual layer with traceable evidence and governed writes.
+Read [modeling method](../../references/modeling-method.md) only for full-layer design,
+method ambiguity, or a requested stress test. Read
+[model datasets](../../references/model-datasets.md) for exact keys only when needed.
+Read [model tools](../../references/model-tools.md) around unfamiliar calls. Read the
+[governed workflow](../../references/governed-model-workflow.md) only for a server
+draft or Apply.
+Use `get_model_conceptual_objects` and `get_model_conceptual_relationships` for
+focused current-state reads.
 
-Read these only when needed:
+## Route by intent
 
-- [modeling method](../../references/modeling-method.md) for Conceptual quality checks;
-- [model datasets](../../references/model-datasets.md) for dataset meaning and keys;
-- [model tools](../../references/model-tools.md) for exact MCP names and limits; and
-- [governed workflow](../../references/governed-model-workflow.md) before any write.
+Choose the least-committed boundary from the user's verbs and context:
 
-## Establish the brief
+- **Inspect:** use focused reads and answer; do not draft or write.
+- **Proposal:** return a compact design or diff; do not write.
+- **Local draft:** for add, edit, retire, or “move to Change Set,” update only
+  `GDS/model-change-set` through `$open-gds-metadata-workbench` when available. Keep
+  the Snapshot immutable. Never call MCP, lock, Stage, Validate, or Apply.
+- **Server draft:** use `$manage-gds-model` for generic create, resume, inspect, or
+  archive intent; enter the governed workflow only when the user asks to Stage or Validate.
+- **Apply:** show the authoritative `action_review` and obtain fresh explicit approval
+  immediately before `apply_model_change_set`.
 
-Confirm or discover the Tenant, existing Model, domain boundary, intended audience,
-business owner, source systems, and requested stopping point: proposal, validated
-draft, or applied change. Ask only for material facts that cannot be read safely.
-When ambiguity spans several decisions, offer `$grill-data-model`; do not start an
-extended interview silently.
+Do not ask for the boundary when it is clear. Never advance beyond it. If a required
+local workspace is absent, stop at a proposal and ask only for that missing choice.
+Use `$grill-data-model` only when the user explicitly asks for a grill or stress test.
+Otherwise ask at most one smallest material question and continue with stated,
+non-blocking assumptions.
 
-Use `get_model` to select an existing Model and read its revision and naming
-templates. There is no public Model-create tool. Use `get_model_scope`, focused
-physical catalog reads, profiling/analysis, Modeling Assertions, and existing
-Conceptual reads for the minimum evidence needed. Do not treat table names as
-business definitions.
+Use `get_model` only when Model identity, revision, or policy is needed. Preserve
+current naming templates and established names by default; use their established
+patterns for new names. Do not ask a naming question or author `model_details` unless
+the user explicitly requests a naming/template change.
 
-Ask the user to choose one naming posture:
+Read only requested records and direct dependencies. Call `describe_model_dataset`
+only for affected datasets whose records will be authored. Reading a related dataset
+does not make it affected.
 
-1. preserve the current templates;
-2. use them for proposed names without changing them; or
-3. replace them through a complete `model_details` record.
+## Design the affected concepts
 
-For option 3, preserve every unchanged `model_details` value, preview representative
-names, and respect the silver-pair/gold-triple all-or-none rules. Never claim the
-server enforces names generated from a template.
+Define each `conceptual_object` as one stable business concept with a singular name,
+definition, type, instance grain, useful aliases, confidence, lifecycle, and exact
+Object/Assertion support. Do not turn storage names into business definitions.
 
-## Design the Conceptual layer
+Define each `conceptual_relationship` in business language with distinct existing
+endpoints, direction, cardinality, basis, confidence, lifecycle, and support. Use
+`unknown` when evidence is insufficient. Mark uncertainty `needs_review`; never
+manufacture certainty.
 
-Create a small shared vocabulary first. For each `conceptual_object`, define one
-stable business concept with a singular name, definition, object type, explicit
-instance grain, aliases only when useful, confidence, lifecycle status, and exact
-source/Assertion support.
+Check only the requested scope for duplicate terms, mixed grains, unsupported
+cardinality, missing owners/evidence, and out-of-scope concepts.
 
-For each `conceptual_relationship`:
+## Author affected records
 
-- use existing Conceptual object names at both endpoints;
-- phrase the relationship in business language;
-- record definition, type, direction, cardinality, basis, confidence, and support;
-- use `unknown` cardinality when evidence is insufficient; and
-- keep endpoints distinct.
+Describe `conceptual_object` only when Object records change and
+`conceptual_relationship` only when Relationship records change. Describe a supporting
+dataset only when this request actually authors it. Draft complete, ID-free records
+with required nullable fields, natural keys, and exact nested support shapes.
 
-Check for duplicate or overloaded terms, storage-specific concepts, mixed grains,
-unexplained aliases, unsupported cardinality, missing owners, and out-of-scope
-objects. Mark uncertainty `needs_review`; never manufacture certainty.
+Compare affected canonical keys with current state. A key change inserts a new record;
+retire the old key only when requested. For server work, follow the governed workflow,
+reconcile resumed pending work, keep Stage and Apply approvals separate, then verify
+with focused reads or DBML and release the lock.
 
-## Build exact records
+## Report
 
-Call `describe_model_dataset` for `conceptual_object` and
-`conceptual_relationship`, plus `model_details`, `modeling_assertion_document`,
-`modeling_assertion_record`, or `model_scope` only if the approved proposal changes
-them. Use every required field, including required nullable fields. Use natural keys
-and nested source keys, never database IDs.
-
-Prepare complete pending lists. Compare each canonical key with current state and
-show inserts, updates, deactivations/reactivations, unchanged records, naming effects,
-evidence, assumptions, and open decisions. A key change inserts another record; it
-does not rename or retire the original.
-
-If the user requested only a proposal, stop after schema checks and a compact handoff.
-If the user requested a server draft or applied model, follow the governed workflow
-exactly. Reconcile any resumed draft before Stage. Server Validate is authoritative.
-Display its action review, then obtain a fresh explicit approval immediately before
-Apply. Verify with fresh reads or DBML and release the Tenant Lock.
-
-## Completion check
-
-Report the selected Tenant/Model, scope, naming decision, affected datasets, source
-evidence, accepted decisions, assumptions, validation/apply status, resulting Model
-revision when applied, and unresolved issues. Never call a Conceptual model complete
-when its business vocabulary, owner, evidence, or relationship decisions remain
-unknown.
+Normally report no more than three bullets and 120 words: outcome, affected
+datasets/counts, and blocker or next boundary. Do not echo unchanged records, full
+schemas, checklists, or raw tool output unless asked. Never omit conflicts, truncation,
+validation warnings, or the authoritative Apply review.

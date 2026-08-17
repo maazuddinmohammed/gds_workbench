@@ -107,8 +107,7 @@ class DisposablePostgres:
         )
 
 
-@pytest.fixture(scope="session")
-def postgres_database() -> Iterator[DisposablePostgres]:
+def _disposable_postgres() -> Iterator[DisposablePostgres]:
     unexpected = sorted(
         key for key in FORBIDDEN_CONNECTION_ENVIRONMENT if os.environ.get(key)
     )
@@ -246,6 +245,17 @@ def postgres_database() -> Iterator[DisposablePostgres]:
         )
         if stopped.returncode != 0:
             pytest.fail("failed to dispose the verified PostgreSQL container")
+
+
+@pytest.fixture(scope="session")
+def postgres_database() -> Iterator[DisposablePostgres]:
+    yield from _disposable_postgres()
+
+
+@pytest.fixture(scope="module")
+def bootstrap_postgres_database() -> Iterator[DisposablePostgres]:
+    """Provide a pristine database for pre-governance bootstrap tests."""
+    yield from _disposable_postgres()
 
 
 def _published_port(container_name: str) -> int:

@@ -5,6 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import PurePosixPath
+from typing import Literal, cast
 
 from gds_etl_workbench.domain.metadata_records import (
     AttributeRecord,
@@ -61,6 +62,39 @@ class SnapshotSection(StrEnum):
     OPERATIONAL = "operational"
 
 
+type MetadataDataset = Literal[
+    "project",
+    "tenant",
+    "system",
+    "connection",
+    "tenant_metadata_discovery_scope",
+    "system_type",
+    "connection_type",
+    "object_type",
+    "zone",
+    "chunk_type",
+    "file_type",
+    "data_operation",
+    "process_type",
+    "source_object",
+    "source_attribute",
+    "bronze_object",
+    "bronze_attribute",
+    "silver_object",
+    "silver_attribute",
+    "gold_object",
+    "gold_attribute",
+    "ingestion_object_mapping",
+    "ingestion_attribute_mapping",
+    "copy_group",
+    "member_group",
+    "copy_group_control",
+    "copy",
+    "process_group",
+    "process",
+]
+
+
 @dataclass(frozen=True, slots=True)
 class ReferenceDefinition:
     columns: tuple[str, ...]
@@ -71,7 +105,7 @@ class ReferenceDefinition:
 
 @dataclass(frozen=True, slots=True)
 class DatasetDefinition:
-    name: str
+    name: MetadataDataset
     label: str
     database_table: str
     record_type: str
@@ -158,7 +192,7 @@ def _reference(
 
 
 def _dataset(
-    name: str,
+    name: MetadataDataset,
     label: str,
     database_table: str,
     record_type: str,
@@ -365,7 +399,7 @@ DATASETS = (
         )
         for item in (
             _dataset(
-                f"{zone_code}_object",
+                cast(MetadataDataset, f"{zone_code}_object"),
                 f"{label} Objects",
                 "core.object",
                 "object",
@@ -382,7 +416,7 @@ DATASETS = (
                 fixed_values=(("zone_code", zone_code),),
             ),
             _dataset(
-                f"{zone_code}_attribute",
+                cast(MetadataDataset, f"{zone_code}_attribute"),
                 f"{label} Attributes",
                 "core.attribute",
                 "attribute",

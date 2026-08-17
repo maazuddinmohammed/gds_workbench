@@ -43,21 +43,22 @@ Connections are absent. Stop on `tenant_not_found` or `authorization_denied`.
 ### `get_model`
 
 **Purpose:** Read active Model headers and naming/audit policy templates for one Tenant.
-**Inputs:** `tenant_id`.
+**Inputs:** `tenant_id`; optional `page_size` 1–200 (default 200) and opaque `cursor`.
 **Returns:** Up to 200 Models with IDs, names, descriptions, revisions, policy templates,
-and Model Scope Object counts, plus the complete count and a truncation flag.
-**Safe/error:** If truncated, report that the result is incomplete. Created/updated audit
-fields are intentionally omitted.
+Model Scope Object counts, complete count, truncation flag, and `next_cursor`.
+**Safe/error:** Follow the cursor unchanged until the requested scope is complete.
+Created/updated audit fields are intentionally omitted.
 
 ### `get_model_scope`
 
 **Purpose:** Read active physical Objects currently included in one Model Scope.
-**Inputs:** `model_id` returned by `get_model`.
+**Inputs:** `model_id` returned by `get_model`; optional `page_size` 1–2,000 (default
+2,000) and opaque `cursor`.
 **Returns:** Up to 2,000 Scope Objects with Model Scope/Object IDs plus expanded Tenant,
-System, Connection, Object Type, Zone, lock state, and physical names.
-**Safe/error:** Only active Scope and catalog records are returned. If truncated, report
-that the result is incomplete. Use Model Change Sets for add/reactivate/archive; there
-is no direct Model Scope mutation tool.
+System, Connection, Object Type, Zone, lock state, physical names, and `next_cursor`.
+**Safe/error:** Only active Scope and catalog records are returned. Follow the cursor
+unchanged. Use Model Change Sets for add/reactivate/archive; there is no direct Model
+Scope mutation tool.
 
 ### `list_objects`
 

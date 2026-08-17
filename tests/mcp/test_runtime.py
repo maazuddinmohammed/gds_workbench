@@ -42,6 +42,9 @@ from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAM
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
+from gds_etl_workbench.tools.snapshots.model.contracts import (
+    DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
+)
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -323,6 +326,28 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
 
 
 @pytest.mark.asyncio
+async def test_model_dataset_tool_inputs_advertise_the_exact_shared_enum() -> None:
+    settings = development_settings()
+    server = create_mcp_server(
+        settings,
+        FakeDatabase(),
+        IdentityProvider(settings.auth_mode),
+    )
+
+    async with Client(server) as client:
+        listed = await client.list_tools()
+
+    schemas = {tool.name: tool.input_schema for tool in listed.tools}
+    expected = list(MODEL_DATASETS_BY_NAME)
+    assert schemas["stage_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
+    assert schemas["get_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
+    assert schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
+    assert schemas["describe_model_dataset"]["properties"]["dataset"] == {
+        "$ref": "#/$defs/ModelDataset"
+    }
+
+
+@pytest.mark.asyncio
 async def test_describe_metadata_dataset_returns_the_exact_generated_contract() -> None:
     settings = development_settings()
     database = FakeDatabase()
@@ -501,7 +526,13 @@ def test_health_routes_are_anonymous() -> None:
     assert live.status_code == 200
     assert live.json() == {"status": "live"}
     assert ready.status_code == 200
-    assert ready.json()["status"] == "ready"
+    ready_body = ready.json()
+    assert ready_body["status"] == "ready"
+    assert ready_body["mcp_server_version"] == "0.2.0"
+    assert ready_body["tool_count"] == 51
+    fingerprint = ready_body["tool_contract_sha256"]
+    assert len(fingerprint) == 64
+    assert all(character in "0123456789abcdef" for character in fingerprint)
 
 
 def test_oauth_protected_resource_metadata_is_anonymous_and_configured() -> None:

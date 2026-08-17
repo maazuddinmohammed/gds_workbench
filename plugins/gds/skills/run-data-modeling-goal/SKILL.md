@@ -27,25 +27,27 @@ for any server write.
 
 Resolve the target layer, existing Tenant/Model, business scope, sources, owner,
 naming posture, and intended stopping boundary. Ask one concise question only when a
-missing choice materially changes the objective. Use `$grill-data-model` first when
-the brief needs several decisions.
+missing choice materially changes the objective. Use `$grill-data-model` only when
+the user explicitly asks for a grill or accepts an offered stress test.
 
 Route Conceptual, Logical, Dimensional, and Model Mapping work to
 `$build-conceptual-model`, `$build-logical-model`, `$build-dimensional-model`, and
 `$build-data-mapping`, respectively.
 
-Treat the goal as one governed 19-dataset Model Change Set when supporting records are
-needed. Inventory `model_scope`, `profiling`, `analysis`, `assertion`, `conceptual`,
-`logical`, `dimensional`, and `mapping`; include only affected datasets, but do not
-omit profiling evidence, analysis results, Modeling Assertions, or mappings merely
-because the requested output names a modeling layer.
+Inspect affected datasets and direct dependencies only. Existing dependency records
+do not become affected merely because they were read. Include supporting profiling,
+analysis, Assertions, or mappings only when the objective authors them or cannot be
+verified without them. Preserve current naming templates by default; include a naming
+decision only when the user requests a naming/template change or a real conflict blocks
+the work.
 
 Write one cohesive objective, never a loose backlog. Include:
 
 - one observable stopping condition;
 - files, project instructions, current Model/tool schemas, and evidence to inspect
   first;
-- the appropriate modeling skill and exact governed MCP workflow;
+- the appropriate modeling skill and, only for a server boundary, the exact governed
+  MCP workflow;
 - small checkpoints with a compact progress log;
 - validation artifacts or reads that prove each checkpoint;
 - explicit scope exclusions and safety constraints;
@@ -60,8 +62,10 @@ release failure as an unresolved blocker; never silently leave the lock held.
 Choose one end state:
 
 1. proposal: complete schema-checked ID-free records and decision/mapping review;
-2. validated draft: authoritative server Validate succeeds, but nothing is Applied;
-3. applied model: Apply occurs only after the user approves the validated action
+2. local draft: complete records are saved in `GDS/model-change-set`, locally checked,
+   and no lock or server mutation occurs;
+3. validated draft: authoritative server Validate succeeds, but nothing is Applied;
+4. applied model: Apply occurs only after the user approves the validated action
    review, followed by fresh verification and lock release.
 
 Do not make “keep working forever” the stopping condition. Do not mark an actual
@@ -73,4 +77,6 @@ decisions are unknown. A precise blocker is a valid pause, not completion.
 For prepare-only requests, output the finished prompt in one code block plus a short
 list of placeholders the user must replace, if any. For an explicitly started goal,
 report its objective and stopping condition, then let the goal loop own subsequent
-checkpoints. Never promise that the skill itself will continue running.
+checkpoints. Keep ordinary checkpoint reports to three bullets and 120 words unless a
+blocker or authoritative approval review requires more. Never promise that the skill
+itself will continue running.

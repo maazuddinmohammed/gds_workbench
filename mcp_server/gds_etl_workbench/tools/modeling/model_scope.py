@@ -15,6 +15,7 @@ from pydantic import BaseModel, ConfigDict, Field
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
@@ -71,7 +72,7 @@ SELECT model_scope.model_scope_id,
           lower(object.object_schema),
           lower(object.object_name),
           model_scope.object_id
- LIMIT %s
+ LIMIT %s OFFSET %s
 """
 
 
@@ -108,6 +109,7 @@ class GetModelScopeResult(ContractModel):
     object_count: int = Field(ge=0)
     objects: tuple[ModelScopeObject, ...] = Field(max_length=_MAX_SCOPE_OBJECTS)
     objects_truncated: bool
+    next_cursor: str | None = Field(default=None, max_length=2048)
 
 
 class ModelScopeToolError(Exception):
@@ -121,7 +123,10 @@ def register_get_model_scope_tool(
     identity_provider: IdentityProvider,
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
+    cursor_signing_key: bytes,
 ) -> None:
+    cursors = CursorCodec(cursor_signing_key)
+
     @server.tool(
         description=(
             "Get active Objects in one authorized Model Scope with expanded Tenant, "
@@ -139,11 +144,15 @@ def register_get_model_scope_tool(
     async def get_model_scope(
         ctx: Context[None],
         model_id: Annotated[int, Field(gt=0)],
+        page_size: Annotated[int, Field(ge=1, le=_MAX_SCOPE_OBJECTS)] = _MAX_SCOPE_OBJECTS,
+        cursor: Annotated[str | None, Field(max_length=2048)] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> GetModelScopeResult:
         del schema_version
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
+            collection = f"{_TOOL_NAME}:{model_id}:{page_size}"
+            offset = cursors.decode(cursor, collection=collection)
             async with database.read_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
@@ -155,9 +164,14 @@ def register_get_model_scope_tool(
                 )
                 rows = await transaction.fetch_all(
                     _MODEL_SCOPE_SQL,
-                    (model.model_id, _MAX_SCOPE_OBJECTS + 1),
+                    (model.model_id, page_size + 1, offset),
                 )
             object_count = 0 if not rows else int(rows[0]["total_object_count"])
+            next_cursor = (
+                cursors.encode(collection=collection, offset=offset + page_size)
+                if len(rows) > page_size
+                else None
+            )
             return GetModelScopeResult(
                 model_id=model.model_id,
                 model_revision=model.model_revision,
@@ -170,9 +184,10 @@ def register_get_model_scope_tool(
                             if name != "total_object_count"
                         }
                     )
-                    for row in rows[:_MAX_SCOPE_OBJECTS]
+                    for row in rows[:page_size]
                 ),
-                objects_truncated=object_count > _MAX_SCOPE_OBJECTS,
+                objects_truncated=len(rows) > page_size,
+                next_cursor=next_cursor,
             )
         except AuthenticationError as error:
             raise ModelScopeToolError(f"{error.public_code}: {error.message}") from None
@@ -187,15 +202,22 @@ def register_get_model_scope_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input,
-        retain_arguments={"model_id", "schema_version"},
+        retain_arguments={"model_id", "page_size", "schema_version"},
     )
 
 
-def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:
     model_id = arguments.get("model_id")
+    page_size = arguments.get("page_size", _MAX_SCOPE_OBJECTS)
     return {
         "schema_version": (
             "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"
         ),
         "model_id": model_id if type(model_id) is int and model_id > 0 else "invalid",
+        "page_size": (
+            page_size
+            if type(page_size) is int and 1 <= page_size <= _MAX_SCOPE_OBJECTS
+            else "invalid"
+        ),
+        "cursor_provided": arguments.get("cursor") is not None,
     }

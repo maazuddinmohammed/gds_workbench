@@ -3,11 +3,15 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
+from importlib.metadata import version
 from typing import cast
 
 from mcp.server.mcpserver import MCPServer
+from mcp.types import Tool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -74,6 +78,8 @@ from gds_etl_workbench.tools.tenants.tenant_locks import register_tenant_lock_to
 
 from .tool_audit import ToolCallAuditMiddleware
 
+MCP_SERVER_VERSION = version("gds-etl-workbench-mcp")
+
 
 def create_mcp_server(
     settings: RuntimeSettings,
@@ -109,36 +115,28 @@ def create_mcp_server(
     server = MCPServer[None](
         name="gds-etl-workbench",
         title="GDS ETL Workbench",
-        version="0.1.0",
+        version=MCP_SERVER_VERSION,
         description="Governed metadata access for GDS ETL Workbench.",
         instructions=(
-            "Check /health/ready before use. Start with list_tenants, then use Tenant, "
-            "Object, Copy Group, Process Group, or direct ingestion-lineage reads. Prefer "
-            "these bounded summaries before requesting a protected Metadata Snapshot. "
-            "Snapshots and local drafting need no Tenant Lock. For a metadata change, "
-            "first get_metadata_snapshot and build and review the complete local draft. "
-            "Only when it is ready for server work, check_tenant_lock and ask before "
-            "acquire_tenant_lock. Then create_metadata_change_set, describe only needed "
-            "dataset contracts, stage complete ID-free dataset lists atomically, and call "
-            "validate_metadata_change_set. If create returns an existing "
-            "Change Set, review every nonempty pending dataset before continuing. Apply only after "
-            "review; apply_metadata_change_set revalidates atomically. Archive abandoned "
-            "drafts. For modeling, use the focused Profiling, Analysis, Assertion, "
-            "Conceptual, Logical, Dimensional, and Mapping reads when database IDs help "
-            "navigation. Use get_model_snapshot for the complete ID-free state, or "
-            "get_model_dbml for a governed conceptual, logical, dimensional, or full "
-            "DBML archive with optional Submodel files. Before "
-            "staging a Model dataset, call describe_model_dataset for its exact shared "
-            "Snapshot/Change-Set schema. Then create, stage, validate, and apply the "
-            "Model Change Set under an Architect-owned Tenant Lock. Each supplied Model "
-            "dataset replaces only that pending dataset; omitted datasets remain untouched. "
-            "Metadata get and archive enforce ownership but do not require a current lock. "
-            "Use renew_tenant_lock only for your own lock. Release it when finished. "
-            "override_tenant_lock only force-releases another owner's lock; it never "
-            "acquires a replacement. Tenant identity, roles, and lock ownership are "
-            "always resolved server-side. execute_databricks_sql accepts only reads and "
-            "unqualified temporary views/tables on an active global Connection; it "
-            "rejects DML and persistent DDL."
+            "Use the least-committed boundary. Prefer Tenant, "
+            "catalog, ingestion, and focused Model reads; follow next_cursor only until "
+            "the requested scope is complete. Use a Snapshot or DBML only for a broad "
+            "baseline or export. Reads and local drafts require no lock. Read-only Change "
+            "Set inspection uses get_metadata_change_set or get_model_change_set without "
+            "a lock and stops. Before Create, Stage, Validate, or Apply, call "
+            "check_tenant_lock and ask before acquire_tenant_lock. Create a Change Set "
+            "only for explicit create, "
+            "resume, or an approved Stage with no draft. If resumed, inspect every "
+            "nonempty pending dataset before replacing anything. Describe only datasets "
+            "being authored. Show complete affected lists and obtain Stage approval before "
+            "staging. Validate the latest revision. Show the authoritative action_review "
+            "and require fresh Apply approval before Apply. Archive only when "
+            "requested; archive needs no current lock. Release any lock this workflow "
+            "acquired whenever it stops. "
+            "Server derives identity, authorization, and lock ownership. Never expose "
+            "credentials, temporary URLs, rows, prompts, or tool output. "
+            "execute_databricks_sql permits reads and unqualified temporary objects only; "
+            "it rejects DML and persistent DDL."
         ),
         lifespan=lifespan,
         middleware=[audit],
@@ -165,6 +163,7 @@ def create_mcp_server(
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
     )
     register_get_model_scope_tool(
         server,
@@ -172,6 +171,7 @@ def create_mcp_server(
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
+        cursor_signing_key=settings.cursor_signing_key,
     )
     register_tenant_lock_tools(
         server,
@@ -341,11 +341,15 @@ def create_mcp_server(
 
     async def ready(_request: Request) -> Response:
         readiness = await database.readiness()
+        tools = await server.list_tools()
         return JSONResponse(
             {
                 "status": "ready" if readiness.ready else "not_ready",
                 "code": readiness.code,
                 "schema_version": settings.schema_version,
+                "mcp_server_version": MCP_SERVER_VERSION,
+                "tool_count": len(tools),
+                "tool_contract_sha256": tool_contract_sha256(tools),
             },
             status_code=200 if readiness.ready else 503,
             headers={"Cache-Control": "no-store"},
@@ -382,3 +386,31 @@ async def _expire_tenant_locks(database: Database) -> None:
             await database.expire_tenant_locks()
         except DependencyUnavailableError:
             continue
+
+
+def tool_contract_sha256(tools: list[Tool]) -> str:
+    document = [
+        {
+            "name": tool.name,
+            "title": tool.title,
+            "description": tool.description,
+            "input_schema": tool.input_schema,
+            "output_schema": tool.output_schema,
+            "annotations": (
+                None
+                if tool.annotations is None
+                else tool.annotations.model_dump(
+                    mode="json", by_alias=True, exclude_none=True
+                )
+            ),
+            "meta": tool.meta,
+        }
+        for tool in tools
+    ]
+    encoded = json.dumps(
+        document,
+        ensure_ascii=True,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()

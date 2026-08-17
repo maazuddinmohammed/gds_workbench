@@ -33,7 +33,10 @@ from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
 from gds_etl_workbench.infrastructure.postgres import WriteDatabase, WriteTransaction
 from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
 from gds_etl_workbench.tools.modeling.common import ModelReadContext
-from gds_etl_workbench.tools.snapshots.model.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.tools.snapshots.model.contracts import (
+    DATASETS_BY_NAME,
+    ModelDataset,
+)
 from gds_etl_workbench.tools.snapshots.model.selection import build_model_snapshot
 
 from .action_review import DatasetActionReview
@@ -50,28 +53,6 @@ from .model_validation import (
 
 POLICY = ToolPolicy.TENANT_MODEL_WRITE
 READ_POLICY = ToolPolicy.TENANT_READ
-
-type ModelDataset = Literal[
-    "model_details",
-    "model_scope",
-    "profiling_profile",
-    "analysis_result",
-    "modeling_assertion_document",
-    "modeling_assertion_record",
-    "conceptual_object",
-    "conceptual_relationship",
-    "logical_submodel",
-    "logical_entity",
-    "logical_attribute",
-    "logical_relationship",
-    "dimensional_submodel",
-    "dimensional_entity",
-    "dimensional_attribute",
-    "dimensional_relationship",
-    "mapping_dependency",
-    "mapping_object",
-    "mapping_attribute",
-]
 
 SECTION_COLUMN_BY_DATASET: dict[str, str] = {
     name: f"{definition.section}_document" for name, definition in DATASETS_BY_NAME.items()
@@ -1004,6 +985,30 @@ def register_model_change_set_tools(
             "schema_version",
         },
     )
+
+    @server.prompt(
+        name="work_with_model_change_set",
+        title="Work with a GDS Model",
+        description="Intent-bounded workflow for one complete Model Change Set.",
+    )
+    def work_with_model_change_set(model_id: int) -> str:
+        return (
+            f"Work with Model ID {model_id} only to the user's requested boundary. "
+            "Never advance beyond it. Read-only inspection: use get_model, focused "
+            "layer/evidence reads, or get_model_change_set and stop without a lock. "
+            "Local drafting: keep the Model Snapshot immutable, author only affected "
+            "datasets and direct dependencies, and do not call MCP mutation tools. "
+            "Before Create, Stage, Validate, or Apply, call check_tenant_lock and ask "
+            "before acquire_tenant_lock. Call create_model_change_set only for explicit "
+            "create/resume or when an approved Stage has no draft. If resumed, fetch "
+            "the summary and every dataset with a nonzero count before replacing "
+            "anything. Use describe_model_dataset only for datasets being authored. "
+            "Show complete affected lists and ask before stage_model_change_set. "
+            "Validate the latest revision and repair only the first failed phase. Show "
+            "the authoritative action_review, then obtain fresh approval immediately "
+            "before apply_model_change_set. Archive only when requested; archive needs "
+            "no current lock. Release any lock this workflow acquired when it stops."
+        )
 
 
 async def _authorize_model(

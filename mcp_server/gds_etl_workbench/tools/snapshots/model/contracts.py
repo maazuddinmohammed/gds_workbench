@@ -41,6 +41,28 @@ type ModelSection = Literal[
     "mapping",
 ]
 
+type ModelDataset = Literal[
+    "model_details",
+    "model_scope",
+    "profiling_profile",
+    "analysis_result",
+    "modeling_assertion_document",
+    "modeling_assertion_record",
+    "conceptual_object",
+    "conceptual_relationship",
+    "logical_submodel",
+    "logical_entity",
+    "logical_attribute",
+    "logical_relationship",
+    "dimensional_submodel",
+    "dimensional_entity",
+    "dimensional_attribute",
+    "dimensional_relationship",
+    "mapping_dependency",
+    "mapping_object",
+    "mapping_attribute",
+]
+
 MODEL_SECTIONS: tuple[ModelSection, ...] = (
     "model_scope",
     "profiling",
@@ -55,7 +77,7 @@ MODEL_SECTIONS: tuple[ModelSection, ...] = (
 
 @dataclass(frozen=True, slots=True)
 class ModelingDatasetDefinition:
-    name: str
+    name: ModelDataset
     section: ModelSection
     row_model: type[ModelingRecord]
     canonical_key: tuple[str, ...]

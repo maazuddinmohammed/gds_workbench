@@ -1,6 +1,6 @@
 ---
 name: open-gds-metadata-workbench
-description: Launch the bundled local GDS Data Workbench to browse or edit downloaded Metadata or Model Snapshot and Change Set files. Use only when the user explicitly asks to open the local table utility; do not use for MCP reads or server Change Set operations.
+description: Launch the bundled GDS Data Workbench to browse or edit a local Metadata or Model Snapshot or Change Set. Use when the user asks to open the utility, inspect local tables, select or copy Snapshot rows, edit a local draft, or save local changes; do not use for MCP reads or server Change Set operations.
 ---
 
 # Open GDS Data Workbench
@@ -36,12 +36,15 @@ does not support it, ask the user to open the same bundled
    user which one to open. The utility verifies each opened member against its
    `manifest.json` before displaying it.
 3. Explain that Snapshot rows are immutable. Metadata exposes all 29 Snapshot
-   datasets and edits only the 16 eligible Change Set datasets. Model exposes all
+   datasets and permits copying only the 16 eligible datasets. Model exposes all
    19 Model Change Set datasets, including mapping.
-4. The utility reuses or creates the matching `GDS/change-set` or
-   `GDS/model-change-set` local draft. No Tenant Lock is needed for local drafting.
-5. Ask the user to save inside the utility and tell you when finished. Do not
-   assume that an interaction occurred or inspect all local rows afterward.
+4. In Snapshot, select one or more eligible rows and choose **Copy to Change Set**.
+   The utility preserves existing pending edits and switches to the matching local
+   Change Set. Edit only there.
+5. The utility reuses or creates `GDS/change-set` or `GDS/model-change-set`. Save
+   remains in the top draft bar. Copied unchanged rows must be edited or removed
+   before handoff. No Tenant Lock is needed for local drafting.
+6. Do not assume that a user interaction occurred or inspect all local rows afterward.
 
 ## Boundary
 
@@ -52,7 +55,7 @@ server Snapshot. It never calls MCP, acquires a Tenant Lock, Stages, validates o
 server, Applies, or changes PostgreSQL.
 
 For Metadata Stage or Apply, switch to `$manage-gds-metadata`. For Model Stage or
-Apply, switch to the matching Model-building skill and its governed workflow. Both
+Apply, switch to `$manage-gds-model`. Both
 paths must check the Tenant Lock, reconcile a resumed server draft, ask before Stage,
 validate on the server, and ask separately before Apply. Use `get_model_snapshot`
 when an authoritative immutable Model Snapshot is required.

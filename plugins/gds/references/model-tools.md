@@ -47,10 +47,11 @@ writes go through a Model Change Set.
 
 - `list_tenants(page_size?, cursor?)`: find visible Tenants. Page size is 1–200,
   default 50. Follow opaque cursors unchanged.
-- `get_model(tenant_id)`: return up to 200 active Models, revisions, scope counts,
-  and the five silver/gold naming and audit templates. If truncated, do not claim
-  the desired Model is absent.
-- `get_model_scope(model_id)`: return up to 2,000 active scoped physical Objects.
+- `get_model(tenant_id, page_size?, cursor?)`: return active Models, revisions, scope
+  counts, and the five silver/gold naming and audit templates. Page size is 1–200,
+  default 200. Follow `next_cursor` unchanged until the requested scope is complete.
+- `get_model_scope(model_id, page_size?, cursor?)`: return active scoped physical
+  Objects. Page size is 1–2,000, default 2,000; follow `next_cursor` unchanged.
 - `get_model_profiling(model_id, object_ids?, page_size?, cursor?)` and
   `get_model_analysis(...)`: read profiling and relationship evidence.
 - `get_modeling_assertion_documents(model_id, page_size?, cursor?)` and
@@ -68,7 +69,7 @@ writes go through a Model Change Set.
   `get_model_object_mappings(model_id, object_ids?, page_size?, cursor?)`, and
   `get_model_attribute_mappings(...)`: read Model Mapping lineage.
 
-Paged model reads default to 50 rows and allow 1–200. ID filters allow at most
+Other paged Model reads default to 50 rows and allow 1–200. ID filters allow at most
 100 unique positive IDs; an omitted or empty filter means all visible records.
 Focused reads return database IDs for navigation. Never put those IDs into the
 ID-free records staged by a Model Change Set.

@@ -162,7 +162,17 @@ EXPECTED_RUNTIME_TOOLS = EXPECTED_TOOLS | {
     "get_model_dbml",
 }
 
+METADATA_CHANGE_SET_TOOLS = (
+    "create_metadata_change_set",
+    "get_metadata_change_set",
+    "stage_metadata_change_set",
+    "validate_metadata_change_set",
+    "apply_metadata_change_set",
+    "archive_metadata_change_set",
+)
+
 MODELING_SKILLS = {
+    "manage-gds-model",
     "build-conceptual-model",
     "build-logical-model",
     "build-dimensional-model",
@@ -170,6 +180,12 @@ MODELING_SKILLS = {
     "author-model-metadata",
     "grill-data-model",
     "run-data-modeling-goal",
+}
+
+PLUGIN_SKILLS = MODELING_SKILLS | {
+    "understand-gds",
+    "manage-gds-metadata",
+    "open-gds-metadata-workbench",
 }
 
 ELIGIBLE_DATASETS = {
@@ -695,7 +711,7 @@ def test_plugin_contract_is_named_gds_and_contains_no_credentials() -> None:
     mcp = _json(PLUGIN_ROOT / "mcp.json")
 
     assert manifest["name"] == PLUGIN_ROOT.name == "gds"
-    assert manifest["version"] == "1.3.0"
+    assert manifest["version"] == "1.4.3"
     assert manifest["$schema"].endswith("/plugin.schema.json")
     assert (PLUGIN_ROOT / "skills" / "understand-gds" / "SKILL.md").is_file()
     assert (METADATA_SKILL / "SKILL.md").is_file()
@@ -740,7 +756,7 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
         assert names
         assert all(name.startswith("gds/") for name in names)
         assert not any(".DS_Store" in name or "__pycache__" in name for name in names)
-        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.3.0"
+        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.4.3"
         assert (
             archive.getinfo(
                 "gds/skills/manage-gds-metadata/scripts/initialize-gds-workspace.sh"
@@ -748,6 +764,35 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
             >> 16
             & 0o777
             == 0o755
+        )
+
+
+def test_current_version_distribution_zip_matches_plugin_source(tmp_path: Path) -> None:
+    version = _json(PLUGIN_ROOT / "plugin.json")["version"]
+    committed = (
+        REPOSITORY_ROOT / "plugins" / "dist" / f"gds-agent-plugin-{version}.zip"
+    )
+    assert committed.is_file(), f"missing current-version plugin archive: {committed}"
+
+    rebuilt = tmp_path / committed.name
+    result = subprocess.run(
+        [
+            sys.executable,
+            str(REPOSITORY_ROOT / "plugins" / "build_gds_plugin_zip.py"),
+            "--output",
+            str(rebuilt),
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=20,
+        check=False,
+    )
+    assert result.returncode == 0, result.stderr
+    if committed.read_bytes() != rebuilt.read_bytes():
+        pytest.fail(
+            f"{committed.relative_to(REPOSITORY_ROOT)} is stale; rebuild it from "
+            "plugins/gds with plugins/build_gds_plugin_zip.py"
         )
 
 
@@ -776,6 +821,35 @@ def test_metadata_skill_documents_exact_tools_datasets_and_safety() -> None:
     assert "never delete applied metadata" in normalized_bundle
     assert "override only releases" in normalized_bundle
     assert "direct sql" in normalized_bundle
+
+
+def test_metadata_skill_exposes_every_change_set_tool_in_its_main_workflow() -> None:
+    skill = (METADATA_SKILL / "SKILL.md").read_text(encoding="utf-8")
+    for tool_name in (
+        "list_tenants",
+        "get_tenant_details",
+        "list_objects",
+        "get_objects",
+        "get_object_lineage",
+        "list_copy_groups",
+        "get_copy_group",
+        "list_process_groups",
+        "get_process_group",
+        "get_metadata_snapshot",
+        "describe_metadata_dataset",
+    ):
+        assert f"`{tool_name}`" in skill
+    for tool_name in METADATA_CHANGE_SET_TOOLS:
+        assert f"`{tool_name}`" in skill
+    for helper_name in (
+        "upsert-local-metadata-record",
+        "remove-local-metadata-record",
+        "initialize-metadata-change-set",
+        "validate-local-change-set",
+        "prepare-metadata-stage-review",
+    ):
+        assert f"`{helper_name}`" in skill
+    assert "There is no `build_metadata_change_set` MCP tool" in skill
 
 
 def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() -> None:
@@ -831,15 +905,33 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     )
     for name in model_builders:
         text = skill_docs[name]
+        normalized = " ".join(text.split())
         assert "get_model" in text
         assert "describe_model_dataset" in text
         assert "governed workflow" in text.casefold()
         assert "explicit" in text.casefold() and "approval" in text.casefold()
+        assert "## Route by intent" in text
+        for boundary in ("**Inspect:**", "**Proposal:**", "**Local draft:**", "**Server draft:**", "**Apply:**"):
+            assert boundary in text
+        assert "Do not ask for the boundary when it is clear" in normalized
+        assert "Preserve current naming templates" in normalized
+        assert "only when the user explicitly asks" in normalized
+        assert "affected datasets" in text.casefold()
+        assert "120 words" in text
+        assert "[modeling method]" in text
+        assert "only for full-layer design, method ambiguity, or a requested stress test" in normalized
+        assert "$open-gds-metadata-workbench" in text
+        assert "$manage-gds-model" in text
+        assert len(text.split()) <= 650
 
     metadata = skill_docs["author-model-metadata"]
     assert "describe_metadata_dataset" in metadata
     assert "get_metadata_snapshot" in metadata
     assert "$manage-gds-metadata" in metadata
+    assert "$open-gds-metadata-workbench" in metadata
+    assert "Do not mutate workspace files" in metadata
+    assert "120 words" in metadata
+    assert "## Govern a Metadata Change Set" not in metadata
 
     grill = " ".join(skill_docs["grill-data-model"].casefold().split())
     assert "exactly one question per turn" in grill
@@ -868,6 +960,23 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     assert "do not invent configuration steps" in goal_lower
     assert "inspect current goal state" in goal_lower
     assert "release before a validated-draft" in goal_lower
+    assert "affected datasets and direct dependencies only" in goal_lower
+    assert "preserve current naming templates by default" in goal_lower
+    assert "local draft" in goal_lower
+    assert "gds/model-change-set" in goal_lower
+    assert "no lock or server mutation occurs" in goal_lower
+    assert "120 words" in goal_lower
+    goal_template = (
+        PLUGIN_ROOT
+        / "skills"
+        / "run-data-modeling-goal"
+        / "references"
+        / "goal-template.md"
+    ).read_text(encoding="utf-8")
+    assert "Inventory all eight" not in goal + goal_template
+    normalized_goal_template = " ".join(goal_template.split())
+    assert "[proposal|local draft|validated draft|applied model]" in normalized_goal_template
+    assert "stop without a lock or MCP mutation" in normalized_goal_template
 
     all_model_docs = "\n".join(
         path.read_text(encoding="utf-8")
@@ -876,6 +985,64 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     assert "stage_model_change_set_bundle" not in all_model_docs
     assert "individual graph mutation" in all_model_docs
     assert "temporary `download_url`" in all_model_docs
+    governed_workflow = (PLUGIN_ROOT / "references" / "governed-model-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    normalized_workflow = " ".join(governed_workflow.split())
+    assert "lower boundary never implies a higher one" in normalized_workflow
+    assert "every nonempty pending dataset" in normalized_workflow
+    assert "Classify all eight sections" not in governed_workflow
+    assert "Ask whether to preserve" not in governed_workflow
+    modeling_method = (PLUGIN_ROOT / "references" / "modeling-method.md").read_text(
+        encoding="utf-8"
+    )
+    assert "adopt/preserve/change decision" not in modeling_method
+    assert "Preserve current naming templates" in modeling_method
+
+
+def test_manage_model_skill_covers_generic_datasets_and_lifecycle_tools() -> None:
+    skill = (
+        PLUGIN_ROOT / "skills" / "manage-gds-model" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    for dataset in (
+        "model_details",
+        "model_scope",
+        "profiling_profile",
+        "analysis_result",
+        "modeling_assertion_document",
+        "modeling_assertion_record",
+    ):
+        assert f"`{dataset}`" in skill
+    for tool_name in (
+        "list_tenants",
+        "get_model",
+        "get_model_scope",
+        "create_model_change_set",
+        "get_model_change_set",
+        "stage_model_change_set",
+        "validate_model_change_set",
+        "apply_model_change_set",
+        "archive_model_change_set",
+    ):
+        assert f"`{tool_name}`" in skill
+    assert "`list_objects`" in skill and "`get_objects`" in skill
+    assert "at any requested stopping boundary" in " ".join(skill.split())
+    assert "archive-only intent" in skill
+    assert "without acquiring a lock" in skill
+    assert "[model datasets]" not in skill
+
+
+def test_every_plugin_skill_has_invocable_ui_metadata() -> None:
+    for name in PLUGIN_SKILLS:
+        interface = PLUGIN_ROOT / "skills" / name / "agents" / "openai.yaml"
+        assert interface.is_file(), name
+        text = interface.read_text(encoding="utf-8")
+        assert re.search(r'^  display_name: ".+"$', text, re.MULTILINE)
+        description = re.search(
+            r'^  short_description: "(.+)"$', text, re.MULTILINE
+        )
+        assert description is not None and 25 <= len(description.group(1)) <= 64
+        assert f"${name}" in text
 
 
 def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
@@ -891,8 +1058,22 @@ def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
     all_skill_docs = "\n".join((understand, manage, workbench, metadata_docs))
 
     assert "Use only for conceptual questions" in understand
+    assert "`manage-gds-model`" in understand
+    assert "`open-gds-metadata-workbench`" in understand
     assert "read specific Tenant metadata" in manage
-    assert "explicitly asks to open the local table utility" in workbench
+    assert "build or prepare a local Metadata Change Set" in manage
+    for path_name in ("Bounded read", "Broad inspection", "Local draft", "Server change"):
+        assert f"**{path_name}:**" in manage
+    assert "Do not ask whether the user wants to read or change when their request is clear" in manage
+    assert "Never advance beyond the requested boundary" in manage
+    assert "120 words" in manage
+    assert "browse or edit a local Metadata or Model Snapshot or Change Set" in workbench
+    assert "Use only when the user explicitly asks" not in workbench
+    assert "$manage-gds-model" in workbench
+    normalized_manage = " ".join(manage.split())
+    assert "explicit create, resume, local-to-server handoff, Stage, Validate, or Apply" in normalized_manage
+    assert "archive-only intent" in manage and "without acquiring a lock" in manage
+    assert "at any requested stopping boundary" in normalized_manage
     assert "<plugin>" not in all_skill_docs
     assert 'powershell.exe -NoProfile -File ".\\scripts\\' in all_skill_docs
     assert '"./scripts/' in all_skill_docs
@@ -903,6 +1084,116 @@ def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
     assert "process_location" in metadata_docs
     assert "process_executable" in metadata_docs
     assert "x-gds-key-normalization" in metadata_docs
+
+
+def test_model_builder_intent_and_report_contracts_are_identical() -> None:
+    builders = [
+        (PLUGIN_ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
+        for name in (
+            "build-conceptual-model",
+            "build-logical-model",
+            "build-dimensional-model",
+            "build-data-mapping",
+        )
+    ]
+
+    def section(text: str, heading: str) -> str:
+        match = re.search(
+            rf"^## {re.escape(heading)}\n\n(.*?)(?=^## |\Z)",
+            text,
+            re.MULTILINE | re.DOTALL,
+        )
+        assert match is not None
+        return " ".join(match.group(1).split())
+
+    routes = {section(text, "Route by intent") for text in builders}
+    reports = {section(text, "Report") for text in builders}
+    assert len(routes) == 1
+    assert len(reports) == 1
+
+    route = routes.pop()
+    assert "Do not ask for the boundary when it is clear" in route
+    assert "Preserve current naming templates and established names by default" in route
+    assert "Reading a related dataset does not make it affected" in route
+    assert "only when the user explicitly asks for a grill or stress test" in route
+    report = reports.pop()
+    assert "three bullets and 120 words" in report
+
+    bundle = " ".join("\n".join(builders).split()).casefold()
+    for forbidden in (
+        "ask the user to choose one naming posture",
+        "ask whether to preserve, adopt, or replace",
+        "get an explicit preserve/adopt/replace decision",
+    ):
+        assert forbidden not in bundle
+
+
+def test_model_builder_one_record_rules_keep_unchanged_parents_out() -> None:
+    conceptual = (PLUGIN_ROOT / "skills" / "build-conceptual-model" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    logical = (PLUGIN_ROOT / "skills" / "build-logical-model" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    dimensional = (
+        PLUGIN_ROOT / "skills" / "build-dimensional-model" / "SKILL.md"
+    ).read_text(encoding="utf-8")
+    mapping = (PLUGIN_ROOT / "skills" / "build-data-mapping" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    assert "Describe `conceptual_object` only when Object records change" in conceptual
+    assert "An Attribute-only change affects `logical_attribute`" in " ".join(logical.split())
+    assert "An Attribute-only change affects `dimensional_attribute`" in " ".join(
+        dimensional.split()
+    )
+    assert "Existing parents are read dependencies, not affected datasets" in mapping
+
+
+def test_model_builders_name_their_focused_read_tools() -> None:
+    expected = {
+        "build-conceptual-model": (
+            "get_model_conceptual_objects",
+            "get_model_conceptual_relationships",
+        ),
+        "build-logical-model": (
+            "get_model_logical_submodels",
+            "get_model_logical_entities",
+            "get_model_logical_attributes",
+            "get_model_logical_relationships",
+        ),
+        "build-dimensional-model": (
+            "get_model_dimensional_submodels",
+            "get_model_dimensional_entities",
+            "get_model_dimensional_attributes",
+            "get_model_dimensional_relationships",
+        ),
+        "build-data-mapping": (
+            "get_model_mapping_dependencies",
+            "get_model_object_mappings",
+            "get_model_attribute_mappings",
+        ),
+    }
+    for skill_name, tool_names in expected.items():
+        text = (PLUGIN_ROOT / "skills" / skill_name / "SKILL.md").read_text(
+            encoding="utf-8"
+        )
+        for tool_name in tool_names:
+            assert f"`{tool_name}`" in text
+
+
+def test_governed_model_workflow_separates_stage_and_apply_approval() -> None:
+    workflow = (PLUGIN_ROOT / "references" / "governed-model-workflow.md").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(workflow.split())
+    resumed = normalized.index("When resumed")
+    inspect_pending = normalized.index("every nonempty pending dataset")
+    stage_review = normalized.index("Present the exact affected Stage batch")
+    stage_call = normalized.index("Call one `stage_model_change_set`")
+    validate = normalized.index("Call `validate_model_change_set`")
+    apply_review = normalized.index("Validation and Stage approval are not Apply approval")
+    apply_call = normalized.index("Only that affirmative answer authorizes `apply_model_change_set`")
+    assert resumed < inspect_pending < stage_review < stage_call < validate < apply_review < apply_call
 
 
 def test_plugin_has_no_python_runtime_dependency() -> None:
@@ -930,7 +1221,9 @@ def test_workbench_skill_and_static_assets_define_the_local_only_boundary() -> N
     assert "GDS Data Workbench" in html
     assert 'id="snapshotKindSelect"' in html
     assert 'id="exportModelSnapshotButton"' in html
+    assert 'id="bulkAddButton"' in html
     assert 'src="logic.js"' in html and 'src="app.js"' in html
+    assert html.index('id="saveButton"') < html.index('class="table-toolbar"')
     assert "showDirectoryPicker" in app
     assert 'getDirectoryHandle("change-set", { create: true })' in app
     assert 'showDirectoryPicker({ id: "gds-metadata-workbench", mode: "read" })' in app
@@ -938,6 +1231,33 @@ def test_workbench_skill_and_static_assets_define_the_local_only_boundary() -> N
     assert "readVerifiedSnapshotFile" in app
     assert "loadSnapshotSearchRows" in app
     assert "buildLocalReview" in app
+    assert "copyMissingRecords" in logic_text
+    assert "copySelectedRowsToChangeSet" in app
+    copy_start = app.index("async function copyRecordsToChangeSet")
+    copy_end = app.index("function copySelectedSnapshotRecord", copy_start)
+    copy_handler = app[copy_start:copy_end]
+    assert copy_handler.index("snapshotRowsText(datasetName)") < copy_handler.index(
+        "for (const index of searchIndexes)"
+    )
+    assert "loadSnapshotRecord(datasetName, index, snapshotLines)" in copy_handler
+    assert "if (state.busy) return;" in app
+    assert "if (state.busy || !localDatasetNames().length) return;" in app
+    assert "elements.saveButton.disabled = busy || !hasDirtyChanges();" in app
+    assert "elements.reviewButton.disabled = busy || localDatasetNames().length === 0;" in app
+    assert "elements.bulkDeactivateButton,\n      elements.newRowButton" in app
+    for handler in (
+        "applyBulkField",
+        "deactivateSelectedRecords",
+        "removeSelectedLocalRecord",
+        "openRecordDialog",
+    ):
+        handler_start = app.index(f"function {handler}")
+        assert "if (state.busy) return;" in app[handler_start : handler_start + 220]
+    assert "elements.saveButton.disabled = state.busy || dirty === 0;" in app
+    assert "elements.reviewButton.disabled = state.busy || names.length === 0;" in app
+    assert "state.activeDataset !== datasetName" in app
+    assert "choose Create change" not in app
+    assert "elements.saveButton.hidden" not in app
     assert "window.confirm" in app
     assert "createWritable" in app
     assert 'profile.kind === "model"' in app
@@ -952,6 +1272,43 @@ def test_workbench_skill_and_static_assets_define_the_local_only_boundary() -> N
         assert re.search(rf'"{re.escape(dataset)}"', logic_text)
     for dataset in DATASETS_BY_NAME:
         assert re.search(rf'"{re.escape(dataset)}"', logic_text)
+
+
+def test_workbench_has_no_bulk_one_field_edit() -> None:
+    html = WORKBENCH_HTML.read_text(encoding="utf-8")
+    app = WORKBENCH_APP.read_text(encoding="utf-8")
+
+    assert 'id="bulkEditButton"' not in html
+    assert "bulkEditButton" not in app
+    assert "editSelectedField" not in app
+    assert "Edit one field" not in html + app
+    assert 'id="bulkAddButton"' in html
+    assert 'id="bulkDeactivateButton"' in html
+    assert "deactivateSelectedRecords" in app
+    assert "await applyBulkField(field, value)" in app
+
+
+def test_workbench_edit_modal_has_a_reliable_save_changes_action() -> None:
+    html = WORKBENCH_HTML.read_text(encoding="utf-8")
+    app = WORKBENCH_APP.read_text(encoding="utf-8")
+
+    record_dialog = html[html.index('<dialog id="recordDialog"') : html.index('<dialog id="schemaDialog"')]
+    header = record_dialog[record_dialog.index("<header>") : record_dialog.index("</header>")]
+    submit = re.search(
+        r'<button\b[^>]*type="submit"[^>]*id="recordSubmitButton"[^>]*>',
+        record_dialog,
+    )
+    assert submit is not None
+    assert "hidden" not in submit.group(0)
+    assert 'class="dialog-header-actions"' in header
+    assert 'id="recordSubmitButton"' in header
+    assert header.index('id="recordSubmitButton"') < header.index("data-dialog-close")
+    assert 'id="recordSubmitButton"' not in record_dialog[record_dialog.index("<footer>") :]
+    assert 'mode === "add" ? "Add new record" : "Edit proposed record"' in app
+    assert 'mode === "add" ? "Add to Change Set" : "Save changes"' in app
+    assert "Save proposed change" not in html + app
+    assert 'elements.fieldGrid.addEventListener("input", refreshRecordForm);' in app
+    assert 'elements.fieldGrid.addEventListener("change", refreshRecordForm);' in app
 
 
 def test_workbench_logic_and_launchers_pass_static_smoke_checks(

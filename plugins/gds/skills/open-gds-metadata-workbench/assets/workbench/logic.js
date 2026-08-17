@@ -534,6 +534,40 @@
       : { rows: next, action: "merged", indexes, errors: [] };
   }
 
+  function copyMissingRecords(rows, records, schema, dataset) {
+    assertEligibleSchema(dataset, schema);
+    if (!Array.isArray(records) || !records.length) {
+      return { rows: clone(rows), action: "rejected", indexes: [], copiedCount: 0, skippedCount: 0, errors: [{ field: "$", message: "Choose at least one record." }] };
+    }
+    const columns = canonicalColumns(schema);
+    const next = clone(rows);
+    const indexByKey = new Map(next.map((item, index) => [keyFor(item, columns, schema), index]));
+    const indexes = [];
+    let copiedCount = 0;
+    let skippedCount = 0;
+    for (const record of records) {
+      const recordErrors = validateRecord(record, schema);
+      if (recordErrors.length) {
+        return { rows: clone(rows), action: "rejected", indexes: [], copiedCount: 0, skippedCount: 0, errors: recordErrors };
+      }
+      const wanted = keyFor(record, columns, schema);
+      let index = indexByKey.get(wanted);
+      if (index === undefined) {
+        index = next.length;
+        next.push(clone(record));
+        indexByKey.set(wanted, index);
+        copiedCount += 1;
+      } else {
+        skippedCount += 1;
+      }
+      indexes.push(index);
+    }
+    const errors = validateDataset(next, schema);
+    return errors.length
+      ? { rows: clone(rows), action: "rejected", indexes: [], copiedCount: 0, skippedCount: 0, errors }
+      : { rows: next, action: "copied", indexes, copiedCount, skippedCount, errors: [] };
+  }
+
   function removeRecord(rows, keyRecord, schema, dataset) {
     assertEligibleSchema(dataset, schema);
     const columns = canonicalColumns(schema);
@@ -811,6 +845,7 @@
     serializeDataset,
     mergeRecord,
     mergeRecords,
+    copyMissingRecords,
     removeRecord,
     createLocalState,
     classifyRecord,

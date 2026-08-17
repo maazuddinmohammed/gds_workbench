@@ -1,6 +1,6 @@
 ---
 name: grill-data-model
-description: "Run a bounded, one-question-at-a-time interview to stress-test a Conceptual, Logical, Dimensional, or mapping brief and record decisions. Use when a user says grill me, wants shared understanding before modeling, has an ambiguous design, or asks to challenge modeling assumptions without endless questions."
+description: "Run a bounded, one-question-at-a-time interview to stress-test a Conceptual, Logical, Dimensional, or mapping brief and record decisions. Use only when a user explicitly says grill me, requests a modeling interview or stress test, or accepts an offered grill; do not trigger merely because a brief is ambiguous."
 ---
 
 # Grill Data Model

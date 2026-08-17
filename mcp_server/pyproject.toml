@@ -1,6 +1,6 @@
 [project]
 name = "gds-etl-workbench-mcp"
-version = "0.1.0"
+version = "0.2.0"
 description = "GDS ETL Workbench MCP App Service"
 requires-python = ">=3.12,<3.13"
 dependencies = [

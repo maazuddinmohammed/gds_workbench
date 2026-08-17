@@ -39,6 +39,9 @@ Assertion, Analysis, Conceptual, Logical, Dimensional, or Mapping. It is not a
 Metadata Change Set. Model changes validate one future graph and apply
 atomically.
 
+Use `manage-gds-model` for generic Model reads, Scope/evidence, and Model Change
+Set lifecycle work. Use a layer builder only when designing that layer.
+
 ## Workflow boundary
 
 Reads need Tenant visibility but no Tenant Lock. Ordinary writes require the

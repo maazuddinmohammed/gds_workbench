@@ -3,11 +3,12 @@ from __future__ import annotations
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
+from pydantic import TypeAdapter, ValidationError
 
 from gds_etl_workbench.domain.modeling_records import ProfilingProfileRecord
 from gds_etl_workbench.tools.snapshots.model.contracts import (
     DATASETS_BY_NAME,
+    ModelDataset,
     build_model_dataset_schema,
 )
 
@@ -75,6 +76,13 @@ def test_all_model_datasets_share_one_registry() -> None:
         "mapping_attribute",
     }
     assert DATASETS_BY_NAME["profiling_profile"].canonical_key[-1] == "attribute_name"
+
+
+def test_model_dataset_literal_matches_the_registry() -> None:
+    assert TypeAdapter(ModelDataset).json_schema() == {
+        "enum": list(DATASETS_BY_NAME),
+        "type": "string",
+    }
 
 
 def test_described_schemas_explain_layer_specific_source_roles() -> None:
