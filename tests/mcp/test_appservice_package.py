@@ -4,10 +4,12 @@ import hashlib
 import json
 import subprocess
 import sys
+import tomllib
 import zipfile
 from pathlib import Path
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
+PROJECT_FILE = BUILD_SCRIPT.with_name("pyproject.toml")
 
 
 def build_zip(output: Path) -> subprocess.CompletedProcess[str]:
@@ -87,3 +89,49 @@ def test_appservice_zip_builder_refuses_overwrite(tmp_path: Path) -> None:
 
     assert first.returncode == 0
     assert second.returncode != 0
+
+
+def test_packaged_server_import_does_not_require_project_metadata(
+    tmp_path: Path,
+) -> None:
+    artifact = tmp_path / "app.zip"
+    completed = build_zip(artifact)
+    assert completed.returncode == 0
+
+    app_root = tmp_path / "app"
+    with zipfile.ZipFile(artifact) as archive:
+        assert all(".dist-info/" not in name for name in archive.namelist())
+        archive.extractall(app_root)
+
+    project_version = tomllib.loads(PROJECT_FILE.read_text())["project"]["version"]
+    import_check = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            """
+import importlib.metadata
+import sys
+
+installed_version = importlib.metadata.version
+
+
+def version_without_project_metadata(name: str) -> str:
+    if name == "gds-etl-workbench-mcp":
+        raise importlib.metadata.PackageNotFoundError(name)
+    return installed_version(name)
+
+
+importlib.metadata.version = version_without_project_metadata
+from gds_etl_workbench.adapters.mcp.server import MCP_SERVER_VERSION
+
+assert MCP_SERVER_VERSION == sys.argv[1]
+""",
+            project_version,
+        ],
+        cwd=app_root,
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert import_check.returncode == 0, import_check.stderr

@@ -7,7 +7,6 @@ import hashlib
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
-from importlib.metadata import version
 from typing import cast
 
 from mcp.server.mcpserver import MCPServer
@@ -15,6 +14,7 @@ from mcp.types import Tool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
+from gds_etl_workbench import __version__
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
@@ -78,7 +78,7 @@ from gds_etl_workbench.tools.tenants.tenant_locks import register_tenant_lock_to
 
 from .tool_audit import ToolCallAuditMiddleware
 
-MCP_SERVER_VERSION = version("gds-etl-workbench-mcp")
+MCP_SERVER_VERSION = __version__
 
 
 def create_mcp_server(
@@ -399,9 +399,7 @@ def tool_contract_sha256(tools: list[Tool]) -> str:
             "annotations": (
                 None
                 if tool.annotations is None
-                else tool.annotations.model_dump(
-                    mode="json", by_alias=True, exclude_none=True
-                )
+                else tool.annotations.model_dump(mode="json", by_alias=True, exclude_none=True)
             ),
             "meta": tool.meta,
         }
