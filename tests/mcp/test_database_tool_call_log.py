@@ -31,6 +31,7 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
         mcp_public_url="https://workbench.example.test/mcp",
         entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
         entra_api_client_id=UUID("22222222-2222-2222-2222-222222222222"),
+        local_principal_object_id=UUID("33333333-3333-3333-3333-333333333333"),
         require_https=False,
         schema_version="1.0.0",
         pool_min=1,

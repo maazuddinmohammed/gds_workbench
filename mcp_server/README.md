@@ -76,20 +76,28 @@ Humans require delegated scope `workbench.access`. Workloads require application
 permission `workbench.workflow` and an active registered service Principal with
 the server-owned Super Admin flag.
 
-`GDS_ENVIRONMENT=local` derives development authentication, disables the HTTPS
-requirement, uses the synthetic display name `Local Developer`, and lists all
-active Tenants. Production derives Easy Auth, HTTPS, and the public host
-allowlist. Tenant Lock, revision, audit, and business invariants remain
-production behavior. Local Development identity cannot own a production lock.
+`GDS_ENVIRONMENT=local` disables request authentication and maps every request
+to one explicitly configured, database-backed `Local Developer` user. That user
+must be seeded with `is_super_admin=true`. It can read every Tenant and use all
+authorized tools, but Tenant Locks, revisions, validation, audit, and business
+invariants still apply. Never expose local mode to an untrusted network.
+Production ignores this path and derives Easy Auth, HTTPS, and the public host
+allowlist.
 
 ## Local run
 
-1. Copy `.env.example` to an untracked `.env`.
-2. Supply a database DSN, a random cursor key of at least 32 bytes, and the
-   private Azure Blob account URL/container used for Metadata Snapshots.
-3. Export those settings into the shell. The app deliberately does not load
+1. Generate one UUID for `GDS_LOCAL_PRINCIPAL_OBJECT_ID`. Copy
+   `database/seed/03_local_super_admin.template.sql` outside the repository,
+   replace its three placeholders, and run that copy once as the database
+   administrator. Use the same UUID in the seed and application setting.
+2. Copy `.env.example` to an untracked `.env`.
+3. Supply the canonical `gds_mcp_runtime` database DSN, a random cursor key of
+   at least 32 bytes, and the private Azure Blob account URL/container used for
+   Metadata Snapshots. The pool activates its `gds_app_write` membership in
+   both local and production modes.
+4. Export those settings into the shell. The app deliberately does not load
    `.env` files.
-4. Run:
+5. Run:
 
 ```bash
 uv sync --project mcp_server --frozen --python 3.14
@@ -114,7 +122,10 @@ Connect an MCP client to `http://localhost:8000/mcp`.
 `GDS_ENTRA_API_CLIENT_ID` publish the MCP OAuth protected-resource metadata.
 They are public deployment identifiers and do not need Key Vault. The server
 derives the Entra authorization-server URL and the delegated
-`workbench.access` scope from them.
+`workbench.access` scope from them. In local mode, the Tenant ID also forms the
+database identity key with `GDS_LOCAL_PRINCIPAL_OBJECT_ID`; the API Client ID is
+metadata only because authentication is disabled. Production must omit
+`GDS_LOCAL_PRINCIPAL_OBJECT_ID`.
 
 `GDS_DATABRICKS_SQL_MAX_ROWS` configures the returned final-statement rows from
 1 through the hard cap of 50; its default is 50.

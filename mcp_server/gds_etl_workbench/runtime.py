@@ -34,10 +34,16 @@ def create_application(
         pool_min=settings.pool_min,
         pool_max=settings.pool_max,
         pool_timeout_seconds=settings.pool_timeout_seconds,
-        require_runtime_role=settings.environment is Environment.PRODUCTION,
+        require_runtime_role=True,
         expected_schema_version=settings.schema_version,
     )
-    identity_provider = IdentityProvider(settings.auth_mode)
+    identity_provider = IdentityProvider(
+        settings.auth_mode,
+        local_tenant_id=(
+            settings.entra_tenant_id if settings.environment is Environment.LOCAL else None
+        ),
+        local_principal_object_id=settings.local_principal_object_id,
+    )
     server = create_mcp_server(
         settings,
         runtime_database,

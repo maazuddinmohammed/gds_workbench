@@ -40,6 +40,7 @@ def _settings() -> RuntimeSettings:
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
             "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
                 "https://snapshot.blob.core.windows.net"
@@ -123,7 +124,9 @@ async def test_change_set_prompts_are_parallel_and_bounded() -> None:
     assert "Read-only inspection" in metadata_text
     assert "stop without a Snapshot or lock" in metadata_text
     assert "every dataset with a nonzero count" in metadata_text
-    assert metadata_text.index("ask before stage_metadata_change_set") < metadata_text.index(
+    assert metadata_text.index(
+        "ask before stage_metadata_change_set"
+    ) < metadata_text.index(
         "fresh approval immediately before apply_metadata_change_set"
     )
     assert "archive needs no current lock" in metadata_text
@@ -136,7 +139,9 @@ async def test_change_set_prompts_are_parallel_and_bounded() -> None:
     assert "requested boundary" in text
     assert "Read-only inspection" in text
     assert "stop without a lock" in text
-    assert "If resumed, fetch the summary and every dataset with a nonzero count" in text
+    assert (
+        "If resumed, fetch the summary and every dataset with a nonzero count" in text
+    )
     stage_approval = text.index("ask before stage_model_change_set")
     apply_approval = text.index(
         "fresh approval immediately before apply_model_change_set"

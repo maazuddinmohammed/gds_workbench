@@ -22,6 +22,7 @@ def settings_values(**overrides: str) -> dict[str, str]:
         "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
         "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
         "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+        "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
         "GDS_MCP_PUBLIC_URL": "https://workbench.example.test/mcp",
         "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
             "https://snapshot.blob.core.windows.net"
@@ -29,6 +30,11 @@ def settings_values(**overrides: str) -> dict[str, str]:
         "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
     }
     values.update(overrides)
+    if (
+        values["GDS_ENVIRONMENT"] == "production"
+        and "GDS_LOCAL_PRINCIPAL_OBJECT_ID" not in overrides
+    ):
+        values.pop("GDS_LOCAL_PRINCIPAL_OBJECT_ID")
     return values
 
 
@@ -49,6 +55,24 @@ def test_development_mode_explicitly_disables_authentication() -> None:
     )
 
 
+def test_local_principal_object_id_is_explicit_configuration() -> None:
+    settings = RuntimeSettings.from_environment(settings_values())
+
+    assert settings.local_principal_object_id == UUID(
+        "33333333-3333-3333-3333-333333333333"
+    )
+
+
+def test_local_principal_object_id_is_required_in_local_mode() -> None:
+    values = settings_values()
+    values.pop("GDS_LOCAL_PRINCIPAL_OBJECT_ID")
+
+    with pytest.raises(
+        ConfigurationError, match="GDS_LOCAL_PRINCIPAL_OBJECT_ID is required"
+    ):
+        RuntimeSettings.from_environment(values)
+
+
 def test_production_derives_easy_auth_https_and_exact_public_host() -> None:
     settings = RuntimeSettings.from_environment(
         settings_values(
@@ -65,6 +89,22 @@ def test_production_derives_easy_auth_https_and_exact_public_host() -> None:
         "workbench.example.test",
         "workbench.example.test:*",
     )
+
+
+def test_production_rejects_the_local_principal_object_id() -> None:
+    with pytest.raises(
+        ConfigurationError,
+        match="GDS_LOCAL_PRINCIPAL_OBJECT_ID is only valid in local mode",
+    ):
+        RuntimeSettings.from_environment(
+            settings_values(
+                GDS_ENVIRONMENT="production",
+                GDS_DATABASE_DSN=(
+                    "postgresql://app@db.example.invalid/workbench?sslmode=verify-full"
+                ),
+                GDS_LOCAL_PRINCIPAL_OBJECT_ID=("33333333-3333-3333-3333-333333333333"),
+            )
+        )
 
 
 def test_oauth_discovery_settings_are_explicit_non_secret_configuration() -> None:

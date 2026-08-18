@@ -50,6 +50,7 @@ _EXPECTED_KEYS = frozenset(
         "GDS_ENTRA_API_CLIENT_ID",
         "GDS_ENTRA_TENANT_ID",
         "GDS_ENVIRONMENT",
+        "GDS_LOCAL_PRINCIPAL_OBJECT_ID",
         "GDS_MCP_PUBLIC_URL",
         "GDS_METADATA_SNAPSHOT_MANAGED_IDENTITY_CLIENT_ID",
         "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL",
@@ -70,6 +71,7 @@ class RuntimeSettings:
     mcp_public_url: str
     entra_tenant_id: UUID
     entra_api_client_id: UUID
+    local_principal_object_id: UUID | None
     require_https: bool
     schema_version: str
     pool_min: int
@@ -165,6 +167,18 @@ class RuntimeSettings:
         if entra_api_client_id.int == 0:
             raise ConfigurationError("GDS_ENTRA_API_CLIENT_ID must be a nonzero UUID")
 
+        local_object_id_text = source.get("GDS_LOCAL_PRINCIPAL_OBJECT_ID", "").strip()
+        try:
+            local_principal_object_id = UUID(local_object_id_text) if local_object_id_text else None
+        except ValueError as exc:
+            raise ConfigurationError("GDS_LOCAL_PRINCIPAL_OBJECT_ID must be a UUID") from exc
+        if local_principal_object_id is not None and local_principal_object_id.int == 0:
+            raise ConfigurationError("GDS_LOCAL_PRINCIPAL_OBJECT_ID must be a nonzero UUID")
+        if environment is Environment.LOCAL and local_principal_object_id is None:
+            raise ConfigurationError("GDS_LOCAL_PRINCIPAL_OBJECT_ID is required")
+        if environment is Environment.PRODUCTION and local_principal_object_id is not None:
+            raise ConfigurationError("GDS_LOCAL_PRINCIPAL_OBJECT_ID is only valid in local mode")
+
         account_url = _required(source, "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL")
         parsed_account_url = urlsplit(account_url)
         try:
@@ -249,6 +263,7 @@ class RuntimeSettings:
             mcp_public_url=mcp_public_url,
             entra_tenant_id=entra_tenant_id,
             entra_api_client_id=entra_api_client_id,
+            local_principal_object_id=local_principal_object_id,
             require_https=require_https,
             schema_version=SCHEMA_VERSION,
             pool_min=DATABASE_POOL_MIN,

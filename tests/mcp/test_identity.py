@@ -59,6 +59,18 @@ def test_dev_mode_skips_authentication_and_authorization() -> None:
     assert principal.entra_tenant_id is None
 
 
+def test_dev_mode_can_impersonate_the_configured_local_database_principal() -> None:
+    principal = IdentityProvider(
+        AuthMode.DEV,
+        local_tenant_id=TENANT_ID,
+        local_principal_object_id=OBJECT_ID,
+    ).authenticate(None)
+
+    assert principal.actor_kind is ActorKind.HUMAN
+    assert principal.entra_tenant_id == TENANT_ID
+    assert principal.entra_object_id == OBJECT_ID
+
+
 def test_easy_auth_maps_only_the_bounded_principal_envelope() -> None:
     principal = IdentityProvider(AuthMode.AZURE_EASY_AUTH).authenticate(
         {
@@ -140,7 +152,9 @@ def test_oversized_envelope_fails_before_decode() -> None:
 
 def test_middleware_propagates_the_authenticated_principal() -> None:
     async def current_actor(request: Request) -> Response:
-        return JSONResponse({"actor_kind": request.state.request_principal.actor_kind.value})
+        return JSONResponse(
+            {"actor_kind": request.state.request_principal.actor_kind.value}
+        )
 
     application = Starlette(routes=[Route("/mcp/actor", current_actor)])
     application.add_middleware(

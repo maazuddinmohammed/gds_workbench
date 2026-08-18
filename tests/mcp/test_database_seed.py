@@ -14,6 +14,65 @@ if TYPE_CHECKING:
 SEED_ROOT = Path(__file__).parents[2] / "database" / "seed"
 DEMO_SEED = SEED_ROOT / "01_metadata_snapshot_demo.sql"
 HUMAN_SEED_TEMPLATE = SEED_ROOT / "02_human_principal_access.template.sql"
+LOCAL_SUPER_ADMIN_SEED_TEMPLATE = SEED_ROOT / "03_local_super_admin.template.sql"
+
+
+def test_local_super_admin_seed_is_safe_and_resolves_the_configured_identity(
+    postgres_database: DisposablePostgres,
+) -> None:
+    template = LOCAL_SUPER_ADMIN_SEED_TEMPLATE.read_text(encoding="utf-8")
+    connection = postgres_database.connect_owner()
+    try:
+        with pytest.raises(psycopg.errors.RaiseException), connection.transaction():
+            connection.execute(cast(LiteralString, template))
+
+        rendered = (
+            template.replace(
+                "__REPLACE_WITH_EXPECTED_DATABASE_NAME__",
+                postgres_database.database,
+            )
+            .replace(
+                "__REPLACE_WITH_ENTRA_TENANT_ID__",
+                "73000000-0000-0000-0000-000000000001",
+            )
+            .replace(
+                "__REPLACE_WITH_LOCAL_PRINCIPAL_OBJECT_ID__",
+                "74000000-0000-0000-0000-000000000001",
+            )
+        )
+        assert "__REPLACE_WITH_EXPECTED_DATABASE_NAME__" not in rendered
+        assert "__REPLACE_WITH_ENTRA_TENANT_ID__" not in rendered
+        assert "__REPLACE_WITH_LOCAL_PRINCIPAL_OBJECT_ID__" not in rendered
+
+        connection.execute(cast(LiteralString, rendered))
+        row = connection.execute(
+            """
+            SELECT principal.principal_display_name,
+                   principal.principal_email,
+                   principal.is_super_admin,
+                   principal.is_active,
+                   identity.entra_tenant_id,
+                   identity.entra_object_id,
+                   identity.is_active AS identity_is_active
+              FROM security.principal AS principal
+              JOIN security.entra_principal_identity AS identity
+                ON identity.principal_id = principal.principal_id
+             WHERE principal.principal_email = 'local.developer@local.invalid'
+            """
+        ).fetchone()
+    finally:
+        connection.rollback()
+        connection.close()
+
+    assert row == {
+        "principal_display_name": "Local Developer",
+        "principal_email": "local.developer@local.invalid",
+        "is_super_admin": True,
+        "is_active": True,
+        "entra_tenant_id": UUID("73000000-0000-0000-0000-000000000001"),
+        "entra_object_id": UUID("74000000-0000-0000-0000-000000000001"),
+        "identity_is_active": True,
+    }
 
 
 def test_demo_and_human_access_seeds_are_safe_and_complete(
@@ -22,9 +81,7 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
     template = HUMAN_SEED_TEMPLATE.read_text(encoding="utf-8")
     connection = postgres_database.connect_owner()
     try:
-        connection.execute(
-            cast(LiteralString, DEMO_SEED.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, DEMO_SEED.read_text(encoding="utf-8")))
 
         with pytest.raises(psycopg.errors.RaiseException), connection.transaction():
             connection.execute(cast(LiteralString, template))

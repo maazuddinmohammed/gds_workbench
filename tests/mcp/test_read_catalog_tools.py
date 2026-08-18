@@ -41,6 +41,7 @@ def _settings() -> RuntimeSettings:
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
             "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
                 "https://snapshot.blob.core.windows.net"

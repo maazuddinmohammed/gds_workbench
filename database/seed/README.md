@@ -43,3 +43,22 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 The template grants `viewer`, which is sufficient for `list_tenants` and
 `get_metadata_snapshot`. It refuses unchanged placeholders, missing/inactive
 Tenants, and duplicate Principal or Entra identity records.
+
+## Local Super Admin
+
+`03_local_super_admin.template.sql` creates the single database identity used
+when `GDS_ENVIRONMENT=local`. It is manual, local-development data; never run it
+in production.
+
+Copy it outside the repository, then replace:
+
+- `__REPLACE_WITH_EXPECTED_DATABASE_NAME__` with the exact target database;
+- `__REPLACE_WITH_ENTRA_TENANT_ID__` with `GDS_ENTRA_TENANT_ID`; and
+- `__REPLACE_WITH_LOCAL_PRINCIPAL_OBJECT_ID__` with a generated UUID that also
+  becomes `GDS_LOCAL_PRINCIPAL_OBJECT_ID`.
+
+Run the edited copy as the database administrator with
+`psql -X -v ON_ERROR_STOP=1 --single-transaction -f <edited-copy>`. The script
+refuses unchanged placeholders, a database-name mismatch, zero UUIDs, and
+duplicate local identities. Super Admin grants authorization, but it does not
+bypass Tenant Locks, revisions, validation, or audit.

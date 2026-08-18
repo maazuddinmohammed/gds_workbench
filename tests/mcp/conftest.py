@@ -91,15 +91,18 @@ class DisposablePostgres:
         connection.execute("SET ROLE gds_app_write")
         return connection
 
+    def runtime_dsn(self) -> str:
+        return make_conninfo(
+            host=self.host,
+            port=self.port,
+            dbname=self.database,
+            user=self.runtime_user,
+            password=self._runtime_password,
+        )
+
     def create_runtime_adapter(self) -> PostgresDatabase:
         return PostgresDatabase(
-            dsn=make_conninfo(
-                host=self.host,
-                port=self.port,
-                dbname=self.database,
-                user=self.runtime_user,
-                password=self._runtime_password,
-            ),
+            dsn=self.runtime_dsn(),
             pool_min=1,
             pool_max=2,
             pool_timeout_seconds=5,

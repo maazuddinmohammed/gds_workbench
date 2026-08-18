@@ -39,11 +39,25 @@ class AuthenticationError(Exception):
 class IdentityProvider:
     """Resolve a request identity from either dev mode or trusted Easy Auth claims."""
 
-    def __init__(self, auth_mode: AuthMode) -> None:
+    def __init__(
+        self,
+        auth_mode: AuthMode,
+        *,
+        local_tenant_id: UUID | None = None,
+        local_principal_object_id: UUID | None = None,
+    ) -> None:
         self._auth_mode = auth_mode
+        self._local_tenant_id = local_tenant_id
+        self._local_principal_object_id = local_principal_object_id
 
     def authenticate(self, headers: Mapping[str, str] | None) -> RequestPrincipal:
         if self._auth_mode is AuthMode.DEV:
+            if self._local_tenant_id is not None and self._local_principal_object_id is not None:
+                return RequestPrincipal(
+                    actor_kind=ActorKind.HUMAN,
+                    entra_tenant_id=self._local_tenant_id,
+                    entra_object_id=self._local_principal_object_id,
+                )
             return RequestPrincipal.development()
 
         normalized_headers = {key.lower(): value for key, value in (headers or {}).items()}

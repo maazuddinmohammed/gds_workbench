@@ -150,7 +150,7 @@ SELECT connection_tenant_id,
 
 
 async def _activate_runtime_role(connection: AsyncConnection[Any]) -> None:
-    """Activate the only NOINHERIT group role allowed for the production login."""
+    """Activate the only NOINHERIT group role allowed for the runtime login."""
     await connection.execute("SET ROLE gds_app_write")
 
 

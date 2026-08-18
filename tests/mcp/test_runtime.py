@@ -16,6 +16,7 @@ from mcp.client.streamable_http import streamable_http_client
 from mcp.shared.exceptions import MCPError
 from starlette.testclient import TestClient
 
+from gds_etl_workbench import runtime as runtime_module
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
@@ -182,6 +183,7 @@ def development_settings() -> RuntimeSettings:
             "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
             "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
                 "https://snapshot.blob.core.windows.net"
@@ -189,6 +191,26 @@ def development_settings() -> RuntimeSettings:
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
+
+
+def test_local_application_activates_the_restricted_database_runtime_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, Any] = {}
+
+    class CapturingDatabase(FakeDatabase):
+        def __init__(self, **kwargs: Any) -> None:
+            super().__init__()
+            captured.update(kwargs)
+
+    monkeypatch.setattr(runtime_module, "PostgresDatabase", CapturingDatabase)
+
+    runtime_module.create_application(
+        development_settings(),
+        snapshot_store=FakeSnapshotStore(),
+    )
+
+    assert captured["require_runtime_role"] is True
 
 
 @pytest.mark.asyncio
@@ -257,13 +279,14 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     tools_by_name = {tool.name: tool for tool in tools.tools}
     assert tools_by_name["validate_model_change_set"].annotations is not None
     assert (
-        tools_by_name["validate_model_change_set"].annotations.idempotent_hint
-        is False
+        tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
     )
     assert tools_by_name["apply_model_change_set"].annotations is not None
     assert tools_by_name["apply_model_change_set"].annotations.destructive_hint is True
     assert tools_by_name["archive_model_change_set"].annotations is not None
-    assert tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
+    assert (
+        tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
+    )
     assert tools_by_name["get_model_snapshot"].annotations is not None
     assert tools_by_name["get_model_snapshot"].annotations.idempotent_hint is False
     assert tools_by_name["get_model_dbml"].annotations is not None
@@ -339,9 +362,13 @@ async def test_model_dataset_tool_inputs_advertise_the_exact_shared_enum() -> No
 
     schemas = {tool.name: tool.input_schema for tool in listed.tools}
     expected = list(MODEL_DATASETS_BY_NAME)
-    assert schemas["stage_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
+    assert (
+        schemas["stage_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
+    )
     assert schemas["get_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
-    assert schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
+    assert (
+        schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
+    )
     assert schemas["describe_model_dataset"]["properties"]["dataset"] == {
         "$ref": "#/$defs/ModelDataset"
     }
@@ -404,6 +431,16 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
     snapshot_id = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
     created_at = datetime.now(UTC)
     database = FakeDatabase()
+    database.resolved_principal = {
+        "principal_id": 51,
+        "principal_display_name": "Local Developer",
+        "is_super_admin": True,
+        "effective_role": "super_admin",
+        "authorized": True,
+        "denial_code": None,
+        "lock_owner_display_name": None,
+        "lock_expires_time": None,
+    }
     store = FakeSnapshotStore()
 
     async def fake_create_metadata_snapshot(
@@ -540,6 +577,7 @@ def test_oauth_protected_resource_metadata_is_anonymous_and_configured() -> None
         development_settings(),
         environment=Environment.PRODUCTION,
         auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
         require_https=True,
     )
     application = create_application(settings, FakeDatabase())
@@ -567,6 +605,7 @@ def test_production_mcp_rejects_missing_easy_auth_envelope() -> None:
         development_settings(),
         environment=Environment.PRODUCTION,
         auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
         require_https=True,
     )
     application = create_application(settings, FakeDatabase())
@@ -584,6 +623,7 @@ async def test_easy_auth_principal_reaches_list_tenants_over_stateless_http() ->
         development_settings(),
         environment=Environment.PRODUCTION,
         auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
         require_https=True,
     )
     database = FakeDatabase()
@@ -710,6 +750,7 @@ async def test_easy_auth_list_tenants_uses_the_production_postgres_path(
         development_settings(),
         environment=Environment.PRODUCTION,
         auth_mode=AuthMode.AZURE_EASY_AUTH,
+        local_principal_object_id=None,
         require_https=True,
     )
     database = postgres_database.create_runtime_adapter()
@@ -765,6 +806,183 @@ async def test_easy_auth_list_tenants_uses_the_production_postgres_path(
             (principal["principal_id"],),
         ).fetchone()
     assert audit == {"tool_call_status": "succeeded", "failure_code": None}
+
+
+@pytest.mark.asyncio
+async def test_local_super_admin_reads_locks_and_writes_through_postgres(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        project = connection.execute(
+            """
+            INSERT INTO core.project (project_code, project_name)
+            VALUES ('LOCAL_RUNTIME', 'Local Runtime Project')
+            RETURNING project_id
+            """
+        ).fetchone()
+        assert project is not None
+        tenant = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog,
+                tenant_visibility
+            )
+            VALUES (%s, 'LOCAL_RUNTIME', 'Local Runtime Tenant',
+                    'local_runtime', 'local_runtime_admin', 'private')
+            RETURNING tenant_id
+            """,
+            (project["project_id"],),
+        ).fetchone()
+        assert tenant is not None
+        model = connection.execute(
+            """
+            INSERT INTO model.model (tenant_id, model_name)
+            VALUES (%s, 'Local Runtime Model')
+            RETURNING model_id
+            """,
+            (tenant["tenant_id"],),
+        ).fetchone()
+        assert model is not None
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                principal_description,
+                principal_email,
+                is_super_admin
+            )
+            VALUES (
+                'user',
+                'Local Developer',
+                'Dedicated local-mode Principal',
+                'local.developer@example.test',
+                TRUE
+            )
+            RETURNING principal_id
+            """
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'user', %s, %s)
+            """,
+            (
+                principal["principal_id"],
+                UUID("11111111-1111-1111-1111-111111111111"),
+                UUID("33333333-3333-3333-3333-333333333333"),
+            ),
+        )
+
+    settings = replace(
+        development_settings(),
+        database_dsn=postgres_database.runtime_dsn(),
+    )
+    application = create_application(
+        settings,
+        snapshot_store=FakeSnapshotStore(),
+    )
+
+    async with (
+        application.router.lifespan_context(application),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=application),
+            base_url="http://testserver",
+        ) as http_client,
+    ):
+        readiness = await http_client.get("/health/ready")
+        transport = streamable_http_client(
+            "http://testserver/mcp",
+            http_client=http_client,
+            terminate_on_close=False,
+        )
+        async with Client(transport) as client:
+            result = await client.call_tool("list_tenants", {})
+            lock_result = await client.call_tool(
+                "acquire_tenant_lock",
+                {
+                    "tenant_id": tenant["tenant_id"],
+                    "duration_minutes": 15,
+                    "purpose": "Local integration test",
+                },
+            )
+            change_set_result = await client.call_tool(
+                "create_metadata_change_set",
+                {"tenant_id": tenant["tenant_id"]},
+            )
+            model_change_set_result = await client.call_tool(
+                "create_model_change_set",
+                {"model_id": model["model_id"]},
+            )
+
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready"
+    assert result.is_error is False
+    assert result.structured_content is not None
+    returned_tenant = next(
+        item
+        for item in result.structured_content["tenants"]
+        if item["tenant_id"] == tenant["tenant_id"]
+    )
+    assert returned_tenant["tenant_code"] == "LOCAL_RUNTIME"
+    assert all(
+        tenant["effective_role"] == "super_admin"
+        for tenant in result.structured_content["tenants"]
+    )
+    assert lock_result.is_error is False
+    assert lock_result.structured_content is not None
+    assert lock_result.structured_content["lock"]["owner_display_name"] == (
+        "Local Developer"
+    )
+    assert change_set_result.is_error is False
+    assert change_set_result.structured_content is not None
+    assert change_set_result.structured_content["created"] is True
+    assert change_set_result.structured_content["status"] == "active"
+    assert model_change_set_result.is_error is False
+    assert model_change_set_result.structured_content is not None
+    assert model_change_set_result.structured_content["created"] is True
+    assert model_change_set_result.structured_content["status"] == "active"
+    with postgres_database.connect_owner() as connection:
+        audit = connection.execute(
+            """
+            SELECT array_agg(tool_name ORDER BY tool_call_time) AS tool_names,
+                   bool_and(principal_id = %s) AS principal_resolved,
+                   bool_and(actor_kind = 'human') AS human_actor,
+                   bool_and(tool_call_status = 'succeeded') AS all_succeeded,
+                   bool_and(failure_code IS NULL) AS no_failures
+              FROM mcp.tool_call_log
+                 WHERE principal_id = %s
+                   AND tool_name IN (
+                           'list_tenants',
+                           'acquire_tenant_lock',
+                           'create_metadata_change_set',
+                           'create_model_change_set'
+                       )
+                """,
+            (principal["principal_id"], principal["principal_id"]),
+        ).fetchone()
+    assert audit == {
+        "tool_names": [
+            "list_tenants",
+            "acquire_tenant_lock",
+            "create_metadata_change_set",
+            "create_model_change_set",
+        ],
+        "principal_resolved": True,
+        "human_actor": True,
+        "all_succeeded": True,
+        "no_failures": True,
+    }
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:
