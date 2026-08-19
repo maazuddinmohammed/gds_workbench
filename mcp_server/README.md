@@ -57,6 +57,7 @@ The same guidance is embedded in Metadata Snapshot schema files.
   metadata/modeling Pydantic records used by snapshots and Change Sets.
 - `infrastructure/`: shared PostgreSQL pool, readiness, read transactions,
   governed-function write transactions, and append-only audit inserts.
+- `diagnostics/`: bounded, read-only runtime checks for deployed Snapshot failures.
 - Tests live outside this deployable folder in `../tests/mcp/`.
 
 Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`
@@ -201,6 +202,19 @@ The ZIP places `app.py`, `startup.sh`, `requirements.txt`, and
 `gds_etl_workbench/` runtime package and excludes `.env`, `.env.example`, tests,
 `.venv`, SQL, caches, and documentation. It refuses to overwrite an existing
 artifact.
+
+After deployment, diagnose the complete Metadata Snapshot path in one read-only
+run from the App Service SSH console:
+
+```bash
+cd /home/site/wwwroot
+python3 -m gds_etl_workbench.diagnostics.metadata_snapshot --tenant-id 5
+```
+
+The command checks every manifest file, configuration, PostgreSQL readiness and
+Tenant selection, local archive generation, Storage authentication, container
+access, and delegation-key access. It does not upload a Blob or print settings,
+credentials, URLs, database rows, or raw dependency errors.
 
 Azure App Service must use Python 3.14, build automation
 (`SCM_DO_BUILD_DURING_DEPLOYMENT=1`), and startup command `startup.sh`. Configure
