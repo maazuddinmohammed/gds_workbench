@@ -189,7 +189,8 @@ The fresh cluster defines two non-login, non-superuser group roles:
   governed Tenant Lock functions, and governed Metadata Change Set functions.
 
 `gds_mcp_runtime` is the LOGIN used by App Service. It has exactly one direct
-membership, `gds_app_write`, and activates that group with `SET ROLE`.
+membership, `gds_app_write`, and each transaction activates that group with
+`SET LOCAL ROLE`.
 
 `PUBLIC` loses schema, table, and function rights. The application role is
 explicitly denied `core.connection_value`. Append-only events, revision

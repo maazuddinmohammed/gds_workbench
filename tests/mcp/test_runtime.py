@@ -1,11 +1,14 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
+import zipfile
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
+from io import BytesIO
 from typing import TYPE_CHECKING, Any, LiteralString
 from uuid import UUID
 
@@ -983,6 +986,136 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
         "all_succeeded": True,
         "no_failures": True,
     }
+
+
+@pytest.mark.asyncio
+async def test_local_application_builds_metadata_snapshot_end_to_end(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        project = connection.execute(
+            """
+            INSERT INTO core.project (project_code, project_name)
+            VALUES ('LOCAL_SNAPSHOT_RUNTIME', 'Local Snapshot Runtime Project')
+            RETURNING project_id
+            """
+        ).fetchone()
+        assert project is not None
+        tenant = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog
+            )
+            VALUES (%s, 'LOCAL_SNAPSHOT_RUNTIME', 'Local Snapshot Runtime Tenant',
+                    'local_snapshot_runtime', 'local_snapshot_runtime_admin')
+            RETURNING tenant_id
+            """,
+            (project["project_id"],),
+        ).fetchone()
+        assert tenant is not None
+        principal = connection.execute(
+            """
+            INSERT INTO security.principal (
+                principal_type,
+                principal_display_name,
+                principal_description,
+                principal_email,
+                is_super_admin
+            )
+            VALUES (
+                'user',
+                'Local Snapshot Developer',
+                'Dedicated local snapshot Principal',
+                'local.snapshot.developer@example.test',
+                TRUE
+            )
+            RETURNING principal_id
+            """
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            )
+            VALUES (%s, 'user', %s, %s)
+            """,
+            (
+                principal["principal_id"],
+                UUID("11111111-1111-1111-1111-111111111111"),
+                UUID("44444444-4444-4444-4444-444444444444"),
+            ),
+        )
+
+    class CapturingSnapshotStore(FakeSnapshotStore):
+        def __init__(self) -> None:
+            super().__init__(
+                "https://snapshot.example.test/metadata/local.zip?read-only=true"
+            )
+            self.archive_bytes = b""
+            self.archive_path = None
+
+        async def upload_archive(
+            self,
+            archive: SnapshotArchive,
+            **_kwargs: Any,
+        ) -> None:
+            self.archive_path = archive.path
+            self.archive_bytes = archive.path.read_bytes()
+
+    store = CapturingSnapshotStore()
+    settings = replace(
+        development_settings(),
+        database_dsn=postgres_database.runtime_dsn(),
+        local_principal_object_id=UUID("44444444-4444-4444-4444-444444444444"),
+    )
+    application = create_application(settings, snapshot_store=store)
+
+    async with (
+        application.router.lifespan_context(application),
+        httpx2.AsyncClient(
+            transport=httpx2.ASGITransport(app=application),
+            base_url="http://testserver",
+        ) as http_client,
+    ):
+        readiness = await http_client.get("/health/ready")
+        transport = streamable_http_client(
+            "http://testserver/mcp",
+            http_client=http_client,
+            terminate_on_close=False,
+        )
+        async with Client(transport) as client:
+            result = await client.call_tool(
+                "get_metadata_snapshot",
+                {"tenant_id": tenant["tenant_id"]},
+            )
+
+    assert readiness.status_code == 200
+    assert readiness.json()["status"] == "ready"
+    assert result.is_error is False, result.content
+    assert result.structured_content is not None
+    assert result.structured_content["status"] == "ready"
+    assert result.structured_content["tenant_id"] == tenant["tenant_id"]
+    assert result.structured_content["download_url"] == store.read_url
+    assert result.structured_content["size_bytes"] == len(store.archive_bytes)
+    assert (
+        result.structured_content["sha256"]
+        == hashlib.sha256(store.archive_bytes).hexdigest()
+    )
+    assert store.archive_path is not None and not store.archive_path.exists()
+    assert store.closed is True
+    with zipfile.ZipFile(BytesIO(store.archive_bytes)) as archive:
+        manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
+    assert manifest["tenant_code"] == "LOCAL_SNAPSHOT_RUNTIME"
+    assert manifest["counts"]["logical_dataset_count"] == 29
+    assert manifest["counts"]["file_count"] == 70
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

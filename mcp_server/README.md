@@ -94,8 +94,8 @@ allowlist.
 2. Copy `.env.example` to an untracked `.env`.
 3. Supply the canonical `gds_mcp_runtime` database DSN, a random cursor key of
    at least 32 bytes, and the private Azure Blob account URL/container used for
-   Metadata Snapshots. The pool activates its `gds_app_write` membership in
-   both local and production modes.
+   Metadata Snapshots. Each database transaction activates `gds_app_write`
+   locally in both local and production modes.
 4. Export those settings into the shell. The app deliberately does not load
    `.env` files.
 5. Run:
@@ -233,7 +233,7 @@ anonymous:
 ```
 
 `/mcp` remains protected. The database login must have exactly one direct
-membership: `gds_app_write`; the pool activates that `NOINHERIT` role.
+membership: `gds_app_write`; each transaction activates that `NOINHERIT` role.
 
 The configured Blob container must already exist and remain private. Grant the
 App Service identity narrowly scoped Blob create/read access and Storage Blob

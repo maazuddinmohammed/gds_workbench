@@ -149,11 +149,6 @@ SELECT connection_tenant_id,
 """
 
 
-async def _activate_runtime_role(connection: AsyncConnection[Any]) -> None:
-    """Activate the only NOINHERIT group role allowed for the runtime login."""
-    await connection.execute("SET ROLE gds_app_write")
-
-
 class _PostgresReadTransaction:
     def __init__(self, connection: AsyncConnection[Any]) -> None:
         self._connection = connection
@@ -192,7 +187,6 @@ class PostgresDatabase:
             max_size=pool_max,
             timeout=pool_timeout_seconds,
             kwargs={"autocommit": True, "row_factory": dict_row},
-            configure=_activate_runtime_role if require_runtime_role else None,
             open=False,
             name="gds-mcp",
         )
@@ -204,19 +198,35 @@ class PostgresDatabase:
         await self._pool.close()
 
     @asynccontextmanager
-    async def read_transaction(
+    async def _transaction(
         self,
         *,
+        read_only: bool,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncGenerator[ReadTransaction]:
-        try:
-            async with self._pool.connection() as connection, connection.transaction():
+    ) -> AsyncGenerator[AsyncConnection[Any]]:
+        async with self._pool.connection() as connection, connection.transaction():
+            if read_only:
                 if isolation is ReadIsolation.REPEATABLE_READ:
                     await connection.execute(
                         "SET TRANSACTION ISOLATION LEVEL REPEATABLE READ, READ ONLY"
                     )
                 else:
                     await connection.execute("SET TRANSACTION READ ONLY")
+            if self._require_runtime_role:
+                await connection.execute("SET LOCAL ROLE gds_app_write")
+            yield connection
+
+    @asynccontextmanager
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncGenerator[ReadTransaction]:
+        try:
+            async with self._transaction(
+                read_only=True,
+                isolation=isolation,
+            ) as connection:
                 yield _PostgresReadTransaction(connection)
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc
@@ -224,14 +234,16 @@ class PostgresDatabase:
     @asynccontextmanager
     async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
         try:
-            async with self._pool.connection() as connection, connection.transaction():
+            async with self._transaction(read_only=False) as connection:
                 yield _PostgresReadTransaction(connection)
         except PsycopgError as exc:
             raise DependencyUnavailableError() from exc
 
     async def readiness(self) -> ReadinessRecord:
         try:
-            async with self._pool.connection() as connection:
+            # The readiness contract exercises check_tenant_lock(), whose
+            # SELECT ... FOR SHARE query is invalid in a read-only transaction.
+            async with self._transaction(read_only=False) as connection:
                 bootstrap_result = await connection.execute(_READINESS_BOOTSTRAP_SQL)
                 bootstrap = await bootstrap_result.fetchone()
                 if bootstrap is None:
@@ -265,7 +277,7 @@ class PostgresDatabase:
 
     async def expire_tenant_locks(self) -> int:
         try:
-            async with self._pool.connection() as connection, connection.transaction():
+            async with self._transaction(read_only=False) as connection:
                 result = await connection.execute(
                     "SELECT security.expire_tenant_locks(%s) AS expired_count",
                     (100,),
@@ -277,7 +289,7 @@ class PostgresDatabase:
 
     async def append_tool_call_log(self, record: ToolCallLogRecord) -> None:
         try:
-            async with self._pool.connection() as connection, connection.transaction():
+            async with self._transaction(read_only=False) as connection:
                 await connection.execute(
                     _APPEND_TOOL_CALL_LOG_SQL,
                     (
@@ -301,8 +313,7 @@ class PostgresDatabase:
         connection_id: int,
     ) -> DatabricksConnectionValuesRecord:
         try:
-            async with self._pool.connection() as connection, connection.transaction():
-                await connection.execute("SET TRANSACTION READ ONLY")
+            async with self._transaction(read_only=True) as connection:
                 result = await connection.execute(
                     _READ_DATABRICKS_CONNECTION_VALUES_SQL,
                     (connection_id,),

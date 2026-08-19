@@ -126,7 +126,8 @@ Governed lock functions are:
 - `security.override_tenant_lock`
 - `security.expire_tenant_locks`
 
-The runtime login activates the `NOINHERIT` role `gds_app_write`. It cannot run
+Every runtime transaction locally activates the `NOINHERIT` role
+`gds_app_write`. It cannot run
 DDL, delete product state, modify Principal/Tenant-access rows, or directly
 mutate Tenant Lock tables. It receives only explicit function execution and the
 existing allowlisted table privileges. `PUBLIC` receives no release-schema

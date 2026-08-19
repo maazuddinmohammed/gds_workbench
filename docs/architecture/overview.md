@@ -90,8 +90,8 @@ The App Service ZIP root contains `app.py`, `startup.sh`, `requirements.txt`,
 documentation, caches, and nested archives. Database DDL is installed separately
 and never at application startup.
 
-The server opens one bounded PostgreSQL pool. Production connections activate
-the `NOINHERIT` `gds_app_write` role. Readiness checks PostgreSQL 18, required
+The server opens one bounded PostgreSQL pool. Each transaction activates the
+`NOINHERIT` `gds_app_write` role locally. Readiness checks PostgreSQL 18, required
 schema functions, and the runtime role posture. The only background write is a
 bounded Tenant Lock expiry pass at startup and every 60 seconds.
 
