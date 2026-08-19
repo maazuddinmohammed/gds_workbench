@@ -3,6 +3,6 @@
 .pytest_cache/
 .ruff_cache/
 dist/*
-!dist/gds-mcp-appservice.zip
+!dist/gds-mcp-appservice*.zip
 __pycache__/
 *.pyc
