@@ -9,6 +9,8 @@ import zipfile
 from pathlib import Path
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
+SOURCE_ROOT = BUILD_SCRIPT.parent
+CHECKED_IN_ARTIFACT = SOURCE_ROOT / "dist" / "gds-mcp-appservice.zip"
 PROJECT_FILE = BUILD_SCRIPT.with_name("pyproject.toml")
 LOCK_FILE = BUILD_SCRIPT.with_name("uv.lock")
 
@@ -29,6 +31,24 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
 
     with zipfile.ZipFile(artifact) as archive:
         names = archive.namelist()
+        source_files = [
+            SOURCE_ROOT / "app.py",
+            SOURCE_ROOT / "requirements.txt",
+            SOURCE_ROOT / "startup.sh",
+            *sorted((SOURCE_ROOT / "gds_etl_workbench").rglob("*.py")),
+        ]
+        expected_names = sorted(
+            {
+                "BUILD_MANIFEST.json",
+                *(path.relative_to(SOURCE_ROOT).as_posix() for path in source_files),
+            }
+        )
+        assert names == expected_names
+        for path in source_files:
+            assert (
+                archive.read(path.relative_to(SOURCE_ROOT).as_posix())
+                == path.read_bytes()
+            )
         assert {
             "app.py",
             "startup.sh",
@@ -82,6 +102,15 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         assert "GDS_REQUEST_TIMEOUT_SECONDS" not in startup
         assert "WEB_CONCURRENCY" not in startup
         assert "${PORT" not in startup
+
+
+def test_checked_in_appservice_zip_matches_clean_build(tmp_path: Path) -> None:
+    artifact = tmp_path / "app.zip"
+    completed = build_zip(artifact)
+
+    assert completed.returncode == 0
+    assert CHECKED_IN_ARTIFACT.is_file()
+    assert CHECKED_IN_ARTIFACT.read_bytes() == artifact.read_bytes()
 
 
 def test_appservice_zip_builder_refuses_overwrite(tmp_path: Path) -> None:
