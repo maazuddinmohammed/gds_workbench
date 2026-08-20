@@ -14,7 +14,8 @@ CREATE ROLE gds_mcp_runtime
     NOREPLICATION
     NOBYPASSRLS;
 
-GRANT gds_app_write TO gds_mcp_runtime;
+GRANT gds_app_write TO gds_mcp_runtime
+    WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
 
 DO $grant_runtime_database_connect$
 BEGIN

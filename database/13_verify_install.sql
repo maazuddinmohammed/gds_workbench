@@ -63,12 +63,21 @@ BEGIN
         ON member_role.oid = membership.member
      WHERE member_role.rolname = 'gds_mcp_runtime';
 
-    IF v_membership_count <> 1 OR NOT pg_has_role(
-        'gds_mcp_runtime',
-        'gds_app_write',
-        'MEMBER'
+    IF v_membership_count <> 1 OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_auth_members AS membership
+          JOIN pg_catalog.pg_roles AS member_role
+            ON member_role.oid = membership.member
+          JOIN pg_catalog.pg_roles AS group_role
+            ON group_role.oid = membership.roleid
+         WHERE member_role.rolname = 'gds_mcp_runtime'
+           AND group_role.rolname = 'gds_app_write'
+           AND NOT membership.admin_option
+           AND NOT membership.inherit_option
+           AND membership.set_option
     ) THEN
-        RAISE EXCEPTION 'gds_mcp_runtime must have exactly one direct membership';
+        RAISE EXCEPTION
+            'gds_mcp_runtime gds_app_write membership options are invalid';
     END IF;
 
     IF NOT has_database_privilege(
@@ -229,6 +238,18 @@ BEGIN
          WHERE has_schema_privilege('public', schema_name.value, 'USAGE')
     ) THEN
         RAISE EXCEPTION 'PUBLIC retains release-schema usage';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+                   'reference', 'core', 'security', 'model', 'workflow', 'mcp'
+               ]) AS schema_name(value)
+         WHERE NOT has_schema_privilege(
+                   'gds_app_write', schema_name.value, 'USAGE'
+               )
+    ) THEN
+        RAISE EXCEPTION 'gds_app_write release schema usage is invalid';
     END IF;
 
     IF NOT has_table_privilege('gds_app_write', 'core.project', 'SELECT')

@@ -7,6 +7,7 @@ import pytest
 from psycopg.errors import InsufficientPrivilege
 
 import gds_etl_workbench.infrastructure.postgres as postgres_module
+from gds_etl_workbench.domain.errors import DependencyUnavailableError
 from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
 
 
@@ -30,7 +31,7 @@ class _Connection:
             self.role_active = False
 
     async def execute(self, query: object, _parameters: object = ()) -> _Result:
-        sql = str(query)
+        sql = str(query).strip()
         if sql == "SET ROLE gds_app_write" or sql == "SET LOCAL ROLE gds_app_write":
             self.role_active = True
         elif sql.startswith("SELECT") and not self.role_active:
@@ -102,6 +103,29 @@ async def test_read_transaction_reactivates_role_after_pool_setup(
 
 
 @pytest.mark.asyncio
+async def test_read_transaction_without_role_activation_reproduces_42501(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(postgres_module, "AsyncConnectionPool", _Pool)
+    database = PostgresDatabase(
+        dsn="postgresql://runtime@example.invalid/workbench",
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=1,
+        require_runtime_role=False,
+    )
+    await database.open()
+    try:
+        with pytest.raises(DependencyUnavailableError) as failure:
+            async with database.read_transaction() as transaction:
+                await transaction.fetch_one("SELECT TRUE AS active")
+    finally:
+        await database.close()
+
+    assert isinstance(failure.value.__cause__, InsufficientPrivilege)
+
+
+@pytest.mark.asyncio
 async def test_readiness_reactivates_role_after_pool_setup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -121,3 +145,25 @@ async def test_readiness_reactivates_role_after_pool_setup(
 
     assert readiness.ready is True
     assert readiness.code == "ready"
+
+
+@pytest.mark.asyncio
+async def test_readiness_without_role_activation_reports_invalid_database_role(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(postgres_module, "AsyncConnectionPool", _Pool)
+    database = PostgresDatabase(
+        dsn="postgresql://runtime@example.invalid/workbench",
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=1,
+        require_runtime_role=False,
+    )
+    await database.open()
+    try:
+        readiness = await database.readiness()
+    finally:
+        await database.close()
+
+    assert readiness.ready is False
+    assert readiness.code == "database_role_invalid"

@@ -211,10 +211,12 @@ cd /home/site/wwwroot
 python3 -m gds_etl_workbench.diagnostics.metadata_snapshot --tenant-id 5
 ```
 
-The command checks every manifest file, configuration, PostgreSQL readiness and
-Tenant selection, local archive generation, Storage authentication, container
-access, and delegation-key access. It does not upload a Blob or print settings,
-credentials, URLs, database rows, or raw dependency errors.
+The command checks every manifest file, configuration, the exact runtime login
+and transaction role, PostgreSQL readiness, required schema/table access, every
+Tenant selection stage, local archive generation, Storage authentication,
+container access, and delegation-key access. It reports only bounded stage
+names, booleans, counts, hashes, and error codes. It does not upload a Blob or
+print settings, credentials, URLs, SQL, database rows, or raw dependency errors.
 
 Azure App Service must use Python 3.14, build automation
 (`SCM_DO_BUILD_DURING_DEPLOYMENT=1`), and startup command `startup.sh`. Configure

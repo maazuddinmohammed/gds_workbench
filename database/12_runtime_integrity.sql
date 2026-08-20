@@ -8,6 +8,10 @@ REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, work
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, mcp
     TO gds_app_write;
 
+-- Reassert the exact transaction-scoped membership used by App Service.
+GRANT gds_app_write TO gds_mcp_runtime
+    WITH ADMIN FALSE, INHERIT FALSE, SET TRUE;
+
 -- Runtime writes need the pure validator referenced by CHECK constraints.
 GRANT EXECUTE ON FUNCTION reference.is_nonblank(TEXT) TO gds_app_write;
 
@@ -144,9 +148,24 @@ VOLATILE
 SECURITY INVOKER
 SET search_path = pg_catalog
 AS $runtime_readiness$
+DECLARE
+    runtime_schema_usage_ok BOOLEAN;
 BEGIN
     schema_version := '1.0.0';
     postgres_major := current_setting('server_version_num')::INTEGER / 10000;
+
+    runtime_schema_usage_ok := NOT EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+                   'reference', 'core', 'security', 'model', 'workflow', 'mcp'
+               ]) AS required_schema(name)
+          LEFT JOIN pg_namespace AS namespace_record
+            ON namespace_record.nspname = required_schema.name
+         WHERE namespace_record.oid IS NULL
+            OR has_schema_privilege(
+                   'gds_app_write', namespace_record.oid, 'USAGE'
+               ) IS NOT TRUE
+    );
 
     schema_shape_ok := NOT EXISTS (
         SELECT 1
@@ -186,7 +205,16 @@ BEGIN
                    'mcp.metadata_change_set_event',
                    'mcp.tool_call_log'
                ]) AS required_relation(name)
-         WHERE to_regclass(required_relation.name) IS NULL
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM pg_class AS relation_record
+                     JOIN pg_namespace AS namespace_record
+                       ON namespace_record.oid = relation_record.relnamespace
+                    WHERE namespace_record.nspname =
+                              split_part(required_relation.name, '.', 1)
+                      AND relation_record.relname =
+                              split_part(required_relation.name, '.', 2)
+               )
     ) AND NOT EXISTS (
         SELECT 1
           FROM (
@@ -226,43 +254,121 @@ BEGIN
          WHERE NOT EXISTS (
                    SELECT 1
                      FROM pg_attribute AS attribute_record
-                    WHERE attribute_record.attrelid =
-                              to_regclass(required_column.relation_name)
+                     JOIN pg_class AS relation_record
+                       ON relation_record.oid = attribute_record.attrelid
+                     JOIN pg_namespace AS namespace_record
+                       ON namespace_record.oid = relation_record.relnamespace
+                    WHERE namespace_record.nspname =
+                              split_part(required_column.relation_name, '.', 1)
+                      AND relation_record.relname =
+                              split_part(required_column.relation_name, '.', 2)
                       AND attribute_record.attname = required_column.column_name
                       AND attribute_record.attnum > 0
                       AND NOT attribute_record.attisdropped
                )
     ) AND NOT EXISTS (
         SELECT 1
-          FROM unnest(ARRAY[
-                   'security.authorize_tenant_operation(uuid,uuid,character varying,bigint,character varying)',
-                   'security.check_tenant_lock(uuid,uuid,character varying,bigint)',
-                   'security.acquire_tenant_lock(uuid,uuid,character varying,bigint,integer,character varying)',
-                   'security.renew_tenant_lock(uuid,uuid,character varying,bigint,integer)',
-                   'security.release_tenant_lock(uuid,uuid,character varying,bigint)',
-                   'security.override_tenant_lock(uuid,uuid,character varying,bigint,character varying)',
-                   'security.expire_tenant_locks(integer)',
-                   'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
-                   'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
-                   'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
-                   'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
-                   'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
-                   'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
-                   'mcp.get_databricks_sql_connection_values(bigint)'
-               ]) AS required_function(signature)
-         WHERE to_regprocedure(required_function.signature) IS NULL
+          FROM (VALUES
+                   (
+                       'security',
+                       'authorize_tenant_operation',
+                       'uuid, uuid, character varying, bigint, character varying'
+                   ),
+                   (
+                       'security',
+                       'check_tenant_lock',
+                       'uuid, uuid, character varying, bigint'
+                   ),
+                   (
+                       'security',
+                       'acquire_tenant_lock',
+                       'uuid, uuid, character varying, bigint, integer, character varying'
+                   ),
+                   (
+                       'security',
+                       'renew_tenant_lock',
+                       'uuid, uuid, character varying, bigint, integer'
+                   ),
+                   (
+                       'security',
+                       'release_tenant_lock',
+                       'uuid, uuid, character varying, bigint'
+                   ),
+                   (
+                       'security',
+                       'override_tenant_lock',
+                       'uuid, uuid, character varying, bigint, character varying'
+                   ),
+                   ('security', 'expire_tenant_locks', 'integer'),
+                   (
+                       'mcp',
+                       'create_metadata_change_set',
+                       'uuid, uuid, character varying, bigint, uuid, uuid'
+                   ),
+                   (
+                       'mcp',
+                       'stage_metadata_change_set',
+                       'uuid, uuid, character varying, bigint, uuid, bigint, jsonb, uuid'
+                   ),
+                   (
+                       'mcp',
+                       'get_metadata_change_set',
+                       'uuid, uuid, character varying, bigint, uuid'
+                   ),
+                   (
+                       'mcp',
+                       'record_metadata_change_set_validation',
+                       'uuid, uuid, character varying, bigint, uuid, bigint, boolean, character, jsonb, uuid, uuid'
+                   ),
+                   (
+                       'mcp',
+                       'apply_metadata_change_set',
+                       'uuid, uuid, character varying, bigint, uuid, bigint, character, uuid'
+                   ),
+                   (
+                       'mcp',
+                       'archive_metadata_change_set',
+                       'uuid, uuid, character varying, bigint, uuid, bigint, uuid'
+                   ),
+                   ('mcp', 'get_databricks_sql_connection_values', 'bigint')
+               ) AS required_function(
+                   schema_name,
+                   function_name,
+                   argument_types
+               )
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM pg_proc AS function_record
+                     JOIN pg_namespace AS namespace_record
+                       ON namespace_record.oid = function_record.pronamespace
+                    WHERE namespace_record.nspname =
+                              required_function.schema_name
+                      AND function_record.proname =
+                              required_function.function_name
+                      AND oidvectortypes(function_record.proargtypes) =
+                              required_function.argument_types
+               )
     ) AND NOT EXISTS (
         SELECT 1
           FROM pg_attribute AS old_column
-         WHERE old_column.attrelid =
-                   to_regclass('core.tenant_metadata_discovery_scope')
+          JOIN pg_class AS relation_record
+            ON relation_record.oid = old_column.attrelid
+          JOIN pg_namespace AS namespace_record
+            ON namespace_record.oid = relation_record.relnamespace
+         WHERE namespace_record.nspname = 'core'
+           AND relation_record.relname = 'tenant_metadata_discovery_scope'
            AND old_column.attname = 'connection_id'
            AND old_column.attnum > 0
            AND NOT old_column.attisdropped
     ) AND NOT EXISTS (
         SELECT 1
           FROM pg_attribute AS duplicate_lock
-         WHERE duplicate_lock.attrelid = to_regclass('core.attribute')
+          JOIN pg_class AS relation_record
+            ON relation_record.oid = duplicate_lock.attrelid
+          JOIN pg_namespace AS namespace_record
+            ON namespace_record.oid = relation_record.relnamespace
+         WHERE namespace_record.nspname = 'core'
+           AND relation_record.relname = 'attribute'
            AND duplicate_lock.attname = 'is_locked'
            AND duplicate_lock.attnum > 0
            AND NOT duplicate_lock.attisdropped
@@ -281,7 +387,19 @@ BEGIN
                AND NOT runtime_login.rolreplication
                AND NOT runtime_login.rolbypassrls
         )
-        AND pg_has_role(SESSION_USER, 'gds_app_write', 'MEMBER')
+        AND EXISTS (
+            SELECT 1
+              FROM pg_auth_members AS membership
+              JOIN pg_roles AS runtime_login
+                ON runtime_login.oid = membership.member
+              JOIN pg_roles AS runtime_group
+                ON runtime_group.oid = membership.roleid
+             WHERE runtime_login.rolname = SESSION_USER
+               AND runtime_group.rolname = 'gds_app_write'
+               AND NOT membership.admin_option
+               AND NOT membership.inherit_option
+               AND membership.set_option
+        )
         AND (
             SELECT count(*) = 1
               FROM pg_auth_members AS membership
@@ -291,7 +409,7 @@ BEGIN
         );
 
     runtime_privileges_ok := FALSE;
-    IF schema_shape_ok THEN
+    IF schema_shape_ok AND runtime_schema_usage_ok THEN
         runtime_privileges_ok := NOT EXISTS (
         SELECT 1
           FROM unnest(ARRAY[

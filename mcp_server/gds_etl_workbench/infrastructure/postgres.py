@@ -11,6 +11,7 @@ from uuid import UUID
 
 from psycopg import AsyncConnection
 from psycopg import Error as PsycopgError
+from psycopg.errors import InsufficientPrivilege
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from psycopg_pool import AsyncConnectionPool
@@ -272,6 +273,8 @@ class PostgresDatabase:
             if not row["runtime_query_contract_ok"]:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")
             return ReadinessRecord(ready=True, code="ready")
+        except InsufficientPrivilege:
+            return ReadinessRecord(ready=False, code="database_role_invalid")
         except PsycopgError:
             return ReadinessRecord(ready=False, code="database_unavailable")
 
