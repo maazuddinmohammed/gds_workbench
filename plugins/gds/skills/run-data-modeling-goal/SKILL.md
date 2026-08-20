@@ -1,6 +1,6 @@
 ---
 name: run-data-modeling-goal
-description: "Turn a Conceptual, Logical, Dimensional, or mapping brief into one durable Codex goal with a verifiable stopping condition, checkpoints, validation, exclusions, and pause rules. Use when a user asks for a /goal prompt, wants Codex to keep working toward a model, or explicitly asks to prepare or start a modeling goal."
+description: "Turn a bounded GDS modeling objective into one durable Codex goal with a verifiable stopping condition, checkpoints, evidence, exclusions, and pause rules. Use only when a user asks for a goal prompt, wants persistent multi-checkpoint work, or explicitly asks to prepare/start a modeling goal."
 ---
 
 # Run Data Modeling Goal
@@ -11,6 +11,11 @@ Codex's `/goal` feature owns the long-running loop.
 Read [goal template](references/goal-template.md), then select the matching modeling
 skill and read its workflow. Use [governed model workflow](../../references/governed-model-workflow.md)
 for any server write.
+
+Use a goal for work that genuinely needs several checkpoints, evidence passes, or a
+governed handoff. Use the matching ordinary skill for a quick read, SQL run, Profile,
+single design proposal, or one Change Set action. A goal is not a substitute for an
+unbounded brief; offer `$grill-data-model` when material decisions are still unknown.
 
 ## Distinguish prepare from start
 
@@ -32,7 +37,14 @@ the user explicitly asks for a grill or accepts an offered stress test.
 
 Route Conceptual, Logical, Dimensional, and Model Mapping work to
 `$build-conceptual-model`, `$build-logical-model`, `$build-dimensional-model`, and
-`$build-data-mapping`, respectively.
+`$build-data-mapping`, respectively. Route new table evidence to `$profile-gds-data`,
+new relationship evidence to `$analyze-gds-relationships`, and source-document facts
+to `$capture-modeling-assertions`.
+
+For best performance, target one existing Model and one bounded domain/process; name
+the ordered layer/evidence sequence, source Objects or documents, owner, exclusions,
+acceptance checks, and exact stopping boundary. Extract Assertions or finish a grill
+first when that will remove repeated discovery from the long-running goal.
 
 Inspect affected datasets and direct dependencies only. Existing dependency records
 do not become affected merely because they were read. Include supporting profiling,

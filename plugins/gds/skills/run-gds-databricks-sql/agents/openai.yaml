@@ -1,0 +1,4 @@
+interface:
+  display_name: "Run GDS Databricks SQL"
+  short_description: "Run governed read and temporary Databricks SQL"
+  default_prompt: "Use $run-gds-databricks-sql to prepare or execute governed Databricks SQL."

@@ -1,13 +1,15 @@
 ---
 name: manage-gds-metadata
-description: "Inspect or change GDS Tenant metadata with governed MCP tools and local helpers. Use when the user asks to read specific Tenant metadata, build or prepare a local Metadata Change Set, obtain or search a Metadata Snapshot, manage a Tenant Lock, or create, stage, validate, apply, or archive a server Metadata Change Set; do not use for general GDS explanations or merely opening the local table Workbench."
+description: "Inspect or change GDS physical Tenant metadata with governed MCP tools and local helpers. Use for Tenant/Object/Attribute/ingestion metadata, Metadata Snapshots, local or server Metadata Change Sets, and Tenant Locks; route Model records, Databricks SQL, and merely opening the local Workbench elsewhere."
 ---
 
 # Manage GDS metadata
 
-Use only governed `gds-workbench` tools. Never use direct SQL except the
-read/temporary-object-only `execute_databricks_sql` tool. Never expose foundational
-CRUD, credentials, connection values, raw rows, or raw tool output.
+Use only governed `gds-workbench` tools. Never use direct PostgreSQL or foundational
+CRUD, and never expose credentials, connection values, raw rows, or raw tool output.
+
+Route general Databricks execution to `$run-gds-databricks-sql` and standardized
+Profile generation to `$profile-gds-data`; neither is a Metadata Change Set workflow.
 
 ## Choose the smallest path
 

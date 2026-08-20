@@ -15,6 +15,12 @@ Read [model datasets](../../references/model-datasets.md) when the brief may aff
 profiling, analysis, Assertions, mappings, Model details, or Model Scope in the same
 19-dataset Model Change Set.
 
+For best results, start with the target Tenant/Model, intended layer or business
+process, stopping boundary, and any accessible requirements or decisions. Route source
+material through `$capture-modeling-assertions` first when durable facts and locations
+will answer several branches. Do not re-ask facts already present in current Model
+records or retrieved Assertions.
+
 ## Set the bound
 
 At the start, state the default budget: up to seven questions. Stop early when shared
@@ -57,7 +63,8 @@ into eight questions.
 Update the existing ADR/decision log after each resolved branch when the user has
 authorized local documentation. If no format exists, ask before creating the suggested
 `.scratch` record. Separate user decisions, source evidence, recommendations, and
-assumptions.
+assumptions. Do not turn interview answers into Modeling Assertion records unless the
+user explicitly requests that separate authoring boundary.
 
 ## Stop deliberately
 

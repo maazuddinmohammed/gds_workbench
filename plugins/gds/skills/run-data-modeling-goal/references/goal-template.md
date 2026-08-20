@@ -3,8 +3,9 @@
 Replace every bracketed value before starting. Remove branches that do not apply.
 
 ```text
-/goal Build and verify one governed [Conceptual|Logical|Dimensional|Model Mapping]
-model for Tenant [tenant] and existing Model [model], covering [business scope].
+/goal Build and verify one governed [Profiling|Relationship Analysis|Assertions|
+Conceptual|Logical|Dimensional|Model Mapping|ordered combination] objective for Tenant
+[tenant] and existing Model [model], covering [business scope].
 Continue across checkpoints until [proposal|local draft|validated draft|applied model] satisfies
 the stopping condition below, or pause with one precise blocker that requires my
 decision, approval, access, or external authority.
@@ -20,7 +21,8 @@ Objective and scope:
 - Business outcome: [outcome]
 - In scope: [domain/process/entities/facts/mappings]
 - Out of scope: [explicit exclusions]
-- Sources/evidence: [systems, natural-key Objects/Attributes, Assertions]
+- Sources/evidence: [systems, physical keys/FQNs, Environment/batch scope, documents
+  with stable locations, existing Profiles/Analysis/Assertions]
 - Affected Model Change Set sections/datasets: [subset of all eight sections/19 datasets]
 - Naming posture: preserve current templates unless this goal explicitly changes them
 - Owner/steward: [owner]
@@ -30,10 +32,10 @@ Work in small checkpoints and keep a compact local progress/decision log:
 1. Verify Tenant/Model, current revision, scope, naming, sources, and unresolved
    decisions for affected datasets and direct dependencies only. Do not invent a
    missing fact or widen the goal because a dependency was read.
-2. Draft the model using the matching GDS skill. Include supporting profiling,
-   analysis, Assertions, or mappings only when authored or required to verify the
-   affected work. State exact grain, identifiers or facts/dimensions, history,
-   lineage, and assumptions relevant to the requested scope.
+2. Use the matching GDS evidence or modeling skill. Include supporting Profiling,
+   Analysis, Assertions, or mappings only when authored or required to verify the
+   affected work. State the selected population/document scope and relevant grain,
+   identifiers, facts/dimensions, history, lineage, and assumptions.
 3. Build complete, ID-free records using live dataset schemas. Preview names,
    canonical-key effects, references, record counts, and local validation.
 4. If the stopping boundary is proposal, produce the checked records/review and stop
@@ -60,8 +62,9 @@ Safety and exclusions:
   direct graph mutation, naming-template mutation, or mapping-write tool.
 - Never expose credentials, temporary Snapshot URLs, connection values, raw prompts,
   raw physical rows, or unredacted tool dumps.
-- Do not use arbitrary SQL, direct CRUD, external/Azure/Databricks writes, deployment,
-  publishing, or policy changes.
+- Do not use ungoverned SQL or direct CRUD. Execute only the fixed governed Profile or
+  relationship SQL explicitly required by this objective. Do not deploy, publish,
+  change policy, or perform unrelated Azure/Databricks writes.
 - Preserve server-derived Principal/Tenant/Model authorization, Tenant Lock ownership,
   revision fences, candidate seals, redaction, and idempotency boundaries.
 - Never replay an ambiguous non-idempotent call; inspect current state first.

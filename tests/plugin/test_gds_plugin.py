@@ -56,6 +56,8 @@ POWERSHELL_WORKBENCH_LAUNCHER = (
 TOOLS_REFERENCE = METADATA_SKILL / "references" / "tools.md"
 MODEL_TOOLS_REFERENCE = PLUGIN_ROOT / "references" / "model-tools.md"
 MODEL_DATASETS_REFERENCE = PLUGIN_ROOT / "references" / "model-datasets.md"
+MODEL_AUTHORING_REFERENCE = PLUGIN_ROOT / "references" / "model-authoring-workflow.md"
+WORKFLOW_MAP_REFERENCE = PLUGIN_ROOT / "references" / "workflow-map.md"
 SHELL_INITIALIZER = METADATA_SKILL / "scripts" / "initialize-gds-workspace.sh"
 POWERSHELL_INITIALIZER = METADATA_SKILL / "scripts" / "initialize-gds-workspace.ps1"
 SHELL_SNAPSHOT_VALIDATOR = METADATA_SKILL / "scripts" / "validate-metadata-snapshot.sh"
@@ -178,6 +180,8 @@ MODELING_SKILLS = {
     "build-dimensional-model",
     "build-data-mapping",
     "profile-gds-data",
+    "analyze-gds-relationships",
+    "capture-modeling-assertions",
     "author-model-metadata",
     "grill-data-model",
     "run-data-modeling-goal",
@@ -187,6 +191,7 @@ PLUGIN_SKILLS = MODELING_SKILLS | {
     "understand-gds",
     "manage-gds-metadata",
     "open-gds-metadata-workbench",
+    "run-gds-databricks-sql",
 }
 
 ELIGIBLE_DATASETS = {
@@ -712,7 +717,7 @@ def test_plugin_contract_is_named_gds_and_contains_no_credentials() -> None:
     mcp = _json(PLUGIN_ROOT / "mcp.json")
 
     assert manifest["name"] == PLUGIN_ROOT.name == "gds"
-    assert manifest["version"] == "1.5.0"
+    assert manifest["version"] == "1.7.0"
     assert manifest["$schema"].endswith("/plugin.schema.json")
     assert (PLUGIN_ROOT / "skills" / "understand-gds" / "SKILL.md").is_file()
     assert (METADATA_SKILL / "SKILL.md").is_file()
@@ -757,7 +762,7 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
         assert names
         assert all(name.startswith("gds/") for name in names)
         assert not any(".DS_Store" in name or "__pycache__" in name for name in names)
-        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.5.0"
+        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.7.0"
         assert (
             archive.getinfo(
                 "gds/skills/manage-gds-metadata/scripts/initialize-gds-workspace.sh"
@@ -770,9 +775,7 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
 
 def test_current_version_distribution_zip_matches_plugin_source(tmp_path: Path) -> None:
     version = _json(PLUGIN_ROOT / "plugin.json")["version"]
-    committed = (
-        REPOSITORY_ROOT / "plugins" / "dist" / f"gds-agent-plugin-{version}.zip"
-    )
+    committed = REPOSITORY_ROOT / "plugins" / "dist" / f"gds-agent-plugin-{version}.zip"
     assert committed.is_file(), f"missing current-version plugin archive: {committed}"
 
     rebuilt = tmp_path / committed.name
@@ -821,7 +824,7 @@ def test_metadata_skill_documents_exact_tools_datasets_and_safety() -> None:
     assert "matched to the local record count" in normalized_bundle
     assert "never delete applied metadata" in normalized_bundle
     assert "override only releases" in normalized_bundle
-    assert "direct sql" in normalized_bundle
+    assert "direct postgresql" in normalized_bundle
 
 
 def test_metadata_skill_exposes_every_change_set_tool_in_its_main_workflow() -> None:
@@ -866,7 +869,9 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
         skill_docs[name] = text
         frontmatter = re.match(r"^---\n(.*?)\n---", text, re.DOTALL)
         assert frontmatter is not None
-        assert re.search(rf"^name: {re.escape(name)}$", frontmatter.group(1), re.MULTILINE)
+        assert re.search(
+            rf"^name: {re.escape(name)}$", frontmatter.group(1), re.MULTILINE
+        )
         assert re.search(r'^description: ".+"$', frontmatter.group(1), re.MULTILINE)
         assert "TODO" not in text
         interface_text = interface.read_text(encoding="utf-8")
@@ -904,26 +909,35 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
         "build-dimensional-model",
         "build-data-mapping",
     )
+    authoring = MODEL_AUTHORING_REFERENCE.read_text(encoding="utf-8")
+    normalized_authoring = " ".join(authoring.split())
+    for required in (
+        "**Inspect:**",
+        "**Proposal:**",
+        "**Local draft:**",
+        "**Server draft:**",
+        "**Apply:**",
+        "Do not ask when it is clear",
+        "Preserve current naming templates",
+        "get_model",
+        "describe_model_dataset",
+        "$open-gds-metadata-workbench",
+        "$manage-gds-model",
+        "complete, ID-free records",
+        "three bullets and 120 words",
+    ):
+        assert required in normalized_authoring
     for name in model_builders:
         text = skill_docs[name]
         normalized = " ".join(text.split())
-        assert "get_model" in text
-        assert "describe_model_dataset" in text
-        assert "governed workflow" in text.casefold()
-        assert "explicit" in text.casefold() and "approval" in text.casefold()
-        assert "## Route by intent" in text
-        for boundary in ("**Inspect:**", "**Proposal:**", "**Local draft:**", "**Server draft:**", "**Apply:**"):
-            assert boundary in text
-        assert "Do not ask for the boundary when it is clear" in normalized
-        assert "Preserve current naming templates" in normalized
-        assert "only when the user explicitly asks" in normalized
-        assert "affected datasets" in text.casefold()
-        assert "120 words" in text
+        assert "[Model authoring workflow]" in text
         assert "[modeling method]" in text
-        assert "only for full-layer design, method ambiguity, or a requested stress test" in normalized
-        assert "$open-gds-metadata-workbench" in text
-        assert "$manage-gds-model" in text
-        assert len(text.split()) <= 650
+        assert (
+            "only for full-layer design, method ambiguity, or a requested stress test"
+            in normalized
+        )
+        assert "selected by the shared workflow" in normalized
+        assert len(text.split()) <= 400
 
     metadata = skill_docs["author-model-metadata"]
     assert "describe_metadata_dataset" in metadata
@@ -976,7 +990,10 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     ).read_text(encoding="utf-8")
     assert "Inventory all eight" not in goal + goal_template
     normalized_goal_template = " ".join(goal_template.split())
-    assert "[proposal|local draft|validated draft|applied model]" in normalized_goal_template
+    assert (
+        "[proposal|local draft|validated draft|applied model]"
+        in normalized_goal_template
+    )
     assert "stop without a lock or MCP mutation" in normalized_goal_template
 
     all_model_docs = "\n".join(
@@ -986,9 +1003,9 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     assert "stage_model_change_set_bundle" not in all_model_docs
     assert "individual graph mutation" in all_model_docs
     assert "temporary `download_url`" in all_model_docs
-    governed_workflow = (PLUGIN_ROOT / "references" / "governed-model-workflow.md").read_text(
-        encoding="utf-8"
-    )
+    governed_workflow = (
+        PLUGIN_ROOT / "references" / "governed-model-workflow.md"
+    ).read_text(encoding="utf-8")
     normalized_workflow = " ".join(governed_workflow.split())
     assert "lower boundary never implies a higher one" in normalized_workflow
     assert "every nonempty pending dataset" in normalized_workflow
@@ -1002,9 +1019,9 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
 
 
 def test_manage_model_skill_covers_generic_datasets_and_lifecycle_tools() -> None:
-    skill = (
-        PLUGIN_ROOT / "skills" / "manage-gds-model" / "SKILL.md"
-    ).read_text(encoding="utf-8")
+    skill = (PLUGIN_ROOT / "skills" / "manage-gds-model" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
     for dataset in (
         "model_details",
         "model_scope",
@@ -1039,11 +1056,105 @@ def test_every_plugin_skill_has_invocable_ui_metadata() -> None:
         assert interface.is_file(), name
         text = interface.read_text(encoding="utf-8")
         assert re.search(r'^  display_name: ".+"$', text, re.MULTILINE)
-        description = re.search(
-            r'^  short_description: "(.+)"$', text, re.MULTILINE
-        )
+        description = re.search(r'^  short_description: "(.+)"$', text, re.MULTILINE)
         assert description is not None and 25 <= len(description.group(1)) <= 64
         assert f"${name}" in text
+
+
+def test_workflow_map_routes_every_skill_and_disambiguates_overlaps() -> None:
+    workflow_map = WORKFLOW_MAP_REFERENCE.read_text(encoding="utf-8")
+    understand = (PLUGIN_ROOT / "skills" / "understand-gds" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    manage_model = (PLUGIN_ROOT / "skills" / "manage-gds-model" / "SKILL.md").read_text(
+        encoding="utf-8"
+    )
+    tool_reference = TOOLS_REFERENCE.read_text(encoding="utf-8")
+    normalized_understand = " ".join(understand.split())
+
+    for name in PLUGIN_SKILLS:
+        assert f"`${name}`" in workflow_map or f"`{name}`" in understand
+    for heading in (
+        "Profiling",
+        "Analysis",
+        "Assertions",
+        "SQL",
+        "Mapping",
+        "Snapshot",
+        "Change Set",
+        "JSON",
+    ):
+        assert f"**{heading}:**" in workflow_map
+    assert "new physical profiling to `profile-gds-data`" in normalized_understand
+    assert (
+        "new relationship evidence to `analyze-gds-relationships`"
+        in normalized_understand
+    )
+    assert (
+        "document/text evidence to `capture-modeling-assertions`"
+        in normalized_understand
+    )
+    assert (
+        "governed general Databricks SQL to `run-gds-databricks-sql`"
+        in normalized_understand
+    )
+    assert "Route new Profiling, Analysis, Assertion extraction" in manage_model
+    assert "selected source Connection and Environment" in tool_reference
+    assert "selected global Connection" not in tool_reference
+
+
+def test_readme_is_a_complete_per_skill_user_guide() -> None:
+    readme = (PLUGIN_ROOT / "README.md").read_text(encoding="utf-8")
+    for name in PLUGIN_SKILLS:
+        assert f"`${name}`" in readme
+    for heading in (
+        "Start with the stopping point",
+        "Choose the skill",
+        "How to ask each skill",
+        "Databricks SQL workflow",
+        "Profiling workflow",
+        "Relationship Analysis workflow",
+        "Documents to Modeling Assertions",
+        "Model-building workflow",
+        "Grill workflow",
+        "Goal workflow",
+        "Local draft to server handoff",
+        "Package for the correct MCP environment",
+        "Safety and best practices",
+    ):
+        assert f"## {heading}" in readme
+    normalized = " ".join(readme.split())
+    assert "RAG-like governed retrieval, not vector search" in normalized
+    assert "MCP endpoint and the per-query Databricks Environment" not in normalized
+    assert "separate from the per-query Databricks `environment_code`" in normalized
+    assert "--mcp-url https://company-host.example/mcp" in normalized
+    assert "tool_contract_sha256" in readme
+
+
+def test_databricks_sql_skill_owns_generic_execution_contract() -> None:
+    root = PLUGIN_ROOT / "skills" / "run-gds-databricks-sql"
+    skill = (root / "SKILL.md").read_text(encoding="utf-8")
+    contract = (root / "references" / "execution-contract.md").read_text(
+        encoding="utf-8"
+    )
+    normalized = " ".join(f"{skill}\n{contract}".split())
+    for required in (
+        "`execute_databricks_sql`",
+        "source `connection_id`",
+        "`environment_code`",
+        "1–100,000 characters",
+        "catalog.schema.table",
+        "at most 25",
+        "at most 50 rows",
+        "Tenant's configured Global Data Store Connection",
+        "`rows_truncated=true`",
+        "`cells_truncated=true`",
+        "$profile-gds-data",
+        "$analyze-gds-relationships",
+    ):
+        assert required in normalized
+    assert "credentials" in normalized
+    assert "raw physical" not in normalized.casefold()
 
 
 def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
@@ -1061,18 +1172,31 @@ def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
     assert "Use only for conceptual questions" in understand
     assert "`manage-gds-model`" in understand
     assert "`open-gds-metadata-workbench`" in understand
-    assert "read specific Tenant metadata" in manage
-    assert "build or prepare a local Metadata Change Set" in manage
-    for path_name in ("Bounded read", "Broad inspection", "Local draft", "Server change"):
+    assert "physical Tenant metadata" in manage
+    assert "GDS/change-set" in manage
+    for path_name in (
+        "Bounded read",
+        "Broad inspection",
+        "Local draft",
+        "Server change",
+    ):
         assert f"**{path_name}:**" in manage
-    assert "Do not ask whether the user wants to read or change when their request is clear" in manage
+    assert (
+        "Do not ask whether the user wants to read or change when their request is clear"
+        in manage
+    )
     assert "Never advance beyond the requested boundary" in manage
     assert "120 words" in manage
-    assert "browse or edit a local Metadata or Model Snapshot or Change Set" in workbench
+    assert (
+        "browse or edit a local Metadata or Model Snapshot or Change Set" in workbench
+    )
     assert "Use only when the user explicitly asks" not in workbench
     assert "$manage-gds-model" in workbench
     normalized_manage = " ".join(manage.split())
-    assert "explicit create, resume, local-to-server handoff, Stage, Validate, or Apply" in normalized_manage
+    assert (
+        "explicit create, resume, local-to-server handoff, Stage, Validate, or Apply"
+        in normalized_manage
+    )
     assert "archive-only intent" in manage and "without acquiring a lock" in manage
     assert "at any requested stopping boundary" in normalized_manage
     assert "<plugin>" not in all_skill_docs
@@ -1087,7 +1211,7 @@ def test_skill_triggers_commands_and_stage_contract_are_unambiguous() -> None:
     assert "x-gds-key-normalization" in metadata_docs
 
 
-def test_model_builder_intent_and_report_contracts_are_identical() -> None:
+def test_model_builders_share_one_authoring_contract() -> None:
     builders = [
         (PLUGIN_ROOT / "skills" / name / "SKILL.md").read_text(encoding="utf-8")
         for name in (
@@ -1098,27 +1222,16 @@ def test_model_builder_intent_and_report_contracts_are_identical() -> None:
         )
     ]
 
-    def section(text: str, heading: str) -> str:
-        match = re.search(
-            rf"^## {re.escape(heading)}\n\n(.*?)(?=^## |\Z)",
-            text,
-            re.MULTILINE | re.DOTALL,
-        )
-        assert match is not None
-        return " ".join(match.group(1).split())
-
-    routes = {section(text, "Route by intent") for text in builders}
-    reports = {section(text, "Report") for text in builders}
-    assert len(routes) == 1
-    assert len(reports) == 1
-
-    route = routes.pop()
-    assert "Do not ask for the boundary when it is clear" in route
-    assert "Preserve current naming templates and established names by default" in route
-    assert "Reading a related dataset does not make it affected" in route
-    assert "only when the user explicitly asks for a grill or stress test" in route
-    report = reports.pop()
-    assert "three bullets and 120 words" in report
+    authoring = " ".join(MODEL_AUTHORING_REFERENCE.read_text(encoding="utf-8").split())
+    for text in builders:
+        assert "[Model authoring workflow]" in text
+        assert "## Route by intent" not in text
+        assert "## Report" not in text
+    assert "Infer the smallest boundary" in authoring
+    assert "Preserve current naming templates and established names" in authoring
+    assert "Reading a dependency does not make its dataset affected" in authoring
+    assert "Use `$grill-data-model` only when the user requests" in authoring
+    assert "three bullets and 120 words" in authoring
 
     bundle = " ".join("\n".join(builders).split()).casefold()
     for forbidden in (
@@ -1130,9 +1243,9 @@ def test_model_builder_intent_and_report_contracts_are_identical() -> None:
 
 
 def test_model_builder_one_record_rules_keep_unchanged_parents_out() -> None:
-    conceptual = (PLUGIN_ROOT / "skills" / "build-conceptual-model" / "SKILL.md").read_text(
-        encoding="utf-8"
-    )
+    conceptual = (
+        PLUGIN_ROOT / "skills" / "build-conceptual-model" / "SKILL.md"
+    ).read_text(encoding="utf-8")
     logical = (PLUGIN_ROOT / "skills" / "build-logical-model" / "SKILL.md").read_text(
         encoding="utf-8"
     )
@@ -1143,7 +1256,9 @@ def test_model_builder_one_record_rules_keep_unchanged_parents_out() -> None:
         encoding="utf-8"
     )
     assert "Describe `conceptual_object` only when Object records change" in conceptual
-    assert "An Attribute-only change affects `logical_attribute`" in " ".join(logical.split())
+    assert "An Attribute-only change affects `logical_attribute`" in " ".join(
+        logical.split()
+    )
     assert "An Attribute-only change affects `dimensional_attribute`" in " ".join(
         dimensional.split()
     )
@@ -1192,9 +1307,21 @@ def test_governed_model_workflow_separates_stage_and_apply_approval() -> None:
     stage_review = normalized.index("Present the exact affected Stage batch")
     stage_call = normalized.index("Call one `stage_model_change_set`")
     validate = normalized.index("Call `validate_model_change_set`")
-    apply_review = normalized.index("Validation and Stage approval are not Apply approval")
-    apply_call = normalized.index("Only that affirmative answer authorizes `apply_model_change_set`")
-    assert resumed < inspect_pending < stage_review < stage_call < validate < apply_review < apply_call
+    apply_review = normalized.index(
+        "Validation and Stage approval are not Apply approval"
+    )
+    apply_call = normalized.index(
+        "Only that affirmative answer authorizes `apply_model_change_set`"
+    )
+    assert (
+        resumed
+        < inspect_pending
+        < stage_review
+        < stage_call
+        < validate
+        < apply_review
+        < apply_call
+    )
 
 
 def test_plugin_has_no_python_runtime_dependency() -> None:
@@ -1244,7 +1371,10 @@ def test_workbench_skill_and_static_assets_define_the_local_only_boundary() -> N
     assert "if (state.busy) return;" in app
     assert "if (state.busy || !localDatasetNames().length) return;" in app
     assert "elements.saveButton.disabled = busy || !hasDirtyChanges();" in app
-    assert "elements.reviewButton.disabled = busy || localDatasetNames().length === 0;" in app
+    assert (
+        "elements.reviewButton.disabled = busy || localDatasetNames().length === 0;"
+        in app
+    )
     assert "elements.bulkDeactivateButton,\n      elements.newRowButton" in app
     for handler in (
         "applyBulkField",
@@ -1293,8 +1423,14 @@ def test_workbench_edit_modal_has_a_reliable_save_changes_action() -> None:
     html = WORKBENCH_HTML.read_text(encoding="utf-8")
     app = WORKBENCH_APP.read_text(encoding="utf-8")
 
-    record_dialog = html[html.index('<dialog id="recordDialog"') : html.index('<dialog id="schemaDialog"')]
-    header = record_dialog[record_dialog.index("<header>") : record_dialog.index("</header>")]
+    record_dialog = html[
+        html.index('<dialog id="recordDialog"') : html.index(
+            '<dialog id="schemaDialog"'
+        )
+    ]
+    header = record_dialog[
+        record_dialog.index("<header>") : record_dialog.index("</header>")
+    ]
     submit = re.search(
         r'<button\b[^>]*type="submit"[^>]*id="recordSubmitButton"[^>]*>',
         record_dialog,
@@ -1304,7 +1440,10 @@ def test_workbench_edit_modal_has_a_reliable_save_changes_action() -> None:
     assert 'class="dialog-header-actions"' in header
     assert 'id="recordSubmitButton"' in header
     assert header.index('id="recordSubmitButton"') < header.index("data-dialog-close")
-    assert 'id="recordSubmitButton"' not in record_dialog[record_dialog.index("<footer>") :]
+    assert (
+        'id="recordSubmitButton"'
+        not in record_dialog[record_dialog.index("<footer>") :]
+    )
     assert 'mode === "add" ? "Add new record" : "Edit proposed record"' in app
     assert 'mode === "add" ? "Add to Change Set" : "Save changes"' in app
     assert "Save proposed change" not in html + app

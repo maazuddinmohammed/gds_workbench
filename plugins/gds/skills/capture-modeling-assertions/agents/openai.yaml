@@ -1,0 +1,4 @@
+interface:
+  display_name: "Capture Modeling Assertions"
+  short_description: "Turn documents into governed modeling evidence"
+  default_prompt: "Use $capture-modeling-assertions to extract sourced modeling facts from this document."

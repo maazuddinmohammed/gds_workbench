@@ -316,7 +316,8 @@ an applied Change Set.
   apply then needs fresh explicit approval.
 - `dependency_unavailable` / `internal_error`: report the safe code, preserve local work,
   and retry only when the dependency/server is healthy. Never expose raw exception output.
-- `databricks_connection_*`: confirm the selected global Connection or ask an
-  administrator to correct its stored values; never request those values.
+- `databricks_connection_*`: confirm the selected source Connection and Environment,
+  then ask an administrator to correct the source Tenant's derived GDS Connection
+  values; never request those values.
 - `databricks_statement_failed`: report the returned statement index and correct
   only the SQL. Never expose or infer credentials.

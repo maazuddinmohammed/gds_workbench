@@ -1,6 +1,6 @@
 ---
 name: profile-gds-data
-description: "Profile a registered physical Databricks table and prepare GDS Model Change Set profiling_profile records. Use for table or column data profiling, batch-aware profiling SQL, profiling evidence, null/distinct/blank/length metrics, or a profiling document for a Model draft; not for generic SQL exploration."
+description: "Profile a registered physical Databricks table and prepare GDS Model Change Set profiling_profile records. Use for table/column profiling, batch-aware Profile metrics, null/distinct/blank/length evidence, or Profile records; use the generic Databricks skill for other SQL."
 ---
 
 # Profile GDS Data
@@ -9,10 +9,10 @@ Build aggregate-only profiling evidence through governed `gds-workbench` tools. 
 request or expose connection values, credentials, raw physical rows, prompts, or raw
 tool output. `execute_databricks_sql` is the only allowed SQL surface.
 
+Follow the shared [Model authoring workflow](../../references/model-authoring-workflow.md).
 Read [profiling contract](references/profiling-contract.md) before generating SQL or
 records. Read [model datasets](../../references/model-datasets.md) only if another
-affected dataset is needed. Read the [governed workflow](../../references/governed-model-workflow.md)
-only for server Stage, Validate, or Apply intent.
+affected dataset is authored. Route non-profile SQL to `$run-gds-databricks-sql`.
 
 ## Resolve the scope
 
@@ -33,6 +33,9 @@ complete ID list. Never silently remove the batch predicate, switch modes or
 environments, or profile the batch Attribute. If there is no batch Attribute, use an
 unfiltered aggregate query.
 
+An empty incremental ID list is a configured no-op. Generate no SQL and no Profile
+records; do not Stage or replace `profiling_profile` with zero-valued evidence.
+
 Profile active, non-metadata Attributes only. Exclude the batch Attribute. Do not infer a
 physical catalog or reuse another Object's Connection or batch IDs.
 
@@ -41,6 +44,7 @@ physical catalog or reuse another Object's Connection or batch IDs.
 1. Call `describe_model_dataset` for `profiling_profile` when records will be authored;
    its live schema is authoritative.
 2. Build the documented JSON spec from governed metadata and the user's choices.
+   Require the relation schema/table to exactly match the registered Object key.
 3. Run `node scripts/build-profile-sql.js --spec <path>`. The script emits bounded SQL
    chunks and the exact source `connection_id` and `environment_code` for each call.
 4. If the user's request did not clearly authorize Databricks execution, show the
@@ -54,18 +58,21 @@ physical catalog or reuse another Object's Connection or batch IDs.
    record fields, an Attribute is missing/duplicated, or any count invariant fails.
    Combine chunks only after every chunk succeeds.
 
+On `databricks_connection_*`, verify the source Connection and Environment choice, then
+ask an administrator to correct stored values; never request them. On
+`databricks_statement_failed`, report the statement index and correct only SQL. On
+`databricks_result_too_large`, reduce the generated Attribute chunk size without
+sampling rows or weakening metrics.
+
 The tool returns aggregate rows only. Never add sample-value, top-value, pattern-value,
 or raw-row queries. For more than 50 eligible Attributes, use every emitted chunk; do
 not accept a truncated final result.
 
-## Deliver or govern
+## Deliver
 
 Return complete ID-free `profiling_profile` records as a proposal by default. These are
-agent-assisted Change Set evidence, not an authoritative Profiling Run receipt. For a
-local draft, update only `GDS/model-change-set` through
-`$open-gds-metadata-workbench`. For server Stage/Validate/Apply, route through
-`$manage-gds-model`, preserve unseen pending work, show the exact Profile batch, and
-keep Stage and Apply approvals separate.
+agent-assisted Change Set evidence, not an authoritative Profiling Run receipt. Use the
+shared workflow for local/server boundaries and preserve unseen pending work.
 
 Report the relation, environment, batch mode/count, successful Profile count, excluded
 Attribute count, and any blocker. Do not echo unchanged records or raw results.

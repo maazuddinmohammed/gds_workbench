@@ -258,6 +258,12 @@ function validateSpec(spec) {
   requireText(spec.relation.catalog, "relation.catalog", 255);
   requireText(spec.relation.schema, "relation.schema", 400);
   requireText(spec.relation.table, "relation.table", 400);
+  if (
+    spec.relation.schema !== spec.physical_key.object_schema ||
+    spec.relation.table !== spec.physical_key.object_name
+  ) {
+    fail("relation schema/table must exactly match the registered physical Object key");
+  }
 
   if (!Array.isArray(spec.columns) || spec.columns.length < 1 || spec.columns.length > MAX_ATTRIBUTES) {
     fail(`columns must contain 1-${MAX_ATTRIBUTES} Attributes`);
@@ -315,6 +321,18 @@ function validateSpec(spec) {
 
 function buildPlan(spec) {
   const batch = validateSpec(spec);
+  if (batch !== null && batch.mode === "incremental" && batch.ids.length === 0) {
+    return {
+      schema_version: "1.0",
+      connection_id: spec.connection_id,
+      environment_code: spec.environment_code,
+      batch_mode: batch.mode,
+      batch_value_count: 0,
+      profile_record_count: 0,
+      chunk_count: 0,
+      chunks: [],
+    };
+  }
   const chunks = [];
   let offset = 0;
   while (offset < spec.columns.length) {

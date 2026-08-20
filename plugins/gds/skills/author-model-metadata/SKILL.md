@@ -1,6 +1,6 @@
 ---
 name: author-model-metadata
-description: "Explain exact GDS physical metadata JSON shapes or produce synthetic examples from live schemas. Use for field meanings, canonical keys, validation rules, source/zone metadata, or ingestion lineage examples. Route real workspace and Metadata Change Set work to the dedicated workflow skills."
+description: "Explain exact GDS physical Metadata JSON shapes—not Model records—or produce synthetic examples from live schemas. Use for physical field meanings, canonical keys, validation rules, source/zone Metadata, or ingestion lineage examples. Route real workspace and Change Set work to the dedicated workflow skills."
 ---
 
 # Author Model Metadata

@@ -1,6 +1,6 @@
 ---
 name: manage-gds-model
-description: "Inspect or govern an existing GDS Model and its complete Model Change Set. Use when the user asks to list or inspect Models, Model Scope, Profiling, Analysis, Modeling Assertions, Model snapshots/DBML, or to create, resume, inspect, stage, validate, apply, or archive a Model Change Set. Route Conceptual, Logical, Dimensional, and Mapping design to their dedicated builder skills."
+description: "Inspect or govern an existing GDS Model and its complete Model Change Set. Use for current Model Scope/evidence/layers, Model Snapshot/DBML, or create/resume/handoff/stage/validate/apply/archive lifecycle work. Route new Profiling, Analysis, Assertion extraction, and layer design to their dedicated skills."
 ---
 
 # Manage GDS Model
@@ -33,10 +33,13 @@ changes records or the stopping boundary.
 - Use `get_model_scope` for current `model_scope` Objects. For a requested scope
   addition, use `list_objects` and then `get_objects` to resolve the exact physical
   candidate before authoring it.
-- Use `get_model_profiling` for `profiling_profile` and `get_model_analysis` for
-  `analysis_result`.
+- Use `get_model_profiling` to inspect existing `profiling_profile` records. Route new
+  physical table profiling or new Profile evidence to `$profile-gds-data`. Use
+  `get_model_analysis` for existing `analysis_result`; route new relationship evidence
+  to `$analyze-gds-relationships`.
 - Use `get_modeling_assertion_documents` and `get_modeling_assertion_records` for
-  `modeling_assertion_document` and `modeling_assertion_record`.
+  existing `modeling_assertion_document` and `modeling_assertion_record`; route new
+  document/text extraction to `$capture-modeling-assertions`.
 - Use the Conceptual, Logical, Dimensional, or Mapping builder for those layers. Their
   focused read tools are listed in [model tools](../../references/model-tools.md).
 
@@ -47,7 +50,12 @@ Follow a returned `next_cursor` unchanged only until the requested scope is comp
 
 ## Govern a server Change Set
 
-Read [governed workflow](../../references/governed-model-workflow.md), then:
+Read [governed workflow](../../references/governed-model-workflow.md).
+For a saved `GDS/model-change-set`, also use
+[local handoff](references/local-handoff.md) to bind, seal the Stage review, and
+record returned revisions without losing resumed work.
+
+Then:
 
 1. For read-only server draft inspection, call `get_model_change_set`, answer, and stop
    without acquiring a lock.

@@ -135,6 +135,21 @@ def test_generator_chunks_profiles_at_the_tool_row_limit(tmp_path: Path) -> None
         validate_databricks_sql(chunk["sql"])
 
 
+def test_generator_treats_empty_incremental_batch_as_noop(tmp_path: Path) -> None:
+    spec = _spec()
+    spec["batch"]["ids"] = []
+
+    result = _run_generator(tmp_path, spec)
+
+    assert result.returncode == 0, result.stderr
+    plan = json.loads(result.stdout)
+    assert plan["batch_mode"] == "incremental"
+    assert plan["batch_value_count"] == 0
+    assert plan["profile_record_count"] == 0
+    assert plan["chunk_count"] == 0
+    assert plan["chunks"] == []
+
+
 @pytest.mark.parametrize(
     ("change", "message"),
     [
@@ -151,6 +166,10 @@ def test_generator_chunks_profiles_at_the_tool_row_limit(tmp_path: Path) -> None
                 {"name": "batch_id", "data_type": "BIGINT"}
             ),
             "batch Attribute must not be included",
+        ),
+        (
+            lambda spec: spec["relation"].update(table="other_orders"),
+            "must exactly match the registered physical Object key",
         ),
     ],
 )
@@ -184,6 +203,8 @@ def test_skill_documents_the_governed_profile_boundary() -> None:
         "`environment_code`",
         "catalog.schema.table",
         "Never silently remove the batch predicate",
+        "schema/table to exactly match the registered Object key",
+        "no SQL and no Profile records",
         "not an authoritative Profiling Run receipt",
         "`rows_truncated=true`",
         "`cells_truncated=true`",

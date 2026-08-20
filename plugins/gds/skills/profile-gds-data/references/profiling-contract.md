@@ -8,7 +8,7 @@ Resolve these from `get_objects`; ask only for values not exposed by governed to
 |---|---|---|
 | Physical key | `get_objects` | Tenant, System, Connection, Object schema/name, and each Attribute name. |
 | `connection_id` | `get_objects` | The Object's active source Connection, never its GDS Connection. |
-| Relation | User or established context | Exact three-part `catalog.schema.table`. Every component is quoted by the script. |
+| Relation | User or established context | Exact three-part `catalog.schema.table`. Schema/table must exactly match the registered Object key; every component is quoted. |
 | `environment_code` | User or established context | Pass to `execute_databricks_sql`; use the canonical code returned by the tool. |
 | Attributes | `get_objects` | Active, `is_meta_data=false`, excluding the batch Attribute. |
 | Batch | `get_objects` plus user | Required only when `batch_attribute_name` is non-null. Preserve exact Attribute case. |
@@ -53,7 +53,8 @@ Create a temporary JSON file containing no secrets:
 Use `"batch": null` only when the registered Object has no batch Attribute. Batch IDs
 may be JSON integers within JavaScript's safe range or decimal strings. Strings preserve
 the full signed BIGINT range. `initial` requires one ID. `incremental` accepts up to
-1,000 unique IDs; an empty list is a deliberate no-op, never a full scan.
+1,000 unique IDs. An empty incremental list emits no SQL and no Profile records; it is a
+deliberate no-op, never a full scan or a set of zero-valued Profiles.
 
 Run:
 
@@ -63,7 +64,9 @@ node scripts/build-profile-sql.js --spec /absolute/path/profile-spec.json
 
 The script prints one JSON execution plan. Call `execute_databricks_sql` for each
 `chunks[].sql`, using the plan's `connection_id` and `environment_code`. Each chunk has
-at most 50 Attributes and one read statement under 100,000 characters.
+at most 50 Attributes and one read statement under 100,000 characters. When
+`chunk_count=0`, report the configured no-op and do not Stage or replace
+`profiling_profile`.
 
 ## Metrics
 
