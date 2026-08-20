@@ -64,6 +64,38 @@ def test_validation_accepts_read_statements(sql: str) -> None:
 @pytest.mark.parametrize(
     "sql",
     [
+        "SELECT * FROM orders",
+        "SELECT * FROM sales.orders",
+        "DESCRIBE TABLE sales.orders",
+        ("CREATE TEMP VIEW recent_orders AS SELECT * FROM sales.orders"),
+    ],
+)
+def test_validation_rejects_unqualified_physical_relations(sql: str) -> None:
+    with pytest.raises(
+        InvalidRequestError,
+        match="Statement 1 must fully qualify physical relations",
+    ):
+        validate_databricks_sql(sql)
+
+
+def test_validation_allows_unqualified_ctes_and_batch_temporary_relations() -> None:
+    result = validate_databricks_sql(
+        """
+        CREATE TEMP VIEW recent_orders AS
+        SELECT * FROM catalog.sales.orders;
+        WITH ranked AS (
+            SELECT * FROM recent_orders
+        )
+        SELECT * FROM ranked;
+        """
+    )
+
+    assert len(result.statements) == 2
+
+
+@pytest.mark.parametrize(
+    "sql",
+    [
         "INSERT INTO orders VALUES (1)",
         "UPDATE orders SET status = 'done'",
         "DELETE FROM orders",

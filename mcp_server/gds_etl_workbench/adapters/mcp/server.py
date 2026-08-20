@@ -135,8 +135,8 @@ def create_mcp_server(
             "acquired whenever it stops. "
             "Server derives identity, authorization, and lock ownership. Never expose "
             "credentials, temporary URLs, rows, prompts, or tool output. "
-            "execute_databricks_sql permits reads and unqualified temporary objects only; "
-            "it rejects DML and persistent DDL."
+            "execute_databricks_sql requires source Connection, Environment, qualified "
+            "relations, and read/temporary-object SQL."
         ),
         lifespan=lifespan,
         middleware=[audit],

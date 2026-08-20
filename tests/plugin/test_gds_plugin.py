@@ -177,6 +177,7 @@ MODELING_SKILLS = {
     "build-logical-model",
     "build-dimensional-model",
     "build-data-mapping",
+    "profile-gds-data",
     "author-model-metadata",
     "grill-data-model",
     "run-data-modeling-goal",
@@ -711,7 +712,7 @@ def test_plugin_contract_is_named_gds_and_contains_no_credentials() -> None:
     mcp = _json(PLUGIN_ROOT / "mcp.json")
 
     assert manifest["name"] == PLUGIN_ROOT.name == "gds"
-    assert manifest["version"] == "1.4.3"
+    assert manifest["version"] == "1.5.0"
     assert manifest["$schema"].endswith("/plugin.schema.json")
     assert (PLUGIN_ROOT / "skills" / "understand-gds" / "SKILL.md").is_file()
     assert (METADATA_SKILL / "SKILL.md").is_file()
@@ -756,7 +757,7 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
         assert names
         assert all(name.startswith("gds/") for name in names)
         assert not any(".DS_Store" in name or "__pycache__" in name for name in names)
-        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.4.3"
+        assert json.loads(archive.read("gds/plugin.json"))["version"] == "1.5.0"
         assert (
             archive.getinfo(
                 "gds/skills/manage-gds-metadata/scripts/initialize-gds-workspace.sh"

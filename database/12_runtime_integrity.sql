@@ -4,6 +4,7 @@
 REVOKE ALL ON SCHEMA reference, core, security, model, workflow, mcp FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, model, workflow, mcp FROM PUBLIC;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, mcp FROM PUBLIC;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mcp FROM gds_app_write;
 
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, mcp
     TO gds_app_write;
@@ -128,7 +129,7 @@ GRANT EXECUTE ON FUNCTION mcp.archive_metadata_change_set(
     UUID
 ) TO gds_app_write;
 
-GRANT EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT)
+GRANT EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
 TO gds_app_write;
 
 -- One runtime-owned readiness contract for the exact database surface used by
@@ -330,7 +331,7 @@ BEGIN
                        'archive_metadata_change_set',
                        'uuid, uuid, character varying, bigint, uuid, bigint, uuid'
                    ),
-                   ('mcp', 'get_databricks_sql_connection_values', 'bigint')
+                   ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
                    function_name,
@@ -461,7 +462,7 @@ BEGIN
                    'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
                    'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
                    'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
-                   'mcp.get_databricks_sql_connection_values(bigint)'
+                   'mcp.get_databricks_sql_connection_values(bigint,text)'
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
                    'gds_app_write', executable_function.signature, 'EXECUTE'
@@ -570,7 +571,10 @@ BEGIN
               );
 
             PERFORM 1
-              FROM mcp.get_databricks_sql_connection_values(9223372036854775807);
+              FROM mcp.get_databricks_sql_connection_values(
+                  9223372036854775807,
+                  'readiness_missing_environment'
+              );
 
             runtime_query_contract_ok := TRUE;
         EXCEPTION WHEN OTHERS THEN

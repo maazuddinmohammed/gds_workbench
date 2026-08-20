@@ -130,7 +130,7 @@ class DatabricksConnectionNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="databricks_connection_not_found",
-            message="An active global Databricks Connection was not found.",
+            message="An active source Connection was not found.",
         )
 
 
@@ -141,9 +141,8 @@ class DatabricksConnectionConfigurationError(WorkbenchError):
                 "The Connection is missing a complete Databricks host, HTTP path, "
                 "and token configuration."
             ),
-            "ambiguous": (
-                "The Connection has complete Databricks values for more than one Environment."
-            ),
+            "environment": ("The requested active Environment was not found for the Connection."),
+            "global_connection": ("The source Tenant has no active Global Data Store Connection."),
             "invalid": "The Connection has invalid Databricks configuration values.",
         }
         super().__init__(

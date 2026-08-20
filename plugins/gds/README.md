@@ -6,6 +6,8 @@ package also includes a local browser Data Workbench for Metadata and Model
 Snapshots; that utility is not a VS Code webview and does not depend on an editor.
 Model workflows cover Model Details/Scope, Profiling, Analysis, Assertions,
 Conceptual, Logical, Dimensional, and Mapping records as one governed graph.
+The profiling skill can run aggregate-only, batch-aware Databricks SQL and prepare
+Change Set-ready Profile records without exposing source rows or credentials.
 
 ## Install in VS Code
 
@@ -33,6 +35,7 @@ Conceptual, Logical, Dimensional, and Mapping records as one governed graph.
    open-gds-metadata-workbench    author-model-metadata
    build-conceptual-model         build-logical-model
    build-dimensional-model        build-data-mapping
+   profile-gds-data
    grill-data-model               run-data-modeling-goal
    ```
 
@@ -62,6 +65,7 @@ gds/
     ├── build-logical-model/{SKILL.md,agents/openai.yaml}
     ├── build-dimensional-model/{SKILL.md,agents/openai.yaml}
     ├── build-data-mapping/{SKILL.md,agents/openai.yaml}
+    ├── profile-gds-data/{SKILL.md,agents/openai.yaml,references/,scripts/}
     ├── author-model-metadata/{SKILL.md,agents/openai.yaml}
     ├── manage-gds-model/{SKILL.md,agents/openai.yaml}
     ├── grill-data-model/{SKILL.md,agents/openai.yaml,references/}
@@ -131,6 +135,13 @@ To prepare a bounded modeling goal without starting it, ask:
 ```text
 Use run-data-modeling-goal to give me a paste-ready goal prompt for a validated
 Logical model. Do not start the goal.
+```
+
+To prepare aggregate profiling evidence for a Model Change Set, ask:
+
+```text
+Use profile-gds-data to profile this registered table in TEST. Use its configured
+batch Attribute and ask me for the batch ID if it is missing.
 ```
 
 To open the local utility, ask:

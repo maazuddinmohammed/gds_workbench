@@ -135,13 +135,15 @@ from 1 through 600 seconds; its default is 120. Schema version, snapshot bounds,
 PostgreSQL pool sizing, connection budget, Gunicorn workers, and request timeout
 remain checked-in runtime policy.
 
-`execute_databricks_sql` accepts a positive global `connection_id` and up to 25
-semicolon-separated statements. It permits reads and unqualified temporary
-views/tables only, rejects DML and persistent DDL, executes the batch on one
-Databricks SQL Warehouse session, and returns only the final statement's bounded
-result. PostgreSQL supplies the host, HTTP path, and token through one fixed
-least-privilege function. Those connection values are never logged. The complete
-submitted SQL and its character count are retained in the append-only tool-call
+`execute_databricks_sql` accepts an active source `connection_id`, an active
+`environment_code`, and up to 25 semicolon-separated statements. It authorizes
+the source Tenant, derives `tenant.gds_connection_id`, and reads that GDS
+Connection's host, HTTP path, and token for the requested Environment through one
+fixed least-privilege function. Physical relations must use
+`catalog.schema.table`; unqualified CTE and temporary names remain allowed. It
+rejects DML and persistent DDL, executes the batch in one Databricks SQL Warehouse
+session, and returns only the final statement's bounded result. Connection values
+are never logged. Complete submitted SQL is retained in the append-only tool-call
 log; callers must never place credentials in SQL.
 
 Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result

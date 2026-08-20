@@ -14,9 +14,10 @@ disagree.
 - `get_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
   read-only SAS for the exact private Blob.
 - Metadata discovery and Snapshot tools are read-only.
-- `execute_databricks_sql` is the sole SQL exception. It accepts reads and
-  unqualified temporary views/tables for an authorized active global Connection;
-  it rejects all DML and persistent DDL.
+- `execute_databricks_sql` is the sole SQL exception. It derives an authorized
+  source Tenant's GDS Connection for one requested Environment. It accepts reads,
+  requires fully qualified physical relations, permits unqualified temporary
+  views/tables, and rejects all DML and persistent DDL.
 - Five governed Tenant Lock tools are registered: check, acquire, renew, release,
   and explicit override.
 
@@ -137,10 +138,11 @@ Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
 not exist. Registered workloads authenticate and authorize directly as active
 service Principals.
 
-`mcp.get_databricks_sql_connection_values(bigint)` is a fixed-search-path,
+`mcp.get_databricks_sql_connection_values(bigint,text)` is a fixed-search-path,
 `SECURITY DEFINER` function and the only runtime path to the three Databricks
-connection values. It returns values only when exactly one active Environment
-has a complete host, HTTP path, and token set for an active global Connection.
+connection values. It derives the active source Tenant's active GDS Connection
+and returns its complete host, HTTP path, and token for only the requested active
+Environment.
 The runtime role still has no table-wide `SELECT` on `core.connection_value`.
 
 ## MCP tool-call log
@@ -173,8 +175,8 @@ override reason text are not copied into the MCP tool-call log.
 Metadata Change Set tools retain their safe identifiers, dataset selection, and
 expected revision. Stage records only dataset/record counts; complete staged
 physical records are not copied into the tool-call log.
-`execute_databricks_sql` records schema version, Connection ID, the complete
-submitted SQL, and its character count. SQL is retained only in the append-only
+`execute_databricks_sql` records schema version, source Connection ID, Environment
+code, the complete submitted SQL, and its character count. SQL is retained only in the append-only
 database audit record, not application logs. Returned rows, host, HTTP path,
 token, and connector exception text are never logged.
 

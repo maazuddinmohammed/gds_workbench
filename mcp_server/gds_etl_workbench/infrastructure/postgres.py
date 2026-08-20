@@ -52,6 +52,8 @@ class ToolCallLogRecord:
 @dataclass(frozen=True, slots=True)
 class DatabricksConnectionValuesRecord:
     tenant_id: int | None
+    gds_connection_id: int | None
+    environment_code: str | None
     failure_code: str | None
     server_hostname: str | None = field(repr=False)
     http_path: str | None = field(repr=False)
@@ -100,6 +102,7 @@ class DatabricksConnectionDatabase(Database, Protocol):
     async def read_databricks_connection_values(
         self,
         connection_id: int,
+        environment_code: str,
     ) -> DatabricksConnectionValuesRecord: ...
 
 
@@ -142,11 +145,13 @@ VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 
 _READ_DATABRICKS_CONNECTION_VALUES_SQL = """
 SELECT connection_tenant_id,
+       gds_connection_id,
+       environment_code,
        failure_code,
        databricks_host_name,
        databricks_http_path,
        databricks_token
-  FROM mcp.get_databricks_sql_connection_values(%s)
+  FROM mcp.get_databricks_sql_connection_values(%s, %s)
 """
 
 
@@ -314,18 +319,21 @@ class PostgresDatabase:
     async def read_databricks_connection_values(
         self,
         connection_id: int,
+        environment_code: str,
     ) -> DatabricksConnectionValuesRecord:
         try:
             async with self._transaction(read_only=True) as connection:
                 result = await connection.execute(
                     _READ_DATABRICKS_CONNECTION_VALUES_SQL,
-                    (connection_id,),
+                    (connection_id, environment_code),
                 )
                 row = await result.fetchone()
             if row is None:
                 raise DependencyUnavailableError()
             return DatabricksConnectionValuesRecord(
                 tenant_id=row["connection_tenant_id"],
+                gds_connection_id=row["gds_connection_id"],
+                environment_code=row["environment_code"],
                 failure_code=row["failure_code"],
                 server_hostname=row["databricks_host_name"],
                 http_path=row["databricks_http_path"],

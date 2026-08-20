@@ -84,19 +84,22 @@ Request:
 
 | Field | Contract |
 |---|---|
-| `connection_id` | positive ID of an active global Connection |
+| `connection_id` | positive ID of an active, non-GDS source Connection |
+| `environment_code` | 1–100 characters; matched case-insensitively to one active Environment |
 | `sql` | 1–100,000 characters; at most 25 semicolon-separated statements |
 | `schema_version` | exactly `"1.0"`; default `"1.0"` |
 
-The server resolves the Connection's Tenant and authorizes Tenant Read before
-retrieving connection values. Exactly one active Environment must contain all
-three required parameter codes: `databricks_host_name`,
+The server resolves the source Connection's active Tenant and authorizes Tenant
+Read. It then resolves `tenant.gds_connection_id` to an active Global Data Store
+Connection and retrieves that Connection's values for the requested active
+Environment. The Environment must contain `databricks_host_name`,
 `databricks_http_path`, and `databricks_token`.
 
 Allowed statements are reads and `CREATE [OR REPLACE] TEMP VIEW/TABLE` with an
-unqualified temporary-object name. DML, persistent DDL, commands, `SELECT INTO`,
-secret-returning functions, and external/location-backed temporary objects are
-rejected before connection.
+unqualified temporary-object name. Physical relations must use
+`catalog.schema.table`; CTE and batch temporary names remain unqualified. DML,
+persistent DDL, commands, `SELECT INTO`, secret-returning functions, and
+external/location-backed temporary objects are rejected before connection.
 Statements execute sequentially in one Databricks session. Only the final
 statement's result is returned, with at most 50 rows and 500 columns. The result
 reports row/cell truncation. Connection values never enter the result or audit

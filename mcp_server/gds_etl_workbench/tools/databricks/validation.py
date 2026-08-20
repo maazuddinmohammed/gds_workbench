@@ -14,6 +14,7 @@ from sqlglot.errors import ParseError, TokenError
 from sqlglot.expressions.core import Expression
 from sqlglot.expressions.ddl import DDL
 from sqlglot.expressions.dml import DML
+from sqlglot.optimizer.scope import traverse_scope
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 
@@ -75,6 +76,7 @@ def validate_databricks_sql(sql: str) -> ValidatedDatabricksSql:
         raise InvalidRequestError("Provide at most 25 SQL statements.")
 
     validated: list[ValidatedDatabricksStatement] = []
+    temporary_relations: set[str] = set()
     for index, statement_sql in enumerate(statements, start=1):
         statement_tokens = _tokenize_statement(statement_sql, index)
         if statement_tokens[0].token_type is TokenType.SHOW:
@@ -105,13 +107,15 @@ def validate_databricks_sql(sql: str) -> ValidatedDatabricksSql:
         if isinstance(expression, (exp.Query, exp.Values, exp.Subquery, exp.Describe)):
             if any(
                 isinstance(node, (DDL, DML, exp.Into))
-                or (
-                    isinstance(node, exp.Anonymous)
-                    and node.name.casefold() in _SECRET_FUNCTIONS
-                )
+                or (isinstance(node, exp.Anonymous) and node.name.casefold() in _SECRET_FUNCTIONS)
                 for node in expression.walk()
             ):
                 _raise_not_allowed(index)
+            _require_fully_qualified_relations(
+                expression,
+                index=index,
+                temporary_relations=temporary_relations,
+            )
             validated.append(
                 ValidatedDatabricksStatement(
                     sql=statement_sql,
@@ -133,21 +137,14 @@ def validate_databricks_sql(sql: str) -> ValidatedDatabricksSql:
         if (
             kind not in {"TABLE", "VIEW"}
             or not property_expressions
-            or not all(
-                isinstance(item, exp.TemporaryProperty)
-                for item in property_expressions
-            )
+            or not all(isinstance(item, exp.TemporaryProperty) for item in property_expressions)
         ):
             _raise_not_allowed(index)
 
         target = expression.this
         if isinstance(target, exp.Schema):
             target = target.this
-        if (
-            not isinstance(target, exp.Table)
-            or target.args.get("db")
-            or target.args.get("catalog")
-        ):
+        if not isinstance(target, exp.Table) or target.args.get("db") or target.args.get("catalog"):
             raise InvalidRequestError(
                 f"Statement {index} must use an unqualified temporary object name."
             )
@@ -167,14 +164,18 @@ def validate_databricks_sql(sql: str) -> ValidatedDatabricksSql:
             _raise_not_allowed(index)
         if expression.args.get("clone") is not None or any(
             isinstance(node, (DDL, DML, exp.Into))
-            or (
-                isinstance(node, exp.Anonymous)
-                and node.name.casefold() in _SECRET_FUNCTIONS
-            )
+            or (isinstance(node, exp.Anonymous) and node.name.casefold() in _SECRET_FUNCTIONS)
             for node in expression.walk()
             if node is not expression
         ):
             _raise_not_allowed(index)
+
+        if query is not None:
+            _require_fully_qualified_relations(
+                query,
+                index=index,
+                temporary_relations=temporary_relations,
+            )
 
         validated.append(
             ValidatedDatabricksStatement(
@@ -182,6 +183,7 @@ def validate_databricks_sql(sql: str) -> ValidatedDatabricksSql:
                 kind=DatabricksStatementKind.TEMPORARY_DDL,
             )
         )
+        temporary_relations.add(target.name.casefold())
 
     return ValidatedDatabricksSql(statements=tuple(validated))
 
@@ -190,18 +192,42 @@ def _tokenize_statement(statement_sql: str, index: int) -> list[Token]:
     try:
         tokens = sqlglot.tokenize(statement_sql, dialect="databricks")
     except TokenError as exc:
-        raise InvalidRequestError(
-            f"Statement {index} has invalid Databricks SQL syntax."
-        ) from exc
+        raise InvalidRequestError(f"Statement {index} has invalid Databricks SQL syntax.") from exc
     if not tokens:
-        raise InvalidRequestError(
-            f"Statement {index} has invalid Databricks SQL syntax."
-        )
+        raise InvalidRequestError(f"Statement {index} has invalid Databricks SQL syntax.")
     return tokens
+
+
+def _require_fully_qualified_relations(
+    expression: object,
+    *,
+    index: int,
+    temporary_relations: set[str],
+) -> None:
+    parsed_expression = cast(Expression, expression)
+    scopes = list(traverse_scope(parsed_expression))
+    relations = (
+        [source for scope in scopes for source in scope.sources.values()]
+        if scopes
+        else list(parsed_expression.find_all(exp.Table))
+    )
+    for relation in relations:
+        if not isinstance(relation, exp.Table) or not isinstance(relation.this, exp.Identifier):
+            continue
+        if relation.catalog and relation.db:
+            continue
+        if (
+            not relation.catalog
+            and not relation.db
+            and relation.name.casefold() in temporary_relations
+        ):
+            continue
+        raise InvalidRequestError(
+            f"Statement {index} must fully qualify physical relations as catalog.schema.table."
+        )
 
 
 def _raise_not_allowed(index: int) -> None:
     raise InvalidRequestError(
-        f"Statement {index} is not allowed. Use read SQL or "
-        "CREATE [OR REPLACE] TEMP VIEW/TABLE."
+        f"Statement {index} is not allowed. Use read SQL or CREATE [OR REPLACE] TEMP VIEW/TABLE."
     )

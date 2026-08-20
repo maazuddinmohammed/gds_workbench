@@ -38,9 +38,12 @@ POLICY = ToolPolicy.TENANT_READ
 _CONNECTION_SQL: LiteralString = """
 SELECT connection.tenant_id
   FROM core.connection AS connection
+  JOIN core.tenant AS tenant
+    ON tenant.tenant_id = connection.tenant_id
+   AND tenant.is_active
  WHERE connection.connection_id = %s
    AND connection.is_active
-   AND connection.is_global_data_store
+   AND NOT connection.is_global_data_store
 """
 
 
@@ -51,6 +54,7 @@ class ContractModel(BaseModel):
 class ExecuteDatabricksSqlResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     connection_id: int = Field(gt=0)
+    environment_code: str = Field(min_length=1, max_length=100)
     statement_count: int = Field(gt=0, le=25)
     row_limit: int = Field(gt=0, le=50)
     columns: tuple[str, ...] = Field(max_length=500)
@@ -77,8 +81,10 @@ def register_execute_databricks_sql_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Execute up to 25 governed Databricks SQL statements on one active global "
-            "Connection. Allows reads and unqualified temporary views/tables only. "
+            "Execute up to 25 governed Databricks SQL statements using an active source "
+            "Connection, its Tenant's Global Data Store Connection, and one requested "
+            "Environment. Physical relations must use catalog.schema.table. Allows reads "
+            "and unqualified temporary views/tables only. "
             "Returns the configured row limit, never more than 50, from the final "
             "statement. The complete submitted SQL is retained in the append-only "
             "tool-call audit log; never include credentials in SQL."
@@ -95,6 +101,7 @@ def register_execute_databricks_sql_tool(
     async def execute_databricks_sql(
         ctx: Context[None],
         connection_id: Annotated[int, Field(gt=0)],
+        environment_code: Annotated[str, Field(min_length=1, max_length=100)],
         sql: Annotated[str, Field(min_length=1, max_length=_MAX_SQL_CHARACTERS)],
         schema_version: Literal["1.0"] = "1.0",
     ) -> ExecuteDatabricksSqlResult:
@@ -118,8 +125,15 @@ def register_execute_databricks_sql_tool(
                     policy=POLICY,
                 )
 
-            values = await database.read_databricks_connection_values(connection_id)
-            connection = _validated_connection(values, tenant_id=tenant_id)
+            values = await database.read_databricks_connection_values(
+                connection_id,
+                environment_code,
+            )
+            connection = _validated_connection(
+                values,
+                tenant_id=tenant_id,
+                environment_code=environment_code,
+            )
             execution = await executor.execute(
                 connection=connection,
                 batch=batch,
@@ -128,6 +142,7 @@ def register_execute_databricks_sql_tool(
             )
             return ExecuteDatabricksSqlResult(
                 connection_id=connection_id,
+                environment_code=values.environment_code or environment_code,
                 statement_count=len(batch.statements),
                 row_limit=max_rows,
                 columns=execution.columns,
@@ -147,7 +162,7 @@ def register_execute_databricks_sql_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
-        retain_arguments={"connection_id", "sql", "schema_version"},
+        retain_arguments={"connection_id", "environment_code", "sql", "schema_version"},
     )
 
 
@@ -155,14 +170,24 @@ def _validated_connection(
     values: DatabricksConnectionValuesRecord,
     *,
     tenant_id: int,
+    environment_code: str,
 ) -> DatabricksSqlConnection:
     if values.failure_code == "connection_not_found":
         raise DatabricksConnectionNotFoundError()
     if values.failure_code == "connection_values_missing":
         raise DatabricksConnectionConfigurationError("missing")
-    if values.failure_code == "connection_values_ambiguous":
-        raise DatabricksConnectionConfigurationError("ambiguous")
-    if values.failure_code is not None or values.tenant_id != tenant_id:
+    if values.failure_code == "environment_not_found":
+        raise DatabricksConnectionConfigurationError("environment")
+    if values.failure_code == "gds_connection_not_found":
+        raise DatabricksConnectionConfigurationError("global_connection")
+    if (
+        values.failure_code is not None
+        or values.tenant_id != tenant_id
+        or values.gds_connection_id is None
+        or values.gds_connection_id < 1
+        or values.environment_code is None
+        or values.environment_code.strip().casefold() != environment_code.strip().casefold()
+    ):
         raise DatabricksConnectionConfigurationError("invalid")
 
     host = values.server_hostname
@@ -189,11 +214,17 @@ def _validated_connection(
 
 def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     connection_id = arguments.get("connection_id")
+    environment_code = arguments.get("environment_code")
     sql = arguments.get("sql")
     return {
         "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
         "connection_id": (
             connection_id if type(connection_id) is int and connection_id > 0 else "invalid"
+        ),
+        "environment_code": (
+            environment_code
+            if isinstance(environment_code, str) and environment_code.strip()
+            else "invalid"
         ),
         "sql": sql if isinstance(sql, str) else "invalid",
         "sql_character_count": len(sql) if isinstance(sql, str) else "invalid",

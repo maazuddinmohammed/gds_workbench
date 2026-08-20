@@ -10,7 +10,9 @@ if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
-RUNTIME_INTEGRITY_SQL = Path(__file__).parents[2] / "database" / "12_runtime_integrity.sql"
+RUNTIME_INTEGRITY_SQL = (
+    Path(__file__).parents[2] / "database" / "12_runtime_integrity.sql"
+)
 VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "13_verify_install.sql"
 
 
@@ -49,7 +51,9 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             "set_option": False,
         }
 
-        connection.execute(cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8")))
+        connection.execute(
+            cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"))
+        )
         repaired = connection.execute(
             """
             SELECT has_schema_privilege(
@@ -76,12 +80,75 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
     }
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
+        contract = connection.execute(
+            "SELECT * FROM mcp.runtime_readiness()"
+        ).fetchone()
 
     assert contract is not None
     assert contract["runtime_role_ok"] is True
     assert contract["runtime_privileges_ok"] is True
     assert contract["runtime_query_contract_ok"] is True
+
+
+def test_runtime_integrity_replaces_legacy_databricks_lookup_access(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            CREATE FUNCTION mcp.get_databricks_sql_connection_values(BIGINT)
+            RETURNS TABLE (
+                connection_tenant_id BIGINT,
+                failure_code VARCHAR(50),
+                databricks_host_name TEXT,
+                databricks_http_path TEXT,
+                databricks_token TEXT
+            )
+            LANGUAGE SQL
+            STABLE
+            SECURITY DEFINER
+            SET search_path = pg_catalog
+            AS $legacy_databricks_lookup$
+                SELECT NULL::BIGINT, 'connection_not_found'::VARCHAR(50),
+                       NULL::TEXT, NULL::TEXT, NULL::TEXT
+            $legacy_databricks_lookup$
+            """
+        )
+        connection.execute(
+            """
+            GRANT EXECUTE ON FUNCTION
+                mcp.get_databricks_sql_connection_values(BIGINT)
+            TO gds_app_write
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"),
+            )
+        )
+        posture = connection.execute(
+            """
+            SELECT has_function_privilege(
+                       'gds_app_write',
+                       'mcp.get_databricks_sql_connection_values(bigint)',
+                       'EXECUTE'
+                   ) AS legacy_execute,
+                   has_function_privilege(
+                       'gds_app_write',
+                       'mcp.get_databricks_sql_connection_values(bigint,text)',
+                       'EXECUTE'
+                   ) AS current_execute
+            """
+        ).fetchone()
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+    assert posture == {"legacy_execute": False, "current_execute": True}
 
 
 @pytest.mark.asyncio
@@ -99,7 +166,9 @@ async def test_runtime_readiness_checks_the_complete_mcp_database_contract(
     assert readiness.code == "ready"
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
+        contract = connection.execute(
+            "SELECT * FROM mcp.runtime_readiness()"
+        ).fetchone()
 
     assert contract == {
         "schema_version": "1.0.0",

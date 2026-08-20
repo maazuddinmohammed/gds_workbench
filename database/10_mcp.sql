@@ -1001,10 +1001,13 @@ $archive_metadata_change_set$;
 -- Exact secret-bearing lookup for the governed Databricks SQL tool. The
 -- runtime role never receives table-wide access to core.connection_value.
 CREATE FUNCTION mcp.get_databricks_sql_connection_values(
-    p_connection_id BIGINT
+    p_connection_id BIGINT,
+    p_environment_code TEXT
 )
 RETURNS TABLE (
     connection_tenant_id BIGINT,
+    gds_connection_id BIGINT,
+    environment_code VARCHAR(100),
     failure_code VARCHAR(50),
     databricks_host_name TEXT,
     databricks_http_path TEXT,
@@ -1017,91 +1020,104 @@ SET search_path = pg_catalog
 AS $get_databricks_sql_connection_values$
 DECLARE
     v_tenant_id BIGINT;
-    v_complete_environment_count INTEGER;
+    v_gds_connection_id BIGINT;
+    v_environment_id BIGINT;
+    v_environment_code VARCHAR(100);
     v_host_name TEXT;
     v_http_path TEXT;
     v_token TEXT;
 BEGIN
-    IF p_connection_id < 1 THEN
+    IF p_connection_id < 1 OR NULLIF(btrim(p_environment_code), '') IS NULL THEN
         RETURN QUERY SELECT
-            NULL::BIGINT, 'invalid_request'::VARCHAR(50),
+            NULL::BIGINT, NULL::BIGINT, NULL::VARCHAR(100),
+            'invalid_request'::VARCHAR(50),
             NULL::TEXT, NULL::TEXT, NULL::TEXT;
         RETURN;
     END IF;
 
-    SELECT connection_record.tenant_id
-      INTO v_tenant_id
-      FROM core.connection AS connection_record
-     WHERE connection_record.connection_id = p_connection_id
-       AND connection_record.is_active
-       AND connection_record.is_global_data_store;
+    SELECT source_connection.tenant_id,
+           tenant_record.gds_connection_id
+      INTO v_tenant_id, v_gds_connection_id
+      FROM core.connection AS source_connection
+      JOIN core.tenant AS tenant_record
+        ON tenant_record.tenant_id = source_connection.tenant_id
+       AND tenant_record.is_active
+     WHERE source_connection.connection_id = p_connection_id
+       AND source_connection.is_active
+       AND NOT source_connection.is_global_data_store;
     IF NOT FOUND THEN
         RETURN QUERY SELECT
-            NULL::BIGINT, 'connection_not_found'::VARCHAR(50),
+            NULL::BIGINT, NULL::BIGINT, NULL::VARCHAR(100),
+            'connection_not_found'::VARCHAR(50),
             NULL::TEXT, NULL::TEXT, NULL::TEXT;
         RETURN;
     END IF;
 
-    WITH environment_values AS (
-        SELECT connection_value.environment_id,
-               max(connection_value.connection_value) FILTER (
-                   WHERE lower(btrim(parameter.connection_parameter_code)) =
-                         'databricks_host_name'
-               ) AS host_name,
-               max(connection_value.connection_value) FILTER (
-                   WHERE lower(btrim(parameter.connection_parameter_code)) =
-                         'databricks_http_path'
-               ) AS http_path,
-               max(connection_value.connection_value) FILTER (
-                   WHERE lower(btrim(parameter.connection_parameter_code)) =
-                         'databricks_token'
-               ) AS token
-          FROM core.connection_value AS connection_value
-          JOIN reference.connection_parameter AS parameter
-            ON parameter.connection_parameter_id =
-               connection_value.connection_parameter_id
-           AND parameter.is_active
-          JOIN reference.environment AS environment_record
-            ON environment_record.environment_id = connection_value.environment_id
-           AND environment_record.is_active
-         WHERE connection_value.connection_id = p_connection_id
-           AND lower(btrim(parameter.connection_parameter_code)) IN (
-               'databricks_host_name',
-               'databricks_http_path',
-               'databricks_token'
+    PERFORM 1
+      FROM core.connection AS gds_connection
+     WHERE gds_connection.connection_id = v_gds_connection_id
+       AND gds_connection.is_active
+       AND gds_connection.is_global_data_store;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            v_tenant_id, v_gds_connection_id, NULL::VARCHAR(100),
+            'gds_connection_not_found'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    SELECT environment_record.environment_id,
+           environment_record.environment_code
+      INTO v_environment_id, v_environment_code
+      FROM reference.environment AS environment_record
+     WHERE environment_record.is_active
+       AND lower(btrim(environment_record.environment_code)) =
+           lower(btrim(p_environment_code));
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            v_tenant_id, v_gds_connection_id, NULL::VARCHAR(100),
+            'environment_not_found'::VARCHAR(50),
+            NULL::TEXT, NULL::TEXT, NULL::TEXT;
+        RETURN;
+    END IF;
+
+    SELECT max(connection_value.connection_value) FILTER (
+               WHERE lower(btrim(parameter.connection_parameter_code)) =
+                     'databricks_host_name'
+           ),
+           max(connection_value.connection_value) FILTER (
+               WHERE lower(btrim(parameter.connection_parameter_code)) =
+                     'databricks_http_path'
+           ),
+           max(connection_value.connection_value) FILTER (
+               WHERE lower(btrim(parameter.connection_parameter_code)) =
+                     'databricks_token'
            )
-         GROUP BY connection_value.environment_id
-    ), complete_environments AS (
-        SELECT environment_values.host_name,
-               environment_values.http_path,
-               environment_values.token
-          FROM environment_values
-         WHERE environment_values.host_name IS NOT NULL
-           AND environment_values.http_path IS NOT NULL
-           AND environment_values.token IS NOT NULL
-    )
-    SELECT count(*)::INTEGER,
-           min(complete_environments.host_name),
-           min(complete_environments.http_path),
-           min(complete_environments.token)
-      INTO v_complete_environment_count, v_host_name, v_http_path, v_token
-      FROM complete_environments;
+      INTO v_host_name, v_http_path, v_token
+      FROM core.connection_value AS connection_value
+      JOIN reference.connection_parameter AS parameter
+        ON parameter.connection_parameter_id =
+           connection_value.connection_parameter_id
+       AND parameter.is_active
+     WHERE connection_value.connection_id = v_gds_connection_id
+       AND connection_value.environment_id = v_environment_id
+       AND lower(btrim(parameter.connection_parameter_code)) IN (
+           'databricks_host_name',
+           'databricks_http_path',
+           'databricks_token'
+       );
 
-    IF v_complete_environment_count = 0 THEN
+    IF v_host_name IS NULL OR v_http_path IS NULL OR v_token IS NULL THEN
         RETURN QUERY SELECT
-            v_tenant_id, 'connection_values_missing'::VARCHAR(50),
-            NULL::TEXT, NULL::TEXT, NULL::TEXT;
-        RETURN;
-    END IF;
-    IF v_complete_environment_count > 1 THEN
-        RETURN QUERY SELECT
-            v_tenant_id, 'connection_values_ambiguous'::VARCHAR(50),
+            v_tenant_id, v_gds_connection_id, v_environment_code,
+            'connection_values_missing'::VARCHAR(50),
             NULL::TEXT, NULL::TEXT, NULL::TEXT;
         RETURN;
     END IF;
 
     RETURN QUERY SELECT
-        v_tenant_id, NULL::VARCHAR(50), v_host_name, v_http_path, v_token;
+        v_tenant_id, v_gds_connection_id, v_environment_code,
+        NULL::VARCHAR(50), v_host_name, v_http_path, v_token;
 END;
 $get_databricks_sql_connection_values$;
 

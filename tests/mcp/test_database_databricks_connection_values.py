@@ -12,11 +12,12 @@ if TYPE_CHECKING:
 
 @dataclass(frozen=True, slots=True)
 class DatabricksConnectionSeed:
-    complete_connection_id: int
-    missing_connection_id: int
-    ambiguous_connection_id: int
-    non_global_connection_id: int
+    source_connection_id: int
+    no_gds_source_connection_id: int
+    gds_connection_id: int
     tenant_id: int
+    environment_code: str
+    missing_environment_code: str
     server_hostname: str = field(repr=False)
     http_path: str = field(repr=False)
     access_token: str = field(repr=False)
@@ -36,7 +37,7 @@ def databricks_connection_seed(
             """
             INSERT INTO reference.environment (environment_code, environment_name)
             VALUES (%s, %s), (%s, %s)
-            RETURNING environment_id
+            RETURNING environment_id, environment_code
             """,
             (
                 f"{prefix}_ENV_1",
@@ -69,8 +70,8 @@ def databricks_connection_seed(
                 connection_parameter_code, connection_parameter_name
             )
             VALUES
-                ('databricks_host_name', 'Databricks Host Name'),
-                ('databricks_http_path', 'Databricks HTTP Path'),
+                ('DATABRICKS_HOST_NAME', 'Databricks Host Name'),
+                ('Databricks_HTTP_Path', 'Databricks HTTP Path'),
                 ('databricks_token', 'Databricks Token')
             RETURNING connection_parameter_id, connection_parameter_code
             """
@@ -88,13 +89,15 @@ def databricks_connection_seed(
         assert project is not None
         assert len(environment_rows) == 2
 
-        tenant = connection.execute(
+        tenant_rows = connection.execute(
             """
             INSERT INTO core.tenant (
                 project_id, tenant_code, tenant_name,
                 tenant_catalog, gds_admin_catalog
             )
-            VALUES (%s, %s, %s, %s, %s)
+            VALUES
+                (%s, %s, %s, %s, %s),
+                (%s, %s, %s, %s, %s)
             RETURNING tenant_id
             """,
             (
@@ -103,8 +106,13 @@ def databricks_connection_seed(
                 f"{prefix} Tenant",
                 f"{prefix.lower()}_catalog",
                 f"{prefix.lower()}_admin",
+                project["project_id"],
+                f"{prefix}_NO_GDS_TENANT",
+                f"{prefix} No GDS Tenant",
+                f"{prefix.lower()}_no_gds_catalog",
+                f"{prefix.lower()}_no_gds_admin",
             ),
-        ).fetchone()
+        ).fetchall()
         system = connection.execute(
             """
             INSERT INTO core.system (
@@ -119,7 +127,9 @@ def databricks_connection_seed(
                 system_type["system_type_id"],
             ),
         ).fetchone()
-        assert tenant is not None and system is not None
+        assert len(tenant_rows) == 2 and system is not None
+        tenant = tenant_rows[0]
+        no_gds_tenant = tenant_rows[1]
 
         connection_rows = connection.execute(
             """
@@ -128,8 +138,7 @@ def databricks_connection_seed(
                 connection_type_id, is_global_data_store
             )
             VALUES
-                (%s, %s, %s, %s, %s, TRUE),
-                (%s, %s, %s, %s, %s, TRUE),
+                (%s, %s, %s, %s, %s, FALSE),
                 (%s, %s, %s, %s, %s, TRUE),
                 (%s, %s, %s, %s, %s, FALSE)
             RETURNING connection_id
@@ -137,57 +146,52 @@ def databricks_connection_seed(
             (
                 tenant["tenant_id"],
                 system["system_id"],
-                f"{prefix}_COMPLETE",
-                f"{prefix} Complete",
+                f"{prefix}_SOURCE",
+                f"{prefix} Source",
                 connection_type["connection_type_id"],
                 tenant["tenant_id"],
                 system["system_id"],
-                f"{prefix}_MISSING",
-                f"{prefix} Missing",
+                f"{prefix}_GDS",
+                f"{prefix} GDS",
                 connection_type["connection_type_id"],
-                tenant["tenant_id"],
+                no_gds_tenant["tenant_id"],
                 system["system_id"],
-                f"{prefix}_AMBIGUOUS",
-                f"{prefix} Ambiguous",
-                connection_type["connection_type_id"],
-                tenant["tenant_id"],
-                system["system_id"],
-                f"{prefix}_NON_GLOBAL",
-                f"{prefix} Non Global",
+                f"{prefix}_NO_GDS_SOURCE",
+                f"{prefix} No GDS Source",
                 connection_type["connection_type_id"],
             ),
         ).fetchall()
-        assert len(connection_rows) == 4
+        assert len(connection_rows) == 3
         parameter_ids = {
-            str(row["connection_parameter_code"]): int(row["connection_parameter_id"])
+            str(row["connection_parameter_code"]).strip().lower(): int(
+                row["connection_parameter_id"]
+            )
             for row in parameter_rows
         }
         environment_ids = [int(row["environment_id"]) for row in environment_rows]
-        complete_connection_id = int(connection_rows[0]["connection_id"])
-        ambiguous_connection_id = int(connection_rows[2]["connection_id"])
+        source_connection_id = int(connection_rows[0]["connection_id"])
+        gds_connection_id = int(connection_rows[1]["connection_id"])
+
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (gds_connection_id, tenant["tenant_id"]),
+        )
 
         _insert_connection_values(
             connection,
-            connection_id=complete_connection_id,
+            connection_id=gds_connection_id,
             environment_id=environment_ids[0],
             parameter_ids=parameter_ids,
             values=(server_hostname, http_path, access_token),
         )
-        for environment_id in environment_ids:
-            _insert_connection_values(
-                connection,
-                connection_id=ambiguous_connection_id,
-                environment_id=environment_id,
-                parameter_ids=parameter_ids,
-                values=(server_hostname, http_path, access_token),
-            )
 
     return DatabricksConnectionSeed(
-        complete_connection_id=complete_connection_id,
-        missing_connection_id=int(connection_rows[1]["connection_id"]),
-        ambiguous_connection_id=ambiguous_connection_id,
-        non_global_connection_id=int(connection_rows[3]["connection_id"]),
+        source_connection_id=source_connection_id,
+        no_gds_source_connection_id=int(connection_rows[2]["connection_id"]),
+        gds_connection_id=gds_connection_id,
         tenant_id=int(tenant["tenant_id"]),
+        environment_code=str(environment_rows[0]["environment_code"]),
+        missing_environment_code=str(environment_rows[1]["environment_code"]),
         server_hostname=server_hostname,
         http_path=http_path,
         access_token=access_token,
@@ -228,7 +232,7 @@ def _insert_connection_values(
 
 
 @pytest.mark.asyncio
-async def test_runtime_adapter_reads_only_one_complete_databricks_environment(
+async def test_runtime_adapter_derives_gds_values_for_requested_environment(
     postgres_database: DisposablePostgres,
     databricks_connection_seed: DatabricksConnectionSeed,
 ) -> None:
@@ -236,21 +240,31 @@ async def test_runtime_adapter_reads_only_one_complete_databricks_environment(
     await database.open()
     try:
         complete = await database.read_databricks_connection_values(
-            databricks_connection_seed.complete_connection_id
+            databricks_connection_seed.source_connection_id,
+            databricks_connection_seed.environment_code.lower(),
         )
         missing = await database.read_databricks_connection_values(
-            databricks_connection_seed.missing_connection_id
+            databricks_connection_seed.source_connection_id,
+            databricks_connection_seed.missing_environment_code,
         )
-        ambiguous = await database.read_databricks_connection_values(
-            databricks_connection_seed.ambiguous_connection_id
+        environment_not_found = await database.read_databricks_connection_values(
+            databricks_connection_seed.source_connection_id,
+            "environment-that-does-not-exist",
         )
-        non_global = await database.read_databricks_connection_values(
-            databricks_connection_seed.non_global_connection_id
+        submitted_gds = await database.read_databricks_connection_values(
+            databricks_connection_seed.gds_connection_id,
+            databricks_connection_seed.environment_code,
+        )
+        no_gds = await database.read_databricks_connection_values(
+            databricks_connection_seed.no_gds_source_connection_id,
+            databricks_connection_seed.environment_code,
         )
     finally:
         await database.close()
 
     assert complete.tenant_id == databricks_connection_seed.tenant_id
+    assert complete.gds_connection_id == databricks_connection_seed.gds_connection_id
+    assert complete.environment_code == databricks_connection_seed.environment_code
     assert complete.failure_code is None
     assert complete.server_hostname == databricks_connection_seed.server_hostname
     assert complete.http_path == databricks_connection_seed.http_path
@@ -263,5 +277,6 @@ async def test_runtime_adapter_reads_only_one_complete_databricks_environment(
     assert missing.server_hostname is None
     assert missing.http_path is None
     assert missing.access_token is None
-    assert ambiguous.failure_code == "connection_values_ambiguous"
-    assert non_global.failure_code == "connection_not_found"
+    assert environment_not_found.failure_code == "environment_not_found"
+    assert submitted_gds.failure_code == "connection_not_found"
+    assert no_gds.failure_code == "gds_connection_not_found"

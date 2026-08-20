@@ -44,7 +44,9 @@ class FakeDatabase:
     audit_records: list[ToolCallLogRecord] = field(
         default_factory=lambda: list[ToolCallLogRecord]()
     )
-    lookup_ids: list[int] = field(default_factory=lambda: list[int]())
+    lookups: list[tuple[int, str]] = field(
+        default_factory=lambda: list[tuple[int, str]]()
+    )
 
     async def open(self) -> None:
         return None
@@ -72,8 +74,9 @@ class FakeDatabase:
     async def read_databricks_connection_values(
         self,
         connection_id: int,
+        environment_code: str,
     ) -> DatabricksConnectionValuesRecord:
-        self.lookup_ids.append(connection_id)
+        self.lookups.append((connection_id, environment_code))
         if self.lookup_failure is not None:
             raise self.lookup_failure
         return self.values
@@ -134,9 +137,12 @@ def _values(
     *,
     failure_code: str | None = None,
     tenant_id: int | None = 7,
+    environment_code: str | None = "PROD",
 ) -> DatabricksConnectionValuesRecord:
     return DatabricksConnectionValuesRecord(
         tenant_id=tenant_id,
+        gds_connection_id=99 if failure_code is None else None,
+        environment_code=environment_code if failure_code is None else None,
         failure_code=failure_code,
         server_hostname=("workspace.example.invalid" if failure_code is None else None),
         http_path=("/sql/1.0/warehouses/abc-123" if failure_code is None else None),
@@ -186,13 +192,14 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": sql},
+            {"connection_id": 42, "environment_code": "PROD", "sql": sql},
         )
 
     assert result.is_error is False
     assert result.structured_content == {
         "schema_version": "1.0",
         "connection_id": 42,
+        "environment_code": "PROD",
         "statement_count": 2,
         "row_limit": 50,
         "columns": ["answer"],
@@ -201,7 +208,7 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
         "rows_truncated": True,
         "cells_truncated": False,
     }
-    assert database.lookup_ids == [42]
+    assert database.lookups == [(42, "PROD")]
     assert len(executor.calls) == 1
     connection, batch, max_rows, timeout = executor.calls[0]
     assert [statement.sql for statement in batch.statements] == [
@@ -213,6 +220,7 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
     assert database.audit_records[0].input_metadata == {
         "schema_version": "1.0",
         "connection_id": 42,
+        "environment_code": "PROD",
         "sql": sql,
         "sql_character_count": len(sql),
     }
@@ -229,14 +237,18 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
             "databricks_connection_configuration_missing",
         ),
         (
-            "connection_values_ambiguous",
-            "databricks_connection_configuration_ambiguous",
+            "environment_not_found",
+            "databricks_connection_configuration_environment",
+        ),
+        (
+            "gds_connection_not_found",
+            "databricks_connection_configuration_global_connection",
         ),
         ("connection_not_found", "databricks_connection_not_found"),
     ],
 )
 @pytest.mark.asyncio
-async def test_tool_returns_missing_or_ambiguous_configuration_gracefully(
+async def test_tool_returns_connection_configuration_failure_gracefully(
     failure_code: str,
     expected_code: str,
 ) -> None:
@@ -246,7 +258,11 @@ async def test_tool_returns_missing_or_ambiguous_configuration_gracefully(
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "SELECT 1"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "SELECT 1",
+            },
         )
 
     assert result.is_error is True
@@ -263,13 +279,17 @@ async def test_tool_returns_missing_global_connection_gracefully() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "SELECT 1"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "SELECT 1",
+            },
         )
 
     assert result.is_error is True
     assert isinstance(result.content[0], TextContent)
     assert "databricks_connection_not_found" in result.content[0].text
-    assert database.lookup_ids == []
+    assert database.lookups == []
     assert executor.calls == []
 
 
@@ -285,7 +305,11 @@ async def test_tool_returns_connection_value_read_failure_gracefully() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "SELECT 1"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "SELECT 1",
+            },
         )
 
     assert result.is_error is True
@@ -302,13 +326,17 @@ async def test_tool_rejects_dml_before_reading_connection_values() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "DELETE FROM bronze.customer"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "DELETE FROM bronze.customer",
+            },
         )
 
     assert result.is_error is True
     assert isinstance(result.content[0], TextContent)
     assert "invalid_request" in result.content[0].text
-    assert database.lookup_ids == []
+    assert database.lookups == []
     assert executor.calls == []
 
 
@@ -320,7 +348,11 @@ async def test_tool_returns_databricks_statement_failure_gracefully() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "SELECT 1; SELECT 2"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "SELECT 1; SELECT 2",
+            },
         )
 
     assert result.is_error is True
@@ -339,7 +371,11 @@ async def test_tool_redacts_unexpected_failure_details() -> None:
     async with Client(_server(database, executor)) as client:
         result = await client.call_tool(
             "execute_databricks_sql",
-            {"connection_id": 42, "sql": "SELECT 1"},
+            {
+                "connection_id": 42,
+                "environment_code": "PROD",
+                "sql": "SELECT 1",
+            },
         )
 
     assert result.is_error is True

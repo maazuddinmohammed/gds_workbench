@@ -219,6 +219,7 @@ BEGIN
         ON namespace_record.oid = function_record.pronamespace
      WHERE namespace_record.nspname = 'mcp'
        AND function_record.proname = 'get_databricks_sql_connection_values'
+       AND oidvectortypes(function_record.proargtypes) = 'bigint, text'
        AND function_record.prosecdef
        AND EXISTS (
                SELECT 1
@@ -330,7 +331,7 @@ BEGIN
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',
-        'mcp.get_databricks_sql_connection_values(bigint)',
+        'mcp.get_databricks_sql_connection_values(bigint,text)',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',

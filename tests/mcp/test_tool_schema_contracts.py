@@ -83,6 +83,28 @@ async def test_every_advertised_tool_schema_is_valid_json_schema() -> None:
 
 
 @pytest.mark.asyncio
+async def test_execute_databricks_sql_requires_source_connection_environment_and_sql() -> (
+    None
+):
+    tools = {tool.name: tool for tool in await _list_tools()}
+    tool = tools["execute_databricks_sql"]
+
+    assert set(tool.input_schema["required"]) == {
+        "connection_id",
+        "environment_code",
+        "sql",
+    }
+    assert tool.input_schema["properties"]["environment_code"] == {
+        "maxLength": 100,
+        "minLength": 1,
+        "title": "Environment Code",
+        "type": "string",
+    }
+    assert tool.output_schema is not None
+    assert "environment_code" in tool.output_schema["properties"]
+
+
+@pytest.mark.asyncio
 async def test_plugin_contract_fingerprint_matches_the_runtime() -> None:
     contract_path = (
         Path(__file__).resolve().parents[2] / "plugins" / "gds" / "tool-contract.json"

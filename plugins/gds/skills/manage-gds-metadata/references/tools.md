@@ -143,14 +143,15 @@ new Snapshot if the URL expires. Stop on `payload_too_large` or
 
 ### `execute_databricks_sql`
 
-**Purpose:** Run governed analysis SQL on the Databricks SQL Warehouse selected
-by an active global Connection.
-**Inputs:** Positive `connection_id`; `sql` containing 1-25 semicolon-separated
-statements and at most 100,000 characters.
+**Purpose:** Run governed analysis SQL using the source Tenant's configured GDS
+Connection for one Environment.
+**Inputs:** Positive source `connection_id`; active `environment_code`; `sql`
+containing 1-25 semicolon-separated statements and at most 100,000 characters.
 **Returns:** Columns and at most 50 rows from only the final statement, plus
 statement count and row/cell truncation flags.
-**Safe/error:** Use reads or unqualified `CREATE [OR REPLACE] TEMP VIEW/TABLE`
-only. Never send INSERT, UPDATE, DELETE, MERGE, COPY, persistent DDL, secrets, or
+**Safe/error:** Fully qualify physical relations as `catalog.schema.table`. Use
+reads or unqualified `CREATE [OR REPLACE] TEMP VIEW/TABLE` only. Never send
+INSERT, UPDATE, DELETE, MERGE, COPY, persistent DDL, secrets, or
 connection values. The complete submitted SQL is retained in the append-only
 tool-call audit log, so never place credentials in SQL. Secret-returning SQL
 functions are rejected. Statements share one session and run in order; a failure
