@@ -1,4 +1,0 @@
-interface:
-  display_name: "Understand GDS"
-  short_description: "Explain GDS concepts and choose the right workflow"
-  default_prompt: "Use $understand-gds to explain this GDS concept and identify the smallest safe workflow."

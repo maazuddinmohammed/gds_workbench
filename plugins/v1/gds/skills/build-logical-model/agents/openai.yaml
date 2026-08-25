@@ -1,4 +1,0 @@
-interface:
-  display_name: "Build Logical Model"
-  short_description: "Build a governed normalized logical data model"
-  default_prompt: "Use $build-logical-model to design and govern a logical data model."

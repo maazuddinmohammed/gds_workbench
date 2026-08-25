@@ -1,4 +1,0 @@
-interface:
-  display_name: "Analyze GDS Relationships"
-  short_description: "Validate physical Attribute relationship evidence"
-  default_prompt: "Use $analyze-gds-relationships to validate a candidate source-to-target Attribute relationship."

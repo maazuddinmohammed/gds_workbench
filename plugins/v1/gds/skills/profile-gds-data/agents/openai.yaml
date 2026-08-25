@@ -1,4 +1,0 @@
-interface:
-  display_name: "Profile GDS Data"
-  short_description: "Build batch-aware Model profiling evidence"
-  default_prompt: "Use $profile-gds-data to profile a registered table and prepare profiling_profile records."

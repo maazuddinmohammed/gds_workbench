@@ -1,4 +1,0 @@
-interface:
-  display_name: "Open GDS Data Workbench"
-  short_description: "Open the local GDS Snapshot and Change Set editor"
-  default_prompt: "Use $open-gds-metadata-workbench to open the local GDS Data Workbench."

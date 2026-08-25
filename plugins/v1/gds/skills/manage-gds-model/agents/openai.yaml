@@ -1,4 +1,0 @@
-interface:
-  display_name: "Manage GDS Model"
-  short_description: "Inspect and govern complete GDS Model Change Sets"
-  default_prompt: "Use $manage-gds-model to inspect Model state or govern one Model Change Set."

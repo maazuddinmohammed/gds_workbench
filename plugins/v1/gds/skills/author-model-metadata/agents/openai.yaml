@@ -1,4 +1,0 @@
-interface:
-  display_name: "Author GDS Metadata JSON"
-  short_description: "Explain and author governed GDS metadata JSON"
-  default_prompt: "Use $author-model-metadata to explain, draft, and validate GDS metadata JSON."
