@@ -12,8 +12,21 @@ from pydantic import (
     ConfigDict,
     Field,
     StringConstraints,
+    field_validator,
     model_validator,
 )
+
+from gds_etl_workbench.domain.assertion_safety import (
+    ASSERTION_DOCUMENT_METADATA_MAX_BYTES,
+    ASSERTION_RECORD_DETAILS_MAX_BYTES,
+    ASSERTION_RECORD_SOURCE_LOCATION_MAX_BYTES,
+    ASSERTION_RECORD_TEXT_MAX_CHARACTERS,
+    validate_assertion_json,
+)
+from gds_etl_workbench.domain.mapping_contracts import (
+    validate_mapping_package_document,
+)
+from gds_etl_workbench.domain.mapping_profiles import validate_mapping_package_profile
 
 Code100 = Annotated[
     str,
@@ -36,6 +49,10 @@ StableKey = Annotated[
     ),
 ]
 NonblankText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
+NamingInstructions = Annotated[
+    str,
+    StringConstraints(min_length=1, max_length=32_768, pattern=r"\S"),
+]
 Percentage = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4)]
 Status = Literal["active", "needs_review", "inactive", "deprecated"]
 Confidence = Literal["low", "medium", "high"]
@@ -46,6 +63,17 @@ Cardinality = Literal[
     "many_to_many",
 ]
 JsonObject = dict[str, object]
+ANALYSIS_VALIDATION_FIELDS = (
+    "validation_policy_version",
+    "validation_result",
+    "validation_source_non_null_count",
+    "validation_source_distinct_count",
+    "validation_target_non_null_count",
+    "validation_target_distinct_count",
+    "validation_source_missing_target_count",
+    "validation_unused_target_count",
+    "validation_duplicate_target_key_count",
+)
 
 
 def normalize_model_key_value[T](value: T) -> T:
@@ -78,42 +106,46 @@ class ModelDetailsRecord(ModelingRecord):
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    model_description: Annotated[
-        str,
-        StringConstraints(min_length=1, max_length=2000, pattern=r"\S"),
-    ] | None
-    silver_model_naming_template: JsonObject | None
+    model_description: (
+        Annotated[
+            str,
+            StringConstraints(min_length=1, max_length=2000, pattern=r"\S"),
+        ]
+        | None
+    )
+    silver_model_naming_instructions: NamingInstructions | None
     silver_model_audit_columns_template: JsonObject | None
-    gold_model_naming_template: JsonObject | None
+    gold_model_naming_instructions: NamingInstructions | None
     gold_model_technical_columns_template: JsonObject | None
     gold_model_audit_columns_template: JsonObject | None
 
     @model_validator(mode="after")
-    def validate_policy_groups(self) -> ModelDetailsRecord:
-        silver = (
-            self.silver_model_naming_template,
-            self.silver_model_audit_columns_template,
+    def validate_policy_fields(self) -> ModelDetailsRecord:
+        naming_instructions = (
+            self.silver_model_naming_instructions,
+            self.gold_model_naming_instructions,
         )
-        gold = (
-            self.gold_model_naming_template,
+        if any(
+            value is not None and len(value.encode("utf-8")) > 32_768
+            for value in naming_instructions
+        ):
+            raise ValueError("Model naming instructions are too large.")
+        templates = (
+            self.silver_model_audit_columns_template,
             self.gold_model_technical_columns_template,
             self.gold_model_audit_columns_template,
         )
-        if any(value is None for value in silver) and any(
-            value is not None for value in silver
-        ):
-            raise ValueError("Silver Model policy fields must be entirely present or absent.")
-        if any(value is None for value in gold) and any(value is not None for value in gold):
-            raise ValueError("Gold Model policy fields must be entirely present or absent.")
-        if any(
-            value is not None and _json_size(value) > 262_144
-            for value in (*silver, *gold)
-        ):
+        if any(value is not None and _json_size(value) > 262_144 for value in templates):
             raise ValueError("A Model policy template is too large.")
         return self
 
 
 class ModelScopeRecord(PhysicalObjectKey):
+    zone_code: Code100
+    is_bronze_source_eligible: bool
+    is_dimensional_source_eligible: bool
+    is_logical_mapping_target_eligible: bool
+    is_dimensional_mapping_target_eligible: bool
     model_scope_is_locked: bool
     is_active: bool
 
@@ -175,15 +207,15 @@ class AnalysisResultRecord(ModelingRecord):
     relationship_kind: Annotated[str, StringConstraints(min_length=1, max_length=100)]
     relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: NonblankText
-    validation_policy_version: DigestVersion
-    validation_result: Literal["supported", "inconclusive", "unsupported"]
-    validation_source_non_null_count: int = Field(ge=0)
-    validation_source_distinct_count: int = Field(ge=0)
-    validation_target_non_null_count: int = Field(ge=0)
-    validation_target_distinct_count: int = Field(ge=0)
-    validation_source_missing_target_count: int = Field(ge=0)
-    validation_unused_target_count: int = Field(ge=0)
-    validation_duplicate_target_key_count: int = Field(ge=0)
+    validation_policy_version: DigestVersion | None = None
+    validation_result: Literal["supported", "inconclusive", "unsupported"] | None = None
+    validation_source_non_null_count: int | None = Field(default=None, ge=0)
+    validation_source_distinct_count: int | None = Field(default=None, ge=0)
+    validation_target_non_null_count: int | None = Field(default=None, ge=0)
+    validation_target_distinct_count: int | None = Field(default=None, ge=0)
+    validation_source_missing_target_count: int | None = Field(default=None, ge=0)
+    validation_unused_target_count: int | None = Field(default=None, ge=0)
+    validation_duplicate_target_key_count: int | None = Field(default=None, ge=0)
     analysis_result_status: Literal[
         "active",
         "needs_review",
@@ -194,6 +226,11 @@ class AnalysisResultRecord(ModelingRecord):
 
     @model_validator(mode="after")
     def validate_endpoints(self) -> AnalysisResultRecord:
+        validation_values = tuple(getattr(self, field) for field in ANALYSIS_VALIDATION_FIELDS)
+        if any(value is None for value in validation_values) and not all(
+            value is None for value in validation_values
+        ):
+            raise ValueError("Analysis validation fields must all be present or all be absent.")
         from_key = (
             normalize_model_key_value(self.from_tenant_code),
             normalize_model_key_value(self.from_system_code),
@@ -240,6 +277,16 @@ class ModelingAssertionDocumentRecord(ModelingRecord):
     modeling_assertion_document_metadata: JsonObject
     is_active: bool
 
+    @field_validator("modeling_assertion_document_metadata")
+    @classmethod
+    def validate_metadata(cls, value: JsonObject) -> JsonObject:
+        validate_assertion_json(
+            value,
+            maximum_bytes=ASSERTION_DOCUMENT_METADATA_MAX_BYTES,
+            label="Assertion Document metadata",
+        )
+        return value
+
 
 class ModelingAssertionRecordRecord(AssertionRecordKey):
     modeling_assertion_document_name: Annotated[
@@ -257,6 +304,34 @@ class ModelingAssertionRecordRecord(AssertionRecordKey):
     modeling_assertion_confidence: Confidence | None
     modeling_assertion_record_status: Status
     modeling_assertion_record_is_locked: bool
+
+    @field_validator("modeling_assertion_text")
+    @classmethod
+    def validate_text(cls, value: str) -> str:
+        if len(value) > ASSERTION_RECORD_TEXT_MAX_CHARACTERS:
+            raise ValueError("Assertion Record text is too large")
+        return value
+
+    @field_validator("modeling_assertion_details")
+    @classmethod
+    def validate_details(cls, value: JsonObject) -> JsonObject:
+        validate_assertion_json(
+            value,
+            maximum_bytes=ASSERTION_RECORD_DETAILS_MAX_BYTES,
+            label="Assertion Record details",
+        )
+        return value
+
+    @field_validator("modeling_assertion_source_location")
+    @classmethod
+    def validate_source_location(cls, value: JsonObject | None) -> JsonObject | None:
+        if value is not None:
+            validate_assertion_json(
+                value,
+                maximum_bytes=ASSERTION_RECORD_SOURCE_LOCATION_MAX_BYTES,
+                label="Assertion Record source location",
+            )
+        return value
 
     @model_validator(mode="after")
     def validate_layers(self) -> ModelingAssertionRecordRecord:
@@ -716,6 +791,7 @@ class DimensionalRelationshipRecord(ModelingRecord):
         StringConstraints(min_length=1, max_length=50, pattern=r"\S"),
     ]
     dimensional_relationship_cardinality: Cardinality
+    dimensional_relationship_is_optional: bool
     dimensional_relationship_role_name: (
         Annotated[
             str,
@@ -779,6 +855,14 @@ class MappingObjectRecord(PhysicalObjectKey):
     object_mapping_status: Status
     object_mapping_is_locked: bool
 
+    @field_validator("mapping_package_document")
+    @classmethod
+    def validate_and_normalize_package(cls, value: JsonObject | None) -> JsonObject | None:
+        if value is None:
+            return None
+        package = validate_mapping_package_document(value)
+        return cast(JsonObject, package.model_dump(mode="json"))
+
     @model_validator(mode="after")
     def validate_authored_group(self) -> MappingObjectRecord:
         authored = (
@@ -793,11 +877,15 @@ class MappingObjectRecord(PhysicalObjectKey):
             value is not None for value in authored
         ):
             raise ValueError("Mapping authored fields must be entirely present or absent.")
-        if (
-            self.mapping_package_document is not None
-            and _json_size(self.mapping_package_document) > 524_288
-        ):
-            raise ValueError("Mapping package document is too large.")
+        package = self.mapping_package_document
+        if package is not None:
+            assert self.mapping_profile_key is not None
+            assert self.mapping_profile_version is not None
+            validate_mapping_package_profile(
+                package,
+                self.mapping_profile_key,
+                self.mapping_profile_version,
+            )
         transformation = self.object_mapping_transformation_document
         if transformation is not None and (
             transformation.get("schema_version") != "1.0"

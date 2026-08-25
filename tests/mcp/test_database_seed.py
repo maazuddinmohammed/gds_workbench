@@ -18,8 +18,9 @@ LOCAL_SUPER_ADMIN_SEED_TEMPLATE = SEED_ROOT / "03_local_super_admin.template.sql
 
 
 def test_local_super_admin_seed_is_safe_and_resolves_the_configured_identity(
-    postgres_database: DisposablePostgres,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
+    postgres_database = bootstrap_postgres_database
     template = LOCAL_SUPER_ADMIN_SEED_TEMPLATE.read_text(encoding="utf-8")
     connection = postgres_database.connect_owner()
     try:
@@ -76,8 +77,9 @@ def test_local_super_admin_seed_is_safe_and_resolves_the_configured_identity(
 
 
 def test_demo_and_human_access_seeds_are_safe_and_complete(
-    postgres_database: DisposablePostgres,
+    bootstrap_postgres_database: DisposablePostgres,
 ) -> None:
+    postgres_database = bootstrap_postgres_database
     template = HUMAN_SEED_TEMPLATE.read_text(encoding="utf-8")
     connection = postgres_database.connect_owner()
     try:

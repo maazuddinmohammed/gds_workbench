@@ -55,6 +55,16 @@ SELECT dependency.mapping_source_system_dependency_id,
 """
 
 MAPPING_OBJECTS_SQL: LiteralString = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_objects AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT mapping.mapping_object_id,
        mapping.object_id,
        tenant.tenant_code,
@@ -84,16 +94,25 @@ SELECT mapping.mapping_object_id,
        mapping.object_mapping_status,
        mapping.object_mapping_is_locked
   FROM workflow.mapping_object AS mapping
-  JOIN model.model_scope AS active_scope
-    ON active_scope.model_id = mapping.model_id
-   AND active_scope.object_id = mapping.object_id
-   AND active_scope.is_active
+  JOIN eligible_objects AS eligibility
+    ON eligibility.object_id = mapping.object_id
+   AND eligibility.model_id = mapping.model_id
+   AND (
+       (
+           mapping.modeled_entity_type = 'logical_entity'
+           AND eligibility.is_logical_mapping_target_eligible
+       )
+       OR (
+           mapping.modeled_entity_type = 'dimensional_entity'
+           AND eligibility.is_dimensional_mapping_target_eligible
+       )
+   )
   JOIN core.object AS object
     ON object.object_id = mapping.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
+    ON tenant.tenant_id = eligibility.object_tenant_id
   JOIN core.system AS object_system
     ON object_system.system_id = connection.system_id
   JOIN core.system AS source_system
@@ -104,8 +123,7 @@ SELECT mapping.mapping_object_id,
   LEFT JOIN workflow.dimensional_entity AS dimensional_entity
     ON dimensional_entity.dimensional_entity_id = mapping.dimensional_entity_id
    AND dimensional_entity.model_id = mapping.model_id
- WHERE mapping.model_id = %s
-   AND (
+ WHERE (
        cardinality(%s::BIGINT[]) = 0
        OR mapping.object_id = ANY(%s::BIGINT[])
    )
@@ -118,6 +136,16 @@ SELECT mapping.mapping_object_id,
 """
 
 MAPPING_ATTRIBUTES_SQL: LiteralString = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_attributes AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT attribute_mapping.mapping_attribute_id,
        attribute_mapping.object_id,
        target_object.object_schema,
@@ -152,10 +180,20 @@ SELECT attribute_mapping.mapping_attribute_id,
        attribute_mapping.attribute_mapping_status,
        attribute_mapping.attribute_mapping_is_locked
   FROM workflow.mapping_attribute AS attribute_mapping
-  JOIN model.model_scope AS active_scope
-    ON active_scope.model_id = attribute_mapping.model_id
-   AND active_scope.object_id = attribute_mapping.object_id
-   AND active_scope.is_active
+  JOIN eligible_attributes AS eligibility
+    ON eligibility.object_id = attribute_mapping.object_id
+   AND eligibility.attribute_id = attribute_mapping.attribute_id
+   AND eligibility.model_id = attribute_mapping.model_id
+   AND (
+       (
+           attribute_mapping.modeled_entity_type = 'logical_entity'
+           AND eligibility.is_logical_mapping_target_eligible
+       )
+       OR (
+           attribute_mapping.modeled_entity_type = 'dimensional_entity'
+           AND eligibility.is_dimensional_mapping_target_eligible
+       )
+   )
   JOIN workflow.mapping_object AS object_mapping
     ON object_mapping.mapping_object_id = attribute_mapping.mapping_object_id
    AND object_mapping.model_id = attribute_mapping.model_id
@@ -169,7 +207,7 @@ SELECT attribute_mapping.mapping_attribute_id,
   JOIN core.connection AS connection
     ON connection.connection_id = target_object.connection_id
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
+    ON tenant.tenant_id = eligibility.object_tenant_id
   JOIN core.system AS object_system
     ON object_system.system_id = connection.system_id
   JOIN core.system AS source_system
@@ -187,8 +225,7 @@ SELECT attribute_mapping.mapping_attribute_id,
     ON dimensional_attribute.dimensional_attribute_id
         = attribute_mapping.dimensional_attribute_id
    AND dimensional_attribute.model_id = attribute_mapping.model_id
- WHERE attribute_mapping.model_id = %s
-   AND (
+ WHERE (
        cardinality(%s::BIGINT[]) = 0
        OR attribute_mapping.object_id = ANY(%s::BIGINT[])
    )

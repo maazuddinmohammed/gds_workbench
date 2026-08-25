@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
@@ -221,11 +222,11 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
         "schema_version": "1.0",
         "connection_id": 42,
         "environment_code": "PROD",
-        "sql": sql,
         "sql_character_count": len(sql),
+        "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
     }
     rendered_audit = repr(database.audit_records)
-    assert sql in rendered_audit
+    assert sql not in rendered_audit
     assert connection.access_token not in rendered_audit
 
 

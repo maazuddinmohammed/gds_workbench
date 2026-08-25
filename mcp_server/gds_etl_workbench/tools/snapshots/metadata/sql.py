@@ -44,13 +44,49 @@ valid_scope_config AS (
        AND zone_is_active
        AND zone_code IN ('bronze', 'silver', 'gold')
 ),
+resolved_object_tenants AS (
+    SELECT object.object_id,
+           CASE
+               WHEN connection.is_global_data_store
+               THEN discovery_tenant.tenant_id
+               ELSE connection_tenant.tenant_id
+           END AS object_tenant_id
+      FROM core.object AS object
+      JOIN core.connection AS connection
+        ON connection.connection_id = object.connection_id
+      LEFT JOIN core.tenant AS connection_tenant
+        ON NOT connection.is_global_data_store
+       AND connection_tenant.tenant_id = connection.tenant_id
+       AND connection_tenant.is_active
+      LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
+        ON connection.is_global_data_store
+       AND discovery_scope.gds_connection_id = connection.connection_id
+       AND discovery_scope.zone_id = object.zone_id
+       AND lower(btrim(discovery_scope.object_schema)) =
+           lower(btrim(object.object_schema))
+       AND discovery_scope.is_active
+      LEFT JOIN core.tenant AS discovery_tenant
+        ON discovery_tenant.tenant_id = discovery_scope.tenant_id
+       AND discovery_tenant.is_active
+     WHERE (
+               NOT connection.is_global_data_store
+               AND connection_tenant.tenant_id IS NOT NULL
+           )
+        OR (
+               connection.is_global_data_store
+               AND discovery_tenant.tenant_id IS NOT NULL
+           )
+),
 owned_objects AS (
     SELECT object.object_id
       FROM requested_tenant
       JOIN core.connection AS connection
         ON connection.tenant_id = requested_tenant.tenant_id
+       AND NOT connection.is_global_data_store
       JOIN core.object AS object
         ON object.connection_id = connection.connection_id
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = object.object_id
 ),
 scope_objects AS (
     SELECT object.object_id
@@ -59,6 +95,10 @@ scope_objects AS (
         ON object.connection_id = scope.gds_connection_id
        AND object.zone_id = scope.zone_id
        AND lower(btrim(object.object_schema)) = lower(btrim(scope.object_schema))
+      JOIN requested_tenant ON TRUE
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = object.object_id
+       AND resolved.object_tenant_id = requested_tenant.tenant_id
 ),
 copy_objects AS (
     SELECT mapping.source_object_id AS object_id
@@ -69,6 +109,8 @@ copy_objects AS (
         ON copy.copy_group_id = copy_group.copy_group_id
       JOIN core.ingestion_object_mapping AS mapping
         ON mapping.ingestion_object_mapping_id = copy.ingestion_object_mapping_id
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = mapping.source_object_id
     UNION
     SELECT mapping.target_object_id
       FROM requested_tenant
@@ -78,6 +120,8 @@ copy_objects AS (
         ON copy.copy_group_id = copy_group.copy_group_id
       JOIN core.ingestion_object_mapping AS mapping
         ON mapping.ingestion_object_mapping_id = copy.ingestion_object_mapping_id
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = mapping.target_object_id
 ),
 process_objects AS (
     SELECT process.object_id
@@ -86,6 +130,8 @@ process_objects AS (
         ON process_group.tenant_id = requested_tenant.tenant_id
       JOIN core.process AS process
         ON process.process_group_id = process_group.process_group_id
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = process.object_id
 ),
 model_scope_objects AS (
     SELECT model_scope.object_id
@@ -96,6 +142,8 @@ model_scope_objects AS (
       JOIN model.model_scope AS model_scope
         ON model_scope.model_id = model.model_id
        AND model_scope.is_active
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = model_scope.object_id
 ),
 seed_objects AS (
     SELECT object_id FROM owned_objects
@@ -111,11 +159,7 @@ seed_objects AS (
 connected_objects (object_id) AS (
     SELECT object_id FROM seed_objects
     UNION
-    SELECT CASE
-               WHEN mapping.source_object_id = connected_objects.object_id
-               THEN mapping.target_object_id
-               ELSE mapping.source_object_id
-           END
+    SELECT resolved.object_id
       FROM connected_objects
       JOIN core.ingestion_object_mapping AS mapping
         ON mapping.is_active
@@ -123,14 +167,23 @@ connected_objects (object_id) AS (
            mapping.source_object_id = connected_objects.object_id
            OR mapping.target_object_id = connected_objects.object_id
        )
+      JOIN resolved_object_tenants AS resolved
+        ON resolved.object_id = CASE
+               WHEN mapping.source_object_id = connected_objects.object_id
+               THEN mapping.target_object_id
+               ELSE mapping.source_object_id
+           END
 )
 SELECT requested_tenant.tenant_id,
        connected_objects.object_id,
+       resolved.object_tenant_id,
        zone.zone_code AS snapshot_zone_code,
        zone.is_active AS snapshot_zone_is_active,
        EXISTS (SELECT 1 FROM invalid_scope_config) AS invalid_discovery_scope
   FROM requested_tenant
   LEFT JOIN connected_objects ON TRUE
+  LEFT JOIN resolved_object_tenants AS resolved
+    ON resolved.object_id = connected_objects.object_id
   LEFT JOIN core.object AS object
     ON object.object_id = connected_objects.object_id
   LEFT JOIN reference.zone AS zone

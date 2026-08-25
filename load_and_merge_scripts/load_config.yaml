@@ -2310,9 +2310,9 @@ loads:
       - tenant_code
       - model_name
       - model_description
-      - silver_model_naming_template
+      - silver_model_naming_instructions
       - silver_model_audit_columns_template
-      - gold_model_naming_template
+      - gold_model_naming_instructions
       - gold_model_technical_columns_template
       - gold_model_audit_columns_template
       - is_active
@@ -2326,9 +2326,9 @@ loads:
             tenant.tenant_id,
             btrim(staged.model_name::text) AS model_name,
             NULLIF(btrim(staged.model_description::text), '') AS model_description,
-            NULLIF(btrim(staged.silver_model_naming_template::text), '')::jsonb AS silver_model_naming_template,
+            NULLIF(btrim(staged.silver_model_naming_instructions::text), '') AS silver_model_naming_instructions,
             NULLIF(btrim(staged.silver_model_audit_columns_template::text), '')::jsonb AS silver_model_audit_columns_template,
-            NULLIF(btrim(staged.gold_model_naming_template::text), '')::jsonb AS gold_model_naming_template,
+            NULLIF(btrim(staged.gold_model_naming_instructions::text), '') AS gold_model_naming_instructions,
             NULLIF(btrim(staged.gold_model_technical_columns_template::text), '')::jsonb AS gold_model_technical_columns_template,
             NULLIF(btrim(staged.gold_model_audit_columns_template::text), '')::jsonb AS gold_model_audit_columns_template,
             COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
@@ -2340,9 +2340,9 @@ loads:
         AND lower(btrim(target.model_name)) = lower(source.model_name)
         WHEN MATCHED THEN UPDATE SET
           model_description = source.model_description,
-          silver_model_naming_template = source.silver_model_naming_template,
+          silver_model_naming_instructions = source.silver_model_naming_instructions,
           silver_model_audit_columns_template = source.silver_model_audit_columns_template,
-          gold_model_naming_template = source.gold_model_naming_template,
+          gold_model_naming_instructions = source.gold_model_naming_instructions,
           gold_model_technical_columns_template = source.gold_model_technical_columns_template,
           gold_model_audit_columns_template = source.gold_model_audit_columns_template,
           is_active = source.is_active,
@@ -2350,14 +2350,14 @@ loads:
           updated_by = CURRENT_USER
         WHEN NOT MATCHED THEN INSERT (
           tenant_id, model_name, model_description,
-          silver_model_naming_template, silver_model_audit_columns_template,
-          gold_model_naming_template, gold_model_technical_columns_template,
+          silver_model_naming_instructions, silver_model_audit_columns_template,
+          gold_model_naming_instructions, gold_model_technical_columns_template,
           gold_model_audit_columns_template, is_active
         ) VALUES (
           source.tenant_id, source.model_name, source.model_description,
-          source.silver_model_naming_template,
+          source.silver_model_naming_instructions,
           source.silver_model_audit_columns_template,
-          source.gold_model_naming_template,
+          source.gold_model_naming_instructions,
           source.gold_model_technical_columns_template,
           source.gold_model_audit_columns_template, source.is_active
         );

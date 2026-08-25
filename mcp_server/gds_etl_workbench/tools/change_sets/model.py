@@ -18,6 +18,7 @@ from pydantic import Field
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService, ResolvedPrincipal
+from gds_etl_workbench.domain.assertion_safety import ASSERTION_SECTION_MAX_BYTES
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
@@ -27,6 +28,11 @@ from gds_etl_workbench.domain.errors import (
     ModelChangeSetNotActiveError,
     ModelChangeSetNotFoundError,
     ModelChangeSetNotValidatedError,
+    StageBatchConflictError,
+    StageBatchIncompleteError,
+    StageBatchNotActiveError,
+    StageBatchNotFoundError,
+    StageChunkConflictError,
     WorkbenchError,
 )
 from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
@@ -34,14 +40,24 @@ from gds_etl_workbench.infrastructure.postgres import WriteDatabase, WriteTransa
 from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
 from gds_etl_workbench.tools.modeling.common import ModelReadContext
 from gds_etl_workbench.tools.snapshots.model.contracts import (
+    CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME,
+    ModelChangeSetDataset,
     ModelDataset,
 )
 from gds_etl_workbench.tools.snapshots.model.selection import build_model_snapshot
 
 from .action_review import DatasetActionReview
-from .common import ChangeSetContractModel as ContractModel
-from .common import change_set_annotations as _annotations
+from .common import (
+    MAX_STAGE_CHUNK_BYTES,
+    MAX_STAGE_CHUNK_RECORDS,
+    MAX_STAGE_CHUNKS,
+    SHA256_PATTERN,
+    ChangeSetContractModel,
+    canonical_records_sha256,
+    change_set_annotations,
+    stage_batch_sha256,
+)
 from .model_apply import ModelMaterializer
 from .model_validation import (
     ModelValidationIssue,
@@ -53,11 +69,10 @@ from .model_validation import (
 
 POLICY = ToolPolicy.TENANT_MODEL_WRITE
 READ_POLICY = ToolPolicy.TENANT_READ
+ContractModel = ChangeSetContractModel
+_annotations = change_set_annotations
 
-SECTION_COLUMN_BY_DATASET: dict[str, str] = {
-    name: f"{definition.section}_document" for name, definition in DATASETS_BY_NAME.items()
-}
-SECTION_COLUMNS = (
+READ_SECTION_COLUMNS = (
     "model_scope_document",
     "profiling_document",
     "analysis_document",
@@ -67,6 +82,7 @@ SECTION_COLUMNS = (
     "dimensional_document",
     "mapping_document",
 )
+WRITE_SECTION_COLUMNS = READ_SECTION_COLUMNS[1:]
 
 _MODEL_CONTEXT_FOR_UPDATE_SQL: LiteralString = """
 SELECT model_id,
@@ -82,11 +98,13 @@ SELECT model_id,
 _MODEL_PHYSICAL_SCOPE_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT model_tenant.tenant_code AS model_tenant_code,
+       object.object_id,
        scoped_tenant.tenant_code,
        system.system_code,
        connection.connection_code,
        object.object_schema,
        object.object_name,
+       attribute.attribute_id,
        attribute.attribute_name
   FROM requested_tenant
   JOIN core.tenant AS model_tenant
@@ -101,7 +119,7 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
     ON connection.connection_id = object.connection_id
    AND connection.is_active
   LEFT JOIN core.tenant AS scoped_tenant
-    ON scoped_tenant.tenant_id = connection.tenant_id
+    ON scoped_tenant.tenant_id = visible_objects.object_tenant_id
    AND scoped_tenant.is_active
   LEFT JOIN core.system AS system
     ON system.system_id = connection.system_id
@@ -109,6 +127,24 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
   LEFT JOIN core.attribute AS attribute
     ON attribute.object_id = object.object_id
    AND attribute.is_active
+"""
+
+_MODEL_OBJECT_ELIGIBILITY_SQL: LiteralString = """
+SELECT object_id,
+       is_bronze_source_eligible,
+       is_dimensional_source_eligible,
+       is_logical_mapping_target_eligible,
+       is_dimensional_mapping_target_eligible
+  FROM workflow.list_model_object_eligibility(%s)
+"""
+
+_MODEL_ATTRIBUTE_ELIGIBILITY_SQL: LiteralString = """
+SELECT attribute_id,
+       is_bronze_source_eligible,
+       is_dimensional_source_eligible,
+       is_logical_mapping_target_eligible,
+       is_dimensional_mapping_target_eligible
+  FROM workflow.list_model_attribute_eligibility(%s)
 """
 
 _OTHER_MODEL_NAMES_SQL: LiteralString = """
@@ -134,6 +170,7 @@ SELECT model_change_set_id,
   FROM mcp.model_change_set
  WHERE model_id = %s
    AND created_by_principal_id = %s
+   AND workflow_run_id IS NULL
    AND model_change_set_status IN ('active', 'validated')
    AND expires_time > CURRENT_TIMESTAMP
  ORDER BY created_time DESC
@@ -148,6 +185,7 @@ UPDATE mcp.model_change_set
        last_activity_time = CURRENT_TIMESTAMP
  WHERE model_id = %s
    AND created_by_principal_id = %s
+   AND workflow_run_id IS NULL
    AND model_change_set_status IN ('active', 'validated')
    AND expires_time <= CURRENT_TIMESTAMP
 RETURNING model_change_set_id, draft_revision
@@ -172,9 +210,19 @@ SELECT %s,
        repeat(md5('scope:' || model.model_id::TEXT || ':' || model.model_revision::TEXT), 2),
        repeat(md5('assertion:' || model.model_id::TEXT || ':' || model.model_revision::TEXT), 2),
        repeat(md5(
-           'policy:' || model.model_id::TEXT || ':' ||
-           coalesce(model.silver_model_naming_template::TEXT, '') || ':' ||
-           coalesce(model.gold_model_naming_template::TEXT, '')
+           'policy:' || jsonb_build_object(
+               'model_id', model.model_id,
+               'silver_model_naming_instructions',
+                   model.silver_model_naming_instructions,
+               'silver_model_audit_columns_template',
+                   model.silver_model_audit_columns_template,
+               'gold_model_naming_instructions',
+                   model.gold_model_naming_instructions,
+               'gold_model_technical_columns_template',
+                   model.gold_model_technical_columns_template,
+               'gold_model_audit_columns_template',
+                   model.gold_model_audit_columns_template
+           )::TEXT
        ), 2),
        %s,
        %s
@@ -232,8 +280,7 @@ SELECT model_change_set.*
 
 _STAGE_SQL: LiteralString = """
 UPDATE mcp.model_change_set
-   SET model_scope_document = %s,
-       profiling_document = %s,
+   SET profiling_document = %s,
        analysis_document = %s,
        assertion_document = %s,
        conceptual_document = %s,
@@ -249,6 +296,107 @@ UPDATE mcp.model_change_set
        expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
  WHERE model_change_set_id = %s
 RETURNING draft_revision, model_change_set_status, expires_time
+"""
+
+_EXPIRE_MODEL_STAGE_BATCH_SQL: LiteralString = """
+UPDATE mcp.model_stage_batch
+   SET stage_batch_status = 'expired',
+       terminal_time = CURRENT_TIMESTAMP
+ WHERE model_change_set_id = %s
+   AND dataset_name = %s
+   AND stage_batch_status = 'active'
+   AND expires_time <= CURRENT_TIMESTAMP
+RETURNING stage_batch_id
+"""
+
+_FIND_MODEL_STAGE_BATCH_SQL: LiteralString = """
+SELECT batch.*,
+       (
+           SELECT count(*)
+             FROM mcp.model_stage_chunk AS chunk
+            WHERE chunk.stage_batch_id = batch.stage_batch_id
+       ) AS received_chunk_count
+  FROM mcp.model_stage_batch AS batch
+ WHERE batch.model_change_set_id = %s
+   AND batch.dataset_name = %s
+   AND batch.stage_batch_status = 'active'
+ FOR UPDATE
+"""
+
+_CREATE_MODEL_STAGE_BATCH_SQL: LiteralString = """
+INSERT INTO mcp.model_stage_batch (
+    stage_batch_id,
+    model_change_set_id,
+    model_id,
+    dataset_name,
+    expected_draft_revision,
+    total_record_count,
+    total_chunk_count,
+    batch_sha256,
+    created_by_principal_id,
+    correlation_id,
+    expires_time
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+        least(%s, CURRENT_TIMESTAMP + INTERVAL '4 hours'))
+RETURNING *, 0::BIGINT AS received_chunk_count
+"""
+
+_GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL: LiteralString = """
+SELECT *
+  FROM mcp.model_stage_batch
+ WHERE stage_batch_id = %s
+   AND model_change_set_id = %s
+   AND model_id = %s
+ FOR UPDATE
+"""
+
+_GET_MODEL_STAGE_CHUNK_SQL: LiteralString = """
+SELECT chunk_sha256, records_document, record_count
+  FROM mcp.model_stage_chunk
+ WHERE stage_batch_id = %s
+   AND chunk_index = %s
+"""
+
+_MODEL_STAGE_CHUNK_TOTALS_SQL: LiteralString = """
+SELECT count(*) AS chunk_count,
+       coalesce(sum(record_count), 0) AS record_count
+  FROM mcp.model_stage_chunk
+ WHERE stage_batch_id = %s
+"""
+
+_INSERT_MODEL_STAGE_CHUNK_SQL: LiteralString = """
+INSERT INTO mcp.model_stage_chunk (
+    stage_batch_id, chunk_index, record_count, chunk_sha256, records_document
+)
+VALUES (%s, %s, %s, %s, %s)
+RETURNING record_count
+"""
+
+_TOUCH_MODEL_STAGE_BATCH_SQL: LiteralString = """
+UPDATE mcp.model_stage_batch
+   SET last_activity_time = CURRENT_TIMESTAMP
+ WHERE stage_batch_id = %s
+RETURNING expires_time
+"""
+
+_GET_MODEL_STAGE_CHUNKS_SQL: LiteralString = """
+SELECT chunk_index, record_count, chunk_sha256, records_document
+  FROM mcp.model_stage_chunk
+ WHERE stage_batch_id = %s
+ ORDER BY chunk_index
+"""
+
+_MARK_MODEL_STAGE_BATCH_COMMITTED_SQL: LiteralString = """
+UPDATE mcp.model_stage_batch
+   SET stage_batch_status = 'committed',
+       last_activity_time = CURRENT_TIMESTAMP,
+       committed_revision = %s,
+       committed_expires_time = %s,
+       terminal_time = CURRENT_TIMESTAMP
+ WHERE stage_batch_id = %s
+   AND stage_batch_status = 'active'
+RETURNING committed_revision, committed_expires_time
 """
 
 _RECORD_VALIDATION_SQL: LiteralString = """
@@ -300,12 +448,17 @@ RETURNING draft_revision, terminal_time
 
 
 class StageModelChange(ContractModel):
-    dataset: ModelDataset
+    dataset: ModelChangeSetDataset
     records: Annotated[list[dict[str, object]], Field(max_length=20_000)]
 
 
 class ModelDatasetCount(ContractModel):
     dataset: ModelDataset
+    record_count: int = Field(ge=0)
+
+
+class ModelChangeSetDatasetCount(ContractModel):
+    dataset: ModelChangeSetDataset
     record_count: int = Field(ge=0)
 
 
@@ -323,7 +476,7 @@ class ModelChangeSetActionKey(ContractModel):
 
 
 class ModelChangeSetActionReview(ContractModel):
-    dataset: ModelDataset
+    dataset: ModelChangeSetDataset
     insert_count: int = Field(ge=0)
     update_count: int = Field(ge=0)
     deactivate_count: int = Field(ge=0)
@@ -349,7 +502,53 @@ class StageModelChangeSetResult(ContractModel):
     model_id: int = Field(gt=0)
     model_change_set_id: UUID
     staged: Literal[True] = True
-    datasets: tuple[ModelDatasetCount, ...] = Field(min_length=1, max_length=19)
+    datasets: tuple[ModelChangeSetDatasetCount, ...] = Field(
+        min_length=1,
+        max_length=18,
+    )
+    draft_revision: int = Field(gt=0)
+    status: Literal["active"] = "active"
+    expires_at: datetime
+
+
+class BeginModelStageBatchResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    model_id: int = Field(gt=0)
+    model_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ModelChangeSetDataset
+    created: bool
+    total_record_count: int = Field(gt=0, le=20_000)
+    total_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    received_chunk_count: int = Field(ge=0, le=MAX_STAGE_CHUNKS)
+    expected_draft_revision: int = Field(gt=0)
+    expires_at: datetime
+
+
+class PutModelStageChunkResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    model_id: int = Field(gt=0)
+    model_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ModelChangeSetDataset
+    accepted: Literal[True] = True
+    duplicate: bool
+    chunk_index: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    record_count: int = Field(gt=0, le=MAX_STAGE_CHUNK_RECORDS)
+    received_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    total_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    expires_at: datetime
+
+
+class CommitModelStageBatchResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    model_id: int = Field(gt=0)
+    model_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ModelChangeSetDataset
+    committed: Literal[True] = True
+    replayed: bool
+    record_count: int = Field(gt=0, le=20_000)
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
     expires_at: datetime
@@ -541,7 +740,7 @@ def register_model_change_set_tools(
         model_id: Annotated[int, Field(gt=0)],
         model_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        changes: Annotated[list[StageModelChange], Field(min_length=1, max_length=19)],
+        changes: Annotated[list[StageModelChange], Field(min_length=1, max_length=18)],
         schema_version: Literal["1.0"] = "1.0",
     ) -> StageModelChangeSetResult:
         del schema_version
@@ -577,7 +776,7 @@ def register_model_change_set_tools(
                     (
                         *(
                             Jsonb(documents[column.removesuffix("_document")])
-                            for column in SECTION_COLUMNS
+                            for column in WRITE_SECTION_COLUMNS
                         ),
                         model_change_set_id,
                     ),
@@ -600,8 +799,9 @@ def register_model_change_set_tools(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
                 datasets=tuple(
-                    ModelDatasetCount(
-                        dataset=cast(ModelDataset, dataset), record_count=len(records)
+                    ModelChangeSetDatasetCount(
+                        dataset=cast(ModelChangeSetDataset, dataset),
+                        record_count=len(records),
                     )
                     for dataset, records in staged.items()
                 ),
@@ -624,6 +824,414 @@ def register_model_change_set_tools(
         retain_arguments={
             "model_id",
             "model_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
+    )
+
+    @server.tool(
+        description=(
+            "Begin or resume an idempotent bounded upload for one complete Model "
+            "Change Set dataset. This does not change the draft revision."
+        ),
+        annotations=_annotations(read_only=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def begin_model_stage_batch(
+        ctx: Context[None],
+        model_id: Annotated[int, Field(gt=0)],
+        model_change_set_id: UUID,
+        expected_draft_revision: Annotated[int, Field(gt=0)],
+        dataset: ModelChangeSetDataset,
+        total_record_count: Annotated[int, Field(gt=0, le=20_000)],
+        total_chunk_count: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
+        batch_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> BeginModelStageBatchResult:
+        del schema_version
+        try:
+            request_principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                model, principal = await _authorize_model(
+                    transaction,
+                    authorizer=authorizer,
+                    request_principal=request_principal,
+                    model_id=model_id,
+                    policy=POLICY,
+                )
+                if principal.principal_id is None:
+                    raise AuthorizationDeniedError()
+                change_set = await _owned_change_set(
+                    transaction,
+                    change_set_id=model_change_set_id,
+                    model_id=model.model_id,
+                    principal=principal,
+                    for_update=True,
+                )
+                _require_mutable(change_set)
+                if change_set["draft_revision"] != expected_draft_revision:
+                    raise DraftRevisionConflictError(change_set["draft_revision"])
+                await transaction.fetch_all(
+                    _EXPIRE_MODEL_STAGE_BATCH_SQL,
+                    (model_change_set_id, dataset),
+                )
+                row = await transaction.fetch_one(
+                    _FIND_MODEL_STAGE_BATCH_SQL,
+                    (model_change_set_id, dataset),
+                )
+                created = row is None
+                if row is not None:
+                    if (
+                        row["created_by_principal_id"] != principal.principal_id
+                        or row["expected_draft_revision"] != expected_draft_revision
+                        or row["total_record_count"] != total_record_count
+                        or row["total_chunk_count"] != total_chunk_count
+                        or row["batch_sha256"] != batch_sha256
+                    ):
+                        raise StageBatchConflictError()
+                else:
+                    stage_batch_id = uuid4()
+                    row = await transaction.fetch_one(
+                        _CREATE_MODEL_STAGE_BATCH_SQL,
+                        (
+                            stage_batch_id,
+                            model_change_set_id,
+                            model.model_id,
+                            dataset,
+                            expected_draft_revision,
+                            total_record_count,
+                            total_chunk_count,
+                            batch_sha256,
+                            principal.principal_id,
+                            uuid4(),
+                            change_set["expires_time"],
+                        ),
+                    )
+                    assert row is not None
+            return BeginModelStageBatchResult(
+                model_id=model_id,
+                model_change_set_id=model_change_set_id,
+                stage_batch_id=row["stage_batch_id"],
+                dataset=cast(ModelChangeSetDataset, row["dataset_name"]),
+                created=created,
+                total_record_count=row["total_record_count"],
+                total_chunk_count=row["total_chunk_count"],
+                received_chunk_count=row["received_chunk_count"],
+                expected_draft_revision=expected_draft_revision,
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise ModelChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise ModelChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "begin_model_stage_batch",
+        policy=POLICY,
+        summarize_input=_audit_begin_stage_batch,
+        retain_arguments={
+            "model_id",
+            "model_change_set_id",
+            "expected_draft_revision",
+            "dataset",
+            "total_record_count",
+            "total_chunk_count",
+            "schema_version",
+        },
+    )
+
+    @server.tool(
+        description=(
+            "Idempotently store one ordered, schema-valid chunk for an active Model "
+            "Stage Batch. This does not change or validate the Change Set."
+        ),
+        annotations=_annotations(read_only=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def put_model_stage_chunk(
+        ctx: Context[None],
+        model_id: Annotated[int, Field(gt=0)],
+        model_change_set_id: UUID,
+        stage_batch_id: UUID,
+        dataset: ModelChangeSetDataset,
+        chunk_index: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
+        records: Annotated[
+            list[dict[str, object]],
+            Field(min_length=1, max_length=MAX_STAGE_CHUNK_RECORDS),
+        ],
+        chunk_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> PutModelStageChunkResult:
+        del schema_version
+        try:
+            normalized = _validate_stage_changes(
+                [StageModelChange(dataset=dataset, records=records)]
+            )[dataset]
+            encoded = json.dumps(
+                normalized,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            if len(encoded) > MAX_STAGE_CHUNK_BYTES:
+                raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
+            if canonical_records_sha256(normalized) != chunk_sha256:
+                raise InvalidRequestError(
+                    "The Stage chunk SHA-256 does not match its normalized records."
+                )
+            request_principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                model, principal = await _authorize_model(
+                    transaction,
+                    authorizer=authorizer,
+                    request_principal=request_principal,
+                    model_id=model_id,
+                    policy=POLICY,
+                )
+                change_set = await _owned_change_set(
+                    transaction,
+                    change_set_id=model_change_set_id,
+                    model_id=model.model_id,
+                    principal=principal,
+                    for_update=True,
+                )
+                _require_mutable(change_set)
+                batch = await transaction.fetch_one(
+                    _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
+                    (stage_batch_id, model_change_set_id, model.model_id),
+                )
+                _require_model_stage_batch(batch, principal, dataset)
+                assert batch is not None
+                if change_set["draft_revision"] != batch["expected_draft_revision"]:
+                    raise DraftRevisionConflictError(change_set["draft_revision"])
+                if chunk_index > batch["total_chunk_count"]:
+                    raise InvalidRequestError("Chunk index exceeds the Stage Batch manifest.")
+                existing = await transaction.fetch_one(
+                    _GET_MODEL_STAGE_CHUNK_SQL,
+                    (stage_batch_id, chunk_index),
+                )
+                duplicate = existing is not None
+                if existing is not None:
+                    if (
+                        existing["chunk_sha256"] != chunk_sha256
+                        or existing["records_document"] != normalized
+                    ):
+                        raise StageChunkConflictError()
+                else:
+                    totals = await transaction.fetch_one(
+                        _MODEL_STAGE_CHUNK_TOTALS_SQL,
+                        (stage_batch_id,),
+                    )
+                    assert totals is not None
+                    if totals["record_count"] + len(normalized) > batch["total_record_count"]:
+                        raise InvalidRequestError("Stage chunks exceed the approved record count.")
+                    inserted = await transaction.fetch_one(
+                        _INSERT_MODEL_STAGE_CHUNK_SQL,
+                        (
+                            stage_batch_id,
+                            chunk_index,
+                            len(normalized),
+                            chunk_sha256,
+                            Jsonb(normalized),
+                        ),
+                    )
+                    assert inserted is not None
+                    touched = await transaction.fetch_one(
+                        _TOUCH_MODEL_STAGE_BATCH_SQL,
+                        (stage_batch_id,),
+                    )
+                    assert touched is not None
+                totals = await transaction.fetch_one(
+                    _MODEL_STAGE_CHUNK_TOTALS_SQL,
+                    (stage_batch_id,),
+                )
+                assert totals is not None
+            return PutModelStageChunkResult(
+                model_id=model_id,
+                model_change_set_id=model_change_set_id,
+                stage_batch_id=stage_batch_id,
+                dataset=dataset,
+                duplicate=duplicate,
+                chunk_index=chunk_index,
+                record_count=len(normalized),
+                received_chunk_count=totals["chunk_count"],
+                total_chunk_count=batch["total_chunk_count"],
+                expires_at=batch["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise ModelChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise ModelChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "put_model_stage_chunk",
+        policy=POLICY,
+        summarize_input=_audit_put_stage_chunk,
+        retain_arguments={
+            "model_id",
+            "model_change_set_id",
+            "stage_batch_id",
+            "dataset",
+            "chunk_index",
+            "schema_version",
+        },
+    )
+
+    @server.tool(
+        description=(
+            "Verify and atomically commit one complete Model Stage Batch as the "
+            "dataset's replacement list, incrementing the draft revision once."
+        ),
+        annotations=_annotations(read_only=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def commit_model_stage_batch(
+        ctx: Context[None],
+        model_id: Annotated[int, Field(gt=0)],
+        model_change_set_id: UUID,
+        stage_batch_id: UUID,
+        expected_draft_revision: Annotated[int, Field(gt=0)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> CommitModelStageBatchResult:
+        del schema_version
+        try:
+            request_principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                model, principal = await _authorize_model(
+                    transaction,
+                    authorizer=authorizer,
+                    request_principal=request_principal,
+                    model_id=model_id,
+                    policy=POLICY,
+                )
+                change_set = await _owned_change_set(
+                    transaction,
+                    change_set_id=model_change_set_id,
+                    model_id=model.model_id,
+                    principal=principal,
+                    for_update=True,
+                )
+                batch = await transaction.fetch_one(
+                    _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
+                    (stage_batch_id, model_change_set_id, model.model_id),
+                )
+                if batch is None or batch["created_by_principal_id"] != principal.principal_id:
+                    raise StageBatchNotFoundError()
+                if batch["expected_draft_revision"] != expected_draft_revision:
+                    raise InvalidRequestError(
+                        "Expected revision does not match the Stage Batch manifest."
+                    )
+                if batch["stage_batch_status"] == "committed":
+                    replayed = True
+                    committed_revision = batch["committed_revision"]
+                    committed_expires_time = batch["committed_expires_time"]
+                else:
+                    _require_model_stage_batch(batch, principal, None)
+                    _require_mutable(change_set)
+                    if change_set["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(change_set["draft_revision"])
+                    chunks = await transaction.fetch_all(
+                        _GET_MODEL_STAGE_CHUNKS_SQL,
+                        (stage_batch_id,),
+                    )
+                    if (
+                        len(chunks) != batch["total_chunk_count"]
+                        or sum(row["record_count"] for row in chunks) != batch["total_record_count"]
+                        or stage_batch_sha256([row["chunk_sha256"] for row in chunks])
+                        != batch["batch_sha256"]
+                    ):
+                        raise StageBatchIncompleteError()
+                    assembled = [
+                        cast(dict[str, object], record)
+                        for chunk in chunks
+                        for record in chunk["records_document"]
+                    ]
+                    staged = _validate_stage_changes(
+                        [
+                            StageModelChange(
+                                dataset=cast(ModelChangeSetDataset, batch["dataset_name"]),
+                                records=assembled,
+                            )
+                        ]
+                    )
+                    documents = _documents(change_set)
+                    dataset_name = batch["dataset_name"]
+                    section = DATASETS_BY_NAME[dataset_name].section
+                    documents[section][dataset_name] = staged[dataset_name]
+                    _validate_document_bounds(documents)
+                    updated = await transaction.fetch_one(
+                        _STAGE_SQL,
+                        (
+                            *(
+                                Jsonb(documents[column.removesuffix("_document")])
+                                for column in WRITE_SECTION_COLUMNS
+                            ),
+                            model_change_set_id,
+                        ),
+                    )
+                    assert updated is not None
+                    await _insert_event(
+                        transaction,
+                        change_set_id=model_change_set_id,
+                        model_id=model.model_id,
+                        event_type="section_put",
+                        draft_revision=updated["draft_revision"],
+                        section=section,
+                        action_count=len(assembled),
+                        outcome="staged",
+                        metadata={"datasets": [dataset_name]},
+                        correlation_id=uuid4(),
+                    )
+                    marked = await transaction.fetch_one(
+                        _MARK_MODEL_STAGE_BATCH_COMMITTED_SQL,
+                        (
+                            updated["draft_revision"],
+                            updated["expires_time"],
+                            stage_batch_id,
+                        ),
+                    )
+                    assert marked is not None
+                    replayed = False
+                    committed_revision = marked["committed_revision"]
+                    committed_expires_time = marked["committed_expires_time"]
+            return CommitModelStageBatchResult(
+                model_id=model_id,
+                model_change_set_id=model_change_set_id,
+                stage_batch_id=stage_batch_id,
+                dataset=cast(ModelChangeSetDataset, batch["dataset_name"]),
+                replayed=replayed,
+                record_count=batch["total_record_count"],
+                draft_revision=committed_revision,
+                expires_at=committed_expires_time,
+            )
+        except AuthenticationError as error:
+            raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise ModelChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise ModelChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "commit_model_stage_batch",
+        policy=POLICY,
+        summarize_input=_audit_revision_input,
+        retain_arguments={
+            "model_id",
+            "model_change_set_id",
+            "stage_batch_id",
             "expected_draft_revision",
             "schema_version",
         },
@@ -732,6 +1340,7 @@ def register_model_change_set_tools(
                 _require_mutable(row)
                 if row["draft_revision"] != expected_draft_revision:
                     raise DraftRevisionConflictError(row["draft_revision"])
+                _require_mcp_writable_pending(row)
                 validation = await _validate_locked_change_set(transaction, model, row)
                 outcome = _validation_outcome(validation)
                 updated = await transaction.fetch_one(
@@ -835,6 +1444,7 @@ def register_model_change_set_tools(
                     raise ModelChangeSetNotValidatedError()
                 if row["draft_revision"] != expected_draft_revision:
                     raise DraftRevisionConflictError(row["draft_revision"])
+                _require_mcp_writable_pending(row)
                 validation = await _validate_locked_change_set(transaction, model, row)
                 if not validation.valid:
                     raise CandidateDigestConflictError()
@@ -998,12 +1608,15 @@ def register_model_change_set_tools(
             "layer/evidence reads, or get_model_change_set and stop without a lock. "
             "Local drafting: keep the Model Snapshot immutable, author only affected "
             "datasets and direct dependencies, and do not call MCP mutation tools. "
+            "Model Scope is read-only through MCP and must never be staged or batched. "
             "Before Create, Stage, Validate, or Apply, call check_tenant_lock and ask "
             "before acquire_tenant_lock. Call create_model_change_set only for explicit "
             "create/resume or when an approved Stage has no draft. If resumed, fetch "
             "the summary and every dataset with a nonzero count before replacing "
             "anything. Use describe_model_dataset only for datasets being authored. "
-            "Show complete affected lists and ask before stage_model_change_set. "
+            "Show complete affected lists and ask before stage_model_change_set or "
+            "begin_model_stage_batch. For a large dataset, Put every approved chunk and "
+            "Commit once. "
             "Validate the latest revision and repair only the first failed phase. Show "
             "the authoritative action_review, then obtain fresh approval immediately "
             "before apply_model_change_set. Archive only when requested; archive needs "
@@ -1057,10 +1670,28 @@ async def _owned_change_set(
 
 
 def _require_mutable(row: Mapping[str, Any]) -> None:
+    _require_generic_change_set(row)
     if row["model_change_set_status"] not in ("active", "validated"):
         raise ModelChangeSetNotActiveError()
     if row["expires_time"] <= datetime.now(row["expires_time"].tzinfo):
         raise ModelChangeSetNotActiveError()
+
+
+def _require_model_stage_batch(
+    row: Mapping[str, Any] | None,
+    principal: ResolvedPrincipal,
+    dataset: ModelChangeSetDataset | None,
+) -> None:
+    if row is None or row["created_by_principal_id"] != principal.principal_id:
+        raise StageBatchNotFoundError()
+    if dataset is not None and row["dataset_name"] != dataset:
+        raise InvalidRequestError("Dataset does not match the Stage Batch manifest.")
+    if row["dataset_name"] not in CHANGE_SET_DATASETS_BY_NAME:
+        raise InvalidRequestError("The Stage Batch dataset is not writable through MCP.")
+    if row["stage_batch_status"] != "active":
+        raise StageBatchNotActiveError()
+    if row["expires_time"] <= datetime.now(row["expires_time"].tzinfo):
+        raise StageBatchNotActiveError()
 
 
 def _validate_stage_changes(
@@ -1084,22 +1715,24 @@ def _validate_document_bounds(
 ) -> None:
     if sum(len(records) for section in documents.values() for records in section.values()) > 50_000:
         raise InvalidRequestError("A Model Change Set is limited to 50,000 pending records.")
-    if any(
-        len(
+    for section_name, section in documents.items():
+        encoded_size = len(
             json.dumps(
                 section,
                 ensure_ascii=False,
                 separators=(",", ":"),
             ).encode("utf-8")
         )
-        > 16 * 1024 * 1024
-        for section in documents.values()
-    ):
-        raise InvalidRequestError("A Model Change Set section exceeds 16 MiB.")
+        if section_name == "assertion" and encoded_size > ASSERTION_SECTION_MAX_BYTES:
+            raise InvalidRequestError("The Assertion Section exceeds 4 MiB.")
+        if section_name != "assertion" and encoded_size > 16 * 1024 * 1024:
+            raise InvalidRequestError("A Model Change Set section exceeds 16 MiB.")
 
 
 def _documents(row: Mapping[str, Any]) -> dict[str, dict[str, list[dict[str, object]]]]:
-    return {column.removesuffix("_document"): dict(row[column] or {}) for column in SECTION_COLUMNS}
+    return {
+        column.removesuffix("_document"): dict(row[column] or {}) for column in READ_SECTION_COLUMNS
+    }
 
 
 def _pending_datasets(row: Mapping[str, Any]) -> dict[str, list[dict[str, object]]]:
@@ -1108,6 +1741,21 @@ def _pending_datasets(row: Mapping[str, Any]) -> dict[str, list[dict[str, object
         for section in _documents(row).values()
         for dataset, records in section.items()
     }
+
+
+def _require_mcp_writable_pending(row: Mapping[str, Any]) -> None:
+    _require_generic_change_set(row)
+    if any(dataset not in CHANGE_SET_DATASETS_BY_NAME for dataset in _pending_datasets(row)):
+        raise InvalidRequestError(
+            "The Model Change Set contains a dataset that is not writable through MCP."
+        )
+
+
+def _require_generic_change_set(row: Mapping[str, Any]) -> None:
+    if row.get("workflow_run_id") is not None:
+        raise InvalidRequestError(
+            "Workflow-bound Model Change Sets are managed only by their Workflow Run."
+        )
 
 
 async def _validate_locked_change_set(
@@ -1134,7 +1782,10 @@ async def _validate_locked_change_set(
     physical_scope = await _load_physical_scope(transaction, model)
     return validate_future_graph(
         snapshot=snapshot,
-        staged_documents=_pending_datasets(row),
+        staged_documents=cast(
+            dict[ModelChangeSetDataset, list[dict[str, object]]],
+            _pending_datasets(row),
+        ),
         physical_scope=physical_scope,
     )
 
@@ -1151,8 +1802,18 @@ async def _load_physical_scope(
         _OTHER_MODEL_NAMES_SQL,
         (model.tenant_id, model.model_id),
     )
+    object_eligibility_rows = await transaction.fetch_all(
+        _MODEL_OBJECT_ELIGIBILITY_SQL,
+        (model.model_id,),
+    )
+    attribute_eligibility_rows = await transaction.fetch_all(
+        _MODEL_ATTRIBUTE_ELIGIBILITY_SQL,
+        (model.model_id,),
+    )
     objects: set[tuple[str, str, str, str, str]] = set()
     attributes: set[tuple[str, str, str, str, str, str]] = set()
+    object_keys_by_id: dict[int, tuple[str, str, str, str, str]] = {}
+    attribute_keys_by_id: dict[int, tuple[str, str, str, str, str, str]] = {}
     for physical in rows:
         object_values = tuple(
             physical[field]
@@ -1170,9 +1831,41 @@ async def _load_physical_scope(
                 tuple(normalize_model_key_value(value) for value in object_values),
             )
             objects.add(object_key)
+            object_id = physical["object_id"]
+            if isinstance(object_id, int):
+                object_keys_by_id[object_id] = object_key
             attribute_name = physical["attribute_name"]
             if isinstance(attribute_name, str):
-                attributes.add((*object_key, normalize_model_key_value(attribute_name)))
+                attribute_key = (*object_key, normalize_model_key_value(attribute_name))
+                attributes.add(attribute_key)
+                attribute_id = physical["attribute_id"]
+                if isinstance(attribute_id, int):
+                    attribute_keys_by_id[attribute_id] = attribute_key
+
+    eligibility_flags = (
+        "is_bronze_source_eligible",
+        "is_dimensional_source_eligible",
+        "is_logical_mapping_target_eligible",
+        "is_dimensional_mapping_target_eligible",
+    )
+    eligible_objects: dict[str, set[tuple[str, str, str, str, str]]] = {
+        flag: set() for flag in eligibility_flags
+    }
+    eligible_attributes: dict[str, set[tuple[str, str, str, str, str, str]]] = {
+        flag: set() for flag in eligibility_flags
+    }
+    for eligibility in object_eligibility_rows:
+        key = object_keys_by_id.get(eligibility["object_id"])
+        if key is not None:
+            for flag in eligibility_flags:
+                if eligibility[flag] is True:
+                    eligible_objects[flag].add(key)
+    for eligibility in attribute_eligibility_rows:
+        key = attribute_keys_by_id.get(eligibility["attribute_id"])
+        if key is not None:
+            for flag in eligibility_flags:
+                if eligibility[flag] is True:
+                    eligible_attributes[flag].add(key)
     return PhysicalModelScope(
         model_tenant_code=rows[0]["model_tenant_code"],
         active_system_codes=frozenset(
@@ -1180,9 +1873,26 @@ async def _load_physical_scope(
         ),
         objects=frozenset(objects),
         attributes=frozenset(attributes),
+        bronze_source_objects=frozenset(eligible_objects["is_bronze_source_eligible"]),
+        bronze_source_attributes=frozenset(eligible_attributes["is_bronze_source_eligible"]),
+        dimensional_source_objects=frozenset(eligible_objects["is_dimensional_source_eligible"]),
+        dimensional_source_attributes=frozenset(
+            eligible_attributes["is_dimensional_source_eligible"]
+        ),
+        logical_mapping_target_objects=frozenset(
+            eligible_objects["is_logical_mapping_target_eligible"]
+        ),
+        logical_mapping_target_attributes=frozenset(
+            eligible_attributes["is_logical_mapping_target_eligible"]
+        ),
+        dimensional_mapping_target_objects=frozenset(
+            eligible_objects["is_dimensional_mapping_target_eligible"]
+        ),
+        dimensional_mapping_target_attributes=frozenset(
+            eligible_attributes["is_dimensional_mapping_target_eligible"]
+        ),
         other_model_names=frozenset(
-            normalize_model_key_value(other_model["model_name"])
-            for other_model in other_model_rows
+            normalize_model_key_value(other_model["model_name"]) for other_model in other_model_rows
         ),
     )
 
@@ -1223,7 +1933,7 @@ def _model_action_review(
 ) -> tuple[ModelChangeSetActionReview, ...]:
     return tuple(
         ModelChangeSetActionReview(
-            dataset=cast(ModelDataset, summary.dataset),
+            dataset=cast(ModelChangeSetDataset, summary.dataset),
             insert_count=summary.insert_count,
             update_count=summary.update_count,
             deactivate_count=summary.deactivate_count,
@@ -1302,6 +2012,39 @@ def _audit_stage_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     }
 
 
+def _audit_begin_stage_batch(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+    result = _audit_revision_input(arguments)
+    dataset = arguments.get("dataset")
+    for name in ("total_record_count", "total_chunk_count"):
+        value = arguments.get(name)
+        result[name] = value if type(value) is int and value > 0 else "invalid"
+    result["dataset"] = (
+        dataset
+        if isinstance(dataset, str) and dataset in CHANGE_SET_DATASETS_BY_NAME
+        else "invalid"
+    )
+    return result
+
+
+def _audit_put_stage_chunk(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+    result = _audit_model_input(arguments)
+    dataset = arguments.get("dataset")
+    result["dataset"] = (
+        dataset
+        if isinstance(dataset, str) and dataset in CHANGE_SET_DATASETS_BY_NAME
+        else "invalid"
+    )
+    chunk_index = arguments.get("chunk_index")
+    result["chunk_index"] = (
+        chunk_index if type(chunk_index) is int and chunk_index > 0 else "invalid"
+    )
+    records = arguments.get("records")
+    result["record_count"] = (
+        len(cast(list[object], records)) if isinstance(records, list) else "invalid"
+    )
+    return result
+
+
 def _audit_get_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     result = _audit_model_input(arguments)
     dataset = arguments.get("dataset")
@@ -1314,3 +2057,36 @@ def _audit_get_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
         )
         or "counts_only",
     }
+
+
+# Shared application-service boundary. MCP handlers keep their existing local
+# names; the web adapter imports only these explicit public contracts.
+model_change_set_documents = _documents
+model_validation_error = _error
+model_action_review = _model_action_review
+pending_model_change_set_datasets = _pending_datasets
+require_mcp_writable_pending = _require_mcp_writable_pending
+require_model_stage_batch = _require_model_stage_batch
+require_mutable_model_change_set = _require_mutable
+validate_model_change_set_document_bounds = _validate_document_bounds
+validate_locked_model_change_set = _validate_locked_change_set
+validate_model_stage_changes = _validate_stage_changes
+model_validation_outcome = _validation_outcome
+
+
+__all__ = [
+    "ModelChangeSetDatasetCount",
+    "ModelDatasetCount",
+    "StageModelChange",
+    "model_action_review",
+    "model_change_set_documents",
+    "model_validation_error",
+    "model_validation_outcome",
+    "pending_model_change_set_datasets",
+    "require_mcp_writable_pending",
+    "require_model_stage_batch",
+    "require_mutable_model_change_set",
+    "validate_locked_model_change_set",
+    "validate_model_change_set_document_bounds",
+    "validate_model_stage_changes",
+]

@@ -1,0 +1,14 @@
+{
+  "schema_version": "1.0",
+  "key": "mapping.standard",
+  "version": "1.0.0",
+  "schema_digest": "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa",
+  "schema_bundle_version": "1.0",
+  "json_schema_mode": "validation",
+  "pydantic_version": "2.13.4",
+  "root_models": [
+    "AttributeMapperBatchOutputV1",
+    "GeneratorDocumentV1",
+    "HeaderMapperOutputV1"
+  ]
+}

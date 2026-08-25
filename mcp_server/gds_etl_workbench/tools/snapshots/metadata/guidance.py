@@ -349,9 +349,7 @@ def metadata_population_rules(definition: DatasetDefinition) -> tuple[str, ...]:
         )
     for constraint in definition.unique_constraints:
         if constraint != definition.canonical_key:
-            rules.append(
-                f"Values must also be unique by ({', '.join(constraint)})."
-            )
+            rules.append(f"Values must also be unique by ({', '.join(constraint)}).")
     for field, value in definition.fixed_values:
         rules.append(f"{field} must be exactly {value!r} in this dataset.")
     for reference in definition.references:
@@ -494,8 +492,7 @@ def _population_guidance(
         additions.append(f"For this dataset, use exactly {fixed_values[name]!r}.")
     if references:
         targets = "; ".join(
-            f"column {reference.column} in dataset(s) "
-            f"{', '.join(reference.datasets)}"
+            f"column {reference.column} in dataset(s) {', '.join(reference.datasets)}"
             for reference in references
         )
         additions.append(
@@ -515,9 +512,7 @@ def _data_types(schema: dict[str, object]) -> list[str]:
     if isinstance(raw_type, str):
         result.append(raw_type)
     elif isinstance(raw_type, list):
-        result.extend(
-            item for item in cast(list[object], raw_type) if isinstance(item, str)
-        )
+        result.extend(item for item in cast(list[object], raw_type) if isinstance(item, str))
     raw_any_of = schema.get("anyOf")
     if isinstance(raw_any_of, list):
         for branch in cast(list[object], raw_any_of):

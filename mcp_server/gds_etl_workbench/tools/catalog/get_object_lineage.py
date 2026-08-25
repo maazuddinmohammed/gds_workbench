@@ -77,14 +77,14 @@ SELECT mapping.ingestion_object_mapping_id,
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_connection.tenant_id
+    ON source_tenant.tenant_id = source_visible.object_tenant_id
   JOIN core.object AS target_object
     ON target_object.object_id = mapping.target_object_id
   JOIN reference.zone AS target_zone ON target_zone.zone_id = target_object.zone_id
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_connection.tenant_id
+    ON target_tenant.tenant_id = target_visible.object_tenant_id
  WHERE (
        (%s IN ('upstream', 'both') AND mapping.target_object_id = %s)
        OR (%s IN ('downstream', 'both') AND mapping.source_object_id = %s)
@@ -147,6 +147,7 @@ def register_get_object_lineage_tool(
     audit: ToolCallAuditMiddleware,
 ) -> None:
     @server.tool(
+        name=_TOOL_NAME,
         description=(
             "Get direct configured ingestion mappings upstream and/or downstream of one "
             "authorized Object. This reports configured lineage, not observed runtime flow."
@@ -160,7 +161,7 @@ def register_get_object_lineage_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_object_lineage(
+    async def _get_object_lineage(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         object_id: Annotated[int, Field(gt=0)],
@@ -201,6 +202,7 @@ def register_get_object_lineage_tool(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _get_object_lineage
     audit.register_tool(
         _TOOL_NAME,
         policy=POLICY,

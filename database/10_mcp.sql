@@ -5,6 +5,7 @@ CREATE SCHEMA mcp;
 CREATE TABLE mcp.model_change_set (
     model_change_set_id UUID PRIMARY KEY,
     model_id BIGINT NOT NULL,
+    workflow_run_id BIGINT,
     model_change_set_status VARCHAR(20) NOT NULL DEFAULT 'active',
     base_model_revision BIGINT NOT NULL,
     base_source_context_digest CHAR(64) NOT NULL,
@@ -31,10 +32,16 @@ CREATE TABLE mcp.model_change_set (
     terminal_time TIMESTAMPTZ,
     CONSTRAINT fk_change_set_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_change_set_workflow_run FOREIGN KEY (
+        workflow_run_id,
+        model_id
+    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
+        ON DELETE NO ACTION,
     CONSTRAINT fk_change_set_creator FOREIGN KEY (created_by_principal_id)
         REFERENCES security.principal (principal_id)
         ON DELETE NO ACTION,
     CONSTRAINT uq_change_set_id_model UNIQUE (model_change_set_id, model_id),
+    CONSTRAINT uq_change_set_workflow_run UNIQUE (workflow_run_id),
     CONSTRAINT ck_change_set_status CHECK (
         model_change_set_status IN (
             'active', 'validated', 'applied', 'expired', 'discarded', 'superseded'
@@ -84,6 +91,127 @@ CREATE TABLE mcp.model_change_set (
     CONSTRAINT ck_change_set_terminal_time CHECK (
         (model_change_set_status IN ('applied', 'expired', 'discarded', 'superseded'))
         = (terminal_time IS NOT NULL)
+    )
+);
+
+CREATE FUNCTION mcp.guard_model_change_set_workflow_binding()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $guard_model_change_set_workflow_binding$
+BEGIN
+    IF NEW.workflow_run_id IS DISTINCT FROM OLD.workflow_run_id THEN
+        RAISE EXCEPTION 'Model Change Set Workflow Run binding is immutable'
+            USING ERRCODE = '55000';
+    END IF;
+    RETURN NEW;
+END;
+$guard_model_change_set_workflow_binding$;
+
+CREATE TRIGGER guard_model_change_set_workflow_binding
+BEFORE UPDATE ON mcp.model_change_set
+FOR EACH ROW EXECUTE FUNCTION mcp.guard_model_change_set_workflow_binding();
+
+CREATE TABLE mcp.model_stage_batch (
+    stage_batch_id UUID PRIMARY KEY,
+    model_change_set_id UUID NOT NULL,
+    model_id BIGINT NOT NULL,
+    dataset_name VARCHAR(50) NOT NULL,
+    expected_draft_revision BIGINT NOT NULL,
+    total_record_count INTEGER NOT NULL,
+    total_chunk_count INTEGER NOT NULL,
+    batch_sha256 CHAR(64) NOT NULL,
+    stage_batch_status VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_by_principal_id BIGINT NOT NULL,
+    correlation_id UUID NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_activity_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_time TIMESTAMPTZ NOT NULL DEFAULT (
+        CURRENT_TIMESTAMP + INTERVAL '4 hours'
+    ),
+    committed_revision BIGINT,
+    committed_expires_time TIMESTAMPTZ,
+    terminal_time TIMESTAMPTZ,
+    CONSTRAINT fk_model_stage_batch_change_set FOREIGN KEY (
+        model_change_set_id,
+        model_id
+    ) REFERENCES mcp.model_change_set (
+        model_change_set_id,
+        model_id
+    ) ON DELETE NO ACTION,
+    CONSTRAINT fk_model_stage_batch_creator FOREIGN KEY (
+        created_by_principal_id
+    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_model_stage_batch_id_model
+        UNIQUE (stage_batch_id, model_id),
+    CONSTRAINT ck_model_stage_batch_dataset CHECK (
+        dataset_name IN (
+            'model_details', 'model_scope', 'profiling_profile',
+            'analysis_result', 'modeling_assertion_document',
+            'modeling_assertion_record', 'conceptual_object',
+            'conceptual_relationship', 'logical_submodel', 'logical_entity',
+            'logical_attribute', 'logical_relationship',
+            'dimensional_submodel', 'dimensional_entity',
+            'dimensional_attribute', 'dimensional_relationship',
+            'mapping_dependency', 'mapping_object', 'mapping_attribute'
+        )
+    ),
+    CONSTRAINT ck_model_stage_batch_manifest CHECK (
+        expected_draft_revision >= 1
+        AND total_record_count BETWEEN 1 AND 20000
+        AND total_chunk_count BETWEEN 1 AND 64
+        AND batch_sha256 ~ '^[0-9a-f]{64}$'
+    ),
+    CONSTRAINT ck_model_stage_batch_status CHECK (
+        stage_batch_status IN ('active', 'committed', 'expired')
+    ),
+    CONSTRAINT ck_model_stage_batch_expiry CHECK (
+        last_activity_time >= created_time
+        AND expires_time > last_activity_time
+    ),
+    CONSTRAINT ck_model_stage_batch_terminal_state CHECK (
+        (
+            stage_batch_status = 'active'
+            AND committed_revision IS NULL
+            AND committed_expires_time IS NULL
+            AND terminal_time IS NULL
+        ) OR (
+            stage_batch_status = 'committed'
+            AND committed_revision > expected_draft_revision
+            AND committed_expires_time IS NOT NULL
+            AND terminal_time IS NOT NULL
+        ) OR (
+            stage_batch_status = 'expired'
+            AND committed_revision IS NULL
+            AND committed_expires_time IS NULL
+            AND terminal_time IS NOT NULL
+        )
+    )
+);
+
+CREATE TABLE mcp.model_stage_chunk (
+    stage_batch_id UUID NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    record_count INTEGER NOT NULL,
+    chunk_sha256 CHAR(64) NOT NULL,
+    records_document JSONB NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_model_stage_chunk PRIMARY KEY (
+        stage_batch_id,
+        chunk_index
+    ),
+    CONSTRAINT fk_model_stage_chunk_batch FOREIGN KEY (stage_batch_id)
+        REFERENCES mcp.model_stage_batch (stage_batch_id)
+        ON DELETE NO ACTION,
+    CONSTRAINT ck_model_stage_chunk_index CHECK (
+        chunk_index BETWEEN 1 AND 64
+    ),
+    CONSTRAINT ck_model_stage_chunk_content CHECK (
+        record_count >= 1
+        AND chunk_sha256 ~ '^[0-9a-f]{64}$'
+        AND jsonb_typeof(records_document) = 'array'
+        AND jsonb_array_length(records_document) = record_count
+        AND octet_length(records_document::TEXT) <= 524288
     )
 );
 
@@ -240,6 +368,108 @@ CREATE TABLE mcp.metadata_change_set (
                 'applied', 'expired', 'archived', 'superseded'
             )
         ) = (terminal_time IS NOT NULL)
+    )
+);
+
+CREATE TABLE mcp.metadata_stage_batch (
+    stage_batch_id UUID PRIMARY KEY,
+    metadata_change_set_id UUID NOT NULL,
+    tenant_id BIGINT NOT NULL,
+    dataset_name VARCHAR(40) NOT NULL,
+    expected_draft_revision BIGINT NOT NULL,
+    total_record_count INTEGER NOT NULL,
+    total_chunk_count INTEGER NOT NULL,
+    batch_sha256 CHAR(64) NOT NULL,
+    stage_batch_status VARCHAR(20) NOT NULL DEFAULT 'active',
+    created_by_principal_id BIGINT NOT NULL,
+    correlation_id UUID NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_activity_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    expires_time TIMESTAMPTZ NOT NULL DEFAULT (
+        CURRENT_TIMESTAMP + INTERVAL '4 hours'
+    ),
+    committed_revision BIGINT,
+    committed_expires_time TIMESTAMPTZ,
+    terminal_time TIMESTAMPTZ,
+    CONSTRAINT fk_metadata_stage_batch_change_set FOREIGN KEY (
+        metadata_change_set_id,
+        tenant_id
+    ) REFERENCES mcp.metadata_change_set (
+        metadata_change_set_id,
+        tenant_id
+    ) ON DELETE NO ACTION,
+    CONSTRAINT fk_metadata_stage_batch_creator FOREIGN KEY (
+        created_by_principal_id
+    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
+    CONSTRAINT uq_metadata_stage_batch_id_tenant
+        UNIQUE (stage_batch_id, tenant_id),
+    CONSTRAINT ck_metadata_stage_batch_dataset CHECK (
+        dataset_name IN (
+            'source_object', 'source_attribute',
+            'bronze_object', 'bronze_attribute',
+            'silver_object', 'silver_attribute',
+            'gold_object', 'gold_attribute',
+            'ingestion_object_mapping', 'ingestion_attribute_mapping',
+            'copy_group', 'member_group', 'copy_group_control', 'copy',
+            'process_group', 'process'
+        )
+    ),
+    CONSTRAINT ck_metadata_stage_batch_manifest CHECK (
+        expected_draft_revision >= 1
+        AND total_record_count BETWEEN 1 AND 50000
+        AND total_chunk_count BETWEEN 1 AND 64
+        AND batch_sha256 ~ '^[0-9a-f]{64}$'
+    ),
+    CONSTRAINT ck_metadata_stage_batch_status CHECK (
+        stage_batch_status IN ('active', 'committed', 'expired')
+    ),
+    CONSTRAINT ck_metadata_stage_batch_expiry CHECK (
+        last_activity_time >= created_time
+        AND expires_time > last_activity_time
+    ),
+    CONSTRAINT ck_metadata_stage_batch_terminal_state CHECK (
+        (
+            stage_batch_status = 'active'
+            AND committed_revision IS NULL
+            AND committed_expires_time IS NULL
+            AND terminal_time IS NULL
+        ) OR (
+            stage_batch_status = 'committed'
+            AND committed_revision > expected_draft_revision
+            AND committed_expires_time IS NOT NULL
+            AND terminal_time IS NOT NULL
+        ) OR (
+            stage_batch_status = 'expired'
+            AND committed_revision IS NULL
+            AND committed_expires_time IS NULL
+            AND terminal_time IS NOT NULL
+        )
+    )
+);
+
+CREATE TABLE mcp.metadata_stage_chunk (
+    stage_batch_id UUID NOT NULL,
+    chunk_index INTEGER NOT NULL,
+    record_count INTEGER NOT NULL,
+    chunk_sha256 CHAR(64) NOT NULL,
+    records_document JSONB NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT pk_metadata_stage_chunk PRIMARY KEY (
+        stage_batch_id,
+        chunk_index
+    ),
+    CONSTRAINT fk_metadata_stage_chunk_batch FOREIGN KEY (stage_batch_id)
+        REFERENCES mcp.metadata_stage_batch (stage_batch_id)
+        ON DELETE NO ACTION,
+    CONSTRAINT ck_metadata_stage_chunk_index CHECK (
+        chunk_index BETWEEN 1 AND 64
+    ),
+    CONSTRAINT ck_metadata_stage_chunk_content CHECK (
+        record_count >= 1
+        AND chunk_sha256 ~ '^[0-9a-f]{64}$'
+        AND jsonb_typeof(records_document) = 'array'
+        AND jsonb_array_length(records_document) = record_count
+        AND octet_length(records_document::TEXT) <= 524288
     )
 );
 
@@ -600,6 +830,623 @@ BEGIN
         TRUE, NULL::VARCHAR(50), v_new_revision, v_dataset_counts, v_expires_time;
 END;
 $stage_metadata_change_set$;
+
+CREATE FUNCTION mcp.begin_metadata_stage_batch(
+    p_entra_tenant_id UUID,
+    p_entra_object_id UUID,
+    p_expected_principal_type VARCHAR(30),
+    p_tenant_id BIGINT,
+    p_metadata_change_set_id UUID,
+    p_expected_draft_revision BIGINT,
+    p_new_stage_batch_id UUID,
+    p_dataset_name VARCHAR(40),
+    p_total_record_count INTEGER,
+    p_total_chunk_count INTEGER,
+    p_batch_sha256 CHAR(64),
+    p_correlation_id UUID
+)
+RETURNS TABLE (
+    started BOOLEAN,
+    denial_code VARCHAR(50),
+    stage_batch_id UUID,
+    created BOOLEAN,
+    dataset_name VARCHAR(40),
+    total_record_count INTEGER,
+    total_chunk_count INTEGER,
+    received_chunk_count INTEGER,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, mcp, security, core
+AS $begin_metadata_stage_batch$
+DECLARE
+    v_decision RECORD;
+    v_change_set RECORD;
+    v_existing RECORD;
+    v_expires_time TIMESTAMPTZ;
+BEGIN
+    IF p_expected_draft_revision < 1
+       OR p_dataset_name NOT IN (
+           'source_object', 'source_attribute',
+           'bronze_object', 'bronze_attribute',
+           'silver_object', 'silver_attribute',
+           'gold_object', 'gold_attribute',
+           'ingestion_object_mapping', 'ingestion_attribute_mapping',
+           'copy_group', 'member_group', 'copy_group_control', 'copy',
+           'process_group', 'process'
+       )
+       OR p_total_record_count NOT BETWEEN 1 AND 50000
+       OR p_total_chunk_count NOT BETWEEN 1 AND 64
+       OR p_batch_sha256 IS NULL
+       OR p_batch_sha256 !~ '^[0-9a-f]{64}$' THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), NULL::UUID, FALSE,
+            NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER, NULL::INTEGER,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT *
+      INTO v_decision
+      FROM security.authorize_tenant_operation(
+          p_entra_tenant_id,
+          p_entra_object_id,
+          p_expected_principal_type,
+          p_tenant_id,
+          'tenant_metadata_write'
+      );
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RETURN QUERY SELECT
+            FALSE,
+            coalesce(v_decision.denial_code, 'authorization_denied')::VARCHAR(50),
+            NULL::UUID, FALSE, NULL::VARCHAR(40), NULL::INTEGER,
+            NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT change_set.metadata_change_set_status,
+           change_set.draft_revision,
+           change_set.expires_time
+      INTO v_change_set
+      FROM mcp.metadata_change_set AS change_set
+     WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
+       AND change_set.tenant_id = p_tenant_id
+       AND change_set.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_found'::VARCHAR(50), NULL::UUID,
+            FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER,
+            NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
+       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), NULL::UUID,
+            FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER,
+            NULL::INTEGER, v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+        RETURN QUERY SELECT
+            FALSE, 'draft_revision_conflict'::VARCHAR(50), NULL::UUID,
+            FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER,
+            NULL::INTEGER, v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    UPDATE mcp.metadata_stage_batch AS batch
+       SET stage_batch_status = 'expired',
+           terminal_time = CURRENT_TIMESTAMP
+     WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+       AND batch.dataset_name = p_dataset_name
+       AND batch.stage_batch_status = 'active'
+       AND batch.expires_time <= CURRENT_TIMESTAMP;
+
+    SELECT batch.stage_batch_id,
+           batch.expected_draft_revision,
+           batch.total_record_count,
+           batch.total_chunk_count,
+           batch.batch_sha256,
+           batch.expires_time,
+           (
+               SELECT count(*)::INTEGER
+                 FROM mcp.metadata_stage_chunk AS chunk
+                WHERE chunk.stage_batch_id = batch.stage_batch_id
+           ) AS received_chunk_count
+      INTO v_existing
+      FROM mcp.metadata_stage_batch AS batch
+     WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+       AND batch.dataset_name = p_dataset_name
+       AND batch.stage_batch_status = 'active'
+     FOR UPDATE;
+    IF FOUND THEN
+        IF v_existing.expected_draft_revision = p_expected_draft_revision
+           AND v_existing.total_record_count = p_total_record_count
+           AND v_existing.total_chunk_count = p_total_chunk_count
+           AND v_existing.batch_sha256 = p_batch_sha256 THEN
+            RETURN QUERY SELECT
+                TRUE, NULL::VARCHAR(50), v_existing.stage_batch_id::UUID,
+                FALSE, p_dataset_name::VARCHAR(40), p_total_record_count,
+                p_total_chunk_count, v_existing.received_chunk_count::INTEGER,
+                v_existing.expires_time::TIMESTAMPTZ;
+        ELSE
+            RETURN QUERY SELECT
+                FALSE, 'stage_batch_conflict'::VARCHAR(50),
+                v_existing.stage_batch_id::UUID, FALSE,
+                p_dataset_name::VARCHAR(40),
+                v_existing.total_record_count::INTEGER,
+                v_existing.total_chunk_count::INTEGER,
+                v_existing.received_chunk_count::INTEGER,
+                v_existing.expires_time::TIMESTAMPTZ;
+        END IF;
+        RETURN;
+    END IF;
+
+    v_expires_time := least(
+        v_change_set.expires_time,
+        CURRENT_TIMESTAMP + INTERVAL '4 hours'
+    );
+    INSERT INTO mcp.metadata_stage_batch (
+        stage_batch_id,
+        metadata_change_set_id,
+        tenant_id,
+        dataset_name,
+        expected_draft_revision,
+        total_record_count,
+        total_chunk_count,
+        batch_sha256,
+        created_by_principal_id,
+        correlation_id,
+        expires_time
+    ) VALUES (
+        p_new_stage_batch_id,
+        p_metadata_change_set_id,
+        p_tenant_id,
+        p_dataset_name,
+        p_expected_draft_revision,
+        p_total_record_count,
+        p_total_chunk_count,
+        p_batch_sha256,
+        v_decision.principal_id,
+        p_correlation_id,
+        v_expires_time
+    );
+
+    RETURN QUERY SELECT
+        TRUE, NULL::VARCHAR(50), p_new_stage_batch_id,
+        TRUE, p_dataset_name::VARCHAR(40), p_total_record_count,
+        p_total_chunk_count, 0, v_expires_time;
+END;
+$begin_metadata_stage_batch$;
+
+CREATE FUNCTION mcp.put_metadata_stage_chunk(
+    p_entra_tenant_id UUID,
+    p_entra_object_id UUID,
+    p_expected_principal_type VARCHAR(30),
+    p_tenant_id BIGINT,
+    p_metadata_change_set_id UUID,
+    p_stage_batch_id UUID,
+    p_dataset_name VARCHAR(40),
+    p_chunk_index INTEGER,
+    p_chunk_sha256 CHAR(64),
+    p_records JSONB
+)
+RETURNS TABLE (
+    accepted BOOLEAN,
+    denial_code VARCHAR(50),
+    duplicate BOOLEAN,
+    received_chunk_count INTEGER,
+    total_chunk_count INTEGER,
+    record_count INTEGER,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, mcp, security, core
+AS $put_metadata_stage_chunk$
+DECLARE
+    v_decision RECORD;
+    v_change_set RECORD;
+    v_batch RECORD;
+    v_existing RECORD;
+    v_received_chunk_count INTEGER;
+    v_received_record_count INTEGER;
+    v_record_count INTEGER;
+BEGIN
+    IF p_chunk_index NOT BETWEEN 1 AND 64
+       OR p_chunk_sha256 IS NULL
+       OR p_chunk_sha256 !~ '^[0-9a-f]{64}$'
+       OR jsonb_typeof(p_records) <> 'array'
+       OR jsonb_array_length(p_records) < 1
+       OR octet_length(p_records::TEXT) > 524288 THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            NULL::INTEGER, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    v_record_count := jsonb_array_length(p_records);
+
+    SELECT *
+      INTO v_decision
+      FROM security.authorize_tenant_operation(
+          p_entra_tenant_id,
+          p_entra_object_id,
+          p_expected_principal_type,
+          p_tenant_id,
+          'tenant_metadata_write'
+      );
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RETURN QUERY SELECT
+            FALSE,
+            coalesce(v_decision.denial_code, 'authorization_denied')::VARCHAR(50),
+            FALSE, NULL::INTEGER, NULL::INTEGER, NULL::INTEGER,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT change_set.metadata_change_set_status,
+           change_set.draft_revision,
+           change_set.expires_time
+      INTO v_change_set
+      FROM mcp.metadata_change_set AS change_set
+     WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
+       AND change_set.tenant_id = p_tenant_id
+       AND change_set.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_found'::VARCHAR(50), FALSE,
+            NULL::INTEGER, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT *
+      INTO v_batch
+      FROM mcp.metadata_stage_batch AS batch
+     WHERE batch.stage_batch_id = p_stage_batch_id
+       AND batch.metadata_change_set_id = p_metadata_change_set_id
+       AND batch.tenant_id = p_tenant_id
+       AND batch.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE, 'stage_batch_not_found'::VARCHAR(50), FALSE,
+            NULL::INTEGER, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_batch.stage_batch_status <> 'active'
+       OR v_batch.expires_time <= CURRENT_TIMESTAMP THEN
+        IF v_batch.stage_batch_status = 'active' THEN
+            UPDATE mcp.metadata_stage_batch
+               SET stage_batch_status = 'expired',
+                   terminal_time = CURRENT_TIMESTAMP
+             WHERE stage_batch_id = p_stage_batch_id;
+        END IF;
+        RETURN QUERY SELECT
+            FALSE, 'stage_batch_not_active'::VARCHAR(50), FALSE,
+            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+            NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
+       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
+            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+            NULL::INTEGER, v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.draft_revision <> v_batch.expected_draft_revision THEN
+        RETURN QUERY SELECT
+            FALSE, 'draft_revision_conflict'::VARCHAR(50), FALSE,
+            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+            NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_batch.dataset_name <> p_dataset_name
+       OR p_chunk_index > v_batch.total_chunk_count THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+            NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT chunk.chunk_sha256,
+           chunk.records_document,
+           chunk.record_count
+      INTO v_existing
+      FROM mcp.metadata_stage_chunk AS chunk
+     WHERE chunk.stage_batch_id = p_stage_batch_id
+       AND chunk.chunk_index = p_chunk_index;
+    IF FOUND THEN
+        IF v_existing.chunk_sha256 = p_chunk_sha256
+           AND v_existing.records_document = p_records THEN
+            SELECT count(*)::INTEGER
+              INTO v_received_chunk_count
+              FROM mcp.metadata_stage_chunk
+             WHERE stage_batch_id = p_stage_batch_id;
+            RETURN QUERY SELECT
+                TRUE, NULL::VARCHAR(50), TRUE,
+                v_received_chunk_count, v_batch.total_chunk_count::INTEGER,
+                v_existing.record_count::INTEGER,
+                v_batch.expires_time::TIMESTAMPTZ;
+        ELSE
+            RETURN QUERY SELECT
+                FALSE, 'stage_chunk_conflict'::VARCHAR(50), FALSE,
+                NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+                NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
+        END IF;
+        RETURN;
+    END IF;
+
+    SELECT coalesce(sum(chunk.record_count), 0)::INTEGER
+      INTO v_received_record_count
+      FROM mcp.metadata_stage_chunk AS chunk
+     WHERE chunk.stage_batch_id = p_stage_batch_id;
+    IF v_received_record_count + v_record_count > v_batch.total_record_count THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
+            NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    INSERT INTO mcp.metadata_stage_chunk (
+        stage_batch_id,
+        chunk_index,
+        record_count,
+        chunk_sha256,
+        records_document
+    ) VALUES (
+        p_stage_batch_id,
+        p_chunk_index,
+        v_record_count,
+        p_chunk_sha256,
+        p_records
+    );
+    UPDATE mcp.metadata_stage_batch
+       SET last_activity_time = CURRENT_TIMESTAMP
+     WHERE stage_batch_id = p_stage_batch_id;
+    SELECT count(*)::INTEGER
+      INTO v_received_chunk_count
+      FROM mcp.metadata_stage_chunk
+     WHERE stage_batch_id = p_stage_batch_id;
+
+    RETURN QUERY SELECT
+        TRUE, NULL::VARCHAR(50), FALSE, v_received_chunk_count,
+        v_batch.total_chunk_count::INTEGER, v_record_count,
+        v_batch.expires_time::TIMESTAMPTZ;
+END;
+$put_metadata_stage_chunk$;
+
+CREATE FUNCTION mcp.commit_metadata_stage_batch(
+    p_entra_tenant_id UUID,
+    p_entra_object_id UUID,
+    p_expected_principal_type VARCHAR(30),
+    p_tenant_id BIGINT,
+    p_metadata_change_set_id UUID,
+    p_stage_batch_id UUID,
+    p_expected_draft_revision BIGINT,
+    p_correlation_id UUID
+)
+RETURNS TABLE (
+    committed BOOLEAN,
+    denial_code VARCHAR(50),
+    replayed BOOLEAN,
+    dataset_name VARCHAR(40),
+    record_count INTEGER,
+    draft_revision BIGINT,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, mcp, security, core
+AS $commit_metadata_stage_batch$
+DECLARE
+    v_decision RECORD;
+    v_change_set RECORD;
+    v_batch RECORD;
+    v_chunk_count INTEGER;
+    v_record_count INTEGER;
+    v_batch_sha256 TEXT;
+    v_document JSONB;
+    v_staged RECORD;
+BEGIN
+    IF p_expected_draft_revision < 1 THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT *
+      INTO v_decision
+      FROM security.authorize_tenant_operation(
+          p_entra_tenant_id,
+          p_entra_object_id,
+          p_expected_principal_type,
+          p_tenant_id,
+          'tenant_metadata_write'
+      );
+    IF NOT FOUND OR NOT v_decision.authorized THEN
+        RETURN QUERY SELECT
+            FALSE,
+            coalesce(v_decision.denial_code, 'authorization_denied')::VARCHAR(50),
+            FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT change_set.metadata_change_set_status,
+           change_set.draft_revision,
+           change_set.expires_time
+      INTO v_change_set
+      FROM mcp.metadata_change_set AS change_set
+     WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
+       AND change_set.tenant_id = p_tenant_id
+       AND change_set.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_found'::VARCHAR(50), FALSE,
+            NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT *
+      INTO v_batch
+      FROM mcp.metadata_stage_batch AS batch
+     WHERE batch.stage_batch_id = p_stage_batch_id
+       AND batch.metadata_change_set_id = p_metadata_change_set_id
+       AND batch.tenant_id = p_tenant_id
+       AND batch.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE, 'stage_batch_not_found'::VARCHAR(50), FALSE,
+            NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_batch.expected_draft_revision <> p_expected_draft_revision THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
+            NULL::BIGINT, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_batch.stage_batch_status = 'committed' THEN
+        RETURN QUERY SELECT
+            TRUE, NULL::VARCHAR(50), TRUE,
+            v_batch.dataset_name::VARCHAR(40),
+            v_batch.total_record_count::INTEGER,
+            v_batch.committed_revision::BIGINT,
+            v_batch.committed_expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_batch.stage_batch_status <> 'active'
+       OR v_batch.expires_time <= CURRENT_TIMESTAMP THEN
+        IF v_batch.stage_batch_status = 'active' THEN
+            UPDATE mcp.metadata_stage_batch
+               SET stage_batch_status = 'expired',
+                   terminal_time = CURRENT_TIMESTAMP
+             WHERE stage_batch_id = p_stage_batch_id;
+        END IF;
+        RETURN QUERY SELECT
+            FALSE, 'stage_batch_not_active'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
+            NULL::BIGINT, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
+       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
+            v_change_set.draft_revision::BIGINT,
+            v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+        RETURN QUERY SELECT
+            FALSE, 'draft_revision_conflict'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
+            v_change_set.draft_revision::BIGINT,
+            v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT count(*)::INTEGER,
+           coalesce(sum(chunk.record_count), 0)::INTEGER,
+           encode(
+               sha256(
+                   convert_to(
+                       coalesce(
+                           string_agg(
+                               trim(chunk.chunk_sha256)::TEXT,
+                               '' ORDER BY chunk.chunk_index
+                           ),
+                           ''
+                       ),
+                       'UTF8'
+                   )
+               ),
+               'hex'
+           )
+      INTO v_chunk_count, v_record_count, v_batch_sha256
+      FROM mcp.metadata_stage_chunk AS chunk
+     WHERE chunk.stage_batch_id = p_stage_batch_id;
+    IF v_chunk_count <> v_batch.total_chunk_count
+       OR v_record_count <> v_batch.total_record_count
+       OR v_batch_sha256 <> v_batch.batch_sha256 THEN
+        RETURN QUERY SELECT
+            FALSE, 'stage_batch_incomplete'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), v_record_count,
+            NULL::BIGINT, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT coalesce(
+               jsonb_agg(
+                   record.value ORDER BY chunk.chunk_index, record.ordinality
+               ),
+               '[]'::JSONB
+           )
+      INTO v_document
+      FROM mcp.metadata_stage_chunk AS chunk
+      CROSS JOIN LATERAL jsonb_array_elements(chunk.records_document)
+          WITH ORDINALITY AS record(value, ordinality)
+     WHERE chunk.stage_batch_id = p_stage_batch_id;
+    IF jsonb_array_length(v_document) <> v_batch.total_record_count
+       OR octet_length(v_document::TEXT) > 16777216 THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), v_record_count,
+            NULL::BIGINT, v_batch.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    SELECT *
+      INTO v_staged
+      FROM mcp.stage_metadata_change_set(
+          p_entra_tenant_id,
+          p_entra_object_id,
+          p_expected_principal_type,
+          p_tenant_id,
+          p_metadata_change_set_id,
+          p_expected_draft_revision,
+          jsonb_build_object(v_batch.dataset_name, v_document),
+          p_correlation_id
+      );
+    IF NOT v_staged.staged THEN
+        RETURN QUERY SELECT
+            FALSE, v_staged.denial_code::VARCHAR(50), FALSE,
+            v_batch.dataset_name::VARCHAR(40), v_record_count,
+            v_staged.draft_revision::BIGINT,
+            v_staged.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    UPDATE mcp.metadata_stage_batch
+       SET stage_batch_status = 'committed',
+           last_activity_time = CURRENT_TIMESTAMP,
+           committed_revision = v_staged.draft_revision,
+           committed_expires_time = v_staged.expires_time,
+           terminal_time = CURRENT_TIMESTAMP
+     WHERE stage_batch_id = p_stage_batch_id;
+
+    RETURN QUERY SELECT
+        TRUE, NULL::VARCHAR(50), FALSE,
+        v_batch.dataset_name::VARCHAR(40), v_record_count,
+        v_staged.draft_revision::BIGINT, v_staged.expires_time::TIMESTAMPTZ;
+END;
+$commit_metadata_stage_batch$;
 
 CREATE FUNCTION mcp.get_metadata_change_set(
     p_entra_tenant_id UUID,
@@ -1214,6 +2061,17 @@ CREATE INDEX ix_change_set_expiry
     ON mcp.model_change_set (expires_time)
     WHERE model_change_set_status IN ('active', 'validated');
 
+CREATE UNIQUE INDEX uq_model_stage_batch_active_dataset
+    ON mcp.model_stage_batch (
+        model_change_set_id,
+        dataset_name
+    )
+    WHERE stage_batch_status = 'active';
+
+CREATE INDEX ix_model_stage_batch_expiry
+    ON mcp.model_stage_batch (expires_time)
+    WHERE stage_batch_status = 'active';
+
 CREATE INDEX ix_metadata_change_set_tenant_status_activity
     ON mcp.metadata_change_set (
         tenant_id,
@@ -1224,6 +2082,17 @@ CREATE INDEX ix_metadata_change_set_tenant_status_activity
 CREATE UNIQUE INDEX uq_metadata_change_set_ongoing_owner
     ON mcp.metadata_change_set (tenant_id, created_by_principal_id)
     WHERE metadata_change_set_status IN ('active', 'validated');
+
+CREATE UNIQUE INDEX uq_metadata_stage_batch_active_dataset
+    ON mcp.metadata_stage_batch (
+        metadata_change_set_id,
+        dataset_name
+    )
+    WHERE stage_batch_status = 'active';
+
+CREATE INDEX ix_metadata_stage_batch_expiry
+    ON mcp.metadata_stage_batch (expires_time)
+    WHERE stage_batch_status = 'active';
 
 CREATE INDEX ix_metadata_change_set_expiry
     ON mcp.metadata_change_set (expires_time)

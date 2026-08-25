@@ -3,6 +3,21 @@
 Seed files are separate from canonical DDL. Run them only after
 `database/13_verify_install.sql` passes.
 
+## Application reference metadata
+
+`04_application_reference.sql` installs 47 stable workflow stages and 78 allowed
+backend-resolved prompt variables. It includes deterministic stages, but gives
+variables only to agentic stages. It contains no prompt or SQL-generation-guide
+bodies, credentials, connection values, or business data.
+
+Run it in a fresh application database after install verification. Replaying
+the exact file is safe and does not update existing rows:
+
+```bash
+psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
+  --single-transaction -f database/seed/04_application_reference.sql
+```
+
 ## Demo metadata
 
 `01_metadata_snapshot_demo.sql` creates a small test-only dataset containing:

@@ -1,0 +1,65 @@
+{
+  "schema_version": "1.0",
+  "sdks": [
+    {
+      "code": "langchain_create_agent",
+      "name": "Create Agent",
+      "provider_codes": ["microsoft_foundry", "openai"]
+    },
+    {
+      "code": "openai_agents_sdk",
+      "name": "OpenAI Agents SDK",
+      "provider_codes": ["microsoft_foundry", "openai"]
+    }
+  ],
+  "providers": [
+    {
+      "code": "microsoft_foundry",
+      "name": "Microsoft Foundry"
+    },
+    {
+      "code": "openai",
+      "name": "OpenAI"
+    }
+  ],
+  "models": [
+    {
+      "code": "gpt-5.6",
+      "name": "GPT-5.6",
+      "provider_code": "microsoft_foundry",
+      "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
+      "reasoning_effort_codes": ["low", "medium", "high"]
+    },
+    {
+      "code": "gpt-5.6-openai",
+      "name": "GPT-5.6 (OpenAI)",
+      "provider_code": "openai",
+      "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
+      "reasoning_effort_codes": ["low", "medium", "high"]
+    }
+  ],
+  "reasoning_efforts": [
+    {
+      "code": "low",
+      "name": "Low"
+    },
+    {
+      "code": "medium",
+      "name": "Medium"
+    },
+    {
+      "code": "high",
+      "name": "High"
+    }
+  ],
+  "max_turns": {
+    "minimum": 1,
+    "default": 10,
+    "maximum": 50
+  },
+  "validation_retries": {
+    "minimum": 0,
+    "default": 2,
+    "maximum": 5
+  }
+}

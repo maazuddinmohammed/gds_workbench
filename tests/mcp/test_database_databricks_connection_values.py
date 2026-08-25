@@ -64,7 +64,7 @@ def databricks_connection_seed(
             """,
             (f"{prefix}_CONNECTION_TYPE", f"{prefix} Connection Type"),
         ).fetchone()
-        parameter_rows = connection.execute(
+        connection.execute(
             """
             INSERT INTO reference.connection_parameter (
                 connection_parameter_code, connection_parameter_name
@@ -73,7 +73,19 @@ def databricks_connection_seed(
                 ('DATABRICKS_HOST_NAME', 'Databricks Host Name'),
                 ('Databricks_HTTP_Path', 'Databricks HTTP Path'),
                 ('databricks_token', 'Databricks Token')
-            RETURNING connection_parameter_id, connection_parameter_code
+            ON CONFLICT DO NOTHING
+            """
+        )
+        parameter_rows = connection.execute(
+            """
+            SELECT connection_parameter_id, connection_parameter_code
+              FROM reference.connection_parameter
+             WHERE lower(btrim(connection_parameter_code)) IN (
+                       'databricks_host_name',
+                       'databricks_http_path',
+                       'databricks_token'
+                   )
+             ORDER BY lower(btrim(connection_parameter_code))
             """
         ).fetchall()
         project = connection.execute(
@@ -88,6 +100,7 @@ def databricks_connection_seed(
         assert connection_type is not None
         assert project is not None
         assert len(environment_rows) == 2
+        assert len(parameter_rows) == 3
 
         tenant_rows = connection.execute(
             """

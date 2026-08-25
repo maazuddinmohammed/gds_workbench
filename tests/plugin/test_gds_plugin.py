@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import json
 import os
 import re
@@ -23,11 +24,12 @@ from gds_etl_workbench.tools.change_sets.model_validation import validate_staged
 from gds_etl_workbench.tools.snapshots.model.archive import (
     build_model_snapshot_archive,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.model.contracts import (
     AnalysisSection,
     AssertionSection,
+    CHANGE_SET_DATASETS_BY_NAME,
     ConceptualSection,
+    DATASETS_BY_NAME,
     DimensionalSection,
     LogicalSection,
     MappingSection,
@@ -36,11 +38,14 @@ from gds_etl_workbench.tools.snapshots.model.contracts import (
     ProfilingSection,
     model_snapshot_records,
 )
-from tests.mcp.test_model_change_set_validation import _complete_graph
+from tests.mcp.test_model_change_set_validation import (
+    complete_graph,
+    model_scope_records,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "gds"
+PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v1" / "gds"
 METADATA_SKILL = PLUGIN_ROOT / "skills" / "manage-gds-metadata"
 WORKBENCH_SKILL = PLUGIN_ROOT / "skills" / "open-gds-metadata-workbench"
 WORKBENCH_ROOT = WORKBENCH_SKILL / "assets" / "workbench"
@@ -93,6 +98,7 @@ POWERSHELL_LOCAL_RECORD_UPSERTER = (
     METADATA_SKILL / "scripts" / "upsert-local-metadata-record.ps1"
 )
 POWERSHELL_SCHEMA_HELPER = METADATA_SKILL / "scripts" / "metadata-schema.ps1"
+STAGE_BATCH_PREPARER = PLUGIN_ROOT / "scripts" / "prepare-stage-batch.js"
 SHELL_STAGE_REVIEWER = METADATA_SKILL / "scripts" / "prepare-metadata-stage-review.sh"
 POWERSHELL_STAGE_REVIEWER = (
     METADATA_SKILL / "scripts" / "prepare-metadata-stage-review.ps1"
@@ -129,6 +135,9 @@ EXPECTED_TOOLS = {
     "override_tenant_lock",
     "create_metadata_change_set",
     "stage_metadata_change_set",
+    "begin_metadata_stage_batch",
+    "put_metadata_stage_chunk",
+    "commit_metadata_stage_batch",
     "get_metadata_change_set",
     "validate_metadata_change_set",
     "apply_metadata_change_set",
@@ -138,6 +147,9 @@ EXPECTED_TOOLS = {
 EXPECTED_RUNTIME_TOOLS = EXPECTED_TOOLS | {
     "create_model_change_set",
     "stage_model_change_set",
+    "begin_model_stage_batch",
+    "put_model_stage_chunk",
+    "commit_model_stage_batch",
     "get_model_change_set",
     "validate_model_change_set",
     "apply_model_change_set",
@@ -168,6 +180,9 @@ METADATA_CHANGE_SET_TOOLS = (
     "create_metadata_change_set",
     "get_metadata_change_set",
     "stage_metadata_change_set",
+    "begin_metadata_stage_batch",
+    "put_metadata_stage_chunk",
+    "commit_metadata_stage_batch",
     "validate_metadata_change_set",
     "apply_metadata_change_set",
     "archive_metadata_change_set",
@@ -278,7 +293,11 @@ def _build_snapshot(
 
 
 def _build_model_snapshot(workspace: Path) -> tuple[Path, ModelSnapshot]:
-    graph = _complete_graph()
+    graph = complete_graph()
+    snapshot_records: dict[str, list[dict[str, object]]] = {
+        **graph,
+        "model_scope": model_scope_records(),
+    }
     records = {
         name: tuple(
             DATASETS_BY_NAME[name].row_model.model_validate_json(
@@ -286,7 +305,7 @@ def _build_model_snapshot(workspace: Path) -> tuple[Path, ModelSnapshot]:
             )
             for record in raw_records
         )
-        for name, raw_records in graph.items()
+        for name, raw_records in snapshot_records.items()
     }
     details = records["model_details"][0]
     snapshot = ModelSnapshot(
@@ -712,6 +731,92 @@ def _dataset_summary(stdout: str, dataset: str) -> list[str]:
     return matches[0].removeprefix("dataset=").split("|")
 
 
+@pytest.mark.parametrize(
+    ("kind", "dataset"),
+    [("metadata", "source_object"), ("model", "conceptual_object")],
+)
+def test_stage_batch_preparer_builds_bounded_reconstructable_chunks(
+    tmp_path: Path,
+    kind: str,
+    dataset: str,
+) -> None:
+    marker = "STAGE-BATCH-SENSITIVE-MARKER"
+    records = [
+        {"name": f"record-{index}", "description": marker + "x" * 230_000}
+        for index in range(3)
+    ]
+    dataset_file = tmp_path / f"{dataset}.json"
+    dataset_file.write_text(json.dumps(records), encoding="utf-8")
+    output = tmp_path / f"{kind}-batch"
+
+    prepared = subprocess.run(
+        [
+            "node",
+            str(STAGE_BATCH_PREPARER),
+            "--kind",
+            kind,
+            "--dataset-file",
+            str(dataset_file),
+            "--dataset",
+            dataset,
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    assert "ok=true" in prepared.stdout
+    assert marker not in prepared.stdout + prepared.stderr
+    manifest = _json(output / "manifest.json")
+    assert manifest["kind"] == kind
+    assert manifest["dataset"] == dataset
+    assert manifest["record_count"] == 3
+    assert 1 < manifest["chunk_count"] <= 3
+    assert all(chunk["bytes"] <= 450 * 1024 for chunk in manifest["chunks"])
+    reconstructed: list[dict[str, Any]] = []
+    chunk_sha256s: list[str] = []
+    for chunk in manifest["chunks"]:
+        chunk_records = json.loads((output / chunk["file"]).read_text(encoding="utf-8"))
+        reconstructed.extend(chunk_records)
+        canonical = json.dumps(
+            chunk_records,
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+        digest = hashlib.sha256(canonical).hexdigest()
+        assert digest == chunk["chunk_sha256"]
+        chunk_sha256s.append(digest)
+    assert reconstructed == records
+    assert (
+        manifest["batch_sha256"]
+        == hashlib.sha256("".join(chunk_sha256s).encode("ascii")).hexdigest()
+    )
+
+    repeated = subprocess.run(
+        [
+            "node",
+            str(STAGE_BATCH_PREPARER),
+            "--kind",
+            kind,
+            "--dataset-file",
+            str(dataset_file),
+            "--dataset",
+            dataset,
+            "--output",
+            str(output),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+    )
+    assert repeated.returncode == 2
+    assert "Output directory already exists" in repeated.stderr
+
+
 def test_plugin_contract_is_named_gds_and_contains_no_credentials() -> None:
     manifest = _json(PLUGIN_ROOT / "plugin.json")
     mcp = _json(PLUGIN_ROOT / "mcp.json")
@@ -775,7 +880,9 @@ def test_plugin_distribution_zip_is_clean_and_reproducible(tmp_path: Path) -> No
 
 def test_current_version_distribution_zip_matches_plugin_source(tmp_path: Path) -> None:
     version = _json(PLUGIN_ROOT / "plugin.json")["version"]
-    committed = REPOSITORY_ROOT / "plugins" / "dist" / f"gds-agent-plugin-{version}.zip"
+    committed = (
+        REPOSITORY_ROOT / "plugins" / "v1" / "dist" / f"gds-agent-plugin-{version}.zip"
+    )
     assert committed.is_file(), f"missing current-version plugin archive: {committed}"
 
     rebuilt = tmp_path / committed.name
@@ -796,7 +903,7 @@ def test_current_version_distribution_zip_matches_plugin_source(tmp_path: Path) 
     if committed.read_bytes() != rebuilt.read_bytes():
         pytest.fail(
             f"{committed.relative_to(REPOSITORY_ROOT)} is stale; rebuild it from "
-            "plugins/gds with plugins/build_gds_plugin_zip.py"
+            "plugins/v1/gds with plugins/build_gds_plugin_zip.py"
         )
 
 
@@ -891,7 +998,7 @@ def test_modeling_skills_are_registered_bounded_and_match_runtime_contracts() ->
     )
     assert inventory is not None
     assert set(inventory.group(1).split()) == EXPECTED_RUNTIME_TOOLS
-    assert len(EXPECTED_RUNTIME_TOOLS) == 51
+    assert len(EXPECTED_RUNTIME_TOOLS) == 57
 
     dataset_rows = set(
         re.findall(
@@ -1510,7 +1617,9 @@ def test_workbench_logic_and_launchers_pass_static_smoke_checks(
     assert stage["model_id"] == expected_model.model_id
     assert stage["model_change_set_id"] == str(CHANGE_SET_ID)
     assert stage["expected_draft_revision"] == 3
-    assert {change["dataset"] for change in stage["changes"]} == set(DATASETS_BY_NAME)
+    assert {change["dataset"] for change in stage["changes"]} == set(
+        CHANGE_SET_DATASETS_BY_NAME
+    )
     for change in stage["changes"]:
         _, issues = validate_staged_records(change["dataset"], change["records"])
         assert not issues

@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 from collections.abc import Mapping
 from re import fullmatch
 from typing import Annotated, Any, Literal, LiteralString
@@ -86,8 +87,8 @@ def register_execute_databricks_sql_tool(
             "Environment. Physical relations must use catalog.schema.table. Allows reads "
             "and unqualified temporary views/tables only. "
             "Returns the configured row limit, never more than 50, from the final "
-            "statement. The complete submitted SQL is retained in the append-only "
-            "tool-call audit log; never include credentials in SQL."
+            "statement. The audit log retains only a digest and bounded metadata, "
+            "never submitted SQL or credentials."
         ),
         annotations=ToolAnnotations(
             read_only_hint=False,
@@ -162,7 +163,7 @@ def register_execute_databricks_sql_tool(
         _TOOL_NAME,
         policy=POLICY,
         summarize_input=_audit_input_metadata,
-        retain_arguments={"connection_id", "environment_code", "sql", "schema_version"},
+        retain_arguments={"connection_id", "environment_code", "schema_version"},
     )
 
 
@@ -226,6 +227,8 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
             if isinstance(environment_code, str) and environment_code.strip()
             else "invalid"
         ),
-        "sql": sql if isinstance(sql, str) else "invalid",
         "sql_character_count": len(sql) if isinstance(sql, str) else "invalid",
+        "sql_sha256": (
+            hashlib.sha256(sql.encode("utf-8")).hexdigest() if isinstance(sql, str) else "invalid"
+        ),
     }

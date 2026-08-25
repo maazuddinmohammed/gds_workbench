@@ -92,14 +92,10 @@ def build_dataset_document(definition: DatasetDefinition) -> MetadataDatasetDocu
 
     raw_required = generated.get("required", [])
     if not isinstance(raw_required, list):
-        raise SnapshotContractError(
-            f"{definition.name} generated invalid required-field metadata"
-        )
+        raise SnapshotContractError(f"{definition.name} generated invalid required-field metadata")
     required_items = cast(list[object], raw_required)
     if not all(isinstance(field, str) for field in required_items):
-        raise SnapshotContractError(
-            f"{definition.name} generated invalid required-field metadata"
-        )
+        raise SnapshotContractError(f"{definition.name} generated invalid required-field metadata")
     required = cast(list[str], required_items)
     required_fields = set(required)
     description = build_metadata_dataset_description(

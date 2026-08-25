@@ -4,6 +4,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
 
 import pytest
+from psycopg import sql
 from psycopg.errors import RaiseException
 
 if TYPE_CHECKING:
@@ -23,6 +24,14 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
         connection.execute("REVOKE USAGE ON SCHEMA model FROM gds_app_write")
         connection.execute(
             """
+            GRANT UPDATE (default_agent_sdk_code)
+                ON model.model TO gds_app_write;
+            GRANT INSERT (model_id, object_id)
+                ON model.model_scope TO gds_app_write
+            """
+        )
+        connection.execute(
+            """
             GRANT gds_app_write TO gds_mcp_runtime
                 WITH ADMIN TRUE, INHERIT TRUE, SET FALSE
             """
@@ -34,7 +43,15 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
                    ) AS model_schema_usage,
                    membership.admin_option,
                    membership.inherit_option,
-                   membership.set_option
+                   membership.set_option,
+                   has_column_privilege(
+                       'gds_app_write', 'model.model',
+                       'default_agent_sdk_code', 'UPDATE'
+                   ) AS web_agent_default_update,
+                   has_column_privilege(
+                       'gds_app_write', 'model.model_scope',
+                       'model_id', 'INSERT'
+                   ) AS model_scope_insert
               FROM pg_auth_members AS membership
               JOIN pg_roles AS member_role
                 ON member_role.oid = membership.member
@@ -49,6 +66,8 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             "admin_option": True,
             "inherit_option": True,
             "set_option": False,
+            "web_agent_default_update": True,
+            "model_scope_insert": True,
         }
 
         connection.execute(
@@ -61,7 +80,15 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
                    ) AS model_schema_usage,
                    membership.admin_option,
                    membership.inherit_option,
-                   membership.set_option
+                   membership.set_option,
+                   has_column_privilege(
+                       'gds_app_write', 'model.model',
+                       'default_agent_sdk_code', 'UPDATE'
+                   ) AS web_agent_default_update,
+                   has_column_privilege(
+                       'gds_app_write', 'model.model_scope',
+                       'model_id', 'INSERT'
+                   ) AS model_scope_insert
               FROM pg_auth_members AS membership
               JOIN pg_roles AS member_role
                 ON member_role.oid = membership.member
@@ -77,6 +104,8 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
         "admin_option": False,
         "inherit_option": False,
         "set_option": True,
+        "web_agent_default_update": False,
+        "model_scope_insert": False,
     }
 
     with postgres_database.connect_runtime() as connection:
@@ -151,6 +180,66 @@ def test_runtime_integrity_replaces_legacy_databricks_lookup_access(
     assert posture == {"legacy_execute": False, "current_execute": True}
 
 
+def test_mcp_role_cannot_mutate_model_scope_or_web_agent_defaults(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        posture = connection.execute(
+            """
+            SELECT has_column_privilege(
+                       'gds_app_write',
+                       'model.model',
+                       'silver_model_naming_instructions',
+                       'UPDATE'
+                   ) AS model_policy_update,
+                   EXISTS (
+                       SELECT 1
+                         FROM unnest(ARRAY[
+                                  'default_agent_sdk_code',
+                                  'default_agent_provider_code',
+                                  'default_agent_model_code',
+                                  'default_reasoning_effort_code',
+                                  'default_max_turns',
+                                  'default_validation_retry_count'
+                              ]) AS forbidden_column(name)
+                        WHERE has_column_privilege(
+                                  'gds_app_write',
+                                  'model.model',
+                                  forbidden_column.name,
+                                  'UPDATE'
+                              )
+                   ) AS web_agent_default_update,
+                   EXISTS (
+                       SELECT 1
+                         FROM pg_attribute AS attribute
+                        WHERE attribute.attrelid = 'model.model_scope'::REGCLASS
+                          AND attribute.attnum > 0
+                          AND NOT attribute.attisdropped
+                          AND (
+                              has_column_privilege(
+                                  'gds_app_write',
+                                  'model.model_scope',
+                                  attribute.attname,
+                                  'INSERT'
+                              )
+                              OR has_column_privilege(
+                                  'gds_app_write',
+                                  'model.model_scope',
+                                  attribute.attname,
+                                  'UPDATE'
+                              )
+                          )
+                   ) AS model_scope_mutation
+            """
+        ).fetchone()
+
+    assert posture == {
+        "model_policy_update": True,
+        "web_agent_default_update": False,
+        "model_scope_mutation": False,
+    }
+
+
 @pytest.mark.asyncio
 async def test_runtime_readiness_checks_the_complete_mcp_database_contract(
     postgres_database: DisposablePostgres,
@@ -213,6 +302,40 @@ async def test_runtime_readiness_rejects_the_old_discovery_connection_column(
 
 
 @pytest.mark.asyncio
+async def test_runtime_readiness_rejects_a_missing_canonical_model_policy_column(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            ALTER TABLE model.model
+            RENAME COLUMN gold_model_audit_columns_template
+            TO missing_gold_model_audit_columns_template
+            """
+        )
+
+    try:
+        database = postgres_database.create_runtime_adapter()
+        await database.open()
+        try:
+            readiness = await database.readiness()
+        finally:
+            await database.close()
+    finally:
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                """
+                ALTER TABLE model.model
+                RENAME COLUMN missing_gold_model_audit_columns_template
+                TO gold_model_audit_columns_template
+                """
+            )
+
+    assert readiness.ready is False
+    assert readiness.code == "database_schema_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_runtime_readiness_rejects_a_missing_governed_function_grant(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -240,6 +363,46 @@ async def test_runtime_readiness_rejects_a_missing_governed_function_grant(
                     UUID, UUID, VARCHAR, BIGINT
                 ) TO gds_app_write
                 """
+            )
+
+    assert readiness.ready is False
+    assert readiness.code == "database_role_invalid"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "function_name",
+    [
+        "workflow.list_tenant_visible_objects",
+        "workflow.list_model_object_eligibility",
+        "workflow.list_model_attribute_eligibility",
+    ],
+)
+async def test_runtime_readiness_rejects_a_missing_model_read_grant(
+    postgres_database: DisposablePostgres,
+    function_name: str,
+) -> None:
+    function_identifier = sql.Identifier(*function_name.split("."))
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {}(BIGINT) FROM gds_app_write").format(
+                function_identifier
+            )
+        )
+
+    try:
+        database = postgres_database.create_runtime_adapter()
+        await database.open()
+        try:
+            readiness = await database.readiness()
+        finally:
+            await database.close()
+    finally:
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                sql.SQL("GRANT EXECUTE ON FUNCTION {}(BIGINT) TO gds_app_write").format(
+                    function_identifier
+                )
             )
 
     assert readiness.ready is False
@@ -299,6 +462,67 @@ def test_verify_install_rejects_missing_runtime_schema_usage(
         connection.transaction(),
     ):
         connection.execute("REVOKE USAGE ON SCHEMA model FROM gds_app_write")
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_mcp_model_scope_column_mutation(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="runtime table privileges"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            """
+            GRANT INSERT (model_id, object_id)
+                ON model.model_scope TO gds_app_write
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_a_missing_application_table(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="application table"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            """
+            ALTER TABLE application.prompt_assignment
+            RENAME TO missing_prompt_assignment
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_missing_application_schema_usage(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="schema usage"),
+        connection.transaction(),
+    ):
+        connection.execute("REVOKE USAGE ON SCHEMA application FROM gds_web_write")
         connection.execute(
             cast(
                 LiteralString,

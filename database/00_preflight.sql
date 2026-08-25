@@ -2,6 +2,7 @@
 -- This intentionally fails if the target is not empty for this release.
 
 --DROP SCHEMA model CASCADE;
+--DROP SCHEMA application CASCADE;
 --DROP SCHEMA core CASCADE;
 --DROP SCHEMA mcp CASCADE;
 --DROP SCHEMA reference CASCADE;
@@ -9,9 +10,12 @@
 --DROP SCHEMA workflow CASCADE;
 
 --DROP ROLE gds_app_write ;
+--DROP ROLE gds_web_write ;
 --DROP ROLE gds_migration;
 --DROP OWNED BY gds_mcp_runtime CASCADE;
 --DROP ROLE gds_mcp_runtime ;
+--DROP OWNED BY gds_web_runtime CASCADE;
+--DROP ROLE gds_web_runtime ;
 
 DO $preflight$
 DECLARE
@@ -34,9 +38,10 @@ BEGIN
 
     SELECT namespace_record.nspname
       INTO v_existing_schema
-      FROM pg_catalog.pg_namespace AS namespace_record
+     FROM pg_catalog.pg_namespace AS namespace_record
      WHERE namespace_record.nspname IN (
-               'reference', 'core', 'security', 'model', 'workflow', 'mcp'
+               'reference', 'core', 'security', 'model', 'workflow',
+               'application', 'mcp'
            )
      ORDER BY namespace_record.nspname
      LIMIT 1;
@@ -47,9 +52,10 @@ BEGIN
 
     SELECT role_record.rolname
       INTO v_existing_role
-      FROM pg_catalog.pg_roles AS role_record
+     FROM pg_catalog.pg_roles AS role_record
      WHERE role_record.rolname IN (
-               'gds_migration', 'gds_app_write', 'gds_mcp_runtime'
+               'gds_migration', 'gds_app_write', 'gds_web_write',
+               'gds_mcp_runtime', 'gds_web_runtime'
            )
      ORDER BY role_record.rolname
      LIMIT 1;

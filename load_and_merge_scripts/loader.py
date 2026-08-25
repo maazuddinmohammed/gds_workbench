@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import argparse
+import importlib
 import os
 import re
 import sys
@@ -10,11 +11,22 @@ from collections.abc import Callable, Iterable, Mapping, Sequence
 from dataclasses import dataclass, field
 from datetime import date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 import psycopg
 from psycopg.conninfo import conninfo_to_dict
+
+
+class _YamlModule(Protocol):
+    YAMLError: type[Exception]
+
+    def safe_load(self, stream: str) -> object: ...
+
+
+class _DotenvModule(Protocol):
+    load_dotenv: Callable[..., bool]
+
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 DATA_DIR = SCRIPT_DIR / "data"
@@ -132,7 +144,7 @@ _ALLOWED_WORKBOOKS = frozenset(
         "model.xlsx",
     }
 )
-_ALLOWED_LOAD_TARGETS = {
+ALLOWED_LOAD_TARGETS = {
     ("reference.xlsx", "Environment"): ("reference", "environment"),
     ("reference.xlsx", "SystemType"): ("reference", "system_type"),
     ("reference.xlsx", "Zone"): ("reference", "zone"),
@@ -252,11 +264,16 @@ class LoaderSettings:
             parts = conninfo_to_dict(dsn)
         except Exception as exc:
             raise LoaderError("GDS_LOADER_DSN is invalid") from exc
-        if not parts.get("host") or not parts.get("dbname") or not parts.get("user"):
+        user = parts.get("user")
+        if (
+            not isinstance(parts.get("host"), str)
+            or not isinstance(parts.get("dbname"), str)
+            or not isinstance(user, str)
+        ):
             raise LoaderError("GDS_LOADER_DSN requires host, dbname, and user")
         if parts.get("sslmode") != "verify-full":
             raise LoaderError("GDS_LOADER_DSN requires sslmode=verify-full")
-        if parts["user"].split("@", 1)[0].casefold() in {
+        if user.split("@", 1)[0].casefold() in {
             "gds_app_write",
             "gds_mcp_runtime",
         }:
@@ -288,7 +305,7 @@ def read_config(
 ) -> tuple[LoadDefinition, ...]:
     """Read and strictly validate the allowlisted merge configuration."""
     try:
-        import yaml
+        yaml = cast(_YamlModule, importlib.import_module("yaml"))
     except ImportError as exc:
         raise LoaderError("PyYAML is required; run uv sync") from exc
     try:
@@ -338,7 +355,7 @@ def read_config(
             )
         except (KeyError, TypeError, ValueError) as exc:
             raise LoaderError("a load configuration is incomplete") from exc
-        _validate_definition(definition)
+        validate_definition(definition)
         if definition.selection in seen_selections:
             raise LoaderError("workbook and sheet selections must be unique")
         if definition.dependency_order in seen_orders:
@@ -346,7 +363,7 @@ def read_config(
         seen_selections.add(definition.selection)
         seen_orders.add(definition.dependency_order)
         definitions.append(definition)
-    if require_complete and seen_selections != set(_ALLOWED_LOAD_TARGETS):
+    if require_complete and seen_selections != set(ALLOWED_LOAD_TARGETS):
         raise LoaderError("merge configuration must define every approved workbook sheet")
     return tuple(sorted(definitions, key=lambda value: value.dependency_order))
 
@@ -361,7 +378,7 @@ def _string_tuple(value: Any, name: str, *, allow_empty: bool = False) -> tuple[
     return tuple(value)
 
 
-def _validate_definition(definition: LoadDefinition) -> None:
+def validate_definition(definition: LoadDefinition) -> None:
     if definition.workbook not in _ALLOWED_WORKBOOKS:
         raise LoaderError("merge configuration contains an unsupported workbook")
     if definition.schema not in _ALLOWED_SCHEMAS:
@@ -372,7 +389,7 @@ def _validate_definition(definition: LoadDefinition) -> None:
         raise LoaderError("dependency_order must be positive")
     if len(definition.sheet) > 31 or not definition.sheet.strip():
         raise LoaderError("sheet names must be 1-31 characters")
-    expected_target = _ALLOWED_LOAD_TARGETS.get(definition.selection)
+    expected_target = ALLOWED_LOAD_TARGETS.get(definition.selection)
     if expected_target != (definition.schema, definition.table):
         raise LoaderError("merge configuration contains a non-allowlisted workbook target")
     if len(set(definition.columns)) != len(definition.columns):
@@ -437,7 +454,9 @@ def prepare_selected_loads(
 ) -> tuple[PreparedLoad | PreparedLockLoad, ...]:
     prepared: list[PreparedLoad | PreparedLockLoad] = []
     for item in selected:
-        if item == "lock":
+        if isinstance(item, str):
+            if item != "lock":
+                raise LoaderError("selected load kind is invalid")
             prepared.append(PreparedLockLoad(rows=_read_lock_rows(data_dir / LOCK_WORKBOOK)))
         else:
             rows = _read_sheet_rows(data_dir / item.workbook, item.sheet, item.columns)
@@ -603,8 +622,8 @@ def execute_prepared_loads(
                 _execute_lock_load(cursor, item)
                 continue
             definition = item.definition
-            _create_temp_table(cursor, definition.staging_name, definition.columns)
-            _insert_staging_rows(cursor, definition.staging_name, definition.columns, item.rows)
+            create_temp_table(cursor, definition.staging_name, definition.columns)
+            insert_staging_rows(cursor, definition.staging_name, definition.columns, item.rows)
             staging_table = f'pg_temp."{definition.staging_name}"'
             for statement in definition.merge_statements:
                 cursor.execute(statement.replace("{staging_table}", staging_table))
@@ -629,7 +648,7 @@ def _assert_bootstrap_window(cursor: Any) -> None:
     if lock_result is None or not bool(_row_value(lock_result, 0, "maintenance_lock")):
         raise LoaderError("another Excel bootstrap load is already running")
 
-    target_tables = sorted(set(_ALLOWED_LOAD_TARGETS.values()))
+    target_tables = sorted(set(ALLOWED_LOAD_TARGETS.values()))
     targets = ", ".join(f'"{schema}"."{table}"' for schema, table in target_tables)
     cursor.execute(f"LOCK TABLE {targets} IN SHARE ROW EXCLUSIVE MODE")
     activity_query = " UNION ALL ".join(
@@ -673,7 +692,7 @@ def _require_complete_merge(cursor: Any, definition: LoadDefinition, expected_ro
         )
 
 
-def _create_temp_table(cursor: Any, table_name: str, columns: Sequence[str]) -> None:
+def create_temp_table(cursor: Any, table_name: str, columns: Sequence[str]) -> None:
     if not _IDENTIFIER.fullmatch(table_name) or any(
         not _IDENTIFIER.fullmatch(column) for column in columns
     ):
@@ -682,7 +701,7 @@ def _create_temp_table(cursor: Any, table_name: str, columns: Sequence[str]) -> 
     cursor.execute(f'CREATE TEMP TABLE "{table_name}" ({column_sql})')
 
 
-def _insert_staging_rows(
+def insert_staging_rows(
     cursor: Any,
     table_name: str,
     columns: Sequence[str],
@@ -725,7 +744,7 @@ def _resolve_lock_actor(cursor: Any) -> LockActor:
 
 def _execute_lock_load(cursor: Any, load: PreparedLockLoad) -> None:
     actor = _resolve_lock_actor(cursor)
-    _create_temp_table(cursor, "staging_lock_control", LOCK_COLUMNS)
+    create_temp_table(cursor, "staging_lock_control", LOCK_COLUMNS)
     staging_rows = tuple(
         (
             schema,
@@ -737,7 +756,7 @@ def _execute_lock_load(cursor: Any, load: PreparedLockLoad) -> None:
         )
         for schema, table, id_column, id_value, locked, expected_revision in load.rows
     )
-    _insert_staging_rows(cursor, "staging_lock_control", LOCK_COLUMNS, staging_rows)
+    insert_staging_rows(cursor, "staging_lock_control", LOCK_COLUMNS, staging_rows)
 
     changed_model_revisions: dict[int, int] = {}
     seen_model_revisions: dict[int, int] = {}
@@ -945,7 +964,8 @@ def main(
             return 0
 
         try:
-            from dotenv import load_dotenv
+            dotenv = cast(_DotenvModule, importlib.import_module("dotenv"))
+            load_dotenv = dotenv.load_dotenv
         except ImportError as exc:
             raise LoaderError("python-dotenv is required; run uv sync") from exc
         load_dotenv(dotenv_path=ENV_PATH, override=False)

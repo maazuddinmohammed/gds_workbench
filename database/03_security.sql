@@ -308,7 +308,7 @@ BEGIN
        AND access.is_active
        AND (
            access.access_expires_time IS NULL
-           OR access.access_expires_time > CURRENT_TIMESTAMP
+           OR access.access_expires_time > clock_timestamp()
        )
      FOR SHARE OF access;
 
@@ -362,7 +362,7 @@ BEGIN
           JOIN security.principal AS lock_owner
             ON lock_owner.principal_id = tenant_lock.locked_by_principal_id
          WHERE tenant_lock.tenant_id = p_tenant_id
-           AND tenant_lock.tenant_lock_expires_time > CURRENT_TIMESTAMP
+           AND tenant_lock.tenant_lock_expires_time > clock_timestamp()
          FOR SHARE OF tenant_lock, lock_owner;
         IF NOT FOUND THEN
             RETURN QUERY SELECT
@@ -466,7 +466,7 @@ BEGIN
       JOIN security.principal AS lock_owner
         ON lock_owner.principal_id = tenant_lock.locked_by_principal_id
      WHERE tenant_lock.tenant_id = p_tenant_id
-       AND tenant_lock.tenant_lock_expires_time > CURRENT_TIMESTAMP
+       AND tenant_lock.tenant_lock_expires_time > clock_timestamp()
      FOR SHARE OF tenant_lock, lock_owner;
 
     IF NOT FOUND THEN
@@ -582,7 +582,7 @@ BEGIN
      WHERE tenant_lock.tenant_id = p_tenant_id
      FOR UPDATE OF tenant_lock;
 
-    IF FOUND AND v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP THEN
+    IF FOUND AND v_existing_lock.tenant_lock_expires_time <= clock_timestamp() THEN
         INSERT INTO security.tenant_lock_event (
             tenant_id,
             tenant_lock_id,
@@ -748,7 +748,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP THEN
+    IF v_existing_lock.tenant_lock_expires_time <= clock_timestamp() THEN
         INSERT INTO security.tenant_lock_event (
             tenant_id,
             tenant_lock_id,
@@ -909,7 +909,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP THEN
+    IF v_existing_lock.tenant_lock_expires_time <= clock_timestamp() THEN
         INSERT INTO security.tenant_lock_event (
             tenant_id,
             tenant_lock_id,
@@ -1060,7 +1060,7 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_existing_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP THEN
+    IF v_existing_lock.tenant_lock_expires_time <= clock_timestamp() THEN
         INSERT INTO security.tenant_lock_event (
             tenant_id,
             tenant_lock_id,
@@ -1153,7 +1153,7 @@ BEGIN
                tenant_lock.tenant_lock_acquired_time,
                tenant_lock.tenant_lock_expires_time
           FROM security.tenant_lock AS tenant_lock
-         WHERE tenant_lock.tenant_lock_expires_time <= CURRENT_TIMESTAMP
+         WHERE tenant_lock.tenant_lock_expires_time <= clock_timestamp()
          ORDER BY tenant_lock.tenant_lock_expires_time, tenant_lock.tenant_lock_id
          FOR UPDATE SKIP LOCKED
          LIMIT p_limit

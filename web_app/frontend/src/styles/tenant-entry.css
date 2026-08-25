@@ -1,0 +1,269 @@
+/* Tenant entry */
+.entry-shell {
+  min-height: 100vh;
+  background:
+    radial-gradient(circle at 50% 17%, rgb(255 255 255 / 95%) 0, rgb(255 255 255 / 0%) 33rem),
+    var(--paper);
+}
+
+.entry-topbar {
+  display: flex;
+  min-height: 5.35rem;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 3rem;
+  border-bottom: 1px solid var(--line);
+  background: rgb(255 255 255 / 82%);
+  backdrop-filter: blur(18px) saturate(125%);
+}
+
+.signed-in {
+  display: flex;
+  align-items: center;
+  gap: 0.7rem;
+  color: var(--muted);
+  font-size: 0.82rem;
+}
+
+.signed-in strong {
+  color: var(--ink);
+}
+
+.tenant-entry {
+  width: min(72rem, calc(100% - 3rem));
+  margin: 0 auto;
+  padding: 5.8rem 0 3rem;
+}
+
+.tenant-entry-heading {
+  margin-bottom: 3rem;
+  text-align: center;
+}
+
+.tenant-entry-heading h1 {
+  margin: 0;
+  font-size: clamp(2.35rem, 5vw, 3.5rem);
+  font-weight: 780;
+  letter-spacing: -0.055em;
+  line-height: 0.98;
+}
+
+.tenant-search-row {
+  display: flex;
+  width: min(49rem, 100%);
+  align-items: center;
+  gap: 1.25rem;
+  margin: 0 auto 2rem;
+}
+
+.search-field {
+  display: flex;
+  min-width: 0;
+  min-height: 3.35rem;
+  flex: 1;
+  align-items: center;
+  gap: 0.8rem;
+  padding: 0 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.75rem;
+  background: white;
+  box-shadow: 0 8px 24px rgb(23 32 42 / 4%);
+  transition: border-color 120ms ease, box-shadow 120ms ease;
+}
+
+.search-field:focus-within {
+  border-color: var(--blue);
+  box-shadow: 0 0 0 3px rgb(49 95 207 / 12%);
+}
+
+.search-field svg {
+  width: 1.15rem;
+  height: 1.15rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: var(--muted);
+  stroke-linecap: round;
+  stroke-width: 1.8;
+}
+
+.search-field input {
+  width: 100%;
+  min-width: 0;
+  height: 3.15rem;
+  border: 0;
+  outline: 0;
+  color: var(--ink);
+  background: transparent;
+}
+
+.search-field input::placeholder {
+  color: #737e88;
+}
+
+.result-count {
+  flex: 0 0 auto;
+  color: var(--muted);
+  font-size: 0.82rem;
+  white-space: nowrap;
+}
+
+.tenant-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.9rem;
+}
+
+.tenant-card {
+  display: grid;
+  min-height: 8.9rem;
+  grid-template-columns: auto minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1.15rem;
+  padding: 1.4rem;
+  border: 1px solid var(--line);
+  border-radius: 1rem;
+  color: var(--ink);
+  background: rgb(255 255 255 / 82%);
+  box-shadow: 0 1px 1px rgb(23 32 42 / 2%);
+  text-align: left;
+  cursor: pointer;
+  transition: transform 140ms ease, border-color 140ms ease, box-shadow 140ms ease, background-color 140ms ease;
+}
+
+.tenant-card:hover {
+  transform: translateY(-1px);
+  border-color: #b7c1ca;
+  background: white;
+  box-shadow: var(--shadow-soft);
+}
+
+.tenant-card:active {
+  transform: scale(0.992);
+}
+
+.tenant-card[aria-pressed="true"] {
+  border-color: var(--blue);
+  background: white;
+  box-shadow: 0 0 0 3px rgb(49 95 207 / 10%), var(--shadow-soft);
+}
+
+.tenant-code-mark {
+  display: grid;
+  width: 3.4rem;
+  height: 3.4rem;
+  place-items: center;
+  border-radius: 0.9rem;
+  color: var(--blue);
+  background: var(--blue-soft);
+  font-size: 0.85rem;
+  font-weight: 850;
+  letter-spacing: 0.02em;
+}
+
+.tenant-card-copy,
+.tenant-name-line {
+  display: flex;
+  min-width: 0;
+}
+
+.tenant-card-copy {
+  flex-direction: column;
+  gap: 0.42rem;
+}
+
+.tenant-name-line {
+  align-items: center;
+  gap: 0.55rem;
+}
+
+.tenant-name-line strong {
+  overflow: hidden;
+  font-size: 0.94rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tenant-code-line {
+  color: var(--muted);
+  font-size: 0.78rem;
+  font-weight: 650;
+}
+
+.tenant-card-meta {
+  color: var(--muted);
+  font-size: 0.76rem;
+}
+
+.badge,
+.tenant-code-badge,
+.role-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 0.42rem;
+  font-size: 0.66rem;
+  font-weight: 800;
+  letter-spacing: 0.02em;
+}
+
+.badge {
+  padding: 0.28rem 0.45rem;
+}
+
+.badge-success {
+  color: var(--green);
+  background: var(--green-soft);
+}
+
+.tenant-card-indicator {
+  color: var(--blue);
+  font-size: 1.3rem;
+  font-weight: 800;
+}
+
+.tenant-entry-footer {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 2rem;
+  margin-top: 1.5rem;
+  padding: 1.5rem;
+  border-top: 1px solid var(--line-strong);
+}
+
+.tenant-entry-footer > div {
+  display: flex;
+  flex-direction: column;
+  gap: 0.3rem;
+  font-size: 0.83rem;
+}
+
+.tenant-entry-footer > div span {
+  color: var(--muted);
+  font-size: 0.75rem;
+}
+
+.button-enter {
+  min-width: 11.5rem;
+}
+
+.inline-error {
+  margin-top: 0;
+  color: var(--red);
+  font-size: 0.82rem;
+  text-align: right;
+}
+
+.empty-state {
+  padding: 3rem 1.5rem;
+  border: 1px dashed var(--line-strong);
+  color: var(--muted);
+  background: rgb(255 255 255 / 48%);
+  text-align: center;
+}
+
+.empty-state.compact {
+  padding: 1.75rem;
+  border-top: 0;
+}
+

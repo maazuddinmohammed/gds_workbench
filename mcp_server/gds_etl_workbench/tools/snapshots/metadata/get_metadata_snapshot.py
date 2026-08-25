@@ -231,10 +231,18 @@ async def select_snapshot_datasets(
         raise SnapshotContractError("active Metadata Discovery Scope configuration is invalid")
 
     zone_by_object_id: dict[int, str] = {}
+    tenant_by_object_id: dict[int, int] = {}
     for row in closure_rows:
         object_id = row["object_id"]
         if object_id is None:
             continue
+        object_tenant_id = row["object_tenant_id"]
+        if (
+            isinstance(object_tenant_id, bool)
+            or not isinstance(object_tenant_id, int)
+            or object_tenant_id < 1
+        ):
+            raise SnapshotContractError("included Object has no resolved Tenant")
         zone_code = row["snapshot_zone_code"]
         if row["snapshot_zone_is_active"] is not True or zone_code not in {
             "source",
@@ -244,12 +252,17 @@ async def select_snapshot_datasets(
         }:
             raise SnapshotContractError("included Object has an unsupported or inactive Zone")
         zone_by_object_id[object_id] = zone_code
+        tenant_by_object_id[object_id] = object_tenant_id
 
     object_ids = sorted(zone_by_object_id)
-    object_rows = await transaction.fetch_all(OBJECT_ROWS_SQL, (object_ids,))
+    selected_object_rows = await transaction.fetch_all(OBJECT_ROWS_SQL, (object_ids,))
     attribute_rows = await transaction.fetch_all(ATTRIBUTE_ROWS_SQL, (object_ids,))
-    if {row["object_id"] for row in object_rows} != set(object_ids):
+    if {row["object_id"] for row in selected_object_rows} != set(object_ids):
         raise SnapshotContractError("included Object closure changed during snapshot selection")
+    object_rows = [
+        {**row, "object_tenant_id": tenant_by_object_id[row["object_id"]]}
+        for row in selected_object_rows
+    ]
 
     rows_by_dataset: dict[str, list[dict[str, object]]] = {
         f"{zone_code}_object": [] for zone_code in ("source", "bronze", "silver", "gold")
@@ -373,7 +386,15 @@ async def select_snapshot_datasets(
     connection_by_id = {row["connection_id"]: row for row in connection_rows}
     tenant_rows = await transaction.fetch_all(
         FOUNDATION_TENANT_ROWS_SQL,
-        (tenant_id, sorted({row["tenant_id"] for row in connection_rows})),
+        (
+            tenant_id,
+            sorted(
+                {
+                    *(row["tenant_id"] for row in connection_rows),
+                    *tenant_by_object_id.values(),
+                }
+            ),
+        ),
     )
     tenant_by_id = {row["tenant_id"]: row for row in tenant_rows}
     requested_tenant = tenant_by_id.get(tenant_id)
@@ -428,6 +449,7 @@ async def select_snapshot_datasets(
         raise SnapshotContractError("foundation System relationship is incomplete")
     if any(
         row["connection_id"] not in connection_by_id
+        or row["object_tenant_id"] not in tenant_by_id
         or row["object_type_id"] not in reference_ids_by_dataset["object_type"]
         or row["zone_id"] not in reference_ids_by_dataset["zone"]
         for row in object_rows

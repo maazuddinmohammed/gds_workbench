@@ -28,7 +28,7 @@ class DescribeModelDatasetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     dataset: ModelDataset
     section: ModelSection
-    change_set_eligible: Literal[True] = True
+    change_set_eligible: bool
     database_ids_included: Literal[False] = False
     canonical_key: tuple[str, ...]
     record_schema: dict[str, object]
@@ -47,8 +47,8 @@ def register_describe_model_dataset_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Describe one shared Model Snapshot and Model Change Set dataset. Returns "
-            "the exact ID-free JSON Schema, canonical key, and usage guidance."
+            "Describe one Model dataset, including whether MCP Model Change Sets may "
+            "write it. Returns the exact ID-free JSON Schema and canonical key."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -70,17 +70,22 @@ def register_describe_model_dataset_tool(
             definition = DATASETS_BY_NAME.get(dataset)
             if definition is None:
                 raise InvalidRequestError("The Model dataset is unknown.")
+            usage = ("Use every required field and no unlisted field.",)
+            if definition.change_set_eligible:
+                usage += (
+                    "Use canonical names, never database IDs, in Model Change Set records.",
+                    "Each staged dataset completely replaces that pending dataset.",
+                    "An empty staged record list clears that pending dataset.",
+                )
+            else:
+                usage += ("This dataset is read-only through MCP; it cannot be staged or applied.",)
             return DescribeModelDatasetResult(
                 dataset=definition.name,
                 section=definition.section,
+                change_set_eligible=definition.change_set_eligible,
                 canonical_key=definition.canonical_key,
                 record_schema=build_model_dataset_schema(definition),
-                usage=(
-                    "Use every required field and no unlisted field.",
-                    "Use canonical names, never database IDs, in Model Change Set records.",
-                    "Each staged dataset is a complete replacement of that pending dataset.",
-                    "An empty staged record list clears that pending dataset.",
-                ),
+                usage=usage,
             )
         except AuthenticationError as error:
             raise ModelDatasetToolError(f"{error.public_code}: {error.message}") from None

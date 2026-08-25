@@ -58,7 +58,9 @@ def _local_settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
             "GDS_MCP_PUBLIC_URL": "http://localhost:8000/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+                "https://snapshot.blob.core.windows.net"
+            ),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -243,13 +245,17 @@ def test_configuration_diagnostic_recovers_without_mutating_production_values(
 ) -> None:
     values = {
         "GDS_ENVIRONMENT": "production",
-        "GDS_DATABASE_DSN": ("postgresql://app@db.example.invalid/workbench?sslmode=verify-full"),
+        "GDS_DATABASE_DSN": (
+            "postgresql://app@db.example.invalid/workbench?sslmode=verify-full"
+        ),
         "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
         "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
         "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
         "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
         "GDS_MCP_PUBLIC_URL": "https://workbench.example.test/mcp",
-        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
+        "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
+            "https://snapshot.blob.core.windows.net"
+        ),
         "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
     }
 

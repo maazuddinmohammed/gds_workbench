@@ -74,7 +74,7 @@ def test_validation_returns_authoritative_action_review() -> None:
 
 
 def test_action_review_limits_natural_keys_but_keeps_counts() -> None:
-    records = []
+    records: list[dict[str, object]] = []
     for index in range(101):
         record = _copy_group()
         record["copy_group_name"] = f"GROUP_{index:03d}"
@@ -257,7 +257,7 @@ def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
             "is_active": True,
         }
     ]
-    record = _object_record(object_schema="demo")
+    record = _object_record(object_schema="demo", tenant_code="DEMO")
 
     result = validate_metadata_documents(
         tenant_code="DEMO",

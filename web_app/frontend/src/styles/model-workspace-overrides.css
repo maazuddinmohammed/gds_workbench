@@ -1,0 +1,36 @@
+/* Keep model workspace overrides after the shared workspace rules. */
+.workspace.workspace-ledger {
+  padding-top: 0;
+}
+
+.workspace.workspace-model {
+  padding: 0;
+  overflow: hidden;
+}
+
+.button.button-small {
+  min-height: 2.15rem;
+  padding: 0.5rem 0.72rem;
+  font-size: 0.74rem;
+}
+
+@media (max-width: 58rem) {
+  .workspace.workspace-ledger {
+    padding: 0 1.4rem 3rem;
+  }
+
+  .workspace.workspace-model {
+    padding: 0;
+  }
+}
+
+@media (max-width: 42rem) {
+  .workspace.workspace-ledger {
+    padding: 0 0.75rem 2.5rem;
+  }
+
+  .workspace.workspace-model {
+    padding: 0;
+  }
+}
+

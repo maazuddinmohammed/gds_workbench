@@ -242,12 +242,13 @@ def register_copy_group_tools(
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
+        name=_LIST_TOOL,
         description="List Copy Groups owned by one authorized Tenant.",
         annotations=_annotations(),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def list_copy_groups(
+    async def _list_copy_groups(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         system_id: Annotated[int | None, Field(gt=0)] = None,
@@ -297,6 +298,7 @@ def register_copy_group_tools(
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
     @server.tool(
+        name=_GET_TOOL,
         description=(
             "Get one Tenant-owned Copy Group with bounded Copies and Controls. "
             "SQL scripts and raw checkpoint values are never returned."
@@ -305,7 +307,7 @@ def register_copy_group_tools(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_copy_group(
+    async def _get_copy_group(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         copy_group_id: Annotated[int, Field(gt=0)],
@@ -350,6 +352,7 @@ def register_copy_group_tools(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _list_copy_groups, _get_copy_group
     audit.register_tool(
         _LIST_TOOL,
         policy=POLICY,

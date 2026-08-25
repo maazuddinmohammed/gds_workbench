@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any, LiteralString
+from typing import Any, LiteralString, cast
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -105,5 +105,7 @@ def summarize_model_object_input(arguments: Mapping[str, Any]) -> dict[str, str 
     return {
         "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
         "model_id": model_id if type(model_id) is int and model_id > 0 else "invalid",
-        "object_count": len(object_ids) if isinstance(object_ids, list) else "invalid",
+        "object_count": (
+            len(cast(list[object], object_ids)) if isinstance(object_ids, list) else "invalid"
+        ),
     }

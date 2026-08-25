@@ -179,6 +179,7 @@ def register_get_tenant_details_tool(
     audit: ToolCallAuditMiddleware,
 ) -> None:
     @server.tool(
+        name=_TOOL_NAME,
         description=(
             "Get one authorized Tenant and its Connection-grain System, Connection Type, "
             "System Type, and active Source/Bronze/Silver/Gold Object counts."
@@ -192,7 +193,7 @@ def register_get_tenant_details_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_tenant_details(
+    async def _get_tenant_details(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         schema_version: Literal["1.0"] = "1.0",
@@ -230,6 +231,7 @@ def register_get_tenant_details_tool(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _get_tenant_details
     audit.register_tool(
         _TOOL_NAME,
         policy=POLICY,

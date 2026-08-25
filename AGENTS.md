@@ -20,6 +20,12 @@ These rules apply to every file and command in this repository.
 - MCP must not expose foundational CRUD, Model Scope mutation, direct lock-table toggles, individual graph mutation, arbitrary SQL, delete, secret-returning, file-upload, or code-execution tools. The only arbitrary-SQL exception is the governed `execute_databricks_sql` tool: it may accept multi-statement Databricks SQL, allow reads and unqualified temporary views/tables only, reject persistent DDL and all DML, never return or log credentials, and return at most 50 rows from the final statement. Any future Tenant Lock tool must call only the governed acquire, renew, release, or explicit override operations and preserve their role, ownership, duration, reason, and audit rules.
 - Derive actor, Tenant, Model ownership, and authorization server-side. Preserve least privilege, redaction, Tenant Lock protection, revision fencing, and idempotency.
 
+## Frontend and backend responsibility
+
+- When application logic could reasonably live in either frontend or backend, prefer the backend.
+- Keep authoritative authorization, validation, normalization, reconciliation, digest, workflow, and state-transition rules in the backend. The frontend may mirror bounded checks for immediate feedback, but the backend must revalidate them.
+- Keep presentation, interaction behavior, and temporary unsaved UI state in the frontend when they naturally belong there.
+
 ### Code Structure and Abstraction
 
 Optimize for readability, locality, and traceability, not maximum decomposition.

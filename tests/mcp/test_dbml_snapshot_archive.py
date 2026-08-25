@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from test_dbml_snapshot_renderer import _snapshot
+from test_dbml_snapshot_renderer import snapshot_fixture
 
 from gds_etl_workbench.tools.snapshots.archive import SnapshotPayloadTooLargeError
 from gds_etl_workbench.tools.snapshots.dbml.archive import build_dbml_snapshot_archive
@@ -20,7 +20,7 @@ AVAILABLE_UNTIL = CREATED_TIME + timedelta(hours=24)
 
 
 def test_dbml_archive_contains_manifest_and_bounded_files(tmp_path: Path) -> None:
-    snapshot = _snapshot()
+    snapshot = snapshot_fixture()
     documents = render_dbml_documents(
         snapshot,
         model_type="full",
@@ -68,32 +68,33 @@ def test_dbml_archive_contains_manifest_and_bounded_files(tmp_path: Path) -> Non
 def test_dbml_archive_is_deterministic_and_enforces_size_limit(
     tmp_path: Path,
 ) -> None:
-    snapshot = _snapshot()
+    snapshot = snapshot_fixture()
     documents = render_dbml_documents(
         snapshot,
         model_type="logical",
         include_submodels=True,
     )
-    arguments = {
-        "snapshot_id": SNAPSHOT_ID,
-        "snapshot": snapshot,
-        "model_type": "logical",
-        "include_submodels": True,
-        "created_time": CREATED_TIME,
-        "available_until": AVAILABLE_UNTIL,
-    }
-
     first = build_dbml_snapshot_archive(
         tmp_path / "first.zip",
+        snapshot_id=SNAPSHOT_ID,
+        snapshot=snapshot,
+        model_type="logical",
+        include_submodels=True,
         documents=documents,
+        created_time=CREATED_TIME,
+        available_until=AVAILABLE_UNTIL,
         max_archive_bytes=20 * 1024 * 1024,
-        **arguments,
     )
     second = build_dbml_snapshot_archive(
         tmp_path / "second.zip",
+        snapshot_id=SNAPSHOT_ID,
+        snapshot=snapshot,
+        model_type="logical",
+        include_submodels=True,
         documents=tuple(reversed(documents)),
+        created_time=CREATED_TIME,
+        available_until=AVAILABLE_UNTIL,
         max_archive_bytes=20 * 1024 * 1024,
-        **arguments,
     )
 
     assert first.sha256 == second.sha256
@@ -101,8 +102,13 @@ def test_dbml_archive_is_deterministic_and_enforces_size_limit(
     with pytest.raises(SnapshotPayloadTooLargeError, match="expanded size"):
         build_dbml_snapshot_archive(
             tmp_path / "oversized.zip",
+            snapshot_id=SNAPSHOT_ID,
+            snapshot=snapshot,
+            model_type="logical",
+            include_submodels=True,
             documents=documents,
+            created_time=CREATED_TIME,
+            available_until=AVAILABLE_UNTIL,
             max_archive_bytes=1,
-            **arguments,
         )
     assert not (tmp_path / "oversized.zip").exists()

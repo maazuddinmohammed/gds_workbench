@@ -1,15 +1,22 @@
 from __future__ import annotations
 
+import importlib
 from dataclasses import replace
 from pathlib import Path
-from typing import Any
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 import pytest
-import yaml
 from openpyxl import Workbook
 
 import loader
+
+
+class _YamlModule(Protocol):
+    def safe_dump(self, data: object, *, sort_keys: bool) -> str: ...
+
+
+yaml = cast(_YamlModule, importlib.import_module("yaml"))
 
 OPAQUE_DSN = "test-connection-input"
 VALID_CONNECTION_PARTS = {
@@ -83,6 +90,7 @@ def _write_config(path: Path, statement: str) -> None:
 def _write_lock_workbook(path: Path, rows: list[tuple[Any, ...]]) -> None:
     workbook = Workbook()
     sheet = workbook.active
+    assert sheet is not None
     sheet.title = loader.LOCK_SHEET
     sheet.append(loader.LOCK_COLUMNS)
     for row in rows:
@@ -216,9 +224,7 @@ def test_complete_config_uses_approved_workbook_split() -> None:
     definitions = loader.read_config()
     sheets_by_workbook = {
         workbook: {
-            definition.sheet
-            for definition in definitions
-            if definition.workbook == workbook
+            definition.sheet for definition in definitions if definition.workbook == workbook
         }
         for workbook in loader._ALLOWED_WORKBOOKS
     }
@@ -273,6 +279,49 @@ def test_complete_config_uses_approved_workbook_split() -> None:
         },
         "model.xlsx": {"Model", "ModelScope"},
     }
+
+
+def test_model_sheet_uses_canonical_policy_columns() -> None:
+    definitions = loader.read_config()
+    definition = next(value for value in definitions if value.selection == ("model.xlsx", "Model"))
+
+    assert definition.target == "model.model"
+    assert definition.columns == (
+        "tenant_code",
+        "model_name",
+        "model_description",
+        "silver_model_naming_instructions",
+        "silver_model_audit_columns_template",
+        "gold_model_naming_instructions",
+        "gold_model_technical_columns_template",
+        "gold_model_audit_columns_template",
+        "is_active",
+    )
+    assert definition.required_columns == ("tenant_code", "model_name")
+    assert definition.source_key == ("tenant_code", "model_name")
+    assert loader.prepare_selected_loads((definition,)) == (
+        loader.PreparedLoad(definition=definition, rows=()),
+    )
+
+    merge_sql = definition.merge_statements[0]
+    assert "silver_model_naming_template" not in merge_sql
+    assert "gold_model_naming_template" not in merge_sql
+    assert (
+        "NULLIF(btrim(staged.silver_model_naming_instructions::text), '') "
+        "AS silver_model_naming_instructions"
+    ) in merge_sql
+    assert (
+        "NULLIF(btrim(staged.gold_model_naming_instructions::text), '') "
+        "AS gold_model_naming_instructions"
+    ) in merge_sql
+    for column in (
+        "silver_model_audit_columns_template",
+        "gold_model_technical_columns_template",
+        "gold_model_audit_columns_template",
+    ):
+        assert f"NULLIF(btrim(staged.{column}::text), '')::jsonb AS {column}" in merge_sql
+    for column in definition.columns[2:]:
+        assert f"{column} = source.{column}" in merge_sql
 
 
 @pytest.mark.parametrize(

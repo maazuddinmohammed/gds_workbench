@@ -14,6 +14,7 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.modeling_records import ANALYSIS_VALIDATION_FIELDS
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
@@ -29,10 +30,18 @@ from gds_etl_workbench.tools.modeling.profiling_analysis import (
 
 @dataclass
 class FakeDatabase:
-    profiles: list[dict[str, Any]] = field(default_factory=list)
-    relationships: list[dict[str, Any]] = field(default_factory=list)
-    audit_records: list[ToolCallLogRecord] = field(default_factory=list)
-    isolations: list[ReadIsolation] = field(default_factory=list)
+    profiles: list[dict[str, Any]] = field(
+        default_factory=lambda: list[dict[str, Any]]()
+    )
+    relationships: list[dict[str, Any]] = field(
+        default_factory=lambda: list[dict[str, Any]]()
+    )
+    audit_records: list[ToolCallLogRecord] = field(
+        default_factory=lambda: list[ToolCallLogRecord]()
+    )
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     async def open(self) -> None:
         return None
@@ -175,6 +184,13 @@ def _relationship() -> dict[str, Any]:
     }
 
 
+def _inference_only_relationship() -> dict[str, Any]:
+    relationship = _relationship()
+    for validation_field in ANALYSIS_VALIDATION_FIELDS:
+        relationship[validation_field] = None
+    return relationship
+
+
 @pytest.mark.asyncio
 async def test_profiling_expands_names_and_omits_internal_columns() -> None:
     database = FakeDatabase(profiles=[_profile()])
@@ -234,3 +250,19 @@ async def test_empty_analysis_filter_returns_complete_directional_views() -> Non
     result = GetModelAnalysisResult.model_validate(call.structured_content)
     assert len(result.from_relationships) == 1
     assert len(result.to_relationships) == 1
+
+
+@pytest.mark.asyncio
+async def test_analysis_returns_inference_only_relationships_with_null_validation() -> (
+    None
+):
+    database = FakeDatabase(relationships=[_inference_only_relationship()])
+
+    async with Client(_server(database)) as client:
+        call = await client.call_tool("get_model_analysis", {"model_id": 7})
+
+    result = GetModelAnalysisResult.model_validate(call.structured_content)
+    relationship = result.from_relationships[0]
+    assert relationship.validation_policy_version is None
+    assert relationship.validation_result is None
+    assert relationship.validation_duplicate_target_key_count is None

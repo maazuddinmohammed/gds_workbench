@@ -16,7 +16,7 @@ from gds_etl_workbench.tools.databricks.validation import validate_databricks_sq
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SKILLS_ROOT = REPOSITORY_ROOT / "plugins" / "gds" / "skills"
+SKILLS_ROOT = REPOSITORY_ROOT / "plugins" / "v1" / "gds" / "skills"
 ANALYSIS_ROOT = SKILLS_ROOT / "analyze-gds-relationships"
 ASSERTION_ROOT = SKILLS_ROOT / "capture-modeling-assertions"
 GENERATOR = ANALYSIS_ROOT / "scripts" / "build-relationship-sql.js"

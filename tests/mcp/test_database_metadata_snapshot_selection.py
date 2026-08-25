@@ -19,6 +19,7 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     EncodedDataset,
     SnapshotArchive,
     SnapshotContractError,
+    build_root_documents,
 )
 from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
@@ -52,8 +53,11 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
 
     selected = await _select(postgres_database, seed.tenant_id)
     encoded = selected.datasets
+    build_root_documents(encoded)
     assert selected.tenant_code == seed.tenant_code
-    rows_by_dataset = {dataset.definition.name: _decode_rows(dataset) for dataset in encoded}
+    rows_by_dataset = {
+        dataset.definition.name: _decode_rows(dataset) for dataset in encoded
+    }
 
     assert list(rows_by_dataset) == [dataset.name for dataset in DATASETS]
     forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
@@ -64,10 +68,12 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         for row in rows
     )
     assert len(rows_by_dataset["project"]) == 1
-    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {seed.tenant_code}
+    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {
+        seed.tenant_code
+    }
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
-    assert len(rows_by_dataset["tenant_metadata_discovery_scope"]) == 1
+    assert len(rows_by_dataset["tenant_metadata_discovery_scope"]) == 7
     for dataset_name in (
         "system_type",
         "connection_type",
@@ -86,6 +92,8 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         assert {row["attribute_name"] for row in attribute_rows} == {
             f"{object_name}_attribute" for object_name in expected_names
         }
+        assert {row["tenant_code"] for row in object_rows} == {seed.tenant_code}
+        assert {row["tenant_code"] for row in attribute_rows} == {seed.tenant_code}
         assert all(row["zone_code"] == zone_code for row in object_rows)
         assert all("attributes" not in row for row in object_rows)
 
@@ -104,6 +112,8 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     mapping_rows = rows_by_dataset["ingestion_object_mapping"]
     attribute_mapping_rows = rows_by_dataset["ingestion_attribute_mapping"]
     assert len(mapping_rows) == 4
+    assert {row["source_tenant_code"] for row in mapping_rows} == {seed.tenant_code}
+    assert {row["target_tenant_code"] for row in mapping_rows} == {seed.tenant_code}
     assert [row["is_active"] for row in mapping_rows].count(True) == 2
     assert [row["is_active"] for row in mapping_rows].count(False) == 2
     assert len(attribute_mapping_rows) == 2
@@ -123,9 +133,12 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     assert rows_by_dataset["member_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["member_group"][0]["is_active"] is False
     assert rows_by_dataset["copy_group_control"][0]["tenant_code"] == seed.tenant_code
+    assert rows_by_dataset["copy"][0]["source_tenant_code"] == seed.tenant_code
+    assert rows_by_dataset["copy"][0]["target_tenant_code"] == seed.tenant_code
     assert rows_by_dataset["copy"][0]["is_active"] is False
     assert rows_by_dataset["process_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process_group"][0]["is_active"] is False
+    assert rows_by_dataset["process"][0]["object_tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process"][0]["is_active"] is False
 
 
@@ -160,6 +173,7 @@ async def test_selection_rejects_source_as_an_active_discovery_zone(
             UPDATE core.tenant_metadata_discovery_scope
                SET zone_id = %s
              WHERE tenant_id = %s
+               AND lower(btrim(object_schema)) = 'risk_discovery'
             """,
             (source_zone_id, seed.tenant_id),
         )
@@ -543,7 +557,9 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (list(object_ids.values()),),
     ).fetchall()
-    attribute_id_by_object_id = {row["object_id"]: row["attribute_id"] for row in attribute_rows}
+    attribute_id_by_object_id = {
+        row["object_id"]: row["attribute_id"] for row in attribute_rows
+    }
     first_mapping = connection.execute(
         """
         INSERT INTO core.ingestion_object_mapping (
@@ -601,8 +617,24 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (object_ids["unrelated_bronze"], object_ids["inactive_model_gold"]),
     ).fetchone()
-    assert first_mapping is not None and second_mapping is not None and copy_mapping is not None
+    unassigned_branch_mapping = connection.execute(
+        """
+        INSERT INTO core.ingestion_object_mapping (
+            source_object_id,
+            target_object_id
+        )
+        VALUES (%s, %s)
+        RETURNING ingestion_object_mapping_id
+        """,
+        (object_ids["mapped_silver"], object_ids["unrelated_bronze"]),
+    ).fetchone()
+    assert (
+        first_mapping is not None
+        and second_mapping is not None
+        and copy_mapping is not None
+    )
     assert inactive_unreferenced_mapping is not None and unrelated_mapping is not None
+    assert unassigned_branch_mapping is not None
     connection.execute(
         """
         INSERT INTO core.ingestion_attribute_mapping (
@@ -638,12 +670,37 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             zone_id,
             object_schema
         )
-        VALUES (%s, %s, %s, 'RISK_DISCOVERY')
+        VALUES
+            (%s, %s, %s, 'RISK_DISCOVERY'),
+            (%s, %s, %s, 'MAPPED'),
+            (%s, %s, %s, 'MAPPED'),
+            (%s, %s, %s, 'COPY'),
+            (%s, %s, %s, 'COPY'),
+            (%s, %s, %s, 'PROCESS'),
+            (%s, %s, %s, 'MODEL')
         """,
         (
             requested_tenant["tenant_id"],
             global_connection["connection_id"],
             zone_ids["bronze"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["bronze"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["silver"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["bronze"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["gold"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["gold"],
+            requested_tenant["tenant_id"],
+            global_connection["connection_id"],
+            zone_ids["silver"],
         ),
     )
     copy_group = connection.execute(

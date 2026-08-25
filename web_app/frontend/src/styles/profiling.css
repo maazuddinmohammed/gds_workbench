@@ -1,0 +1,685 @@
+/* Model Profiling */
+.profiling-page {
+  min-width: 0;
+}
+
+.workflow-commandbar {
+  display: flex;
+  min-height: 5.6rem;
+  align-items: stretch;
+  justify-content: space-between;
+  gap: 1.25rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.workflow-command-context,
+.workflow-command-actions {
+  display: flex;
+  align-items: center;
+}
+
+.workflow-command-context {
+  min-width: 0;
+  gap: 1.5rem;
+}
+
+.workflow-command-actions {
+  gap: 0.55rem;
+}
+
+.lock-context {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.45rem;
+  color: var(--muted);
+  font-size: 0.68rem;
+  font-weight: 750;
+  white-space: nowrap;
+}
+
+.lock-context::before {
+  width: 0.48rem;
+  height: 0.48rem;
+  border-radius: 50%;
+  background: var(--orange);
+  content: "";
+}
+
+.lock-context.is-held {
+  color: var(--green);
+}
+
+.lock-context.is-held::before {
+  background: var(--green);
+}
+
+.workflow-tabs {
+  display: flex;
+  align-self: stretch;
+}
+
+.workflow-tabs button {
+  position: relative;
+  min-width: 5.3rem;
+  padding: 0 0.9rem;
+  border: 0;
+  color: var(--muted);
+  background: transparent;
+  font-size: 0.76rem;
+  font-weight: 780;
+  cursor: pointer;
+}
+
+.workflow-tabs button:hover {
+  color: var(--ink);
+  background: var(--soft);
+}
+
+.workflow-tabs button.is-active {
+  color: var(--ink);
+}
+
+.workflow-tabs button.is-active::after {
+  position: absolute;
+  right: 0.8rem;
+  bottom: 0;
+  left: 0.8rem;
+  height: 3px;
+  background: var(--blue);
+  content: "";
+}
+
+.workflow-surface {
+  min-width: 0;
+}
+
+.workflow-filterbar {
+  display: grid;
+  align-items: end;
+  gap: 0.65rem;
+  padding: 0.9rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.profiling-filterbar {
+  grid-template-columns: 0.65fr repeat(4, minmax(7.5rem, 1fr)) auto;
+}
+
+.workflow-filterbar label,
+.batch-input {
+  display: grid;
+  min-width: 0;
+  gap: 0.34rem;
+}
+
+.workflow-filterbar label > span,
+.batch-input > span,
+.scope-mode-options legend {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 820;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.workflow-filterbar input,
+.workflow-filterbar select,
+.batch-input input {
+  width: 100%;
+  min-width: 0;
+  min-height: 2.55rem;
+  padding: 0.52rem 0.65rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 0.5rem;
+  color: var(--ink);
+  background: white;
+  font-size: 0.73rem;
+}
+
+.workflow-filter-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.run-filterbar {
+  grid-template-columns: minmax(11rem, 17rem) 1fr;
+}
+
+.run-filterbar > span {
+  align-self: center;
+  justify-self: end;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.workflow-table-scroll {
+  max-height: calc(100vh - 14.5rem);
+  overflow: auto;
+  border-top: 2px solid var(--ink);
+}
+
+.workflow-table-scroll table {
+  min-width: 58rem;
+}
+
+.workflow-table-scroll th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+}
+
+.workflow-table-scroll tbody tr.is-active td {
+  background: var(--blue-soft);
+}
+
+.workflow-table-scroll tbody tr.is-active td:first-child {
+  box-shadow: inset 3px 0 var(--blue);
+}
+
+.workflow-drawer {
+  position: fixed;
+  z-index: 40;
+  top: 4.8rem;
+  right: 0;
+  bottom: 0;
+  width: min(35rem, 94vw);
+  padding: 1.4rem 1.35rem 3rem;
+  overflow: auto;
+  border-left: 1px solid rgb(200 208 215 / 82%);
+  background: rgb(250 251 252 / 94%);
+  box-shadow: -20px 0 54px rgb(23 32 42 / 14%);
+  backdrop-filter: blur(24px) saturate(130%);
+  animation: workflow-drawer-enter 220ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes workflow-drawer-enter {
+  from {
+    opacity: 0;
+    transform: translateX(1.2rem);
+  }
+}
+
+.drawer-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 1rem;
+  padding-bottom: 1.1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-header small {
+  color: var(--muted);
+  font-size: 0.62rem;
+  font-weight: 850;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+}
+
+.drawer-header h2 {
+  margin: 0.4rem 0 0;
+  font-size: 1.35rem;
+  letter-spacing: -0.035em;
+  overflow-wrap: anywhere;
+}
+
+.drawer-header-actions {
+  display: flex;
+  align-items: center;
+  gap: 0.65rem;
+}
+
+.drawer-facts {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0;
+  padding: 1.15rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.drawer-facts div {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.drawer-facts dt {
+  color: var(--muted);
+  font-size: 0.61rem;
+  font-weight: 780;
+  letter-spacing: 0.07em;
+  text-transform: uppercase;
+}
+
+.drawer-facts dd {
+  margin: 0;
+  font-size: 0.74rem;
+  font-weight: 750;
+  overflow-wrap: anywhere;
+}
+
+.drawer-table-scroll {
+  max-height: 31rem;
+  margin-top: 1.2rem;
+  overflow: auto;
+  border: 1px solid var(--line);
+  background: white;
+}
+
+.drawer-table-scroll table {
+  min-width: 34rem;
+}
+
+.drawer-table-scroll th,
+.drawer-table-scroll td {
+  padding: 0.58rem;
+  font-size: 0.66rem;
+}
+
+.profile-attribute {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.profile-attribute span {
+  color: var(--muted);
+  font-size: 0.61rem;
+}
+
+.drawer-footnote,
+.drawer-warning {
+  margin: 0.85rem 0 0;
+  color: var(--muted);
+  font-size: 0.67rem;
+  line-height: 1.5;
+}
+
+.drawer-warning {
+  padding: 0.65rem;
+  border-left: 3px solid var(--orange);
+  color: #7b4323;
+  background: #fff6f0;
+}
+
+.queued-run-action {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  margin-top: 1rem;
+  padding: 0.8rem;
+  border-left: 3px solid var(--orange);
+  background: #fff6f0;
+}
+
+.queued-run-action p {
+  margin: 0;
+  color: #704027;
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.run-failure {
+  margin-top: 1rem;
+  padding: 0.85rem;
+  color: var(--red);
+  background: #fff1f0;
+}
+
+.run-failure strong {
+  font-size: 0.72rem;
+}
+
+.run-failure p {
+  margin: 0.35rem 0 0;
+  font-size: 0.68rem;
+  line-height: 1.5;
+}
+
+.run-event-timeline {
+  display: grid;
+  gap: 0;
+  margin: 1.2rem 0 0;
+  padding: 0;
+  list-style: none;
+}
+
+.run-event-timeline li {
+  display: grid;
+  grid-template-columns: 0.9rem minmax(0, 1fr);
+  gap: 0.7rem;
+  min-height: 4.4rem;
+}
+
+.event-marker {
+  position: relative;
+  display: block;
+  width: 0.52rem;
+  height: 0.52rem;
+  margin-top: 0.3rem;
+  border: 2px solid var(--line-strong);
+  border-radius: 50%;
+  background: white;
+}
+
+.run-event-timeline li:not(:last-child) .event-marker::after {
+  position: absolute;
+  top: 0.55rem;
+  bottom: -3.55rem;
+  left: 0.08rem;
+  width: 1px;
+  background: var(--line);
+  content: "";
+}
+
+.run-event-timeline .is-completed .event-marker {
+  border-color: var(--green);
+  background: var(--green);
+}
+
+.run-event-timeline .is-warning .event-marker,
+.run-event-timeline .is-blocked .event-marker {
+  border-color: var(--orange);
+  background: var(--orange);
+}
+
+.run-event-timeline .is-failed .event-marker {
+  border-color: var(--red);
+  background: var(--red);
+}
+
+.run-event-timeline header {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+}
+
+.run-event-timeline header strong {
+  font-size: 0.72rem;
+}
+
+.run-event-timeline time,
+.run-event-timeline li > div > span {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.run-event-timeline p {
+  margin: 0.22rem 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+  line-height: 1.45;
+}
+
+.dialog-scrim {
+  position: fixed;
+  z-index: 50;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: 1.5rem;
+  background: rgb(15 23 31 / 34%);
+  animation: dialog-scrim-enter 160ms ease-out both;
+}
+
+@keyframes dialog-scrim-enter {
+  from { opacity: 0; }
+}
+
+.run-configuration-dialog {
+  width: min(46rem, 100%);
+  max-height: min(48rem, calc(100vh - 3rem));
+  padding: 1.25rem;
+  overflow: auto;
+  border-radius: 0.9rem;
+  background: rgb(255 255 255 / 97%);
+  box-shadow: 0 28px 80px rgb(15 23 31 / 26%);
+  backdrop-filter: blur(24px) saturate(130%);
+  animation: dialog-materialize 200ms cubic-bezier(0.2, 0.75, 0.25, 1) both;
+}
+
+@keyframes dialog-materialize {
+  from {
+    opacity: 0;
+    transform: translateY(0.6rem) scale(0.985);
+  }
+}
+
+.run-configuration-dialog form {
+  margin-top: 1rem;
+}
+
+.scope-mode-options {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.55rem;
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.scope-mode-options legend {
+  margin-bottom: 0.55rem;
+}
+
+.scope-mode-options label {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.6rem;
+  padding: 0.75rem;
+  border: 1px solid var(--line);
+  border-radius: 0.55rem;
+  cursor: pointer;
+}
+
+.scope-mode-options label:has(input:checked) {
+  border-color: var(--blue);
+  background: var(--blue-soft);
+}
+
+.scope-mode-options input,
+.run-object-list input {
+  margin-top: 0.15rem;
+}
+
+.scope-mode-options label > span,
+.run-object-list label > span {
+  display: grid;
+  gap: 0.18rem;
+}
+
+.scope-mode-options strong,
+.run-object-list strong {
+  font-size: 0.72rem;
+}
+
+.scope-mode-options small,
+.run-object-list small,
+.batch-input small {
+  color: var(--muted);
+  font-size: 0.63rem;
+  line-height: 1.4;
+}
+
+.run-object-selection {
+  margin-top: 1rem;
+  border: 1px solid var(--line);
+}
+
+.run-object-selection > header {
+  display: flex;
+  min-height: 2.8rem;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0.75rem;
+  background: var(--soft);
+}
+
+.run-object-selection > header strong {
+  font-size: 0.7rem;
+}
+
+.run-object-selection > header span {
+  color: var(--muted);
+  font-size: 0.65rem;
+}
+
+.run-object-list {
+  display: grid;
+  max-height: 14rem;
+  overflow: auto;
+}
+
+.run-object-list label {
+  display: grid;
+  min-height: 3.2rem;
+  grid-template-columns: auto minmax(0, 1fr);
+  align-items: start;
+  gap: 0.65rem;
+  padding: 0.65rem 0.75rem;
+  border-top: 1px solid var(--line);
+  cursor: pointer;
+}
+
+.run-object-list label:first-child {
+  border-top: 0;
+}
+
+.run-object-list label:hover {
+  background: var(--soft);
+}
+
+.batch-input {
+  margin-top: 1rem;
+}
+
+.dialog-actions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-top: 1.15rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--line);
+}
+
+.dialog-actions > p {
+  max-width: 25rem;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.65rem;
+  line-height: 1.45;
+}
+
+.dialog-actions > div {
+  display: flex;
+  flex: 0 0 auto;
+  gap: 0.5rem;
+}
+
+@media (max-width: 80rem) {
+  .profiling-filterbar {
+    grid-template-columns: repeat(3, minmax(8rem, 1fr));
+  }
+
+  .logical-entity-filterbar {
+    grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  }
+
+  .dimensional-filterbar.has-entity-filter {
+    grid-template-columns: repeat(2, minmax(8rem, 1fr));
+  }
+
+  .logical-entity-filterbar .workflow-filter-actions,
+  .dimensional-filterbar.has-entity-filter .workflow-filter-actions {
+    grid-column: 2;
+  }
+
+  .workflow-filter-actions {
+    justify-self: end;
+  }
+}
+
+@media (max-width: 48rem) {
+  .workflow-commandbar,
+  .workflow-command-context,
+  .dialog-actions {
+    align-items: stretch;
+    flex-direction: column;
+  }
+
+  .workflow-commandbar {
+    padding: 0.8rem 0;
+  }
+
+  .workflow-command-context {
+    gap: 0.4rem;
+  }
+
+  .workflow-tabs {
+    min-height: 3rem;
+  }
+
+  .workflow-command-actions .button {
+    flex: 1;
+  }
+
+  .profiling-filterbar,
+  .run-filterbar,
+  .logical-entity-filterbar,
+  .dimensional-filterbar,
+  .scope-mode-options {
+    grid-template-columns: 1fr;
+  }
+
+  .logical-entity-filterbar .workflow-filter-actions,
+  .dimensional-filterbar.has-entity-filter .workflow-filter-actions {
+    grid-column: auto;
+  }
+
+  .workflow-filter-actions,
+  .run-filterbar > span {
+    justify-self: stretch;
+  }
+
+  .workflow-filter-actions .button {
+    flex: 1;
+  }
+
+  .workflow-drawer {
+    top: 0;
+    width: 100vw;
+  }
+
+  .dialog-scrim {
+    padding: 0;
+  }
+
+  .run-configuration-dialog {
+    width: 100vw;
+    max-height: 100vh;
+    min-height: 100vh;
+    border-radius: 0;
+  }
+
+  .dialog-actions > div {
+    width: 100%;
+  }
+
+  .dialog-actions .button {
+    flex: 1;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .workflow-drawer,
+  .dialog-scrim,
+  .run-configuration-dialog {
+    animation: none;
+  }
+}
+

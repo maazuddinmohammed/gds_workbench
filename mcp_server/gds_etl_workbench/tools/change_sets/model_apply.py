@@ -10,6 +10,10 @@ from typing import Any, LiteralString, cast
 from psycopg.types.json import Jsonb
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.mapping_profiles import (
+    mapping_package_digest,
+    resolve_mapping_profile_schema_digest,
+)
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     ConceptualObjectRecord,
@@ -29,7 +33,6 @@ from gds_etl_workbench.domain.modeling_records import (
     ModelingAssertionDocumentRecord,
     ModelingAssertionRecordRecord,
     ModelingRecord,
-    ModelScopeRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
     ProfilingProfileRecord,
@@ -46,9 +49,9 @@ _UPDATE_MODEL_DETAILS_SQL: LiteralString = """
 UPDATE model.model
    SET model_name = %s,
        model_description = %s,
-       silver_model_naming_template = %s,
+       silver_model_naming_instructions = %s,
        silver_model_audit_columns_template = %s,
-       gold_model_naming_template = %s,
+       gold_model_naming_instructions = %s,
        gold_model_technical_columns_template = %s,
        gold_model_audit_columns_template = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -58,39 +61,41 @@ UPDATE model.model
 RETURNING model_id
 """
 
-_UPSERT_MODEL_SCOPE_SQL: LiteralString = """
-INSERT INTO model.model_scope (
-    model_id,
-    object_id,
-    model_scope_is_locked,
-    is_active
-)
-VALUES (%s, %s, %s, %s)
-ON CONFLICT (model_id, object_id) DO UPDATE
-   SET model_scope_is_locked = EXCLUDED.model_scope_is_locked,
-       is_active = EXCLUDED.is_active,
-       updated_time = CURRENT_TIMESTAMP,
-       updated_by = CURRENT_USER
-RETURNING model_scope_id
-"""
-
 _RESOLVE_OBJECT_SQL: LiteralString = """
 SELECT object.object_id,
        connection.system_id
   FROM core.object AS object
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
- WHERE lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
-   AND lower(btrim(system.system_code)) = lower(btrim(%s))
+  JOIN core.tenant AS tenant
+    ON lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
+   AND tenant.is_active
+ WHERE lower(btrim(system.system_code)) = lower(btrim(%s))
    AND lower(btrim(connection.connection_code)) = lower(btrim(%s))
    AND lower(btrim(object.object_schema)) = lower(btrim(%s))
    AND lower(btrim(object.object_name)) = lower(btrim(%s))
    AND connection.is_active
    AND object.is_active
+   AND (
+       (
+           NOT connection.is_global_data_store
+           AND connection.tenant_id = tenant.tenant_id
+       ) OR (
+           connection.is_global_data_store
+           AND EXISTS (
+               SELECT 1
+                 FROM core.tenant_metadata_discovery_scope AS scope
+                WHERE scope.tenant_id = tenant.tenant_id
+                  AND scope.gds_connection_id = connection.connection_id
+                  AND scope.zone_id = object.zone_id
+                  AND lower(btrim(scope.object_schema)) =
+                      lower(btrim(object.object_schema))
+                  AND scope.is_active
+           )
+       )
+   )
 """
 
 _RESOLVE_ATTRIBUTE_SQL: LiteralString = """
@@ -102,12 +107,12 @@ SELECT object.object_id,
     ON attribute.object_id = object.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
- WHERE lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
-   AND lower(btrim(system.system_code)) = lower(btrim(%s))
+  JOIN core.tenant AS tenant
+    ON lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
+   AND tenant.is_active
+ WHERE lower(btrim(system.system_code)) = lower(btrim(%s))
    AND lower(btrim(connection.connection_code)) = lower(btrim(%s))
    AND lower(btrim(object.object_schema)) = lower(btrim(%s))
    AND lower(btrim(object.object_name)) = lower(btrim(%s))
@@ -115,6 +120,24 @@ SELECT object.object_id,
    AND connection.is_active
    AND object.is_active
    AND attribute.is_active
+   AND (
+       (
+           NOT connection.is_global_data_store
+           AND connection.tenant_id = tenant.tenant_id
+       ) OR (
+           connection.is_global_data_store
+           AND EXISTS (
+               SELECT 1
+                 FROM core.tenant_metadata_discovery_scope AS scope
+                WHERE scope.tenant_id = tenant.tenant_id
+                  AND scope.gds_connection_id = connection.connection_id
+                  AND scope.zone_id = object.zone_id
+                  AND lower(btrim(scope.object_schema)) =
+                      lower(btrim(object.object_schema))
+                  AND scope.is_active
+           )
+       )
+   )
 """
 
 _RESOLVE_SYSTEM_SQL: LiteralString = """
@@ -136,6 +159,8 @@ INSERT INTO workflow.attribute_profile (
     model_id,
     attribute_id,
     object_id,
+    agent_run_id,
+    workflow_run_id,
     source_context_digest,
     row_count,
     non_null_count,
@@ -151,9 +176,14 @@ INSERT INTO workflow.attribute_profile (
     percent_blank,
     percent_distinct
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (
+    %s, %s, %s, NULL, NULL, %s, %s, %s, %s, %s, %s,
+    %s, %s, %s, %s, %s, %s, %s, %s
+)
 ON CONFLICT (model_id, attribute_id) DO UPDATE
    SET object_id = EXCLUDED.object_id,
+       agent_run_id = NULL,
+       workflow_run_id = NULL,
        source_context_digest = EXCLUDED.source_context_digest,
        row_count = EXCLUDED.row_count,
        non_null_count = EXCLUDED.non_null_count,
@@ -174,8 +204,12 @@ RETURNING attribute_id
 """
 
 _UPSERT_ANALYSIS_SQL: LiteralString = """
-INSERT INTO workflow.analysis_result (
+INSERT INTO workflow.analysis_result AS current_result (
     model_id,
+    agent_run_id,
+    inference_workflow_run_id,
+    validation_workflow_run_id,
+    validation_source_context_digest,
     from_object_id,
     from_attribute_id,
     to_object_id,
@@ -197,26 +231,85 @@ INSERT INTO workflow.analysis_result (
     analysis_result_is_locked
 )
 VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+    %s, NULL, %s, NULL, NULL, %s, %s, %s, %s, %s, %s,
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 ON CONFLICT ON CONSTRAINT uq_analysis_result_identity DO UPDATE
-   SET from_object_id = EXCLUDED.from_object_id,
+   SET agent_run_id = NULL,
+       inference_workflow_run_id = EXCLUDED.inference_workflow_run_id,
+       validation_workflow_run_id = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL THEN NULL
+           ELSE current_result.validation_workflow_run_id
+       END,
+       validation_source_context_digest = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN NULL
+           ELSE current_result.validation_source_context_digest
+       END,
+       from_object_id = EXCLUDED.from_object_id,
        to_object_id = EXCLUDED.to_object_id,
        relationship_confidence = EXCLUDED.relationship_confidence,
        relationship_basis = EXCLUDED.relationship_basis,
-       validation_policy_version = EXCLUDED.validation_policy_version,
-       validation_policy_digest = EXCLUDED.validation_policy_digest,
-       validation_result = EXCLUDED.validation_result,
-       validation_source_non_null_count = EXCLUDED.validation_source_non_null_count,
-       validation_source_distinct_count = EXCLUDED.validation_source_distinct_count,
-       validation_target_non_null_count = EXCLUDED.validation_target_non_null_count,
-       validation_target_distinct_count = EXCLUDED.validation_target_distinct_count,
-       validation_source_missing_target_count = EXCLUDED.validation_source_missing_target_count,
-       validation_unused_target_count = EXCLUDED.validation_unused_target_count,
-       validation_duplicate_target_key_count = EXCLUDED.validation_duplicate_target_key_count,
-       analysis_result_status = EXCLUDED.analysis_result_status,
-       analysis_result_is_locked = EXCLUDED.analysis_result_is_locked,
+       validation_policy_version = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_policy_version
+           ELSE current_result.validation_policy_version
+       END,
+       validation_policy_digest = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_policy_digest
+           ELSE current_result.validation_policy_digest
+       END,
+       validation_result = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_result
+           ELSE current_result.validation_result
+       END,
+       validation_source_non_null_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_source_non_null_count
+           ELSE current_result.validation_source_non_null_count
+       END,
+       validation_source_distinct_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_source_distinct_count
+           ELSE current_result.validation_source_distinct_count
+       END,
+       validation_target_non_null_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_target_non_null_count
+           ELSE current_result.validation_target_non_null_count
+       END,
+       validation_target_distinct_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_target_distinct_count
+           ELSE current_result.validation_target_distinct_count
+       END,
+       validation_source_missing_target_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_source_missing_target_count
+           ELSE current_result.validation_source_missing_target_count
+       END,
+       validation_unused_target_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_unused_target_count
+           ELSE current_result.validation_unused_target_count
+       END,
+       validation_duplicate_target_key_count = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.validation_duplicate_target_key_count
+           ELSE current_result.validation_duplicate_target_key_count
+       END,
+       analysis_result_status = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.analysis_result_status
+           ELSE current_result.analysis_result_status
+       END,
+       analysis_result_is_locked = CASE
+           WHEN EXCLUDED.inference_workflow_run_id IS NULL
+           THEN EXCLUDED.analysis_result_is_locked
+           ELSE current_result.analysis_result_is_locked
+       END,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
 RETURNING analysis_result_id
@@ -303,6 +396,7 @@ SELECT conceptual_object_id
 _INSERT_CONCEPTUAL_OBJECT_SQL: LiteralString = """
 INSERT INTO workflow.conceptual_object (
     model_id,
+    workflow_run_id,
     conceptual_object_name,
     conceptual_object_definition,
     conceptual_object_type,
@@ -312,13 +406,14 @@ INSERT INTO workflow.conceptual_object (
     conceptual_object_status,
     conceptual_object_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_object_id
 """
 
 _UPDATE_CONCEPTUAL_OBJECT_SQL: LiteralString = """
 UPDATE workflow.conceptual_object
-   SET conceptual_object_name = %s,
+   SET workflow_run_id = %s,
+       conceptual_object_name = %s,
        conceptual_object_definition = %s,
        conceptual_object_type = %s,
        conceptual_object_grain = %s,
@@ -345,6 +440,7 @@ SELECT conceptual_relationship_id
 _INSERT_CONCEPTUAL_RELATIONSHIP_SQL: LiteralString = """
 INSERT INTO workflow.conceptual_relationship (
     model_id,
+    workflow_run_id,
     from_conceptual_object_id,
     to_conceptual_object_id,
     conceptual_relationship_name,
@@ -357,13 +453,14 @@ INSERT INTO workflow.conceptual_relationship (
     conceptual_relationship_status,
     conceptual_relationship_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_relationship_id
 """
 
 _UPDATE_CONCEPTUAL_RELATIONSHIP_SQL: LiteralString = """
 UPDATE workflow.conceptual_relationship
-   SET conceptual_relationship_name = %s,
+   SET workflow_run_id = %s,
+       conceptual_relationship_name = %s,
        conceptual_relationship_type = %s,
        conceptual_relationship_definition = %s,
        conceptual_relationship_cardinality = %s,
@@ -398,6 +495,7 @@ SELECT conceptual_support_id
 _INSERT_CONCEPTUAL_SUPPORT_SQL: LiteralString = """
 INSERT INTO workflow.conceptual_support (
     model_id,
+    workflow_run_id,
     supported_artifact_type,
     conceptual_object_id,
     conceptual_relationship_id,
@@ -411,13 +509,14 @@ INSERT INTO workflow.conceptual_support (
     conceptual_support_status,
     conceptual_support_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING conceptual_support_id
 """
 
 _UPDATE_CONCEPTUAL_SUPPORT_SQL: LiteralString = """
 UPDATE workflow.conceptual_support
-   SET conceptual_support_role = %s,
+   SET workflow_run_id = %s,
+       conceptual_support_role = %s,
        conceptual_support_reason = %s,
        conceptual_support_reason_detail = %s,
        conceptual_support_confidence = %s,
@@ -432,15 +531,17 @@ RETURNING conceptual_support_id
 _UPSERT_MAPPING_DEPENDENCY_SQL: LiteralString = """
 INSERT INTO workflow.mapping_source_system_dependency (
     model_id,
+    workflow_run_id,
     modeled_entity_type,
     source_system_id,
     source_system_dependency_order,
     mapping_source_system_dependency_status,
     mapping_source_system_dependency_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s)
 ON CONFLICT ON CONSTRAINT uq_mapping_source_dependency_binding DO UPDATE
-   SET source_system_dependency_order = EXCLUDED.source_system_dependency_order,
+   SET workflow_run_id = EXCLUDED.workflow_run_id,
+       source_system_dependency_order = EXCLUDED.source_system_dependency_order,
        mapping_source_system_dependency_status
            = EXCLUDED.mapping_source_system_dependency_status,
        mapping_source_system_dependency_is_locked
@@ -469,6 +570,8 @@ SELECT mapping_object_id
 _INSERT_MAPPING_OBJECT_SQL: LiteralString = """
 INSERT INTO workflow.mapping_object (
     model_id,
+    workflow_run_id,
+    output_template_id,
     object_id,
     source_system_id,
     modeled_entity_type,
@@ -488,14 +591,16 @@ INSERT INTO workflow.mapping_object (
 )
 VALUES (
     %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s, %s, %s, %s
+    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
 )
 RETURNING mapping_object_id
 """
 
 _UPDATE_MAPPING_OBJECT_SQL: LiteralString = """
 UPDATE workflow.mapping_object
-   SET object_dependency_order = %s,
+   SET workflow_run_id = %s,
+       output_template_id = CASE WHEN %s THEN %s ELSE output_template_id END,
+       object_dependency_order = %s,
        artifact_type = %s,
        artifact_generation_instructions = %s,
        mapping_profile_key = %s,
@@ -531,6 +636,8 @@ SELECT mapping_attribute_id
 _INSERT_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 INSERT INTO workflow.mapping_attribute (
     model_id,
+    workflow_run_id,
+    output_template_id,
     object_id,
     attribute_id,
     mapping_object_id,
@@ -541,13 +648,15 @@ INSERT INTO workflow.mapping_attribute (
     attribute_mapping_status,
     attribute_mapping_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING mapping_attribute_id
 """
 
 _UPDATE_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 UPDATE workflow.mapping_attribute
-   SET attribute_mapping_transformation_document = %s,
+   SET workflow_run_id = %s,
+       output_template_id = CASE WHEN %s THEN %s ELSE output_template_id END,
+       attribute_mapping_transformation_document = %s,
        attribute_mapping_status = %s,
        attribute_mapping_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -557,11 +666,20 @@ RETURNING mapping_attribute_id
 """
 
 
+@dataclass(frozen=True, slots=True)
+class _MappingMaterializationPolicy:
+    workflow_run_id: int
+    object_output_template_id: int | None
+    attribute_output_template_id: int | None
+
+
 @dataclass(slots=True)
 class ModelMaterializer:
     transaction: WriteTransaction
     model_id: int
     source_context_digest: str
+    workflow_run_id: int | None = None
+    _mapping_policy: _MappingMaterializationPolicy | None = None
     _object_ids: dict[tuple[str, ...], tuple[int, int]] = field(
         default_factory=dict[tuple[str, ...], tuple[int, int]]
     )
@@ -587,6 +705,48 @@ class ModelMaterializer:
         default_factory=dict[tuple[str, ...], int]
     )
 
+    @classmethod
+    def for_workflow_apply(
+        cls,
+        *,
+        transaction: WriteTransaction,
+        model_id: int,
+        source_context_digest: str,
+        workflow_run_id: int,
+        model_workflow: str,
+        mapping_object_output_template_id: int | None,
+        mapping_attribute_output_template_id: int | None,
+    ) -> ModelMaterializer:
+        if workflow_run_id <= 0 or any(
+            template_id is not None and template_id <= 0
+            for template_id in (
+                mapping_object_output_template_id,
+                mapping_attribute_output_template_id,
+            )
+        ):
+            raise InvalidRequestError("Workflow Mapping materialization policy is invalid.")
+        policy = None
+        if model_workflow == "mapping":
+            policy = _MappingMaterializationPolicy(
+                workflow_run_id=workflow_run_id,
+                object_output_template_id=mapping_object_output_template_id,
+                attribute_output_template_id=mapping_attribute_output_template_id,
+            )
+        elif (
+            mapping_object_output_template_id is not None
+            or mapping_attribute_output_template_id is not None
+        ):
+            raise InvalidRequestError(
+                "Mapping materialization policy is unavailable outside Mapping."
+            )
+        return cls(
+            transaction=transaction,
+            model_id=model_id,
+            source_context_digest=source_context_digest,
+            workflow_run_id=workflow_run_id,
+            _mapping_policy=policy,
+        )
+
     async def apply(
         self,
         records: dict[str, tuple[ModelingRecord, ...]],
@@ -594,7 +754,6 @@ class ModelMaterializer:
         """Materialize in dependency order inside the caller's transaction."""
         action_count = 0
         action_count += await self._apply_model_details(records.get("model_details", ()))
-        action_count += await self._apply_model_scope(records.get("model_scope", ()))
         action_count += await self._apply_assertion_documents(
             records.get("modeling_assertion_document", ())
         )
@@ -620,21 +779,13 @@ class ModelMaterializer:
                 (
                     record.model_name,
                     record.model_description,
-                    (
-                        None
-                        if record.silver_model_naming_template is None
-                        else Jsonb(record.silver_model_naming_template)
-                    ),
+                    record.silver_model_naming_instructions,
                     (
                         None
                         if record.silver_model_audit_columns_template is None
                         else Jsonb(record.silver_model_audit_columns_template)
                     ),
-                    (
-                        None
-                        if record.gold_model_naming_template is None
-                        else Jsonb(record.gold_model_naming_template)
-                    ),
+                    record.gold_model_naming_instructions,
                     (
                         None
                         if record.gold_model_technical_columns_template is None
@@ -650,23 +801,6 @@ class ModelMaterializer:
             )
             if row is None:
                 raise InvalidRequestError("Model details could not be updated.")
-        return len(records)
-
-    async def _apply_model_scope(self, records: tuple[ModelingRecord, ...]) -> int:
-        for raw in records:
-            record = _as(raw, ModelScopeRecord)
-            object_id, _ = await self.resolve_object(record)
-            row = await self.transaction.fetch_one(
-                _UPSERT_MODEL_SCOPE_SQL,
-                (
-                    self.model_id,
-                    object_id,
-                    record.model_scope_is_locked,
-                    record.is_active,
-                ),
-            )
-            if row is None:
-                raise InvalidRequestError("Model Scope could not be updated.")
         return len(records)
 
     async def _apply_profiles(self, records: tuple[ModelingRecord, ...]) -> int:
@@ -718,17 +852,22 @@ class ModelMaterializer:
             )
             from_object_id, from_attribute_id, _ = await self.resolve_attribute(from_key)
             to_object_id, to_attribute_id, _ = await self.resolve_attribute(to_key)
-            policy_digest = _digest(
-                {
-                    "version": record.validation_policy_version,
-                    "result": record.validation_result,
-                    "kind": record.relationship_kind,
-                }
+            policy_digest = (
+                None
+                if record.validation_policy_version is None
+                else _digest(
+                    {
+                        "version": record.validation_policy_version,
+                        "result": record.validation_result,
+                        "kind": record.relationship_kind,
+                    }
+                )
             )
             await self.transaction.fetch_one(
                 _UPSERT_ANALYSIS_SQL,
                 (
                     self.model_id,
+                    self.workflow_run_id,
                     from_object_id,
                     from_attribute_id,
                     to_object_id,
@@ -940,12 +1079,12 @@ SELECT modeling_assertion_record_id
             if existing is None:
                 row = await self.transaction.fetch_one(
                     _INSERT_CONCEPTUAL_OBJECT_SQL,
-                    (self.model_id, *values),
+                    (self.model_id, self.workflow_run_id, *values),
                 )
             else:
                 row = await self.transaction.fetch_one(
                     _UPDATE_CONCEPTUAL_OBJECT_SQL,
-                    (*values, existing["conceptual_object_id"]),
+                    (self.workflow_run_id, *values, existing["conceptual_object_id"]),
                 )
             assert row is not None
             object_id = row["conceptual_object_id"]
@@ -991,12 +1130,16 @@ SELECT modeling_assertion_record_id
             if existing is None:
                 row = await self.transaction.fetch_one(
                     _INSERT_CONCEPTUAL_RELATIONSHIP_SQL,
-                    (self.model_id, from_id, to_id, *values),
+                    (self.model_id, self.workflow_run_id, from_id, to_id, *values),
                 )
             else:
                 row = await self.transaction.fetch_one(
                     _UPDATE_CONCEPTUAL_RELATIONSHIP_SQL,
-                    (*values, existing["conceptual_relationship_id"]),
+                    (
+                        self.workflow_run_id,
+                        *values,
+                        existing["conceptual_relationship_id"],
+                    ),
                 )
             assert row is not None
             relationship_id = row["conceptual_relationship_id"]
@@ -1056,6 +1199,7 @@ SELECT modeling_assertion_record_id
                 _INSERT_CONCEPTUAL_SUPPORT_SQL,
                 (
                     self.model_id,
+                    self.workflow_run_id,
                     parent_type,
                     conceptual_object_id,
                     conceptual_relationship_id,
@@ -1068,7 +1212,7 @@ SELECT modeling_assertion_record_id
         else:
             await self.transaction.fetch_one(
                 _UPDATE_CONCEPTUAL_SUPPORT_SQL,
-                (*values, existing["conceptual_support_id"]),
+                (self.workflow_run_id, *values, existing["conceptual_support_id"]),
             )
 
     async def resolve_conceptual_object(self, name: str) -> int:
@@ -1188,13 +1332,13 @@ SELECT {config.submodel_id}
                     LiteralString,
                     f"""
 INSERT INTO {config.submodel_table} (
-    model_id, {name_field}, {definition_field}, {status_field}, {locked_field}
+    model_id, workflow_run_id, {name_field}, {definition_field}, {status_field}, {locked_field}
 )
-VALUES (%s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s)
 RETURNING {config.submodel_id}
 """,
                 ),
-                (self.model_id, *values),
+                (self.model_id, self.workflow_run_id, *values),
             )
         else:
             row = await self.transaction.fetch_one(
@@ -1202,7 +1346,8 @@ RETURNING {config.submodel_id}
                     LiteralString,
                     f"""
 UPDATE {config.submodel_table}
-   SET {name_field} = %s,
+   SET workflow_run_id = %s,
+       {name_field} = %s,
        {definition_field} = %s,
        {status_field} = %s,
        {locked_field} = %s,
@@ -1212,7 +1357,7 @@ UPDATE {config.submodel_table}
 RETURNING {config.submodel_id}
 """,
                 ),
-                (*values, existing[config.submodel_id]),
+                (self.workflow_run_id, *values, existing[config.submodel_id]),
             )
         assert row is not None
         self._submodel_cache(config)[normalize_model_key_value(name)] = row[config.submodel_id]
@@ -1237,17 +1382,17 @@ SELECT {config.entity_id}
         fields = config.entity_fields
         values = tuple(getattr(record, field) for field in fields)
         if existing is None:
-            placeholders = ", ".join("%s" for _ in range(len(fields) + 1))
+            placeholders = ", ".join("%s" for _ in range(len(fields) + 2))
             row = await self.transaction.fetch_one(
                 cast(
                     LiteralString,
                     f"""
-INSERT INTO {config.entity_table} (model_id, {", ".join(fields)})
+INSERT INTO {config.entity_table} (model_id, workflow_run_id, {", ".join(fields)})
 VALUES ({placeholders})
 RETURNING {config.entity_id}
 """,
                 ),
-                (self.model_id, *values),
+                (self.model_id, self.workflow_run_id, *values),
             )
         else:
             assignments = ",\n       ".join(f"{field} = %s" for field in fields)
@@ -1256,14 +1401,15 @@ RETURNING {config.entity_id}
                     LiteralString,
                     f"""
 UPDATE {config.entity_table}
-   SET {assignments},
+   SET workflow_run_id = %s,
+       {assignments},
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE {config.entity_id} = %s
 RETURNING {config.entity_id}
 """,
                 ),
-                (*values, existing[config.entity_id]),
+                (self.workflow_run_id, *values, existing[config.entity_id]),
             )
         assert row is not None
         self._entity_cache(config)[normalize_model_key_value(name)] = row[config.entity_id]
@@ -1298,14 +1444,16 @@ SELECT {id_field}
                     LiteralString,
                     f"""
 INSERT INTO {config.membership_table} (
-    model_id, {config.entity_id}, {config.submodel_id}, {status_field}, {locked_field}
+    model_id, workflow_run_id, {config.entity_id}, {config.submodel_id},
+    {status_field}, {locked_field}
 )
-VALUES (%s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s)
 RETURNING {id_field}
 """,
                 ),
                 (
                     self.model_id,
+                    self.workflow_run_id,
                     entity_id,
                     submodel_id,
                     membership.membership_status,
@@ -1318,7 +1466,8 @@ RETURNING {id_field}
                     LiteralString,
                     f"""
 UPDATE {config.membership_table}
-   SET {status_field} = %s,
+   SET workflow_run_id = %s,
+       {status_field} = %s,
        {locked_field} = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
@@ -1327,6 +1476,7 @@ RETURNING {id_field}
 """,
                 ),
                 (
+                    self.workflow_run_id,
                     membership.membership_status,
                     membership.membership_is_locked,
                     existing[id_field],
@@ -1373,6 +1523,7 @@ SELECT {id_field}
         )
         columns = [
             "model_id",
+            "workflow_run_id",
             config.entity_id,
             "support_source_type",
             "source_object_id",
@@ -1380,12 +1531,13 @@ SELECT {id_field}
         ]
         values: list[object] = [
             self.model_id,
+            self.workflow_run_id,
             entity_id,
             source.support_source_type,
             source_object_id,
             assertion_record_id,
         ]
-        update_fields: list[tuple[str, object]] = []
+        update_fields: list[tuple[str, object]] = [("workflow_run_id", self.workflow_run_id)]
         if config.entity_source_role_column is not None:
             columns.append(config.entity_source_role_column)
             values.append(source.source_role)
@@ -1453,7 +1605,7 @@ SELECT {config.attribute_id}
         fields = config.attribute_fields
         values = tuple(getattr(record, field) for field in fields)
         if existing is None:
-            columns = ("model_id", config.entity_id, *fields)
+            columns = ("model_id", "workflow_run_id", config.entity_id, *fields)
             row = await self.transaction.fetch_one(
                 cast(
                     LiteralString,
@@ -1463,7 +1615,7 @@ VALUES ({", ".join("%s" for _ in columns)})
 RETURNING {config.attribute_id}
 """,
                 ),
-                (self.model_id, entity_id, *values),
+                (self.model_id, self.workflow_run_id, entity_id, *values),
             )
         else:
             assignments = ",\n       ".join(f"{field} = %s" for field in fields)
@@ -1472,14 +1624,15 @@ RETURNING {config.attribute_id}
                     LiteralString,
                     f"""
 UPDATE {config.attribute_table}
-   SET {assignments},
+   SET workflow_run_id = %s,
+       {assignments},
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE {config.attribute_id} = %s
 RETURNING {config.attribute_id}
 """,
                 ),
-                (*values, existing[config.attribute_id]),
+                (self.workflow_run_id, *values, existing[config.attribute_id]),
             )
         assert row is not None
         self._attribute_cache(config)[
@@ -1550,6 +1703,7 @@ SELECT {id_field}
                     f"""
 INSERT INTO {config.attribute_source_table} (
     model_id,
+    workflow_run_id,
     {config.layer}_entity_source_mapping_id,
     {config.entity_id},
     {config.attribute_id},
@@ -1562,12 +1716,13 @@ INSERT INTO {config.attribute_source_table} (
     {status_field},
     {locked_field}
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING {id_field}
 """,
                 ),
                 (
                     self.model_id,
+                    self.workflow_run_id,
                     entity_source_mapping_id,
                     entity_id,
                     attribute_id,
@@ -1587,7 +1742,8 @@ RETURNING {id_field}
                     LiteralString,
                     f"""
 UPDATE {config.attribute_source_table}
-   SET {order_field} = %s,
+   SET workflow_run_id = %s,
+       {order_field} = %s,
        {rationale_field} = %s,
        {status_field} = %s,
        {locked_field} = %s,
@@ -1598,6 +1754,7 @@ RETURNING {id_field}
 """,
                 ),
                 (
+                    self.workflow_run_id,
                     source.source_order,
                     source.rationale,
                     source.status,
@@ -1646,6 +1803,20 @@ SELECT {id_field}
             config, to_entity_name, to_attribute_name
         )
         relationship_name = getattr(record, f"{config.layer}_relationship_name")
+        if config.layer == "logical":
+            identity_predicate = (
+                f"lower(btrim({config.layer}_relationship_name)) = lower(btrim(%s))"
+            )
+            identity_values = (relationship_name,)
+        else:
+            relationship_kind = record.dimensional_relationship_kind
+            relationship_role = record.dimensional_relationship_role_name
+            identity_predicate = """
+lower(btrim(dimensional_relationship_kind)) = lower(btrim(%s))
+   AND coalesce(lower(btrim(dimensional_relationship_role_name)), '') =
+       coalesce(lower(btrim(%s::text)), '')
+""".strip()
+            identity_values = (relationship_kind, relationship_role)
         existing = await self.transaction.fetch_one(
             cast(
                 LiteralString,
@@ -1657,7 +1828,7 @@ SELECT {config.relationship_id}
    AND {config.layer}_relationship_from_attribute_id = %s
    AND {config.layer}_relationship_to_entity_id = %s
    AND {config.layer}_relationship_to_attribute_id = %s
-   AND lower(btrim({config.layer}_relationship_name)) = lower(btrim(%s))
+   AND {identity_predicate}
  ORDER BY {config.relationship_id}
  LIMIT 1
  FOR UPDATE
@@ -1669,7 +1840,7 @@ SELECT {config.relationship_id}
                 from_attribute_id,
                 to_entity_id,
                 to_attribute_id,
-                relationship_name,
+                *identity_values,
             ),
         )
         endpoint_fields = (
@@ -1687,7 +1858,7 @@ SELECT {config.relationship_id}
             to_attribute_id,
         )
         if existing is None:
-            columns = ("model_id", *fields)
+            columns = ("model_id", "workflow_run_id", *fields)
             await self.transaction.fetch_one(
                 cast(
                     LiteralString,
@@ -1697,7 +1868,7 @@ VALUES ({", ".join("%s" for _ in columns)})
 RETURNING {config.relationship_id}
 """,
                 ),
-                (self.model_id, *values),
+                (self.model_id, self.workflow_run_id, *values),
             )
         else:
             assignments = ",\n       ".join(f"{field} = %s" for field in fields)
@@ -1706,14 +1877,15 @@ RETURNING {config.relationship_id}
                     LiteralString,
                     f"""
 UPDATE {config.relationship_table}
-   SET {assignments},
+   SET workflow_run_id = %s,
+       {assignments},
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE {config.relationship_id} = %s
 RETURNING {config.relationship_id}
 """,
                 ),
-                (*values, existing[config.relationship_id]),
+                (self.workflow_run_id, *values, existing[config.relationship_id]),
             )
 
     async def resolve_submodel(self, config: LayerConfig, name: str) -> int:
@@ -1815,6 +1987,9 @@ SELECT attribute.{config.attribute_id}
 
     async def _apply_mapping(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         action_count = 0
+        mapping_workflow_run_id = (
+            None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
+        )
         for raw in records.get("mapping_dependency", ()):
             record = _as(raw, MappingDependencyRecord)
             source_system_id = await self.resolve_system(record.source_system_code)
@@ -1822,6 +1997,7 @@ SELECT attribute.{config.attribute_id}
                 _UPSERT_MAPPING_DEPENDENCY_SQL,
                 (
                     self.model_id,
+                    mapping_workflow_run_id,
                     record.modeled_entity_type,
                     source_system_id,
                     record.source_system_dependency_order,
@@ -1865,17 +2041,18 @@ SELECT attribute.{config.attribute_id}
             ),
         )
         authored = record.mapping_package_document is not None
-        profile_digest = (
-            _digest(
-                {
-                    "mapping_profile_key": record.mapping_profile_key,
-                    "mapping_profile_version": record.mapping_profile_version,
-                }
+        if authored:
+            assert record.mapping_profile_key is not None
+            assert record.mapping_profile_version is not None
+            assert record.mapping_package_document is not None
+            profile_digest = resolve_mapping_profile_schema_digest(
+                record.mapping_profile_key,
+                record.mapping_profile_version,
             )
-            if authored
-            else None
-        )
-        package_digest = _digest(record.mapping_package_document) if authored else None
+            package_digest = mapping_package_digest(record.mapping_package_document)
+        else:
+            profile_digest = None
+            package_digest = None
         mutable_values = (
             record.object_dependency_order,
             record.artifact_type,
@@ -1898,10 +2075,20 @@ SELECT attribute.{config.attribute_id}
             record.object_mapping_is_locked,
         )
         if existing is None:
+            mapping_workflow_run_id = (
+                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
+            )
+            output_template_id = (
+                None
+                if self._mapping_policy is None
+                else self._mapping_policy.object_output_template_id
+            )
             row = await self.transaction.fetch_one(
                 _INSERT_MAPPING_OBJECT_SQL,
                 (
                     self.model_id,
+                    mapping_workflow_run_id,
+                    output_template_id,
                     object_id,
                     source_system_id,
                     record.modeled_entity_type,
@@ -1911,9 +2098,23 @@ SELECT attribute.{config.attribute_id}
                 ),
             )
         else:
+            mapping_workflow_run_id = (
+                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
+            )
+            output_template_id = (
+                None
+                if self._mapping_policy is None
+                else self._mapping_policy.object_output_template_id
+            )
             row = await self.transaction.fetch_one(
                 _UPDATE_MAPPING_OBJECT_SQL,
-                (*mutable_values, existing["mapping_object_id"]),
+                (
+                    mapping_workflow_run_id,
+                    self._mapping_policy is not None,
+                    output_template_id,
+                    *mutable_values,
+                    existing["mapping_object_id"],
+                ),
             )
         assert row is not None
         key = _mapping_key(record)
@@ -1960,10 +2161,20 @@ SELECT attribute.{config.attribute_id}
             record.attribute_mapping_is_locked,
         )
         if existing is None:
+            mapping_workflow_run_id = (
+                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
+            )
+            output_template_id = (
+                None
+                if self._mapping_policy is None
+                else self._mapping_policy.attribute_output_template_id
+            )
             row = await self.transaction.fetch_one(
                 _INSERT_MAPPING_ATTRIBUTE_SQL,
                 (
                     self.model_id,
+                    mapping_workflow_run_id,
+                    output_template_id,
                     object_id,
                     attribute_id,
                     mapping_object_id,
@@ -1974,9 +2185,23 @@ SELECT attribute.{config.attribute_id}
                 ),
             )
         else:
+            mapping_workflow_run_id = (
+                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
+            )
+            output_template_id = (
+                None
+                if self._mapping_policy is None
+                else self._mapping_policy.attribute_output_template_id
+            )
             row = await self.transaction.fetch_one(
                 _UPDATE_MAPPING_ATTRIBUTE_SQL,
-                (*mutable_values, existing["mapping_attribute_id"]),
+                (
+                    mapping_workflow_run_id,
+                    self._mapping_policy is not None,
+                    output_template_id,
+                    *mutable_values,
+                    existing["mapping_attribute_id"],
+                ),
             )
         assert row is not None
         return row["mapping_attribute_id"]

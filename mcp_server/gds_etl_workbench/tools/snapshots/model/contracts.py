@@ -1,4 +1,4 @@
-"""Shared Model Snapshot and Model Change Set dataset registry."""
+"""Model Snapshot registry and its MCP-writable Model Change Set subset."""
 
 from __future__ import annotations
 
@@ -63,6 +63,27 @@ type ModelDataset = Literal[
     "mapping_attribute",
 ]
 
+type ModelChangeSetDataset = Literal[
+    "model_details",
+    "profiling_profile",
+    "analysis_result",
+    "modeling_assertion_document",
+    "modeling_assertion_record",
+    "conceptual_object",
+    "conceptual_relationship",
+    "logical_submodel",
+    "logical_entity",
+    "logical_attribute",
+    "logical_relationship",
+    "dimensional_submodel",
+    "dimensional_entity",
+    "dimensional_attribute",
+    "dimensional_relationship",
+    "mapping_dependency",
+    "mapping_object",
+    "mapping_attribute",
+]
+
 MODEL_SECTIONS: tuple[ModelSection, ...] = (
     "model_scope",
     "profiling",
@@ -81,6 +102,7 @@ class ModelingDatasetDefinition:
     section: ModelSection
     row_model: type[ModelingRecord]
     canonical_key: tuple[str, ...]
+    change_set_eligible: bool = True
 
     @property
     def rows_path(self) -> str:
@@ -192,8 +214,12 @@ def build_model_dataset_schema(
         "$id": definition.schema_path,
         "title": definition.row_model.__name__,
         "description": (
-            f"One exact ID-free {definition.name} record shared by Model Snapshots "
-            "and Model Change Sets."
+            f"One exact ID-free {definition.name} record "
+            + (
+                "shared by Model Snapshots and Model Change Sets."
+                if definition.change_set_eligible
+                else "available only through Model Snapshot and read tools."
+            )
         ),
         "type": "object",
         "additionalProperties": False,
@@ -204,7 +230,7 @@ def build_model_dataset_schema(
         "x-gds-section": definition.section,
         "x-gds-canonical-key": list(definition.canonical_key),
         "x-gds-database-ids-included": False,
-        "x-gds-change-set-eligible": True,
+        "x-gds-change-set-eligible": definition.change_set_eligible,
     }
 
 
@@ -226,6 +252,7 @@ DATASETS = (
             "object_schema",
             "object_name",
         ),
+        change_set_eligible=False,
     ),
     ModelingDatasetDefinition(
         name="profiling_profile",
@@ -390,3 +417,5 @@ DATASETS = (
 )
 
 DATASETS_BY_NAME = {definition.name: definition for definition in DATASETS}
+CHANGE_SET_DATASETS = tuple(definition for definition in DATASETS if definition.change_set_eligible)
+CHANGE_SET_DATASETS_BY_NAME = {definition.name: definition for definition in CHANGE_SET_DATASETS}

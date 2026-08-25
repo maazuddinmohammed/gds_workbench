@@ -440,6 +440,10 @@ def _dimensional_layer(snapshot: ModelSnapshot) -> _ModeledLayer:
             notes=(
                 ("Kind", record.dimensional_relationship_kind),
                 ("Role", record.dimensional_relationship_role_name),
+                (
+                    "Optional",
+                    "yes" if record.dimensional_relationship_is_optional else "no",
+                ),
                 ("Basis", record.dimensional_relationship_basis),
                 ("Confidence", record.dimensional_relationship_confidence),
             ),

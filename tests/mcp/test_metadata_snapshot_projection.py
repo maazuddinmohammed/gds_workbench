@@ -32,7 +32,9 @@ def test_projection_resolves_ids_and_every_projected_row_matches_its_model() -> 
 
 
 def _decode(content: bytes) -> list[dict[str, Any]]:
-    return [cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()]
+    return [
+        cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()
+    ]
 
 
 def _raw_rows() -> dict[str, list[dict[str, object]]]:
@@ -72,7 +74,9 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                 "zone_description": None,
                 "is_active": True,
             }
-            for zone_id, zone_code in enumerate(("source", "bronze", "silver", "gold"), start=20)
+            for zone_id, zone_code in enumerate(
+                ("source", "bronze", "silver", "gold"), start=20
+            )
         ],
         "chunk_type": [
             {
@@ -109,6 +113,7 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
     }
     object_common = {
         "connection_id": 3,
+        "object_tenant_id": 2,
         "fc_object_schema": None,
         "fc_object_name": None,
         "object_transformation": None,

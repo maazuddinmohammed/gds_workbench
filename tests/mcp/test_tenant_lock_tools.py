@@ -345,7 +345,9 @@ async def test_acquire_tenant_lock_rejects_an_existing_lock() -> None:
 
     assert result.is_error is True
     assert isinstance(result.content[0], TextContent)
-    assert result.content[0].text.endswith("tenant_locked: Tenant is locked by Another Developer.")
+    assert result.content[0].text.endswith(
+        "tenant_locked: Tenant is locked by Another Developer."
+    )
 
 
 @pytest.mark.asyncio

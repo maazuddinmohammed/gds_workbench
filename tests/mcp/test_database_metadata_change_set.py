@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -99,6 +100,63 @@ def test_metadata_change_set_has_exact_sixteen_documents(
         assert section_name in event_section_check["definition"]
 
 
+def test_metadata_stage_batch_storage_is_bounded_and_not_directly_accessible(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        relations = connection.execute(
+            """
+            SELECT to_regclass('mcp.metadata_stage_batch') AS batch,
+                   to_regclass('mcp.metadata_stage_chunk') AS chunk,
+                   has_table_privilege(
+                       'gds_app_write', 'mcp.metadata_stage_batch', 'SELECT,INSERT,UPDATE,DELETE'
+                   ) AS batch_access,
+                   has_table_privilege(
+                       'gds_app_write', 'mcp.metadata_stage_chunk', 'SELECT,INSERT,UPDATE,DELETE'
+                   ) AS chunk_access
+            """
+        ).fetchone()
+        batch_checks = connection.execute(
+            """
+            SELECT conname, pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint
+             WHERE conrelid = 'mcp.metadata_stage_batch'::REGCLASS
+               AND conname LIKE 'ck_metadata_stage_batch_%'
+             ORDER BY conname
+            """
+        ).fetchall()
+        chunk_check = connection.execute(
+            """
+            SELECT pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint
+             WHERE conrelid = 'mcp.metadata_stage_chunk'::REGCLASS
+               AND conname = 'ck_metadata_stage_chunk_content'
+            """
+        ).fetchone()
+
+    assert relations == {
+        "batch": "mcp.metadata_stage_batch",
+        "chunk": "mcp.metadata_stage_chunk",
+        "batch_access": False,
+        "chunk_access": False,
+    }
+    definitions = " ".join(row["definition"] for row in batch_checks)
+    assert "total_record_count >= 1" in definitions
+    assert "total_record_count <= 50000" in definitions
+    assert "total_chunk_count >= 1" in definitions
+    assert "total_chunk_count <= 64" in definitions
+    assert (
+        "active" in definitions
+        and "committed" in definitions
+        and "expired" in definitions
+    )
+    assert chunk_check is not None
+    assert "jsonb_typeof(records_document) = 'array'" in chunk_check["definition"]
+    assert (
+        "octet_length((records_document)::text) <= 524288" in chunk_check["definition"]
+    )
+
+
 def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -122,6 +180,21 @@ def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions
                    AND has_function_privilege(
                        'gds_app_write',
                        'mcp.stage_metadata_change_set(uuid,uuid,varchar,bigint,uuid,bigint,jsonb,uuid)',
+                       'EXECUTE'
+                   )
+                   AND has_function_privilege(
+                       'gds_app_write',
+                       'mcp.begin_metadata_stage_batch(uuid,uuid,varchar,bigint,uuid,bigint,uuid,varchar,integer,integer,character,uuid)',
+                       'EXECUTE'
+                   )
+                   AND has_function_privilege(
+                       'gds_app_write',
+                       'mcp.put_metadata_stage_chunk(uuid,uuid,varchar,bigint,uuid,uuid,varchar,integer,character,jsonb)',
+                       'EXECUTE'
+                   )
+                   AND has_function_privilege(
+                       'gds_app_write',
+                       'mcp.commit_metadata_stage_batch(uuid,uuid,varchar,bigint,uuid,uuid,bigint,uuid)',
                        'EXECUTE'
                    )
                    AND has_function_privilege(
@@ -495,6 +568,303 @@ def test_stage_metadata_change_set_replaces_multiple_documents_with_one_revision
     ]
 
 
+def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = UUID("10000000-0000-0000-0000-000000000052")
+    entra_object_id = UUID("20000000-0000-0000-0000-000000000052")
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix="STAGE_BATCH",
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    stage_batch_id = uuid4()
+    chunks = [
+        [
+            {
+                "tenant_code": "CHANGE_SET_TENANT_STAGE_BATCH",
+                "system_code": "CRM",
+                "copy_group_name": "CUSTOMERS",
+                "copy_group_description": None,
+                "is_member_group_required": False,
+                "is_active": True,
+            }
+        ],
+        [
+            {
+                "tenant_code": "CHANGE_SET_TENANT_STAGE_BATCH",
+                "system_code": "CRM",
+                "copy_group_name": "ORDERS",
+                "copy_group_description": None,
+                "is_member_group_required": False,
+                "is_active": True,
+            }
+        ],
+    ]
+    chunk_sha256s = [
+        hashlib.sha256(f"chunk-{index}".encode()).hexdigest() for index in (1, 2)
+    ]
+    batch_sha256 = hashlib.sha256("".join(chunk_sha256s).encode("ascii")).hexdigest()
+
+    with postgres_database.connect_runtime() as connection:
+        begun = connection.execute(
+            """
+            SELECT started, denial_code, stage_batch_id, created,
+                   total_record_count, total_chunk_count, received_chunk_count
+              FROM mcp.begin_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::UUID, 'copy_group'::VARCHAR,
+                  2::INTEGER, 2::INTEGER, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                batch_sha256,
+                uuid4(),
+            ),
+        ).fetchone()
+        resumed = connection.execute(
+            """
+            SELECT started, denial_code, stage_batch_id, created, received_chunk_count
+              FROM mcp.begin_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::UUID, 'copy_group'::VARCHAR,
+                  2::INTEGER, 2::INTEGER, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                uuid4(),
+                batch_sha256,
+                uuid4(),
+            ),
+        ).fetchone()
+        first = connection.execute(
+            """
+            SELECT accepted, denial_code, duplicate, received_chunk_count
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, %s::CHAR(64), %s::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256s[0],
+                Jsonb(chunks[0]),
+            ),
+        ).fetchone()
+        first_replay = connection.execute(
+            """
+            SELECT accepted, denial_code, duplicate, received_chunk_count
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, %s::CHAR(64), %s::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256s[0],
+                Jsonb(chunks[0]),
+            ),
+        ).fetchone()
+        incomplete = connection.execute(
+            """
+            SELECT committed, denial_code, draft_revision
+              FROM mcp.commit_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 1::BIGINT, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                uuid4(),
+            ),
+        ).fetchone()
+        conflict = connection.execute(
+            """
+            SELECT accepted, denial_code
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, %s::CHAR(64), %s::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256s[1],
+                Jsonb(chunks[1]),
+            ),
+        ).fetchone()
+        second = connection.execute(
+            """
+            SELECT accepted, denial_code, duplicate, received_chunk_count
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 'copy_group'::VARCHAR,
+                  2::INTEGER, %s::CHAR(64), %s::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256s[1],
+                Jsonb(chunks[1]),
+            ),
+        ).fetchone()
+        committed = connection.execute(
+            """
+            SELECT committed, denial_code, replayed, dataset_name,
+                   record_count, draft_revision
+              FROM mcp.commit_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 1::BIGINT, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                uuid4(),
+            ),
+        ).fetchone()
+        replayed = connection.execute(
+            """
+            SELECT committed, denial_code, replayed, dataset_name,
+                   record_count, draft_revision
+              FROM mcp.commit_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 1::BIGINT, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT draft_revision, copy_group_document
+              FROM mcp.metadata_change_set
+             WHERE metadata_change_set_id = %s
+            """,
+            (change_set_id,),
+        ).fetchone()
+        batch = connection.execute(
+            """
+            SELECT stage_batch_status, committed_revision
+              FROM mcp.metadata_stage_batch
+             WHERE stage_batch_id = %s
+            """,
+            (stage_batch_id,),
+        ).fetchone()
+        event_count = connection.execute(
+            """
+            SELECT count(*) AS count
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type = 'section_put'
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert begun == {
+        "started": True,
+        "denial_code": None,
+        "stage_batch_id": stage_batch_id,
+        "created": True,
+        "total_record_count": 2,
+        "total_chunk_count": 2,
+        "received_chunk_count": 0,
+    }
+    assert resumed == {
+        "started": True,
+        "denial_code": None,
+        "stage_batch_id": stage_batch_id,
+        "created": False,
+        "received_chunk_count": 0,
+    }
+    assert first == {
+        "accepted": True,
+        "denial_code": None,
+        "duplicate": False,
+        "received_chunk_count": 1,
+    }
+    assert first_replay == {
+        "accepted": True,
+        "denial_code": None,
+        "duplicate": True,
+        "received_chunk_count": 1,
+    }
+    assert incomplete == {
+        "committed": False,
+        "denial_code": "stage_batch_incomplete",
+        "draft_revision": None,
+    }
+    assert conflict == {"accepted": False, "denial_code": "stage_chunk_conflict"}
+    assert second == {
+        "accepted": True,
+        "denial_code": None,
+        "duplicate": False,
+        "received_chunk_count": 2,
+    }
+    assert committed == {
+        "committed": True,
+        "denial_code": None,
+        "replayed": False,
+        "dataset_name": "copy_group",
+        "record_count": 2,
+        "draft_revision": 2,
+    }
+    assert replayed == {
+        "committed": True,
+        "denial_code": None,
+        "replayed": True,
+        "dataset_name": "copy_group",
+        "record_count": 2,
+        "draft_revision": 2,
+    }
+    assert stored == {"draft_revision": 2, "copy_group_document": chunks[0] + chunks[1]}
+    assert batch == {"stage_batch_status": "committed", "committed_revision": 2}
+    assert event_count == {"count": 1}
+
+
 def test_stage_metadata_change_set_rejects_the_whole_invalid_request(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -506,7 +876,7 @@ def test_stage_metadata_change_set_rejects_the_whole_invalid_request(
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
     )
-    documents = {
+    documents: dict[str, list[object]] = {
         "copy_group": [],
         "not_a_dataset": [],
     }
@@ -1420,8 +1790,26 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                          ON connection.connection_id = object.connection_id
                       WHERE connection.tenant_id = %s
                    ) AS attributes,
-                   (SELECT count(*) FROM core.ingestion_object_mapping) AS object_mappings,
-                   (SELECT count(*) FROM core.ingestion_attribute_mapping) AS attribute_mappings,
+                   (
+                       SELECT count(*)
+                         FROM core.ingestion_object_mapping AS mapping
+                         JOIN core.object AS source_object
+                           ON source_object.object_id = mapping.source_object_id
+                         JOIN core.connection AS source_connection
+                           ON source_connection.connection_id = source_object.connection_id
+                        WHERE source_connection.tenant_id = %s
+                   ) AS object_mappings,
+                   (
+                       SELECT count(*)
+                         FROM core.ingestion_attribute_mapping AS mapping
+                         JOIN core.attribute AS source_attribute
+                           ON source_attribute.attribute_id = mapping.source_attribute_id
+                         JOIN core.object AS source_object
+                           ON source_object.object_id = source_attribute.object_id
+                         JOIN core.connection AS source_connection
+                           ON source_connection.connection_id = source_object.connection_id
+                        WHERE source_connection.tenant_id = %s
+                   ) AS attribute_mappings,
                    (SELECT count(*) FROM core.copy_group WHERE tenant_id = %s) AS copy_groups,
                    (SELECT count(*) FROM core.member_group WHERE tenant_id = %s) AS member_groups,
                    (SELECT count(*) FROM core.copy_group_control WHERE tenant_id = %s) AS controls,
@@ -1440,6 +1828,8 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                    ) AS processes
             """,
             (
+                tenant_id,
+                tenant_id,
                 tenant_id,
                 tenant_id,
                 tenant_id,
@@ -1480,7 +1870,7 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
     )
     digest = "e" * 64
     record = {
-        "tenant_code": "GLOBAL_SCOPED_APPLY",
+        "tenant_code": "CHANGE_SET_TENANT_SCOPED_APPLY",
         "system_code": "CRM_SCOPED_APPLY",
         "connection_code": "GDS",
         "object_schema": "demo",
@@ -1685,7 +2075,7 @@ def _all_apply_documents(
             "is_active": True,
         }
 
-    object_mapping = {
+    object_mapping: dict[str, object] = {
         "source_tenant_code": tenant_code,
         "source_system_code": system_code,
         "source_connection_code": "MAIN",

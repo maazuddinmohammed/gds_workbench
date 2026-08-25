@@ -70,8 +70,8 @@ may be retained, and those values are copied into `input_metadata`. PostgreSQL
 does not impose an application-specific byte ceiling on that JSONB object. The
 normal MCP request-body limit remains 1 MiB. Cursors, lock purpose/reason text,
 staged physical records, prompts, output, credentials, tokens, connection values,
-and exceptions are not logged. The complete SQL submitted to
-`execute_databricks_sql` remains the deliberate SQL exception.
+submitted SQL, and exceptions are not logged. `execute_databricks_sql` retains
+only the SQL character count and SHA-256 digest.
 
 Humans require delegated scope `workbench.access`. Workloads require application
 permission `workbench.workflow` and an active registered service Principal with
@@ -143,8 +143,8 @@ fixed least-privilege function. Physical relations must use
 `catalog.schema.table`; unqualified CTE and temporary names remain allowed. It
 rejects DML and persistent DDL, executes the batch in one Databricks SQL Warehouse
 session, and returns only the final statement's bounded result. Connection values
-are never logged. Complete submitted SQL is retained in the append-only tool-call
-log; callers must never place credentials in SQL.
+and submitted SQL are never logged. The append-only tool-call log retains only
+the SQL character count and SHA-256 digest.
 
 Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result
 contains a 15-minute read-only SAS URL for the exact ZIP, URL expiry time, byte
@@ -159,7 +159,9 @@ audit columns. Empty filter lists mean all matching Model records.
 headers, naming/audit policy templates, revisions, and Model Scope Object counts.
 `get_model_scope` accepts one authorized Model ID and returns up to 2,000 active
 Scope Objects with expanded Tenant, System, Connection, Object Type, Zone, and
-physical Object names. Database IDs remain in this focused navigation result.
+physical Object names plus the four derived workflow-eligibility flags. Database
+IDs remain in this focused navigation result. Model Scope is read-only through
+MCP; explicit Scope changes belong to the governed web workflow.
 `get_model_snapshot` returns only a temporary read-only URL plus ZIP metadata;
 its 19 archive datasets are ID-free and use the exact Pydantic records accepted
 by Model Change Sets. `get_model_dbml` accepts `full`, `conceptual`, `logical`,
@@ -172,9 +174,8 @@ Each `stage_model_change_set` item replaces that dataset's pending records;
 omitted pending datasets remain unchanged. Validate reports the first failed
 phase and a bounded action review, including physical Model Scope checks. Apply
 revalidates and writes atomically. Stage `model_details` to update the Model name,
-description, or naming/audit templates. Stage `model_scope` with `is_active=true`
-to add/reactivate an Object or `is_active=false` to archive it; locked Scope rows
-cannot be archived. `archive_model_change_set` retains an
+description, or naming/audit templates. Model Scope cannot be staged or applied
+through this public Change Set contract. `archive_model_change_set` retains an
 abandoned draft as terminal history; it does not delete it.
 
 ## Tests

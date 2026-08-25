@@ -13,8 +13,8 @@ from pathlib import Path
 from urllib.parse import urlsplit
 
 
-PLUGIN_ROOT = Path(__file__).parent / "gds"
-DIST_ROOT = Path(__file__).parent / "dist"
+PLUGIN_ROOT = Path(__file__).parent / "v1" / "gds"
+DIST_ROOT = Path(__file__).parent / "v1" / "dist"
 IGNORED_NAMES = frozenset({".DS_Store", "__pycache__"})
 ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
 

@@ -1,0 +1,7 @@
+{
+  "schema_version": "1.0",
+  "lease_duration_seconds": 30,
+  "heartbeat_interval_seconds": 10.0,
+  "idle_poll_interval_seconds": 1.0,
+  "error_poll_interval_seconds": 5.0
+}

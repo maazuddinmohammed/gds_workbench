@@ -1,0 +1,26 @@
+{
+  "name": "gds",
+  "version": "0.1.0",
+  "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
+  "author": {
+    "name": "GDS Workbench"
+  },
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "GDS Workbench",
+    "shortDescription": "Plan first. Build from compact snapshots.",
+    "longDescription": "Guides metadata, model, mapping, code, and validation work through compact local sessions and explicit governed gates.",
+    "developerName": "GDS Workbench",
+    "category": "Developer Tools",
+    "capabilities": [
+      "Interactive",
+      "Write"
+    ],
+    "defaultPrompt": [
+      "Initialize GDS Workbench.",
+      "Resume my current GDS session.",
+      "Open the local GDS Workbench."
+    ]
+  },
+  "mcpServers": "./.mcp.json"
+}

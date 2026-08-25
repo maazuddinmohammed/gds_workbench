@@ -16,6 +16,7 @@ from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
+from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
 
 type ActiveState = Literal["active", "inactive", "all"]
 type ZoneCode = Literal["source", "bronze", "silver", "gold"]
@@ -85,7 +86,8 @@ SELECT process_group.process_group_id,
    AND process_group.process_group_id = %s
 """
 
-_PROCESSES_SQL: LiteralString = """
+_PROCESSES_SQL: LiteralString = f"""
+{VISIBLE_OBJECTS_CTE}
 SELECT process.process_id,
        process.process_execution_order,
        process.is_active,
@@ -105,14 +107,17 @@ SELECT process.process_id,
    AND process_group.tenant_id = copy_group.tenant_id
    AND process_group.system_id = copy_group.system_id
   JOIN core.process ON process.process_group_id = process_group.process_group_id
+  JOIN visible_objects
+    ON visible_objects.object_id = process.object_id
   JOIN reference.process_type ON process_type.process_type_id = process.process_type_id
   JOIN core.object
     ON object.object_id = process.object_id
    AND object.connection_id = process.connection_id
   JOIN reference.zone AS object_zone ON object_zone.zone_id = object.zone_id
   JOIN core.connection ON connection.connection_id = process.connection_id
-  JOIN core.tenant AS owning_tenant ON owning_tenant.tenant_id = connection.tenant_id
- WHERE copy_group.tenant_id = %s
+  JOIN core.tenant AS owning_tenant
+    ON owning_tenant.tenant_id = visible_objects.object_tenant_id
+ WHERE copy_group.tenant_id = (SELECT tenant_id FROM requested_tenant)
    AND process_group.process_group_id = %s
  ORDER BY process.process_execution_order, process.process_id
  LIMIT 501
@@ -188,6 +193,7 @@ def register_process_group_tools(
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
+        name=_LIST_TOOL,
         description=(
             "List Process Groups reached through Copy Groups owned by one authorized Tenant."
         ),
@@ -195,7 +201,7 @@ def register_process_group_tools(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def list_process_groups(
+    async def _list_process_groups(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         system_id: Annotated[int | None, Field(gt=0)] = None,
@@ -248,6 +254,7 @@ def register_process_group_tools(
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
     @server.tool(
+        name=_GET_TOOL,
         description=(
             "Get one Process Group and its ordered Process/Object associations. Internal "
             "executable names and locations are never returned."
@@ -256,7 +263,7 @@ def register_process_group_tools(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_process_group(
+    async def _get_process_group(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         process_group_id: Annotated[int, Field(gt=0)],
@@ -293,6 +300,7 @@ def register_process_group_tools(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _list_process_groups, _get_process_group
     audit.register_tool(
         _LIST_TOOL,
         policy=POLICY,

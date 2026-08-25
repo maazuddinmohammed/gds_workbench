@@ -34,7 +34,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice.zip
-   plugins/dist/gds-agent-plugin-1.3.0.zip
+   plugins/v1/dist/gds-agent-plugin-1.3.0.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -651,7 +651,7 @@ az webapp config set \
 
 ### Step 1: point the plugin at the new server
 
-Open `plugins/gds/mcp.json` and replace its `url` with:
+Open `plugins/v1/gds/mcp.json` and replace its `url` with:
 
 ```text
 https://<WEB_APP>.azurewebsites.net/mcp
@@ -662,7 +662,7 @@ existing ZIP:
 
 ```bash
 python3 plugins/build_gds_plugin_zip.py \
-  --output plugins/dist/gds-agent-plugin-local.zip
+  --output plugins/v1/dist/gds-agent-plugin-local.zip
 ```
 
 ### Step 2: extract it
@@ -751,5 +751,5 @@ Repository-specific sources:
 
 - `database/README.md`
 - `mcp_server/README.md`
-- `plugins/gds/README.md`
+- `plugins/v1/gds/README.md`
 - `docs/security.md`

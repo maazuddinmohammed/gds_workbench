@@ -87,7 +87,9 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
 
     assert [column["column_name"] for column in columns] == EXPECTED_COLUMNS
     assert all(column["is_nullable"] == "NO" for column in columns)
-    assert {constraint["conname"]: constraint["definition"] for constraint in constraints} == {
+    assert {
+        constraint["conname"]: constraint["definition"] for constraint in constraints
+    } == {
         "ck_metadata_discovery_scope_schema": (
             "CHECK (reference.is_nonblank((object_schema)::text))"
         ),
@@ -108,6 +110,14 @@ def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
         index["indexname"] == "ux_metadata_discovery_scope"
         and "UNIQUE INDEX" in index["indexdef"]
         and "lower(btrim((object_schema)::text))" in index["indexdef"]
+        for index in indexes
+    )
+    assert any(
+        index["indexname"] == "ux_active_metadata_discovery_scope_assignment"
+        and "UNIQUE INDEX" in index["indexdef"]
+        and "(gds_connection_id, zone_id, lower(btrim((object_schema)::text)))"
+        in index["indexdef"]
+        and "WHERE is_active" in index["indexdef"]
         for index in indexes
     )
     assert privileges == {"can_select": True, "can_mutate": False}
@@ -172,6 +182,69 @@ def test_metadata_discovery_scope_uses_normalized_schema_identity(
                     """,
                 (tenant_id, connection_id, zone_id),
             )
+
+        connection.rollback()
+
+
+def test_active_discovery_scope_assigns_each_gds_schema_to_one_tenant(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        tenant_id, connection_id, zone_id = _seed_scope_parents(connection)
+        project_id = connection.execute(
+            "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
+            (tenant_id,),
+        ).fetchone()["project_id"]
+        second_tenant_id = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog
+            ) VALUES (
+                %s,
+                'SECOND_DISCOVERY_TENANT',
+                'Second Discovery Tenant',
+                'second_discovery_catalog',
+                'second_discovery_admin'
+            )
+            RETURNING tenant_id
+            """,
+            (project_id,),
+        ).fetchone()["tenant_id"]
+        connection.execute(
+            """
+            INSERT INTO core.tenant_metadata_discovery_scope (
+                tenant_id, gds_connection_id, zone_id, object_schema
+            ) VALUES (%s, %s, %s, 'governed_bronze')
+            """,
+            (tenant_id, connection_id, zone_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO core.tenant_metadata_discovery_scope (
+                tenant_id, gds_connection_id, zone_id, object_schema, is_active
+            ) VALUES (%s, %s, %s, ' governed_bronze ', FALSE)
+            """,
+            (second_tenant_id, connection_id, zone_id),
+        )
+
+        with pytest.raises(psycopg.errors.UniqueViolation), connection.transaction():
+            connection.execute(
+                """
+                UPDATE core.tenant_metadata_discovery_scope
+                   SET is_active = TRUE
+                 WHERE tenant_id = %s
+                   AND gds_connection_id = %s
+                   AND zone_id = %s
+                   AND lower(btrim(object_schema)) = 'governed_bronze'
+                """,
+                (second_tenant_id, connection_id, zone_id),
+            )
+
+        connection.rollback()
 
 
 def _seed_scope_parents(connection: Connection[Any]) -> tuple[int, int, int]:
@@ -250,7 +323,7 @@ def _seed_scope_parents(connection: Connection[Any]) -> tuple[int, int, int]:
     zone = connection.execute(
         """
         INSERT INTO reference.zone (zone_code, zone_name)
-        VALUES ('bronze', 'Bronze')
+        VALUES ('discovery_bronze', 'Discovery Bronze')
         RETURNING zone_id
         """
     ).fetchone()

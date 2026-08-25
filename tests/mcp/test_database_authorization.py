@@ -20,7 +20,7 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.tools.tenants.list_tenants import _query_visible_tenants
+from gds_etl_workbench.tools.tenants.list_tenants import query_visible_tenants
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -760,7 +760,7 @@ async def test_list_tenants_sql_enforces_visibility_with_one_bound_actor(
     await database.open()
     try:
         async with database.read_transaction() as transaction:
-            rows = await _query_visible_tenants(
+            rows = await query_visible_tenants(
                 transaction,
                 ResolvedPrincipal(
                     principal_id=principal_id,
@@ -1701,12 +1701,23 @@ def test_expiry_operation_removes_stale_locks_and_records_events(
             (tenant_id, principal_id),
         )
 
+    with postgres_database.connect_owner() as connection:
+        expected = connection.execute(
+            """
+            SELECT least(count(*)::INTEGER, 100) AS expired_count
+              FROM security.tenant_lock
+             WHERE tenant_lock_expires_time <= CURRENT_TIMESTAMP
+            """
+        ).fetchone()
+
     with postgres_database.connect_runtime() as connection:
         result = connection.execute(
             "SELECT security.expire_tenant_locks(100) AS expired_count"
         ).fetchone()
 
-    assert result == {"expired_count": 1}
+    assert expected is not None
+    assert expected["expired_count"] >= 1
+    assert result == expected
     with postgres_database.connect_owner() as connection:
         state = connection.execute(
             """

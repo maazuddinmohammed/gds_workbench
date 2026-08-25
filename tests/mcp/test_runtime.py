@@ -238,12 +238,18 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "override_tenant_lock",
         "create_metadata_change_set",
         "stage_metadata_change_set",
+        "begin_metadata_stage_batch",
+        "put_metadata_stage_chunk",
+        "commit_metadata_stage_batch",
         "get_metadata_change_set",
         "validate_metadata_change_set",
         "apply_metadata_change_set",
         "archive_metadata_change_set",
         "create_model_change_set",
         "stage_model_change_set",
+        "begin_model_stage_batch",
+        "put_model_stage_chunk",
+        "commit_model_stage_batch",
         "get_model_change_set",
         "validate_model_change_set",
         "apply_model_change_set",
@@ -303,6 +309,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                 in {
                     "create_metadata_change_set",
                     "stage_metadata_change_set",
+                    "begin_metadata_stage_batch",
+                    "put_metadata_stage_chunk",
+                    "commit_metadata_stage_batch",
                     "validate_metadata_change_set",
                     "apply_metadata_change_set",
                 }
@@ -311,6 +320,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                 in {
                     "create_model_change_set",
                     "stage_model_change_set",
+                    "begin_model_stage_batch",
+                    "put_model_stage_chunk",
+                    "commit_model_stage_batch",
                     "validate_model_change_set",
                     "apply_model_change_set",
                 }
@@ -352,7 +364,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_model_dataset_tool_inputs_advertise_the_exact_shared_enum() -> None:
+async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes() -> (
+    None
+):
     settings = development_settings()
     server = create_mcp_server(
         settings,
@@ -363,10 +377,21 @@ async def test_model_dataset_tool_inputs_advertise_the_exact_shared_enum() -> No
     async with Client(server) as client:
         listed = await client.list_tools()
 
-    schemas = {tool.name: tool.input_schema for tool in listed.tools}
+    tools = {tool.name: tool for tool in listed.tools}
+    schemas = {name: tool.input_schema for name, tool in tools.items()}
     expected = list(MODEL_DATASETS_BY_NAME)
+    writable = [dataset for dataset in expected if dataset != "model_scope"]
     assert (
-        schemas["stage_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
+        schemas["stage_model_change_set"]["$defs"]["ModelChangeSetDataset"]["enum"]
+        == writable
+    )
+    assert (
+        schemas["begin_model_stage_batch"]["$defs"]["ModelChangeSetDataset"]["enum"]
+        == writable
+    )
+    assert (
+        schemas["put_model_stage_chunk"]["$defs"]["ModelChangeSetDataset"]["enum"]
+        == writable
     )
     assert schemas["get_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
     assert (
@@ -375,6 +400,43 @@ async def test_model_dataset_tool_inputs_advertise_the_exact_shared_enum() -> No
     assert schemas["describe_model_dataset"]["properties"]["dataset"] == {
         "$ref": "#/$defs/ModelDataset"
     }
+    for tool_name in (
+        "stage_model_change_set",
+        "begin_model_stage_batch",
+        "put_model_stage_chunk",
+        "commit_model_stage_batch",
+        "validate_model_change_set",
+        "apply_model_change_set",
+    ):
+        tool = tools[tool_name]
+        schemas_text = json.dumps(
+            {"input": tool.input_schema, "output": tool.output_schema}
+        )
+        assert '"model_scope"' not in schemas_text, tool_name
+
+
+@pytest.mark.asyncio
+async def test_describe_model_scope_marks_it_read_only_for_mcp() -> None:
+    settings = development_settings()
+    server = create_mcp_server(
+        settings,
+        FakeDatabase(),
+        IdentityProvider(settings.auth_mode),
+    )
+
+    async with Client(server) as client:
+        result = await client.call_tool(
+            "describe_model_dataset",
+            {"dataset": "model_scope"},
+        )
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["change_set_eligible"] is False
+    assert (
+        result.structured_content["record_schema"]["x-gds-change-set-eligible"] is False
+    )
+    assert "read-only" in " ".join(result.structured_content["usage"]).lower()
 
 
 @pytest.mark.asyncio
@@ -569,7 +631,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 51
+    assert ready_body["tool_count"] == 57
     fingerprint = ready_body["tool_contract_sha256"]
     assert len(fingerprint) == 64
     assert all(character in "0123456789abcdef" for character in fingerprint)

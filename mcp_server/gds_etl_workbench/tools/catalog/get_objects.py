@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import defaultdict
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal, LiteralString
+from typing import Annotated, Any, Literal, LiteralString, cast
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
@@ -153,6 +153,7 @@ def register_get_objects_tool(
     audit: ToolCallAuditMiddleware,
 ) -> None:
     @server.tool(
+        name=_TOOL_NAME,
         description=(
             "Get up to 25 authorized physical Objects and their bounded Attribute "
             "definitions. Use list_objects first to discover Object IDs."
@@ -166,7 +167,7 @@ def register_get_objects_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_objects(
+    async def _get_objects(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         object_ids: Annotated[list[int], Field(min_length=1, max_length=_MAX_OBJECTS)],
@@ -217,6 +218,7 @@ def register_get_objects_tool(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _get_objects
     audit.register_tool(
         _TOOL_NAME,
         policy=POLICY,
@@ -232,5 +234,7 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     return {
         "schema_version": "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid",
         "tenant_id": tenant_id if type(tenant_id) is int and tenant_id > 0 else "invalid",
-        "object_count": len(object_ids) if isinstance(object_ids, list) else "invalid",
+        "object_count": (
+            len(cast(list[object], object_ids)) if isinstance(object_ids, list) else "invalid"
+        ),
     }

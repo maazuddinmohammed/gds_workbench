@@ -26,7 +26,7 @@ _MAX_SCOPE_OBJECTS = 2_000
 
 _MODEL_SCOPE_SQL: LiteralString = """
 SELECT model_scope.model_scope_id,
-       model_scope.object_id,
+       eligibility.object_id,
        tenant.tenant_id,
        tenant.tenant_code,
        tenant.tenant_name,
@@ -41,31 +41,36 @@ SELECT model_scope.model_scope_id,
        object_type.object_type_id,
        object_type.object_type_code,
        object_type.object_type_name,
-       zone.zone_code,
+       eligibility.zone_code,
+       eligibility.is_bronze_source_eligible,
+       eligibility.is_dimensional_source_eligible,
+       eligibility.is_logical_mapping_target_eligible,
+       eligibility.is_dimensional_mapping_target_eligible,
        model_scope.model_scope_is_locked,
-       model_scope.is_active,
+       TRUE AS is_active,
        count(*) OVER () AS total_object_count
-  FROM model.model_scope AS model_scope
+  FROM workflow.list_model_object_eligibility(%s) AS eligibility
+  JOIN model.model_scope AS model_scope
+    ON model_scope.model_id = eligibility.model_id
+   AND model_scope.object_id = eligibility.object_id
+   AND model_scope.is_active
   JOIN core.object AS object
-    ON object.object_id = model_scope.object_id
+    ON object.object_id = eligibility.object_id
+   AND object.connection_id = eligibility.connection_id
    AND object.is_active
   JOIN core.connection AS connection
-    ON connection.connection_id = object.connection_id
+    ON connection.connection_id = eligibility.connection_id
+   AND connection.system_id = eligibility.system_id
    AND connection.is_active
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
+    ON tenant.tenant_id = eligibility.object_tenant_id
    AND tenant.is_active
   JOIN core.system AS system
-    ON system.system_id = connection.system_id
+    ON system.system_id = eligibility.system_id
    AND system.is_active
   JOIN reference.object_type AS object_type
     ON object_type.object_type_id = object.object_type_id
    AND object_type.is_active
-  JOIN reference.zone AS zone
-    ON zone.zone_id = object.zone_id
-   AND zone.is_active
- WHERE model_scope.model_id = %s
-   AND model_scope.is_active
  ORDER BY lower(tenant.tenant_code),
           lower(system.system_code),
           lower(connection.connection_code),
@@ -98,6 +103,10 @@ class ModelScopeObject(ContractModel):
     object_type_code: str = Field(min_length=1, max_length=100)
     object_type_name: str = Field(min_length=1, max_length=200)
     zone_code: str = Field(min_length=1, max_length=100)
+    is_bronze_source_eligible: bool
+    is_dimensional_source_eligible: bool
+    is_logical_mapping_target_eligible: bool
+    is_dimensional_mapping_target_eligible: bool
     model_scope_is_locked: bool
     is_active: Literal[True]
 
@@ -130,7 +139,8 @@ def register_get_model_scope_tool(
     @server.tool(
         description=(
             "Get active Objects in one authorized Model Scope with expanded Tenant, "
-            "System, Connection, Object Type, Zone, and physical Object names."
+            "System, Connection, Object Type, Zone, physical Object names, and "
+            "workflow eligibility."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -210,9 +220,7 @@ def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:
     model_id = arguments.get("model_id")
     page_size = arguments.get("page_size", _MAX_SCOPE_OBJECTS)
     return {
-        "schema_version": (
-            "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"
-        ),
+        "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
         "model_id": model_id if type(model_id) is int and model_id > 0 else "invalid",
         "page_size": (
             page_size

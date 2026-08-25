@@ -53,6 +53,13 @@ nullable Object batch-attribute name must still be nonblank when present.
 Connection values store optional literal configuration. General application
 roles cannot select this table.
 
+An active Metadata Discovery Scope row uniquely assigns each GDS Connection,
+Zone, and normalized schema to one source Tenant. Eligibility, operational
+visibility, snapshots, and execution contexts use that assigned Tenant for GDS
+Objects and never fall back to the Connection owner. Non-GDS Objects use their
+Connection Tenant. The active-only unique assignment index enforces this Core
+rule without removing retained inactive scope history.
+
 Tenant visibility is `global|private` and defaults to private. An active
 authenticated Principal may read a global Tenant without membership. Private
 reads and every mutation require active, unexpired Tenant access unless the
@@ -151,14 +158,16 @@ ongoing draft is allowed per Tenant and creating Principal. Tenant Lock ownershi
 is the current concurrency boundary. Their events are append-only, and archive is
 a retained terminal state rather than a row move or delete.
 
-Six governed functions back the MCP Metadata Change Set tools. Create, stage,
+Nine governed functions back the MCP Metadata Change Set tools. Create, stage,
 validate, and apply require the caller-owned Tenant Lock. Get and archive require
 creator ownership but no current lock. Stage replaces one complete JSON list and
 uses optimistic `draft_revision`. Validation shares the Snapshot Pydantic
 schemas, canonical keys, uniqueness constraints, and reference definitions.
 Apply repeats validation, resolves natural keys to IDs, and upserts all 16
 eligible Core datasets atomically. The runtime role has no direct SELECT or DML
-on Metadata Change Set or event tables. Object mutation is restricted to the
+on Metadata Change Set, Stage Batch, chunk, or event tables. Begin and Put retain
+bounded typed chunks without changing the draft; Commit verifies the manifest and
+calls the same atomic complete-list Stage operation once. Object mutation is restricted to the
 locked Tenant's connections or its active global Metadata Discovery Scopes.
 
 The `ChangeSetsFeature` draft-expiry worker asks the repository to select one
@@ -179,6 +188,66 @@ event-before-replacement behavior. There is no time-based trigger.
 Workflow Grant and grant-bound run-summary structures are intentionally absent.
 Registered workload identities map directly to active Super Admin Principals.
 
+## Durable web Workflow Run inputs
+
+The `application` schema has 15 normalized tables. A governed Workflow Run
+stores the exact active Entra identity used to create it, an optional bounded
+Profiling/Analysis batch ID, and one immutable
+`workflow_run_object_selection` row per selected Object. Mapping selected
+coverage also stores one normalized
+`workflow_run_mapping_target_selection` target Object/source System pair. The
+caller chooses `build|extend` and an artifact type but not a modeled layer or
+route. PostgreSQL infers those from active, unlocked preregistered headers and
+the target Zone, then freezes the exact `mapping.standard@1.0.0` profile digest.
+Code Generation retains its explicit modeled Entity discriminator. The public
+create function validates active Model Scope and workflow eligibility,
+canonicalizes Object IDs, and derives the SHA-256 digest and count inside
+PostgreSQL. Caller-supplied digest/count witnesses are not accepted. Profiling
+and Analysis batch requests also require every selected eligible Object to
+belong to one System; multi-System selection remains valid without a batch.
+
+Model Scope itself remains zone-neutral. Run eligibility selects Bronze inputs
+for Profiling through Logical, applied-Logical Silver inputs for Dimensional,
+and Silver or Gold targets for Logical or Dimensional Mapping/Code Generation.
+The web role can read these rows and execute the governed create function, but
+has no direct Application table or sequence mutation privilege.
+
+`application.persist_profiling_results` is the only web Attribute Profile
+write boundary. While the Profiling Run is `running`, it reauthorizes the bound
+actor, requires the owned Tenant Lock and current Model revision, and requires
+one bounded result for every active Bronze Attribute in the immutable selected
+Objects. It replaces Profiles only in those Objects, advances the Model revision
+once when storage changes, and returns that revision for terminal completion.
+
+Two read-through, web-only `SECURITY DEFINER` functions provide Profiling
+execution inputs. `get_profiling_execution_context` reauthorizes the bound Run
+actor, owned Tenant Lock, running Profiling state, current revision, exact active
+discovery assignments, and at least one active eligible Attribute per selected
+Object before returning relation and batch metadata. It derives each catalog
+from the assigned source Tenant. `get_profiling_connection_values` returns one
+credential tuple per exact active GDS Connection for one active Environment. A
+missing Environment or incomplete value set returns one fixed safe failure and
+no partial secrets.
+
+## Governed web Model authoring
+
+Four `application` functions are the only web Model mutation boundary:
+`create_model`, `update_model`, `archive_model`, and `replace_model_scope`.
+They resolve the active actor, derive the owning Tenant from the target Model,
+apply `tenant_model_write` authorization and current Tenant Lock ownership, and
+fence existing Models with `model_revision`. Each actual change increments the
+revision once and records one `model_revision_transaction`; an equivalent update
+or Scope set is a no-op.
+
+Scope replacement stores the exact unique active Object IDs supplied by the
+caller only when every ID is in the canonical Tenant-visible closure. Empty sets
+remain valid. Cross-Tenant and mixed-Zone Objects remain valid when reached by
+discovery, copy/process references, active ingestion mappings, or current active
+Scope. Existing inactive rows are reactivated without changing
+`model_scope_is_locked`; absent rows become inactive rather than being deleted.
+Workflow-specific zone and Mapping eligibility remains a later run-time rule,
+not a Model Scope rule.
+
 ## Roles and privileges
 
 The fresh cluster defines two non-login, non-superuser group roles:
@@ -186,17 +255,24 @@ The fresh cluster defines two non-login, non-superuser group roles:
 - `gds_migration`: schema creation plus all release objects;
 - `gds_app_write`: safe reads, constrained Model/workflow DML,
   sequence use, the pure `CHECK` validator, centralized authorization,
-  governed Tenant Lock functions, and governed Metadata Change Set functions.
+  governed Tenant Lock functions, and governed Metadata Change Set functions;
+- `gds_web_write`: web reads plus the exact 23 secure `application` functions
+  used for Models, Scope, preferences, prompts, runs, events, output templates,
+  guides, and stored SQL artifacts.
 
 `gds_mcp_runtime` is the LOGIN used by App Service. It has exactly one direct
 membership, `gds_app_write`, and each transaction activates that group with
 `SET LOCAL ROLE`.
 
+`gds_web_runtime` is the separate web LOGIN. Its only direct membership is
+`gds_web_write`; it never grants MCP access to the `application` schema.
+
 `PUBLIC` loses schema, table, and function rights. The application role is
 explicitly denied `core.connection_value`. Append-only events, revision
 transactions, and audit projections cannot be
 updated/deleted by the write role. The runtime role cannot directly mutate
-Principal, Tenant-access, Tenant Lock, or Tenant Lock event tables. It can
+Principal, Tenant-access, Tenant Lock, Model Scope, or Tenant Lock event tables,
+and it cannot update web-only Model agent defaults. It can
 insert into `mcp.tool_call_log`, but cannot select, update, delete, or
 truncate that append-only table.
 

@@ -17,12 +17,16 @@ class UnexpectedDatabaseAccess:
     async def fetch_one(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
-        raise AssertionError("dev authorization must not query production identity data")
+        raise AssertionError(
+            "dev authorization must not query production identity data"
+        )
 
     async def fetch_all(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
-        raise AssertionError("dev authorization must not query production identity data")
+        raise AssertionError(
+            "dev authorization must not query production identity data"
+        )
 
 
 @pytest.mark.asyncio

@@ -1,4 +1,4 @@
-"""Bounded Model headers and policy templates for one authorized Tenant."""
+"""Bounded Model headers and policy fields for one authorized Tenant."""
 
 # Pyright cannot see that @server.tool registers this nested handler.
 # pyright: reportUnusedFunction=false
@@ -29,9 +29,9 @@ SELECT model.model_id,
        model.model_name,
        left(model.model_description, 2000) AS model_description,
        model.model_revision,
-       model.silver_model_naming_template,
+       model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
-       model.gold_model_naming_template,
+       model.gold_model_naming_instructions,
        model.gold_model_technical_columns_template,
        model.gold_model_audit_columns_template,
        count(model_scope.object_id) AS model_scope_object_count,
@@ -57,9 +57,9 @@ class ModelDetails(ContractModel):
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
-    silver_model_naming_template: dict[str, JsonValue] | None
+    silver_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     silver_model_audit_columns_template: dict[str, JsonValue] | None
-    gold_model_naming_template: dict[str, JsonValue] | None
+    gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     gold_model_technical_columns_template: dict[str, JsonValue] | None
     gold_model_audit_columns_template: dict[str, JsonValue] | None
     model_scope_object_count: int = Field(ge=0)
@@ -92,7 +92,7 @@ def register_get_model_tool(
     @server.tool(
         description=(
             "Get active Model details for one authorized Tenant, including revision, "
-            "naming/audit policy templates, and current Model Scope Object count."
+            "naming instructions, policy templates, and current Model Scope Object count."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -170,14 +170,10 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int |
     tenant_id = arguments.get("tenant_id")
     page_size = arguments.get("page_size", _MAX_MODELS)
     return {
-        "schema_version": (
-            "1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"
-        ),
+        "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
         "tenant_id": tenant_id if type(tenant_id) is int and tenant_id > 0 else "invalid",
         "page_size": (
-            page_size
-            if type(page_size) is int and 1 <= page_size <= _MAX_MODELS
-            else "invalid"
+            page_size if type(page_size) is int and 1 <= page_size <= _MAX_MODELS else "invalid"
         ),
         "cursor_provided": arguments.get("cursor") is not None,
     }

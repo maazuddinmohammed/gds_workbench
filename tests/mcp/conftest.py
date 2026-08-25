@@ -13,11 +13,12 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
 from psycopg import sql
 from psycopg.conninfo import make_conninfo
 from psycopg.rows import dict_row
 
-from gds_etl_workbench.infrastructure.postgres import PostgresDatabase
+type TestRow = dict[str, Any]
 
 POSTGRES_IMAGE = (
     "postgres:18.4-bookworm@"
@@ -41,6 +42,7 @@ FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
         "DATABASE_URL",
         "GDS_DATABASE_DSN",
         "GDS_LOADER_DSN",
+        "GDS_WEB_DATABASE_DSN",
         "PGDATABASE",
         "PGHOST",
         "PGHOSTADDR",
@@ -60,32 +62,34 @@ class DisposablePostgres:
     database: str
     owner_user: str
     runtime_user: str
+    web_runtime_user: str
     marker: UUID
     _owner_password: str = field(repr=False)
     _runtime_password: str = field(repr=False)
+    _web_runtime_password: str = field(repr=False)
 
-    def connect_owner(self) -> psycopg.Connection[Any]:
-        connection: psycopg.Connection[Any] = psycopg.Connection.connect(
+    def connect_owner(self) -> psycopg.Connection[TestRow]:
+        connection = psycopg.Connection[TestRow].connect(
             host=self.host,
             port=self.port,
             dbname=self.database,
             user=self.owner_user,
             password=self._owner_password,
             connect_timeout=5,
-            row_factory=cast(Any, dict_row),
+            row_factory=dict_row,
         )
         _assert_fixture_identity(connection, self)
         return connection
 
-    def connect_runtime(self) -> psycopg.Connection[Any]:
-        connection: psycopg.Connection[Any] = psycopg.Connection.connect(
+    def connect_runtime(self) -> psycopg.Connection[TestRow]:
+        connection = psycopg.Connection[TestRow].connect(
             host=self.host,
             port=self.port,
             dbname=self.database,
             user=self.runtime_user,
             password=self._runtime_password,
             connect_timeout=5,
-            row_factory=cast(Any, dict_row),
+            row_factory=dict_row,
         )
         _assert_fixture_identity(connection, self)
         connection.execute("SET ROLE gds_app_write")
@@ -100,6 +104,15 @@ class DisposablePostgres:
             password=self._runtime_password,
         )
 
+    def web_runtime_dsn(self) -> str:
+        return make_conninfo(
+            host=self.host,
+            port=self.port,
+            dbname=self.database,
+            user=self.web_runtime_user,
+            password=self._web_runtime_password,
+        )
+
     def create_runtime_adapter(self) -> PostgresDatabase:
         return PostgresDatabase(
             dsn=self.runtime_dsn(),
@@ -109,8 +122,25 @@ class DisposablePostgres:
             require_runtime_role=True,
         )
 
+    def wait_until_ready(self) -> None:
+        deadline = time.monotonic() + 30
+        while time.monotonic() < deadline:
+            try:
+                with psycopg.connect(
+                    host=self.host,
+                    port=self.port,
+                    dbname=self.database,
+                    user=self.owner_user,
+                    password=self._owner_password,
+                    connect_timeout=2,
+                ):
+                    return
+            except psycopg.OperationalError:
+                time.sleep(0.2)
+        pytest.fail("disposable PostgreSQL did not become ready")
 
-def _disposable_postgres() -> Iterator[DisposablePostgres]:
+
+def disposable_postgres() -> Iterator[DisposablePostgres]:
     unexpected = sorted(
         key for key in FORBIDDEN_CONNECTION_ENVIRONMENT if os.environ.get(key)
     )
@@ -123,8 +153,10 @@ def _disposable_postgres() -> Iterator[DisposablePostgres]:
     database = f"gds_{suffix}"
     owner_user = f"owner_{suffix}"
     runtime_user = f"runtime_{suffix}"
+    web_runtime_user = f"web_runtime_{suffix}"
     owner_password = secrets.token_urlsafe(32)
     runtime_password = secrets.token_urlsafe(32)
+    web_runtime_password = secrets.token_urlsafe(32)
 
     started = subprocess.run(
         [
@@ -161,11 +193,13 @@ def _disposable_postgres() -> Iterator[DisposablePostgres]:
             database=database,
             owner_user=owner_user,
             runtime_user=runtime_user,
+            web_runtime_user=web_runtime_user,
             marker=marker,
             _owner_password=owner_password,
             _runtime_password=runtime_password,
+            _web_runtime_password=web_runtime_password,
         )
-        _wait_for_postgres(fixture)
+        fixture.wait_until_ready()
         with fixture.connect_owner() as connection, connection.transaction():
             connection.execute(
                 "CREATE TABLE public.gds_test_sentinel (marker UUID PRIMARY KEY)"
@@ -198,6 +232,10 @@ def _disposable_postgres() -> Iterator[DisposablePostgres]:
                 (runtime_password,),
             )
             connection.execute(
+                "SELECT set_config('gds.test_web_runtime_password', %s, true)",
+                (web_runtime_password,),
+            )
+            connection.execute(
                 sql.SQL(
                     """
                         DO $create_test_runtime$
@@ -217,6 +255,28 @@ def _disposable_postgres() -> Iterator[DisposablePostgres]:
             connection.execute(
                 sql.SQL("GRANT gds_app_write TO {}").format(
                     sql.Identifier(runtime_user)
+                )
+            )
+            connection.execute(
+                sql.SQL(
+                    """
+                        DO $create_test_web_runtime$
+                        BEGIN
+                            EXECUTE format(
+                                'CREATE ROLE %I LOGIN NOINHERIT NOSUPERUSER '
+                                'NOCREATEDB NOCREATEROLE NOREPLICATION '
+                                'NOBYPASSRLS PASSWORD %L',
+                                {},
+                                current_setting('gds.test_web_runtime_password')
+                            );
+                        END;
+                        $create_test_web_runtime$
+                        """
+                ).format(sql.Literal(web_runtime_user))
+            )
+            connection.execute(
+                sql.SQL("GRANT gds_web_write TO {}").format(
+                    sql.Identifier(web_runtime_user)
                 )
             )
             connection.execute(
@@ -252,13 +312,13 @@ def _disposable_postgres() -> Iterator[DisposablePostgres]:
 
 @pytest.fixture(scope="session")
 def postgres_database() -> Iterator[DisposablePostgres]:
-    yield from _disposable_postgres()
+    yield from disposable_postgres()
 
 
 @pytest.fixture(scope="module")
 def bootstrap_postgres_database() -> Iterator[DisposablePostgres]:
     """Provide a pristine database for pre-governance bootstrap tests."""
-    yield from _disposable_postgres()
+    yield from disposable_postgres()
 
 
 def _published_port(container_name: str) -> int:
@@ -279,26 +339,8 @@ def _published_port(container_name: str) -> int:
         pytest.fail("disposable PostgreSQL returned an invalid port")
 
 
-def _wait_for_postgres(fixture: DisposablePostgres) -> None:
-    deadline = time.monotonic() + 30
-    while time.monotonic() < deadline:
-        try:
-            with psycopg.connect(
-                host=fixture.host,
-                port=fixture.port,
-                dbname=fixture.database,
-                user=fixture.owner_user,
-                password=fixture._owner_password,
-                connect_timeout=2,
-            ):
-                return
-        except psycopg.OperationalError:
-            time.sleep(0.2)
-    pytest.fail("disposable PostgreSQL did not become ready")
-
-
 def _assert_fixture_identity(
-    connection: psycopg.Connection[Any],
+    connection: psycopg.Connection[TestRow],
     fixture: DisposablePostgres,
 ) -> None:
     if fixture.host not in {"127.0.0.1", "localhost"}:
@@ -317,7 +359,11 @@ def _assert_fixture_identity(
         raise AssertionError("database fixture identity query returned no row")
     if row["database_name"] != fixture.database or row["major"] != 18:
         raise AssertionError("database fixture identity mismatch")
-    if row["session_user"] not in {fixture.owner_user, fixture.runtime_user}:
+    if row["session_user"] not in {
+        fixture.owner_user,
+        fixture.runtime_user,
+        fixture.web_runtime_user,
+    }:
         raise AssertionError("database fixture user mismatch")
     sentinel_table = connection.execute(
         "SELECT to_regclass('public.gds_test_sentinel') AS relation"

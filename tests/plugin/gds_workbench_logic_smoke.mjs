@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import vm from "node:vm";
 
-const source = await readFile(new URL("../../plugins/gds/skills/open-gds-metadata-workbench/assets/workbench/logic.js", import.meta.url), "utf8");
+const source = await readFile(new URL("../../plugins/v1/gds/skills/open-gds-metadata-workbench/assets/workbench/logic.js", import.meta.url), "utf8");
 const context = { console, JSON, Object, Array, Set, Map, RegExp, Number, String, Error, TextEncoder };
 context.globalThis = context;
 vm.runInNewContext(source, context, { filename: "logic.js" });
@@ -319,12 +319,22 @@ if (process.argv[3]) {
   const manifest = JSON.parse(await readFile(path.join(modelRoot, "manifest.json"), "utf8"));
   const catalog = JSON.parse(await readFile(path.join(modelRoot, "catalog.json"), "utf8"));
   const datasets = {};
+  const changeSetDatasets = {};
   const catalogDatasets = catalog.sections.flatMap(section => section.datasets);
   assert.equal(catalogDatasets.length, 19);
   for (const dataset of catalogDatasets) {
     const liveSchema = JSON.parse(await readFile(path.join(modelRoot, dataset.schema_file), "utf8"));
     const rows = logic.parseRows(await readFile(path.join(modelRoot, dataset.rows_file), "utf8"), dataset.rows_file);
-    assert.equal(logic.validateSchema(liveSchema, dataset.name, true), liveSchema);
+    const changeSetEligible = dataset.name !== "model_scope";
+    assert.equal(
+      liveSchema["x-gds-change-set-eligible"],
+      changeSetEligible,
+      `${dataset.name} eligibility matches the current Model contract`,
+    );
+    assert.equal(
+      logic.validateSchema(liveSchema, dataset.name, changeSetEligible),
+      liveSchema,
+    );
     let validation;
     try {
       validation = logic.validateDataset(rows, liveSchema);
@@ -334,6 +344,7 @@ if (process.argv[3]) {
     }
     assert.equal(validation.length, 0, `${dataset.name} validates: ${JSON.stringify(validation)}`);
     datasets[dataset.name] = rows;
+    if (changeSetEligible) changeSetDatasets[dataset.name] = rows;
   }
   assert.ok(datasets.mapping_dependency);
   assert.ok(datasets.mapping_object);
@@ -348,7 +359,7 @@ if (process.argv[3]) {
     bound.server_change_set.model_change_set_id = "4a4d40a7-7fc9-48ab-b1dc-c14e23ee64ad";
     bound.server_change_set.draft_revision = 3;
     bound.server_change_set.status = "active";
-    const stageDocument = logic.modelStageDocument(manifest, bound, datasets);
+    const stageDocument = logic.modelStageDocument(manifest, bound, changeSetDatasets);
     await writeFile(path.resolve(process.argv[5]), logic.serializeJsonDocument(stageDocument).content, "utf8");
   }
 }

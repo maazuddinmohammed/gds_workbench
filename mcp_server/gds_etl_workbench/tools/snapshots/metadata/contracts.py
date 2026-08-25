@@ -408,7 +408,8 @@ DATASETS = (
                 ObjectRecord,
                 OBJECT_KEY,
                 references=(
-                    _reference(CONNECTION_KEY, "connection", CONNECTION_KEY),
+                    _reference(("tenant_code",), "tenant", TENANT_KEY),
+                    _reference(("system_code",), "system", SYSTEM_KEY),
                     _reference(("object_type_code",), "object_type", ("object_type_code",)),
                     _reference(("zone_code",), "zone", ("zone_code",)),
                 ),

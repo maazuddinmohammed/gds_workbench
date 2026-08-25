@@ -15,8 +15,9 @@ from gds_etl_workbench.domain.modeling_records import (
     normalize_model_key_value,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import (
+    CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
-    DATASETS_BY_NAME,
+    ModelChangeSetDataset,
     ModelingDatasetDefinition,
     ModelSnapshot,
     model_snapshot_records,
@@ -52,6 +53,14 @@ class PhysicalModelScope:
     active_system_codes: frozenset[str]
     objects: frozenset[PhysicalObjectNaturalKey]
     attributes: frozenset[PhysicalAttributeNaturalKey]
+    bronze_source_objects: frozenset[PhysicalObjectNaturalKey]
+    bronze_source_attributes: frozenset[PhysicalAttributeNaturalKey]
+    dimensional_source_objects: frozenset[PhysicalObjectNaturalKey]
+    dimensional_source_attributes: frozenset[PhysicalAttributeNaturalKey]
+    logical_mapping_target_objects: frozenset[PhysicalObjectNaturalKey]
+    logical_mapping_target_attributes: frozenset[PhysicalAttributeNaturalKey]
+    dimensional_mapping_target_objects: frozenset[PhysicalObjectNaturalKey]
+    dimensional_mapping_target_attributes: frozenset[PhysicalAttributeNaturalKey]
     other_model_names: frozenset[str] = frozenset()
 
 
@@ -69,10 +78,10 @@ class ValidatedModelChangeSet:
 
 
 def validate_staged_records(
-    dataset: str,
+    dataset: ModelChangeSetDataset,
     raw_records: list[dict[str, object]],
 ) -> tuple[tuple[ModelingRecord, ...], tuple[ModelValidationIssue, ...]]:
-    definition = DATASETS_BY_NAME[dataset]
+    definition = CHANGE_SET_DATASETS_BY_NAME[dataset]
     records: list[ModelingRecord] = []
     issues: list[ModelValidationIssue] = []
     seen: set[tuple[object, ...]] = set()
@@ -80,7 +89,7 @@ def validate_staged_records(
         try:
             encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
             record = definition.row_model.model_validate_json(encoded, strict=True)
-        except (TypeError, ValueError, ValidationError):
+        except TypeError, ValueError, ValidationError:
             issues.append(
                 ModelValidationIssue(
                     code="record_schema_invalid",
@@ -111,7 +120,7 @@ def validate_staged_records(
 def validate_future_graph(
     *,
     snapshot: ModelSnapshot,
-    staged_documents: dict[str, list[dict[str, object]]],
+    staged_documents: dict[ModelChangeSetDataset, list[dict[str, object]]],
     physical_scope: PhysicalModelScope,
 ) -> ValidatedModelChangeSet:
     effective = model_snapshot_records(snapshot)
@@ -173,6 +182,7 @@ def validate_future_graph(
 
     reference_issues: list[ModelValidationIssue] = []
     _validate_references(future, reference_issues)
+    _validate_active_downstream_dependencies(future, reference_issues)
     if reference_issues:
         return _failed(staged, "references", candidate_digest, reference_issues)
 
@@ -335,15 +345,50 @@ def _validate_physical_scope(
         active_system_codes=catalog.active_system_codes,
         objects=frozenset(active_scope_objects),
         attributes=frozenset(
+            attribute for attribute in catalog.attributes if attribute[:5] in active_scope_objects
+        ),
+        bronze_source_objects=catalog.bronze_source_objects.intersection(active_scope_objects),
+        bronze_source_attributes=frozenset(
             attribute
-            for attribute in catalog.attributes
+            for attribute in catalog.bronze_source_attributes
+            if attribute[:5] in active_scope_objects
+        ),
+        dimensional_source_objects=catalog.dimensional_source_objects.intersection(
+            active_scope_objects
+        ),
+        dimensional_source_attributes=frozenset(
+            attribute
+            for attribute in catalog.dimensional_source_attributes
+            if attribute[:5] in active_scope_objects
+        ),
+        logical_mapping_target_objects=(
+            catalog.logical_mapping_target_objects.intersection(active_scope_objects)
+        ),
+        logical_mapping_target_attributes=frozenset(
+            attribute
+            for attribute in catalog.logical_mapping_target_attributes
+            if attribute[:5] in active_scope_objects
+        ),
+        dimensional_mapping_target_objects=(
+            catalog.dimensional_mapping_target_objects.intersection(active_scope_objects)
+        ),
+        dimensional_mapping_target_attributes=frozenset(
+            attribute
+            for attribute in catalog.dimensional_mapping_target_attributes
             if attribute[:5] in active_scope_objects
         ),
         other_model_names=catalog.other_model_names,
     )
 
     for record in staged.get("profiling_profile", ()):
-        _require_attribute_scope(record, "profiling_profile", "attribute_name", scope, issues)
+        _require_attribute_eligibility(
+            record,
+            "profiling_profile",
+            "attribute_name",
+            scope.bronze_source_attributes,
+            "Referenced physical Attribute is not an eligible Bronze source.",
+            issues,
+        )
     for record in staged.get("analysis_result", ()):
         for endpoint in ("from", "to"):
             key = tuple(
@@ -357,12 +402,12 @@ def _validate_physical_scope(
                     "attribute_name",
                 )
             )
-            if key not in scope.attributes:
+            if key not in scope.bronze_source_attributes:
                 _scope_missing(
                     issues,
                     "analysis_result",
                     f"{endpoint}_attribute_name",
-                    "Referenced physical Attribute is not active in this Model Scope.",
+                    "Referenced physical Attribute is not an eligible Bronze source.",
                 )
 
     for record in staged.get("modeling_assertion_document", ()):
@@ -390,11 +435,12 @@ def _validate_physical_scope(
         for record in staged.get(dataset, ()):
             for support in record.supports:
                 if support.support_source_type == "object":
-                    _require_object_scope(
+                    _require_object_eligibility(
                         support.source_object,
                         dataset,
                         "source_object",
-                        scope,
+                        scope.bronze_source_objects,
+                        "Referenced physical Object is not an eligible Bronze source.",
                         issues,
                     )
 
@@ -402,21 +448,43 @@ def _validate_physical_scope(
         for record in staged.get(f"{layer}_entity", ()):
             for source in record.sources:
                 if source.support_source_type == "object":
-                    _require_object_scope(
+                    eligible_objects = (
+                        scope.bronze_source_objects
+                        if layer == "logical"
+                        else scope.dimensional_source_objects
+                    )
+                    _require_object_eligibility(
                         source.source_object,
                         f"{layer}_entity",
                         "source_object",
-                        scope,
+                        eligible_objects,
+                        (
+                            "Referenced physical Object is not an eligible Bronze source."
+                            if layer == "logical"
+                            else "Referenced physical Object is not an eligible Silver "
+                            "contribution from applied Logical Mapping."
+                        ),
                         issues,
                     )
         for record in staged.get(f"{layer}_attribute", ()):
             for source in record.sources:
                 if source.support_source_type == "attribute":
-                    _require_attribute_scope(
+                    eligible_attributes = (
+                        scope.bronze_source_attributes
+                        if layer == "logical"
+                        else scope.dimensional_source_attributes
+                    )
+                    _require_attribute_eligibility(
                         source.source_attribute,
                         f"{layer}_attribute",
                         "source_attribute",
-                        scope,
+                        eligible_attributes,
+                        (
+                            "Referenced physical Attribute is not an eligible Bronze source."
+                            if layer == "logical"
+                            else "Referenced physical Attribute is not an eligible Silver "
+                            "contribution from applied Logical Mapping."
+                        ),
                         issues,
                     )
 
@@ -428,7 +496,19 @@ def _validate_physical_scope(
             issues,
         )
     for record in staged.get("mapping_object", ()):
-        _require_object_scope(record, "mapping_object", "object_name", scope, issues)
+        object_targets = (
+            scope.logical_mapping_target_objects
+            if record.modeled_entity_type == "logical_entity"
+            else scope.dimensional_mapping_target_objects
+        )
+        _require_object_eligibility(
+            record,
+            "mapping_object",
+            "object_name",
+            object_targets,
+            "Referenced Mapping target Object is not eligible for its modeled layer.",
+            issues,
+        )
         _require_active_system(
             record.source_system_code,
             "mapping_object",
@@ -436,29 +516,24 @@ def _validate_physical_scope(
             issues,
         )
     for record in staged.get("mapping_attribute", ()):
-        _require_attribute_scope(record, "mapping_attribute", "attribute_name", scope, issues)
+        attribute_targets = (
+            scope.logical_mapping_target_attributes
+            if record.modeled_entity_type == "logical_entity"
+            else scope.dimensional_mapping_target_attributes
+        )
+        _require_attribute_eligibility(
+            record,
+            "mapping_attribute",
+            "attribute_name",
+            attribute_targets,
+            "Referenced Mapping target Attribute is not eligible for its modeled layer.",
+            issues,
+        )
         _require_active_system(
             record.source_system_code,
             "mapping_attribute",
             scope,
             issues,
-        )
-
-
-def _require_object_scope(
-    key: Any,
-    dataset: str,
-    field: str,
-    scope: PhysicalModelScope,
-    issues: list[ModelValidationIssue],
-) -> None:
-    natural_key = _physical_object_key(key)
-    if natural_key not in scope.objects:
-        _scope_missing(
-            issues,
-            dataset,
-            field,
-            "Referenced physical Object is not active in this Model Scope.",
         )
 
 
@@ -478,31 +553,45 @@ def _physical_object_key(key: Any) -> PhysicalObjectNaturalKey:
     )
 
 
-def _require_attribute_scope(
+def _require_object_eligibility(
     key: Any,
     dataset: str,
     field: str,
-    scope: PhysicalModelScope,
+    eligible_objects: frozenset[PhysicalObjectNaturalKey],
+    message: str,
     issues: list[ModelValidationIssue],
 ) -> None:
-    natural_key = tuple(
-        normalize_model_key_value(getattr(key, name))
-        for name in (
-            "tenant_code",
-            "system_code",
-            "connection_code",
-            "object_schema",
-            "object_name",
-            "attribute_name",
-        )
+    if _physical_object_key(key) not in eligible_objects:
+        _scope_missing(issues, dataset, field, message)
+
+
+def _require_attribute_eligibility(
+    key: Any,
+    dataset: str,
+    field: str,
+    eligible_attributes: frozenset[PhysicalAttributeNaturalKey],
+    message: str,
+    issues: list[ModelValidationIssue],
+) -> None:
+    if _physical_attribute_key(key) not in eligible_attributes:
+        _scope_missing(issues, dataset, field, message)
+
+
+def _physical_attribute_key(key: Any) -> PhysicalAttributeNaturalKey:
+    return cast(
+        PhysicalAttributeNaturalKey,
+        tuple(
+            normalize_model_key_value(getattr(key, name))
+            for name in (
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+                "attribute_name",
+            )
+        ),
     )
-    if natural_key not in scope.attributes:
-        _scope_missing(
-            issues,
-            dataset,
-            field,
-            "Referenced physical Attribute is not active in this Model Scope.",
-        )
 
 
 def _require_active_system(
@@ -638,6 +727,159 @@ def _validate_references(
             normalize_model_key_value(record.modeled_attribute_name),
         ) not in modeled_attributes:
             _missing(issues, "mapping_attribute", "modeled_attribute_name")
+
+
+def _validate_active_downstream_dependencies(
+    future: dict[str, tuple[Any, ...]],
+    issues: list[ModelValidationIssue],
+) -> None:
+    active_entities = {
+        "logical_entity": {
+            normalize_model_key_value(record.logical_entity_name)
+            for record in future["logical_entity"]
+            if record.logical_entity_status == "active"
+        },
+        "dimensional_entity": {
+            normalize_model_key_value(record.dimensional_entity_name)
+            for record in future["dimensional_entity"]
+            if record.dimensional_entity_status == "active"
+        },
+    }
+    active_attributes = {
+        "logical_entity": {
+            (
+                normalize_model_key_value(record.logical_entity_name),
+                normalize_model_key_value(record.logical_attribute_name),
+            )
+            for record in future["logical_attribute"]
+            if record.logical_attribute_status == "active"
+        },
+        "dimensional_entity": {
+            (
+                normalize_model_key_value(record.dimensional_entity_name),
+                normalize_model_key_value(record.dimensional_attribute_name),
+            )
+            for record in future["dimensional_attribute"]
+            if record.dimensional_attribute_status == "active"
+        },
+    }
+    active_dependencies = {
+        (record.modeled_entity_type, normalize_model_key_value(record.source_system_code))
+        for record in future["mapping_dependency"]
+        if record.mapping_source_system_dependency_status == "active"
+    }
+
+    active_mapping_objects: set[tuple[object, ...]] = set()
+    logical_object_witnesses: set[PhysicalObjectNaturalKey] = set()
+    for record in future["mapping_object"]:
+        if record.object_mapping_status != "active":
+            continue
+        entity_key = normalize_model_key_value(record.modeled_entity_name)
+        entity_is_active = entity_key in active_entities[record.modeled_entity_type]
+        dependency_is_active = (
+            record.modeled_entity_type,
+            normalize_model_key_value(record.source_system_code),
+        ) in active_dependencies
+        if not entity_is_active:
+            _active_dependency_invalid(
+                issues,
+                "mapping_object",
+                "modeled_entity_name",
+                "Active Mapping Object requires an active modeled Entity.",
+            )
+        if not dependency_is_active:
+            _active_dependency_invalid(
+                issues,
+                "mapping_object",
+                "mapping_dependency",
+                "Active Mapping Object requires an active source System dependency.",
+            )
+        if not entity_is_active or not dependency_is_active:
+            continue
+        active_mapping_objects.add(_mapping_object_reference(record))
+        if record.modeled_entity_type == "logical_entity":
+            logical_object_witnesses.add(_physical_object_key(record))
+
+    logical_attribute_witnesses: set[PhysicalAttributeNaturalKey] = set()
+    for record in future["mapping_attribute"]:
+        if record.attribute_mapping_status != "active":
+            continue
+        parent_is_active = _mapping_object_reference(record) in active_mapping_objects
+        attribute_is_active = (
+            normalize_model_key_value(record.modeled_entity_name),
+            normalize_model_key_value(record.modeled_attribute_name),
+        ) in active_attributes[record.modeled_entity_type]
+        if not parent_is_active:
+            _active_dependency_invalid(
+                issues,
+                "mapping_attribute",
+                "mapping_object",
+                "Active Mapping Attribute requires its active Mapping Object.",
+            )
+        if not attribute_is_active:
+            _active_dependency_invalid(
+                issues,
+                "mapping_attribute",
+                "modeled_attribute_name",
+                "Active Mapping Attribute requires an active modeled Attribute.",
+            )
+        if (
+            parent_is_active
+            and attribute_is_active
+            and record.modeled_entity_type == "logical_entity"
+        ):
+            logical_attribute_witnesses.add(_physical_attribute_key(record))
+
+    for record in future["dimensional_entity"]:
+        if record.dimensional_entity_status != "active":
+            continue
+        for source in record.sources:
+            if (
+                source.support_source_type == "object"
+                and source.status in {"active", "needs_review"}
+                and _physical_object_key(source.source_object)
+                not in logical_object_witnesses
+            ):
+                _active_dependency_invalid(
+                    issues,
+                    "dimensional_entity",
+                    "sources",
+                    "Active Dimensional Entity source requires active Logical Mapping.",
+                )
+
+    for record in future["dimensional_attribute"]:
+        if record.dimensional_attribute_status != "active":
+            continue
+        for source in record.sources:
+            if (
+                source.support_source_type == "attribute"
+                and source.status in {"active", "needs_review"}
+                and _physical_attribute_key(source.source_attribute)
+                not in logical_attribute_witnesses
+            ):
+                _active_dependency_invalid(
+                    issues,
+                    "dimensional_attribute",
+                    "sources",
+                    "Active Dimensional Attribute source requires active Logical Mapping.",
+                )
+
+
+def _active_dependency_invalid(
+    issues: list[ModelValidationIssue],
+    dataset: str,
+    field: str,
+    message: str,
+) -> None:
+    issues.append(
+        ModelValidationIssue(
+            code="active_dependency_invalid",
+            dataset=dataset,
+            record_number=None,
+            fields=(field,),
+            message=message,
+        )
+    )
 
 
 def _validate_modeled_layer(

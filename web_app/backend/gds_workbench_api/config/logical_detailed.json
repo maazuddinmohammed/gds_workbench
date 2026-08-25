@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0",
+  "max_relationship_signals": 50000,
+  "validation_package_size": 100,
+  "max_validation_packages": 10000
+}

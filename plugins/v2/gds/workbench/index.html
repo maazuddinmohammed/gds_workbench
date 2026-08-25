@@ -1,0 +1,140 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="color-scheme" content="light">
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self'; style-src 'self'; img-src 'self' data:; connect-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'">
+    <title>GDS Workbench</title>
+    <link rel="stylesheet" href="styles.css">
+  </head>
+  <body>
+    <header class="topbar">
+      <div class="brand" aria-label="GDS Workbench">
+        <span class="brand-mark">GDS</span>
+        <span class="brand-name">Workbench</span>
+      </div>
+      <div class="session-line">
+        <span class="eyebrow">Local session</span>
+        <strong id="session-name">Not connected</strong>
+        <span id="task-state" class="state-pill">idle</span>
+      </div>
+      <div class="top-actions">
+        <button id="connect-button" class="button button-primary">Connect session</button>
+        <button id="refresh-button" class="button" disabled>Refresh</button>
+      </div>
+    </header>
+
+    <nav class="area-tabs" aria-label="Focus area" role="tablist">
+      <button class="area-tab is-active" data-area="metadata" role="tab" aria-selected="true" aria-controls="workspace-panel" disabled>Metadata</button>
+      <button class="area-tab" data-area="model" role="tab" aria-selected="false" aria-controls="workspace-panel" disabled>Model</button>
+      <span id="snapshot-state" class="snapshot-state">Select one existing session folder.</span>
+    </nav>
+
+    <main class="layout">
+      <aside class="dataset-rail" aria-label="Datasets">
+        <label class="field-label" for="dataset-search">Datasets</label>
+        <input id="dataset-search" class="input" type="search" placeholder="Filter datasets" disabled>
+        <div id="dataset-list" class="dataset-list">
+          <p class="empty-copy">No session connected.</p>
+        </div>
+      </aside>
+
+      <section id="workspace-panel" class="work-area" role="tabpanel" aria-labelledby="dataset-title">
+        <div class="work-heading">
+          <div>
+            <span id="dataset-section" class="eyebrow">No dataset</span>
+            <h1 id="dataset-title">Connect a session to begin</h1>
+          </div>
+          <div class="record-nav" aria-label="Record page controls">
+            <button id="previous-page" class="icon-button" disabled aria-label="Previous page">←</button>
+            <button id="all-groups" class="group-toggle" disabled aria-pressed="false">All</button>
+            <span id="page-label">0 / 0</span>
+            <button id="next-page" class="icon-button" disabled aria-label="Next page">→</button>
+          </div>
+        </div>
+
+        <div class="record-filter-row">
+          <input id="record-filter" class="input" type="search" aria-label="Filter visible records" placeholder="Filter visible records" disabled>
+          <div class="segmented" aria-label="Preview source">
+            <button data-preview="effective" class="is-active" aria-pressed="true" disabled>Effective</button>
+            <button data-preview="snapshot" aria-pressed="false" disabled>Snapshot</button>
+          </div>
+        </div>
+
+        <div class="editor-grid">
+          <section class="pane pane-preview">
+            <div class="pane-heading">
+              <span id="preview-label">Effective records</span>
+              <span id="preview-count" class="muted">0 records</span>
+            </div>
+            <pre id="record-preview" tabindex="0" aria-label="Read-only Snapshot or effective record preview">[]</pre>
+          </section>
+          <section class="pane pane-editor">
+            <div class="pane-heading">
+              <span>Local Change Set</span>
+              <span id="pending-digest" class="digest">not created</span>
+            </div>
+            <textarea id="pending-editor" aria-label="Local Change Set JSON draft" spellcheck="false" disabled>[]</textarea>
+          </section>
+        </div>
+
+        <div class="edit-actions">
+          <button id="copy-visible" class="button" disabled>Copy visible</button>
+          <span class="action-note">Save writes local JSON only.</span>
+          <button id="discard-button" class="button" disabled>Discard edits</button>
+          <button id="save-button" class="button button-primary" disabled>Save dataset</button>
+        </div>
+      </section>
+
+      <aside class="validation-rail" aria-label="Validation">
+        <div class="validation-heading">
+          <div>
+            <span class="eyebrow">On demand</span>
+            <h2>Validation</h2>
+          </div>
+          <button id="validate-button" class="button" disabled>Validate</button>
+        </div>
+        <div id="validation-summary" class="validation-summary is-neutral" role="status" aria-live="polite">
+          Validation has not run.
+        </div>
+        <ol id="issue-list" class="issue-list" aria-label="Local validation issues"></ol>
+        <div class="acceptance-actions">
+          <button id="accept-button" class="button button-primary" disabled>Accept valid</button>
+          <button id="override-button" class="button button-danger" disabled>Override failures</button>
+        </div>
+        <p class="rail-note">Acceptance binds the exact local digest. Server validation is never bypassed.</p>
+      </aside>
+    </main>
+
+    <footer class="statusbar">
+      <span id="status-message" role="status" aria-live="polite" aria-atomic="true">Workbench is local-only. No network or server actions are available.</span>
+      <span id="connection-capability">Chrome or Edge directory access required</span>
+    </footer>
+
+    <dialog id="override-dialog" aria-labelledby="override-title" aria-describedby="override-description">
+      <form method="dialog" class="dialog-form">
+        <span class="eyebrow">Explicit local override</span>
+        <h2 id="override-title">Accept validation failures?</h2>
+        <p id="override-description">This does not bypass server validation. Explain why local work may proceed.</p>
+        <label class="field-label" for="override-reason">Reason</label>
+        <textarea id="override-reason" maxlength="300" required></textarea>
+        <div class="dialog-actions">
+          <button value="cancel" class="button">Cancel</button>
+          <button id="confirm-override" value="confirm" class="button button-danger">Accept failures</button>
+        </div>
+      </form>
+    </dialog>
+
+    <script src="unicode.js"></script>
+    <script src="core.js"></script>
+    <script src="validation/common.js"></script>
+    <script src="validation/metadata.js"></script>
+    <script src="validation/model.js"></script>
+    <script src="metadata.js"></script>
+    <script src="model.js"></script>
+    <script src="workspace.js"></script>
+    <script src="ui-state.js"></script>
+    <script src="app.js"></script>
+  </body>
+</html>

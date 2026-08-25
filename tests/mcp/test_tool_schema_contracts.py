@@ -83,6 +83,34 @@ async def test_every_advertised_tool_schema_is_valid_json_schema() -> None:
 
 
 @pytest.mark.asyncio
+async def test_public_tool_schemas_exclude_web_application_contracts() -> None:
+    forbidden_fragments = {
+        "application.",
+        "default_agent_",
+        "generated_sql_artifact",
+        "output_template_id",
+        "prompt_assignment",
+        "prompt_template",
+        "prompt_version_id",
+        "sql_generation_guide",
+        "workflow_run_id",
+    }
+
+    for tool in await _list_tools():
+        contract = json.dumps(
+            {
+                "input": tool.input_schema,
+                "output": tool.output_schema,
+            },
+            sort_keys=True,
+        ).lower()
+        exposed = sorted(
+            fragment for fragment in forbidden_fragments if fragment in contract
+        )
+        assert exposed == [], f"{tool.name} exposes web-only fields: {exposed}"
+
+
+@pytest.mark.asyncio
 async def test_execute_databricks_sql_requires_source_connection_environment_and_sql() -> (
     None
 ):
@@ -107,7 +135,11 @@ async def test_execute_databricks_sql_requires_source_connection_environment_and
 @pytest.mark.asyncio
 async def test_plugin_contract_fingerprint_matches_the_runtime() -> None:
     contract_path = (
-        Path(__file__).resolve().parents[2] / "plugins" / "gds" / "tool-contract.json"
+        Path(__file__).resolve().parents[2]
+        / "plugins"
+        / "v1"
+        / "gds"
+        / "tool-contract.json"
     )
     contract = json.loads(contract_path.read_text(encoding="utf-8"))
     tools = await _list_tools()
@@ -134,10 +166,10 @@ async def test_change_set_prompts_are_parallel_and_bounded() -> None:
         )
 
     prompt_names = {prompt.name for prompt in listed.prompts}
-    assert {
+    assert prompt_names == {
         "work_with_metadata_change_set",
         "work_with_model_change_set",
-    } <= prompt_names
+    }
 
     metadata_content = metadata_result.messages[0].content
     assert metadata_content.type == "text"
@@ -164,6 +196,7 @@ async def test_change_set_prompts_are_parallel_and_bounded() -> None:
     assert (
         "If resumed, fetch the summary and every dataset with a nonzero count" in text
     )
+    assert "Model Scope is read-only through MCP" in text
     stage_approval = text.index("ask before stage_model_change_set")
     apply_approval = text.index(
         "fresh approval immediately before apply_model_change_set"
@@ -172,6 +205,14 @@ async def test_change_set_prompts_are_parallel_and_bounded() -> None:
     assert "Release any lock this workflow acquired when it stops" in text
     assert "archive needs no current lock" in text
     assert len(content.text.split()) <= 190
+
+
+@pytest.mark.asyncio
+async def test_mcp_has_no_public_resources() -> None:
+    async with Client(_server()) as client:
+        listed = await client.list_resources()
+
+    assert listed.resources == []
 
 
 def test_server_instructions_are_intent_bounded_and_compact() -> None:

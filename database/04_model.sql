@@ -8,11 +8,17 @@ CREATE TABLE model.model (
     model_name VARCHAR(255) NOT NULL,
     model_description VARCHAR(2000),
     model_revision BIGINT NOT NULL DEFAULT 1,
-    silver_model_naming_template JSONB,
+    silver_model_naming_instructions TEXT,
     silver_model_audit_columns_template JSONB,
-    gold_model_naming_template JSONB,
+    gold_model_naming_instructions TEXT,
     gold_model_technical_columns_template JSONB,
     gold_model_audit_columns_template JSONB,
+    default_agent_sdk_code VARCHAR(100),
+    default_agent_provider_code VARCHAR(100),
+    default_agent_model_code VARCHAR(200),
+    default_reasoning_effort_code VARCHAR(50),
+    default_max_turns INTEGER,
+    default_validation_retry_count INTEGER,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -27,15 +33,55 @@ CREATE TABLE model.model (
         OR reference.is_nonblank(model_description)
     ),
     CONSTRAINT ck_model_revision CHECK (model_revision > 0),
-    CONSTRAINT ck_model_silver_policy_group CHECK (
-        (silver_model_naming_template IS NULL)
-        = (silver_model_audit_columns_template IS NULL)
+    CONSTRAINT ck_model_silver_naming_instructions CHECK (
+        silver_model_naming_instructions IS NULL
+        OR (
+            reference.is_nonblank(silver_model_naming_instructions)
+            AND octet_length(silver_model_naming_instructions) <= 32768
+        )
     ),
-    CONSTRAINT ck_model_gold_policy_group CHECK (
-        (gold_model_naming_template IS NULL)
-        = (gold_model_technical_columns_template IS NULL)
-        AND (gold_model_naming_template IS NULL)
-        = (gold_model_audit_columns_template IS NULL)
+    CONSTRAINT ck_model_gold_naming_instructions CHECK (
+        gold_model_naming_instructions IS NULL
+        OR (
+            reference.is_nonblank(gold_model_naming_instructions)
+            AND octet_length(gold_model_naming_instructions) <= 32768
+        )
+    ),
+    CONSTRAINT ck_model_default_agent_configuration CHECK (
+        (
+            default_agent_sdk_code IS NULL
+            AND default_agent_provider_code IS NULL
+            AND default_agent_model_code IS NULL
+            AND default_reasoning_effort_code IS NULL
+            AND default_max_turns IS NULL
+            AND default_validation_retry_count IS NULL
+        ) OR (
+            default_agent_sdk_code IS NOT NULL
+            AND default_agent_provider_code IS NOT NULL
+            AND default_agent_model_code IS NOT NULL
+            AND default_reasoning_effort_code IS NOT NULL
+            AND default_max_turns BETWEEN 1 AND 50
+            AND default_validation_retry_count BETWEEN 0 AND 5
+        )
+    ),
+    CONSTRAINT ck_model_default_agent_codes CHECK (
+        (
+            default_agent_sdk_code IS NULL
+            OR default_agent_sdk_code ~ '^[a-z][a-z0-9_.-]{0,99}$'
+        )
+        AND (
+            default_agent_provider_code IS NULL
+            OR default_agent_provider_code ~ '^[a-z][a-z0-9_.-]{0,99}$'
+        )
+        AND (
+            default_agent_model_code IS NULL
+            OR default_agent_model_code
+                ~ '^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$'
+        )
+        AND (
+            default_reasoning_effort_code IS NULL
+            OR default_reasoning_effort_code ~ '^[a-z][a-z0-9_-]{0,49}$'
+        )
     )
 );
 
@@ -62,6 +108,9 @@ CREATE TABLE model.model_event_log (
     model_id BIGINT NOT NULL,
     correlation_id UUID NOT NULL,
     agent_run_id VARCHAR(500),
+    workflow_run_id BIGINT,
+    model_event_log_sequence BIGINT NOT NULL,
+    model_event_log_attempt INTEGER NOT NULL,
     model_workflow VARCHAR(30) NOT NULL,
     model_event_log_stage VARCHAR(100) NOT NULL,
     model_event_log_status VARCHAR(30) NOT NULL,
@@ -77,8 +126,13 @@ CREATE TABLE model.model_event_log (
     CONSTRAINT ck_model_event_log_workflow CHECK (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual',
-            'logical', 'dimensional', 'mapping', 'dbml'
+            'logical', 'dimensional', 'mapping',
+            'code_generation', 'dbml'
         )
+    ),
+    CONSTRAINT ck_model_event_log_order CHECK (
+        model_event_log_sequence > 0
+        AND model_event_log_attempt > 0
     ),
     CONSTRAINT ck_model_event_log_stage CHECK (
         reference.is_nonblank(model_event_log_stage)
@@ -104,8 +158,33 @@ CREATE TABLE model.model_event_log (
             OR model_event_log_percent BETWEEN 0 AND 100
         )
         AND finding_count >= 0
+    ),
+    CONSTRAINT uq_model_event_log_sequence UNIQUE (
+        model_id,
+        correlation_id,
+        model_event_log_sequence
     )
 );
+
+CREATE FUNCTION model.reject_model_event_log_mutation()
+RETURNS TRIGGER
+LANGUAGE plpgsql
+SET search_path = pg_catalog
+AS $reject_model_event_log_mutation$
+BEGIN
+    RAISE EXCEPTION 'Model event log is append-only' USING ERRCODE = '55000';
+END;
+$reject_model_event_log_mutation$;
+
+CREATE TRIGGER reject_model_event_log_mutation
+BEFORE UPDATE OR DELETE OR TRUNCATE
+ON model.model_event_log
+FOR EACH STATEMENT
+EXECUTE FUNCTION model.reject_model_event_log_mutation();
+
+CREATE INDEX ix_model_event_log_run_sequence
+    ON model.model_event_log (workflow_run_id, model_event_log_sequence)
+    WHERE workflow_run_id IS NOT NULL;
 
 CREATE TABLE model.modeling_assertion_document (
     modeling_assertion_document_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -119,6 +198,7 @@ CREATE TABLE model.modeling_assertion_document (
     modeling_assertion_document_metadata JSONB NOT NULL DEFAULT '{}'::JSONB,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     agent_run_id VARCHAR(500),
+    workflow_run_id BIGINT,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -165,6 +245,7 @@ CREATE TABLE model.modeling_assertion_record (
     modeling_assertion_record_status VARCHAR(20) NOT NULL DEFAULT 'active',
     modeling_assertion_record_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     agent_run_id VARCHAR(500),
+    workflow_run_id BIGINT,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,

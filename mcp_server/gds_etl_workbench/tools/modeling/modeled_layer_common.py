@@ -181,6 +181,7 @@ DIMENSIONAL = LayerConfig(
         "dimensional_relationship_definition",
         "dimensional_relationship_kind",
         "dimensional_relationship_cardinality",
+        "dimensional_relationship_is_optional",
         "dimensional_relationship_role_name",
         "dimensional_relationship_confidence",
         "dimensional_relationship_basis",
@@ -503,6 +504,11 @@ SELECT submodel.{config.submodel_id},
 
 def entities_sql(config: LayerConfig) -> LiteralString:
     selected = _select_fields("entity", config.entity_fields)
+    eligibility_field = (
+        "is_bronze_source_eligible"
+        if config.layer == "logical"
+        else "is_dimensional_source_eligible"
+    )
     role_field = (
         f"'source_role', source.{config.entity_source_role_column},"
         if config.entity_source_role_column is not None
@@ -511,6 +517,16 @@ def entities_sql(config: LayerConfig) -> LiteralString:
     return cast(
         LiteralString,
         f"""
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_objects AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT entity.{config.entity_id},
        {selected},
        COALESCE((
@@ -582,8 +598,12 @@ SELECT entity.{config.entity_id},
                ON source_object.object_id = source.source_object_id
              LEFT JOIN core.connection AS source_connection
                ON source_connection.connection_id = source_object.connection_id
+             LEFT JOIN eligible_objects AS source_eligibility
+               ON source_eligibility.object_id = source.source_object_id
+              AND source_eligibility.model_id = source.model_id
+              AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
-               ON source_tenant.tenant_id = source_connection.tenant_id
+               ON source_tenant.tenant_id = source_eligibility.object_tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
              LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -596,15 +616,15 @@ SELECT entity.{config.entity_id},
                   source.support_source_type <> 'object'
                   OR EXISTS (
                       SELECT 1
-                        FROM model.model_scope AS active_scope
-                       WHERE active_scope.model_id = source.model_id
-                         AND active_scope.object_id = source.source_object_id
-                         AND active_scope.is_active
+                        FROM eligible_objects AS eligibility
+                       WHERE eligibility.object_id = source.source_object_id
+                         AND eligibility.model_id = source.model_id
+                         AND eligibility.{eligibility_field}
                   )
               )
        ), '[]'::JSONB) AS sources
   FROM {config.entity_table} AS entity
- WHERE entity.model_id = %s
+ WHERE entity.model_id = (SELECT model_id FROM requested_model)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR EXISTS (
@@ -614,6 +634,13 @@ SELECT entity.{config.entity_id},
               AND selected_source.{config.entity_id} = entity.{config.entity_id}
               AND selected_source.support_source_type = 'object'
               AND selected_source.source_object_id = ANY(%s::BIGINT[])
+              AND EXISTS (
+                  SELECT 1
+                    FROM eligible_objects AS eligibility
+                   WHERE eligibility.object_id = selected_source.source_object_id
+                     AND eligibility.model_id = selected_source.model_id
+                     AND eligibility.{eligibility_field}
+              )
        )
    )
  ORDER BY entity.{config.layer}_entity_dependency_order,
@@ -626,9 +653,24 @@ SELECT entity.{config.entity_id},
 
 def attributes_sql(config: LayerConfig) -> LiteralString:
     selected = _select_fields("attribute", config.attribute_fields)
+    eligibility_field = (
+        "is_bronze_source_eligible"
+        if config.layer == "logical"
+        else "is_dimensional_source_eligible"
+    )
     return cast(
         LiteralString,
         f"""
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_attributes AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT attribute.{config.attribute_id},
        attribute.{config.entity_id},
        entity.{config.layer}_entity_name,
@@ -690,8 +732,13 @@ SELECT attribute.{config.attribute_id},
               AND source_attribute.object_id = source.source_object_id
              LEFT JOIN core.connection AS source_connection
                ON source_connection.connection_id = source_object.connection_id
+             LEFT JOIN eligible_attributes AS source_eligibility
+               ON source_eligibility.object_id = source.source_object_id
+              AND source_eligibility.attribute_id = source.source_attribute_id
+              AND source_eligibility.model_id = source.model_id
+              AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
-               ON source_tenant.tenant_id = source_connection.tenant_id
+               ON source_tenant.tenant_id = source_eligibility.object_tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
              LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -704,10 +751,11 @@ SELECT attribute.{config.attribute_id},
                   source.support_source_type <> 'attribute'
                   OR EXISTS (
                       SELECT 1
-                        FROM model.model_scope AS active_scope
-                       WHERE active_scope.model_id = source.model_id
-                         AND active_scope.object_id = source.source_object_id
-                         AND active_scope.is_active
+                        FROM eligible_attributes AS eligibility
+                       WHERE eligibility.object_id = source.source_object_id
+                         AND eligibility.attribute_id = source.source_attribute_id
+                         AND eligibility.model_id = source.model_id
+                         AND eligibility.{eligibility_field}
                   )
               )
        ), '[]'::JSONB) AS sources
@@ -715,7 +763,7 @@ SELECT attribute.{config.attribute_id},
   JOIN {config.entity_table} AS entity
     ON entity.{config.entity_id} = attribute.{config.entity_id}
    AND entity.model_id = attribute.model_id
- WHERE attribute.model_id = %s
+ WHERE attribute.model_id = (SELECT model_id FROM requested_model)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR attribute.{config.entity_id} = ANY(%s::BIGINT[])

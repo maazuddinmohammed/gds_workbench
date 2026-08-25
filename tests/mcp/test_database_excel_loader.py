@@ -5,20 +5,29 @@ import secrets
 import sys
 import textwrap
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Literal, LiteralString, cast
 
 import psycopg
 from psycopg import sql
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
-sys.path.insert(0, str(REPOSITORY_ROOT))
-from load_and_merge_scripts import loader  # noqa: E402
+LOADER_ROOT = REPOSITORY_ROOT / "load_and_merge_scripts"
+sys.path.insert(0, str(LOADER_ROOT))
+import loader  # noqa: E402
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
 CONFIG_PATH = REPOSITORY_ROOT / "load_and_merge_scripts" / "load_config.yaml"
+TablePrivileges = Literal["SELECT", "INSERT, UPDATE", "UPDATE", "INSERT"]
+
+
+def _returned_int(row: tuple[Any, ...] | None) -> int:
+    assert row is not None
+    value = row[0]
+    assert isinstance(value, int)
+    return value
 
 
 def _configured_definitions() -> tuple[loader.LoadDefinition, ...]:
@@ -53,14 +62,14 @@ def _configured_definitions() -> tuple[loader.LoadDefinition, ...]:
             merge_statements=_config_statements(body, "merge_statements"),
             deferred_statements=_config_statements(body, "deferred_statements"),
         )
-        loader._validate_definition(definition)
+        loader.validate_definition(definition)
         definitions.append(definition)
 
     definitions.sort(key=lambda value: value.dependency_order)
     assert len(definitions) == 41
     assert len({definition.selection for definition in definitions}) == 41
     assert {definition.selection for definition in definitions} == set(
-        loader._ALLOWED_LOAD_TARGETS
+        loader.ALLOWED_LOAD_TARGETS
     )
     assert sum(len(definition.merge_statements) for definition in definitions) == 41
     assert sum(len(definition.deferred_statements) for definition in definitions) == 2
@@ -209,7 +218,7 @@ def _connect_as_loader(
 def _grant_tables(
     connection: psycopg.Connection[Any],
     role_name: str,
-    privileges: str,
+    privileges: TablePrivileges,
     tables: set[tuple[str, str]],
 ) -> None:
     connection.execute(
@@ -290,17 +299,19 @@ def test_all_configured_merges_parse_and_environment_is_idempotent(
             "{staging_table}", f'pg_temp."{environment.staging_name}"'
         )
         with connection.cursor() as cursor:
-            loader._insert_staging_rows(
+            loader.insert_staging_rows(
                 cursor, environment.staging_name, environment.columns, (row,)
             )
-            cursor.execute(merge)
+            cursor.execute(cast(LiteralString, merge))
             assert cursor.rowcount == 1
             cursor.execute(
-                f'UPDATE pg_temp."{environment.staging_name}" '
-                'SET "environment_name" = %s WHERE "environment_code" = %s',
+                sql.SQL(
+                    'UPDATE pg_temp.{} SET "environment_name" = %s '
+                    'WHERE "environment_code" = %s'
+                ).format(sql.Identifier(environment.staging_name)),
                 ("Integration Test Updated", "INTEGRATION_TEST"),
             )
-            cursor.execute(merge)
+            cursor.execute(cast(LiteralString, merge))
             assert cursor.rowcount == 1
 
         stored = connection.execute(
@@ -309,6 +320,109 @@ def test_all_configured_merges_parse_and_environment_is_idempotent(
             "FROM reference.environment WHERE environment_code = 'INTEGRATION_TEST'"
         ).fetchone()
         assert stored == (1, "Integration Test Updated", role_name, role_name)
+    finally:
+        connection.rollback()
+        connection.close()
+
+
+def test_model_merge_keeps_naming_text_independent_from_json_templates(
+    bootstrap_postgres_database: DisposablePostgres,
+) -> None:
+    postgres_database = bootstrap_postgres_database
+    definitions = _configured_definitions()
+    model = next(
+        definition
+        for definition in definitions
+        if definition.selection == ("model.xlsx", "Model")
+    )
+    role_name = f"gds_excel_loader_{secrets.token_hex(8)}"
+    connection = _connect_as_loader(postgres_database, role_name, definitions)
+    try:
+        suffix = secrets.token_hex(6).upper()
+        project_id = _returned_int(
+            connection.execute(
+                "INSERT INTO core.project (project_code, project_name) "
+                "VALUES (%s, 'Excel Model Contract') RETURNING project_id",
+                (f"EXCEL_{suffix}",),
+            ).fetchone()
+        )
+        tenant_code = f"EXCEL_{suffix}"
+        connection.execute(
+            "INSERT INTO core.tenant "
+            "(project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog) "
+            "VALUES (%s, %s, 'Excel Model Contract', %s, %s)",
+            (
+                project_id,
+                tenant_code,
+                f"excel_{suffix.lower()}",
+                f"admin_{suffix.lower()}",
+            ),
+        )
+
+        row_by_column = {
+            "tenant_code": tenant_code,
+            "model_name": "Canonical Contract",
+            "model_description": "Initial values",
+            "silver_model_naming_instructions": "Use lower snake_case names.",
+            "silver_model_audit_columns_template": '{"columns":["loaded_at"]}',
+            "gold_model_naming_instructions": "Use business-facing names.",
+            "gold_model_technical_columns_template": '{"columns":["row_hash"]}',
+            "gold_model_audit_columns_template": '{"columns":["created_at"]}',
+            "is_active": "true",
+        }
+        row = tuple(row_by_column[column] for column in model.columns)
+        merge = model.merge_statements[0].replace(
+            "{staging_table}", f'pg_temp."{model.staging_name}"'
+        )
+        with connection.cursor() as cursor:
+            loader.create_temp_table(cursor, model.staging_name, model.columns)
+            loader.insert_staging_rows(
+                cursor, model.staging_name, model.columns, (row,)
+            )
+            cursor.execute(cast(LiteralString, merge))
+            assert cursor.rowcount == 1
+
+            stored = connection.execute(
+                "SELECT silver_model_naming_instructions, "
+                "silver_model_audit_columns_template, gold_model_naming_instructions, "
+                "gold_model_technical_columns_template, gold_model_audit_columns_template "
+                "FROM model.model WHERE model_name = 'Canonical Contract'"
+            ).fetchone()
+            assert stored == (
+                "Use lower snake_case names.",
+                {"columns": ["loaded_at"]},
+                "Use business-facing names.",
+                {"columns": ["row_hash"]},
+                {"columns": ["created_at"]},
+            )
+
+            cursor.execute(
+                sql.SQL(
+                    "UPDATE pg_temp.{} SET "
+                    '"silver_model_naming_instructions" = %s, '
+                    '"silver_model_audit_columns_template" = %s, '
+                    '"gold_model_naming_instructions" = %s, '
+                    '"gold_model_technical_columns_template" = %s, '
+                    '"gold_model_audit_columns_template" = %s'
+                ).format(sql.Identifier(model.staging_name)),
+                (" ", '{"columns":["ingested_at"]}', "Use title case.", None, None),
+            )
+            cursor.execute(cast(LiteralString, merge))
+            assert cursor.rowcount == 1
+
+        updated = connection.execute(
+            "SELECT silver_model_naming_instructions, "
+            "silver_model_audit_columns_template, gold_model_naming_instructions, "
+            "gold_model_technical_columns_template, gold_model_audit_columns_template "
+            "FROM model.model WHERE model_name = 'Canonical Contract'"
+        ).fetchone()
+        assert updated == (
+            None,
+            {"columns": ["ingested_at"]},
+            "Use title case.",
+            None,
+            None,
+        )
     finally:
         connection.rollback()
         connection.close()
@@ -384,66 +498,92 @@ def test_lock_control_uses_database_role_owned_lock_and_revision_cas(
 def _seed_lock_target(
     connection: psycopg.Connection[Any], role_name: str
 ) -> dict[str, int]:
-    system_type_id = connection.execute(
-        "INSERT INTO reference.system_type (system_type_code, system_type_name) "
-        "VALUES ('LOADER_TEST', 'Loader Test') RETURNING system_type_id"
-    ).fetchone()[0]
-    connection_type_id = connection.execute(
-        "INSERT INTO reference.connection_type (connection_type_code, connection_type_name) "
-        "VALUES ('LOADER_TEST', 'Loader Test') RETURNING connection_type_id"
-    ).fetchone()[0]
-    object_type_id = connection.execute(
-        "INSERT INTO reference.object_type (object_type_code, object_type_name) "
-        "VALUES ('LOADER_TEST', 'Loader Test') RETURNING object_type_id"
-    ).fetchone()[0]
-    zone_id = connection.execute(
-        "INSERT INTO reference.zone (zone_code, zone_name) "
-        "VALUES ('loader_test', 'Loader Test') RETURNING zone_id"
-    ).fetchone()[0]
-    project_id = connection.execute(
-        "INSERT INTO core.project (project_code, project_name) "
-        "VALUES ('LOADER_TEST', 'Loader Test') RETURNING project_id"
-    ).fetchone()[0]
-    tenant_id = connection.execute(
-        "INSERT INTO core.tenant "
-        "(project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog) "
-        "VALUES (%s, 'LOADER_TEST', 'Loader Test', 'loader_test', 'loader_test_admin') "
-        "RETURNING tenant_id",
-        (project_id,),
-    ).fetchone()[0]
-    system_id = connection.execute(
-        "INSERT INTO core.system (system_code, system_name, system_type_id) "
-        "VALUES ('LOADER_TEST', 'Loader Test', %s) RETURNING system_id",
-        (system_type_id,),
-    ).fetchone()[0]
-    connection_id = connection.execute(
-        "INSERT INTO core.connection "
-        "(tenant_id, system_id, connection_code, connection_name, connection_type_id) "
-        "VALUES (%s, %s, 'LOADER_TEST', 'Loader Test', %s) RETURNING connection_id",
-        (tenant_id, system_id, connection_type_id),
-    ).fetchone()[0]
-    object_id = connection.execute(
-        "INSERT INTO core.object "
-        "(connection_id, object_schema, object_name, object_type_id, zone_id) "
-        "VALUES (%s, 'loader_test', 'loader_test', %s, %s) RETURNING object_id",
-        (connection_id, object_type_id, zone_id),
-    ).fetchone()[0]
-    model_id = connection.execute(
-        "INSERT INTO model.model (tenant_id, model_name) "
-        "VALUES (%s, 'Loader Test') RETURNING model_id",
-        (tenant_id,),
-    ).fetchone()[0]
-    model_scope_id = connection.execute(
-        "INSERT INTO model.model_scope (model_id, object_id) "
-        "VALUES (%s, %s) RETURNING model_scope_id",
-        (model_id, object_id),
-    ).fetchone()[0]
-    principal_id = connection.execute(
-        "INSERT INTO security.principal "
-        "(principal_type, principal_display_name, principal_email) "
-        "VALUES ('user', 'Excel Lock Loader', %s) RETURNING principal_id",
-        (role_name,),
-    ).fetchone()[0]
+    system_type_id = _returned_int(
+        connection.execute(
+            "INSERT INTO reference.system_type (system_type_code, system_type_name) "
+            "VALUES ('LOADER_TEST', 'Loader Test') RETURNING system_type_id"
+        ).fetchone()
+    )
+    connection_type_id = _returned_int(
+        connection.execute(
+            "INSERT INTO reference.connection_type "
+            "(connection_type_code, connection_type_name) "
+            "VALUES ('LOADER_TEST', 'Loader Test') RETURNING connection_type_id"
+        ).fetchone()
+    )
+    object_type_id = _returned_int(
+        connection.execute(
+            "INSERT INTO reference.object_type (object_type_code, object_type_name) "
+            "VALUES ('LOADER_TEST', 'Loader Test') RETURNING object_type_id"
+        ).fetchone()
+    )
+    zone_id = _returned_int(
+        connection.execute(
+            "INSERT INTO reference.zone (zone_code, zone_name) "
+            "VALUES ('loader_test', 'Loader Test') RETURNING zone_id"
+        ).fetchone()
+    )
+    project_id = _returned_int(
+        connection.execute(
+            "INSERT INTO core.project (project_code, project_name) "
+            "VALUES ('LOADER_TEST', 'Loader Test') RETURNING project_id"
+        ).fetchone()
+    )
+    tenant_id = _returned_int(
+        connection.execute(
+            "INSERT INTO core.tenant "
+            "(project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog) "
+            "VALUES (%s, 'LOADER_TEST', 'Loader Test', 'loader_test', "
+            "'loader_test_admin') RETURNING tenant_id",
+            (project_id,),
+        ).fetchone()
+    )
+    system_id = _returned_int(
+        connection.execute(
+            "INSERT INTO core.system (system_code, system_name, system_type_id) "
+            "VALUES ('LOADER_TEST', 'Loader Test', %s) RETURNING system_id",
+            (system_type_id,),
+        ).fetchone()
+    )
+    connection_id = _returned_int(
+        connection.execute(
+            "INSERT INTO core.connection "
+            "(tenant_id, system_id, connection_code, connection_name, "
+            "connection_type_id) VALUES (%s, %s, 'LOADER_TEST', 'Loader Test', %s) "
+            "RETURNING connection_id",
+            (tenant_id, system_id, connection_type_id),
+        ).fetchone()
+    )
+    object_id = _returned_int(
+        connection.execute(
+            "INSERT INTO core.object "
+            "(connection_id, object_schema, object_name, object_type_id, zone_id) "
+            "VALUES (%s, 'loader_test', 'loader_test', %s, %s) RETURNING object_id",
+            (connection_id, object_type_id, zone_id),
+        ).fetchone()
+    )
+    model_id = _returned_int(
+        connection.execute(
+            "INSERT INTO model.model (tenant_id, model_name) "
+            "VALUES (%s, 'Loader Test') RETURNING model_id",
+            (tenant_id,),
+        ).fetchone()
+    )
+    model_scope_id = _returned_int(
+        connection.execute(
+            "INSERT INTO model.model_scope (model_id, object_id) "
+            "VALUES (%s, %s) RETURNING model_scope_id",
+            (model_id, object_id),
+        ).fetchone()
+    )
+    principal_id = _returned_int(
+        connection.execute(
+            "INSERT INTO security.principal "
+            "(principal_type, principal_display_name, principal_email) "
+            "VALUES ('user', 'Excel Lock Loader', %s) RETURNING principal_id",
+            (role_name,),
+        ).fetchone()
+    )
     connection.execute(
         "INSERT INTO security.entra_principal_identity "
         "(principal_id, principal_type, entra_tenant_id, entra_object_id) "

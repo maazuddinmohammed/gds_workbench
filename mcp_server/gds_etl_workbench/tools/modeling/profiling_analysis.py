@@ -11,13 +11,14 @@ from typing import Annotated, Any, Literal, LiteralString
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
-from pydantic import Field
+from pydantic import Field, model_validator
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.modeling_records import ANALYSIS_VALIDATION_FIELDS
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
 from .common import (
@@ -33,6 +34,16 @@ from .common import (
 _MAX_PAGE_SIZE = 200
 
 PROFILING_SQL: LiteralString = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_attributes AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT profile.object_id,
        tenant.tenant_code,
        system.system_code,
@@ -55,23 +66,23 @@ SELECT profile.object_id,
        profile.percent_blank,
        profile.percent_distinct
   FROM workflow.attribute_profile AS profile
-  JOIN model.model_scope AS active_scope
-    ON active_scope.model_id = profile.model_id
-   AND active_scope.object_id = profile.object_id
-   AND active_scope.is_active
+  JOIN eligible_attributes AS eligible_attribute
+    ON eligible_attribute.object_id = profile.object_id
+   AND eligible_attribute.attribute_id = profile.attribute_id
+   AND eligible_attribute.model_id = profile.model_id
+   AND eligible_attribute.is_bronze_source_eligible
   JOIN core.object AS object_record
     ON object_record.object_id = profile.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = object_record.connection_id
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
+    ON tenant.tenant_id = eligible_attribute.object_tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
   JOIN core.attribute AS attribute
     ON attribute.attribute_id = profile.attribute_id
    AND attribute.object_id = profile.object_id
- WHERE profile.model_id = %s
-   AND (
+ WHERE (
        cardinality(%s::BIGINT[]) = 0
        OR profile.object_id = ANY(%s::BIGINT[])
    )
@@ -83,6 +94,16 @@ SELECT profile.object_id,
 """
 
 ANALYSIS_SQL: LiteralString = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_attributes AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
 SELECT result.from_object_id,
        from_tenant.tenant_code AS from_tenant_code,
        from_system.system_code AS from_system_code,
@@ -114,20 +135,22 @@ SELECT result.from_object_id,
        result.analysis_result_status,
        result.analysis_result_is_locked
   FROM workflow.analysis_result AS result
-  JOIN model.model_scope AS active_from_scope
-    ON active_from_scope.model_id = result.model_id
-   AND active_from_scope.object_id = result.from_object_id
-   AND active_from_scope.is_active
-  JOIN model.model_scope AS active_to_scope
-    ON active_to_scope.model_id = result.model_id
-   AND active_to_scope.object_id = result.to_object_id
-   AND active_to_scope.is_active
+  JOIN eligible_attributes AS eligible_from_attribute
+    ON eligible_from_attribute.object_id = result.from_object_id
+   AND eligible_from_attribute.attribute_id = result.from_attribute_id
+   AND eligible_from_attribute.model_id = result.model_id
+   AND eligible_from_attribute.is_bronze_source_eligible
+  JOIN eligible_attributes AS eligible_to_attribute
+    ON eligible_to_attribute.object_id = result.to_object_id
+   AND eligible_to_attribute.attribute_id = result.to_attribute_id
+   AND eligible_to_attribute.model_id = result.model_id
+   AND eligible_to_attribute.is_bronze_source_eligible
   JOIN core.object AS from_object
     ON from_object.object_id = result.from_object_id
   JOIN core.connection AS from_connection
     ON from_connection.connection_id = from_object.connection_id
   JOIN core.tenant AS from_tenant
-    ON from_tenant.tenant_id = from_connection.tenant_id
+    ON from_tenant.tenant_id = eligible_from_attribute.object_tenant_id
   JOIN core.system AS from_system
     ON from_system.system_id = from_connection.system_id
   JOIN core.attribute AS from_attribute
@@ -138,14 +161,13 @@ SELECT result.from_object_id,
   JOIN core.connection AS to_connection
     ON to_connection.connection_id = to_object.connection_id
   JOIN core.tenant AS to_tenant
-    ON to_tenant.tenant_id = to_connection.tenant_id
+    ON to_tenant.tenant_id = eligible_to_attribute.object_tenant_id
   JOIN core.system AS to_system
     ON to_system.system_id = to_connection.system_id
   JOIN core.attribute AS to_attribute
     ON to_attribute.attribute_id = result.to_attribute_id
    AND to_attribute.object_id = result.to_object_id
- WHERE result.model_id = %s
-   AND (
+ WHERE (
        cardinality(%s::BIGINT[]) = 0
        OR result.from_object_id = ANY(%s::BIGINT[])
        OR result.to_object_id = ANY(%s::BIGINT[])
@@ -211,21 +233,29 @@ class AnalysisRelationshipResult(ContractModel):
     relationship_kind: str = Field(min_length=1, max_length=100)
     relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: str = Field(min_length=1)
-    validation_policy_version: str = Field(
+    validation_policy_version: str | None = Field(
+        default=None,
         min_length=1,
         max_length=50,
         pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$",
     )
-    validation_result: Literal["supported", "inconclusive", "unsupported"]
-    validation_source_non_null_count: int = Field(ge=0)
-    validation_source_distinct_count: int = Field(ge=0)
-    validation_target_non_null_count: int = Field(ge=0)
-    validation_target_distinct_count: int = Field(ge=0)
-    validation_source_missing_target_count: int = Field(ge=0)
-    validation_unused_target_count: int = Field(ge=0)
-    validation_duplicate_target_key_count: int = Field(ge=0)
+    validation_result: Literal["supported", "inconclusive", "unsupported"] | None = None
+    validation_source_non_null_count: int | None = Field(default=None, ge=0)
+    validation_source_distinct_count: int | None = Field(default=None, ge=0)
+    validation_target_non_null_count: int | None = Field(default=None, ge=0)
+    validation_target_distinct_count: int | None = Field(default=None, ge=0)
+    validation_source_missing_target_count: int | None = Field(default=None, ge=0)
+    validation_unused_target_count: int | None = Field(default=None, ge=0)
+    validation_duplicate_target_key_count: int | None = Field(default=None, ge=0)
     analysis_result_status: Literal["active", "needs_review", "inactive", "deprecated"]
     analysis_result_is_locked: bool
+
+    @model_validator(mode="after")
+    def validate_validation_fields(self) -> AnalysisRelationshipResult:
+        values = tuple(getattr(self, field) for field in ANALYSIS_VALIDATION_FIELDS)
+        if any(value is None for value in values) and not all(value is None for value in values):
+            raise ValueError("Analysis validation fields must all be present or all be absent.")
+        return self
 
 
 class GetModelAnalysisResult(ContractModel):

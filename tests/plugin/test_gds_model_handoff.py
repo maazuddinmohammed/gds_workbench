@@ -12,6 +12,7 @@ REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HELPER = (
     REPOSITORY_ROOT
     / "plugins"
+    / "v1"
     / "gds"
     / "skills"
     / "manage-gds-model"

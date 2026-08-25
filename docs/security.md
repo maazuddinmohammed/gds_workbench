@@ -130,9 +130,27 @@ Governed lock functions are:
 Every runtime transaction locally activates the `NOINHERIT` role
 `gds_app_write`. It cannot run
 DDL, delete product state, modify Principal/Tenant-access rows, or directly
-mutate Tenant Lock tables. It receives only explicit function execution and the
-existing allowlisted table privileges. `PUBLIC` receives no release-schema
-rights.
+mutate Tenant Lock or Model Scope tables. Web-only Model agent defaults and the
+entire `application` schema are outside its write surface. It receives only
+explicit function execution and allowlisted table/column privileges. `PUBLIC`
+receives no release-schema rights.
+
+The web runtime also has no direct Model, Model Scope, or revision-transaction
+DML. Its Model authoring path is limited to the four fixed-search-path
+`application` functions for create, update, archive, and exact Scope
+replacement. Those functions derive Model ownership, require the active actor's
+Tenant Lock, enforce revision fencing, and keep Model Scope zone-neutral. MCP
+cannot execute them and retains no Model Scope mutation path.
+
+Web Profiling execution uses two additional fixed-search-path,
+`SECURITY DEFINER` functions. Both reauthorize the immutable identity triple,
+bound running Profiling Run, owning Tenant, active Model revision, and
+caller-owned Tenant Lock. Execution metadata resolves GDS Object ownership and
+catalog only through the unique active Metadata Discovery Scope assignment.
+Credential reads require the exact active selected GDS Connection and active
+Environment. Any incomplete credential set returns one fixed safe failure with
+all values null. The browser, MCP role, audit logs, and direct web table grants
+never receive `core.connection_value` access.
 
 Workflow Grant tables, procedures, privileges, and grant-bound run summaries do
 not exist. Registered workloads authenticate and authorize directly as active
@@ -174,10 +192,12 @@ whether optional purpose or required override reason was supplied. Purpose and
 override reason text are not copied into the MCP tool-call log.
 Metadata Change Set tools retain their safe identifiers, dataset selection, and
 expected revision. Stage records only dataset/record counts; complete staged
-physical records are not copied into the tool-call log.
+physical records are not copied into the tool-call log. Stage Batch tools retain only
+safe Batch/dataset identifiers, chunk index, and counts; chunk bodies and hashes are
+not logged.
 `execute_databricks_sql` records schema version, source Connection ID, Environment
-code, the complete submitted SQL, and its character count. SQL is retained only in the append-only
-database audit record, not application logs. Returned rows, host, HTTP path,
+code, submitted-SQL character count, and a SHA-256 digest. Submitted SQL is never
+copied into the audit record or application logs. Returned rows, host, HTTP path,
 token, and connector exception text are never logged.
 
 Authentication rejected before MCP execution and identities that do not map to

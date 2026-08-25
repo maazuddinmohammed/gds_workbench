@@ -10,6 +10,7 @@ import pytest
 from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
+from psycopg.types.json import Jsonb
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
@@ -23,6 +24,10 @@ from gds_etl_workbench.infrastructure.postgres import (
     ToolCallLogRecord,
     WriteTransaction,
 )
+from gds_etl_workbench.tools.change_sets.common import (
+    canonical_records_sha256,
+    stage_batch_sha256,
+)
 from gds_etl_workbench.tools.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
@@ -35,6 +40,7 @@ from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
 ENTRA_TENANT_ID = UUID("10000000-0000-0000-0000-000000000050")
 ENTRA_OBJECT_ID = UUID("20000000-0000-0000-0000-000000000050")
 CHANGE_SET_ID = UUID("30000000-0000-4000-8000-000000000050")
+STAGE_BATCH_ID = UUID("40000000-0000-4000-8000-000000000050")
 
 
 class StaticIdentityProvider(IdentityProvider):
@@ -80,6 +86,50 @@ class FakeTransaction:
             )
             assert isinstance(parameters[7], UUID)
             return self._database.stage_row
+        if "mcp.begin_metadata_stage_batch" in query:
+            assert parameters[:6] == (
+                ENTRA_TENANT_ID,
+                ENTRA_OBJECT_ID,
+                "user",
+                123,
+                CHANGE_SET_ID,
+                1,
+            )
+            assert isinstance(parameters[6], UUID)
+            assert parameters[7:11] == (
+                "copy_group",
+                2,
+                2,
+                self._database.batch_sha256,
+            )
+            assert isinstance(parameters[11], UUID)
+            return self._database.begin_stage_batch_row
+        if "mcp.put_metadata_stage_chunk" in query:
+            assert parameters[:9] == (
+                ENTRA_TENANT_ID,
+                ENTRA_OBJECT_ID,
+                "user",
+                123,
+                CHANGE_SET_ID,
+                STAGE_BATCH_ID,
+                "copy_group",
+                1,
+                self._database.chunk_sha256,
+            )
+            assert isinstance(parameters[9], Jsonb)
+            return self._database.put_stage_chunk_row
+        if "mcp.commit_metadata_stage_batch" in query:
+            assert parameters[:7] == (
+                ENTRA_TENANT_ID,
+                ENTRA_OBJECT_ID,
+                "user",
+                123,
+                CHANGE_SET_ID,
+                STAGE_BATCH_ID,
+                1,
+            )
+            assert isinstance(parameters[7], UUID)
+            return self._database.commit_stage_batch_row
         if "mcp.get_metadata_change_set" in query:
             assert parameters == (
                 ENTRA_TENANT_ID,
@@ -164,6 +214,11 @@ class FakeDatabase:
         validation_row: dict[str, Any] | None = None,
         apply_row: dict[str, Any] | None = None,
         archive_row: dict[str, Any] | None = None,
+        begin_stage_batch_row: dict[str, Any] | None = None,
+        put_stage_chunk_row: dict[str, Any] | None = None,
+        commit_stage_batch_row: dict[str, Any] | None = None,
+        batch_sha256: str | None = None,
+        chunk_sha256: str | None = None,
     ) -> None:
         self.create_row = create_row
         self.stage_row = stage_row
@@ -171,6 +226,11 @@ class FakeDatabase:
         self.validation_row = validation_row
         self.apply_row = apply_row
         self.archive_row = archive_row
+        self.begin_stage_batch_row = begin_stage_batch_row
+        self.put_stage_chunk_row = put_stage_chunk_row
+        self.commit_stage_batch_row = commit_stage_batch_row
+        self.batch_sha256 = batch_sha256
+        self.chunk_sha256 = chunk_sha256
         self.audit_records: list[ToolCallLogRecord] = []
         self.write_transaction_count = 0
 
@@ -244,9 +304,7 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
     )
 
     async with Client(_server(database)) as client:
-        result = await client.call_tool(
-            "create_metadata_change_set", {"tenant_id": 123}
-        )
+        result = await client.call_tool("create_metadata_change_set", {"tenant_id": 123})
 
     assert result.is_error is False
     assert result.structured_content == {
@@ -267,9 +325,7 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
 
 
 @pytest.mark.asyncio
-async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> (
-    None
-):
+async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> None:
     database = FakeDatabase(
         stage_row={
             "staged": True,
@@ -345,6 +401,52 @@ async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revis
 
 
 @pytest.mark.asyncio
+async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes() -> None:
+    database = FakeDatabase(
+        stage_row={
+            "staged": True,
+            "denial_code": None,
+            "draft_revision": 2,
+            "dataset_counts": {"copy_group_control": 1},
+            "expires_time": datetime(2026, 8, 13, 19, 30, tzinfo=UTC),
+        }
+    )
+
+    async with Client(_server(database)) as client:
+        result = await client.call_tool(
+            "stage_metadata_change_set",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "expected_draft_revision": 1,
+                "changes": [
+                    {
+                        "dataset": "copy_group_control",
+                        "records": [
+                            {
+                                "tenant_code": "DEMO",
+                                "system_code": "CRM",
+                                "copy_group_name": "CUSTOMERS",
+                                "member_group_name": None,
+                                "copy_group_control_initial_load_date": "2026-08-24",
+                                "copy_group_control_last_run_time": ("2026-08-24T10:42:00Z"),
+                                "copy_group_control_last_run_value": "1048",
+                            }
+                        ],
+                    }
+                ],
+            },
+        )
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["datasets"] == [
+        {"dataset": "copy_group_control", "record_count": 1}
+    ]
+    assert database.write_transaction_count == 1
+
+
+@pytest.mark.asyncio
 async def test_stage_metadata_change_set_reports_safe_dynamic_schema_error() -> None:
     database = FakeDatabase()
 
@@ -375,8 +477,7 @@ async def test_stage_metadata_change_set_reports_safe_dynamic_schema_error() -> 
     assert result.is_error is True
     assert isinstance(result.content[0], TextContent)
     assert result.content[0].text.endswith(
-        "invalid_request: copy_group record 1 field is_active "
-        "does not match its published schema."
+        "invalid_request: copy_group record 1 field is_active does not match its published schema."
     )
     assert "must-not-appear" not in result.content[0].text
     assert database.write_transaction_count == 0
@@ -387,9 +488,7 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
     async with Client(_server(FakeDatabase())) as client:
         tools = await client.list_tools()
 
-    stage = next(
-        tool for tool in tools.tools if tool.name == "stage_metadata_change_set"
-    )
+    stage = next(tool for tool in tools.tools if tool.name == "stage_metadata_change_set")
     definitions = stage.input_schema["$defs"]
     stage_change = definitions["StageChange"]
     assert stage_change["properties"]["records"]["items"] == {
@@ -400,6 +499,145 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
         field not in str(stage.input_schema)
         for field in ("copy_group_name", "process_executable", "attribute_data_type")
     )
+    put_chunk = next(tool for tool in tools.tools if tool.name == "put_metadata_stage_chunk")
+    assert put_chunk.input_schema["properties"]["records"]["items"] == {
+        "additionalProperties": True,
+        "type": "object",
+    }
+    assert put_chunk.input_schema["properties"]["records"]["maxItems"] == 5_000
+    assert put_chunk.input_schema["properties"]["chunk_index"]["maximum"] == 64
+
+
+@pytest.mark.asyncio
+async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement() -> None:
+    first: dict[str, object] = {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "copy_group_name": "CUSTOMERS",
+        "copy_group_description": None,
+        "is_member_group_required": False,
+        "is_active": True,
+    }
+    second: dict[str, object] = {**first, "copy_group_name": "ORDERS"}
+    first_sha256 = canonical_records_sha256([first])
+    second_sha256 = canonical_records_sha256([second])
+    batch_sha256 = stage_batch_sha256([first_sha256, second_sha256])
+    expires_at = datetime(2026, 8, 13, 19, 30, tzinfo=UTC)
+    database = FakeDatabase(
+        begin_stage_batch_row={
+            "started": True,
+            "denial_code": None,
+            "stage_batch_id": STAGE_BATCH_ID,
+            "created": True,
+            "dataset_name": "copy_group",
+            "total_record_count": 2,
+            "total_chunk_count": 2,
+            "received_chunk_count": 0,
+            "expires_time": expires_at,
+        },
+        put_stage_chunk_row={
+            "accepted": True,
+            "denial_code": None,
+            "duplicate": False,
+            "received_chunk_count": 1,
+            "total_chunk_count": 2,
+            "record_count": 1,
+            "expires_time": expires_at,
+        },
+        commit_stage_batch_row={
+            "committed": True,
+            "denial_code": None,
+            "replayed": False,
+            "dataset_name": "copy_group",
+            "record_count": 2,
+            "draft_revision": 2,
+            "expires_time": expires_at,
+        },
+        batch_sha256=batch_sha256,
+        chunk_sha256=first_sha256,
+    )
+
+    async with Client(_server(database)) as client:
+        begun = await client.call_tool(
+            "begin_metadata_stage_batch",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "expected_draft_revision": 1,
+                "dataset": "copy_group",
+                "total_record_count": 2,
+                "total_chunk_count": 2,
+                "batch_sha256": batch_sha256,
+            },
+        )
+        put = await client.call_tool(
+            "put_metadata_stage_chunk",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "stage_batch_id": str(STAGE_BATCH_ID),
+                "dataset": "copy_group",
+                "chunk_index": 1,
+                "records": [first],
+                "chunk_sha256": first_sha256,
+            },
+        )
+        committed = await client.call_tool(
+            "commit_metadata_stage_batch",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "stage_batch_id": str(STAGE_BATCH_ID),
+                "expected_draft_revision": 1,
+            },
+        )
+
+    assert begun.is_error is False
+    assert begun.structured_content["stage_batch_id"] == str(STAGE_BATCH_ID)
+    assert begun.structured_content["received_chunk_count"] == 0
+    assert put.is_error is False
+    assert put.structured_content["received_chunk_count"] == 1
+    assert put.structured_content["duplicate"] is False
+    assert committed.is_error is False
+    assert committed.structured_content["dataset"] == "copy_group"
+    assert committed.structured_content["record_count"] == 2
+    assert committed.structured_content["draft_revision"] == 2
+    assert database.write_transaction_count == 3
+    assert all("records" not in record.input_metadata for record in database.audit_records)
+    assert "CUSTOMERS" not in str([record.input_metadata for record in database.audit_records])
+
+
+@pytest.mark.asyncio
+async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_write() -> None:
+    record = {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "copy_group_name": "CUSTOMERS",
+        "copy_group_description": None,
+        "is_member_group_required": False,
+        "is_active": True,
+    }
+    database = FakeDatabase()
+
+    async with Client(_server(database)) as client:
+        result = await client.call_tool(
+            "put_metadata_stage_chunk",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+                "stage_batch_id": str(STAGE_BATCH_ID),
+                "dataset": "copy_group",
+                "chunk_index": 1,
+                "records": [record],
+                "chunk_sha256": "0" * 64,
+            },
+        )
+
+    assert result.is_error is True
+    assert isinstance(result.content[0], TextContent)
+    assert "invalid_request" in result.content[0].text
+    assert "CUSTOMERS" not in result.content[0].text
+    assert database.write_transaction_count == 0
 
 
 @pytest.mark.asyncio
@@ -587,14 +825,11 @@ async def test_validate_metadata_change_set_persists_bounded_result(
         ],
     }
 
-    async def select_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(
             tenant_code="DEMO",
             datasets=tuple(
-                encode_dataset(DATASETS_BY_NAME[name], rows)
-                for name, rows in foundation.items()
+                encode_dataset(DATASETS_BY_NAME[name], rows) for name, rows in foundation.items()
             ),
         )
 
@@ -696,9 +931,7 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         },
     )
 
-    async def select_empty_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
@@ -778,9 +1011,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         },
     )
 
-    async def select_empty_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
@@ -849,9 +1080,7 @@ async def test_metadata_change_set_prompt_teaches_context_bounded_workflow() -> 
             {"tenant_id": "123"},
         )
 
-    assert [prompt.name for prompt in prompts.prompts] == [
-        "work_with_metadata_change_set"
-    ]
+    assert [prompt.name for prompt in prompts.prompts] == ["work_with_metadata_change_set"]
     content = result.messages[0].content
     assert content.type == "text"
     assert "requested boundary" in content.text

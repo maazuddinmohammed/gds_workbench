@@ -28,6 +28,11 @@ from gds_etl_workbench.domain.errors import (
     MetadataChangeSetNotFoundError,
     MetadataChangeSetNotValidatedError,
     ObjectLockedError,
+    StageBatchConflictError,
+    StageBatchIncompleteError,
+    StageBatchNotActiveError,
+    StageBatchNotFoundError,
+    StageChunkConflictError,
     TenantLockedError,
     TenantLockRequiredError,
     TenantNotFoundError,
@@ -39,8 +44,15 @@ from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     select_snapshot_datasets,
 )
 
-from .common import ChangeSetContractModel as ContractModel
-from .common import change_set_annotations as _annotations
+from .common import (
+    MAX_STAGE_CHUNK_BYTES,
+    MAX_STAGE_CHUNK_RECORDS,
+    MAX_STAGE_CHUNKS,
+    SHA256_PATTERN,
+    ChangeSetContractModel,
+    canonical_records_sha256,
+    change_set_annotations,
+)
 from .validation import (
     MetadataChangeSetValidation,
     rows_from_snapshot,
@@ -49,6 +61,8 @@ from .validation import (
 
 POLICY = ToolPolicy.TENANT_METADATA_WRITE
 READ_POLICY = ToolPolicy.TENANT_LOCK_MANAGE
+ContractModel = ChangeSetContractModel
+_annotations = change_set_annotations
 
 type ChangeSetDataset = Literal[
     "source_object",
@@ -108,6 +122,47 @@ SELECT staged,
        dataset_counts,
        expires_time
   FROM mcp.stage_metadata_change_set(%s, %s, %s, %s, %s, %s, %s, %s)
+"""
+
+_BEGIN_STAGE_BATCH_SQL: LiteralString = """
+SELECT started,
+       denial_code,
+       stage_batch_id,
+       created,
+       dataset_name,
+       total_record_count,
+       total_chunk_count,
+       received_chunk_count,
+       expires_time
+  FROM mcp.begin_metadata_stage_batch(
+      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+  )
+"""
+
+_PUT_STAGE_CHUNK_SQL: LiteralString = """
+SELECT accepted,
+       denial_code,
+       duplicate,
+       received_chunk_count,
+       total_chunk_count,
+       record_count,
+       expires_time
+  FROM mcp.put_metadata_stage_chunk(
+      %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
+  )
+"""
+
+_COMMIT_STAGE_BATCH_SQL: LiteralString = """
+SELECT committed,
+       denial_code,
+       replayed,
+       dataset_name,
+       record_count,
+       draft_revision,
+       expires_time
+  FROM mcp.commit_metadata_stage_batch(
+      %s, %s, %s, %s, %s, %s, %s, %s
+  )
 """
 
 _GET_SQL: LiteralString = """
@@ -182,6 +237,49 @@ class StageMetadataChangeSetResult(ContractModel):
     metadata_change_set_id: UUID
     staged: Literal[True] = True
     datasets: list[StagedMetadataChangeSetDataset] = Field(min_length=1, max_length=16)
+    draft_revision: int = Field(gt=0)
+    status: Literal["active"] = "active"
+    expires_at: datetime
+
+
+class BeginMetadataStageBatchResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    metadata_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ChangeSetDataset
+    created: bool
+    total_record_count: int = Field(gt=0, le=50_000)
+    total_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    received_chunk_count: int = Field(ge=0, le=MAX_STAGE_CHUNKS)
+    expected_draft_revision: int = Field(gt=0)
+    expires_at: datetime
+
+
+class PutMetadataStageChunkResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    metadata_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ChangeSetDataset
+    accepted: Literal[True] = True
+    duplicate: bool
+    chunk_index: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    record_count: int = Field(gt=0, le=MAX_STAGE_CHUNK_RECORDS)
+    received_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    total_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
+    expires_at: datetime
+
+
+class CommitMetadataStageBatchResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    metadata_change_set_id: UUID
+    stage_batch_id: UUID
+    dataset: ChangeSetDataset
+    committed: Literal[True] = True
+    replayed: bool
+    record_count: int = Field(gt=0, le=50_000)
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
     expires_at: datetime
@@ -383,13 +481,14 @@ def register_metadata_change_set_tools(
             raw_counts = row["dataset_counts"]
             if not isinstance(raw_counts, Mapping):
                 raise InvalidRequestError("Stored dataset counts are invalid.")
+            dataset_counts = cast(Mapping[object, object], raw_counts)
             return StageMetadataChangeSetResult(
                 tenant_id=tenant_id,
                 metadata_change_set_id=metadata_change_set_id,
                 datasets=[
                     StagedMetadataChangeSetDataset(
                         dataset=cast(ChangeSetDataset, dataset),
-                        record_count=_staged_record_count(raw_counts, dataset),
+                        record_count=_staged_record_count(dataset_counts, dataset),
                     )
                     for dataset in documents
                 ],
@@ -412,6 +511,242 @@ def register_metadata_change_set_tools(
         retain_arguments={
             "tenant_id",
             "metadata_change_set_id",
+            "expected_draft_revision",
+            "schema_version",
+        },
+        tenant_argument="tenant_id",
+    )
+
+    @server.tool(
+        description=(
+            "Begin or resume an idempotent bounded upload for one complete Metadata "
+            "Change Set dataset. This does not change the draft revision."
+        ),
+        annotations=_annotations(read_only=False, destructive=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def begin_metadata_stage_batch(
+        ctx: Context[None],
+        tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
+        metadata_change_set_id: UUID,
+        expected_draft_revision: Annotated[int, Field(gt=0)],
+        dataset: ChangeSetDataset,
+        total_record_count: Annotated[int, Field(gt=0, le=50_000)],
+        total_chunk_count: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
+        batch_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> BeginMetadataStageBatchResult:
+        del schema_version
+        try:
+            principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                row = await transaction.fetch_one(
+                    _BEGIN_STAGE_BATCH_SQL,
+                    (
+                        *_identity_arguments(principal),
+                        tenant_id,
+                        metadata_change_set_id,
+                        expected_draft_revision,
+                        uuid4(),
+                        dataset,
+                        total_record_count,
+                        total_chunk_count,
+                        batch_sha256,
+                        uuid4(),
+                    ),
+                )
+            _raise_governed_denial(row)
+            assert row is not None and row["started"]
+            return BeginMetadataStageBatchResult(
+                tenant_id=tenant_id,
+                metadata_change_set_id=metadata_change_set_id,
+                stage_batch_id=row["stage_batch_id"],
+                dataset=cast(ChangeSetDataset, row["dataset_name"]),
+                created=row["created"],
+                total_record_count=row["total_record_count"],
+                total_chunk_count=row["total_chunk_count"],
+                received_chunk_count=row["received_chunk_count"],
+                expected_draft_revision=expected_draft_revision,
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise MetadataChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise MetadataChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise MetadataChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "begin_metadata_stage_batch",
+        policy=POLICY,
+        summarize_input=_begin_stage_batch_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "expected_draft_revision",
+            "dataset",
+            "total_record_count",
+            "total_chunk_count",
+            "schema_version",
+        },
+        tenant_argument="tenant_id",
+    )
+
+    @server.tool(
+        description=(
+            "Idempotently store one ordered, schema-valid chunk for an active Metadata "
+            "Stage Batch. This does not change or validate the Change Set."
+        ),
+        annotations=_annotations(read_only=False, destructive=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def put_metadata_stage_chunk(
+        ctx: Context[None],
+        tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
+        metadata_change_set_id: UUID,
+        stage_batch_id: UUID,
+        dataset: ChangeSetDataset,
+        chunk_index: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
+        records: Annotated[
+            list[dict[str, object]],
+            Field(min_length=1, max_length=MAX_STAGE_CHUNK_RECORDS),
+        ],
+        chunk_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> PutMetadataStageChunkResult:
+        del schema_version
+        try:
+            normalized = _stage_document(StageChange(dataset=dataset, records=records))
+            encoded = json.dumps(
+                normalized,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+            if len(encoded) > MAX_STAGE_CHUNK_BYTES:
+                raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
+            if canonical_records_sha256(normalized) != chunk_sha256:
+                raise InvalidRequestError(
+                    "The Stage chunk SHA-256 does not match its normalized records."
+                )
+            principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                row = await transaction.fetch_one(
+                    _PUT_STAGE_CHUNK_SQL,
+                    (
+                        *_identity_arguments(principal),
+                        tenant_id,
+                        metadata_change_set_id,
+                        stage_batch_id,
+                        dataset,
+                        chunk_index,
+                        chunk_sha256,
+                        Jsonb(normalized),
+                    ),
+                )
+            _raise_governed_denial(row)
+            assert row is not None and row["accepted"]
+            return PutMetadataStageChunkResult(
+                tenant_id=tenant_id,
+                metadata_change_set_id=metadata_change_set_id,
+                stage_batch_id=stage_batch_id,
+                dataset=dataset,
+                duplicate=row["duplicate"],
+                chunk_index=chunk_index,
+                record_count=row["record_count"],
+                received_chunk_count=row["received_chunk_count"],
+                total_chunk_count=row["total_chunk_count"],
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise MetadataChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise MetadataChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise MetadataChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "put_metadata_stage_chunk",
+        policy=POLICY,
+        summarize_input=_put_stage_chunk_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "stage_batch_id",
+            "dataset",
+            "chunk_index",
+            "schema_version",
+        },
+        tenant_argument="tenant_id",
+    )
+
+    @server.tool(
+        description=(
+            "Verify and atomically commit one complete Metadata Stage Batch as the "
+            "dataset's replacement list, incrementing the draft revision once."
+        ),
+        annotations=_annotations(read_only=False, destructive=False, idempotent=True),
+        meta={"gds/toolPolicy": POLICY.value},
+        structured_output=True,
+    )
+    async def commit_metadata_stage_batch(
+        ctx: Context[None],
+        tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
+        metadata_change_set_id: UUID,
+        stage_batch_id: UUID,
+        expected_draft_revision: Annotated[int, Field(gt=0)],
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> CommitMetadataStageBatchResult:
+        del schema_version
+        try:
+            principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                row = await transaction.fetch_one(
+                    _COMMIT_STAGE_BATCH_SQL,
+                    (
+                        *_identity_arguments(principal),
+                        tenant_id,
+                        metadata_change_set_id,
+                        stage_batch_id,
+                        expected_draft_revision,
+                        uuid4(),
+                    ),
+                )
+            _raise_governed_denial(row)
+            assert row is not None and row["committed"]
+            return CommitMetadataStageBatchResult(
+                tenant_id=tenant_id,
+                metadata_change_set_id=metadata_change_set_id,
+                stage_batch_id=stage_batch_id,
+                dataset=cast(ChangeSetDataset, row["dataset_name"]),
+                replayed=row["replayed"],
+                record_count=row["record_count"],
+                draft_revision=row["draft_revision"],
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise MetadataChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise MetadataChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise MetadataChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "commit_metadata_stage_batch",
+        policy=POLICY,
+        summarize_input=_revision_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
+            "stage_batch_id",
             "expected_draft_revision",
             "schema_version",
         },
@@ -744,7 +1079,9 @@ def register_metadata_change_set_tools(
             "Stage has no draft. If resumed, fetch the summary and every dataset with a "
             "nonzero count before replacing anything. Use describe_metadata_dataset only "
             "for datasets you will edit. Show the exact complete affected lists and ask "
-            "before stage_metadata_change_set. Validate the latest revision and repair only "
+            "before stage_metadata_change_set or begin_metadata_stage_batch. For a large "
+            "dataset, Put every approved chunk then Commit once. Validate the latest "
+            "revision and repair only "
             "the first failed phase. Show the authoritative action_review, then obtain fresh "
             "approval immediately before apply_metadata_change_set. Archive only when "
             "requested; archive needs no current lock. Release any lock this workflow "
@@ -857,8 +1194,19 @@ def _raise_governed_denial(row: Mapping[str, Any] | None) -> None:
         raise ObjectLockedError()
     if denial_code == "candidate_digest_conflict":
         raise CandidateDigestConflictError()
+    if denial_code == "stage_batch_conflict":
+        raise StageBatchConflictError()
+    if denial_code == "stage_batch_not_found":
+        raise StageBatchNotFoundError()
+    if denial_code == "stage_batch_not_active":
+        raise StageBatchNotActiveError()
+    if denial_code == "stage_batch_incomplete":
+        raise StageBatchIncompleteError()
+    if denial_code == "stage_chunk_conflict":
+        raise StageChunkConflictError()
     if denial_code == "draft_revision_conflict":
-        raise DraftRevisionConflictError(int(row["draft_revision"]))
+        raw_revision = row.get("draft_revision")
+        raise DraftRevisionConflictError(int(raw_revision) if type(raw_revision) is int else None)
     if denial_code == "invalid_request":
         raise InvalidRequestError()
     raise AuthorizationDeniedError()
@@ -869,7 +1217,18 @@ def _stage_document(change: StageChange) -> list[dict[str, object]]:
     records: list[dict[str, object]] = []
     for record_number, raw_record in enumerate(change.records, start=1):
         try:
-            record = definition.row_model.model_validate(raw_record)
+            encoded_record = json.dumps(
+                raw_record,
+                ensure_ascii=False,
+                separators=(",", ":"),
+            )
+        except TypeError, ValueError:
+            raise InvalidRequestError(
+                f"{change.dataset} record {record_number} field record "
+                "does not match its published schema."
+            ) from None
+        try:
+            record = definition.row_model.model_validate_json(encoded_record, strict=True)
         except ValidationError as error:
             first_error = error.errors(
                 include_url=False,
@@ -990,12 +1349,13 @@ def _stage_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     datasets: set[str] = set()
     record_count = 0
     valid = True
-    for raw_change in raw_changes:
+    for raw_change in cast(list[object], raw_changes):
         if not isinstance(raw_change, Mapping):
             valid = False
             continue
-        dataset = raw_change.get("dataset")
-        records = raw_change.get("records")
+        change = cast(Mapping[object, object], raw_change)
+        dataset = change.get("dataset")
+        records = change.get("records")
         if (
             not isinstance(dataset, str)
             or dataset not in DATASETS_BY_NAME
@@ -1005,9 +1365,40 @@ def _stage_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
             valid = False
             continue
         datasets.add(dataset)
-        record_count += len(records)
+        record_count += len(cast(list[object], records))
     summary["dataset_count"] = len(datasets) if valid else "invalid"
     summary["record_count"] = record_count if valid else "invalid"
+    return summary
+
+
+def _begin_stage_batch_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+    summary = _revision_audit(arguments)
+    raw_dataset = arguments.get("dataset")
+    summary["dataset"] = (
+        raw_dataset
+        if isinstance(raw_dataset, str) and raw_dataset in DATASETS_BY_NAME
+        else "invalid"
+    )
+    for name in ("total_record_count", "total_chunk_count"):
+        value = arguments.get(name)
+        summary[name] = value if type(value) is int and value > 0 else "invalid"
+    return summary
+
+
+def _put_stage_chunk_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
+    summary = _tenant_audit(arguments)
+    raw_dataset = arguments.get("dataset")
+    summary["dataset"] = (
+        raw_dataset
+        if isinstance(raw_dataset, str) and raw_dataset in DATASETS_BY_NAME
+        else "invalid"
+    )
+    raw_index = arguments.get("chunk_index")
+    summary["chunk_index"] = raw_index if type(raw_index) is int and raw_index > 0 else "invalid"
+    raw_records = arguments.get("records")
+    summary["record_count"] = (
+        len(cast(list[object], raw_records)) if isinstance(raw_records, list) else "invalid"
+    )
     return summary
 
 

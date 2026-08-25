@@ -11,7 +11,7 @@ from gds_etl_workbench.tools.databricks.validation import validate_databricks_sq
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-SKILL_ROOT = REPOSITORY_ROOT / "plugins" / "gds" / "skills" / "profile-gds-data"
+SKILL_ROOT = REPOSITORY_ROOT / "plugins" / "v1" / "gds" / "skills" / "profile-gds-data"
 GENERATOR = SKILL_ROOT / "scripts" / "build-profile-sql.js"
 RESULT_COLUMNS = (
     "tenant_code",

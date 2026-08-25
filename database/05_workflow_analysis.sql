@@ -7,6 +7,7 @@ CREATE TABLE workflow.attribute_profile (
     attribute_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
+    workflow_run_id BIGINT,
     source_context_digest CHAR(64) NOT NULL,
     row_count BIGINT NOT NULL,
     non_null_count BIGINT NOT NULL,
@@ -68,6 +69,9 @@ CREATE TABLE workflow.analysis_result (
     analysis_result_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     agent_run_id VARCHAR(500),
+    inference_workflow_run_id BIGINT,
+    validation_workflow_run_id BIGINT,
+    validation_source_context_digest CHAR(64),
     from_object_id BIGINT NOT NULL,
     from_attribute_id BIGINT NOT NULL,
     to_object_id BIGINT NOT NULL,
@@ -75,16 +79,16 @@ CREATE TABLE workflow.analysis_result (
     relationship_kind VARCHAR(100) NOT NULL,
     relationship_confidence VARCHAR(10) NOT NULL DEFAULT 'medium',
     relationship_basis TEXT NOT NULL,
-    validation_policy_version VARCHAR(50) NOT NULL,
-    validation_policy_digest CHAR(64) NOT NULL,
-    validation_result VARCHAR(30) NOT NULL,
-    validation_source_non_null_count BIGINT NOT NULL,
-    validation_source_distinct_count BIGINT NOT NULL,
-    validation_target_non_null_count BIGINT NOT NULL,
-    validation_target_distinct_count BIGINT NOT NULL,
-    validation_source_missing_target_count BIGINT NOT NULL,
-    validation_unused_target_count BIGINT NOT NULL,
-    validation_duplicate_target_key_count BIGINT NOT NULL,
+    validation_policy_version VARCHAR(50),
+    validation_policy_digest CHAR(64),
+    validation_result VARCHAR(30),
+    validation_source_non_null_count BIGINT,
+    validation_source_distinct_count BIGINT,
+    validation_target_non_null_count BIGINT,
+    validation_target_distinct_count BIGINT,
+    validation_source_missing_target_count BIGINT,
+    validation_unused_target_count BIGINT,
+    validation_duplicate_target_key_count BIGINT,
     analysis_result_status VARCHAR(20) NOT NULL DEFAULT 'active',
     analysis_result_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -121,8 +125,37 @@ CREATE TABLE workflow.analysis_result (
         relationship_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_analysis_basis CHECK (reference.is_nonblank(relationship_basis)),
+    CONSTRAINT ck_analysis_validation_payload CHECK (
+        num_nonnulls(
+            validation_policy_version,
+            validation_policy_digest,
+            validation_result,
+            validation_source_non_null_count,
+            validation_source_distinct_count,
+            validation_target_non_null_count,
+            validation_target_distinct_count,
+            validation_source_missing_target_count,
+            validation_unused_target_count,
+            validation_duplicate_target_key_count
+        ) IN (0, 10)
+        AND (
+            validation_workflow_run_id IS NULL
+            OR validation_result IS NOT NULL
+        )
+    ),
     CONSTRAINT ck_analysis_policy_version CHECK (
         validation_policy_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'
+    ),
+    CONSTRAINT ck_analysis_source_context_digest CHECK (
+        validation_source_context_digest IS NULL
+        OR (
+            validation_source_context_digest ~ '^[0-9a-f]{64}$'
+            AND validation_result IS NOT NULL
+        )
+    ),
+    CONSTRAINT ck_analysis_web_validation_context CHECK (
+        validation_workflow_run_id IS NULL
+        OR validation_source_context_digest IS NOT NULL
     ),
     CONSTRAINT ck_analysis_policy_digest CHECK (
         validation_policy_digest ~ '^[0-9a-f]{64}$'

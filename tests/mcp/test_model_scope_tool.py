@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, LiteralString
@@ -28,8 +28,12 @@ from gds_etl_workbench.tools.modeling.model_scope import (
 @dataclass
 class FakeDatabase:
     scope_rows: list[dict[str, Any]]
-    audit_records: list[ToolCallLogRecord] = field(default_factory=list)
-    calls: list[tuple[Any, ...]] = field(default_factory=list)
+    audit_records: list[ToolCallLogRecord] = field(
+        default_factory=lambda: list[ToolCallLogRecord]()
+    )
+    calls: list[tuple[Any, ...]] = field(
+        default_factory=lambda: list[tuple[Any, ...]]()
+    )
 
     async def open(self) -> None: ...
 
@@ -49,7 +53,7 @@ class FakeDatabase:
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncIterator[ReadTransaction]:
+    ) -> AsyncGenerator[ReadTransaction]:
         yield FakeReadTransaction(self)
 
 
@@ -75,7 +79,9 @@ class FakeReadTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
-        assert "model_scope.is_active" in query
+        assert "workflow.list_model_object_eligibility" in query
+        assert "tenant.tenant_id = eligibility.object_tenant_id" in query
+        assert "tenant.tenant_id = connection.tenant_id" not in query
         self.database.calls.append(parameters)
         limit, offset = parameters[-2:]
         return self.database.scope_rows[offset : offset + limit]
@@ -120,6 +126,10 @@ def _scope_row() -> dict[str, Any]:
         "object_type_code": "table",
         "object_type_name": "Table",
         "zone_code": "model_tool_raw",
+        "is_bronze_source_eligible": True,
+        "is_dimensional_source_eligible": False,
+        "is_logical_mapping_target_eligible": False,
+        "is_dimensional_mapping_target_eligible": False,
         "model_scope_is_locked": False,
         "is_active": True,
         "total_object_count": 1,
@@ -141,6 +151,10 @@ async def test_get_model_scope_returns_expanded_active_objects() -> None:
     assert result.objects[0].tenant_code == "northwind"
     assert result.objects[0].object_name == "orders"
     assert result.objects[0].zone_code == "model_tool_raw"
+    assert result.objects[0].is_bronze_source_eligible is True
+    assert result.objects[0].is_dimensional_source_eligible is False
+    assert result.objects[0].is_logical_mapping_target_eligible is False
+    assert result.objects[0].is_dimensional_mapping_target_eligible is False
     assert result.objects[0].is_active is True
     assert database.calls == [(7, 2001, 0)]
     assert database.audit_records[0].input_metadata == {
@@ -192,7 +206,9 @@ async def test_get_model_scope_recovers_every_object_across_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_model_scope_rejects_a_tampered_cursor_before_querying_scope() -> None:
+async def test_get_model_scope_rejects_a_tampered_cursor_before_querying_scope() -> (
+    None
+):
     rows = [
         {**_scope_row(), "object_id": object_id, "total_object_count": 2}
         for object_id in range(1, 3)

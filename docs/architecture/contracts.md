@@ -103,9 +103,8 @@ external/location-backed temporary objects are rejected before connection.
 Statements execute sequentially in one Databricks session. Only the final
 statement's result is returned, with at most 50 rows and 500 columns. The result
 reports row/cell truncation. Connection values never enter the result or audit
-log. The complete submitted SQL and its character count enter the append-only
-tool-call audit record, but not application logs. Callers must never place
-credentials in SQL.
+log. Only the submitted SQL's character count and SHA-256 digest enter the
+append-only tool-call audit record; submitted SQL itself is not logged.
 
 ## Health
 
@@ -119,7 +118,9 @@ MCP tool failures use safe `code: message` text because the SDK serializes tool
 exceptions. Relevant codes are `authentication_required`,
 `authorization_denied`, `tenant_not_found`, `tenant_lock_required`,
 `tenant_locked`, `invalid_request`, `dependency_unavailable`, and
-`internal_error`. Metadata Change Set validation also returns `object_locked`
+`internal_error`. Stage Batch operations additionally use `stage_batch_conflict`,
+`stage_batch_not_found`, `stage_batch_not_active`, `stage_batch_incomplete`, and
+`stage_chunk_conflict`. Metadata Change Set validation also returns `object_locked`
 when a staged Object or Attribute belongs to an existing locked Object. Apply
 rechecks the same lock in PostgreSQL before writing.
 

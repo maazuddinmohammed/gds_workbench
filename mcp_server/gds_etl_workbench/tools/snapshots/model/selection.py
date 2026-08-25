@@ -44,9 +44,9 @@ _MAX_TOTAL_ROWS = 50_000
 _MODEL_DETAILS_SQL: LiteralString = """
 SELECT model_name,
        model_description,
-       silver_model_naming_template,
+       silver_model_naming_instructions,
        silver_model_audit_columns_template,
-       gold_model_naming_template,
+       gold_model_naming_instructions,
        gold_model_technical_columns_template,
        gold_model_audit_columns_template
   FROM model.model
@@ -58,30 +58,39 @@ _MODEL_SCOPE_SQL: LiteralString = """
 SELECT tenant.tenant_code,
        system.system_code,
        connection.connection_code,
-       object.object_schema,
-       object.object_name,
+       eligibility.object_schema,
+       eligibility.object_name,
+       eligibility.zone_code,
+       eligibility.is_bronze_source_eligible,
+       eligibility.is_dimensional_source_eligible,
+       eligibility.is_logical_mapping_target_eligible,
+       eligibility.is_dimensional_mapping_target_eligible,
        model_scope.model_scope_is_locked,
-       model_scope.is_active
-  FROM model.model_scope AS model_scope
+       TRUE AS is_active
+  FROM workflow.list_model_object_eligibility(%s) AS eligibility
+  JOIN model.model_scope AS model_scope
+    ON model_scope.model_id = eligibility.model_id
+   AND model_scope.object_id = eligibility.object_id
+   AND model_scope.is_active
   JOIN core.object AS object
-    ON object.object_id = model_scope.object_id
+    ON object.object_id = eligibility.object_id
+   AND object.connection_id = eligibility.connection_id
    AND object.is_active
   JOIN core.connection AS connection
-    ON connection.connection_id = object.connection_id
+    ON connection.connection_id = eligibility.connection_id
+   AND connection.system_id = eligibility.system_id
    AND connection.is_active
   JOIN core.tenant AS tenant
-    ON tenant.tenant_id = connection.tenant_id
+    ON tenant.tenant_id = eligibility.object_tenant_id
    AND tenant.is_active
   JOIN core.system AS system
-    ON system.system_id = connection.system_id
+    ON system.system_id = eligibility.system_id
    AND system.is_active
- WHERE model_scope.model_id = %s
-   AND model_scope.is_active
  ORDER BY lower(tenant.tenant_code),
           lower(system.system_code),
           lower(connection.connection_code),
-          lower(object.object_schema),
-          lower(object.object_name)
+          lower(eligibility.object_schema),
+          lower(eligibility.object_name)
  LIMIT %s
 """
 

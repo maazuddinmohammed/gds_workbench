@@ -15,6 +15,13 @@ authorized Azure/App Service/Databricks smoke is actually run.
 Each row names a positive path and a distinct negative path. SQL references are
 the exact labels passed to the fixture's fail-closed `expect_error` helper.
 
+Disposable-database regression evidence on 2026-08-24 is 280 passing MCP
+database tests and 36 passing web-backend database tests, each against only the
+fixture-created random PostgreSQL container. Ruff format/check passes for the
+five corrected fixture files. Strict Pyright is not recorded as passing: the
+current aggregate command reports 555 errors outside the corrected SQL fixture
+rows, so this evidence does not claim the aggregate T24 gate is complete.
+
 | ID | Invariant | Source | Accepting test | Rejecting test | Owner | Local | Environment |
 |---|---|---|---|---|---|---|---|
 | INV-01 | PostgreSQL is authoritative for applied state, drafts, grants, staging, receipts, and events. | IMPLEMENTATION_PLAN.md §6, invariant 1 | `tests/mcp/infrastructure/test_postgres_repository.py::test_application_change_set_apply_and_replay_are_atomic` | `tests/mcp/infrastructure/test_postgres_repository.py::test_rollback_removes_artifact_receipt_and_revision` | T03–T07, T10, T13–T14 | PASS | EXTERNAL (T25) |
@@ -50,6 +57,55 @@ These checks deepen existing modules and remove false seams while preserving
 explicit package interfaces for export control. They do not add, remove, or
 renumber any of the 26 canonical Release 1 invariants above.
 
+- Web Profiling publication is one bounded, revision-fenced PostgreSQL
+  operation. It derives Tenant, Model, and actor from a running Profiling
+  Workflow Run; requires the caller-owned Tenant Lock; requires exact eligible
+  Attribute coverage for the immutable selected Objects; replaces only those
+  Objects' Profiles; and leaves direct web table DML denied. Accepting and
+  fail-closed anchors are
+  `tests/mcp/test_database_profiling_persistence.py::test_running_profiling_results_replace_selected_profiles_and_complete`,
+  `tests/mcp/test_database_profiling_persistence.py::test_one_invalid_profile_rolls_back_every_profile_and_revision`,
+  `tests/mcp/test_database_profiling_persistence.py::test_profiling_payload_requires_exact_selected_attribute_coverage`,
+  `tests/mcp/test_database_profiling_persistence.py::test_profiling_persistence_denies_cross_tenant_actor`,
+  `tests/mcp/test_database_profiling_persistence.py::test_profiling_persistence_requires_owned_lock_and_current_revision`,
+  and
+  `tests/mcp/test_database_profiling_persistence.py::test_web_role_has_function_only_profiling_write_surface`.
+  MCP Profile upserts explicitly clear prior web-run provenance through
+  `tests/mcp/test_model_materializer.py::test_profile_materializer_clears_prior_workflow_provenance`.
+- Profiling planning and GDS credential reads are web-only governed database
+  boundaries. They require one bound running Profiling Run, current revision,
+  owned Tenant Lock, exact immutable selection, active eligible Attributes, and
+  the unique active Discovery Scope assignment. Batch requests require one
+  selected System, while no-batch multi-System runs remain valid. Anchors are
+  `tests/mcp/test_database_profiling_execution_context.py`,
+  `tests/mcp/test_database_workflow_run_lifecycle.py::test_create_workflow_run_rejects_only_batch_across_multiple_systems`,
+  `tests/mcp/test_database_metadata_discovery_scope.py::test_active_discovery_scope_assigns_each_gds_schema_to_one_tenant`,
+  and
+  `tests/mcp/test_database_application_governance.py::test_verify_install_requires_unique_active_discovery_assignment`.
+- Deterministic Analysis validation is a separate web-only Run path. It binds
+  the exact actor, Tenant, Model, revision, selected endpoints, Environment,
+  and non-secret connection-value row versions; executes fixed aggregate-only
+  Databricks SQL with bounded concurrency; and atomically persists the complete
+  validation set plus Run completion. Empty eligible sets skip credentials and
+  Databricks. Failures persist only safe Run state and never partial evidence.
+  MCP/manual Analysis writes remain valid with nullable web provenance. Anchors
+  are `tests/mcp/test_database_analysis_validation.py`,
+  `tests/web_backend/test_analysis_validation_execution.py`, and
+  `tests/web_backend/test_analysis_validation_workflow.py`.
+- GDS Object source-Tenant attribution is consistent across workflow
+  eligibility, MCP/web visibility, Metadata Snapshot projection, and governed
+  change-set resolution. Unassigned GDS Objects cannot seed or extend recursive
+  visibility. Focused anchors are
+  `tests/mcp/test_database_model_eligibility.py::test_unassigned_gds_object_is_not_workflow_eligible`,
+  `tests/mcp/test_read_catalog_tools.py::test_get_objects_returns_batched_objects_and_attributes`,
+  `tests/web_backend/test_metadata_repository.py::test_gds_object_tenant_comes_only_from_active_discovery_scope`,
+  `tests/web_backend/test_profiling_analysis.py::test_database_review_labels_gds_objects_from_discovery_scope`,
+  `tests/mcp/test_modeling_source_tenant_sql.py`,
+  `tests/web_backend/test_review_source_tenant_sql.py`,
+  `tests/mcp/test_database_metadata_snapshot_selection.py::test_selection_uses_all_approved_seeds_and_active_mapping_closure`,
+  `tests/mcp/test_database_application_model_mutations.py::test_scope_replacement_rejects_active_object_outside_visible_closure`,
+  and
+  `tests/mcp/test_database_metadata_change_set.py::test_apply_allows_global_object_inside_tenant_discovery_scope`.
 - Package initializers are explicit module interfaces: each MCP and jobs package
   declares a literal, duplicate-free `__all__` that exactly controls its public
   re-exports, all declared jobs exports resolve, and the jobs root preserves the
@@ -93,12 +149,14 @@ renumber any of the 26 canonical Release 1 invariants above.
   `test_mapping_profile_schema_has_no_unbounded_string_leaf` checks, both
   `test_generator_safety_honors_exact_dd109_text_limits` checks, and
   `tests/contracts/workflows/test_section_compatibility.py::test_mapping_profile_asset_copies_are_byte_identical`.
-  This pre-release correction changes the unregistered and undeployed
-  `mapping.standard@1.0.0` digest from
-  `553ecc421adda0b299034d7a4867e83979273784c154123fa88afeb624f0a631`
-  to `9abbca1ddf0ff6f6844265103f455066e34694bfd2e173aa8929a5cb04cbdb0f`;
-  it is not mutation of an effective registered version because T24 remains
-  blocked and T25 remains external.
+  The greenfield web contract replaces the orphaned internal fingerprint with
+  the code-generated `mapping.standard@1.0.0` digest
+  `b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa`.
+  The backend recomputes it from the three validation-mode Pydantic schemas and
+  rejects configuration drift; it does not trust the JSON registry value.
+  Current anchors are `tests/web_backend/test_mapping_contracts.py` and
+  `tests/mcp/test_database_mapping_workflow_run.py::` followed by
+  `test_mapping_run_freezes_one_inferred_logical_to_silver_pair`.
 - Mapping dependency ordering now has one shared planner and exact caller-level
   failure translation. The accepting and rejecting anchors are
   `tests/workflows/test_mapping_workflow.py::test_mapping_dependency_planner_preserves_all_failure_translations`

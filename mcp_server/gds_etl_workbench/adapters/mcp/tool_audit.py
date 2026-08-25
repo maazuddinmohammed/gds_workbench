@@ -42,6 +42,7 @@ _PROHIBITED_ARGUMENT_NAMES = frozenset(
         "records",
         "result",
         "rows",
+        "sql",
     }
 )
 _PROHIBITED_NAME_PARTS = frozenset({"api_key", "password", "secret", "token"})
@@ -122,7 +123,7 @@ class ToolCallAuditMiddleware:
                     transaction,
                     request_principal,
                 )
-        except (AuthenticationError, WorkbenchError):
+        except AuthenticationError, WorkbenchError:
             # No active server-side Principal exists to satisfy the audit row's
             # Principal constraint. The tool returns its normal safe denial.
             return await call_next(ctx)
@@ -195,24 +196,26 @@ def _protocol_failure_code(error: Exception) -> str:
 
 
 def _retain_safe_arguments(
-    arguments: Mapping[str, Any],
+    arguments: Mapping[str, object],
     *,
     retained_arguments: frozenset[str] | None = None,
-) -> dict[str, Any]:
+) -> dict[str, object]:
     return {
         name: _retain_safe_value(value)
         for name, value in arguments.items()
-        if isinstance(name, str)
-        and (retained_arguments is None or name in retained_arguments)
+        if (retained_arguments is None or name in retained_arguments)
         and not _prohibited_argument_name(name)
     }
 
 
-def _retain_safe_value(value: Any) -> Any:
+def _retain_safe_value(value: object) -> object:
     if isinstance(value, Mapping):
-        return _retain_safe_arguments(value)
+        nested = cast(Mapping[object, object], value)
+        return _retain_safe_arguments(
+            {name: item for name, item in nested.items() if isinstance(name, str)}
+        )
     if isinstance(value, list):
-        return [_retain_safe_value(item) for item in value]
+        return [_retain_safe_value(item) for item in cast(list[object], value)]
     return value
 
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from typing import TYPE_CHECKING
 from uuid import UUID
 
@@ -186,7 +187,7 @@ async def test_runtime_adapter_can_append_a_tool_call_log(
 
 
 @pytest.mark.asyncio
-async def test_runtime_adapter_retains_complete_databricks_sql(
+async def test_runtime_adapter_retains_only_databricks_sql_digest_metadata(
     postgres_database: DisposablePostgres,
 ) -> None:
     tool_call_id = UUID("40000000-0000-0000-0000-000000000004")
@@ -208,8 +209,8 @@ async def test_runtime_adapter_retains_complete_databricks_sql(
                 input_metadata={
                     "schema_version": "1.0",
                     "connection_id": 42,
-                    "sql": sql,
                     "sql_character_count": len(sql),
+                    "sql_sha256": hashlib.sha256(sql.encode("utf-8")).hexdigest(),
                 },
                 status="succeeded",
                 failure_code=None,
@@ -229,8 +230,12 @@ async def test_runtime_adapter_retains_complete_databricks_sql(
         ).fetchone()
 
     assert row is not None
-    assert row["input_metadata"]["sql"] == sql
+    assert "sql" not in row["input_metadata"]
     assert row["input_metadata"]["sql_character_count"] == 100_000
+    assert (
+        row["input_metadata"]["sql_sha256"]
+        == hashlib.sha256(sql.encode("utf-8")).hexdigest()
+    )
 
 
 def test_tool_call_log_rejects_update_and_delete(

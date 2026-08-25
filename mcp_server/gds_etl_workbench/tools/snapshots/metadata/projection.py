@@ -80,10 +80,20 @@ def project_id_free_rows(
             f"{prefix}connection_code": connection["connection_code"],
         }
 
+    def object_connection_key(
+        row: Mapping[str, Any], prefix: str = ""
+    ) -> dict[str, object]:
+        connection = connection_by_id[row["connection_id"]]
+        return {
+            f"{prefix}tenant_code": tenant_code(row["object_tenant_id"]),
+            f"{prefix}system_code": system_code(connection["system_id"]),
+            f"{prefix}connection_code": connection["connection_code"],
+        }
+
     def object_key(object_id: int, prefix: str = "") -> dict[str, object]:
         row = object_by_id[object_id]
         return {
-            **connection_key(row["connection_id"], prefix),
+            **object_connection_key(row, prefix),
             f"{prefix}object_schema": row["object_schema"],
             f"{prefix}object_name": row["object_name"],
         }
@@ -194,7 +204,7 @@ def project_id_free_rows(
     for zone_code in ("source", "bronze", "silver", "gold"):
         projected[f"{zone_code}_object"] = [
             {
-                **connection_key(row["connection_id"]),
+                **object_connection_key(row),
                 "object_schema": row["object_schema"],
                 "object_name": row["object_name"],
                 "fc_object_schema": row["fc_object_schema"],

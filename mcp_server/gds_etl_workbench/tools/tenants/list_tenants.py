@@ -117,6 +117,7 @@ def register_list_tenants_tool(
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
+        name=_COLLECTION,
         description=(
             "List active Tenants the current Principal can read. Global Tenants are "
             "visible to every active registered Principal; private Tenants require current "
@@ -131,7 +132,7 @@ def register_list_tenants_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def list_tenants(
+    async def _list_tenants(
         ctx: Context[None],
         schema_version: Literal["1.0"] = "1.0",
         page_size: Annotated[int, Field(ge=1, le=200)] = 50,
@@ -150,7 +151,7 @@ def register_list_tenants_tool(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
                 actor = await authorizer.resolve_principal(transaction, principal)
-                rows = await _query_visible_tenants(
+                rows = await query_visible_tenants(
                     transaction,
                     actor,
                     limit=request.page_size + 1,
@@ -181,6 +182,7 @@ def register_list_tenants_tool(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _list_tenants
     audit.register_tool(
         _COLLECTION,
         policy=POLICY,
@@ -203,7 +205,7 @@ def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int |
     }
 
 
-async def _query_visible_tenants(
+async def query_visible_tenants(
     transaction: ReadTransaction,
     principal: ResolvedPrincipal,
     *,

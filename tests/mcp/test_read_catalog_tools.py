@@ -278,6 +278,15 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
         assert mapping is not None
         connection.execute(
             """
+            INSERT INTO core.ingestion_object_mapping (
+                source_object_id, target_object_id
+            )
+            VALUES (%s, %s)
+            """,
+            (source_object_id, unrelated_bronze_object_id),
+        )
+        connection.execute(
+            """
             INSERT INTO core.ingestion_attribute_mapping (
                 ingestion_object_mapping_id,
                 source_object_id,
@@ -647,6 +656,8 @@ async def test_get_object_lineage_returns_direct_ingestion_mapping(
     assert mappings[0]["direction"] == "upstream"
     assert mappings[0]["source_object"]["object_id"] == catalog_seed.source_object_id
     assert mappings[0]["target_object"]["object_id"] == catalog_seed.bronze_object_id
+    assert mappings[0]["source_object"]["owning_tenant_id"] == catalog_seed.tenant_id
+    assert mappings[0]["target_object"]["owning_tenant_id"] == catalog_seed.tenant_id
     assert mappings[0]["attribute_mapping_count"] == 1
     assert mappings[0]["copy_count"] == 1
 
@@ -747,6 +758,7 @@ async def test_process_group_tools_resolve_through_tenant_copy_groups(
     assert process["process_id"] == catalog_seed.process_id
     assert process["object"]["object_id"] == catalog_seed.bronze_object_id
     assert process["object"]["zone"] == "bronze"
+    assert process["object"]["owning_tenant_id"] == catalog_seed.tenant_id
     assert process["connection_id"] == catalog_seed.gds_connection_id
     assert "process_location" not in process
     assert "process_executable" not in process

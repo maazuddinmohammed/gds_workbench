@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, LiteralString
@@ -23,9 +23,15 @@ from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
 @dataclass
 class RecordingDatabase:
     records: list[dict[str, Any]]
-    calls: list[tuple[int, int]] = field(default_factory=list)
-    isolations: list[ReadIsolation] = field(default_factory=list)
-    audit_records: list[ToolCallLogRecord] = field(default_factory=list)
+    calls: list[tuple[int, int]] = field(
+        default_factory=lambda: list[tuple[int, int]]()
+    )
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
+    audit_records: list[ToolCallLogRecord] = field(
+        default_factory=lambda: list[ToolCallLogRecord]()
+    )
 
     async def open(self) -> None: ...
 
@@ -45,7 +51,7 @@ class RecordingDatabase:
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncIterator[ReadTransaction]:
+    ) -> AsyncGenerator[ReadTransaction]:
         self.isolations.append(isolation)
         yield RecordingReadTransaction(self)
 

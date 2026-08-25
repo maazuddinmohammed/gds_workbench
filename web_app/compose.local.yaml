@@ -1,0 +1,113 @@
+x-backend-build: &backend-build
+  context: ..
+  dockerfile: web_app/backend/Dockerfile
+
+x-backend-environment: &backend-environment
+  GDS_WEB_AGENT_EXECUTION_MODE: fake
+  GDS_WEB_CURSOR_SIGNING_KEY: ${GDS_LOCAL_CURSOR_SIGNING_KEY:?generated cursor key required}
+  GDS_WEB_DATABASE_DSN: >-
+    host=database port=5432 dbname=${GDS_LOCAL_DATABASE_NAME:?generated database required}
+    user=gds_web_runtime password=${GDS_LOCAL_WEB_PASSWORD:?generated web password required}
+    sslmode=disable application_name=gds_workbench_local
+  GDS_WEB_DATABRICKS_ENVIRONMENT_CODE: local_fake
+  GDS_WEB_DATABRICKS_EXECUTION_MODE: fake
+  GDS_WEB_ENVIRONMENT: local
+  GDS_WEB_FRONTEND_ORIGIN: http://127.0.0.1:${GDS_LOCAL_FRONTEND_PORT:?frontend port required}
+  GDS_WEB_LOCAL_ENTRA_TENANT_ID: ${GDS_LOCAL_ENTRA_TENANT_ID:?generated Tenant identity required}
+  GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID: ${GDS_LOCAL_PRINCIPAL_OBJECT_ID:?generated Principal identity required}
+  GDS_WEB_PUBLIC_URL: http://127.0.0.1:${GDS_LOCAL_API_PORT:?API port required}
+
+x-backend-security: &backend-security
+  init: true
+  read_only: true
+  tmpfs:
+    - /tmp
+  cap_drop:
+    - ALL
+  security_opt:
+    - no-new-privileges:true
+  networks:
+    - local_internal
+
+services:
+  database:
+    image: postgres:18.4-bookworm@sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382
+    environment:
+      POSTGRES_DB: ${GDS_LOCAL_DATABASE_NAME:?generated database required}
+      POSTGRES_USER: ${GDS_LOCAL_DATABASE_ADMIN:?generated database administrator required}
+      POSTGRES_PASSWORD: ${GDS_LOCAL_POSTGRES_ADMIN_PASSWORD:?generated administrator password required}
+      GDS_LOCAL_POSTGRES_ADMIN_PASSWORD: ${GDS_LOCAL_POSTGRES_ADMIN_PASSWORD:?generated administrator password required}
+      GDS_LOCAL_WEB_PASSWORD: ${GDS_LOCAL_WEB_PASSWORD:?generated web password required}
+      GDS_LOCAL_MCP_PASSWORD: ${GDS_LOCAL_MCP_PASSWORD:?generated MCP password required}
+      GDS_LOCAL_RUN_SENTINEL: ${GDS_LOCAL_RUN_SENTINEL:?generated run sentinel required}
+      GDS_LOCAL_ENTRA_TENANT_ID: ${GDS_LOCAL_ENTRA_TENANT_ID:?generated Tenant identity required}
+      GDS_LOCAL_PRINCIPAL_OBJECT_ID: ${GDS_LOCAL_PRINCIPAL_OBJECT_ID:?generated Principal identity required}
+    volumes:
+      - database_data:/var/lib/postgresql
+      - ../database:/opt/gds/database:ro
+      - ./local/install_database.sh:/docker-entrypoint-initdb.d/00_install_release.sh:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -h 127.0.0.1 -U \"$$POSTGRES_USER\" -d \"$$POSTGRES_DB\""]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+      start_period: 10s
+    networks:
+      - local_internal
+
+  api:
+    <<: *backend-security
+    image: gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
+    pull_policy: never
+    build: *backend-build
+    environment: *backend-environment
+    depends_on:
+      database:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GDS_LOCAL_API_PORT}:8000"
+
+  worker:
+    <<: *backend-security
+    image: gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
+    pull_policy: never
+    build: *backend-build
+    command: ["gds-workbench-worker"]
+    environment: *backend-environment
+    depends_on:
+      database:
+        condition: service_healthy
+
+  frontend:
+    image: gds-workbench-frontend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
+    pull_policy: never
+    build:
+      context: ./frontend
+      dockerfile: Dockerfile
+    environment:
+      API_UPSTREAM: http://api:8000
+    depends_on:
+      api:
+        condition: service_healthy
+    ports:
+      - "127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8080"
+    init: true
+    read_only: true
+    tmpfs:
+      - /tmp:mode=1777,uid=101,gid=101
+      - /etc/nginx/conf.d:mode=0755,uid=101,gid=101
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
+    networks:
+      - local_internal
+
+volumes:
+  database_data:
+    labels:
+      gds.local.run: ${GDS_LOCAL_RUN_SENTINEL:?generated run sentinel required}
+
+networks:
+  local_internal:
+    internal: true

@@ -1,0 +1,7 @@
+interface:
+  display_name: GDS Workbench
+  short_description: Strict snapshot-first GDS workflow
+  default_prompt: Initialize GDS Workbench and guide me through the next required decision.
+
+policy:
+  allow_implicit_invocation: true

@@ -7,7 +7,7 @@ import binascii
 import json
 from collections.abc import Mapping
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 from uuid import UUID
 
 from gds_etl_workbench.configuration import AuthMode
@@ -79,22 +79,29 @@ class IdentityProvider:
             raise _invalid_identity()
 
         try:
-            payload: Any = json.loads(decoded)
+            payload: object = json.loads(decoded)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise _invalid_identity() from exc
-        if not isinstance(payload, dict) or payload.get("auth_typ") != "aad":
+        if not isinstance(payload, dict):
+            raise _invalid_identity()
+        payload_object = cast(dict[str, object], payload)
+        if payload_object.get("auth_typ") != "aad":
             raise _invalid_identity()
 
-        claims = payload.get("claims")
-        if not isinstance(claims, list) or not 1 <= len(claims) <= _MAX_CLAIMS:
+        raw_claims = payload_object.get("claims")
+        if not isinstance(raw_claims, list):
+            raise _invalid_identity()
+        claims = cast(list[object], raw_claims)
+        if not 1 <= len(claims) <= _MAX_CLAIMS:
             raise _invalid_identity()
 
         claim_values: dict[str, list[str]] = {}
         for claim in claims:
             if not isinstance(claim, dict):
                 raise _invalid_identity()
-            claim_type = claim.get("typ")
-            claim_value = claim.get("val")
+            claim_object = cast(dict[str, object], claim)
+            claim_type = claim_object.get("typ")
+            claim_value = claim_object.get("val")
             if not isinstance(claim_type, str) or not isinstance(claim_value, str):
                 raise _invalid_identity()
             if not claim_type or len(claim_type) > _MAX_CLAIM_VALUE_CHARS:

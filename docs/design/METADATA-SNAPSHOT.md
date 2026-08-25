@@ -20,7 +20,8 @@ structured files support selective agent reads and a separate HTML viewer.
 - No raw physical data is read or exported.
 - No foundational CRUD, direct table mutation, arbitrary SQL, or reference-data
   mutation is exposed.
-- Metadata Discovery Scope does not establish or restrict lineage.
+- Metadata Discovery Scope does not establish lineage; it is the sole
+  source-Tenant assignment for GDS Object visibility and attribution.
 - The snapshot tool does not create, validate, or apply a Metadata Change Set.
 - The App Service never writes to a user's local filesystem.
 
@@ -139,6 +140,14 @@ CREATE UNIQUE INDEX ux_metadata_discovery_scope
         lower(btrim(object_schema))
     );
 
+CREATE UNIQUE INDEX ux_active_metadata_discovery_scope_assignment
+    ON core.tenant_metadata_discovery_scope (
+        gds_connection_id,
+        zone_id,
+        lower(btrim(object_schema))
+    )
+    WHERE is_active;
+
 CREATE INDEX ix_metadata_discovery_scope_tenant_active
     ON core.tenant_metadata_discovery_scope (
         tenant_id,
@@ -156,8 +165,11 @@ safely rather than widening discovery.
 
 All scope rows for the requested Tenant, including inactive rows, are exported
 under `foundational` for explanation. Only active valid rows expand discovery.
-An ingestion mapping, Process, or Model Scope may select an Object outside this
-table; that is allowed because this table is not lineage or authorization.
+The active-only unique index enforces one source Tenant for each GDS Connection,
+Zone, and normalized schema while retaining inactive history. A GDS Object
+without an active assignment cannot seed or extend the selected graph. Non-GDS
+Objects continue to derive their Tenant from Connection ownership. This rule
+attributes Objects and closes visibility; it does not create lineage edges.
 The table's four database audit columns remain operational in PostgreSQL but
 are not selected into the snapshot.
 
@@ -170,7 +182,7 @@ the caller.
 
 The included Object set is the union of:
 
-1. every Object owned by a Connection of the requested Tenant;
+1. every non-GDS Object owned by a Connection of the requested Tenant;
 2. Objects matched by an active valid Metadata Discovery Scope row on exact
    Connection, Zone, and case-insensitive trimmed schema;
 3. endpoints of active ingestion mappings connected to the selected graph,
@@ -179,10 +191,18 @@ The included Object set is the union of:
    Tenant; and
 5. Objects in Model Scope for every active Model owned by the requested Tenant.
 
-Active ingestion mappings expand the connected lineage. Inactive mappings do
-not grant cross-Tenant expansion, but are exported when both endpoints are
-already included. Ingestion Attribute Mappings are exported when their parent
-mapping and both Attributes are included.
+Active ingestion mappings expand the connected lineage only through Objects
+whose Tenant can be resolved by the rule above. An unassigned GDS endpoint is
+excluded and stops recursive expansion. Inactive mappings do not grant
+cross-Tenant expansion, but are exported when both endpoints are already
+included. Ingestion Attribute Mappings are exported when their parent mapping
+and both Attributes are included.
+
+Projected Object, Attribute, Mapping, Copy, and Process natural keys use the
+discovery-assigned source Tenant for GDS Objects. Connection rows retain their
+physical owner. Object contracts therefore reference Tenant and System
+directly; governed change-set validation and apply resolve the physical GDS
+Connection through the exact active Discovery Scope assignment.
 
 Every Attribute of an included Object is exported, including inactive
 Attributes. Objects and Attributes are partitioned by the exact active

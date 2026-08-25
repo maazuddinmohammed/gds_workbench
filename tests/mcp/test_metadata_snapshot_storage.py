@@ -175,10 +175,17 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     blob = FakeBlob()
     service = FakeBlobService(blob)
     sas_arguments: dict[str, Any] = {}
+
+    def fake_default_azure_credential(**_kwargs: object) -> FakeCredential:
+        return credential
+
+    def fake_blob_service_client(**_kwargs: object) -> FakeBlobService:
+        return service
+
     monkeypatch.setattr(
-        storage_module, "DefaultAzureCredential", lambda **_kwargs: credential
+        storage_module, "DefaultAzureCredential", fake_default_azure_credential
     )
-    monkeypatch.setattr(storage_module, "BlobServiceClient", lambda **_kwargs: service)
+    monkeypatch.setattr(storage_module, "BlobServiceClient", fake_blob_service_client)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
         sas_arguments.update(kwargs)

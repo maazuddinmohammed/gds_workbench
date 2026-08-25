@@ -111,10 +111,55 @@ class ModelChangeSetNotValidatedError(WorkbenchError):
 
 
 class DraftRevisionConflictError(WorkbenchError):
-    def __init__(self, current_revision: int) -> None:
+    def __init__(self, current_revision: int | None = None) -> None:
+        message = (
+            f"Draft revision changed; current revision is {current_revision}."
+            if current_revision is not None
+            else "Draft revision changed; inspect the current Change Set before retrying."
+        )
         super().__init__(
             code="draft_revision_conflict",
-            message=f"Draft revision changed; current revision is {current_revision}.",
+            message=message,
+        )
+
+
+class StageBatchConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="stage_batch_conflict",
+            message="A different active Stage Batch already exists for this dataset.",
+        )
+
+
+class StageBatchNotFoundError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="stage_batch_not_found",
+            message="Stage Batch was not found for this Change Set and Principal.",
+        )
+
+
+class StageBatchNotActiveError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="stage_batch_not_active",
+            message="Stage Batch is no longer active.",
+        )
+
+
+class StageBatchIncompleteError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="stage_batch_incomplete",
+            message="Stage Batch chunks do not match its approved manifest.",
+        )
+
+
+class StageChunkConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="stage_chunk_conflict",
+            message="This chunk index already contains different records.",
         )
 
 

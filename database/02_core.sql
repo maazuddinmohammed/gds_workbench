@@ -546,6 +546,13 @@ CREATE UNIQUE INDEX ux_metadata_discovery_scope
         zone_id,
         lower(btrim(object_schema))
     );
+CREATE UNIQUE INDEX ux_active_metadata_discovery_scope_assignment
+    ON core.tenant_metadata_discovery_scope (
+        gds_connection_id,
+        zone_id,
+        lower(btrim(object_schema))
+    )
+    WHERE is_active;
 CREATE UNIQUE INDEX ux_process_group_name_ci
     ON core.process_group (
         tenant_id,

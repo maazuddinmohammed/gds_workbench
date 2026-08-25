@@ -133,6 +133,7 @@ def register_list_objects_tool(
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
+        name=_TOOL_NAME,
         description=(
             "List authorized physical Objects for one Tenant and exact Source, Bronze, "
             "Silver, or Gold Zone. Results explain their Tenant inclusion and whether "
@@ -147,7 +148,7 @@ def register_list_objects_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def list_objects(
+    async def _list_objects(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         zone: ZoneCode,
@@ -203,6 +204,7 @@ def register_list_objects_tool(
         except Exception:
             raise SafeToolError("internal_error: The operation could not be completed.") from None
 
+    del _list_objects
     audit.register_tool(
         _TOOL_NAME,
         policy=POLICY,

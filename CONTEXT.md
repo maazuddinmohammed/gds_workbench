@@ -8,6 +8,16 @@ GDS ETL Workbench lets developers inspect governed metadata, prepare a complete 
 The ownership scope for Principals, metadata, Models, and authorization.
 _Avoid_: Customer, client, account scope
 
+**Active Tenant**:
+The Tenant chosen as the current Workbench authorization and navigation scope.
+It determines visible metadata, Models, and Tenant Lock state without selecting a Model.
+_Avoid_: Current Model, selected GDS Connection
+
+**Tenant Code**:
+The unique human-readable natural key identifying a Tenant. It is distinct from
+the server-generated Tenant ID and the descriptive Tenant name.
+_Avoid_: Tenant ID, Tenant name
+
 **Principal**:
 One active internal identity representing either a user or an Entra service
 principal. Authentication maps an Entra Tenant/Object pair to this record.
@@ -31,7 +41,7 @@ _Avoid_: Database superuser, automatic workload admin
 The database-time lease that permits ordinary Tenant writes only for its exact
 owning Principal. A different human or workload Principal is blocked until the
 owner releases it, it expires, or an authorized Principal explicitly overrides
-it with an audited reason.
+it with an audited reason. Acquisition is always an explicit Principal action.
 _Avoid_: Tenant Lease token, lock Boolean, implicit override
 
 **Tool Policy**:
@@ -54,10 +64,15 @@ The server-owned active set of physical Objects that a Model can use. Membership
 is added, reactivated, or archived only through a governed Model Change Set.
 _Avoid_: Selection, source list
 
+**Selected Scope**:
+The explicit subset of eligible Model Scope inputs chosen for one Section workflow.
+It never changes Model Scope membership.
+_Avoid_: Model Scope, source list
+
 **Modeling Assertion**:
 One Model-owned structured factual statement derived from a document, email,
-meeting note, or direct user input. An Assertion Record may durably support a
-Conceptual, Logical, or Dimensional artifact.
+meeting note, or direct user input. An applicable Assertion provides governed
+context for Analysis, Conceptual, Logical, Dimensional, or Mapping but is not executable lineage.
 _Avoid_: Modeling Evidence, fact, transient context
 
 **Section**:
@@ -66,13 +81,71 @@ Analysis, Conceptual, Logical, Dimensional, or Mapping.
 _Avoid_: Phase document, payload type
 
 **Model Change Set**:
-The draft aggregate that replaces whole Sections, validates one future Model graph, and applies atomically.
+The draft aggregate containing complete pending Model records grouped by dataset.
+Validation evaluates them with the applied Model, and Apply commits the accepted
+changes atomically.
 _Avoid_: Patch, transaction draft
 
 **Metadata Change Set**:
 The Tenant-owned draft aggregate for Source/Bronze/Silver/Gold Objects and
 Attributes plus Copy and Process configuration.
 _Avoid_: Model Change Set, foundational CRUD
+
+**Reference Metadata**:
+The operator-governed shared vocabulary that classifies metadata and constrains
+accepted values. Workbench users may read it but do not author it.
+_Avoid_: Tenant Metadata, user-managed lookup values
+
+**Foundational Metadata**:
+The operator-governed Projects, Tenants, Systems, Connections, and discovery
+scope that establish ownership and access context. Workbench users may read it
+but do not author it.
+_Avoid_: Tenant Metadata, user-editable platform configuration
+
+**Target Registration**:
+The governed metadata registration of Silver or Gold Objects and Attributes for
+an applied modeled layer. It neither deploys physical targets nor creates Mapping records.
+_Avoid_: Target deployment, Mapping
+
+**Pending Record**:
+One complete proposed record that inserts, updates, reactivates, or explicitly
+deactivates an applied record. It is neither a field patch nor a complete future
+dataset copy.
+_Avoid_: Patch row, full dataset replacement
+
+**Relationship Inference**:
+A local, non-persisted hypothesis about possible physical relationships derived
+from Snapshot metadata, profiles, Assertions, and existing Analysis Results. It
+does not claim referential-integrity validation or create an Analysis Result.
+_Avoid_: Analysis Result, validated relationship
+
+**Logical Model**:
+A normalized representation driven primarily by in-scope physical Objects and
+Attributes. Profiles, Analysis Results, Conceptual records, and Assertions add
+context and improve quality but do not drive its structure.
+_Avoid_: Conceptual decomposition, physical copy
+
+**Dimensional Model**:
+An optional business-process and grain-oriented Model layer containing Facts,
+Dimensions, Bridges, Attributes, and Relationships. Its physical inputs are
+eligible Silver contributions established by applied Logical Mapping.
+_Avoid_: Mandatory Logical projection, Mapping prerequisite
+
+**Logical Mapping**:
+The Mapping route that binds applied Logical Entities and Attributes to
+preregistered Silver Objects and Attributes. Its applied bindings establish the
+Silver contributions eligible for Dimensional modeling.
+_Avoid_: Logical Section, Silver deployment
+
+**Dimensional Mapping**:
+The Mapping route that binds applied Dimensional Entities and Attributes to
+preregistered Gold Objects and Attributes. It is stored in the Mapping Section.
+_Avoid_: Dimensional Section, Gold deployment
+
+**Stage Batch**:
+A Change-Set-owned, revision-bound transport manifest whose ordered typed chunks are
+invisible to validation and apply until one atomic Commit replaces a complete dataset.
+_Avoid_: Append Stage, file upload, partial dataset
 
 **Local Reference**:
 A typed, Change-Set-scoped identity for a proposed record that has no database
@@ -87,6 +160,38 @@ _Avoid_: Agent answer, model output
 One execution by an active registered workload Principal. The MCP server maps
 the workload's Entra identity directly to its internal Principal.
 _Avoid_: Job, session
+
+**GDS Work Session**:
+One Tenant-bound, resumable body of related user-directed work. It may span
+multiple GDS focus areas, Workflow Targets, and governed drafts.
+_Avoid_: Workflow Run, chat, permanent workspace
+
+**GDS Workflow Target**:
+One user-selected bounded outcome with at most one authoritative Apply boundary.
+It never advances automatically into another Workflow Target.
+_Avoid_: Model Section, focus area, end-to-end build
+
+**Resolution Prompt**:
+A concise GDS-generated handoff describing a blocked package, its evidence, the
+required upstream Workflow Target, and the exact resume point.
+_Avoid_: Automatic repair, error dump, raw prompt
+
+**Mapping Code Generation**:
+A read-only Workflow Target that creates selected SQL or Python artifacts from
+applied Mapping records. It neither changes server state nor executes generated code.
+_Avoid_: Mapping Section, Mapping Apply, code execution
+
+**GDS Workbench**:
+The local-only interface for inspecting immutable Snapshots, editing local
+Change Sets, and performing preliminary validation. It has no authority to
+Stage, server-Validate, Apply, or otherwise change server state.
+_Avoid_: Server Change Set client, deployment interface
+
+**Local Validation Override**:
+An explicit human acceptance of exact local Change Set contents despite
+preliminary validation findings. It never bypasses authoritative server
+validation or permits Apply.
+_Avoid_: Server validation bypass, Apply approval
 
 **Actor Kind**:
 The server-derived `human` or `workload` classification used to project the MCP

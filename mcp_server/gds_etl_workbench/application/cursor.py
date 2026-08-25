@@ -8,7 +8,7 @@ import hashlib
 import hmac
 import json
 from dataclasses import dataclass
-from typing import Any
+from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 
@@ -41,15 +41,18 @@ class CursorCodec:
         if not hmac.compare_digest(signature, expected):
             raise InvalidRequestError("The pagination cursor is invalid.")
         try:
-            payload: Any = json.loads(body)
+            payload: object = json.loads(body)
         except (UnicodeDecodeError, json.JSONDecodeError) as exc:
             raise InvalidRequestError("The pagination cursor is invalid.") from exc
-        if not isinstance(payload, dict) or set(payload) != {"collection", "offset", "version"}:
+        if not isinstance(payload, dict):
             raise InvalidRequestError("The pagination cursor is invalid.")
-        offset = payload.get("offset")
+        cursor_payload = cast(dict[str, object], payload)
+        if set(cursor_payload) != {"collection", "offset", "version"}:
+            raise InvalidRequestError("The pagination cursor is invalid.")
+        offset = cursor_payload.get("offset")
         if (
-            payload.get("collection") != collection
-            or payload.get("version") != 1
+            cursor_payload.get("collection") != collection
+            or cursor_payload.get("version") != 1
             or not isinstance(offset, int)
             or isinstance(offset, bool)
             or not 0 <= offset <= 10_000_000

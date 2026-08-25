@@ -10,7 +10,7 @@ import pytest
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "gds"
+PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v1" / "gds"
 BUILDER = REPOSITORY_ROOT / "plugins" / "build_gds_plugin_zip.py"
 
 

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from collections.abc import AsyncIterator
+from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass, field
 from typing import Any, LiteralString
@@ -28,9 +28,15 @@ from gds_etl_workbench.tools.modeling.model_details import (
 @dataclass
 class FakeDatabase:
     models: list[dict[str, Any]]
-    audit_records: list[ToolCallLogRecord] = field(default_factory=list)
-    calls: list[tuple[Any, ...]] = field(default_factory=list)
-    isolations: list[ReadIsolation] = field(default_factory=list)
+    audit_records: list[ToolCallLogRecord] = field(
+        default_factory=lambda: list[ToolCallLogRecord]()
+    )
+    calls: list[tuple[Any, ...]] = field(
+        default_factory=lambda: list[tuple[Any, ...]]()
+    )
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     async def open(self) -> None: ...
 
@@ -50,7 +56,7 @@ class FakeDatabase:
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncIterator[ReadTransaction]:
+    ) -> AsyncGenerator[ReadTransaction]:
         self.isolations.append(isolation)
         yield FakeReadTransaction(self)
 
@@ -103,9 +109,9 @@ def _model(model_id: int = 7) -> dict[str, Any]:
         "model_name": "Northwind",
         "model_description": "Northwind analytics model",
         "model_revision": 4,
-        "silver_model_naming_template": {"prefix": "slv"},
+        "silver_model_naming_instructions": "Prefix Silver objects with slv_.",
         "silver_model_audit_columns_template": {"columns": ["loaded_at"]},
-        "gold_model_naming_template": {"prefix": "gld"},
+        "gold_model_naming_instructions": "Prefix Gold objects with gld_.",
         "gold_model_technical_columns_template": {"columns": ["row_hash"]},
         "gold_model_audit_columns_template": {"columns": ["loaded_at"]},
         "model_scope_object_count": 12,
@@ -124,6 +130,11 @@ async def test_get_model_returns_headers_and_policy_without_audit_columns() -> N
     assert result.tenant_id == 3
     assert result.model_count == 1
     assert result.models[0].model_name == "Northwind"
+    assert (
+        result.models[0].silver_model_naming_instructions
+        == "Prefix Silver objects with slv_."
+    )
+    assert "silver_model_naming_template" not in result.models[0].model_dump()
     assert result.models[0].silver_model_audit_columns_template == {
         "columns": ["loaded_at"]
     }

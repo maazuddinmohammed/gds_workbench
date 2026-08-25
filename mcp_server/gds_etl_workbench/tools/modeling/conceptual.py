@@ -39,6 +39,19 @@ from .common import (
 
 _MAX_PAGE_SIZE = 200
 
+_ELIGIBLE_OBJECTS_CTE = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_objects AS MATERIALIZED (
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+)
+"""
+
 _SUPPORT_JSON_SQL = """
 COALESCE((
     SELECT jsonb_agg(
@@ -85,8 +98,12 @@ COALESCE((
         ON source_object.object_id = support.source_object_id
       LEFT JOIN core.connection AS source_connection
         ON source_connection.connection_id = source_object.connection_id
+      LEFT JOIN eligible_objects AS source_eligibility
+        ON source_eligibility.object_id = support.source_object_id
+       AND source_eligibility.model_id = support.model_id
+       AND source_eligibility.is_bronze_source_eligible
       LEFT JOIN core.tenant AS source_tenant
-        ON source_tenant.tenant_id = source_connection.tenant_id
+        ON source_tenant.tenant_id = source_eligibility.object_tenant_id
       LEFT JOIN core.system AS source_system
         ON source_system.system_id = source_connection.system_id
       LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -99,16 +116,17 @@ COALESCE((
            support.support_source_type <> 'object'
            OR EXISTS (
                SELECT 1
-                 FROM model.model_scope AS active_scope
-                WHERE active_scope.model_id = support.model_id
-                  AND active_scope.object_id = support.source_object_id
-                  AND active_scope.is_active
+                 FROM eligible_objects AS eligibility
+                WHERE eligibility.object_id = support.source_object_id
+                  AND eligibility.model_id = support.model_id
+                  AND eligibility.is_bronze_source_eligible
            )
        )
 ), '[]'::JSONB) AS supports
 """
 
 CONCEPTUAL_OBJECTS_SQL: LiteralString = f"""
+{_ELIGIBLE_OBJECTS_CTE}
 SELECT parent.conceptual_object_id,
        parent.conceptual_object_name,
        parent.conceptual_object_definition,
@@ -125,7 +143,7 @@ SELECT parent.conceptual_object_id,
     )
 }
   FROM workflow.conceptual_object AS parent
- WHERE parent.model_id = %s
+ WHERE parent.model_id = (SELECT model_id FROM requested_model)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR EXISTS (
@@ -135,6 +153,13 @@ SELECT parent.conceptual_object_id,
               AND selected_support.conceptual_object_id = parent.conceptual_object_id
               AND selected_support.support_source_type = 'object'
               AND selected_support.source_object_id = ANY(%s::BIGINT[])
+              AND EXISTS (
+                  SELECT 1
+                    FROM eligible_objects AS eligibility
+                   WHERE eligibility.object_id = selected_support.source_object_id
+                     AND eligibility.model_id = selected_support.model_id
+                     AND eligibility.is_bronze_source_eligible
+              )
        )
    )
  ORDER BY lower(parent.conceptual_object_name), parent.conceptual_object_id
@@ -142,6 +167,7 @@ SELECT parent.conceptual_object_id,
 """
 
 CONCEPTUAL_RELATIONSHIPS_SQL: LiteralString = f"""
+{_ELIGIBLE_OBJECTS_CTE}
 SELECT parent.conceptual_relationship_id,
        parent.from_conceptual_object_id,
        from_object.conceptual_object_name AS from_conceptual_object_name,
@@ -169,7 +195,7 @@ SELECT parent.conceptual_relationship_id,
   JOIN workflow.conceptual_object AS to_object
     ON to_object.conceptual_object_id = parent.to_conceptual_object_id
    AND to_object.model_id = parent.model_id
- WHERE parent.model_id = %s
+ WHERE parent.model_id = (SELECT model_id FROM requested_model)
    AND (
        cardinality(%s::BIGINT[]) = 0
        OR parent.from_conceptual_object_id = ANY(%s::BIGINT[])

@@ -305,7 +305,7 @@ def _validate_tenant_scope(
     discovery_scopes = {
         _normalized_key(
             (
-                "connection_tenant_code",
+                "scope_tenant_code",
                 "connection_system_code",
                 "connection_code",
                 "zone_code",
