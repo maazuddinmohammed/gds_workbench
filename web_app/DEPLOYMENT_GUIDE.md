@@ -164,7 +164,28 @@ docker build --file web_app/backend/Dockerfile --tag gds-workbench-backend:local
 docker build --file web_app/frontend/Dockerfile --tag gds-workbench-frontend:local web_app/frontend
 ```
 
-## 7. Local troubleshooting
+## 7. Understand local versus live PostgreSQL testing
+
+The local runner and automated test suites must use only their disposable
+PostgreSQL containers. Never point `pytest`, the local runner, or CI at an
+Azure, staging, production, developer-managed, or other persistent database.
+
+Live PostgreSQL acceptance happens only through an approved non-production
+Azure deployment after the fresh-install database procedure in Part 3. The
+connection path is:
+
+```text
+Browser -> frontend container -> API container -> private PostgreSQL
+                                      ^
+Worker Container App -----------------|
+```
+
+The frontend never receives a database DSN and never connects to PostgreSQL.
+Only the API and worker receive separate references to the same Key
+Vault-backed `GDS_WEB_DATABASE_DSN`. Part 5 contains the exact live acceptance
+checklist.
+
+## 8. Local troubleshooting
 
 | Symptom | What to do |
 |---|---|
@@ -745,7 +766,41 @@ container, or normal Container Apps environment settings.
 - API `/readyz` succeeds inside the web revision.
 - The worker has at least one running replica.
 
-## 2. Authentication and authorization checks
+## 2. Validate the live PostgreSQL connection path
+
+This is a deployment smoke test, not an automated database test. Use only the
+new approved non-production database installed and verified in Part 3.
+
+1. Confirm `database/13_verify_install.sql` reports the expected schema version
+   and `verification_status = passed` from the approved private bootstrap host.
+2. Confirm the API and worker each reference the approved Key Vault secret as
+   `GDS_WEB_DATABASE_DSN`. The DSN must use `gds_web_runtime`, private DNS, and
+   certificate verification. Do not reveal or copy its resolved value.
+3. Confirm the frontend has no database setting. Its only runtime setting is
+   `API_UPSTREAM=http://127.0.0.1:8000`.
+4. Deploy one web revision containing the frontend image and API image. Deploy
+   the worker as its separate ingress-disabled Container App using the same
+   immutable backend image tag.
+5. Wait for the frontend and API startup, liveness, and readiness probes to
+   pass. Confirm the worker has one running replica without an HTTP probe.
+6. Sign in through the public frontend. Confirm `/api/v1/session` returns `200`,
+   authorized Tenants load, and normalized Metadata loads. These are
+   database-backed API reads through the frontend proxy.
+7. With an authorized non-production user, acquire and release the Tenant Lock.
+   Confirm the changed server-owned state appears after refresh. This proves a
+   governed database write and read without exposing table access to the
+   browser.
+8. After the approved Databricks and Agent integrations are registered, run one
+   small non-sensitive workflow. Confirm the worker claims it and bounded Run
+   Events reach the UI. This proves the worker uses the same live database path.
+9. Inspect only bounded health and error messages. Never print the DSN, Easy
+   Auth principal header, credentials, prompts, physical rows, provider output,
+   or workflow claim tokens.
+
+If any check fails, stop the release and preserve the bounded error. Do not
+drop, truncate, reset, backfill, or apply an ad hoc database repair.
+
+## 3. Authentication and authorization checks
 
 Using an approved test user:
 
@@ -760,7 +815,7 @@ Using an approved test user:
 
 Do not test by forging Easy Auth headers against the public endpoint.
 
-## 3. Workflow smoke test
+## 4. Workflow smoke test
 
 Use a small, non-sensitive test Model:
 
@@ -778,7 +833,7 @@ Use a small, non-sensitive test Model:
 Check that failures are explicit, no partial result is committed, and retry
 attempts remain within the selected run settings.
 
-## 4. Logging and redaction check
+## 5. Logging and redaction check
 
 Container Apps and Log Analytics must not contain:
 
