@@ -140,6 +140,31 @@ describe("Tenant Lock acquisition", () => {
 });
 
 describe("Tenant Lock renewal", () => {
+  it("keeps extension help outside the input row so the action aligns with the input", async () => {
+    const api: TenantLockApi = {
+      acquireTenantLock: vi.fn(),
+      renewTenantLock: vi.fn(),
+      releaseTenantLock: vi.fn(),
+      overrideTenantLock: vi.fn(),
+    };
+
+    renderTenantLock({
+      api,
+      readTenantHome: vi.fn(async () => ownedTenant()),
+      actions: renewableActions(),
+    });
+
+    const duration = await screen.findByRole("spinbutton", {
+      name: "Extend duration (minutes)",
+    });
+    const help = screen.getByText(
+      "1–240 whole minutes from server time; the server checks this again.",
+    );
+
+    expect(duration).toHaveAttribute("aria-describedby", help.id);
+    expect(duration.closest("label")).not.toContainElement(help);
+  });
+
   it("renews only after explicit submission and refetches server-owned state", async () => {
     let lock = ownedTenant();
     const readTenantHome = vi.fn(async () => lock);

@@ -311,7 +311,24 @@
 
 .tenant-lock-renew-form {
   grid-template-columns: minmax(15rem, 24rem) auto;
+  grid-template-areas:
+    "renew-field renew-action"
+    "renew-help .";
   justify-content: start;
+  column-gap: 0.85rem;
+  row-gap: 0.35rem;
+}
+
+.tenant-lock-renew-field {
+  grid-area: renew-field;
+}
+
+.tenant-lock-renew-help {
+  grid-area: renew-help;
+}
+
+.tenant-lock-renew-form > .button {
+  grid-area: renew-action;
 }
 
 .tenant-lock-form label {
@@ -703,6 +720,15 @@ tbody tr:hover {
     justify-self: end;
   }
 
+  .tenant-lock-renew-form {
+    grid-template-columns: minmax(15rem, 24rem) auto;
+  }
+
+  .tenant-lock-renew-form > .button {
+    grid-area: renew-action;
+    justify-self: start;
+  }
+
   .tenant-lock-release-confirmation {
     align-items: stretch;
     flex-direction: column;
@@ -904,6 +930,19 @@ tbody tr:hover {
   .tenant-lock-form .button {
     width: 100%;
     grid-column: auto;
+  }
+
+  .tenant-lock-renew-form {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "renew-field"
+      "renew-help"
+      "renew-action";
+  }
+
+  .tenant-lock-renew-form > .button {
+    grid-area: renew-action;
+    justify-self: stretch;
   }
 
   .tenant-lock-release-action,

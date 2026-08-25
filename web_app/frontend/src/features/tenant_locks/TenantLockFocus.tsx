@@ -96,6 +96,7 @@ export function TenantLockFocus({
   });
   const renewDurationValue = useStore(renewForm.store, (state) => state.values.durationMinutes);
   const renewDuration = Number(renewDurationValue);
+  const renewHelpId = `tenant-lock-renew-help-${tenantId}`;
   const renewFormIsValid = Number.isSafeInteger(renewDuration)
     && renewDuration >= 1
     && renewDuration <= 240;
@@ -209,10 +210,11 @@ export function TenantLockFocus({
             >
               <renewForm.Field name="durationMinutes">
                 {(field) => (
-                  <label>
+                  <label className="tenant-lock-renew-field">
                     <span>Extend duration (minutes)</span>
                     <input
                       aria-label="Extend duration (minutes)"
+                      aria-describedby={renewHelpId}
                       type="number"
                       min="1"
                       max="240"
@@ -222,10 +224,12 @@ export function TenantLockFocus({
                       onBlur={field.handleBlur}
                       onChange={(event) => field.handleChange(event.target.value)}
                     />
-                    <small>1–240 whole minutes from server time; the server checks this again.</small>
                   </label>
                 )}
               </renewForm.Field>
+              <small id={renewHelpId} className="tenant-lock-renew-help">
+                1–240 whole minutes from server time; the server checks this again.
+              </small>
               <button
                 className="button button-primary"
                 type="submit"
