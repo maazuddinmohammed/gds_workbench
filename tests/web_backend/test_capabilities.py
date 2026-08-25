@@ -26,8 +26,8 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
     }
     selection = AgentRunSelection(
         sdk_code="langchain_create_agent",
-        provider_code="microsoft_foundry",
-        model_code="gpt-5.6",
+        provider_code="databricks",
+        model_code="databricks-primary",
         reasoning_effort_code="medium",
         max_turns=10,
         validation_retry_count=2,
@@ -83,6 +83,6 @@ def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["schema_version"] == "1.0"
-    assert payload["models"][0]["provider_code"] == "microsoft_foundry"
+    assert payload["models"][0]["provider_code"] == "databricks"
     assert "endpoint" not in response.text.lower()
     assert "secret" not in response.text.lower()

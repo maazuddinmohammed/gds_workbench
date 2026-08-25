@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import ast
 import importlib.util
 import re
 import stat
@@ -10,6 +11,14 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 RUNNER_PATH = REPOSITORY_ROOT / "web_app" / "local" / "run.py"
+
+
+def test_runner_uses_python_3_13_compatible_syntax() -> None:
+    ast.parse(
+        RUNNER_PATH.read_text(encoding="utf-8"),
+        filename=str(RUNNER_PATH),
+        feature_version=(3, 13),
+    )
 
 
 def _load_runner():
@@ -135,11 +144,9 @@ def test_compose_cleanup_always_disposes_volumes(
     image_removal = next(
         command for command in calls if command[:3] == ["docker", "image", "rm"]
     )
-    assert len(image_removal) == 5
-    backend_suffix = image_removal[3].removeprefix("gds-workbench-backend:local-")
-    frontend_suffix = image_removal[4].removeprefix("gds-workbench-frontend:local-")
-    assert backend_suffix == frontend_suffix
-    assert re.fullmatch(r"[0-9a-f]{12}", backend_suffix)
+    assert len(image_removal) == 4
+    image_suffix = image_removal[3].removeprefix("gds-workbench-app:local-")
+    assert re.fullmatch(r"[0-9a-f]{12}", image_suffix)
 
 
 def test_standalone_compose_is_used_when_cli_plugin_is_unavailable(

@@ -43,7 +43,7 @@ class StaticModelCommandService:
         assert request.silver_model_audit_columns_template == {
             "columns": [{"name": "created_at", "type": "timestamp"}]
         }
-        assert request.default_agent_model_code == "gpt-5.6"
+        assert request.default_agent_model_code == "databricks-primary"
         return ModelCommandResult(
             model_id=18,
             tenant_id=7,
@@ -133,8 +133,8 @@ def _complete_model_payload() -> dict[str, object]:
             "columns": [{"name": "updated_at", "type": "timestamp"}]
         },
         "default_agent_sdk_code": "langchain_create_agent",
-        "default_agent_provider_code": "microsoft_foundry",
-        "default_agent_model_code": "gpt-5.6",
+        "default_agent_provider_code": "databricks",
+        "default_agent_model_code": "databricks-primary",
         "default_reasoning_effort_code": "medium",
         "default_max_turns": 10,
         "default_validation_retry_count": 2,
@@ -307,8 +307,8 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
     assert isinstance(parameters[10], Jsonb)
     assert parameters[11:] == (
         "langchain_create_agent",
-        "microsoft_foundry",
-        "gpt-5.6",
+        "databricks",
+        "databricks-primary",
         "medium",
         10,
         2,
@@ -456,8 +456,8 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
     assert isinstance(update_call[1][11], Jsonb)
     assert update_call[1][12:] == (
         "langchain_create_agent",
-        "microsoft_foundry",
-        "gpt-5.6",
+        "databricks",
+        "databricks-primary",
         "medium",
         10,
         2,
@@ -535,7 +535,7 @@ async def test_agent_registry_rejects_incompatible_defaults_before_database_acce
         agent_capability_registry=load_default_agent_capabilities(),
     )
     incompatible = _complete_model_payload() | {
-        "default_agent_model_code": "gpt-5.6-openai"
+        "default_agent_model_code": "unavailable-model"
     }
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -756,8 +756,6 @@ def test_runtime_wires_all_complete_model_command_routes() -> None:
             "GDS_WEB_DATABASE_DSN": "postgresql://fixture.invalid/workbench",
             "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
-            "GDS_WEB_PUBLIC_URL": "http://localhost:8000",
-            "GDS_WEB_FRONTEND_ORIGIN": "http://localhost:5173",
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
             "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
                 "22222222-2222-2222-2222-222222222222"

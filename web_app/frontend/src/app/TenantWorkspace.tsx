@@ -64,7 +64,9 @@ export function TenantWorkspace({
         <p className="sidebar-label">Workspace</p>
         <nav>
           <Link
+            aria-label="Home"
             className={`nav-item${activeNav === "home" ? " is-active" : ""}`}
+            data-short-label="Home"
             to="/tenants/$tenantId"
             params={{ tenantId }}
             activeOptions={{ exact: true }}
@@ -72,35 +74,45 @@ export function TenantWorkspace({
             <HomeIcon />Home
           </Link>
           <Link
+            aria-label="Metadata"
             className={`nav-item${activeNav === "metadata" ? " is-active" : ""}`}
+            data-short-label="Metadata"
             to="/tenants/$tenantId/metadata"
             params={{ tenantId }}
           >
             <DatabaseIcon />Metadata
           </Link>
           <Link
+            aria-label="Models"
             className={`nav-item${activeNav === "models" ? " is-active" : ""}`}
+            data-short-label="Models"
             to="/tenants/$tenantId/models"
             params={{ tenantId }}
           >
             <ModelIcon />Models
           </Link>
           <Link
+            aria-label="Mapping"
             className={`nav-item${activeNav === "mapping" ? " is-active" : ""}`}
+            data-short-label="Mapping"
             to="/tenants/$tenantId/mapping"
             params={{ tenantId }}
           >
             <MappingIcon />Mapping
           </Link>
           <Link
+            aria-label="Code generation"
             className={`nav-item${activeNav === "code-generation" ? " is-active" : ""}`}
+            data-short-label="Code"
             to="/tenants/$tenantId/code-generation"
             params={{ tenantId }}
           >
             <CodeIcon />Code generation
           </Link>
           <Link
+            aria-label="Prompts"
             className={`nav-item${activeNav === "prompts" ? " is-active" : ""}`}
+            data-short-label="Prompts"
             to="/tenants/$tenantId/prompts"
             params={{ tenantId }}
           >

@@ -66,7 +66,7 @@ describe("Model Analysis", () => {
       workflow_execution_mode: "tool_assisted",
       selected_object_ids: [501, 502],
       requested_batch_id: null,
-      agent: expect.objectContaining({ model_code: "gpt-5.6" }),
+      agent: expect.objectContaining({ model_code: "databricks-primary" }),
     }));
 
     await user.click(screen.getByRole("button", { name: "Validate pending" }));
@@ -195,8 +195,8 @@ const modelPayload = {
   gold_model_technical_columns_template: null,
   gold_model_audit_columns_template: null,
   default_agent_sdk_code: "openai_agents",
-  default_agent_provider_code: "microsoft_foundry",
-  default_agent_model_code: "gpt-5.6",
+  default_agent_provider_code: "databricks",
+  default_agent_model_code: "databricks-primary",
   default_reasoning_effort_code: "medium",
   default_max_turns: 8,
   default_validation_retry_count: 1,
@@ -338,12 +338,12 @@ const analysisRunsPayload = [
 
 const capabilitiesPayload = {
   schema_version: "1.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents SDK", provider_codes: ["microsoft_foundry"] }],
-  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
+  sdks: [{ code: "openai_agents", name: "OpenAI Agents SDK", provider_codes: ["databricks"] }],
+  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
   models: [{
-    code: "gpt-5.6",
+    code: "databricks-primary",
     name: "GPT-5.6",
-    provider_code: "microsoft_foundry",
+    provider_code: "databricks",
     sdk_codes: ["openai_agents"],
     reasoning_effort_codes: ["medium"],
   }],

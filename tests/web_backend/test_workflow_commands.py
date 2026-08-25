@@ -81,7 +81,7 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
                 "agent": {
                     "sdk_code": "openai_agents_sdk",
                     "provider_code": "openai",
-                    "model_code": "gpt-5.6-openai",
+                    "model_code": "databricks-primary",
                     "reasoning_effort_code": "high",
                     "max_turns": 15,
                     "validation_retry_count": 2,
@@ -121,7 +121,7 @@ def test_deterministic_and_agentic_inputs_cannot_be_mixed() -> None:
                 "agent": {
                     "sdk_code": "openai_agents_sdk",
                     "provider_code": "openai",
-                    "model_code": "gpt-5.6-openai",
+                    "model_code": "databricks-primary",
                     "reasoning_effort_code": "high",
                     "max_turns": 15,
                     "validation_retry_count": 2,

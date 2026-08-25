@@ -5,16 +5,19 @@ from contextlib import AbstractAsyncContextManager, asynccontextmanager
 from typing import Protocol
 
 from fastapi import FastAPI
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.configuration import Environment
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     WriteTransaction,
 )
-from starlette.middleware.cors import CORSMiddleware
-from starlette.middleware.httpsredirect import HTTPSRedirectMiddleware
-from starlette.middleware.trustedhost import TrustedHostMiddleware
 
+from gds_workbench_api.authentication import (
+    DatabricksUserResolver,
+    LocalUserResolver,
+    WebAuthenticationMiddleware,
+    WebIdentityProvider,
+)
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
@@ -108,6 +111,11 @@ from gds_workbench_api.features.workflows.runs import (
     DatabaseWorkflowRunService,
     WorkflowRunDatabase,
 )
+from gds_workbench_api.frontend import (
+    RequestBodyLimitMiddleware,
+    SecurityHeadersMiddleware,
+    mount_frontend,
+)
 from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
 from gds_workbench_api.main import ReadinessDependency, create_app
 
@@ -177,11 +185,21 @@ def create_runtime_app(
             runtime_settings.databricks_execution_mode
         ),
     )
-    identity_provider = IdentityProvider(
-        runtime_settings.auth_mode,
-        local_tenant_id=runtime_settings.local_entra_tenant_id,
-        local_principal_object_id=runtime_settings.local_principal_object_id,
-    )
+    identity_provider = WebIdentityProvider()
+    if runtime_settings.environment is Environment.LOCAL:
+        if runtime_settings.local_principal_object_id is None:
+            raise RuntimeError("the validated local web identity is unavailable")
+        identity_resolver = LocalUserResolver(
+            entra_tenant_id=runtime_settings.entra_tenant_id,
+            entra_object_id=runtime_settings.local_principal_object_id,
+        )
+    else:
+        if runtime_settings.databricks_host is None:
+            raise RuntimeError("the validated Databricks host is unavailable")
+        identity_resolver = DatabricksUserResolver(
+            host=runtime_settings.databricks_host,
+            entra_tenant_id=runtime_settings.entra_tenant_id,
+        )
 
     @asynccontextmanager
     async def lifespan(_app: FastAPI) -> AsyncGenerator[None]:
@@ -321,22 +339,13 @@ def create_runtime_app(
         ),
         lifespan=lifespan,
     )
+    if runtime_settings.static_directory is not None:
+        mount_frontend(app, runtime_settings.static_directory)
     app.add_middleware(
-        CORSMiddleware,
-        allow_origins=[runtime_settings.frontend_origin],
-        allow_credentials=True,
-        allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE"],
-        allow_headers=[
-            "Content-Type",
-            "Idempotency-Key",
-            "If-Match",
-            "X-Correlation-ID",
-        ],
+        WebAuthenticationMiddleware,
+        identity_provider=identity_provider,
+        resolver=identity_resolver,
     )
-    app.add_middleware(
-        TrustedHostMiddleware,
-        allowed_hosts=list(runtime_settings.allowed_hosts),
-    )
-    if runtime_settings.require_https:
-        app.add_middleware(HTTPSRedirectMiddleware)
+    app.add_middleware(RequestBodyLimitMiddleware)
+    app.add_middleware(SecurityHeadersMiddleware)
     return app

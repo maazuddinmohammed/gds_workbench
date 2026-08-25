@@ -1,0 +1,29 @@
+command:
+  - uv
+  - run
+  - --frozen
+  - python
+  - -m
+  - gds_workbench_api.app_process
+
+env:
+  - name: NODE_ENV
+    value: production
+  - name: GDS_WEB_ENVIRONMENT
+    value: production
+  - name: GDS_WEB_STATIC_DIR
+    value: web_app/frontend/dist
+  - name: GDS_WEB_AGENT_EXECUTION_MODE
+    value: remote
+  - name: GDS_WEB_DATABRICKS_EXECUTION_MODE
+    value: remote
+  - name: GDS_WEB_DATABASE_DSN
+    valueFrom: postgres-dsn
+  - name: GDS_WEB_CURSOR_SIGNING_KEY
+    valueFrom: cursor-signing-key
+  - name: GDS_WEB_ENTRA_TENANT_ID
+    valueFrom: entra-tenant-id
+  - name: GDS_WEB_DATABRICKS_ENVIRONMENT_CODE
+    valueFrom: databricks-environment-code
+  - name: GDS_WEB_DATABRICKS_MODEL_ENDPOINT
+    valueFrom: agent-model-endpoint

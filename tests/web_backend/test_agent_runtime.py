@@ -11,7 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from pydantic import JsonValue, SecretStr
+from pydantic import JsonValue
 from test_mapping_attribute_candidate import (
     _preparation as _mapping_preparation,  # pyright: ignore[reportPrivateUsage]
 )
@@ -79,8 +79,8 @@ from gds_workbench_api.integrations.agents import (
 def _selection(*, sdk_code: str) -> AgentRunSelection:
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code="microsoft_foundry",
-        model_code="gpt-5.6",
+        provider_code="databricks",
+        model_code="databricks-primary",
         reasoning_effort_code="medium",
         max_turns=8,
         validation_retry_count=2,
@@ -2064,9 +2064,8 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
 
 async def test_remote_runtime_constructs_without_contacting_a_provider() -> None:
     connection = AgentProviderConnection(
-        provider_code="microsoft_foundry",
-        api_key=SecretStr("must-not-appear"),
-        base_url="https://foundry.example/openai/v1/",
+        provider_code="databricks",
+        model_endpoint="production-agent-endpoint",
         timeout_seconds=90,
     )
 
@@ -2084,7 +2083,7 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
             "selection": AgentRunSelection(
                 sdk_code="langchain_create_agent",
                 provider_code="openai",
-                model_code="gpt-5.6-openai",
+                model_code="databricks-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=2,
@@ -2095,4 +2094,3 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
         await router.execute(request)
 
     assert captured.value.code == "invalid_request"
-    assert "must-not-appear" not in repr(router)

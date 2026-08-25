@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
+from dataclasses import dataclass, field
 from typing import Any, Literal, Protocol, cast, runtime_checkable
+from urllib.parse import urlsplit
 
 import langchain.agents as langchain_agents
 import langsmith.run_helpers as langsmith_run_helpers
@@ -13,18 +16,19 @@ from agents import (
     Agent,
     FunctionTool,
     ModelSettings,
-    OpenAIResponsesModel,
+    OpenAIChatCompletionsModel,
     RunConfig,
     Runner,
     Tool,
     ToolCallItem,
 )
+from databricks.sdk import WorkspaceClient
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
 from openai.types.shared import Reasoning
-from pydantic import JsonValue, TypeAdapter
+from pydantic import JsonValue, SecretStr, TypeAdapter
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionFailedError,
@@ -56,7 +60,6 @@ class _CreateAgent(Protocol):
         model: object,
         tools: Sequence[BaseTool],
         system_prompt: str,
-        response_format: dict[str, JsonValue],
         name: str,
     ) -> _LangChainGraph: ...
 
@@ -69,10 +72,64 @@ class _TracingContext(Protocol):
 class _AgentMessage(Protocol):
     type: str
     tool_calls: Sequence[object]
+    content: object
 
 
 create_agent = cast(_CreateAgent, vars(langchain_agents)["create_agent"])
 tracing_context = cast(_TracingContext, vars(langsmith_run_helpers)["tracing_context"])
+
+
+@dataclass(frozen=True, slots=True)
+class OpenAIProviderCredentials:
+    api_key: SecretStr = field(repr=False)
+    base_url: str
+
+
+class ModelAuthentication(Protocol):
+    async def authenticate(self) -> OpenAIProviderCredentials: ...
+
+
+class DatabricksModelAuthentication:
+    """Resolve short-lived app service-principal credentials through unified auth."""
+
+    async def authenticate(self) -> OpenAIProviderCredentials:
+        return await asyncio.to_thread(self._authenticate)
+
+    @staticmethod
+    def _authenticate() -> OpenAIProviderCredentials:
+        workspace = WorkspaceClient(
+            auth_type="oauth-m2m",
+            debug_headers=False,
+            product="gds-workbench-web",
+            product_version="0.1.0",
+        )
+        headers = workspace.config.authenticate()
+        authorization = next(
+            (value for name, value in headers.items() if name.lower() == "authorization"),
+            "",
+        )
+        scheme, _, access_token = authorization.partition(" ")
+        host = (workspace.config.host or "").rstrip("/")
+        parsed_host = urlsplit(host)
+        if (
+            scheme.lower() != "bearer"
+            or not access_token
+            or parsed_host.scheme != "https"
+            or not parsed_host.hostname
+            or parsed_host.username is not None
+            or parsed_host.password is not None
+            or parsed_host.path not in {"", "/"}
+            or parsed_host.query
+            or parsed_host.fragment
+        ):
+            raise RuntimeError("Databricks model authentication is unavailable")
+        return OpenAIProviderCredentials(
+            api_key=SecretStr(access_token),
+            base_url=f"{host}/serving-endpoints",
+        )
+
+    def __repr__(self) -> str:
+        return "DatabricksModelAuthentication()"
 
 
 class _ConfiguredAdapter:
@@ -82,11 +139,13 @@ class _ConfiguredAdapter:
         self,
         *,
         connections: tuple[AgentProviderConnection, ...],
+        model_authentication: ModelAuthentication | None = None,
     ) -> None:
         provider_codes = [connection.provider_code for connection in connections]
         if len(provider_codes) != len(set(provider_codes)):
             raise ValueError("Agent provider connections must be unique")
         self._connections = {connection.provider_code: connection for connection in connections}
+        self._model_authentication = model_authentication or DatabricksModelAuthentication()
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(configured_providers={len(self._connections)})"
@@ -120,22 +179,21 @@ class LangChainCreateAgentAdapter(_ConfiguredAdapter):
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         connection = self._connection(request)
         try:
+            credentials = await self._model_authentication.authenticate()
             with tracing_context(enabled=False):
                 tools: Sequence[BaseTool] = _langchain_tools(self._tool_catalog(request))
                 model = ChatOpenAI(
-                    model=request.selection.model_code,
-                    api_key=connection.api_key,
-                    base_url=connection.base_url,
+                    model=connection.model_endpoint,
+                    api_key=credentials.api_key,
+                    base_url=credentials.base_url,
                     timeout=connection.timeout_seconds,
                     max_retries=2,
                     reasoning_effort=request.selection.reasoning_effort_code,
-                    store=False,
                 )
                 graph = create_agent(
                     model=model,
                     tools=tools,
                     system_prompt=_system_prompt(request),
-                    response_format=request.output_schema,
                     name=f"{request.workflow}_{request.stage}",
                 )
                 raw_state = await graph.ainvoke(
@@ -152,7 +210,6 @@ class LangChainCreateAgentAdapter(_ConfiguredAdapter):
             if not isinstance(raw_state, Mapping):
                 raise AgentExecutionFailedError()
             state = cast(Mapping[object, object], raw_state)
-            candidate = _candidate(state.get("structured_response"))
             messages = state.get("messages")
             if not isinstance(messages, Sequence) or isinstance(messages, str | bytes):
                 raise AgentExecutionFailedError()
@@ -161,6 +218,9 @@ class LangChainCreateAgentAdapter(_ConfiguredAdapter):
                 for message in cast(Sequence[object], messages)
                 if isinstance(message, _AgentMessage) and message.type == "ai"
             ]
+            if not ai_messages:
+                raise AgentExecutionFailedError()
+            candidate = _candidate(_message_text(ai_messages[-1].content))
             turn_count = len(ai_messages)
             tool_call_count = sum(len(message.tool_calls) for message in ai_messages)
             return AgentExecutionResult(
@@ -181,15 +241,16 @@ class OpenAIAgentsSdkAdapter(_ConfiguredAdapter):
         connection = self._connection(request)
         client: AsyncOpenAI | None = None
         try:
+            credentials = await self._model_authentication.authenticate()
             tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request)))
             client = AsyncOpenAI(
-                api_key=connection.api_key.get_secret_value(),
-                base_url=connection.base_url,
+                api_key=credentials.api_key.get_secret_value(),
+                base_url=credentials.base_url,
                 timeout=connection.timeout_seconds,
                 max_retries=2,
             )
-            model = OpenAIResponsesModel(
-                model=request.selection.model_code,
+            model = OpenAIChatCompletionsModel(
+                model=connection.model_endpoint,
                 openai_client=client,
             )
             reasoning_effort = cast(
@@ -203,7 +264,6 @@ class OpenAIAgentsSdkAdapter(_ConfiguredAdapter):
                 model_settings=ModelSettings(
                     reasoning=Reasoning(effort=reasoning_effort),
                     parallel_tool_calls=False,
-                    store=False,
                     timeout=float(connection.timeout_seconds),
                 ),
                 tools=list(tools),
@@ -234,9 +294,11 @@ class OpenAIAgentsSdkAdapter(_ConfiguredAdapter):
 
 
 def _system_prompt(request: AgentExecutionRequest) -> str:
-    if request.tool_instruction is None:
-        return request.system_prompt
-    return f"{request.system_prompt}\n\n{request.tool_instruction}"
+    sections = [request.system_prompt]
+    if request.tool_instruction is not None:
+        sections.append(request.tool_instruction)
+    sections.append("Return exactly one JSON object with no Markdown or surrounding text.")
+    return "\n\n".join(sections)
 
 
 def _langchain_tools(
@@ -322,3 +384,23 @@ def _candidate(value: object) -> JsonValue:
         return _JSON_VALUE.validate_python(value, strict=True)
     except ValueError:
         raise AgentExecutionFailedError() from None
+
+
+def _message_text(content: object) -> str:
+    if isinstance(content, str) and content:
+        return content
+    if not isinstance(content, Sequence) or isinstance(content, str | bytes):
+        raise AgentExecutionFailedError()
+    parts: list[str] = []
+    for block in cast(Sequence[object], content):
+        if not isinstance(block, Mapping):
+            continue
+        block_mapping = cast(Mapping[object, object], block)
+        if block_mapping.get("type") != "text":
+            continue
+        text = block_mapping.get("text")
+        if isinstance(text, str) and text:
+            parts.append(text)
+    if not parts:
+        raise AgentExecutionFailedError()
+    return "".join(parts)

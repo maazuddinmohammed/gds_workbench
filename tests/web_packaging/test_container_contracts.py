@@ -1,74 +1,123 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
+DOCKERIGNORE = ROOT / ".dockerignore"
+ROOT_PACKAGE_LOCK = ROOT / "package-lock.json"
 COMPOSE = ROOT / "web_app" / "compose.local.yaml"
 BACKEND_DOCKERFILE = ROOT / "web_app" / "backend" / "Dockerfile"
-FRONTEND_DOCKERFILE = ROOT / "web_app" / "frontend" / "Dockerfile"
-NGINX_TEMPLATE = ROOT / "web_app" / "frontend" / "nginx.conf.template"
+FRONTEND_PACKAGE = ROOT / "web_app" / "frontend" / "package.json"
+FRONTEND_BUILD_TSCONFIG = ROOT / "web_app" / "frontend" / "tsconfig.build.json"
 INSTALL_DATABASE = ROOT / "web_app" / "local" / "install_database.sh"
 
 
-def test_local_compose_is_loopback_only_and_uses_one_backend_image() -> None:
+def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
     compose = COMPOSE.read_text(encoding="utf-8")
-    api = compose[compose.index("  api:\n") : compose.index("  worker:\n")]
-    worker = compose[compose.index("  worker:\n") : compose.index("  frontend:\n")]
-    frontend = compose[compose.index("  frontend:\n") : compose.index("\nvolumes:\n")]
+    app = compose[compose.index("  app:\n") : compose.index("\nvolumes:\n")]
 
     assert "postgres:18.4-bookworm@sha256:882236b897e39051" in compose
     assert '"127.0.0.1:${GDS_LOCAL_API_PORT}:8000"' in compose
-    assert '"127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8080"' in compose
+    assert '"127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8000"' in compose
     assert not re.search(r"ports:\s*\n(?:\s+-.*\n)*\s+-\s*[\"']?5432:", compose)
     assert (
         compose.count(
-            "gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}"
+            "gds-workbench-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}"
         )
-        == 2
+        == 1
     )
-    assert compose.count("build: *backend-build") == 1
-    assert 'command: ["gds-workbench-worker"]' in compose
+    assert "  api:\n" not in compose
+    assert "  worker:\n" not in compose
+    assert "  frontend:\n" not in compose
+    assert "GDS_WEB_STATIC_DIR: /app/web_app/frontend/dist" in compose
+    assert 'DATABRICKS_APP_PORT: "8000"' in compose
     assert "GDS_WEB_AGENT_EXECUTION_MODE: fake" in compose
     assert "GDS_WEB_DATABRICKS_EXECUTION_MODE: fake" in compose
     assert "local_backend:\n    internal: true" in compose
     assert "local_edge:\n" in compose
-    assert "- local_backend" in api and "- local_edge" in api
-    assert "<<: *backend-security" in worker and "- local_edge" not in worker
-    assert "- local_edge" in frontend and "- local_backend" not in frontend
-    assert "healthcheck:\n      disable: true" in worker
+    assert "- local_backend" in app and "- local_edge" in app
+    assert "<<: *app-security" in app
     assert "cap_drop:" in compose and "- ALL" in compose
 
 
-def test_backend_image_is_python_314_frozen_and_non_root() -> None:
+def test_combined_local_image_builds_react_and_python_then_runs_one_app_process() -> (
+    None
+):
     dockerfile = BACKEND_DOCKERFILE.read_text(encoding="utf-8")
 
+    assert (
+        "node:22.16.0-bookworm-slim@sha256:048ed02c5fd52e86fda6fbd2f6a76cf0d4492f"
+        in dockerfile
+    )
     assert dockerfile.count("python:3.14.7-slim-trixie@sha256:ce40764625a4ff50") == 2
     assert "uv==0.11.14" in dockerfile
-    assert "uv sync --frozen --no-dev --no-editable" in dockerfile
-    assert "USER 10001:10001" in dockerfile
-    assert "gds_workbench_api.runtime:create_runtime_app" in dockerfile
-
-
-def test_frontend_image_is_node_24_locked_and_unprivileged() -> None:
-    dockerfile = FRONTEND_DOCKERFILE.read_text(encoding="utf-8")
-
-    assert "node:24.19.0-bookworm-slim@sha256:3638d9a6fe4030bd" in dockerfile
-    assert "npm@11.6.0" in dockerfile
-    assert "npm ci" in dockerfile
+    assert "COPY package.json package-lock.json ./" in dockerfile
+    assert "npm ci --omit=dev" in dockerfile
     assert "npm run build" in dockerfile
-    assert "nginxinc/nginx-unprivileged:1.31.4-trixie" in dockerfile
-    assert "USER nginx" in dockerfile
+    assert "COPY pyproject.toml uv.lock /workspace/" in dockerfile
+    assert "uv sync --frozen --no-dev --no-editable" in dockerfile
+    assert "/workspace/web_app/frontend/dist /app/web_app/frontend/dist" in dockerfile
+    assert "USER 10001:10001" in dockerfile
+    assert 'CMD ["python", "-m", "gds_workbench_api.app_process"]' in dockerfile
 
 
-def test_frontend_proxy_has_api_proxy_spa_fallback_and_health_endpoint() -> None:
-    nginx = NGINX_TEMPLATE.read_text(encoding="utf-8")
+def test_combined_image_context_excludes_local_and_generated_content() -> None:
+    ignored = DOCKERIGNORE.read_text(encoding="utf-8").splitlines()
 
-    assert "location /api/" in nginx
-    assert "proxy_pass ${API_UPSTREAM}" in nginx
-    assert "try_files $uri $uri/ /index.html" in nginx
-    assert "location = /healthz" in nginx
-    assert "listen 8080" in nginx
+    assert {
+        ".git",
+        ".github",
+        ".scratch",
+        ".bundle",
+        ".databricks",
+        "**/.env*",
+        "**/*.key",
+        "**/*.p12",
+        "**/*.pem",
+        "**/*.pfx",
+        "**/.pytest_cache",
+        "**/.ruff_cache",
+        "**/.venv",
+        "**/dist",
+        "**/node_modules",
+        "database",
+        "docs",
+        "artifacts",
+        "plugins",
+        "tests",
+        "web_app/compose.local.yaml",
+        "web_app/local",
+        "web_app/prototypes",
+    } <= set(ignored)
+
+
+def test_frontend_lock_contains_cross_platform_native_build_packages() -> None:
+    packages = json.loads(ROOT_PACKAGE_LOCK.read_text(encoding="utf-8"))["packages"]
+
+    for build_package in ("node_modules/rolldown", "node_modules/lightningcss"):
+        optional_dependencies = packages[build_package]["optionalDependencies"]
+        assert {
+            f"node_modules/{dependency}" for dependency in optional_dependencies
+        } <= packages.keys()
+
+
+def test_frontend_production_build_does_not_require_test_dependencies() -> None:
+    package = FRONTEND_PACKAGE.read_text(encoding="utf-8")
+    build_config = FRONTEND_BUILD_TSCONFIG.read_text(encoding="utf-8")
+
+    assert '"node": ">=22.16 <23"' in package
+    assert (
+        '"build": "tsc --project tsconfig.build.json --noEmit && vite build"' in package
+    )
+    assert '"extends": "./tsconfig.json"' in build_config
+    assert '"src/**/*.test.ts"' in build_config
+    assert '"src/**/*.test.tsx"' in build_config
+    assert '"src/test/**"' in build_config
+    assert not (ROOT / "web_app" / "frontend" / "Dockerfile").exists()
+    assert not (ROOT / "web_app" / "frontend" / "nginx.conf.template").exists()
+    assert not (ROOT / "web_app" / "frontend" / "package-lock.json").exists()
 
 
 def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> (

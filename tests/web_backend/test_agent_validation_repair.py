@@ -32,8 +32,8 @@ def _request(
         execution_mode="one_shot",
         selection=AgentRunSelection(
             sdk_code="langchain_create_agent",
-            provider_code="microsoft_foundry",
-            model_code="gpt-5.6",
+            provider_code="databricks",
+            model_code="databricks-primary",
             reasoning_effort_code="medium",
             max_turns=6,
             validation_retry_count=retries,

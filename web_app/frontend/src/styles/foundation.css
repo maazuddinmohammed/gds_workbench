@@ -1,8 +1,12 @@
 :root {
-  font-family: Inter, ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;
+  font-size: 100%;
+  line-height: 1.5;
   color: #17202a;
   background: #f2f4f6;
+  color-scheme: light;
   font-synthesis: none;
+  font-optical-sizing: auto;
   text-rendering: optimizeLegibility;
   --ink: #17202a;
   --ink-2: #28333e;
@@ -21,7 +25,12 @@
   --green: #187252;
   --green-soft: #eaf6f1;
   --red: #b42318;
-  --shadow-soft: 0 16px 42px rgb(23 32 42 / 8%);
+  --shadow-soft: 0 1px 2px rgb(23 32 42 / 4%), 0 12px 34px rgb(23 32 42 / 8%);
+  --shadow-float: 0 18px 50px rgb(23 32 42 / 14%);
+  --radius-small: 0.55rem;
+  --radius-medium: 0.8rem;
+  --radius-large: 1.1rem;
+  --ease-fluid: cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
 * {
@@ -31,6 +40,7 @@
 html {
   min-width: 20rem;
   background: var(--paper);
+  -webkit-text-size-adjust: 100%;
 }
 
 body {
@@ -38,24 +48,42 @@ body {
   min-height: 100vh;
   margin: 0;
   background: var(--paper);
+  -webkit-font-smoothing: antialiased;
 }
 
 button,
 input,
-select {
+select,
+textarea {
   font: inherit;
 }
 
 button,
 a {
   -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 
 button:focus-visible,
 a:focus-visible,
 input:focus-visible,
-select:focus-visible {
+select:focus-visible,
+textarea:focus-visible,
+summary:focus-visible {
   outline: 3px solid rgb(49 95 207 / 34%);
   outline-offset: 2px;
 }
 
+::selection {
+  color: var(--ink);
+  background: #dce7ff;
+}
+
+@media (prefers-contrast: more) {
+  :root {
+    --muted: #3f4a56;
+    --faint: #505c68;
+    --line: #aeb7c1;
+    --line-strong: #788592;
+  }
+}

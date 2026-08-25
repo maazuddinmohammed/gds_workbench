@@ -1,0 +1,74 @@
+name: GDS Workbench Databricks App
+
+on:
+  pull_request:
+    paths:
+      - ".github/workflows/web-app.yml"
+      - "app.yaml"
+      - "databricks.yml"
+      - "mcp_server/**"
+      - "package-lock.json"
+      - "package.json"
+      - "pyproject.toml"
+      - "tests/web_backend/**"
+      - "tests/web_packaging/**"
+      - "uv.lock"
+      - "web_app/**"
+  push:
+    paths:
+      - ".github/workflows/web-app.yml"
+      - "app.yaml"
+      - "databricks.yml"
+      - "mcp_server/**"
+      - "package-lock.json"
+      - "package.json"
+      - "pyproject.toml"
+      - "tests/web_backend/**"
+      - "tests/web_packaging/**"
+      - "uv.lock"
+      - "web_app/**"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: web-app-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  backend-and-packaging:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install Databricks Apps package manager
+        run: python -m pip install uv==0.10.2
+      - name: Verify frozen dependencies
+        run: uv sync --frozen
+      - name: Test backend
+        run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
+      - name: Test deployment packaging
+        run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
+      - name: Check formatting
+        run: uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+      - name: Check lint
+        run: uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+      - name: Check types
+        run: uv run --project web_app/backend pyright --project web_app/backend
+
+  frontend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22.16.0"
+          cache: npm
+      - name: Install frozen dependencies
+        run: npm ci
+      - name: Test and build frontend
+        run: npm run check

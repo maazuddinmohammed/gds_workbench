@@ -68,7 +68,7 @@ class SeededCodeGeneration:
             selected_object_ids=self.object_ids,
             selection=AgentRunSelection(
                 sdk_code="openai_agents_sdk",
-                provider_code="microsoft_foundry",
+                provider_code="databricks",
                 model_code="test-model",
                 reasoning_effort_code="medium",
                 max_turns=8,
@@ -698,7 +698,7 @@ def _seed_code_generation(
                     workflow_run_claim_expires_time
                 ) VALUES (
                     %s, %s, 'code_generation', %s, %s, 'openai_agents_sdk',
-                    'microsoft_foundry', 'test-model', 'medium', 8, 1,
+                    'databricks', 'test-model', 'medium', 8, 1,
                     'logical_entity', 'selected_targets', %s, %s, %s,
                     %s, %s, 'running', %s, CURRENT_TIMESTAMP,
                     %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP,

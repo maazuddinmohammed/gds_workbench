@@ -1,0 +1,15 @@
+{
+  "name": "gds-workbench-databricks-app",
+  "version": "0.1.0",
+  "private": true,
+  "engines": {
+    "node": ">=22.16 <23"
+  },
+  "workspaces": [
+    "web_app/frontend"
+  ],
+  "scripts": {
+    "build": "npm run build --workspace=gds-workbench-web",
+    "check": "npm run check --workspace=gds-workbench-web"
+  }
+}

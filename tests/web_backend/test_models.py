@@ -72,8 +72,8 @@ class StaticModelService:
             gold_model_technical_columns_template=None,
             gold_model_audit_columns_template=None,
             default_agent_sdk_code="langchain_create_agent",
-            default_agent_provider_code="microsoft_foundry",
-            default_agent_model_code="gpt-5.6",
+            default_agent_provider_code="databricks",
+            default_agent_model_code="databricks-primary",
             default_reasoning_effort_code="medium",
             default_max_turns=10,
             default_validation_retry_count=2,
@@ -129,7 +129,7 @@ def test_model_detail_exposes_server_stored_settings_without_raw_prompts() -> No
     assert response.status_code == 200
     detail = response.json()
     assert detail["model_name"] == "Customer 360"
-    assert detail["default_agent_provider_code"] == "microsoft_foundry"
+    assert detail["default_agent_provider_code"] == "databricks"
     assert detail["model_scope_object_count"] == 25
     assert "prompt_text" not in detail
 

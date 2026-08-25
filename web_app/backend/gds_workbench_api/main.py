@@ -167,8 +167,9 @@ def create_app(
     app = FastAPI(
         title="GDS Workbench API",
         version="0.1.0",
-        docs_url="/docs",
+        docs_url=None,
         redoc_url=None,
+        openapi_url=None,
         lifespan=lifespan,
     )
     app.add_exception_handler(AuthenticationError, authentication_error_response)

@@ -47,8 +47,8 @@ def _plan(
             "selected_object_ids": selected_object_ids,
             "selection": AgentRunSelection(
                 sdk_code="langchain_create_agent",
-                provider_code="microsoft_foundry",
-                model_code="gpt-5.6",
+                provider_code="databricks",
+                model_code="databricks-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=2,

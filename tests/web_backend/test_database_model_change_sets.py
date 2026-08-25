@@ -682,7 +682,7 @@ def _create_running_conceptual_run(
                     started_time
                 ) VALUES (
                     %s, 1, 'conceptual', 'one_shot', %s, %s,
-                    'openai_agents_sdk', 'microsoft_foundry', 'test-model',
+                    'openai_agents_sdk', 'databricks', 'test-model',
                     'medium', 8, 1, %s, 1, 'running', %s, CURRENT_TIMESTAMP
                 )
                 RETURNING workflow_run_id
@@ -952,7 +952,7 @@ def _create_queued_authoring_run_with_prompt(
                   %s::VARCHAR,
                   'one_shot'::VARCHAR,
                   'openai_agents_sdk'::VARCHAR,
-                  'microsoft_foundry'::VARCHAR,
+                  'databricks'::VARCHAR,
                   'test-model'::VARCHAR,
                   'medium'::VARCHAR,
                   8::INTEGER,
@@ -1241,7 +1241,7 @@ def _create_queued_analysis_run_with_prompt(
                   'analysis'::VARCHAR,
                   'one_shot'::VARCHAR,
                   'openai_agents_sdk'::VARCHAR,
-                  'microsoft_foundry'::VARCHAR,
+                  'databricks'::VARCHAR,
                   'test-model'::VARCHAR,
                   'medium'::VARCHAR,
                   8::INTEGER,

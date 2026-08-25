@@ -21,6 +21,15 @@ def test_health_reports_that_the_process_is_running() -> None:
     assert response.json() == {"status": "ok"}
 
 
+def test_generated_api_documentation_is_not_exposed() -> None:
+    with TestClient(create_app()) as client:
+        docs = client.get("/docs")
+        schema = client.get("/openapi.json")
+
+    assert docs.status_code == 404
+    assert schema.status_code == 404
+
+
 def test_readiness_reports_that_dependencies_are_ready() -> None:
     with TestClient(create_app(readiness=ReadyDependency())) as client:
         response = client.get("/readyz")

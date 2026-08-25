@@ -1,0 +1,111 @@
+bundle:
+  name: gds-workbench-app
+  databricks_cli_version: ">=0.294.0"
+
+sync:
+  exclude:
+    - "**/.env*"
+    - "**/*.key"
+    - "**/*.p12"
+    - "**/*.pem"
+    - "**/*.pfx"
+    - .dockerignore
+    - .github/**
+    - .gitignore
+    - .scratch/**
+    - AGENTS.md
+    - CONTEXT.md
+    - IMPLEMENTATION_PLAN.md
+    - artifacts/**
+    - database/**
+    - databricks.yml
+    - docs/**
+    - load_and_merge_scripts/**
+    - plugins/**
+    - tests/**
+    - mcp_server/.env.example
+    - mcp_server/README.md
+    - mcp_server/app.py
+    - mcp_server/build_zip.py
+    - mcp_server/dist/**
+    - mcp_server/requirements.txt
+    - mcp_server/startup.sh
+    - mcp_server/useful_commands.txt
+    - mcp_server/uv.lock
+    - web_app/compose.local.yaml
+    - web_app/local/**
+    - web_app/prototypes/**
+    - web_app/*.md
+    - web_app/**/Dockerfile
+    - web_app/frontend/nginx.conf.template
+    - web_app/frontend/src/**/*.test.*
+    - web_app/frontend/vitest.config.mjs
+
+variables:
+  app_name:
+    description: Unique Databricks App name for this environment.
+  user_group_name:
+    description: Databricks group allowed to use the application.
+  secret_scope:
+    description: Existing Databricks secret scope for application configuration.
+  database_dsn_secret_key:
+    description: Secret key containing the verified PostgreSQL DSN.
+  cursor_signing_key_secret_key:
+    description: Secret key containing the cursor signing key.
+  entra_tenant_id_secret_key:
+    description: Secret key containing the Entra tenant UUID.
+  databricks_environment_code_secret_key:
+    description: Secret key containing the registered GDS environment code.
+  model_endpoint_name:
+    description: Ready Databricks Model Serving endpoint name.
+
+resources:
+  apps:
+    workbench:
+      name: ${var.app_name}
+      description: GDS Workbench React and FastAPI application.
+      source_code_path: .
+      compute_size: MEDIUM
+      user_api_scopes:
+        - iam.access-control:read
+        - iam.current-user:read
+      permissions:
+        - group_name: ${var.user_group_name}
+          level: CAN_USE
+      resources:
+        - name: postgres-dsn
+          description: Verified PostgreSQL runtime connection.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.database_dsn_secret_key}
+            permission: READ
+        - name: cursor-signing-key
+          description: Opaque cursor signing material.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.cursor_signing_key_secret_key}
+            permission: READ
+        - name: entra-tenant-id
+          description: Entra tenant used by existing Principal authorization.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.entra_tenant_id_secret_key}
+            permission: READ
+        - name: databricks-environment-code
+          description: Existing registered GDS Databricks environment code.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.databricks_environment_code_secret_key}
+            permission: READ
+        - name: agent-model-endpoint
+          description: Primary agent model endpoint.
+          serving_endpoint:
+            name: ${var.model_endpoint_name}
+            permission: CAN_QUERY
+
+targets:
+  development:
+    mode: development
+    default: true
+  production:
+    mode: production

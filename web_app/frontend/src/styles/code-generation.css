@@ -61,7 +61,7 @@
   justify-content: space-between;
   gap: 1rem;
   padding: 0 0 0.85rem;
-  border-bottom: 3px solid var(--ink);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .code-generation-ledger-heading .eyebrow {
@@ -248,7 +248,7 @@
   display: grid;
   margin: 1rem 0 0;
   padding: 0;
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
   list-style: none;
 }
 
@@ -308,7 +308,7 @@
 }
 
 .code-generation-support-scroll {
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
 }
 
 .code-generation-support-scroll table {
@@ -434,4 +434,3 @@
     transition: none;
   }
 }
-

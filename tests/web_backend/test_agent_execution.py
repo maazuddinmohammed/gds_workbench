@@ -17,8 +17,8 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 def _selection(*, sdk_code: str = "langchain_create_agent") -> AgentRunSelection:
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code="microsoft_foundry",
-        model_code="gpt-5.6",
+        provider_code="databricks",
+        model_code="databricks-primary",
         reasoning_effort_code="medium",
         max_turns=7,
         validation_retry_count=2,
@@ -108,7 +108,7 @@ async def test_router_rejects_incompatible_selection_before_adapter_call() -> No
         AgentRunSelection(
             sdk_code="langchain_create_agent",
             provider_code="openai",
-            model_code="gpt-5.6",
+            model_code="databricks-primary",
             reasoning_effort_code="medium",
             max_turns=7,
             validation_retry_count=2,

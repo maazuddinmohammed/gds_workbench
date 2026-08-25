@@ -27,8 +27,8 @@ def _stage_row(
         "selected_scope_digest": "a" * 64,
         "selected_scope_count": 2,
         "agent_sdk_code": "langchain_create_agent",
-        "agent_provider_code": "microsoft_foundry",
-        "agent_model_code": "gpt-5.6",
+        "agent_provider_code": "databricks",
+        "agent_model_code": "databricks-primary",
         "reasoning_effort_code": "medium",
         "max_turns": 8,
         "validation_retry_count": 2,
@@ -102,7 +102,7 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
     assert plan.correlation_id == UUID("33333333-3333-3333-3333-333333333333")
     assert plan.model_revision == 7
     assert plan.selected_object_ids == (501, 502)
-    assert plan.selection.model_code == "gpt-5.6"
+    assert plan.selection.model_code == "databricks-primary"
     assert [stage.stage_code for stage in plan.stages] == ["candidate_authoring"]
     assert [variable.name for variable in plan.stages[0].variables] == [
         "model_name",

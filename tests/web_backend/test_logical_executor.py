@@ -149,8 +149,8 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
             "selected_object_ids": (501,),
             "selection": AgentRunSelection(
                 sdk_code="langchain_create_agent",
-                provider_code="microsoft_foundry",
-                model_code="gpt-5.6",
+                provider_code="databricks",
+                model_code="databricks-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=retry_count,

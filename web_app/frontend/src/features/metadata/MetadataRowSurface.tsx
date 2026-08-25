@@ -43,7 +43,7 @@ export function MetadataRowDetail({
   return (
     <div className="metadata-detail-scrim">
       <aside
-        className="metadata-row-detail page-enter"
+        className="metadata-row-detail"
         role="dialog"
         aria-modal="true"
         aria-labelledby="metadata-row-detail-title"

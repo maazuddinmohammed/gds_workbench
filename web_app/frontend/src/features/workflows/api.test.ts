@@ -44,8 +44,8 @@ describe("Workflow HTTP adapter", () => {
       requested_batch_id: null,
       agent: {
         sdk_code: "openai_agents",
-        provider_code: "microsoft_foundry",
-        model_code: "gpt-5.6",
+        provider_code: "databricks",
+        model_code: "databricks-primary",
         reasoning_effort_code: "medium",
         max_turns: 8,
         validation_retry_count: 1,

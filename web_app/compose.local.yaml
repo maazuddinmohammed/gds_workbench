@@ -1,8 +1,9 @@
-x-backend-build: &backend-build
+x-app-build: &app-build
   context: ..
   dockerfile: web_app/backend/Dockerfile
 
-x-backend-environment: &backend-environment
+x-app-environment: &app-environment
+  DATABRICKS_APP_PORT: "8000"
   GDS_WEB_AGENT_EXECUTION_MODE: fake
   GDS_WEB_CURSOR_SIGNING_KEY: ${GDS_LOCAL_CURSOR_SIGNING_KEY:?generated cursor key required}
   GDS_WEB_DATABASE_DSN: >-
@@ -12,12 +13,11 @@ x-backend-environment: &backend-environment
   GDS_WEB_DATABRICKS_ENVIRONMENT_CODE: local_fake
   GDS_WEB_DATABRICKS_EXECUTION_MODE: fake
   GDS_WEB_ENVIRONMENT: local
-  GDS_WEB_FRONTEND_ORIGIN: http://127.0.0.1:${GDS_LOCAL_FRONTEND_PORT:?frontend port required}
   GDS_WEB_LOCAL_ENTRA_TENANT_ID: ${GDS_LOCAL_ENTRA_TENANT_ID:?generated Tenant identity required}
   GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID: ${GDS_LOCAL_PRINCIPAL_OBJECT_ID:?generated Principal identity required}
-  GDS_WEB_PUBLIC_URL: http://127.0.0.1:${GDS_LOCAL_API_PORT:?API port required}
+  GDS_WEB_STATIC_DIR: /app/web_app/frontend/dist
 
-x-backend-security: &backend-security
+x-app-security: &app-security
   init: true
   read_only: true
   tmpfs:
@@ -26,8 +26,6 @@ x-backend-security: &backend-security
     - ALL
   security_opt:
     - no-new-privileges:true
-  networks:
-    - local_backend
 
 services:
   database:
@@ -55,56 +53,20 @@ services:
     networks:
       - local_backend
 
-  api:
-    <<: *backend-security
-    image: gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
+  app:
+    <<: *app-security
+    image: gds-workbench-app:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
     pull_policy: never
-    build: *backend-build
-    environment: *backend-environment
+    build: *app-build
+    environment: *app-environment
     depends_on:
       database:
         condition: service_healthy
     ports:
+      - "127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8000"
       - "127.0.0.1:${GDS_LOCAL_API_PORT}:8000"
     networks:
       - local_backend
-      - local_edge
-
-  worker:
-    <<: *backend-security
-    image: gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
-    pull_policy: never
-    command: ["gds-workbench-worker"]
-    environment: *backend-environment
-    depends_on:
-      database:
-        condition: service_healthy
-    healthcheck:
-      disable: true
-
-  frontend:
-    image: gds-workbench-frontend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
-    pull_policy: never
-    build:
-      context: ./frontend
-      dockerfile: Dockerfile
-    environment:
-      API_UPSTREAM: http://api:8000
-    depends_on:
-      api:
-        condition: service_healthy
-    ports:
-      - "127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8080"
-    init: true
-    read_only: true
-    tmpfs:
-      - /tmp:mode=1777,uid=101,gid=101
-      - /etc/nginx/conf.d:mode=0755,uid=101,gid=101
-    cap_drop:
-      - ALL
-    security_opt:
-      - no-new-privileges:true
-    networks:
       - local_edge
 
 volumes:

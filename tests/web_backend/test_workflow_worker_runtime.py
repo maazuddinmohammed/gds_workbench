@@ -197,8 +197,6 @@ def _settings() -> RuntimeSettings:
             "GDS_WEB_DATABASE_DSN": "postgresql://fixture.invalid/workbench",
             "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
-            "GDS_WEB_PUBLIC_URL": "http://localhost:8000",
-            "GDS_WEB_FRONTEND_ORIGIN": "http://localhost:5173",
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": "22222222-2222-2222-2222-222222222222",
         }

@@ -1,3 +1,15 @@
 .DS_Store
+**/.env
+**/.env.*
+!**/.env.example
+**/*.key
+**/*.p12
+**/*.pem
+**/*.pfx
 __pycache__/
 *.py[cod]
+.bundle/
+.databricks/
+.venv/
+node_modules/
+web_app/frontend/dist/

@@ -11,7 +11,9 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 )
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
+    DatabricksModelAuthentication,
     LangChainCreateAgentAdapter,
+    OpenAIProviderCredentials,
     OpenAIAgentsSdkAdapter,
 )
 from gds_workbench_api.integrations.agents.configuration import (
@@ -46,8 +48,16 @@ def _request(
     )
 
 
+class FakeModelAuthentication:
+    async def authenticate(self) -> OpenAIProviderCredentials:
+        return OpenAIProviderCredentials(
+            api_key=SecretStr("short-lived-databricks-token"),
+            base_url="https://fixture.azuredatabricks.net/serving-endpoints",
+        )
+
+
 @pytest.mark.asyncio
-async def test_langchain_adapter_uses_structured_output_and_bounded_turns(
+async def test_langchain_adapter_uses_prompt_json_and_bounded_turns(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
@@ -61,10 +71,16 @@ async def test_langchain_adapter_uses_structured_output_and_bounded_turns(
             captured["values"] = values
             captured["config"] = config
             return {
-                "structured_response": {"entities": []},
                 "messages": [
-                    SimpleNamespace(type="ai", tool_calls=[]),
-                    SimpleNamespace(type="ai", tool_calls=[{"name": "local"}]),
+                    SimpleNamespace(type="ai", tool_calls=[], content="intermediate"),
+                    SimpleNamespace(
+                        type="ai",
+                        tool_calls=[{"name": "local"}],
+                        content=[
+                            {"type": "reasoning", "reasoning": "not an answer"},
+                            {"type": "text", "text": '{"entities":[]}'},
+                        ],
+                    ),
                 ],
             }
 
@@ -81,30 +97,30 @@ async def test_langchain_adapter_uses_structured_output_and_bounded_turns(
     adapter = LangChainCreateAgentAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="microsoft_foundry",
-                api_key=SecretStr("hidden-key"),
-                base_url="https://foundry.invalid/openai/v1/",
+                provider_code="databricks",
+                model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
+        model_authentication=FakeModelAuthentication(),
     )
 
     result = await adapter.execute(
         _request(
             sdk_code="langchain_create_agent",
-            provider_code="microsoft_foundry",
-            model_code="gpt-5.6",
+            provider_code="databricks",
+            model_code="databricks-primary",
         )
     )
 
     assert result.candidate == {"entities": []}
     assert result.turn_count == 2
     assert result.tool_call_count == 1
-    assert captured["agent"]["response_format"] == {"type": "object"}
+    assert "response_format" not in captured["agent"]
     assert captured["config"] == {"recursion_limit": 13}
-    assert captured["model"]["store"] is False
-    assert "hidden-key" not in repr(adapter)
-    assert "foundry.invalid" not in repr(adapter)
+    assert captured["model"]["model"] == "production-agent-endpoint"
+    assert "store" not in captured["model"]
+    assert "short-lived-databricks-token" not in repr(adapter)
 
 
 @pytest.mark.asyncio
@@ -142,26 +158,26 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
             )
 
     monkeypatch.setattr(agent_adapters, "AsyncOpenAI", FakeClient)
-    monkeypatch.setattr(agent_adapters, "OpenAIResponsesModel", FakeModel)
+    monkeypatch.setattr(agent_adapters, "OpenAIChatCompletionsModel", FakeModel)
     monkeypatch.setattr(agent_adapters, "Agent", FakeAgent)
     monkeypatch.setattr(agent_adapters, "Runner", FakeRunner)
     monkeypatch.setattr(agent_adapters, "ToolCallItem", FakeToolCall)
     adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="openai",
-                api_key=SecretStr("hidden-openai-key"),
-                base_url="https://api.openai.example/v1/",
+                provider_code="databricks",
+                model_endpoint="production-agent-endpoint",
                 timeout_seconds=80,
             ),
         ),
+        model_authentication=FakeModelAuthentication(),
     )
 
     result = await adapter.execute(
         _request(
             sdk_code="openai_agents_sdk",
-            provider_code="openai",
-            model_code="gpt-5.6-sol",
+            provider_code="databricks",
+            model_code="databricks-primary",
         )
     )
 
@@ -173,6 +189,8 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     assert run_kwargs["run_config"].tracing_disabled is True
     assert run_kwargs["run_config"].trace_include_sensitive_data is False
     assert captured["closed"] is True
+    assert captured["model"]["model"] == "production-agent-endpoint"
+    assert captured["agent"]["model_settings"].store is None
 
 
 @pytest.mark.asyncio
@@ -183,9 +201,38 @@ async def test_adapter_rejects_provider_without_configured_connection() -> None:
         await adapter.execute(
             _request(
                 sdk_code="langchain_create_agent",
-                provider_code="microsoft_foundry",
-                model_code="gpt-5.6",
+                provider_code="databricks",
+                model_code="databricks-primary",
             )
         )
 
     assert caught.value.code == "invalid_request"
+
+
+@pytest.mark.asyncio
+async def test_databricks_model_authentication_uses_unified_oauth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class FakeConfig:
+        host = "https://fixture.azuredatabricks.net"
+
+        @staticmethod
+        def authenticate() -> dict[str, str]:
+            return {"Authorization": "Bearer never-log-this-token"}
+
+    class FakeWorkspace:
+        def __init__(self, **kwargs: object) -> None:
+            assert kwargs["product"] == "gds-workbench-web"
+            assert kwargs["auth_type"] == "oauth-m2m"
+            assert kwargs["debug_headers"] is False
+            self.config = FakeConfig()
+
+    monkeypatch.setattr(agent_adapters, "WorkspaceClient", FakeWorkspace)
+
+    credentials = await DatabricksModelAuthentication().authenticate()
+
+    assert credentials.base_url == (
+        "https://fixture.azuredatabricks.net/serving-endpoints"
+    )
+    assert credentials.api_key.get_secret_value() == "never-log-this-token"
+    assert "never-log-this-token" not in repr(credentials)

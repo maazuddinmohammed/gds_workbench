@@ -1,9 +1,34 @@
-# GDS Workbench containers
+# GDS Workbench web application
 
-## Run the complete local stack
+The supported production deployment is one Azure Databricks App:
 
-Requirements: Docker Desktop/Engine with Compose, using a local Unix socket or
-Windows named pipe.
+```text
+Databricks-authenticated browser
+  -> FastAPI serves React and /api/* on one origin
+  -> embedded durable workflow worker
+  -> existing PostgreSQL and governed Databricks connections
+  -> Databricks Model Serving through the app service principal
+```
+
+This deploys the web application only. The MCP server remains separate, keeps
+its Azure authentication, and is not started or changed by the Databricks App.
+The deployment performs no database DDL or migration.
+
+## Security boundaries
+
+- Databricks Apps OAuth and app `CAN_USE` protect the app URL.
+- The backend resolves each user from the forwarded access token through
+  Databricks `current_user.me()`.
+- Existing PostgreSQL Principal, Tenant, role, Tenant Lock, ownership, revision,
+  and idempotency rules remain authoritative.
+- The app service principal receives only `CAN_QUERY` on the attached Model
+  Serving endpoint. Users do not receive model endpoint access.
+- Secrets enter the app only through Databricks App resource references.
+- Existing GDS Databricks SQL connections and MCP authentication are unchanged.
+
+## Run safely on a local computer
+
+Requirements: Docker Desktop or Docker Engine with Compose.
 
 From the repository root:
 
@@ -11,16 +36,12 @@ From the repository root:
 python3 web_app/local/run.py
 ```
 
-Open `http://127.0.0.1:8080`. Stop with `Ctrl-C`.
+Open <http://127.0.0.1:8080>. Stop with `Ctrl-C`.
 
-The runner creates random database credentials, runtime passwords, local
-identity UUIDs, and a cursor key in a private temporary directory. It starts a
-fresh PostgreSQL 18 volume, runs the canonical preflight/install/verification,
-adds only the repository demo/reference/local-identity seed, and disposes the
-containers and volume on exit. The database is never published to the host.
-
-The API and durable worker use local fake Agent and Databricks adapters. They do
-not call provider, Azure, Databricks, or other external runtime endpoints.
+The runner creates random local credentials and a fresh PostgreSQL 18 container,
+loads only local fixtures, uses local identity plus fake Agent and Databricks
+adapters, and disposes the database on exit. It does not call Azure,
+Databricks, Model Serving, MCP, or a persistent database.
 
 Optional loopback ports:
 
@@ -28,24 +49,34 @@ Optional loopback ports:
 python3 web_app/local/run.py --frontend-port 9080 --api-port 9000
 ```
 
-The runner refuses ambient database, provider, Compose, GDS, or network Docker
-configuration. Remove the named setting shown by the error instead of
-overriding that guard.
+## Verify a release locally
 
-## Build the two application images
-
-The API and worker intentionally share the backend image.
+Backend checks require Python 3.14 and `uv`. Frontend checks require Node 22.16
+through 22.x and npm.
 
 ```bash
-docker build --file web_app/backend/Dockerfile --tag gds-workbench-backend:local .
-docker build --file web_app/frontend/Dockerfile --tag gds-workbench-frontend:local web_app/frontend
+uv sync --frozen
+uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
+uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
+uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+uv run --project web_app/backend pyright --project web_app/backend
+npm ci
+npm run check
 ```
 
-The Python and Node build stages use immutable base-image digests; the NGINX
-runtime uses an exact version tag. Dependency installation uses frozen lock
-files. No Azure deployment is performed by these commands.
+Docker remains available for the disposable local stack. Production Databricks
+deployment uploads source and pinned lock files; it does not deploy a container
+image or Azure Container App.
 
-For local verification and the complete step-by-step Azure procedure, use
-[`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md). The shorter immutable Azure
-topology contract remains in
-[`AZURE_CONTAINER_APPS.md`](AZURE_CONTAINER_APPS.md).
+## Deployment files
+
+| File | Role |
+|---|---|
+| [`databricks.yml`](../databricks.yml) | App, user permission, secret resources, Model Serving resource, and deployment targets. |
+| [`app.yaml`](../app.yaml) | Starts the combined FastAPI and worker process and binds runtime resources. |
+| [`pyproject.toml`](../pyproject.toml) and [`uv.lock`](../uv.lock) | Root Python application dependencies. |
+| [`package.json`](../package.json) and [`package-lock.json`](../package-lock.json) | Root React build and pinned Node dependencies. |
+
+Use [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for prerequisites, authentication,
+resource permissions, variables, exact operator commands, production acceptance,
+the Foundry-default data compatibility gate, and rollback.

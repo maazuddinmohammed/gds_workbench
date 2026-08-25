@@ -18,6 +18,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
     LangChainCreateAgentAdapter,
+    OpenAIProviderCredentials,
     OpenAIAgentsSdkAdapter,
 )
 from gds_workbench_api.integrations.agents.configuration import AgentProviderConnection
@@ -69,13 +70,19 @@ class _Catalog:
         }
 
 
+class _ModelAuthentication:
+    async def authenticate(self) -> OpenAIProviderCredentials:
+        return OpenAIProviderCredentials(
+            api_key=SecretStr("short-lived-databricks-token"),
+            base_url="https://fixture.azuredatabricks.net/serving-endpoints",
+        )
+
+
 def _selection(*, sdk_code: str) -> AgentRunSelection:
-    provider_code = "openai" if sdk_code == "openai_agents_sdk" else "microsoft_foundry"
-    model_code = "gpt-5.6-sol" if sdk_code == "openai_agents_sdk" else "gpt-5.6"
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code=provider_code,
-        model_code=model_code,
+        provider_code="databricks",
+        model_code="databricks-primary",
         reasoning_effort_code="medium",
         max_turns=6,
         validation_retry_count=2,
@@ -178,9 +185,12 @@ async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
             )
             captured["tool_results"] = (manifest, dataset)
             return {
-                "structured_response": {"objects": [], "relationships": []},
                 "messages": [
-                    SimpleNamespace(type="ai", tool_calls=[{"name": "local"}])
+                    SimpleNamespace(
+                        type="ai",
+                        tool_calls=[{"name": "local"}],
+                        content='{"objects":[],"relationships":[]}',
+                    )
                 ],
             }
 
@@ -195,12 +205,12 @@ async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
     adapter = LangChainCreateAgentAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="microsoft_foundry",
-                api_key=SecretStr("hidden"),
-                base_url="https://foundry.invalid/openai/v1/",
+                provider_code="databricks",
+                model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
-        )
+        ),
+        model_authentication=_ModelAuthentication(),
     )
 
     result = await adapter.execute(
@@ -263,18 +273,18 @@ async def test_openai_agents_adapter_wraps_only_the_attached_local_catalog(
         return "model"
 
     monkeypatch.setattr(agent_adapters, "AsyncOpenAI", FakeClient)
-    monkeypatch.setattr(agent_adapters, "OpenAIResponsesModel", fake_model)
+    monkeypatch.setattr(agent_adapters, "OpenAIChatCompletionsModel", fake_model)
     monkeypatch.setattr(agent_adapters, "Agent", FakeAgent)
     monkeypatch.setattr(agent_adapters, "Runner", FakeRunner)
     adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="openai",
-                api_key=SecretStr("hidden"),
-                base_url="https://api.openai.invalid/v1/",
+                provider_code="databricks",
+                model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
-        )
+        ),
+        model_authentication=_ModelAuthentication(),
     )
 
     result = await adapter.execute(
@@ -301,12 +311,12 @@ async def test_tool_wrapper_construction_failure_is_redacted(
     adapter = LangChainCreateAgentAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="microsoft_foundry",
-                api_key=SecretStr("hidden"),
-                base_url="https://foundry.invalid/openai/v1/",
+                provider_code="databricks",
+                model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
-        )
+        ),
+        model_authentication=_ModelAuthentication(),
     )
 
     with pytest.raises(WorkbenchError) as captured:

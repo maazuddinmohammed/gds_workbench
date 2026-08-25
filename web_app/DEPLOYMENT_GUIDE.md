@@ -1,939 +1,447 @@
-# GDS Workbench local and Azure deployment guide
+# GDS Workbench deployment on Azure Databricks Apps
 
-This guide covers:
-
-1. starting the complete Workbench safely on a local computer;
-2. checking the application before release; and
-3. deploying the frontend, API, worker, and PostgreSQL database to Azure.
-
-It does not deploy the MCP server. `docs/AZURE_FRESH_DEPLOYMENT.md` is the MCP
-App Service runbook and must not be used for the Workbench web application.
-
-## Deployment status and safety
-
-The supported Azure shape is:
+This is the deployment runbook for the Workbench web application. The supported
+production shape is one Azure Databricks App containing:
 
 ```text
 Browser
-  -> Azure Container Apps HTTPS ingress + Microsoft Entra authentication
-     -> frontend container :8080
-        -> /api/* over localhost
-           -> API container :8000
-              -> private PostgreSQL / Databricks / enabled Agent provider
-
-Worker Container App, no ingress
-  -> backend image running gds-workbench-worker
-     -> same private PostgreSQL / Databricks / enabled Agent provider
+  -> Databricks Apps OAuth and CAN_USE
+  -> one Python process
+       -> FastAPI: /api/*
+       -> FastAPI: built React application and assets
+       -> durable workflow worker
+            -> existing PostgreSQL database
+            -> existing governed Databricks SQL connection
+            -> Databricks Model Serving through the app service principal
 ```
 
-The frontend and API are two containers in one Container App. They share a
-network and revision lifecycle. The worker is a separate, ingress-disabled
-Container App. Azure supports this tightly coupled sidecar pattern; see
-[Containers in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/containers).
+The frontend and API share the Databricks App origin. The worker runs beside the
+HTTP server in the same app process. If either required runtime stops, the app
+process stops so Databricks can report and restart the failed app.
 
-The repository does not yet contain reviewed Bicep, Terraform, or Container
-Apps YAML. Therefore:
+This deployment does **not** deploy or change the MCP server. MCP remains a
+separate Azure-authenticated service and keeps its existing authentication and
+Databricks connection behavior. Use
+[`docs/AZURE_FRESH_DEPLOYMENT.md`](../docs/AZURE_FRESH_DEPLOYMENT.md) only for
+that service.
 
-- use this manual procedure first in a non-production Azure environment;
-- record every selected value outside the repository;
-- do not place credentials or connection values in source control, commands,
-  build arguments, deployment manifests, screenshots, or logs; and
-- convert the proven configuration to reviewed infrastructure as code before
-  declaring the deployment production-ready.
+This runbook performs no database DDL, migration, backfill, or direct data edit.
+It requires an already installed, compatible PostgreSQL database.
 
-No command in this document should be run against an existing populated
-database. The current SQL is fresh-install DDL, not a migration system.
+## 1. Identity and authorization boundaries
 
----
+| Operation | Identity and authorization |
+|---|---|
+| Open the app | Databricks OAuth plus app `CAN_USE` permission. |
+| Resolve the web user | Databricks forwards `X-Forwarded-Access-Token`. The backend calls `current_user.me()` with that user token and accepts only an active SCIM user whose `externalId` is a nonzero Entra object UUID. |
+| Authorize application actions | The backend combines the configured Entra tenant UUID with the resolved object UUID. Existing PostgreSQL Principal, Tenant, role, Tenant Lock, Model ownership, and revision rules remain authoritative. |
+| Query the agent model | The Databricks App service principal uses platform-injected OAuth credentials. The attached Model Serving endpoint grants only `CAN_QUERY`. End users do not need endpoint permission. |
+| Run profiling and analysis validation | The existing registered GDS Databricks environment and governed connection remain unchanged. |
+| Use MCP | The separate MCP server and its Azure authentication remain unchanged. |
 
-# Part 1: Run locally
+Only `/api/*` requires the backend identity resolver. Databricks still protects
+the entire app URL before a request reaches FastAPI. Never expose the FastAPI
+port separately or accept identity from a browser-provided body or query value.
 
-## 1. Install the local prerequisites
+User authorization is currently a Databricks Public Preview feature. The bundle
+requests only its two default identity scopes: `iam.access-control:read` and
+`iam.current-user:read`. Before deployment, a workspace administrator must
+enable user authorization, allow both scopes in the app OAuth policy, and
+restart an existing app before adding the scopes. See
+[Configure authorization in a Databricks app](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/auth).
 
-Required for the complete stack:
+## 2. Deployment files
 
-- Docker Desktop or Docker Engine;
-- Docker Compose, either `docker compose` or `docker-compose`;
-- a local Unix Docker socket or Windows named pipe; and
-- Python 3.10 or newer for the safe local runner.
+Run bundle commands from the repository root. Databricks uses these files:
 
-Docker performs the PostgreSQL, Python, Node, API, worker, and frontend setup.
-Python 3.14 and Node 24 are needed on the host only for direct development
-commands, not for the normal Docker startup.
+| File | Purpose |
+|---|---|
+| `databricks.yml` | Creates or updates the app, grants the user group `CAN_USE`, attaches four secret resources, attaches one serving endpoint with `CAN_QUERY`, and defines `development` and `production` targets. |
+| `app.yaml` | Starts `uv run --frozen python -m gds_workbench_api.app_process` and maps resource keys to runtime variables. |
+| `pyproject.toml` and `uv.lock` | Install the pinned Python 3.14 application and local package dependencies. |
+| `package.json` and `package-lock.json` | Install Node 22 dependencies and build React into `web_app/frontend/dist`. |
 
-Confirm Docker is running:
+During deployment, Databricks detects both root dependency manifests, runs the
+Node build, installs Python with `uv`, then runs `app.yaml`. See
+[Databricks Apps deployment logic](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/deploy#deployment-logic)
+and
+[Manage app dependencies](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/dependencies).
 
-```bash
-docker version
-docker compose version
+Docker is used for the disposable local stack only. No container image or Azure
+Container Apps resource is part of this deployment.
+
+The bundle source boundary excludes tests, database installers, local tooling,
+documentation, generated artifacts, and the separately deployed MCP plugin.
+It includes only the root build manifests, `app.yaml`, the MCP Python package
+needed as an internal dependency, and the web backend/frontend production
+source. This prevents legacy MCP deployment configuration from entering the
+Databricks App while leaving MCP runtime behavior unchanged.
+
+## 3. Prerequisites
+
+### Workspace and operator
+
+- An Azure Databricks workspace with Databricks Apps enabled.
+- User authorization enabled by a workspace administrator. This feature is
+  Public Preview; restart an existing app before adding its scopes.
+- A workspace app OAuth scope policy that permits `iam.access-control:read` and
+  `iam.current-user:read`.
+- A deployment operator allowed to create or update Apps, app permissions, app
+  resources, and the app service principal's resource grants.
+- Databricks CLI `0.294.0` or newer, as required by `databricks.yml`.
+- The managed runtime currently supplies `uv` 0.10.2 and Node 22.16. The lock
+  files and CI are verified against those versions.
+- OAuth user-to-machine authentication for interactive deployment. Use a
+  dedicated OAuth service principal for production CI/CD; do not use a PAT.
+- A workspace group whose members may use the app. The bundle grants that group
+  `CAN_USE`.
+
+### Existing PostgreSQL database
+
+- The canonical database is already installed and at the revision expected by
+  this release.
+- The runtime DSN uses the least-privilege `gds_web_runtime` account and includes
+  a host, database, and `sslmode=verify-full`.
+- Every intended user has an active `security.entra_principal_identity` for the
+  configured Entra tenant and object UUID, plus the required active Tenant role.
+- Databricks Apps serverless compute can reach PostgreSQL. Configure an approved
+  Network Connectivity Configuration, egress policy, firewall rule, or outbound
+  Private Link path as required by the environment. See
+  [Configure networking for Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/networking).
+
+Do not point local runners or automated tests at this database. Local and CI
+database tests may use only the disposable PostgreSQL container created by the
+test fixture or local runner.
+
+### Existing Databricks resources
+
+- One standard, non-route-optimized Model Serving endpoint in the same workspace,
+  in `READY` state, compatible with OpenAI Chat Completions, tool calls, JSON
+  responses, and the configured `low`, `medium`, and `high` reasoning effort
+  values. This release uses the workspace `/serving-endpoints` OpenAI-compatible
+  API; route-optimized endpoint URLs require a different authentication flow.
+- One registered GDS Databricks environment code already present in the existing
+  application data. Profiling and analysis validation continue using that
+  environment's existing governed connection.
+- If serverless egress is restricted, allow the approved PostgreSQL destination
+  and the package registries needed during builds. Do not broadly allow all
+  outbound traffic.
+
+See
+[Model Serving resources for Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/model-serving)
+and
+[Add resources to a Databricks app](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/resources).
+
+### Secret scope
+
+Create a dedicated Databricks secret scope for this app. Store only these four
+values in it:
+
+| Bundle variable points to | Required secret value |
+|---|---|
+| `database_dsn_secret_key` | Verified PostgreSQL runtime DSN. |
+| `cursor_signing_key_secret_key` | Random 32-4096 byte cursor-signing value. |
+| `entra_tenant_id_secret_key` | Entra tenant UUID used by existing PostgreSQL identities. |
+| `databricks_environment_code_secret_key` | Existing registered GDS environment code. |
+
+Enter secret values through the approved secret-management UI or secret-input
+workflow. Never place a value in source, a shell command, a bundle variable
+file, a screenshot, or logs. Secret permissions apply at scope level, so do not
+mix unrelated secrets into this scope. See
+[Add a secret resource to a Databricks app](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/secrets).
+
+## 4. Required bundle variables
+
+`databricks.yml` requires these non-secret references:
+
+| Variable | Value |
+|---|---|
+| `app_name` | Unique lowercase app name containing only letters, numbers, and hyphens. |
+| `user_group_name` | Existing Databricks group to receive `CAN_USE`. |
+| `secret_scope` | Dedicated existing secret scope. |
+| `database_dsn_secret_key` | Key name, not its DSN value. |
+| `cursor_signing_key_secret_key` | Key name, not its secret value. |
+| `entra_tenant_id_secret_key` | Key name, not its tenant value. |
+| `databricks_environment_code_secret_key` | Key name, not its environment value. |
+| `model_endpoint_name` | Existing `READY` Model Serving endpoint name. |
+
+Keep per-target values in the CLI's ignored local override file. For production,
+create `.databricks/bundle/production/variable-overrides.json` locally:
+
+```json
+{
+  "app_name": "<production-app-name>",
+  "user_group_name": "<authorized-group-name>",
+  "secret_scope": "<app-secret-scope>",
+  "database_dsn_secret_key": "<database-dsn-key-name>",
+  "cursor_signing_key_secret_key": "<cursor-key-name>",
+  "entra_tenant_id_secret_key": "<tenant-id-key-name>",
+  "databricks_environment_code_secret_key": "<environment-code-key-name>",
+  "model_endpoint_name": "<ready-serving-endpoint-name>"
+}
 ```
 
-Run all commands below from the repository root:
+Use the corresponding
+`.databricks/bundle/development/variable-overrides.json` for the development
+target. `.databricks/` is ignored by Git. These files contain names only, never
+secret values. See
+[Bundle variables and overrides](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/variables).
+
+## 5. Runtime variables
+
+`app.yaml` supplies the following values; operators do not set them manually:
+
+| Variable | Source |
+|---|---|
+| `NODE_ENV=production` | Fixed setting that omits frontend test dependencies during the managed build. |
+| `GDS_WEB_ENVIRONMENT=production` | Fixed app setting. |
+| `GDS_WEB_STATIC_DIR=web_app/frontend/dist` | Fixed app setting. |
+| `GDS_WEB_AGENT_EXECUTION_MODE=remote` | Fixed app setting. |
+| `GDS_WEB_DATABRICKS_EXECUTION_MODE=remote` | Fixed app setting. |
+| `GDS_WEB_DATABASE_DSN` | `postgres-dsn` secret resource. |
+| `GDS_WEB_CURSOR_SIGNING_KEY` | `cursor-signing-key` secret resource. |
+| `GDS_WEB_ENTRA_TENANT_ID` | `entra-tenant-id` secret resource. |
+| `GDS_WEB_DATABRICKS_ENVIRONMENT_CODE` | `databricks-environment-code` secret resource. |
+| `GDS_WEB_DATABRICKS_MODEL_ENDPOINT` | `agent-model-endpoint` serving resource. |
+
+Databricks supplies `DATABRICKS_HOST`, `DATABRICKS_APP_NAME`,
+`DATABRICKS_WORKSPACE_ID`, `DATABRICKS_APP_PORT`, `DATABRICKS_CLIENT_ID`, and
+`DATABRICKS_CLIENT_SECRET`. Do not add, copy, or log them. The app listens on
+`0.0.0.0:$DATABRICKS_APP_PORT` and uses unified authentication for the app
+service principal. See
+[Databricks Apps system environment](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/system-env).
+
+The application also supports reviewed timing overrides, but the manifest uses
+safe defaults: agent timeout 120 seconds; workflow lease 30 seconds; heartbeat
+10 seconds; idle poll 1 second; error poll 5 seconds. Change these only through a
+reviewed `app.yaml` update, never as an untracked ambient variable.
+
+## 6. Local verification
+
+Required local tools:
+
+- Docker Desktop or Docker Engine with Compose;
+- Python 3.14 and `uv` for backend checks;
+- Node 22.16 through 22.x and npm for frontend checks.
+
+From the repository root, verify the release source and lock files:
 
 ```bash
-cd /path/to/gds_workbench_v2
-```
-
-## 2. Start the complete disposable stack
-
-```bash
-python3 web_app/local/run.py
-```
-
-Wait for the frontend to become available, then open:
-
-- Workbench: <http://127.0.0.1:8080>
-- API documentation: <http://127.0.0.1:8000/docs>
-- API liveness: <http://127.0.0.1:8000/healthz>
-- API readiness: <http://127.0.0.1:8000/readyz>
-
-The runner intentionally:
-
-- creates random local database and application credentials;
-- starts a fresh PostgreSQL 18 database in Docker;
-- installs and verifies the canonical database from scratch;
-- loads only demo, reference, and local-identity seed data;
-- keeps PostgreSQL private to the Docker network;
-- runs the Agent and Databricks integrations as local fakes; and
-- removes the containers, network, database volume, and its two exact generated
-  application image tags when stopped.
-
-It does not contact Azure, Databricks, an Agent provider, or another external
-runtime service.
-
-## 3. Stop the local stack
-
-In the terminal running the stack, press `Ctrl-C` once. Wait until the runner
-reports that Compose resources were removed.
-
-The local database is disposable. Starting the runner again creates a new one.
-Do not use this runner for persistent development data.
-
-## 4. Use different local ports
-
-If ports `8080` or `8000` are occupied:
-
-```bash
-python3 web_app/local/run.py --frontend-port 9080 --api-port 9000
-```
-
-Then open `http://127.0.0.1:9080`.
-
-## 5. Optional frontend development mode
-
-Keep the complete Docker stack running in the first terminal. In a second
-terminal:
-
-```bash
-npm --prefix web_app/frontend ci
-npm --prefix web_app/frontend run dev
-```
-
-Open <http://127.0.0.1:5173>. Vite proxies `/api` to the Docker API on port
-`8000`.
-
-The repository does not currently support a separate native PostgreSQL/API/
-worker startup. Use the disposable Docker stack as the database and backend
-boundary.
-
-## 6. Local verification commands
-
-Backend install and checks require Python 3.14 and `uv`:
-
-```bash
-uv sync --project web_app/backend --frozen
+uv sync --frozen
 uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
 uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
 uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
 uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
 uv run --project web_app/backend pyright --project web_app/backend
-uv build web_app/backend
+npm ci
+npm run check
 ```
 
-Frontend checks require Node 24 and npm 11.6:
+Run the complete disposable application locally:
 
 ```bash
-npm --prefix web_app/frontend ci
-npm --prefix web_app/frontend run check
+python3 web_app/local/run.py
 ```
 
-Build both release-shaped images locally:
+Open <http://127.0.0.1:8080>. The local runner creates random credentials and a
+fresh PostgreSQL container, loads only local fixtures, uses explicit local user
+identity, uses fake Databricks and agent adapters, and disposes the database on
+exit. Stop it with `Ctrl-C`.
 
-```bash
-docker build --file web_app/backend/Dockerfile --tag gds-workbench-backend:local .
-docker build --file web_app/frontend/Dockerfile --tag gds-workbench-frontend:local web_app/frontend
-```
+This runner deliberately makes no Azure, Databricks, Model Serving, MCP, or
+persistent database call. Do not use `databricks apps run-local` with production
+secret values as a substitute for the disposable runner.
 
-## 7. Understand local versus live PostgreSQL testing
+## 7. Data compatibility release gate
 
-The local runner and automated test suites must use only their disposable
-PostgreSQL containers. Never point `pytest`, the local runner, or CI at an
-Azure, staging, production, developer-managed, or other persistent database.
-
-Live PostgreSQL acceptance happens only through an approved non-production
-Azure deployment after the fresh-install database procedure in Part 3. The
-connection path is:
+An existing database may contain active Model defaults from the former Foundry
+capability set, such as provider `microsoft_foundry` and a Foundry model code.
+This release exposes only:
 
 ```text
-Browser -> frontend container -> API container -> private PostgreSQL
-                                      ^
-Worker Container App -----------------|
+provider: databricks
+logical model: databricks-primary
 ```
 
-The frontend never receives a database DSN and never connects to PostgreSQL.
-Only the API and worker receive separate references to the same Key
-Vault-backed `GDS_WEB_DATABASE_DSN`. Part 5 contains the exact live acceptance
-checklist.
+Before production acceptance, an authorized operator must audit active
+`model.model` defaults. Do not run direct SQL and do not change them as part of
+deployment. If incompatible active defaults exist:
 
-## 8. Local troubleshooting
+1. report the exact affected Models without exposing other row data;
+2. obtain explicit user and data-owner approval;
+3. use the existing governed Model update API/workflow to change only active
+   defaults to `databricks` and `databricks-primary`; and
+4. leave every historical `application.workflow_run` provider/model value
+   unchanged because it is immutable execution provenance.
 
-| Symptom | What to do |
-|---|---|
-| The runner rejects an environment setting | Remove only the setting named in the error. The guard intentionally rejects ambient Azure, database, Databricks, Docker-network, GDS, OpenAI, PostgreSQL, and Compose configuration. |
-| Docker cannot be reached | Start Docker Desktop/Engine. Do not point the runner at a remote TCP Docker daemon. |
-| A port is already in use | Use `--frontend-port` and `--api-port` with two different free ports from `1024` through `65535`. |
-| First startup is slow | The first run downloads pinned images and dependencies and builds both application images. |
-| API readiness returns `503` | Read the safe readiness code, then inspect container status. Do not dump environment variables or database values. |
-| The stack stops after one service fails | Preserve the bounded error, fix that cause, then start a fresh stack. The runner removes the failed disposable stack. |
+No table, function, trigger, migration, or backfill is required. Without the
+approved governed data update, affected new workflows can fail capability
+validation even when the app itself is healthy.
 
----
+## 8. Deploy through the bundle
 
-# Part 2: Prepare the Azure deployment
+The following commands change Databricks resources. Run them only after the
+target deployment has been separately approved.
 
-## 1. Required Azure access
-
-The deployment operator needs approved permission to:
-
-- create resources in the target subscription and resource group;
-- create role assignments for managed identities;
-- create or configure a Microsoft Entra application registration;
-- create a VNet and delegated subnets;
-- create Azure Database for PostgreSQL Flexible Server;
-- write approved secrets to Azure Key Vault; and
-- create Azure Container Registry and Azure Container Apps resources.
-
-Use separate non-production and production resource groups. Do not use a
-personal subscription for production.
-
-Install current Azure CLI and PostgreSQL client tools, then prepare the CLI:
+### Authenticate the operator
 
 ```bash
-az login
-az account set --subscription <subscription-id>
-az extension add --name containerapp --upgrade
+databricks -v
+databricks auth login --host <workspace-url> --profile <profile-name>
+databricks auth describe --profile <profile-name>
 ```
 
-Register the required resource providers once per subscription:
+OAuth is preferred to a PAT. For CI/CD, configure a dedicated service principal
+with only the deployment permissions it needs. See
+[Databricks CLI authentication](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/authentication).
+
+### Deploy development first
+
+Use the development override file and a development workspace/profile:
 
 ```bash
-az provider register --namespace Microsoft.App
-az provider register --namespace Microsoft.ContainerRegistry
-az provider register --namespace Microsoft.DBforPostgreSQL
-az provider register --namespace Microsoft.KeyVault
-az provider register --namespace Microsoft.ManagedIdentity
-az provider register --namespace Microsoft.Network
-az provider register --namespace Microsoft.OperationalInsights
+databricks bundle validate -t development -p <development-profile>
+databricks bundle deploy -t development -p <development-profile>
+databricks bundle run -t development -p <development-profile> workbench
+databricks bundle summary -t development -p <development-profile>
 ```
 
-## 2. Choose names and capacity
+`workbench` is the bundle resource key, not the physical app name. Bundle deploy
+uploads and updates the source, but the subsequent bundle run is required to
+start or restart the app with that source. `bundle run` returns before startup
+is necessarily complete.
 
-Choose and record these values in an approved private operator record:
-
-- Azure subscription and region;
-- resource group;
-- Container Registry;
-- Key Vault;
-- VNet and its address range;
-- Container Apps infrastructure subnet;
-- PostgreSQL delegated subnet;
-- Container Apps environment;
-- PostgreSQL server and database;
-- web Container App;
-- worker Container App;
-- web managed identity;
-- worker managed identity;
-- registered Databricks environment code; and
-- immutable release tag, normally a commit SHA or release version.
-
-Do not use `latest` as an image tag. Azure recommends a unique tag for each
-deployment so revisions remain traceable.
-
-## 3. Run the release gate locally
-
-Before building an Azure image:
-
-1. start the complete local stack;
-2. test login simulation, Tenant selection, metadata, Models, Mapping, Code
-   Generation, and each workflow page;
-3. run both backend test commands, including `tests/web_packaging`;
-4. run the frontend `check` command;
-5. build both Docker images; and
-6. confirm no secret, connection value, rendered prompt, provider output,
-   physical row, or raw tool output appears in logs or image layers.
-
-Stop if any gate fails.
-
----
-
-# Part 3: Create the Azure foundation
-
-Use the Azure portal for the networking and first manual deployment. The exact
-configuration can then be converted to infrastructure as code.
-
-## 1. Create the resource group
+Check status and bounded logs without dumping the environment:
 
 ```bash
-az group create --name <resource-group> --location <azure-region>
+databricks apps get <development-app-name> --profile <development-profile>
+databricks apps logs <development-app-name> --profile <development-profile> --tail-lines 200
 ```
 
-## 2. Create the VNet and two dedicated subnets
+Wait for `Running`, then complete the acceptance checklist below.
 
-In **Azure portal -> Virtual networks -> Create**:
+### Promote the same revision to production
 
-1. Create one VNet in the same region as Container Apps and PostgreSQL.
-2. Create a dedicated Container Apps subnet.
-3. Size the Container Apps subnet at `/27` or larger for a workload-profiles
-   environment.
-4. Delegate it to `Microsoft.App/environments`.
-5. Create a separate PostgreSQL subnet.
-6. Size the PostgreSQL subnet at `/28` or larger.
-7. Delegate it to `Microsoft.DBforPostgreSQL/flexibleServers`.
-8. Confirm neither subnet overlaps another VNet, on-premises network, service
-   CIDR, or Docker bridge CIDR.
-
-The subnets must not contain other resource types. Microsoft documents the
-Container Apps subnet rules in
-[VNet integration](https://learn.microsoft.com/azure/container-apps/vnet-custom)
-and the PostgreSQL rules in
-[PostgreSQL private networking](https://learn.microsoft.com/azure/postgresql/network/concepts-networking-private).
-
-## 3. Create the Container Apps environment
-
-In **Azure portal -> Container Apps environments -> Create**:
-
-1. Select the resource group and region.
-2. Use the workload-profiles environment type.
-3. Enable Azure Log Analytics as the logs destination.
-4. Create or select a Log Analytics workspace.
-5. Select **Use your own virtual network**.
-6. Select the VNet and the Container Apps delegated subnet.
-7. Use an external environment because the Workbench web app needs HTTPS
-   ingress. Only the web Container App will expose ingress.
-8. Finish creation and record the environment default domain.
-
-## 4. Create private PostgreSQL 18
-
-In **Azure portal -> Azure Database for PostgreSQL flexible servers -> Create**:
-
-1. Select PostgreSQL major version `18`.
-2. Select production-appropriate compute, storage, backup retention, and high
-   availability. Size these from measured workload rather than copying demo
-   values.
-3. Create a dedicated empty Workbench database.
-4. Under networking, select **Private access (VNet integration)**.
-5. Select the Workbench VNet and PostgreSQL delegated subnet.
-6. Create or select the PostgreSQL private DNS zone and link it to the VNet.
-7. Leave public network access disabled from the start.
-8. Record the PostgreSQL fully qualified domain name. Never use its current IP
-   address in a connection string.
-
-PostgreSQL 18 is supported by Azure Flexible Server. Verify the current minor
-version before release in
-[Azure PostgreSQL release notes](https://learn.microsoft.com/azure/postgresql/release-notes/release-notes).
-
-## 5. Install the canonical database
-
-Use an approved bootstrap host that can resolve the private DNS name and reach
-the VNet, such as an organization-managed VPN-connected workstation or private
-administration VM. Do not temporarily enable public PostgreSQL access.
-
-From a clean repository checkout, connect as the PostgreSQL server
-administrator. Let `psql` prompt for the password:
+Use the exact tested commit and lock files. Create the production override file
+with production resource names, then run:
 
 ```bash
-psql "host=<postgres-fqdn> port=5432 dbname=<workbench-database> user=<server-admin> sslmode=verify-full sslrootcert=system"
+databricks bundle validate -t production -p <production-profile>
+databricks bundle deploy -t production -p <production-profile>
+databricks bundle run -t production -p <production-profile> workbench
+databricks bundle summary -t production -p <production-profile>
+databricks apps get <production-app-name> --profile <production-profile>
 ```
 
-If the approved client cannot use the system CA store, provide the current
-Azure root CA file explicitly instead. Do not pin an intermediate or individual
-server certificate. See
-[Azure PostgreSQL TLS connections](https://learn.microsoft.com/azure/postgresql/security/security-tls-how-to-connect).
-
-Run the read-only preflight first:
-
-```bash
-psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
-  -f database/00_preflight.sql
-```
-
-Stop if it fails. A failure means the database is not a safe fresh-install
-target.
-
-Run the canonical files in this exact order:
-
-```bash
-for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_application,10_mcp,10_workflow_eligibility,11_mcp_metadata_apply,11_runtime_account,12_runtime_integrity}.sql
-do
-  psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
-    --single-transaction -f "$file" || exit 1
-done
-```
-
-Do not rerun the sequence after a failure. Preserve the error and investigate.
-Never drop, truncate, reset, backfill, or repair the target with an ad hoc
-script.
-
-While connected interactively as the administrator, set the web runtime
-password:
-
-```text
-\password gds_web_runtime
-```
-
-The command prompts twice without putting the password in SQL or shell history.
-The API and worker must use `gds_web_runtime`; they must never use the server
-administrator or `gds_mcp_runtime`.
-
-Verify the installation:
-
-```bash
-psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
-  -f database/13_verify_install.sql
-```
-
-The final result must show `schema_version = 1.0.0` and
-`verification_status = passed`.
-
-Load stable application workflow stages and allowed prompt variables:
-
-```bash
-psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
-  --single-transaction -f database/seed/04_application_reference.sql
-```
-
-Create approved human Entra Principal/Tenant access rows from
-`database/seed/02_human_principal_access.template.sql`. Edit a copy outside the
-repository. The template grants viewer access only. Provision any higher
-production role through the separately approved administrative bootstrap
-process; do not improvise direct grants. Do not run the demo or
-local-super-admin seed in production.
-
-The complete database procedure and its safety rules are in
-[`database/README.md`](../database/README.md).
-
-## 6. Create Key Vault and managed identities
-
-In Azure portal:
-
-1. Create a Key Vault with Azure RBAC authorization enabled.
-2. Enable soft delete and purge protection according to organization policy.
-3. Create one user-assigned managed identity for the web Container App.
-4. Create a different user-assigned managed identity for the worker Container
-   App.
-5. On Key Vault, grant each identity `Key Vault Secrets User` only for the
-   secrets it needs.
-
-Apply the organization's Key Vault network policy. If public access is
-disabled, create and validate its private endpoint and private DNS path before
-starting the Container Apps. Apply the equivalent approved policy to ACR when
-it is created.
-
-## 7. Store the runtime secrets
-
-Add these values to Key Vault through an approved secret-entry process:
-
-| Secret | Requirement |
-|---|---|
-| Web database DSN | Uses `gds_web_runtime`, the PostgreSQL FQDN, the dedicated database, `sslmode=verify-full`, and an approved root-CA configuration such as PostgreSQL 18's `sslrootcert=system`. |
-| Cursor-signing key | Random UTF-8 value from 32 through 4096 bytes. Use the same value for API and worker. |
-| Microsoft Foundry API key | Required only when that provider is enabled. |
-| OpenAI API key | Required only when that provider is enabled. |
-
-At least one complete provider URL/key pair is required in production. Never
-store Databricks host, HTTP path, or token as browser or frontend settings.
-Those values continue to resolve through the existing governed GDS connection
-mechanism.
-
-Use Container Apps Key Vault references rather than copying secret values into
-ordinary environment variables. This requires the managed identity and `Key
-Vault Secrets User` role described above. See
-[Manage secrets in Azure Container Apps](https://learn.microsoft.com/azure/container-apps/manage-secrets).
-
-## 8. Create Azure Container Registry and build images
-
-Create the registry if the approved resource group does not already have one:
-
-```bash
-az acr create \
-  --resource-group <resource-group> \
-  --name <registry-name> \
-  --sku <approved-sku>
-```
-
-On the registry's **Access control (IAM)** page, grant the web and worker
-managed identities pull-only access: `AcrPull` for a normal RBAC registry, or
-`Container Registry Repository Reader` for an ABAC-enabled registry. Do not
-enable the registry admin account. Microsoft recommends this managed-identity
-pull pattern; see
-[Container Apps image pull with managed identity](https://learn.microsoft.com/azure/container-apps/managed-identity-image-pull).
-
-From the repository root, build and push immutable images with Azure Container
-Registry Tasks. Do not pass a secret as a build argument.
-
-```bash
-az acr build \
-  --registry <registry-name> \
-  --image gds-workbench/backend:<release-tag> \
-  --file web_app/backend/Dockerfile \
-  .
-
-az acr build \
-  --registry <registry-name> \
-  --image gds-workbench/frontend:<release-tag> \
-  --file Dockerfile \
-  web_app/frontend
-```
-
-Record the resulting image digests. Production deployment should reference the
-reviewed digest or its unique immutable tag. Azure documents this build command
-under [`az acr build`](https://learn.microsoft.com/cli/azure/acr#az-acr-build).
-
-Before deploying containers, confirm the Container Apps subnet can reach:
-
-- PostgreSQL privately on TCP `5432`;
-- Key Vault and ACR through the approved Azure paths;
-- the selected Databricks SQL Warehouse endpoint over HTTPS; and
-- each enabled Agent provider endpoint over HTTPS.
-
-If an Azure Firewall or other egress appliance is present, add only the
-approved service tags and FQDNs required by those dependencies.
-
----
-
-# Part 4: Deploy the Container Apps
-
-## 1. Determine the exact public host
-
-The backend requires its exact HTTPS origin before it starts. For the Azure
-default domain, obtain the Container Apps environment default domain:
-
-```bash
-az containerapp env show \
-  --resource-group <resource-group> \
-  --name <container-apps-environment> \
-  --query properties.defaultDomain \
-  --output tsv
-```
-
-The initial web host is:
-
-```text
-https://<web-container-app-name>.<environment-default-domain>
-```
-
-Use this same exact origin for `GDS_WEB_PUBLIC_URL`,
-`GDS_WEB_FRONTEND_ORIGIN`, and the initial Entra redirect URI. If a custom
-domain is added later, update all three together in a new reviewed revision.
-
-## 2. Backend configuration matrix
-
-Set these values on the API container and worker container.
-
-| Setting | API | Worker | Secret | Rule |
-|---|---:|---:|---:|---|
-| `GDS_WEB_ENVIRONMENT=production` | Yes | Yes | No | Enables Easy Auth identity parsing, HTTPS enforcement, and production validation. |
-| `GDS_WEB_PUBLIC_URL` | Yes | Yes | No | Exact public HTTPS origin, with no path. |
-| `GDS_WEB_FRONTEND_ORIGIN` | Yes | Yes | No | Same exact frontend origin. |
-| `GDS_WEB_DATABASE_DSN` | Yes | Yes | Yes | Key Vault-backed; must use `sslmode=verify-full` plus an approved root CA. |
-| `GDS_WEB_CURSOR_SIGNING_KEY` | Yes | Yes | Yes | Same Key Vault-backed value for both processes. |
-| `GDS_WEB_DATABRICKS_ENVIRONMENT_CODE` | Yes | Yes | No | Exact active registered Environment code. |
-| `GDS_WEB_DATABRICKS_EXECUTION_MODE=remote` | Yes | Yes | No | Fake mode is rejected in production. |
-| `GDS_WEB_AGENT_EXECUTION_MODE=remote` | Yes | Yes | No | Fake mode is rejected in production. |
-| `GDS_WEB_AGENT_TIMEOUT_SECONDS` | Optional | Optional | No | Integer from `1` through `600`; default `120`. |
-| `GDS_WEB_FOUNDRY_BASE_URL` | Conditional | Conditional | No | HTTPS URL; set together with its API key. |
-| `GDS_WEB_FOUNDRY_API_KEY` | Conditional | Conditional | Yes | Key Vault-backed. |
-| `GDS_WEB_OPENAI_BASE_URL` | Conditional | Conditional | No | HTTPS URL; set together with its API key. |
-| `GDS_WEB_OPENAI_API_KEY` | Conditional | Conditional | Yes | Key Vault-backed. |
-| `GDS_WEB_WORKFLOW_LEASE_SECONDS` | Optional | Optional | No | Integer `1` through `300`; default `30`; keep heartbeat shorter. |
-| `GDS_WEB_WORKFLOW_HEARTBEAT_SECONDS` | Optional | Optional | No | Positive number below the lease; default `10`. |
-| `GDS_WEB_WORKFLOW_IDLE_POLL_SECONDS` | Optional | Optional | No | Number from `0.05` through `60`; default `1`. |
-| `GDS_WEB_WORKFLOW_ERROR_POLL_SECONDS` | Optional | Optional | No | Number from `0.05` through `300`; default `5`. |
-
-Set only the providers that are enabled. At least one complete provider pair is
-mandatory. Unknown `GDS_WEB_*` settings fail startup. Never set
-`GDS_WEB_LOCAL_ENTRA_TENANT_ID` or `GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID` in
-production.
-
-The frontend container receives only:
-
-```text
-API_UPSTREAM=http://127.0.0.1:8000
-```
-
-## 3. Create the web Container App
-
-For the first manual non-production deployment, create both containers in one
-Container App revision:
-
-> The portal-first procedure can expose the ingress before Easy Auth is fully
-> configured. Use it only in isolated non-production. A production deployment
-> must apply authentication atomically through reviewed infrastructure as code
-> or an approved equivalent control.
-
-### Frontend container
-
-- Name: `frontend`
-- Image: `gds-workbench/frontend:<release-tag>`
-- Port: `8080`
-- Environment: `API_UPSTREAM=http://127.0.0.1:8000`
-- Starting resources: `0.25` vCPU and `0.5 GiB` memory
-
-### API container
-
-- Name: `api`
-- Image: `gds-workbench/backend:<same-release-tag>`
-- Port: `8000`
-- Command: keep the Docker image default
-- Environment: use the API column of the configuration matrix
-- Starting resources: `0.75` vCPU and `1.5 GiB` memory
-
-These resource values are only a valid initial Consumption-plan combination.
-Load test and resize them before production.
-
-Attach the web user-assigned identity. Configure both ACR image pulls to use
-that identity. Add Key Vault-backed Container Apps secrets, then reference them
-from the API environment variables.
-
-Configure ingress:
-
-- external ingress enabled;
-- target port `8080` only;
-- HTTPS only; disable insecure HTTP;
-- no separate API ingress; and
-- single-revision mode for the first deployment.
-
-The API must remain reachable only through frontend NGINX at localhost port
-`8000`. Do not create another Container App or public endpoint for the API.
-
-### Web probes
-
-Configure probes explicitly on both containers:
-
-| Container | Startup | Liveness | Readiness |
-|---|---|---|---|
-| Frontend | HTTP `/healthz`, port `8080` | HTTP `/healthz`, port `8080` | HTTP `/healthz`, port `8080` |
-| API | HTTP `/healthz`, port `8000` | HTTP `/healthz`, port `8000` | HTTP `/readyz`, port `8000` |
-
-A practical starting policy is a five-second period, a generous startup failure
-threshold, and a three-failure liveness threshold. Tune it from measured cold
-starts. Azure treats only HTTP `200` through `399` as probe success; see
-[Container Apps health probes](https://learn.microsoft.com/azure/container-apps/health-probes).
-
-### Web scaling
-
-Start non-production with:
-
-- minimum replicas: `1`;
-- maximum replicas: `3`; and
-- the default HTTP concurrency rule until load testing establishes a better
-  threshold.
-
-Each API replica can open up to five PostgreSQL connections. Include every web
-and worker maximum when checking the database connection budget:
-
-```text
-(maximum web replicas + maximum worker replicas) * 5
-```
-
-Leave headroom for PostgreSQL administration, maintenance, and other approved
-clients.
-
-## 4. Configure Microsoft Entra authentication
-
-Configure authentication before giving users the web URL.
-
-### App registration
-
-In **Microsoft Entra ID -> App registrations**:
-
-1. Create or select a single-Tenant registration for the Workbench web app.
-2. In the manifest, use access-token version `2`.
-3. Under **Expose an API**, set an approved Application ID URI.
-4. Add a delegated scope named exactly `workbench.access`.
-5. Under **Token configuration**, add the `idtyp` optional claim to access
-   tokens and configure it to include user tokens. The backend explicitly
-   requires `idtyp=user` for a human request.
-6. Add the callback URI:
-   `https://<workbench-host>/.auth/login/aad/callback`.
-7. Grant the required organizational consent.
-8. If policy requires assignment, configure the Enterprise Application to
-   require assignment and assign only approved users or groups.
-
-Microsoft documents `idtyp` and optional access-token claims under
-[Configure optional claims](https://learn.microsoft.com/entra/identity-platform/optional-claims).
-When editing the app manifest, merge this entry into any existing
-`optionalClaims.accessToken` array rather than replacing other approved claims:
-
-```json
-{
-  "name": "idtyp",
-  "source": null,
-  "essential": false,
-  "additionalProperties": ["include_user_token"]
-}
-```
-
-### Container Apps Easy Auth
-
-In **web Container App -> Authentication -> Add identity provider**:
-
-1. Choose Microsoft.
-2. Use the single-Tenant registration above.
-3. Require authentication for all external requests.
-4. Redirect unauthenticated browser requests to Microsoft rather than returning
-   a bare `401`; the SPA has no separate sign-in screen.
-5. Request the `workbench.access` delegated scope.
-6. Restrict the allowed issuer/Tenant and token audience to the registration.
-7. Leave the token store disabled; the backend uses only protected identity
-   claims.
-
-Container Apps inserts the protected `X-MS-CLIENT-PRINCIPAL` header after
-authentication and prevents external callers from setting it. The backend then
-requires one Tenant ID, one Object ID, a user identity type, and
-`workbench.access`. See
-[Container Apps authentication](https://learn.microsoft.com/azure/container-apps/authentication)
+Do not deploy from an unreviewed working tree. Record the commit SHA, bundle
+target, app name, endpoint name, deployment time, and operator in the approved
+release record. Do not record secret names, references, or values.
+
+Current bundle/app commands are documented in
+[Manage Databricks Apps with bundles](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial)
+and the
+[bundle command reference](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/bundle-commands).
+
+## 9. Production acceptance
+
+Complete every check in development, then repeat the security and smoke checks
+in production:
+
+1. App status reaches `Running`; no startup error appears in bounded app or
+   system logs.
+2. In an authenticated browser, `/healthz` returns success and `/readyz` reports
+   the canonical database ready without revealing connection details.
+3. React loads from the app origin, a deep client-side route refresh succeeds,
+   hashed assets load, and `/api/*` remains same-origin.
+4. A user outside the configured group cannot open the app. A group member can
+   open it and consent only to `iam.access-control:read` and
+   `iam.current-user:read`.
+5. Missing, invalid, inactive, or malformed forwarded user identity is rejected.
+   The app never accepts a caller-supplied substitute identity.
+6. An active mapped user sees only the Tenants and Models allowed by existing
+   PostgreSQL RBAC. An unmapped or unauthorized user receives a bounded denial.
+7. Tenant Lock, revision fencing, idempotency, and role checks still reject
+   unauthorized state changes.
+8. A queued workflow is claimed by the in-app worker, heartbeats, finishes, and
+   records bounded failure information when deliberately given invalid input.
+9. Profiling and analysis validation use the existing registered GDS Databricks
+   environment without any MCP or credential change.
+10. The attached endpoint is standard, non-route-optimized, and `READY`; the app service principal has
+    `CAN_QUERY`, not `CAN_MANAGE`; ordinary users need no endpoint grant.
+11. Run one approved smoke workflow through each supported agent SDK. Then cover
+    analysis, conceptual, logical, dimensional, mapping, and code-generation
+    paths, including each applicable execution mode and reasoning effort.
+12. Verify timeouts, endpoint throttling, authentication failure, dependency
+    failure, and validation repair return bounded errors without raw prompts,
+    physical rows, tool output, tokens, credentials, or stack traces.
+13. Confirm app logs and any enabled platform telemetry contain no secret,
+    database DSN, bearer token, raw prompt, raw physical row, or raw model/tool
+    response. Do not enable Model Serving payload logging or inference tables for
+    this application.
+
+Live PostgreSQL, Databricks SQL, and Model Serving acceptance is a production-like
+deployment activity, not an automated database test. It requires separate
+approval and approved test data.
+
+## 10. Rollback
+
+Rollback redeploys a previously validated source revision. It does not alter the
+database or MCP server.
+
+1. Stop promotion and record the failed deployment ID, app status, and only the
+   bounded error needed for diagnosis.
+2. Check out the last known-good immutable commit. Confirm its lock files and
+   target override references.
+3. Run the local verification commands from that commit.
+4. With the same target and profile, run:
+
+   ```bash
+   databricks bundle validate -t production -p <production-profile>
+   databricks bundle deploy -t production -p <production-profile>
+   databricks bundle run -t production -p <production-profile> workbench
+   databricks apps get <production-app-name> --profile <production-profile>
+   ```
+
+5. Wait for `Running`, then repeat health, authentication, authorization, worker,
+   and model smoke checks.
+6. If only the serving endpoint failed, point the production bundle variable to
+   the previously approved `READY` endpoint, redeploy, and rerun the app. The
+   endpoint must still implement the `databricks-primary` contract.
+
+Do not run `databricks bundle destroy`; it deletes managed resources and is not
+a rollback mechanism. A code rollback does not reverse an approved governed
+Model-default update. If old code requires different active defaults, obtain
+new approval and use the governed Model update workflow. Historical Workflow Run
+provenance is never rewritten.
+
+The Databricks App details page exposes status, deployment history, resources,
+and bounded logs. See
+[View Databricks App details](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/view-app-details)
 and
-[Microsoft Entra setup](https://learn.microsoft.com/azure/container-apps/authentication-entra).
+[Logging and monitoring](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/monitor).
 
-After login, the browser request to `/api/v1/session` must return `200`. If it
-returns `401` or `403`, inspect the bounded application error and the app
-registration. Do not print the principal header or token.
+## 11. Common failures
 
-## 5. Create the worker Container App
+| Symptom | Check |
+|---|---|
+| Build fails before startup | Root `package-lock.json`, `uv.lock`, Python 3.14 compatibility, and restricted-egress access to approved npm/PyPI domains. |
+| App is `Crashed` | `app.yaml` resource resolution, dependency installation, and bounded app/system logs. |
+| React returns “built frontend unavailable” | Confirm the root Node build ran and produced `web_app/frontend/dist/index.html` plus `assets/`. |
+| API returns `401` | User authorization is enabled, both default identity scopes are granted, the forwarded token is present, and SCIM `externalId` is the Entra object UUID. |
+| API returns `403` | App `CAN_USE`, active SCIM user, PostgreSQL Principal mapping, Tenant access, Model ownership, and Tenant Lock. |
+| Readiness returns `503` | PostgreSQL network path, TLS verification, runtime account, and canonical database revision. Do not print the DSN. |
+| Agent workflow fails | Endpoint `READY` state, app service-principal `CAN_QUERY`, `databricks-primary` selection, timeout, and endpoint model feature compatibility. |
+| Queue does not drain | The app process and embedded worker are running; inspect only bounded workflow state and logs. |
+| Deployment cannot download packages | Databricks Apps egress policy allows the exact required package registries. |
 
-Create a separate Container App in the same environment:
+## Official Azure Databricks references
 
-- Name: the approved worker app name
-- Image: `gds-workbench/backend:<same-release-tag>`
-- Ingress: disabled
-- Command override: `gds-workbench-worker`
-- Environment: use the worker column of the configuration matrix
-- Identity: the worker user-assigned identity
-- Starting resources: `1` vCPU and `2 GiB` memory
-- Minimum replicas: `1`
-- Maximum replicas: `2` until load tests and provider limits justify more
-
-Do not add an HTTP probe to the worker. It is a long-running non-HTTP process.
-Minimum replicas must remain at least one unless workflows are intentionally
-paused; an ingressless app without another scaler does not wake itself from
-zero. Azure documents the minimum-replica behavior in
-[Container Apps scaling](https://learn.microsoft.com/azure/container-apps/scale-app).
-
-The worker claims durable runs through PostgreSQL leases and fencing. Multiple
-replicas are safe, but increasing replicas also increases PostgreSQL and Agent
-provider load.
-
-## 6. Register runtime data
-
-Before running a real workflow, confirm the database contains approved active
-records for:
-
-- the human Entra Principal and Tenant access;
-- the Tenant and its current lock policy;
-- required Systems, Connections, Objects, Attributes, and discovery scopes;
-- the selected Databricks Environment code;
-- governed Databricks connection values through the existing GDS mechanism;
-- published prompt versions and Model-stage bindings where required;
-- published Mapping output templates where required; and
-- a published SQL Generation Guide for Code Generation.
-
-Databricks host, HTTP path, and token do not belong in the browser, frontend
-container, or normal Container Apps environment settings.
-
----
-
-# Part 5: Validate and release
-
-## 1. Infrastructure checks
-
-- Both images resolve from ACR through managed identity.
-- Web and worker secret references show healthy synchronization.
-- PostgreSQL public access is disabled.
-- Private DNS resolves the PostgreSQL FQDN from both backend processes.
-- Only frontend port `8080` has external ingress.
-- Port `8000` has no independent ingress.
-- Insecure HTTP is disabled.
-- API `/readyz` succeeds inside the web revision.
-- The worker has at least one running replica.
-
-## 2. Validate the live PostgreSQL connection path
-
-This is a deployment smoke test, not an automated database test. Use only the
-new approved non-production database installed and verified in Part 3.
-
-1. Confirm `database/13_verify_install.sql` reports the expected schema version
-   and `verification_status = passed` from the approved private bootstrap host.
-2. Confirm the API and worker each reference the approved Key Vault secret as
-   `GDS_WEB_DATABASE_DSN`. The DSN must use `gds_web_runtime`, private DNS, and
-   certificate verification. Do not reveal or copy its resolved value.
-3. Confirm the frontend has no database setting. Its only runtime setting is
-   `API_UPSTREAM=http://127.0.0.1:8000`.
-4. Deploy one web revision containing the frontend image and API image. Deploy
-   the worker as its separate ingress-disabled Container App using the same
-   immutable backend image tag.
-5. Wait for the frontend and API startup, liveness, and readiness probes to
-   pass. Confirm the worker has one running replica without an HTTP probe.
-6. Sign in through the public frontend. Confirm `/api/v1/session` returns `200`,
-   authorized Tenants load, and normalized Metadata loads. These are
-   database-backed API reads through the frontend proxy.
-7. With an authorized non-production user, acquire and release the Tenant Lock.
-   Confirm the changed server-owned state appears after refresh. This proves a
-   governed database write and read without exposing table access to the
-   browser.
-8. After the approved Databricks and Agent integrations are registered, run one
-   small non-sensitive workflow. Confirm the worker claims it and bounded Run
-   Events reach the UI. This proves the worker uses the same live database path.
-9. Inspect only bounded health and error messages. Never print the DSN, Easy
-   Auth principal header, credentials, prompts, physical rows, provider output,
-   or workflow claim tokens.
-
-If any check fails, stop the release and preserve the bounded error. Do not
-drop, truncate, reset, backfill, or apply an ad hoc database repair.
-
-## 3. Authentication and authorization checks
-
-Using an approved test user:
-
-1. Open the HTTPS Workbench URL in a private browser window.
-2. Confirm Azure redirects to Microsoft sign-in.
-3. Confirm `/api/v1/session` succeeds after login.
-4. Confirm only authorized Tenants appear.
-5. Confirm a viewer cannot perform protected writes.
-6. Confirm Tenant Lock acquisition, renewal, release, and explicit override obey
-   database roles and ownership rules.
-7. Confirm a user without `workbench.access` receives a bounded denial.
-
-Do not test by forging Easy Auth headers against the public endpoint.
-
-## 4. Workflow smoke test
-
-Use a small, non-sensitive test Model:
-
-1. add a small eligible Scope;
-2. run Profiling on selected objects without direct raw-row output;
-3. confirm the worker claims the run;
-4. confirm safe Run Events reach the UI;
-5. run Analysis inference and validation;
-6. test one identity-authoring workflow in each explicit execution mode;
-7. review and apply an atomic change set;
-8. run Mapping for one target;
-9. generate and inspect one stored SQL artifact; and
-10. confirm no generated SQL is executed automatically.
-
-Check that failures are explicit, no partial result is committed, and retry
-attempts remain within the selected run settings.
-
-## 5. Logging and redaction check
-
-Container Apps and Log Analytics must not contain:
-
-- database or provider credentials;
-- Key Vault values or references copied from configuration;
-- raw prompts or provider responses;
-- physical data rows;
-- raw Databricks output;
-- workflow claim tokens;
-- generated SQL bodies; or
-- unredacted request/response dumps.
-
-Log only bounded codes, identifiers allowed by policy, safe progress, timing,
-and correlation information.
-
-## 5. Release traffic
-
-For later releases, use a unique image tag and a new revision. Prefer multiple
-revision mode for controlled rollout:
-
-1. deploy the new web revision with no production traffic;
-2. wait for every explicit readiness probe;
-3. run the authentication and smoke checks against the revision label URL;
-4. move a small percentage of traffic;
-5. monitor errors, latency, restarts, database pool use, and worker runs;
-6. move the remaining traffic only when healthy; and
-7. update the worker to the matching backend version.
-
-Container Apps revisions are immutable snapshots and support traffic splitting;
-see [Container Apps revisions](https://learn.microsoft.com/azure/container-apps/revisions).
-
-Rollback only to an application revision compatible with the installed
-database schema. The repository currently has no populated-database migration
-or downgrade system.
-
----
-
-# Part 6: Operations
-
-## Update the application
-
-1. Complete the local release gate.
-2. Build new backend and frontend images with one new immutable release tag.
-3. Review image scan results.
-4. Create a new web revision containing both new images.
-5. Validate readiness and authentication before shifting traffic.
-6. Update the worker to the same backend tag.
-7. Monitor safe workflow events and database capacity.
-
-Never overwrite an existing image tag.
-
-## Rotate a secret
-
-1. Add a new approved Key Vault secret version.
-2. Confirm the web and worker identities can read it.
-3. Update or refresh both Container Apps secret references together.
-4. Wait for both apps to restart or deploy a new revision.
-5. Re-run readiness, login, and one small workflow smoke test.
-6. Revoke the old credential only after both apps use the new value.
-
-Container Apps can refresh an unversioned Key Vault reference automatically;
-pin a version when change control requires an explicit rollout.
-
-## Minimum monitoring
-
-Create alerts for:
-
-- unhealthy or failed revisions;
-- repeated container restarts;
-- API readiness failures;
-- PostgreSQL connection-pool exhaustion;
-- worker runs stuck beyond their lease/recovery policy;
-- repeated workflow failures;
-- authentication or authorization failure spikes; and
-- Key Vault or ACR managed-identity failures.
-
-The worker currently has no positive HTTP readiness signal. Monitor its replica
-state plus durable run progress.
-
----
-
-# Part 7: Known release gates
-
-Close or explicitly accept these before a production launch:
-
-1. **Infrastructure as code:** no reviewed Bicep/Terraform/Container Apps YAML
-   currently enforces the manual configuration.
-2. **End-to-end browser automation:** the repository does not yet include a
-   production-shaped browser E2E suite.
-3. **Import size:** frontend NGINX currently permits `20 MiB`, while higher
-   layers accept larger workbooks. Treat `20 MiB` as the deployed limit until
-   all layers use one agreed value.
-4. **HTTPS proxy smoke test:** confirm `/api/*` has no redirect loop behind
-   Container Apps TLS termination before shifting traffic.
-5. **Worker health:** the worker has no positive readiness endpoint and can
-   continue polling after persistent dependency errors; alert on durable run
-   progress.
-6. **Portable Databricks notebooks:** notebook wrapper deployment/failover is
-   not part of the current web container images and must not be claimed until
-   the shared workflow package and wrappers exist and pass their own gate.
-
-The shorter immutable topology contract remains in
-[`AZURE_CONTAINER_APPS.md`](AZURE_CONTAINER_APPS.md).
+- [Deploy a Databricks app](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/deploy)
+- [Configure `app.yaml`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/app-runtime)
+- [Databricks Apps resources](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/resources)
+- [Databricks Apps authorization](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/auth)
+- [Databricks Apps Model Serving resources](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/model-serving)
+- [Databricks Apps networking](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/networking)
+- [Databricks Apps environment](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/system-env)
+- [Manage Apps with Declarative Automation Bundles](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial)
+- [Databricks CLI authentication](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/authentication)

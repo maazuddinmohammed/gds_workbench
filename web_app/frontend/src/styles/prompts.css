@@ -28,7 +28,7 @@ textarea:focus-visible {
   align-items: end;
   gap: 2rem;
   padding: 1.7rem 0 1.25rem;
-  border-bottom: 3px solid var(--ink);
+  border-bottom: 1px solid var(--line-strong);
 }
 
 .prompts-commandbar h1,
@@ -62,7 +62,7 @@ textarea:focus-visible {
 .prompt-filter-band {
   padding: 1rem 0;
   border-bottom: 1px solid var(--line);
-  background: white;
+  background: transparent;
 }
 
 .prompt-filter-band form {
@@ -106,7 +106,7 @@ textarea:focus-visible {
   min-height: 2.65rem;
   padding: 0.56rem 0.65rem;
   border: 1px solid var(--line-strong);
-  border-radius: 0.45rem;
+  border-radius: var(--radius-small);
   color: var(--ink);
   background: white;
   font-size: 0.74rem;
@@ -151,7 +151,7 @@ textarea:focus-visible {
 
 .prompt-table-scroll {
   max-height: calc(100vh - 24rem);
-  border-top: 2px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
 }
 
 .prompt-table-scroll table,
@@ -247,7 +247,7 @@ textarea:focus-visible {
 
 .prompt-variable-reference {
   margin-top: 1.6rem;
-  border-top: 3px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
   border-bottom: 1px solid var(--line);
 }
 
@@ -367,8 +367,8 @@ textarea:focus-visible {
 
 .prompt-dialog {
   width: min(44rem, 100%);
-  border-top: 4px solid var(--ink);
-  border-radius: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
 }
 
 .prompt-dialog-form,
@@ -413,6 +413,7 @@ textarea:focus-visible {
   gap: 0.6rem;
   padding: 0.7rem;
   border: 1px solid var(--line);
+  border-radius: var(--radius-small);
   background: #fafbfc;
 }
 
@@ -454,8 +455,8 @@ textarea:focus-visible {
 
 .prompt-transition-dialog {
   width: min(37rem, 100%);
-  border-top: 4px solid var(--orange);
-  border-radius: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
 }
 
 .prompt-transition-copy {
@@ -502,7 +503,7 @@ textarea:focus-visible {
   min-width: 0;
   grid-template-columns: 18rem minmax(0, 1fr);
   margin-top: 1.5rem;
-  border-top: 3px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
   border-bottom: 1px solid var(--line);
 }
 
@@ -684,7 +685,7 @@ textarea:focus-visible {
 
 .prompt-detail-variables {
   margin-top: 1.8rem;
-  border-top: 3px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
 }
 
 .prompt-detail-variables .table-scroll {
@@ -745,7 +746,7 @@ textarea:focus-visible {
 
 .model-prompts-table-scroll {
   max-height: calc(100vh - 19rem);
-  border-top: 3px solid var(--ink);
+  border-top: 1px solid var(--line-strong);
 }
 
 .global-default-gap {
@@ -766,8 +767,8 @@ textarea:focus-visible {
 
 .prompt-assignment-dialog {
   width: min(47rem, 100%);
-  border-top: 4px solid var(--orange);
-  border-radius: 0.2rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-large);
 }
 
 .prompt-assignment-options {
