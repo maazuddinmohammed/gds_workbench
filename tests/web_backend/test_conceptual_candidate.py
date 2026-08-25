@@ -90,7 +90,9 @@ def _validator(
     applied_relationships: tuple[ConceptualRelationshipRecord, ...] = (),
 ) -> ConceptualCandidateValidator:
     return ConceptualCandidateValidator(
-        selected_object_keys=(PhysicalObjectKey.model_validate(_physical_object(), strict=True),),
+        selected_object_keys=(
+            PhysicalObjectKey.model_validate(_physical_object(), strict=True),
+        ),
         assertion_record_keys=(),
         applied=ConceptualSection(
             objects=applied_objects,
@@ -169,7 +171,9 @@ async def test_candidate_omits_unchanged_and_unmentioned_applied_records() -> No
 
 
 @pytest.mark.asyncio
-async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> None:
+async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> (
+    None
+):
     locked = ConceptualObjectRecord.model_validate_json(
         json.dumps(_object(locked=True)),
         strict=True,

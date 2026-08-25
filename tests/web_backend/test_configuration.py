@@ -24,8 +24,12 @@ def test_local_settings_are_explicit_and_hide_the_database_dsn() -> None:
 
     assert settings.environment is Environment.LOCAL
     assert settings.auth_mode is AuthMode.DEV
-    assert settings.local_entra_tenant_id == UUID("11111111-1111-1111-1111-111111111111")
-    assert settings.local_principal_object_id == UUID("22222222-2222-2222-2222-222222222222")
+    assert settings.local_entra_tenant_id == UUID(
+        "11111111-1111-1111-1111-111111111111"
+    )
+    assert settings.local_principal_object_id == UUID(
+        "22222222-2222-2222-2222-222222222222"
+    )
     assert settings.frontend_origin == "http://localhost:5173"
     assert settings.databricks_environment_code == "TEST"
     assert settings.databricks_execution_mode == "fake"
@@ -77,7 +81,9 @@ def test_production_requires_a_verified_postgres_connection() -> None:
     assert "top-secret" not in str(captured.value)
 
 
-def test_remote_agent_settings_require_complete_https_provider_pairs_and_hide_keys() -> None:
+def test_remote_agent_settings_require_complete_https_provider_pairs_and_hide_keys() -> (
+    None
+):
     settings = RuntimeSettings.from_environment(
         {
             "GDS_WEB_ENVIRONMENT": "local",
@@ -125,7 +131,9 @@ def test_agent_provider_connection_pair_must_be_complete() -> None:
     with pytest.raises(ConfigurationError) as captured:
         RuntimeSettings.from_environment(values)
 
-    assert str(captured.value) == ("microsoft_foundry agent provider requires both URL and API key")
+    assert str(captured.value) == (
+        "microsoft_foundry agent provider requires both URL and API key"
+    )
 
 
 def test_production_rejects_fake_agent_execution() -> None:
@@ -171,7 +179,9 @@ def test_databricks_execution_mode_is_explicit_and_production_safe() -> None:
     production_values = {
         **local_values,
         "GDS_WEB_ENVIRONMENT": "production",
-        "GDS_WEB_DATABASE_DSN": ("postgresql://fixture.invalid/workbench?sslmode=verify-full"),
+        "GDS_WEB_DATABASE_DSN": (
+            "postgresql://fixture.invalid/workbench?sslmode=verify-full"
+        ),
         "GDS_WEB_PUBLIC_URL": "https://api.example.test",
         "GDS_WEB_FRONTEND_ORIGIN": "https://workbench.example.test",
         "GDS_WEB_DATABRICKS_EXECUTION_MODE": "fake",

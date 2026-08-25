@@ -28,7 +28,9 @@ from gds_workbench_api.features.workflows.authoring.change_set_apply_router impo
     create_workflow_draft_apply_router,
 )
 
-_MAPPING_PROFILE_SCHEMA_DIGEST = "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
+_MAPPING_PROFILE_SCHEMA_DIGEST = (
+    "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
+)
 
 
 class StaticWorkflowDraftApplyService:

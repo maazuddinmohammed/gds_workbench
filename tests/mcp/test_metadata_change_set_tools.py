@@ -304,7 +304,9 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
     )
 
     async with Client(_server(database)) as client:
-        result = await client.call_tool("create_metadata_change_set", {"tenant_id": 123})
+        result = await client.call_tool(
+            "create_metadata_change_set", {"tenant_id": 123}
+        )
 
     assert result.is_error is False
     assert result.structured_content == {
@@ -325,7 +327,9 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
 
 
 @pytest.mark.asyncio
-async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> None:
+async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> (
+    None
+):
     database = FakeDatabase(
         stage_row={
             "staged": True,
@@ -401,7 +405,9 @@ async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revis
 
 
 @pytest.mark.asyncio
-async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes() -> None:
+async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes() -> (
+    None
+):
     database = FakeDatabase(
         stage_row={
             "staged": True,
@@ -429,7 +435,9 @@ async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes
                                 "copy_group_name": "CUSTOMERS",
                                 "member_group_name": None,
                                 "copy_group_control_initial_load_date": "2026-08-24",
-                                "copy_group_control_last_run_time": ("2026-08-24T10:42:00Z"),
+                                "copy_group_control_last_run_time": (
+                                    "2026-08-24T10:42:00Z"
+                                ),
                                 "copy_group_control_last_run_value": "1048",
                             }
                         ],
@@ -488,7 +496,9 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
     async with Client(_server(FakeDatabase())) as client:
         tools = await client.list_tools()
 
-    stage = next(tool for tool in tools.tools if tool.name == "stage_metadata_change_set")
+    stage = next(
+        tool for tool in tools.tools if tool.name == "stage_metadata_change_set"
+    )
     definitions = stage.input_schema["$defs"]
     stage_change = definitions["StageChange"]
     assert stage_change["properties"]["records"]["items"] == {
@@ -499,7 +509,9 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
         field not in str(stage.input_schema)
         for field in ("copy_group_name", "process_executable", "attribute_data_type")
     )
-    put_chunk = next(tool for tool in tools.tools if tool.name == "put_metadata_stage_chunk")
+    put_chunk = next(
+        tool for tool in tools.tools if tool.name == "put_metadata_stage_chunk"
+    )
     assert put_chunk.input_schema["properties"]["records"]["items"] == {
         "additionalProperties": True,
         "type": "object",
@@ -509,7 +521,9 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
 
 
 @pytest.mark.asyncio
-async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement() -> None:
+async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement() -> (
+    None
+):
     first: dict[str, object] = {
         "tenant_code": "DEMO",
         "system_code": "CRM",
@@ -603,12 +617,18 @@ async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement()
     assert committed.structured_content["record_count"] == 2
     assert committed.structured_content["draft_revision"] == 2
     assert database.write_transaction_count == 3
-    assert all("records" not in record.input_metadata for record in database.audit_records)
-    assert "CUSTOMERS" not in str([record.input_metadata for record in database.audit_records])
+    assert all(
+        "records" not in record.input_metadata for record in database.audit_records
+    )
+    assert "CUSTOMERS" not in str(
+        [record.input_metadata for record in database.audit_records]
+    )
 
 
 @pytest.mark.asyncio
-async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_write() -> None:
+async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_write() -> (
+    None
+):
     record = {
         "tenant_code": "DEMO",
         "system_code": "CRM",
@@ -825,11 +845,14 @@ async def test_validate_metadata_change_set_persists_bounded_result(
         ],
     }
 
-    async def select_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
+    async def select_snapshot(
+        *_args: object, **_kwargs: object
+    ) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(
             tenant_code="DEMO",
             datasets=tuple(
-                encode_dataset(DATASETS_BY_NAME[name], rows) for name, rows in foundation.items()
+                encode_dataset(DATASETS_BY_NAME[name], rows)
+                for name, rows in foundation.items()
             ),
         )
 
@@ -931,7 +954,9 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         },
     )
 
-    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(
+        *_args: object, **_kwargs: object
+    ) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
@@ -1011,7 +1036,9 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         },
     )
 
-    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(
+        *_args: object, **_kwargs: object
+    ) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
@@ -1080,7 +1107,9 @@ async def test_metadata_change_set_prompt_teaches_context_bounded_workflow() -> 
             {"tenant_id": "123"},
         )
 
-    assert [prompt.name for prompt in prompts.prompts] == ["work_with_metadata_change_set"]
+    assert [prompt.name for prompt in prompts.prompts] == [
+        "work_with_metadata_change_set"
+    ]
     content = result.messages[0].content
     assert content.type == "text"
     assert "requested boundary" in content.text

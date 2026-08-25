@@ -59,14 +59,18 @@ def test_mapping_profile_bundle_and_registry_are_one_canonical_contract() -> Non
     assert bundle_bytes.startswith(
         b'{"json_schema_mode":"validation","schema_bundle_version":"1.0","schemas":['
     )
-    assert mapping_schema_bundle_digest() == load_mapping_profile_registry().schema_digest
+    assert (
+        mapping_schema_bundle_digest() == load_mapping_profile_registry().schema_digest
+    )
     assert mapping_schema_bundle_digest() == resolve_mapping_profile_schema_digest(
         "mapping.standard",
         "1.0.0",
     )
 
 
-def test_mapping_contract_json_rejects_duplicate_keys_floats_and_nonfinite_numbers() -> None:
+def test_mapping_contract_json_rejects_duplicate_keys_floats_and_nonfinite_numbers() -> (
+    None
+):
     with pytest.raises(ValueError, match="duplicate JSON object key"):
         parse_contract_json('{"schema_version":"1.0","schema_version":"1.0"}')
     with pytest.raises(ValueError, match="floating-point"):
@@ -104,7 +108,9 @@ def test_root_contracts_are_strict_and_nullable_fields_are_required() -> None:
         assert model.model_json_schema()["additionalProperties"] is False
 
     with pytest.raises(ValidationError, match="partition_basis"):
-        HeaderMapperOutputV1.model_validate(_header_candidate(omit_partition_basis=True))
+        HeaderMapperOutputV1.model_validate(
+            _header_candidate(omit_partition_basis=True)
+        )
     invalid = _header_candidate()
     invalid["unexpected"] = True
     with pytest.raises(ValidationError, match="extra_forbidden"):
@@ -136,15 +142,21 @@ def test_web_header_uses_the_shared_exact_mapping_package_contract() -> None:
 def test_header_contract_enforces_provenance_uniqueness_and_direct_shape() -> None:
     candidate = _header_candidate()
     parsed = HeaderMapperOutputV1.model_validate(candidate)
-    assert parsed.package.non_executable_provenance[0].lineage_kind == "original_ingestion"
+    assert (
+        parsed.package.non_executable_provenance[0].lineage_kind == "original_ingestion"
+    )
 
     invalid = _header_candidate()
-    invalid["package"]["non_executable_provenance"][0]["prior_object_mapping_ids"] = [99]
+    invalid["package"]["non_executable_provenance"][0]["prior_object_mapping_ids"] = [
+        99
+    ]
     with pytest.raises(ValidationError, match="Original-ingestion provenance"):
         HeaderMapperOutputV1.model_validate(invalid)
 
     invalid = _header_candidate()
-    invalid["package"]["executable_sources"].append(invalid["package"]["executable_sources"][0])
+    invalid["package"]["executable_sources"].append(
+        invalid["package"]["executable_sources"][0]
+    )
     with pytest.raises(ValidationError, match="aliases must be unique"):
         HeaderMapperOutputV1.model_validate(invalid)
 
@@ -169,7 +181,8 @@ def test_generator_contract_has_no_database_ids_and_enforces_name_only_safety() 
     schema = GeneratorDocumentV1.model_json_schema()
     property_names = _property_names(schema)
     assert not any(
-        name == "id" or name.endswith("_id") or name.endswith("_ids") for name in property_names
+        name == "id" or name.endswith("_id") or name.endswith("_ids")
+        for name in property_names
     )
     assert not property_names & {
         "api_key",
@@ -237,7 +250,9 @@ def test_contract_text_and_collection_limits_are_enforced() -> None:
 
 def test_contract_canonical_json_has_a_stable_golden_vector() -> None:
     value = {"z": [3, 2, 1], "unicode": "café", "a": {"b": True}}
-    assert canonical_json_bytes(value) == (b'{"a":{"b":true},"unicode":"caf\xc3\xa9","z":[3,2,1]}')
+    assert canonical_json_bytes(value) == (
+        b'{"a":{"b":true},"unicode":"caf\xc3\xa9","z":[3,2,1]}'
+    )
     assert canonical_json_bytes(value) == canonical_mapping_json_bytes(value)
 
 
@@ -543,7 +558,9 @@ def _property_names(value: object) -> set[str]:
         properties = mapping.get("properties")
         if isinstance(properties, dict):
             names.update(
-                key for key in cast(dict[object, object], properties) if isinstance(key, str)
+                key
+                for key in cast(dict[object, object], properties)
+                if isinstance(key, str)
             )
         for nested in mapping.values():
             names.update(_property_names(nested))
@@ -558,7 +575,9 @@ def _string_schema_leaves(value: object) -> list[dict[str, object]]:
     if isinstance(value, dict):
         mapping = cast(dict[object, object], value)
         if mapping.get("type") == "string":
-            leaves.append({key: nested for key, nested in mapping.items() if isinstance(key, str)})
+            leaves.append(
+                {key: nested for key, nested in mapping.items() if isinstance(key, str)}
+            )
         for nested in mapping.values():
             leaves.extend(_string_schema_leaves(nested))
     elif isinstance(value, list):

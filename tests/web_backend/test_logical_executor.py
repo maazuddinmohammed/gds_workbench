@@ -499,7 +499,9 @@ def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -654,7 +656,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -668,7 +672,9 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -725,7 +731,9 @@ def _service(
             lifecycle=lifecycle,
             plan_repository=_PlanRepository(selected_plan),
             context_repository=_ContextRepository(
-                _context_bundle(mode=selected_plan.workflow_execution_mode or "one_shot")
+                _context_bundle(
+                    mode=selected_plan.workflow_execution_mode or "one_shot"
+                )
             ),
             context_policy=AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
@@ -773,14 +781,17 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     attribute_change = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
-    assert [record["logical_attribute_name"] for record in attribute_change.records] == [
+    assert [
+        record["logical_attribute_name"] for record in attribute_change.records
+    ] == [
         "Created At",
         "Customer Id",
     ]
     assert handoff.final_events[-1].finding_count == 4
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "logical.candidate_authoring"),
         (3, "logical.backend_validation"),
@@ -826,7 +837,9 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
 async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=_AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]),
+        agent=_AgentExecutor(
+            responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]
+        ),
         no_op=no_op,
     )
 
@@ -911,7 +924,9 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
+    agent = _AgentExecutor(
+        responses=[_candidate(source_name="outside_selection"), _candidate()]
+    )
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -1013,7 +1028,9 @@ async def test_fixed_plan_mismatch_is_rejected_before_agent_execution() -> None:
 
 @pytest.mark.asyncio
 async def test_detailed_coverage_runs_fixed_loops_then_one_atomic_handoff() -> None:
-    agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], _detailed_candidates()))
+    agent = _AgentExecutor(
+        responses=cast(list[JsonValue | Exception], _detailed_candidates())
+    )
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
         plan=_plan(mode="detailed_coverage"),
@@ -1037,7 +1054,9 @@ async def test_detailed_coverage_runs_fixed_loops_then_one_atomic_handoff() -> N
         "validator_worker",
         "validator_lead",
     ]
-    assert all(request.execution_mode == "detailed_coverage" for request in agent.requests)
+    assert all(
+        request.execution_mode == "detailed_coverage" for request in agent.requests
+    )
     assert all(request.allowed_tool_names == () for request in agent.requests)
     assert len(handoff.calls) == 1
     assert result.staged_record_count == 4
@@ -1119,7 +1138,9 @@ async def test_detailed_empty_coverage_completes_with_true_no_op_event(
 
 
 @pytest.mark.asyncio
-async def test_detailed_blocker_repairs_only_whole_model_from_immutable_context() -> None:
+async def test_detailed_blocker_repairs_only_whole_model_from_immutable_context() -> (
+    None
+):
     agent = _AgentExecutor(
         responses=cast(
             list[JsonValue | Exception],

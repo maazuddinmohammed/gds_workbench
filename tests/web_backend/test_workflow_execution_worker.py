@@ -72,7 +72,8 @@ class FakeClaimRepository:
         return WorkflowClaimLease(
             workflow_run_id=workflow_run_id,
             workflow_run_claim_heartbeat_time=now,
-            workflow_run_claim_expires_time=now + timedelta(seconds=lease_duration_seconds),
+            workflow_run_claim_expires_time=now
+            + timedelta(seconds=lease_duration_seconds),
         )
 
     async def release(
@@ -151,7 +152,9 @@ async def test_worker_renews_a_live_claim_until_execution_completes() -> None:
 
 
 @pytest.mark.asyncio
-async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery() -> None:
+async def test_worker_leaves_an_unexpected_failure_claimed_for_bounded_recovery() -> (
+    None
+):
     repository = FakeClaimRepository(_claim())
     dispatcher = BlockingDispatcher()
     dispatcher.failure = RuntimeError("safe test failure")

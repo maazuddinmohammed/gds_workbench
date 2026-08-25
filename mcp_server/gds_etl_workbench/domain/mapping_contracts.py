@@ -26,10 +26,13 @@ OrdinaryText = Annotated[
     str,
     Field(min_length=1, max_length=2_000, pattern=_NONBLANK_PATTERN),
 ]
-OptionalOrdinaryText = Annotated[
-    str,
-    Field(min_length=1, max_length=2_000, pattern=_NONBLANK_PATTERN),
-] | None
+OptionalOrdinaryText = (
+    Annotated[
+        str,
+        Field(min_length=1, max_length=2_000, pattern=_NONBLANK_PATTERN),
+    ]
+    | None
+)
 LogicText = Annotated[
     str,
     Field(min_length=1, max_length=16_384, pattern=_NONBLANK_PATTERN),
@@ -132,8 +135,7 @@ class PackageProvenanceV1(MappingContractModel):
                 )
         elif not self.prior_object_mapping_ids or self.ingestion_object_mapping_ids:
             raise ValueError(
-                "Prior-Mapping provenance requires prior-Mapping IDs and forbids "
-                "ingestion IDs"
+                "Prior-Mapping provenance requires prior-Mapping IDs and forbids ingestion IDs"
             )
         return self
 
@@ -219,9 +221,7 @@ class MappingPackageDocumentV1(MappingContractModel):
 
     @field_validator("non_executable_provenance")
     @classmethod
-    def normalize_provenance(
-        cls, values: list[PackageProvenanceV1]
-    ) -> list[PackageProvenanceV1]:
+    def normalize_provenance(cls, values: list[PackageProvenanceV1]) -> list[PackageProvenanceV1]:
         return sorted(
             values,
             key=lambda item: (
@@ -233,9 +233,7 @@ class MappingPackageDocumentV1(MappingContractModel):
 
     @field_validator("runtime_parameters")
     @classmethod
-    def normalize_parameters(
-        cls, values: list[RuntimeParameterV1]
-    ) -> list[RuntimeParameterV1]:
+    def normalize_parameters(cls, values: list[RuntimeParameterV1]) -> list[RuntimeParameterV1]:
         return sorted(values, key=lambda item: item.name)
 
     @field_validator("source_system_dependencies")

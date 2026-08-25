@@ -5,11 +5,11 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import CheckViolation, InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from test_database_workflow_run_lifecycle import (
+from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     WorkflowContext,
     create_workflow_run_parameters,
@@ -394,8 +394,7 @@ def test_gds_persistence_uses_discovery_assigned_tenant_not_connection_owner(
 
     workflow_run_id = _create_run(postgres_database, context)
     profiles = [
-        _profile(object_id, attribute_id)
-        for object_id, attribute_id in attributes
+        _profile(object_id, attribute_id) for object_id, attribute_id in attributes
     ]
     with psycopg.connect(
         postgres_database.web_runtime_dsn(),

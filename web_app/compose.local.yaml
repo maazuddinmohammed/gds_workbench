@@ -27,7 +27,7 @@ x-backend-security: &backend-security
   security_opt:
     - no-new-privileges:true
   networks:
-    - local_internal
+    - local_backend
 
 services:
   database:
@@ -53,7 +53,7 @@ services:
       retries: 30
       start_period: 10s
     networks:
-      - local_internal
+      - local_backend
 
   api:
     <<: *backend-security
@@ -66,17 +66,21 @@ services:
         condition: service_healthy
     ports:
       - "127.0.0.1:${GDS_LOCAL_API_PORT}:8000"
+    networks:
+      - local_backend
+      - local_edge
 
   worker:
     <<: *backend-security
     image: gds-workbench-backend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
     pull_policy: never
-    build: *backend-build
     command: ["gds-workbench-worker"]
     environment: *backend-environment
     depends_on:
       database:
         condition: service_healthy
+    healthcheck:
+      disable: true
 
   frontend:
     image: gds-workbench-frontend:local-${GDS_LOCAL_IMAGE_SUFFIX:?generated image suffix required}
@@ -101,7 +105,7 @@ services:
     security_opt:
       - no-new-privileges:true
     networks:
-      - local_internal
+      - local_edge
 
 volumes:
   database_data:
@@ -109,5 +113,6 @@ volumes:
       gds.local.run: ${GDS_LOCAL_RUN_SENTINEL:?generated run sentinel required}
 
 networks:
-  local_internal:
+  local_backend:
     internal: true
+  local_edge:

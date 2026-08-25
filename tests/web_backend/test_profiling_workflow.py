@@ -78,7 +78,9 @@ def _target(*, object_id: int, attribute_id: int) -> ProfilingExecutionTarget:
 @dataclass
 class _Repository:
     context: ProfilingExecutionContext
-    events: list[tuple[int, str, str, int | None, int | None]] = field(default_factory=lambda: [])
+    events: list[tuple[int, str, str, int | None, int | None]] = field(
+        default_factory=lambda: []
+    )
     committed_profiles: list[dict[str, object]] | None = None
     failed: tuple[str, str] | None = None
     fail_persistence: bool = False
@@ -221,7 +223,9 @@ class _Executor:
 
 
 @pytest.mark.asyncio
-async def test_profiling_run_executes_all_queries_then_commits_one_complete_payload() -> None:
+async def test_profiling_run_executes_all_queries_then_commits_one_complete_payload() -> (
+    None
+):
     repository = _Repository(
         context=ProfilingExecutionContext(
             workflow_run_id=1048,
@@ -373,7 +377,9 @@ class _StaticWorkflowService:
     ) -> None:
         assert principal.actor_kind is ActorKind.HUMAN
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executed.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executed.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
 
 
 def _client(service: _StaticWorkflowService) -> TestClient:
@@ -576,7 +582,9 @@ async def test_database_repository_starts_run_without_leaking_database_fields() 
 
 
 @pytest.mark.asyncio
-async def test_database_repository_groups_context_without_exposing_credentials() -> None:
+async def test_database_repository_groups_context_without_exposing_credentials() -> (
+    None
+):
     database = _Database()
     repository = DatabaseProfilingWorkflowRepository(
         database=database,

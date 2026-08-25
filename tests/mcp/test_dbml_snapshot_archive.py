@@ -8,7 +8,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from test_dbml_snapshot_renderer import snapshot_fixture
+from tests.mcp.test_dbml_snapshot_renderer import snapshot_fixture
 
 from gds_etl_workbench.tools.snapshots.archive import SnapshotPayloadTooLargeError
 from gds_etl_workbench.tools.snapshots.dbml.archive import build_dbml_snapshot_archive

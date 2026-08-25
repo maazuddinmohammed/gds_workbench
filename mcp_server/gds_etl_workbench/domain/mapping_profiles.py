@@ -8,9 +8,7 @@ from typing import cast
 
 MAPPING_STANDARD_PROFILE_KEY = "mapping.standard"
 MAPPING_STANDARD_PROFILE_VERSION = "1.0.0"
-MAPPING_STANDARD_SCHEMA_DIGEST = (
-    "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
-)
+MAPPING_STANDARD_SCHEMA_DIGEST = "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
 
 _SUPPORTED_SCHEMA_DIGESTS = {
     (MAPPING_STANDARD_PROFILE_KEY, MAPPING_STANDARD_PROFILE_VERSION): (
@@ -33,9 +31,7 @@ def resolve_mapping_profile_schema_digest(key: str, version: str) -> str:
     try:
         return _SUPPORTED_SCHEMA_DIGESTS[(key, version)]
     except KeyError as exc:
-        raise UnknownMappingProfileError(
-            f"Unsupported Mapping profile: {key}@{version}."
-        ) from exc
+        raise UnknownMappingProfileError(f"Unsupported Mapping profile: {key}@{version}.") from exc
 
 
 def canonical_mapping_json_bytes(value: object) -> bytes:
@@ -77,9 +73,7 @@ def validate_mapping_package_profile(package: object, key: str, version: str) ->
         "schema_digest": expected_digest,
     }
     if not isinstance(profile, dict):
-        raise InvalidMappingPackageError(
-            "Mapping package pydantic_profile must be an object."
-        )
+        raise InvalidMappingPackageError("Mapping package pydantic_profile must be an object.")
     if cast(dict[object, object], profile) != expected_profile:
         raise InvalidMappingPackageError(
             "Mapping package pydantic_profile does not match the resolved profile."
@@ -101,6 +95,4 @@ def _validate_canonical_json_value(value: object) -> None:
                 raise ValueError("Mapping canonical JSON object keys must be strings.")
             _validate_canonical_json_value(item)
         return
-    raise ValueError(
-        f"Unsupported Mapping canonical JSON value: {type(value).__name__}."
-    )
+    raise ValueError(f"Unsupported Mapping canonical JSON value: {type(value).__name__}.")

@@ -208,7 +208,9 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
             principal,
             tenant_id=tenant_id,
             change_set_id=created.metadata_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=staged.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=staged.draft_revision
+            ),
         )
         assert reviewed.valid is True
         assert reviewed.status == "validated"
@@ -217,7 +219,9 @@ async def test_web_metadata_change_set_preserves_lock_isolation_revision_and_app
             principal,
             tenant_id=tenant_id,
             change_set_id=created.metadata_change_set_id,
-            command=ExpectedDraftRevisionRequest(expected_draft_revision=staged.draft_revision),
+            command=ExpectedDraftRevisionRequest(
+                expected_draft_revision=staged.draft_revision
+            ),
             idempotency_key=uuid4(),
         )
     finally:

@@ -169,10 +169,16 @@ def _audit_template() -> dict[str, object]:
 def _attribute_records(
     changes: tuple[StageModelChange, ...],
 ) -> list[dict[str, object]]:
-    return next(change.records for change in changes if change.dataset == "dimensional_attribute")
+    return next(
+        change.records
+        for change in changes
+        if change.dataset == "dimensional_attribute"
+    )
 
 
-def test_projection_adds_dimension_surrogate_and_audit_after_business_attributes() -> None:
+def test_projection_adds_dimension_surrogate_and_audit_after_business_attributes() -> (
+    None
+):
     entity = _entity()
     business = _business_attribute()
     changes = (
@@ -288,7 +294,8 @@ def test_projection_covers_applied_active_and_new_needs_review_entities() -> Non
     attributes = _attribute_records(projected)
 
     assert {
-        (item["dimensional_entity_name"], item["dimensional_attribute_name"]) for item in attributes
+        (item["dimensional_entity_name"], item["dimensional_attribute_name"])
+        for item in attributes
     } == {
         ("Account Dimension", "Account Dimension key"),
         ("Account Dimension", "Loaded At"),
@@ -509,10 +516,14 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
     )
     attributes = _attribute_records(projected)
     foreign_key = next(
-        item for item in attributes if item["dimensional_attribute_key_role"] == "foreign"
+        item
+        for item in attributes
+        if item["dimensional_attribute_key_role"] == "foreign"
     )
     relationship = next(
-        change.records[0] for change in projected if change.dataset == "dimensional_relationship"
+        change.records[0]
+        for change in projected
+        if change.dataset == "dimensional_relationship"
     )
 
     assert foreign_key["dimensional_entity_name"] == "Sales Fact"
@@ -530,18 +541,25 @@ def test_foreign_key_projection_binds_role_aware_endpoints_and_nullability() -> 
         "Bill To Customer key",
         "Loaded At",
     ]
-    assert [item["dimensional_attribute_ordinal_position"] for item in fact_attributes] == [1, 2, 3]
+    assert [
+        item["dimensional_attribute_ordinal_position"] for item in fact_attributes
+    ] == [1, 2, 3]
     assert relationship["from_dimensional_attribute_name"] == "Bill To Customer key"
     assert relationship["to_dimensional_attribute_name"] == "Customer Dimension key"
     assert relationship["dimensional_relationship_is_optional"] is True
 
 
-def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> None:
+def test_complete_gold_projection_is_idempotent_with_existing_fact_foreign_key() -> (
+    None
+):
     first = project_dimensional_gold_policy(
         changes=(
             StageModelChange(
                 dataset="dimensional_entity",
-                records=[_entity().model_dump(mode="json"), _fact().model_dump(mode="json")],
+                records=[
+                    _entity().model_dump(mode="json"),
+                    _fact().model_dump(mode="json"),
+                ],
             ),
             StageModelChange(
                 dataset="dimensional_attribute",
@@ -595,7 +613,10 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
         changes=(
             StageModelChange(
                 dataset="dimensional_entity",
-                records=[_entity().model_dump(mode="json"), _fact().model_dump(mode="json")],
+                records=[
+                    _entity().model_dump(mode="json"),
+                    _fact().model_dump(mode="json"),
+                ],
             ),
             StageModelChange(
                 dataset="dimensional_attribute",
@@ -606,7 +627,11 @@ def test_foreign_key_projection_uses_dimension_name_without_role() -> None:
             ),
             StageModelChange(
                 dataset="dimensional_relationship",
-                records=[_relationship(is_optional=False, role_name=None).model_dump(mode="json")],
+                records=[
+                    _relationship(is_optional=False, role_name=None).model_dump(
+                        mode="json"
+                    )
+                ],
             ),
         ),
         applied=None,
@@ -641,7 +666,10 @@ def test_foreign_key_projection_rejects_reversed_fact_dimension_orientation() ->
     changes = (
         StageModelChange(
             dataset="dimensional_entity",
-            records=[_entity().model_dump(mode="json"), _fact().model_dump(mode="json")],
+            records=[
+                _entity().model_dump(mode="json"),
+                _fact().model_dump(mode="json"),
+            ],
         ),
         StageModelChange(
             dataset="dimensional_attribute",

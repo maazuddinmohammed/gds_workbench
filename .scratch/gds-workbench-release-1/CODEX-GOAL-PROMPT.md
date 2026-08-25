@@ -50,7 +50,6 @@ Read these completely before implementation:
 - Every numbered file and README under `database/`.
 - The complete MCP implementation and `tests/mcp/`.
 - `plugins/v2/gds/`, `plugins/build_gds_v2_plugin_zip.py`, and `tests/plugin_v2/`.
-- V1 plugin visuals only as a design reference; V2 remains the functional source.
 - `web_app/prototypes/model-workflow/README.md` and the complete interactive prototype.
 - Existing `web_app/backend/`, `web_app/frontend/`, and their tests before adding or reorganizing code.
 
@@ -476,9 +475,8 @@ Phase 2 gate:
 
 ## Phase 3 — GDS V2 plugin compatibility
 
-Update `plugins/v2` only as the current functional plugin. Preserve V1 unless a
-shared build/test dependency requires a minimal focused correction. Never resurrect
-the deleted legacy `plugins/gds` tree.
+Update `plugins/v2` as the only supported plugin. Never resurrect deleted legacy
+plugin trees.
 
 - Align V2 skills, contracts, helper scripts, local validation, flows, references,
   packaging, and tests with the finalized database/MCP contracts.
@@ -495,8 +493,6 @@ the deleted legacy `plugins/gds` tree.
 Phase 3 gate:
 
 - all Python and Node tests under `tests/plugin_v2/` pass;
-- existing V1 plugin regression tests remain green without converting V1 into the
-  current functional plugin;
 - local-helper parity, Unicode, PowerShell fallback where supported, security/
   network blocking, contracts, instruction size, and packaging tests pass;
 - `plugins/build_gds_v2_plugin_zip.py` creates a reproducible complete V2 archive.
@@ -504,7 +500,7 @@ Phase 3 gate:
 ## Phase 4 — V2 local Workbench visual redesign
 
 Restyle `plugins/v2/gds/workbench/` using the visual language of
-`web_app/prototypes/model-workflow/` and the approved V1-inspired contrast:
+`web_app/prototypes/model-workflow/`:
 restrained layout, compact ledgers, clear central focus, strong typography, dark
 governed-action surfaces, orange primary actions, blue selections/links,
 consistent spacing, reduced clutter, accessible focus, and restrained motion.
@@ -966,7 +962,7 @@ uv run --project mcp_server pyright
 uv run --project mcp_server pytest tests/mcp
 uv run --project mcp_server python mcp_server/build_zip.py
 
-uv run --project mcp_server pytest tests/plugin tests/plugin_v2
+uv run --project mcp_server pytest tests/plugin_v2
 node --test tests/plugin_v2/workbench_logic.test.mjs \
   tests/plugin_v2/workbench_ui_state.test.mjs \
   tests/plugin_v2/workbench_workspace.test.mjs

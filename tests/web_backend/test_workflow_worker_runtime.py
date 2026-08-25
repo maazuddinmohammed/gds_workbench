@@ -158,7 +158,9 @@ class BlockingDispatcher:
 
 
 @pytest.mark.asyncio
-async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> None:
+async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> (
+    None
+):
     database = ProcessDatabase()
     claim = _claim()
     claims = OneClaimRepository(claim)

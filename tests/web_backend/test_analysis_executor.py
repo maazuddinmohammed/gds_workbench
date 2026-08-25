@@ -100,7 +100,9 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
                     prompt_template_digest="b" * 64,
                     templates=PromptComponentTemplates(
                         system="Infer Analysis relationships.",
-                        instruction=("Use {{stage_context}}. Repair {{validation_failures}}."),
+                        instruction=(
+                            "Use {{stage_context}}. Repair {{validation_failures}}."
+                        ),
                     ),
                     variables=(
                         PromptVariableDefinition(
@@ -241,7 +243,9 @@ def _candidate(*, to_name: str = "customer_raw") -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -390,7 +394,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -404,7 +410,9 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
 
@@ -463,7 +471,9 @@ def _service(
     agent: _AgentExecutor,
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
-) -> tuple[DatabaseAnalysisInferenceExecutor, _Database, _Authorizer, _Handoff, _Lifecycle]:
+) -> tuple[
+    DatabaseAnalysisInferenceExecutor, _Database, _Authorizer, _Handoff, _Lifecycle
+]:
     database = _Database()
     authorizer = _Authorizer()
     handoff = _Handoff()
@@ -518,7 +528,8 @@ async def test_analysis_inference_hands_off_one_validated_draft() -> None:
     assert handoff.final_events[-1].finding_count == 1
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "analysis.relationship_inference"),
         (3, "analysis.backend_validation"),

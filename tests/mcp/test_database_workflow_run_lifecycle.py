@@ -1082,7 +1082,9 @@ def test_create_workflow_run_freezes_server_derived_selected_scope(
     ).hexdigest()
     assert stored_run == {
         "actor_principal_id": context.principal_id,
-        "actor_entra_principal_identity_id": stored_run["actor_entra_principal_identity_id"],
+        "actor_entra_principal_identity_id": stored_run[
+            "actor_entra_principal_identity_id"
+        ],
         "modeled_entity_type": None,
         "requested_batch_id": "10428",
         "selected_scope_digest": expected_digest,
@@ -1101,12 +1103,10 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    guide_id, guide_version_id, guide_digest = (
-        _seed_published_sql_generation_guide(
-            postgres_database,
-            context,
-            is_default=False,
-        )
+    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
+        postgres_database,
+        context,
+        is_default=False,
     )
 
     with postgres_database.connect_owner() as connection:
@@ -1150,12 +1150,10 @@ def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty
             _seed_code_generation_target(postgres_database, context),
         ]
     )
-    _guide_id, guide_version_id, _guide_digest = (
-        _seed_published_sql_generation_guide(
-            postgres_database,
-            context,
-            is_default=False,
-        )
+    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+        postgres_database,
+        context,
+        is_default=False,
     )
 
     with postgres_database.connect_owner() as connection:
@@ -1208,8 +1206,8 @@ def test_code_generation_run_replay_keeps_frozen_default_guide_after_retirement(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     target_id = _seed_code_generation_target(postgres_database, context)
-    guide_id, guide_version_id, guide_digest = (
-        _seed_published_sql_generation_guide(postgres_database, context)
+    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
+        postgres_database, context
     )
     correlation_id = uuid4()
     parameters = _code_generation_parameters(
@@ -1265,12 +1263,10 @@ def test_code_generation_run_rejects_zone_only_target_without_complete_mapping(
         context,
         zone_code="silver",
     )
-    _guide_id, guide_version_id, _guide_digest = (
-        _seed_published_sql_generation_guide(
-            postgres_database,
-            context,
-            is_default=False,
-        )
+    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+        postgres_database,
+        context,
+        is_default=False,
     )
 
     with (
@@ -1573,7 +1569,9 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
 ) -> None:
     context = seed_workflow_context(postgres_database)
     correlation_id = uuid4()
-    create_parameters = create_workflow_run_parameters(context, correlation_id=correlation_id)
+    create_parameters = create_workflow_run_parameters(
+        context, correlation_id=correlation_id
+    )
 
     with postgres_database.connect_owner() as connection:
         created = require_row(

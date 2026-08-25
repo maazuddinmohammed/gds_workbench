@@ -8,17 +8,17 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
-from test_database_profiling_execution_context import (
+from tests.mcp.test_database_profiling_execution_context import (
     ProfilingExecutionSeed,
     _execution_parameters,
     _seed_profiling_execution,
 )
-from test_database_profiling_persistence import _create_run
-from test_database_workflow_run_lifecycle import seed_workflow_context
+from tests.mcp.test_database_profiling_persistence import _create_run
+from tests.mcp.test_database_workflow_run_lifecycle import seed_workflow_context
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

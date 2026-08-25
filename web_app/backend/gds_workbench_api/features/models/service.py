@@ -26,7 +26,7 @@ SELECT model.model_id,
        model.model_revision,
        scope.model_scope_object_count,
        latest_run.model_workflow AS latest_workflow,
-       latest_run.workflow_run_status AS latest_run_status,
+       latest_run.workflow_run_state AS latest_run_status,
        model.updated_time AS updated_at
   FROM model.model AS model
  CROSS JOIN LATERAL (
@@ -37,7 +37,7 @@ SELECT model.model_id,
   ) AS scope
   LEFT JOIN LATERAL (
        SELECT workflow_run.model_workflow,
-              workflow_run.workflow_run_status
+              workflow_run.workflow_run_state
          FROM application.workflow_run AS workflow_run
         WHERE workflow_run.model_id = model.model_id
         ORDER BY workflow_run.created_time DESC,

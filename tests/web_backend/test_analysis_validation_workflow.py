@@ -318,7 +318,8 @@ async def test_validation_workflow_is_deterministic_bounded_and_commits_once() -
     payload = repository.commits[0]
     assert [item["analysis_result_id"] for item in payload] == list(range(1, 46))
     assert all(
-        item["source_context_digest"] == f"{item['analysis_result_id']:064x}" for item in payload
+        item["source_context_digest"] == f"{item['analysis_result_id']:064x}"
+        for item in payload
     )
     assert all(
         item["validation_policy_version"] == _policy().validation_policy_version
@@ -397,7 +398,9 @@ async def test_validation_failure_is_safe_and_never_commits_partial_results() ->
 
 
 @pytest.mark.asyncio
-async def test_validation_propagates_when_terminal_failure_cannot_be_persisted() -> None:
+async def test_validation_propagates_when_terminal_failure_cannot_be_persisted() -> (
+    None
+):
     lifecycle = _Lifecycle(fail_persistence=True)
     workflow = AnalysisValidationWorkflow(
         lifecycle=lifecycle,
@@ -620,7 +623,9 @@ async def test_database_repository_empty_context_skips_credential_helper() -> No
 
 
 @pytest.mark.asyncio
-async def test_database_repository_persists_environment_and_completes_atomically() -> None:
+async def test_database_repository_persists_environment_and_completes_atomically() -> (
+    None
+):
     database = _Database(context_rows=[])
     repository = DatabaseAnalysisValidationRepository(
         database=database,
@@ -653,16 +658,18 @@ async def test_database_repository_persists_environment_and_completes_atomically
         if "persist_analysis_validation_results" in call[0]
     )
     completion_call = next(
-        call for call in database.transaction.calls if "complete_workflow_run" in call[0]
+        call
+        for call in database.transaction.calls
+        if "complete_workflow_run" in call[0]
     )
     assert persistence_call[1][-2] == "DEV"
     assert isinstance(persistence_call[1][-1], Jsonb)
     assert persistence_call[1][-1].obj == validation_results
     assertion_call = database.transaction.calls[0]
     assert "application.assert_workflow_run_claim" in assertion_call[0]
-    assert database.transaction.calls.index(persistence_call) < database.transaction.calls.index(
-        completion_call
-    )
+    assert database.transaction.calls.index(
+        persistence_call
+    ) < database.transaction.calls.index(completion_call)
 
 
 @pytest.mark.asyncio
@@ -703,7 +710,9 @@ class _StaticValidationService:
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        self.starts.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.starts.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
         return AgentWorkflowRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
@@ -724,7 +733,9 @@ class _StaticValidationService:
     ) -> None:
         del principal
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
 
 
 def _client(service: _StaticValidationService) -> TestClient:

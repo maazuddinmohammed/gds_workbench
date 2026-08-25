@@ -16,7 +16,9 @@ from gds_workbench_api.features.workflows.execution.assembly import (
 from gds_workbench_api.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
 )
-from gds_workbench_api.integrations.databricks import create_databricks_execution_adapters
+from gds_workbench_api.integrations.databricks import (
+    create_databricks_execution_adapters,
+)
 
 
 class AssemblyDatabase:
@@ -92,8 +94,14 @@ def test_workflow_runtime_services_share_one_executor_graph(
     for dependency in ("agent_executor", "handoff", "no_op", "lifecycle"):
         expected = authoring[0][dependency]
         assert all(arguments[dependency] is expected for arguments in authoring)
-    assert captured["DatabaseCodeGenerationExecutor"]["agent_executor"] is shared_agent_executor
-    assert captured["DatabaseCodeGenerationExecutor"]["lifecycle"] is authoring[0]["lifecycle"]
+    assert (
+        captured["DatabaseCodeGenerationExecutor"]["agent_executor"]
+        is shared_agent_executor
+    )
+    assert (
+        captured["DatabaseCodeGenerationExecutor"]["lifecycle"]
+        is authoring[0]["lifecycle"]
+    )
 
     execution = services.execution_services()
     assert execution.profiling is services.profiling

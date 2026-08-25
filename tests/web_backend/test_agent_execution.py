@@ -58,7 +58,9 @@ class _Adapter:
 
 
 @pytest.mark.asyncio
-async def test_router_validates_and_dispatches_exact_sdk_without_exposing_content() -> None:
+async def test_router_validates_and_dispatches_exact_sdk_without_exposing_content() -> (
+    None
+):
     adapter = _Adapter()
     router = AgentExecutionRouter(
         capabilities=load_default_agent_capabilities(),
@@ -130,7 +132,9 @@ class _FailingAdapter:
 
 
 @pytest.mark.asyncio
-async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error() -> None:
+async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error() -> (
+    None
+):
     router = AgentExecutionRouter(
         capabilities=load_default_agent_capabilities(),
         adapters=(_FailingAdapter(),),

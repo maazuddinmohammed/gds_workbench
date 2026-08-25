@@ -10,7 +10,10 @@ from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.code_generation.context import (
     PostgresCodeGenerationContextRepository,
 )
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan, FrozenAgentStage
+from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    FrozenAgentStage,
+)
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 
@@ -160,7 +163,9 @@ async def test_context_rejects_oversized_mapping_collections() -> None:
 
 
 @pytest.mark.asyncio
-async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> None:
+async def test_context_allows_complete_object_mapping_without_attribute_mappings() -> (
+    None
+):
     first = _row(501)
     second = _row(502)
     first["attribute_mapping_count"] = 0

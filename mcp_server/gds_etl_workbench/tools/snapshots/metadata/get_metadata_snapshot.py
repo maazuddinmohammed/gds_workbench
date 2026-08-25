@@ -264,7 +264,7 @@ async def select_snapshot_datasets(
         for row in selected_object_rows
     ]
 
-    rows_by_dataset: dict[str, list[dict[str, object]]] = {
+    rows_by_dataset: dict[str, list[dict[str, Any]]] = {
         f"{zone_code}_object": [] for zone_code in ("source", "bronze", "silver", "gold")
     }
     rows_by_dataset.update(

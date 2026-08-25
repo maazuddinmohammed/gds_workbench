@@ -1,4 +1,4 @@
-# Fresh Azure deployment: database, MCP server, and VS Code plugin
+# Fresh Azure deployment: database, MCP server, and V2 Codex plugin
 
 This guide deploys the current repository as a new application. It assumes no
 existing GDS database. It uses the simplest supported Azure setup first, then
@@ -16,7 +16,7 @@ fresh-install schema, not migrations.
 | Linux Azure App Service plan and web app | Runs the Python 3.14 MCP server |
 | Azure Key Vault | Holds the database DSN and cursor-signing key |
 | Azure Storage account and private Blob container | Stores temporary Metadata, Model, and DBML ZIP snapshots |
-| Microsoft Entra app registration and App Service Authentication | Authenticates VS Code and other MCP clients |
+| Microsoft Entra app registration and App Service Authentication | Authenticates Codex and other MCP clients |
 
 Databricks is optional. Deploy/configure it only if you intend to use
 `execute_databricks_sql`. Application Insights is also optional.
@@ -29,12 +29,12 @@ You need:
 2. Permission to create Azure resources and role assignments.
 3. Permission to create/configure a Microsoft Entra app registration.
 4. This repository checked out locally.
-5. Azure CLI, `psql`, Python 3.14, `uv`, and VS Code with GitHub Copilot Chat.
+5. Azure CLI, `psql`, Python 3.14, `uv`, and Codex.
 6. The current deployment ZIPs:
 
    ```text
    mcp_server/dist/gds-mcp-appservice.zip
-   plugins/v1/dist/gds-agent-plugin-1.3.0.zip
+   plugins/v2/dist/gds-agent-plugin-0.1.0.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -647,64 +647,54 @@ az webapp config set \
 
 4. Perform Portal Step 13.
 
-## 5. Install the plugin in local VS Code
+## 5. Package and install the V2 Codex plugin
 
-### Step 1: point the plugin at the new server
+### Step 1: build an endpoint-specific archive
 
-Open `plugins/v1/gds/mcp.json` and replace its `url` with:
-
-```text
-https://<WEB_APP>.azurewebsites.net/mcp
-```
-
-Build to a new output name so the deterministic builder does not overwrite an
-existing ZIP:
+Keep the tracked `plugins/v2/gds/.mcp.json` unchanged. Inject the deployed MCP
+URL into a new archive:
 
 ```bash
-python3 plugins/build_gds_plugin_zip.py \
-  --output plugins/v1/dist/gds-agent-plugin-local.zip
+python3 plugins/build_gds_v2_plugin_zip.py \
+  --output plugins/v2/dist/gds-agent-plugin-local.zip \
+  --mcp-url "https://<WEB_APP>.azurewebsites.net/mcp"
 ```
 
-### Step 2: extract it
+The builder validates the URL, refuses to overwrite an existing archive, and
+prints the archive SHA-256 digest. Store that digest with the release record.
 
-Extract the ZIP into a new local folder. The registered folder must be the
-extracted `gds` directory containing `plugin.json`, `mcp.json`, and `skills/`.
+### Step 2: inspect and publish it
 
-Example final path:
+Inspect the archive before distribution. Its root must contain one `gds/`
+directory with these required paths:
 
 ```text
-/absolute/path/to/installed-plugins/gds/plugin.json
+gds/.codex-plugin/plugin.json
+gds/.mcp.json
+gds/skills/
 ```
 
-Review the plugin contents before enabling it.
+Publish the reviewed V2 source/archive through your approved Codex marketplace.
+The repository intentionally does not modify a developer's personal marketplace.
 
-### Step 3: enable the local plugin
+### Step 3: install it in Codex
 
-1. Open VS Code **Settings (JSON)**.
-2. Add:
+After the marketplace is configured, install the plugin by its marketplace
+selector:
 
-   ```json
-   {
-     "chat.plugins.enabled": true,
-     "chat.pluginLocations": {
-       "/absolute/path/to/installed-plugins/gds": true
-     }
-   }
-   ```
+```bash
+codex plugin add gds@<MARKETPLACE>
+```
 
-3. Run **Developer: Reload Window**.
-4. Run **Chat: Open Customizations** and confirm `gds` appears.
-5. Run **MCP: List Servers**.
-6. Select/start `gds-workbench`.
-7. Complete the Microsoft Entra sign-in.
-8. Run **Chat: Configure Skills** and confirm the GDS skills appear.
+Confirm installation and enablement:
 
-If `.vscode/mcp.json` already registers this same URL, disable/remove that
-registration while using the plugin. Otherwise VS Code exposes duplicate tools.
+```bash
+codex plugin list
+```
 
 ### Step 4: smoke test
 
-Open GitHub Copilot Chat in Agent mode and ask:
+Open a fresh Codex task and ask:
 
 ```text
 List the GDS Tenants I can access. Do not make any changes.
@@ -712,7 +702,7 @@ List the GDS Tenants I can access. Do not make any changes.
 
 Expected behavior:
 
-1. VS Code signs in with Microsoft Entra.
+1. Codex signs in with Microsoft Entra.
 2. The server calls `list_tenants`.
 3. Only Tenants allowed for the signed-in database Principal appear.
 4. No Tenant Lock is acquired for this read-only request.
@@ -744,12 +734,12 @@ Expected behavior:
 - [Use Key Vault references in App Service](https://learn.microsoft.com/en-us/azure/app-service/app-service-key-vault-references)
 - [Secure an App Service MCP server for VS Code](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-mcp-server-vscode)
 - [Configure Microsoft Entra authentication for App Service](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad)
-- [VS Code agent plugins](https://code.visualstudio.com/docs/agent-customization/agent-plugins)
-- [VS Code MCP servers](https://code.visualstudio.com/docs/agent-customization/mcp-servers)
+- [Codex plugins](https://developers.openai.com/codex/plugins)
+- [Codex MCP](https://developers.openai.com/codex/mcp)
 
 Repository-specific sources:
 
 - `database/README.md`
 - `mcp_server/README.md`
-- `plugins/v1/gds/README.md`
+- `plugins/v2/gds/.codex-plugin/plugin.json`
 - `docs/security.md`

@@ -7,14 +7,14 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
-from test_database_profiling_persistence import (
+from tests.mcp.test_database_profiling_persistence import (
     _create_run,
     _seed_attributes,
 )
-from test_database_workflow_run_lifecycle import (
+from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     seed_workflow_context,
 )
@@ -715,12 +715,14 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
     assert rows_by_object[moved_object_id]["gds_connection_id"] == (
         second_connection_id
     )
-    assert {
-        row["relation_catalog"] for row in context_rows
-    } == {seed.relation_catalog, second_catalog}
-    assert {
-        row["gds_connection_id"] for row in connection_rows
-    } == {seed.connection_id, second_connection_id}
+    assert {row["relation_catalog"] for row in context_rows} == {
+        seed.relation_catalog,
+        second_catalog,
+    }
+    assert {row["gds_connection_id"] for row in connection_rows} == {
+        seed.connection_id,
+        second_connection_id,
+    }
     assert len(connection_rows) == 2
     assert all(row["failure_code"] is None for row in connection_rows)
     second_connection_row = next(
@@ -734,9 +736,7 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
     assert _digest(second_connection_row["databricks_http_path"]) == _digest(
         second_path
     )
-    assert _digest(second_connection_row["databricks_token"]) == _digest(
-        second_token
-    )
+    assert _digest(second_connection_row["databricks_token"]) == _digest(second_token)
 
 
 def test_web_role_has_function_only_profiling_credential_surface(

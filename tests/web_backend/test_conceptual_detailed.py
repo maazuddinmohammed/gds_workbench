@@ -77,7 +77,9 @@ def _parsed_object(name: str, *source_names: str) -> ConceptualObjectRecord:
     )
 
 
-async def test_object_contribution_requires_exact_source_and_explicit_disposition() -> None:
+async def test_object_contribution_requires_exact_source_and_explicit_disposition() -> (
+    None
+):
     validator = DetailedObjectContributionValidator(
         contribution_ref="object_1",
         source_object=_source("customer_raw"),
@@ -136,7 +138,9 @@ async def test_consolidation_assigns_or_discards_every_proposal_exactly_once() -
             JsonValue,
             {
                 "contribution_ref": "object_2",
-                "source_object": _source("customer_address_raw").model_dump(mode="json"),
+                "source_object": _source("customer_address_raw").model_dump(
+                    mode="json"
+                ),
                 "disposition": "represented",
                 "rationale": "Customer address evidence.",
                 "proposals": [
@@ -164,7 +168,9 @@ async def test_consolidation_assigns_or_discards_every_proposal_exactly_once() -
     )
 
     assert (await validator.validate(candidate)).issues == ()
-    assert validator.parse_validated(candidate).entities[0].canonical_entity_ref == ("customer")
+    assert validator.parse_validated(candidate).entities[0].canonical_entity_ref == (
+        "customer"
+    )
 
     missing = cast(
         JsonValue,
@@ -236,7 +242,9 @@ async def test_entity_detail_preserves_every_consolidated_physical_support() -> 
     )
 
     assert (await validator.validate(candidate)).issues == ()
-    assert validator.parse_validated(candidate).object.conceptual_object_name == ("Customer")
+    assert validator.parse_validated(candidate).object.conceptual_object_name == (
+        "Customer"
+    )
 
     missing_support = cast(
         JsonValue,
@@ -250,7 +258,9 @@ async def test_entity_detail_preserves_every_consolidated_physical_support() -> 
     )
 
 
-def test_relationship_derivation_is_deterministic_and_never_creates_self_pairs() -> None:
+def test_relationship_derivation_is_deterministic_and_never_creates_self_pairs() -> (
+    None
+):
     customer = DetailedEntityDetail(
         canonical_entity_ref="customer",
         object=_parsed_object("Customer", "customer_raw"),
@@ -260,9 +270,15 @@ def test_relationship_derivation_is_deterministic_and_never_creates_self_pairs()
         object=_parsed_object("Order", "order_raw"),
     )
     attributes = (
-        PhysicalAttributeKey(**_source("customer_raw").model_dump(), attribute_name="customer_id"),
-        PhysicalAttributeKey(**_source("customer_raw").model_dump(), attribute_name="name"),
-        PhysicalAttributeKey(**_source("order_raw").model_dump(), attribute_name="customer_id"),
+        PhysicalAttributeKey(
+            **_source("customer_raw").model_dump(), attribute_name="customer_id"
+        ),
+        PhysicalAttributeKey(
+            **_source("customer_raw").model_dump(), attribute_name="name"
+        ),
+        PhysicalAttributeKey(
+            **_source("order_raw").model_dump(), attribute_name="customer_id"
+        ),
     )
     analysis = AnalysisResultRecord.model_validate(
         {

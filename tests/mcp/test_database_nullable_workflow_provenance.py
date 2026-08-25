@@ -3,7 +3,7 @@ from __future__ import annotations
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
 
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg import Connection
 
 if TYPE_CHECKING:

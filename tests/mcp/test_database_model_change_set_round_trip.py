@@ -13,7 +13,10 @@ from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
 from psycopg import sql
-from test_model_change_set_validation import complete_graph, model_scope_records
+from tests.mcp.test_model_change_set_validation import (
+    complete_graph,
+    model_scope_records,
+)
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware

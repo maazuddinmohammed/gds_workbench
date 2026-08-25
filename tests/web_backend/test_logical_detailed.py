@@ -152,7 +152,9 @@ def _contribution(
                 "candidate_entity_type": "core",
                 "candidate_entity_grain": f"One row per {entity_name}.",
                 "candidate_submodel_names": list(submodel_names),
-                "source_attributes": [item.model_dump(mode="json") for item in source_attributes],
+                "source_attributes": [
+                    item.model_dump(mode="json") for item in source_attributes
+                ],
             }
         ],
     }
@@ -166,7 +168,9 @@ def test_default_detailed_logical_policy_loads_from_validated_json() -> None:
     assert policy.validation_package_size == 100
 
 
-async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage() -> None:
+async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage() -> (
+    None
+):
     source = _object("customer_raw")
     attributes = (
         _attribute("customer_raw", "customer_id"),
@@ -206,7 +210,9 @@ async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage()
     )
 
 
-async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many() -> None:
+async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many() -> (
+    None
+):
     source = _object("customer_raw")
     source_attribute = _attribute("customer_raw", "customer_id")
     contribution_validator = DetailedLogicalTopologyContributionValidator(
@@ -227,7 +233,9 @@ async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many
             ),
         )
     )
-    validator = DetailedLogicalTopologyReconciliationValidator(contributions=(contribution,))
+    validator = DetailedLogicalTopologyReconciliationValidator(
+        contributions=(contribution,)
+    )
     candidate = cast(
         JsonValue,
         {
@@ -348,7 +356,9 @@ def _build_topology_and_detail() -> tuple[
     return topology, detail
 
 
-async def test_entity_detail_preserves_sources_and_exact_many_to_many_memberships() -> None:
+async def test_entity_detail_preserves_sources_and_exact_many_to_many_memberships() -> (
+    None
+):
     source = _object("customer_raw")
     source_attribute = _attribute("customer_raw", "customer_id")
     contribution_validator = DetailedLogicalTopologyContributionValidator(
@@ -405,7 +415,9 @@ async def test_entity_detail_preserves_sources_and_exact_many_to_many_membership
     )
 
 
-def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self_pairs() -> None:
+def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self_pairs() -> (
+    None
+):
     _topology, customer = _build_topology_and_detail()
     order_source = _object("order_raw")
     order_source_attribute = _attribute("order_raw", "customer_id")
@@ -452,7 +464,9 @@ def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self
         )
 
 
-async def test_whole_model_reconciliation_requires_exact_coverage_before_materializing() -> None:
+async def test_whole_model_reconciliation_requires_exact_coverage_before_materializing() -> (
+    None
+):
     topology, detail = _build_topology_and_detail()
     ledger = build_logical_relationship_signal_ledger(
         entity_details=(detail,),
@@ -474,11 +488,15 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     candidate = cast(
         JsonValue,
         {
-            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "submodels": [
+                item.submodel.model_dump(mode="json") for item in topology.submodels
+            ],
             "entities": [detail.entity.model_dump(mode="json")],
             "attributes": [item.model_dump(mode="json") for item in detail.attributes],
             "relationships": [],
-            "reviewed_submodel_refs": [item.canonical_submodel_ref for item in topology.submodels],
+            "reviewed_submodel_refs": [
+                item.canonical_submodel_ref for item in topology.submodels
+            ],
             "reviewed_entity_refs": [detail.canonical_entity_ref],
             "reviewed_relationship_signal_refs": [],
             "reviewed_applied_record_refs": [],
@@ -486,7 +504,9 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     )
 
     assert (await validator.validate(candidate)).issues == ()
-    assert set(cast(dict[str, JsonValue], validator.materialize_validated(candidate))) == {
+    assert set(
+        cast(dict[str, JsonValue], validator.materialize_validated(candidate))
+    ) == {
         "submodels",
         "entities",
         "attributes",
@@ -507,11 +527,15 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     reconciliation = cast(
         JsonValue,
         {
-            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "submodels": [
+                item.submodel.model_dump(mode="json") for item in topology.submodels
+            ],
             "entities": [detail.entity.model_dump(mode="json")],
             "attributes": [item.model_dump(mode="json") for item in detail.attributes],
             "relationships": [],
-            "reviewed_submodel_refs": [item.canonical_submodel_ref for item in topology.submodels],
+            "reviewed_submodel_refs": [
+                item.canonical_submodel_ref for item in topology.submodels
+            ],
             "reviewed_entity_refs": [detail.canonical_entity_ref],
             "reviewed_relationship_signal_refs": [],
             "reviewed_applied_record_refs": [],
@@ -560,7 +584,9 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
         assert (await worker_validator.validate(worker_candidate)).issues == ()
         worker_results.append(worker_validator.parse_validated(worker_candidate))
 
-    lead_validator = DetailedLogicalValidationLeadValidator(worker_results=tuple(worker_results))
+    lead_validator = DetailedLogicalValidationLeadValidator(
+        worker_results=tuple(worker_results)
+    )
     finding_ref = worker_results[0].findings[0].finding_ref
     lead_candidate = cast(
         JsonValue,
@@ -585,8 +611,12 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     assert decision.handoff_candidate is None
     assert decision.validation_failures == worker_results[0].findings
 
-    clean_results = tuple(item.model_copy(update={"findings": ()}) for item in worker_results)
-    clean_lead_validator = DetailedLogicalValidationLeadValidator(worker_results=clean_results)
+    clean_results = tuple(
+        item.model_copy(update={"findings": ()}) for item in worker_results
+    )
+    clean_lead_validator = DetailedLogicalValidationLeadValidator(
+        worker_results=clean_results
+    )
     clean_lead = clean_lead_validator.parse_validated(
         cast(
             JsonValue,

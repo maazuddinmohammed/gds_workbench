@@ -76,7 +76,9 @@ class _StaticLogicalWorkflowService:
     ) -> None:
         del principal
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
 
 
 @dataclass

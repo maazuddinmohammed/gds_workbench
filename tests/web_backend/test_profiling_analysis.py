@@ -293,7 +293,9 @@ def test_profiling_ledger_is_object_level_and_normalizes_filters() -> None:
     assert "attribute_profiles" not in payload["items"][0]
 
 
-def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> None:
+def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_profiling_router(
@@ -860,7 +862,9 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
 
 
 @pytest.mark.asyncio
-async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> None:
+async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> (
+    None
+):
     service = DatabaseAnalysisReviewService(
         database=ReviewDatabase(),
         authorizer=AuthorizationService(),
@@ -900,7 +904,9 @@ async def test_database_review_labels_gds_objects_from_discovery_scope(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -1112,7 +1118,9 @@ async def test_database_review_labels_gds_objects_from_discovery_scope(
     assert [item.object_id for item in profile_page.items] == [bronze["object_id"]]
     assert profile_page.items[0].source_tenant_code == "DEMO_TENANT"
     assert profile_detail.source_tenant_code == "DEMO_TENANT"
-    assert [item.analysis_result_id for item in finding_page.items] == [valid_finding_id]
+    assert [item.analysis_result_id for item in finding_page.items] == [
+        valid_finding_id
+    ]
     assert finding_page.items[0].from_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_page.items[0].to_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.from_endpoint.source_tenant_code == "DEMO_TENANT"

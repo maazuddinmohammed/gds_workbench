@@ -152,7 +152,9 @@ async def test_candidate_requires_complete_future_references() -> None:
     assert "candidate.entity_missing" in {issue.code for issue in issues}
 
 
-async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> None:
+async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> (
+    None
+):
     original = _candidate()
     applied = LogicalSection(
         submodels=(
@@ -172,14 +174,18 @@ async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_cha
         ),
         relationships=(),
     )
-    locked_entity = applied.entities[0].model_copy(update={"logical_entity_is_locked": True})
+    locked_entity = applied.entities[0].model_copy(
+        update={"logical_entity_is_locked": True}
+    )
     applied = applied.model_copy(update={"entities": (locked_entity,)})
     candidate = deepcopy(original)
     entity = _first_record(candidate, "entities")
     entity["logical_entity_definition"] = "Changed by the agent."
     entity["sources"] = []
 
-    issues = (await _validator(applied=applied).validate(cast(JsonValue, candidate))).issues
+    issues = (
+        await _validator(applied=applied).validate(cast(JsonValue, candidate))
+    ).issues
 
     assert "candidate.record_locked" in {issue.code for issue in issues}
 

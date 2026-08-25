@@ -183,7 +183,7 @@ abandoned draft as terminal history; it does not delete it.
 ```bash
 uv run --project mcp_server ruff format --check mcp_server tests/mcp
 uv run --project mcp_server ruff check mcp_server tests/mcp
-uv run --project mcp_server pyright
+uv run --project mcp_server pyright --project mcp_server mcp_server/gds_etl_workbench
 uv run --project mcp_server pytest tests/mcp
 ```
 

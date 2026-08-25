@@ -213,7 +213,9 @@ def test_assertion_stage_route_accepts_bounded_structured_records() -> None:
                                 "modeling_assertion_record_type": "identity_rule",
                                 "modeling_assertion_text": "Customer identity is stable.",
                                 "modeling_assertion_details": {"verified": False},
-                                "modeling_assertion_source_location": {"section": "Identity"},
+                                "modeling_assertion_source_location": {
+                                    "section": "Identity"
+                                },
                                 "modeling_assertion_applicable_layers": ["logical"],
                                 "modeling_assertion_confidence": "high",
                                 "modeling_assertion_record_status": "needs_review",
@@ -387,7 +389,9 @@ class CreateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_create_service_authorizes_owned_lock_and_current_model_revision() -> None:
+async def test_create_service_authorizes_owned_lock_and_current_model_revision() -> (
+    None
+):
     database = CreateDatabase()
     service = DatabaseModelChangeSetService(
         database=database,

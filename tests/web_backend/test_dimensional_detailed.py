@@ -17,7 +17,9 @@ from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
 from pydantic import JsonValue, ValidationError
 
-from gds_workbench_api.features.dimensional.candidate import DimensionalCandidateValidator
+from gds_workbench_api.features.dimensional.candidate import (
+    DimensionalCandidateValidator,
+)
 from gds_workbench_api.features.dimensional.detailed import (
     DetailedDimensionalEntityDetail,
     DetailedDimensionalEntityDetailValidator,
@@ -184,7 +186,9 @@ def _contribution(
                 "candidate_fact_type": None,
                 "candidate_entity_grain_definition": None,
                 "candidate_submodel_names": list(submodel_names),
-                "source_attributes": [item.model_dump(mode="json") for item in source_attributes],
+                "source_attributes": [
+                    item.model_dump(mode="json") for item in source_attributes
+                ],
             }
         ],
     }
@@ -198,7 +202,9 @@ def test_default_detailed_dimensional_policy_loads_from_validated_json() -> None
     assert policy.validation_package_size == 100
 
 
-async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage() -> None:
+async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage() -> (
+    None
+):
     source = _object("customer_raw")
     attributes = (
         _attribute("customer_raw", "customer_id"),
@@ -300,9 +306,13 @@ async def test_terminal_topology_disposition_covers_the_whole_frozen_object() ->
     )
 
     for disposition in ("not_dimensional", "needs_review"):
-        terminal_for_disposition = cast(dict[str, JsonValue], json.loads(json.dumps(terminal)))
+        terminal_for_disposition = cast(
+            dict[str, JsonValue], json.loads(json.dumps(terminal))
+        )
         terminal_for_disposition["disposition"] = disposition
-        assert (await validator.validate(cast(JsonValue, terminal_for_disposition))).issues == ()
+        assert (
+            await validator.validate(cast(JsonValue, terminal_for_disposition))
+        ).issues == ()
         validator.parse_validated(cast(JsonValue, terminal_for_disposition))
 
     contribution = validator.parse_validated(terminal)
@@ -335,7 +345,9 @@ async def test_terminal_topology_disposition_covers_the_whole_frozen_object() ->
     )
 
 
-async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many() -> None:
+async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many() -> (
+    None
+):
     source = _object("customer_raw")
     source_attribute = _attribute("customer_raw", "customer_id")
     contribution_validator = DetailedDimensionalTopologyContributionValidator(
@@ -356,7 +368,9 @@ async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many
             ),
         )
     )
-    validator = DetailedDimensionalTopologyReconciliationValidator(contributions=(contribution,))
+    validator = DetailedDimensionalTopologyReconciliationValidator(
+        contributions=(contribution,)
+    )
     candidate = cast(
         JsonValue,
         {
@@ -478,7 +492,9 @@ def _build_topology_and_detail() -> tuple[
     return topology, detail, contribution
 
 
-def test_reconciliation_context_requires_each_topology_entity_detail_exactly_once() -> None:
+def test_reconciliation_context_requires_each_topology_entity_detail_exactly_once() -> (
+    None
+):
     topology, detail, _contribution_record = _build_topology_and_detail()
 
     with pytest.raises(ValueError, match="exactly match"):
@@ -499,7 +515,9 @@ def test_reconciliation_context_requires_each_topology_entity_detail_exactly_onc
     extra = detail.model_copy(
         update={
             "canonical_entity_ref": "extra",
-            "entity": detail.entity.model_copy(update={"dimensional_entity_name": "Extra"}),
+            "entity": detail.entity.model_copy(
+                update={"dimensional_entity_name": "Extra"}
+            ),
         }
     )
     with pytest.raises(ValueError, match="exactly match"):
@@ -535,7 +553,9 @@ def test_reconciliation_context_requires_each_topology_entity_detail_exactly_onc
         )
 
 
-async def test_entity_detail_preserves_sources_and_exact_many_to_many_memberships() -> None:
+async def test_entity_detail_preserves_sources_and_exact_many_to_many_memberships() -> (
+    None
+):
     source = _object("customer_raw")
     source_attribute = _attribute("customer_raw", "customer_id")
     contribution_validator = DetailedDimensionalTopologyContributionValidator(
@@ -593,20 +613,24 @@ async def test_entity_detail_preserves_sources_and_exact_many_to_many_membership
 
     missing_attribute = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
     cast(list[dict[str, JsonValue]], missing_attribute["attributes"])[0]["sources"] = []
-    assert (await validator.validate(cast(JsonValue, missing_attribute))).issues[0].code == (
-        "detailed.entity_detail_coverage_invalid"
-    )
+    assert (await validator.validate(cast(JsonValue, missing_attribute))).issues[
+        0
+    ].code == ("detailed.entity_detail_coverage_invalid")
 
     wrong_shape = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
     wrong_entity = cast(dict[str, JsonValue], wrong_shape["entity"])
     wrong_entity["dimensional_entity_type"] = "bridge"
-    wrong_entity["dimensional_entity_grain_definition"] = "One row per customer bridge member."
+    wrong_entity["dimensional_entity_grain_definition"] = (
+        "One row per customer bridge member."
+    )
     assert (await validator.validate(cast(JsonValue, wrong_shape))).issues[0].code == (
         "detailed.entity_detail_coverage_invalid"
     )
 
 
-async def test_detailed_agent_output_is_lockless_and_excludes_code_owned_attributes() -> None:
+async def test_detailed_agent_output_is_lockless_and_excludes_code_owned_attributes() -> (
+    None
+):
     topology, detail, contribution = _build_topology_and_detail()
     validator = DetailedDimensionalEntityDetailValidator(
         entity=topology.entities[0],
@@ -621,13 +645,20 @@ async def test_detailed_agent_output_is_lockless_and_excludes_code_owned_attribu
     properties = cast(dict[str, JsonValue], attribute_properties)
 
     assert (
-        cast(dict[str, JsonValue], properties["dimensional_attribute_is_locked"])["const"] is False
-    )
-    assert (
-        cast(dict[str, JsonValue], properties["dimensional_attribute_is_audit_column"])["const"]
+        cast(dict[str, JsonValue], properties["dimensional_attribute_is_locked"])[
+            "const"
+        ]
         is False
     )
-    assert cast(dict[str, JsonValue], properties["dimensional_attribute_key_role"])["enum"] == [
+    assert (
+        cast(dict[str, JsonValue], properties["dimensional_attribute_is_audit_column"])[
+            "const"
+        ]
+        is False
+    )
+    assert cast(dict[str, JsonValue], properties["dimensional_attribute_key_role"])[
+        "enum"
+    ] == [
         "none",
         "business",
     ]
@@ -650,9 +681,9 @@ async def test_detailed_agent_output_is_lockless_and_excludes_code_owned_attribu
         attribute["dimensional_attribute_role"] = role
         attribute["dimensional_attribute_key_role"] = key_role
         attribute["dimensional_attribute_is_audit_column"] = audit
-        assert (await validator.validate(cast(JsonValue, policy_owned))).issues[0].code == (
-            "detailed.entity_detail_coverage_invalid"
-        )
+        assert (await validator.validate(cast(JsonValue, policy_owned))).issues[
+            0
+        ].code == ("detailed.entity_detail_coverage_invalid")
 
 
 async def test_entity_detail_allows_only_owned_and_sourced_extra_attributes() -> None:
@@ -679,16 +710,18 @@ async def test_entity_detail_allows_only_owned_and_sourced_extra_attributes() ->
     )
     source_less = cast(dict[str, JsonValue], json.loads(json.dumps(base)))
     cast(list[JsonValue], source_less["attributes"]).append(cast(JsonValue, extra))
-    assert (await default_validator.validate(cast(JsonValue, source_less))).issues[0].code == (
-        "detailed.entity_detail_coverage_invalid"
-    )
+    assert (await default_validator.validate(cast(JsonValue, source_less))).issues[
+        0
+    ].code == ("detailed.entity_detail_coverage_invalid")
 
     extra["sources"] = cast(
         JsonValue,
         [
             {
                 "support_source_type": "assertion",
-                "assertion_record": {"modeling_assertion_record_key": "assertion.customer_segment"},
+                "assertion_record": {
+                    "modeling_assertion_record_key": "assertion.customer_segment"
+                },
                 "source_order": 1,
                 "rationale": "Governed customer segmentation assertion.",
                 "status": "active",
@@ -708,10 +741,14 @@ async def test_entity_detail_allows_only_owned_and_sourced_extra_attributes() ->
         contributions=(contribution,),
         assertion_record_keys=("assertion.customer_segment",),
     )
-    assert (await owned_validator.validate(cast(JsonValue, assertion_backed))).issues == ()
+    assert (
+        await owned_validator.validate(cast(JsonValue, assertion_backed))
+    ).issues == ()
 
 
-def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self_pairs() -> None:
+def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self_pairs() -> (
+    None
+):
     _topology, customer, _contribution_record = _build_topology_and_detail()
     order_source = _object("order_raw")
     order_source_attribute = _attribute("order_raw", "customer_id")
@@ -754,9 +791,13 @@ def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self
     invoice = order.model_copy(
         update={
             "canonical_entity_ref": "invoice",
-            "entity": order.entity.model_copy(update={"dimensional_entity_name": "Invoice"}),
+            "entity": order.entity.model_copy(
+                update={"dimensional_entity_name": "Invoice"}
+            ),
             "attributes": (
-                order.attributes[0].model_copy(update={"dimensional_entity_name": "Invoice"}),
+                order.attributes[0].model_copy(
+                    update={"dimensional_entity_name": "Invoice"}
+                ),
             ),
         }
     )
@@ -766,8 +807,12 @@ def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self
             max_signals=1,
         )
 
-    customer_source = cast(AttributePhysicalSourceRecord, customer.attributes[0].sources[0])
-    order_source_record = cast(AttributePhysicalSourceRecord, order.attributes[0].sources[0])
+    customer_source = cast(
+        AttributePhysicalSourceRecord, customer.attributes[0].sources[0]
+    )
+    order_source_record = cast(
+        AttributePhysicalSourceRecord, order.attributes[0].sources[0]
+    )
     wide_customer = customer.model_copy(
         update={
             "attributes": (
@@ -821,7 +866,9 @@ def test_code_owned_relationship_signal_ledger_is_stable_bounded_and_has_no_self
         )
 
 
-async def test_whole_model_reconciliation_requires_exact_coverage_before_materializing() -> None:
+async def test_whole_model_reconciliation_requires_exact_coverage_before_materializing() -> (
+    None
+):
     topology, detail, _contribution_record = _build_topology_and_detail()
     relationship_signal_refs = ("relationship_signal_00001",)
     applied_record_refs = ("entity:applied_dimension",)
@@ -841,11 +888,15 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     candidate = cast(
         JsonValue,
         {
-            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "submodels": [
+                item.submodel.model_dump(mode="json") for item in topology.submodels
+            ],
             "entities": [detail.entity.model_dump(mode="json")],
             "attributes": [item.model_dump(mode="json") for item in detail.attributes],
             "relationships": [],
-            "reviewed_submodel_refs": [item.canonical_submodel_ref for item in topology.submodels],
+            "reviewed_submodel_refs": [
+                item.canonical_submodel_ref for item in topology.submodels
+            ],
             "reviewed_entity_refs": [detail.canonical_entity_ref],
             "reviewed_relationship_signal_refs": list(relationship_signal_refs),
             "reviewed_applied_record_refs": list(applied_record_refs),
@@ -853,7 +904,9 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     )
 
     assert (await validator.validate(candidate)).issues == ()
-    assert set(cast(dict[str, JsonValue], validator.materialize_validated(candidate))) == {
+    assert set(
+        cast(dict[str, JsonValue], validator.materialize_validated(candidate))
+    ) == {
         "submodels",
         "entities",
         "attributes",
@@ -867,7 +920,9 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
         "detailed.reconciliation_coverage_invalid"
     )
 
-    missing_topology_entity = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
+    missing_topology_entity = cast(
+        dict[str, JsonValue], json.loads(json.dumps(candidate))
+    )
     missing_topology_entity["entities"] = []
     assert (await validator.validate(cast(JsonValue, missing_topology_entity))).issues[
         0
@@ -885,7 +940,9 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     )
     extra_attribute["dimensional_entity_name"] = "Arbitrary Dimension"
     cast(list[JsonValue], arbitrary["entities"]).append(cast(JsonValue, extra_entity))
-    cast(list[JsonValue], arbitrary["attributes"]).append(cast(JsonValue, extra_attribute))
+    cast(list[JsonValue], arbitrary["attributes"]).append(
+        cast(JsonValue, extra_attribute)
+    )
     assert (await validator.validate(cast(JsonValue, arbitrary))).issues[0].code == (
         "detailed.reconciliation_coverage_invalid"
     )
@@ -898,17 +955,21 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     ):
         incomplete = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
         incomplete[ledger_name] = []
-        assert (await validator.validate(cast(JsonValue, incomplete))).issues[0].code == (
-            "detailed.reconciliation_coverage_invalid"
-        )
+        assert (await validator.validate(cast(JsonValue, incomplete))).issues[
+            0
+        ].code == ("detailed.reconciliation_coverage_invalid")
 
     incomplete = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
-    incomplete["reviewed_entity_refs"] = cast(JsonValue, [detail.canonical_entity_ref] * 2)
+    incomplete["reviewed_entity_refs"] = cast(
+        JsonValue, [detail.canonical_entity_ref] * 2
+    )
     with pytest.raises(AgentCandidateValidationError):
         validator.materialize_validated(cast(JsonValue, incomplete))
 
 
-async def test_reconciliation_uses_canonical_required_relationship_optionality() -> None:
+async def test_reconciliation_uses_canonical_required_relationship_optionality() -> (
+    None
+):
     topology, detail, _contribution_record = _build_topology_and_detail()
     customer_code = cast(
         dict[str, JsonValue],
@@ -950,14 +1011,18 @@ async def test_reconciliation_uses_canonical_required_relationship_optionality()
     candidate = cast(
         JsonValue,
         {
-            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "submodels": [
+                item.submodel.model_dump(mode="json") for item in topology.submodels
+            ],
             "entities": [detail.entity.model_dump(mode="json")],
             "attributes": [
                 *[item.model_dump(mode="json") for item in detail.attributes],
                 customer_code,
             ],
             "relationships": [_relationship(optional=True)],
-            "reviewed_submodel_refs": [item.canonical_submodel_ref for item in topology.submodels],
+            "reviewed_submodel_refs": [
+                item.canonical_submodel_ref for item in topology.submodels
+            ],
             "reviewed_entity_refs": [detail.canonical_entity_ref],
             "reviewed_relationship_signal_refs": [],
             "reviewed_applied_record_refs": list(applied_record_refs),
@@ -965,7 +1030,9 @@ async def test_reconciliation_uses_canonical_required_relationship_optionality()
     )
 
     assert (await validator.validate(candidate)).issues == ()
-    materialized = cast(dict[str, JsonValue], validator.materialize_validated(candidate))
+    materialized = cast(
+        dict[str, JsonValue], validator.materialize_validated(candidate)
+    )
     relationship = cast(list[dict[str, JsonValue]], materialized["relationships"])[0]
     assert relationship["dimensional_relationship_is_optional"] is True
 
@@ -983,9 +1050,9 @@ async def test_reconciliation_uses_canonical_required_relationship_optionality()
     cast(list[dict[str, JsonValue]], missing_optionality["relationships"])[0].pop(
         "dimensional_relationship_is_optional"
     )
-    assert (await validator.validate(cast(JsonValue, missing_optionality))).issues[0].code == (
-        "detailed.reconciliation_invalid"
-    )
+    assert (await validator.validate(cast(JsonValue, missing_optionality))).issues[
+        0
+    ].code == ("detailed.reconciliation_invalid")
 
 
 async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -> None:
@@ -993,11 +1060,15 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     reconciliation = cast(
         JsonValue,
         {
-            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "submodels": [
+                item.submodel.model_dump(mode="json") for item in topology.submodels
+            ],
             "entities": [detail.entity.model_dump(mode="json")],
             "attributes": [item.model_dump(mode="json") for item in detail.attributes],
             "relationships": [],
-            "reviewed_submodel_refs": [item.canonical_submodel_ref for item in topology.submodels],
+            "reviewed_submodel_refs": [
+                item.canonical_submodel_ref for item in topology.submodels
+            ],
             "reviewed_entity_refs": [detail.canonical_entity_ref],
             "reviewed_relationship_signal_refs": [],
             "reviewed_applied_record_refs": [],
@@ -1067,11 +1138,13 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
         )
         assert (await worker_validator.validate(worker_candidate)).issues == ()
         if package == packages[0]:
-            incomplete_worker = cast(dict[str, JsonValue], json.loads(json.dumps(worker_candidate)))
+            incomplete_worker = cast(
+                dict[str, JsonValue], json.loads(json.dumps(worker_candidate))
+            )
             incomplete_worker["reviewed_record_refs"] = [package.record_refs[0]]
-            assert (await worker_validator.validate(cast(JsonValue, incomplete_worker))).issues[
-                0
-            ].code == "detailed.validation_worker_coverage_invalid"
+            assert (
+                await worker_validator.validate(cast(JsonValue, incomplete_worker))
+            ).issues[0].code == "detailed.validation_worker_coverage_invalid"
         worker_results.append(worker_validator.parse_validated(worker_candidate))
 
     lead_validator = DetailedDimensionalValidationLeadValidator(
@@ -1091,9 +1164,9 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     lead = lead_validator.parse_validated(lead_candidate)
     incomplete_lead = cast(dict[str, JsonValue], json.loads(json.dumps(lead_candidate)))
     incomplete_lead["reviewed_finding_refs"] = []
-    assert (await lead_validator.validate(cast(JsonValue, incomplete_lead))).issues[0].code == (
-        "detailed.validation_lead_coverage_invalid"
-    )
+    assert (await lead_validator.validate(cast(JsonValue, incomplete_lead))).issues[
+        0
+    ].code == ("detailed.validation_lead_coverage_invalid")
 
     decision = decide_dimensional_detailed_handoff(
         reconciliation_validator=reconciliation_validator,
@@ -1106,8 +1179,12 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     assert decision.handoff_candidate is None
     assert decision.validation_failures == worker_results[0].findings
 
-    clean_results = tuple(item.model_copy(update={"findings": ()}) for item in worker_results)
-    clean_lead_validator = DetailedDimensionalValidationLeadValidator(worker_results=clean_results)
+    clean_results = tuple(
+        item.model_copy(update={"findings": ()}) for item in worker_results
+    )
+    clean_lead_validator = DetailedDimensionalValidationLeadValidator(
+        worker_results=clean_results
+    )
     clean_lead = clean_lead_validator.parse_validated(
         cast(
             JsonValue,
@@ -1129,7 +1206,9 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
     assert clean_decision.handoff_candidate is not None
 
 
-def test_projected_validation_packages_include_code_owned_rows_and_relationships() -> None:
+def test_projected_validation_packages_include_code_owned_rows_and_relationships() -> (
+    None
+):
     source_attribute = _attribute("customer_raw", "customer_id")
     technical = _dimensional_attribute(
         "Customer",
@@ -1200,7 +1279,10 @@ def test_projected_validation_packages_include_code_owned_rows_and_relationships
         for record in records
         if record.dataset == "dimensional_attribute"
     ]
-    assert {item.dimensional_attribute_role for item in attributes} == {"technical", "audit"}
+    assert {item.dimensional_attribute_role for item in attributes} == {
+        "technical",
+        "audit",
+    }
     relationship = cast(DimensionalRelationshipRecord, records[-1].record)
     assert relationship.from_dimensional_attribute_name == "Customer key"
     assert relationship.dimensional_relationship_is_optional is True
@@ -1215,7 +1297,9 @@ def test_projected_validation_packages_include_code_owned_rows_and_relationships
 
     with pytest.raises(InvalidRequestError):
         build_projected_dimensional_validation_packages(
-            projected_changes=(StageModelChange(dataset="logical_submodel", records=[]),),
+            projected_changes=(
+                StageModelChange(dataset="logical_submodel", records=[]),
+            ),
             package_size=2,
             max_packages=10,
         )

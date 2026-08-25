@@ -236,7 +236,9 @@ def test_selected_operational_sheets_download_as_one_canonical_xlsx() -> None:
             "Process Groups",
             "__gds_manifest",
         ]
-        assert tuple(cell.value for cell in next(workbook["Copy Groups"].iter_rows(max_row=1))) == (
+        assert tuple(
+            cell.value for cell in next(workbook["Copy Groups"].iter_rows(max_row=1))
+        ) == (
             "tenant_code",
             "system_code",
             "copy_group_name",
@@ -244,7 +246,9 @@ def test_selected_operational_sheets_download_as_one_canonical_xlsx() -> None:
             "is_member_group_required",
             "is_active",
         )
-        assert tuple(cell.value for cell in next(workbook["Copy Groups"].iter_rows(min_row=2))) == (
+        assert tuple(
+            cell.value for cell in next(workbook["Copy Groups"].iter_rows(min_row=2))
+        ) == (
             "NWA",
             "CRM",
             "CRM daily",
@@ -261,7 +265,9 @@ def test_selected_operational_sheets_download_as_one_canonical_xlsx() -> None:
     ]
 
 
-def test_hidden_manifest_binds_each_selected_sheet_to_its_versioned_row_schema() -> None:
+def test_hidden_manifest_binds_each_selected_sheet_to_its_versioned_row_schema() -> (
+    None
+):
     service = DatabaseMetadataService(
         database=ExportDatabase(),
         repository=cast(Any, ExportRepository()),
@@ -282,7 +288,9 @@ def test_hidden_manifest_binds_each_selected_sheet_to_its_versioned_row_schema()
             json={"schema_version": "1.0", "sheet_codes": ["copy_group"]},
         )
 
-    workbook = load_workbook(BytesIO(response.content), read_only=False, data_only=False)
+    workbook = load_workbook(
+        BytesIO(response.content), read_only=False, data_only=False
+    )
     try:
         manifest = workbook["__gds_manifest"]
         assert manifest.sheet_state == "veryHidden"
@@ -421,7 +429,9 @@ def test_export_preserves_canonical_cell_types_and_writes_sql_as_literal_text() 
             },
         )
 
-    workbook = load_workbook(BytesIO(response.content), read_only=False, data_only=False)
+    workbook = load_workbook(
+        BytesIO(response.content), read_only=False, data_only=False
+    )
     try:
         assert workbook.sheetnames == [
             "Member Groups",
@@ -474,12 +484,16 @@ def test_export_preserves_canonical_cell_types_and_writes_sql_as_literal_text() 
             for name in names
             if name.startswith("xl/worksheets/sheet") and name.endswith(".xml")
         )
-        relationship_xml = b"".join(archive.read(name) for name in names if name.endswith(".rels"))
+        relationship_xml = b"".join(
+            archive.read(name) for name in names if name.endswith(".rels")
+        )
         assert b"<f" not in worksheet_xml
         assert b'TargetMode="External"' not in relationship_xml
 
 
-def test_identical_export_inputs_produce_byte_identical_canonical_xlsx_packages() -> None:
+def test_identical_export_inputs_produce_byte_identical_canonical_xlsx_packages() -> (
+    None
+):
     service = DatabaseMetadataService(
         database=ExportDatabase(),
         repository=cast(Any, ExportRepository()),
@@ -499,7 +513,9 @@ def test_identical_export_inputs_produce_byte_identical_canonical_xlsx_packages(
     assert first.content == second.content
     with ZipFile(BytesIO(first.content)) as archive:
         assert archive.namelist() == sorted(archive.namelist())
-        assert {member.date_time for member in archive.infolist()} == {(1980, 1, 1, 0, 0, 0)}
+        assert {member.date_time for member in archive.infolist()} == {
+            (1980, 1, 1, 0, 0, 0)
+        }
 
 
 def test_sheet_rows_are_sorted_by_the_normalized_canonical_key() -> None:
@@ -544,7 +560,10 @@ def test_sheet_rows_are_sorted_by_the_normalized_canonical_key() -> None:
 
     workbook = load_workbook(BytesIO(response.content), read_only=True, data_only=False)
     try:
-        names = [row[2].value for row in workbook["Copy Groups"].iter_rows(min_row=2, max_col=3)]
+        names = [
+            row[2].value
+            for row in workbook["Copy Groups"].iter_rows(min_row=2, max_col=3)
+        ]
         assert names == [" alpha ", "Zulu"]
     finally:
         workbook.close()
@@ -605,7 +624,9 @@ def test_all_selection_exports_every_operational_sheet_even_when_empty() -> None
     assert len(repository.export_calls) == 16
 
 
-def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes() -> None:
+def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes() -> (
+    None
+):
     database = ExportDatabase()
     repository = ExportRepository({})
     service = DatabaseMetadataService(
@@ -638,7 +659,8 @@ def test_export_selection_rejects_empty_duplicate_and_nonoperational_sheet_codes
     assert [response.status_code for response in responses] == [422, 422, 422, 422, 422]
     assert all(
         response.json()["error"]["code"] == "invalid_request"
-        and response.json()["error"]["message"] == "Metadata workbook sheet selection is invalid."
+        and response.json()["error"]["message"]
+        == "Metadata workbook sheet selection is invalid."
         for response in responses
     )
     assert all(
@@ -836,8 +858,12 @@ def test_export_rejects_a_sheet_above_the_fixed_row_limit() -> None:
         )
 
     assert response.status_code == 422
-    assert response.json()["error"]["message"] == ("Metadata workbook exceeds its row limit.")
-    assert repository.export_calls == [(7, "copy_group", MAX_METADATA_EXPORT_ROWS_PER_SHEET + 1)]
+    assert response.json()["error"]["message"] == (
+        "Metadata workbook exceeds its row limit."
+    )
+    assert repository.export_calls == [
+        (7, "copy_group", MAX_METADATA_EXPORT_ROWS_PER_SHEET + 1)
+    ]
 
 
 @pytest.mark.asyncio
@@ -874,7 +900,9 @@ def test_database_route_exports_authorized_tenant_rows_from_disposable_postgres(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -968,9 +996,12 @@ def test_database_route_exports_authorized_tenant_rows_from_disposable_postgres(
     try:
         assert workbook.sheetnames == ["Source Objects", "Copies", "__gds_manifest"]
         source_headers = tuple(cell.value for cell in workbook["Source Objects"][1])
-        assert source_headers == tuple(DATASETS_BY_NAME["source_object"].row_model.model_fields)
+        assert source_headers == tuple(
+            DATASETS_BY_NAME["source_object"].row_model.model_fields
+        )
         source_tenant_codes = {
-            cast(str, row[0].value) for row in workbook["Source Objects"].iter_rows(min_row=2)
+            cast(str, row[0].value)
+            for row in workbook["Source Objects"].iter_rows(min_row=2)
         }
         assert source_tenant_codes == {"DEMO_TENANT"}
         copy_headers = tuple(cell.value for cell in workbook["Copies"][1])

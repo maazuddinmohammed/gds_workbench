@@ -36,7 +36,9 @@ from gds_etl_workbench.tools.snapshots.model.contracts import (
 
 def test_model_change_set_stage_rejects_raw_prompt_assertion_details() -> None:
     record = deepcopy(complete_graph()["modeling_assertion_record"][0])
-    record["modeling_assertion_details"] = {"review": {"raw_prompt": "sensitive prompt value"}}
+    record["modeling_assertion_details"] = {
+        "review": {"raw_prompt": "sensitive prompt value"}
+    }
 
     with pytest.raises(InvalidRequestError) as captured:
         validate_model_stage_changes(
@@ -52,9 +54,17 @@ def test_model_change_set_stage_rejects_raw_prompt_assertion_details() -> None:
 @pytest.mark.parametrize(
     ("dataset", "field", "prohibited_key"),
     [
-        ("modeling_assertion_document", "modeling_assertion_document_metadata", "raw_rows"),
+        (
+            "modeling_assertion_document",
+            "modeling_assertion_document_metadata",
+            "raw_rows",
+        ),
         ("modeling_assertion_record", "modeling_assertion_details", "tool-output"),
-        ("modeling_assertion_record", "modeling_assertion_source_location", "fileContent"),
+        (
+            "modeling_assertion_record",
+            "modeling_assertion_source_location",
+            "fileContent",
+        ),
         ("modeling_assertion_record", "modeling_assertion_details", "api_secret"),
     ],
 )
@@ -67,9 +77,13 @@ def test_model_change_set_stage_rejects_prohibited_assertion_json_keys(
     record[field] = {"nested": {prohibited_key: "sensitive raw value"}}
 
     with pytest.raises(InvalidRequestError) as captured:
-        validate_model_stage_changes([StageModelChange(dataset=dataset, records=[record])])
+        validate_model_stage_changes(
+            [StageModelChange(dataset=dataset, records=[record])]
+        )
 
-    assert captured.value.message == f"Record does not match the exact {dataset} schema."
+    assert (
+        captured.value.message == f"Record does not match the exact {dataset} schema."
+    )
     assert "sensitive raw value" not in captured.value.message
 
 
@@ -107,9 +121,13 @@ def test_model_change_set_stage_rejects_oversized_assertion_fields(
     record[field] = oversized_value
 
     with pytest.raises(InvalidRequestError) as captured:
-        validate_model_stage_changes([StageModelChange(dataset=dataset, records=[record])])
+        validate_model_stage_changes(
+            [StageModelChange(dataset=dataset, records=[record])]
+        )
 
-    assert captured.value.message == f"Record does not match the exact {dataset} schema."
+    assert (
+        captured.value.message == f"Record does not match the exact {dataset} schema."
+    )
     assert "x" * 100 not in captured.value.message
 
 
@@ -169,7 +187,9 @@ def test_model_change_set_bounds_the_complete_assertion_section_at_four_mib() ->
 def test_assertion_section_bound_does_not_reduce_other_section_limits() -> None:
     documents: dict[str, dict[str, list[dict[str, object]]]] = {
         "conceptual": {
-            "conceptual_object": [{"conceptual_object_definition": "x" * (5 * 1024 * 1024)}]
+            "conceptual_object": [
+                {"conceptual_object_definition": "x" * (5 * 1024 * 1024)}
+            ]
         }
     }
 
@@ -261,7 +281,8 @@ def test_future_graph_rejects_physical_reference_outside_model_scope() -> None:
     assert result.valid is False
     assert result.phase == "model_scope"
     assert any(
-        issue.dataset == "profiling_profile" and issue.code == "model_scope_reference_invalid"
+        issue.dataset == "profiling_profile"
+        and issue.code == "model_scope_reference_invalid"
         for issue in result.issues
     )
 
@@ -483,7 +504,9 @@ def test_future_graph_rejects_active_mapping_for_retired_logical_attribute() -> 
     )
 
 
-def test_future_graph_rejects_active_dimensional_object_source_after_mapping_retirement() -> None:
+def test_future_graph_rejects_active_dimensional_object_source_after_mapping_retirement() -> (
+    None
+):
     graph = complete_graph()
     dimensional_entity = deepcopy(graph["dimensional_entity"][0])
     dimensional_entity["sources"] = [_silver_object_source()]
@@ -539,7 +562,9 @@ def test_future_graph_rejects_active_dimensional_attribute_source_after_mapping_
     )
 
 
-def test_future_graph_allows_complete_logical_mapping_and_dimensional_retirement() -> None:
+def test_future_graph_allows_complete_logical_mapping_and_dimensional_retirement() -> (
+    None
+):
     graph = complete_graph()
     dimensional_entity = deepcopy(graph["dimensional_entity"][0])
     dimensional_entity["sources"] = [_silver_object_source()]
@@ -579,7 +604,9 @@ def test_future_graph_rejects_change_to_locked_applied_record() -> None:
         {**raw, "conceptual_object_is_locked": True},
         strict=False,
     )
-    snapshot = _empty_snapshot(conceptual=ConceptualSection(objects=(locked,), relationships=()))
+    snapshot = _empty_snapshot(
+        conceptual=ConceptualSection(objects=(locked,), relationships=())
+    )
     changed = deepcopy(raw)
     changed["conceptual_object_definition"] = "Changed definition"
 
@@ -602,7 +629,9 @@ def test_future_graph_rejects_change_to_locked_nested_record() -> None:
         raw,
         strict=False,
     )
-    snapshot = _empty_snapshot(conceptual=ConceptualSection(objects=(applied,), relationships=()))
+    snapshot = _empty_snapshot(
+        conceptual=ConceptualSection(objects=(applied,), relationships=())
+    )
     changed = deepcopy(raw)
     changed_supports = cast(list[dict[str, object]], changed["supports"])
     changed_supports[0]["support_reason"] = "Changed reason"
@@ -615,7 +644,8 @@ def test_future_graph_rejects_change_to_locked_nested_record() -> None:
 
     assert result.valid is False
     assert any(
-        issue.code == "record_locked" and issue.fields == ("supports",) for issue in result.issues
+        issue.code == "record_locked" and issue.fields == ("supports",)
+        for issue in result.issues
     )
 
 
@@ -758,8 +788,12 @@ def _empty_snapshot(
         analysis=AnalysisSection(relationships=()),
         assertion=AssertionSection(documents=(), records=()),
         conceptual=conceptual or ConceptualSection(objects=(), relationships=()),
-        logical=LogicalSection(submodels=(), entities=(), attributes=(), relationships=()),
-        dimensional=DimensionalSection(submodels=(), entities=(), attributes=(), relationships=()),
+        logical=LogicalSection(
+            submodels=(), entities=(), attributes=(), relationships=()
+        ),
+        dimensional=DimensionalSection(
+            submodels=(), entities=(), attributes=(), relationships=()
+        ),
         mapping=MappingSection(dependencies=(), objects=(), attributes=()),
     )
 
@@ -781,9 +815,13 @@ def _complete_physical_scope() -> PhysicalModelScope:
         objects=objects,
         attributes=attributes,
         bronze_source_objects=bronze_objects,
-        bronze_source_attributes=frozenset({(*key, "customer_id") for key in bronze_objects}),
+        bronze_source_attributes=frozenset(
+            {(*key, "customer_id") for key in bronze_objects}
+        ),
         dimensional_source_objects=silver_objects,
-        dimensional_source_attributes=frozenset({(*key, "customer_id") for key in silver_objects}),
+        dimensional_source_attributes=frozenset(
+            {(*key, "customer_id") for key in silver_objects}
+        ),
         logical_mapping_target_objects=silver_objects,
         logical_mapping_target_attributes=frozenset(
             {(*key, "customer_id") for key in silver_objects}
@@ -902,7 +940,9 @@ def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
                 "supports": [
                     {
                         "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "assertion_record": {
+                            "modeling_assertion_record_key": "order.customer"
+                        },
                         "support_role": "definition",
                         "support_reason": "Business rule identifies the concept.",
                         "support_reason_detail": None,
@@ -950,7 +990,9 @@ def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
                 "supports": [
                     {
                         "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "assertion_record": {
+                            "modeling_assertion_record_key": "order.customer"
+                        },
                         "support_role": "cardinality",
                         "support_reason": "Business rule defines the relationship.",
                         "support_reason_detail": None,
@@ -1037,7 +1079,9 @@ def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
                 sources=[
                     {
                         "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "assertion_record": {
+                            "modeling_assertion_record_key": "order.customer"
+                        },
                         "source_role": "transaction_source",
                         "source_order": 1,
                         "rationale": "Business rule defines the fact grain.",
@@ -1055,7 +1099,9 @@ def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
                 sources=[
                     {
                         "support_source_type": "assertion",
-                        "assertion_record": {"modeling_assertion_record_key": "order.customer"},
+                        "assertion_record": {
+                            "modeling_assertion_record_key": "order.customer"
+                        },
                         "source_order": 1,
                         "rationale": "Business rule identifies the customer key.",
                         "status": "active",

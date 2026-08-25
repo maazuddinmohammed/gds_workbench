@@ -33,10 +33,14 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
         validation_retry_count=2,
     )
     registry.validate_selection(selection)
-    registry.validate_selection(selection.model_copy(update={"sdk_code": "openai_agents_sdk"}))
+    registry.validate_selection(
+        selection.model_copy(update={"sdk_code": "openai_agents_sdk"})
+    )
 
 
-def test_invalid_capability_cross_references_fail_before_startup(tmp_path: Path) -> None:
+def test_invalid_capability_cross_references_fail_before_startup(
+    tmp_path: Path,
+) -> None:
     invalid_path = tmp_path / "agent_capabilities.json"
     invalid_path.write_text(
         json.dumps(

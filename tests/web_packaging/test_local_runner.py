@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import importlib.util
+import re
 import stat
 import subprocess
 from pathlib import Path
@@ -70,7 +71,12 @@ def test_local_docker_endpoints_are_accepted(endpoint: str) -> None:
 
 @pytest.mark.parametrize(
     "endpoint",
-    ["tcp://127.0.0.1:2375", "tcp://example.invalid:2375", "ssh://host", "https://host"],
+    [
+        "tcp://127.0.0.1:2375",
+        "tcp://example.invalid:2375",
+        "ssh://host",
+        "https://host",
+    ],
 )
 def test_network_docker_endpoints_are_rejected(endpoint: str) -> None:
     runner = _load_runner()
@@ -96,11 +102,15 @@ def test_secret_environment_file_is_private_and_removed_with_its_directory(
     assert "host=" not in contents
 
 
-def test_compose_cleanup_always_disposes_volumes(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_compose_cleanup_always_disposes_volumes(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
     runner = _load_runner()
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if command[-2:] == ["version", "--short"]:
             return subprocess.CompletedProcess(command, 0, stdout="2.39.0\n")
@@ -122,6 +132,14 @@ def test_compose_cleanup_always_disposes_volumes(monkeypatch: pytest.MonkeyPatch
         "down" in command and "--volumes" in command and "--remove-orphans" in command
         for command in calls
     )
+    image_removal = next(
+        command for command in calls if command[:3] == ["docker", "image", "rm"]
+    )
+    assert len(image_removal) == 5
+    backend_suffix = image_removal[3].removeprefix("gds-workbench-backend:local-")
+    frontend_suffix = image_removal[4].removeprefix("gds-workbench-frontend:local-")
+    assert backend_suffix == frontend_suffix
+    assert re.fullmatch(r"[0-9a-f]{12}", backend_suffix)
 
 
 def test_standalone_compose_is_used_when_cli_plugin_is_unavailable(
@@ -130,7 +148,9 @@ def test_standalone_compose_is_used_when_cli_plugin_is_unavailable(
     runner = _load_runner()
     calls: list[list[str]] = []
 
-    def fake_run(command: list[str], **kwargs: object) -> subprocess.CompletedProcess[str]:
+    def fake_run(
+        command: list[str], **kwargs: object
+    ) -> subprocess.CompletedProcess[str]:
         calls.append(command)
         if command[:2] == ["docker", "compose"]:
             raise subprocess.CalledProcessError(125, command)

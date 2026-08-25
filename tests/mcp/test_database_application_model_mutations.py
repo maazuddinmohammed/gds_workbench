@@ -6,7 +6,7 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 

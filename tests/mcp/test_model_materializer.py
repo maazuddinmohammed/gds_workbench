@@ -102,7 +102,10 @@ class LayerFakeWriteTransaction:
             "dimensional_attribute_id",
             "dimensional_relationship_id",
         ):
-            if f"RETURNING {field_name}" in normalized or f"SELECT {field_name}" in normalized:
+            if (
+                f"RETURNING {field_name}" in normalized
+                or f"SELECT {field_name}" in normalized
+            ):
                 self.next_id += 1
                 return {field_name: self.next_id}
         raise AssertionError(f"unexpected layer materializer query: {normalized}")
@@ -492,8 +495,9 @@ async def test_analysis_materializer_stamps_web_inference_provenance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_analysis_materializer_clears_web_validation_context_for_manual_write(
-) -> None:
+async def test_analysis_materializer_clears_web_validation_context_for_manual_write() -> (
+    None
+):
     transaction = FakeWriteTransaction()
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),
@@ -528,7 +532,9 @@ async def test_profile_materializer_clears_prior_workflow_provenance() -> None:
 
 
 @pytest.mark.asyncio
-async def test_physical_resolvers_use_discovery_assigned_tenant_for_gds_objects() -> None:
+async def test_physical_resolvers_use_discovery_assigned_tenant_for_gds_objects() -> (
+    None
+):
     transaction = FakeWriteTransaction()
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),
@@ -604,7 +610,9 @@ async def test_logical_materializer_stamps_all_seven_families_and_counts_once(
 
 
 @pytest.mark.asyncio
-async def test_dimensional_relationship_lookup_uses_canonical_kind_and_role_identity() -> None:
+async def test_dimensional_relationship_lookup_uses_canonical_kind_and_role_identity() -> (
+    None
+):
     transaction = LayerFakeWriteTransaction()
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),
@@ -671,7 +679,9 @@ async def test_logical_materializer_updates_all_seven_family_provenance(
 
 
 @pytest.mark.asyncio
-async def test_mapping_materializer_persists_resolved_profile_and_package_digests() -> None:
+async def test_mapping_materializer_persists_resolved_profile_and_package_digests() -> (
+    None
+):
     transaction = MappingFakeWriteTransaction()
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),
@@ -763,7 +773,9 @@ async def test_mapping_materializer_persists_resolved_profile_and_package_digest
 
 
 @pytest.mark.asyncio
-async def test_generic_mapping_insert_has_null_workflow_and_template_provenance() -> None:
+async def test_generic_mapping_insert_has_null_workflow_and_template_provenance() -> (
+    None
+):
     transaction = MappingFakeWriteTransaction()
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),
@@ -804,7 +816,9 @@ async def test_generic_mapping_insert_has_null_workflow_and_template_provenance(
 
 
 @pytest.mark.asyncio
-async def test_generic_mapping_update_clears_run_provenance_and_preserves_template() -> None:
+async def test_generic_mapping_update_clears_run_provenance_and_preserves_template() -> (
+    None
+):
     transaction = MappingFakeWriteTransaction(existing=True)
     materializer = ModelMaterializer(
         transaction=cast(WriteTransaction, transaction),

@@ -33,7 +33,9 @@ def _variables() -> tuple[PromptVariableDefinition, ...]:
     )
 
 
-def test_prompt_renderer_uses_only_allowlisted_resolvers_and_preserves_unknowns() -> None:
+def test_prompt_renderer_uses_only_allowlisted_resolvers_and_preserves_unknowns() -> (
+    None
+):
     templates = PromptComponentTemplates(
         system="Model {{ model_name }}; future={{future_variable}}",
         instruction="Use {{stage_context}}. Retry {{ retry_count }}.",
@@ -62,7 +64,9 @@ def test_prompt_renderer_uses_only_allowlisted_resolvers_and_preserves_unknowns(
     assert "stage_context" not in repr(templates)
 
 
-def test_prompt_renderer_fails_before_rendering_when_required_value_is_missing() -> None:
+def test_prompt_renderer_fails_before_rendering_when_required_value_is_missing() -> (
+    None
+):
     with pytest.raises(InvalidRequestError, match="required Prompt variable"):
         render_prompt(
             templates=PromptComponentTemplates(

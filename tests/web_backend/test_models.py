@@ -185,6 +185,8 @@ class ModelTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
         assert "application.workflow_run" in query
+        assert "workflow_run.workflow_run_state" in query
+        assert "workflow_run.workflow_run_status" not in query
         assert parameters[:2] == (7, True)
         limit, offset = parameters[2:]
         assert limit == 2

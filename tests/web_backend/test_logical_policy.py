@@ -104,7 +104,9 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
 
     assert len(attributes) == 5
     audit = [item for item in attributes if item["logical_attribute_is_audit_column"]]
-    assert {(item["logical_entity_name"], item["logical_attribute_name"]) for item in audit} == {
+    assert {
+        (item["logical_entity_name"], item["logical_attribute_name"]) for item in audit
+    } == {
         ("Account", "Created At"),
         ("Account", "Updated At"),
         ("Customer", "Created At"),

@@ -14,7 +14,9 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
 from pydantic import JsonValue
 
-from gds_workbench_api.features.dimensional.candidate import DimensionalCandidateValidator
+from gds_workbench_api.features.dimensional.candidate import (
+    DimensionalCandidateValidator,
+)
 
 
 def _object(name: str = "dim_customer") -> PhysicalObjectKey:
@@ -189,7 +191,9 @@ async def test_candidate_rejects_assertion_evidence_outside_frozen_context() -> 
     attribute["sources"] = [
         {
             "support_source_type": "assertion",
-            "assertion_record": {"modeling_assertion_record_key": "assertion.customer_key"},
+            "assertion_record": {
+                "modeling_assertion_record_key": "assertion.customer_key"
+            },
             "source_order": 1,
             "rationale": "Key assertion.",
             "status": "active",
@@ -199,7 +203,9 @@ async def test_candidate_rejects_assertion_evidence_outside_frozen_context() -> 
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
-    assert [issue.code for issue in issues].count("candidate.assertion_unavailable") == 2
+    assert [issue.code for issue in issues].count(
+        "candidate.assertion_unavailable"
+    ) == 2
 
 
 async def test_candidate_requires_complete_future_references() -> None:
@@ -269,18 +275,28 @@ async def test_candidate_schema_forbids_agent_lock_authority() -> None:
 
 async def test_candidate_rejects_changes_to_applied_main_and_nested_locks() -> None:
     applied = _applied()
-    locked_source = applied.entities[0].sources[0].model_copy(update={"is_locked": True})
+    locked_source = (
+        applied.entities[0].sources[0].model_copy(update={"is_locked": True})
+    )
     entity = applied.entities[0].model_copy(update={"sources": (locked_source,)})
-    attribute = applied.attributes[0].model_copy(update={"dimensional_attribute_is_locked": True})
-    applied = applied.model_copy(update={"entities": (entity,), "attributes": (attribute,)})
+    attribute = applied.attributes[0].model_copy(
+        update={"dimensional_attribute_is_locked": True}
+    )
+    applied = applied.model_copy(
+        update={"entities": (entity,), "attributes": (attribute,)}
+    )
     candidate = _candidate()
     candidate_entity = _first_record(candidate, "entities")
     source = cast(dict[str, object], cast(list[object], candidate_entity["sources"])[0])
     source["rationale"] = "Agent changed locked lineage."
     candidate_attribute = _first_record(candidate, "attributes")
-    candidate_attribute["dimensional_attribute_definition"] = "Agent changed locked row."
+    candidate_attribute["dimensional_attribute_definition"] = (
+        "Agent changed locked row."
+    )
 
-    issues = (await _validator(applied=applied).validate(cast(JsonValue, candidate))).issues
+    issues = (
+        await _validator(applied=applied).validate(cast(JsonValue, candidate))
+    ).issues
 
     assert [issue.code for issue in issues].count("candidate.record_locked") == 2
 
@@ -306,4 +322,6 @@ async def test_candidate_forbids_all_agent_authored_gold_policy_columns() -> Non
 
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
-    assert [issue.code for issue in issues].count("candidate.policy_column_forbidden") == 4
+    assert [issue.code for issue in issues].count(
+        "candidate.policy_column_forbidden"
+    ) == 4

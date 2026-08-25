@@ -82,7 +82,9 @@ def _selection(*, sdk_code: str) -> AgentRunSelection:
     )
 
 
-def _request(*, sdk_code: str, catalog: _Catalog | None = None) -> AgentExecutionRequest:
+def _request(
+    *, sdk_code: str, catalog: _Catalog | None = None
+) -> AgentExecutionRequest:
     catalog = catalog or _Catalog()
     return AgentExecutionRequest(
         workflow_run_id=1048,
@@ -177,7 +179,9 @@ async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
             captured["tool_results"] = (manifest, dataset)
             return {
                 "structured_response": {"objects": [], "relationships": []},
-                "messages": [SimpleNamespace(type="ai", tool_calls=[{"name": "local"}])],
+                "messages": [
+                    SimpleNamespace(type="ai", tool_calls=[{"name": "local"}])
+                ],
             }
 
     monkeypatch.setattr(agent_adapters, "ChatOpenAI", fake_model)
@@ -199,7 +203,9 @@ async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
         )
     )
 
-    result = await adapter.execute(_request(sdk_code="langchain_create_agent", catalog=catalog))
+    result = await adapter.execute(
+        _request(sdk_code="langchain_create_agent", catalog=catalog)
+    )
 
     tools = cast(list[Any], captured["tools"])
     assert [tool.name for tool in tools] == list(
@@ -271,7 +277,9 @@ async def test_openai_agents_adapter_wraps_only_the_attached_local_catalog(
         )
     )
 
-    result = await adapter.execute(_request(sdk_code="openai_agents_sdk", catalog=catalog))
+    result = await adapter.execute(
+        _request(sdk_code="openai_agents_sdk", catalog=catalog)
+    )
 
     tools = cast(list[Any], captured["tools"])
     assert [tool.name for tool in tools] == list(

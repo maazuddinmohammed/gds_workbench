@@ -780,7 +780,9 @@ def _non_dimensional_candidates(
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -910,7 +912,9 @@ class _Handoff:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
     fail_event_sequence: int | None = None
@@ -993,7 +997,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -1055,7 +1061,9 @@ async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
     model_details = context.context.model_details.model_copy(
         update={"gold_model_audit_columns_template": None}
     )
-    authoring_context = context.context.model_copy(update={"model_details": model_details})
+    authoring_context = context.context.model_copy(
+        update={"model_details": model_details}
+    )
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1086,7 +1094,9 @@ async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
 async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     relationship_optional: bool,
 ) -> None:
-    agent = _AgentExecutor(responses=[_candidate(relationship_optional=relationship_optional)])
+    agent = _AgentExecutor(
+        responses=[_candidate(relationship_optional=relationship_optional)]
+    )
     service, database, authorizer, handoff, lifecycle = _service(agent=agent)
 
     result = await service.execute_started(
@@ -1115,7 +1125,9 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert handoff.workflows == ["dimensional"]
     assert len(handoff.calls) == 1
     attribute_change = next(
-        change for change in handoff.calls[0] if change.dataset == "dimensional_attribute"
+        change
+        for change in handoff.calls[0]
+        if change.dataset == "dimensional_attribute"
     )
     foreign_key = next(
         record
@@ -1125,7 +1137,9 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
     assert foreign_key["dimensional_attribute_is_nullable"] is relationship_optional
     relationship_change = next(
-        change for change in handoff.calls[0] if change.dataset == "dimensional_relationship"
+        change
+        for change in handoff.calls[0]
+        if change.dataset == "dimensional_relationship"
     )
     assert relationship_change.records[0]["from_dimensional_attribute_name"] == (
         "Bill To Customer key"
@@ -1170,7 +1184,9 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
+    agent = _AgentExecutor(
+        responses=[_candidate(source_name="outside_selection"), _candidate()]
+    )
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -1271,8 +1287,12 @@ async def test_valid_unchanged_candidate_completes_as_no_op() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> None:
-    agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()])
+async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> (
+    None
+):
+    agent = _AgentExecutor(
+        responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()]
+    )
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1356,7 +1376,9 @@ async def test_fixed_plan_identity_mismatch_is_rejected_before_agent_execution(
 
 @pytest.mark.asyncio
 async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> None:
-    agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], _detailed_candidates()))
+    agent = _AgentExecutor(
+        responses=cast(list[JsonValue | Exception], _detailed_candidates())
+    )
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
         plan=_plan(mode="detailed_coverage"),
@@ -1379,7 +1401,9 @@ async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> 
         "validator_worker",
         "validator_lead",
     ]
-    assert all(request.execution_mode == "detailed_coverage" for request in agent.requests)
+    assert all(
+        request.execution_mode == "detailed_coverage" for request in agent.requests
+    )
     assert all(request.allowed_tool_names == () for request in agent.requests)
     assert len(handoff.calls) == 1
     assert isinstance(result, WorkflowChangeSetHandoffResult)
@@ -1395,7 +1419,9 @@ async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> 
     for record in records:
         if record["dataset"] != "dimensional_attribute":
             continue
-        name = cast(dict[str, JsonValue], record["record"])["dimensional_attribute_name"]
+        name = cast(dict[str, JsonValue], record["record"])[
+            "dimensional_attribute_name"
+        ]
         if isinstance(name, str):
             projected_names.add(name)
     assert {"Customer Dimension key", "Loaded At"} <= projected_names

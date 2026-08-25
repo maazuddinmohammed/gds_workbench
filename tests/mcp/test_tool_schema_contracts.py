@@ -137,7 +137,7 @@ async def test_plugin_contract_fingerprint_matches_the_runtime() -> None:
     contract_path = (
         Path(__file__).resolve().parents[2]
         / "plugins"
-        / "v1"
+        / "v2"
         / "gds"
         / "tool-contract.json"
     )

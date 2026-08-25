@@ -95,7 +95,8 @@ The runner intentionally:
 - loads only demo, reference, and local-identity seed data;
 - keeps PostgreSQL private to the Docker network;
 - runs the Agent and Databricks integrations as local fakes; and
-- removes the containers, network, and database volume when stopped.
+- removes the containers, network, database volume, and its two exact generated
+  application image tags when stopped.
 
 It does not contact Azure, Databricks, an Agent provider, or another external
 runtime service.
@@ -141,11 +142,11 @@ Backend install and checks require Python 3.14 and `uv`:
 
 ```bash
 uv sync --project web_app/backend --frozen
-uv run --project web_app/backend pytest
-uv run --project web_app/backend pytest tests/web_packaging
-uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api tests/web_backend
-uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend
-uv run --project web_app/backend pyright
+uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
+uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
+uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+uv run --project web_app/backend pyright --project web_app/backend
 uv build web_app/backend
 ```
 

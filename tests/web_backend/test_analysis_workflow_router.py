@@ -49,7 +49,9 @@ class _StaticService:
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        self.starts.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.starts.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
         return AgentWorkflowRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
@@ -68,7 +70,9 @@ class _StaticService:
         expected_model_revision: int,
     ) -> object:
         del principal
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
         return None
 
 

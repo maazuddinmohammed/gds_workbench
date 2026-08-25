@@ -190,6 +190,19 @@ def run_local(*, frontend_port: int, api_port: int) -> int:
                 [*compose, "down", "--volumes", "--remove-orphans"],
                 check=False,
             )
+            image_suffix = values["GDS_LOCAL_IMAGE_SUFFIX"]
+            subprocess.run(
+                [
+                    "docker",
+                    "image",
+                    "rm",
+                    f"gds-workbench-backend:local-{image_suffix}",
+                    f"gds-workbench-frontend:local-{image_suffix}",
+                ],
+                check=False,
+                capture_output=True,
+                text=True,
+            )
         return result
 
 

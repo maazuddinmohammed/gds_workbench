@@ -5,7 +5,7 @@ from typing import TYPE_CHECKING, LiteralString, cast
 from uuid import uuid4
 
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import RaiseException
 
 if TYPE_CHECKING:

@@ -259,7 +259,9 @@ def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -402,7 +404,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -416,7 +420,9 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -479,7 +485,9 @@ def _service(
             lifecycle=lifecycle,
             plan_repository=_PlanRepository(plan=selected_plan),
             context_repository=_ContextRepository(
-                bundle=_context_bundle(mode=selected_plan.workflow_execution_mode or "one_shot")
+                bundle=_context_bundle(
+                    mode=selected_plan.workflow_execution_mode or "one_shot"
+                )
             ),
             context_policy=AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
@@ -528,7 +536,8 @@ async def test_executor_authors_validated_draft_without_applying_model() -> None
     assert handoff.final_events[-1].finding_count == 1
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage)
+        for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "conceptual.candidate_authoring"),
         (3, "conceptual.backend_validation"),
@@ -574,7 +583,9 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
 async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=_AgentExecutor(responses=[{"invalid": True}, {"objects": [], "relationships": []}]),
+        agent=_AgentExecutor(
+            responses=[{"invalid": True}, {"objects": [], "relationships": []}]
+        ),
         no_op=no_op,
     )
 
@@ -629,7 +640,9 @@ async def test_no_op_error_never_marks_the_run_failed(
 
 @pytest.mark.asyncio
 async def test_executor_repairs_invalid_candidate_before_single_handoff() -> None:
-    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
+    agent = _AgentExecutor(
+        responses=[_candidate(source_name="outside_selection"), _candidate()]
+    )
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -754,7 +767,9 @@ async def test_executor_detailed_coverage_runs_each_ledger_then_one_handoff() ->
                     "source_object": source,
                     "disposition": "represented",
                     "rationale": "The selected Object represents Customer.",
-                    "proposals": [{"local_entity_ref": "customer", "object": object_record}],
+                    "proposals": [
+                        {"local_entity_ref": "customer", "object": object_record}
+                    ],
                 },
                 {
                     "entities": [
@@ -802,7 +817,9 @@ async def test_executor_detailed_coverage_runs_each_ledger_then_one_handoff() ->
         "entity_attribute_detail",
         "whole_model_reconciliation",
     ]
-    assert all(request.execution_mode == "detailed_coverage" for request in agent.requests)
+    assert all(
+        request.execution_mode == "detailed_coverage" for request in agent.requests
+    )
     assert all(request.allowed_tool_names == () for request in agent.requests)
     assert len(handoff.calls) == 1
     assert handoff.calls[0][0].dataset == "conceptual_object"

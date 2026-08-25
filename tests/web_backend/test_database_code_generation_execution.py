@@ -22,7 +22,10 @@ from gds_workbench_api.features.code_generation.storage import (
     GeneratedSqlStorageError,
     SqlGeneratorIdentity,
 )
-from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan, FrozenAgentStage
+from gds_workbench_api.features.workflows.authoring.plan import (
+    AgentRunPlan,
+    FrozenAgentStage,
+)
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 
@@ -90,7 +93,9 @@ def _required_str(row: Mapping[str, object] | None, field: str) -> str:
 
 
 def _selection_digest(object_ids: tuple[int, ...]) -> str:
-    return hashlib.sha256(",".join(str(value) for value in object_ids).encode()).hexdigest()
+    return hashlib.sha256(
+        ",".join(str(value) for value in object_ids).encode()
+    ).hexdigest()
 
 
 def _ensure_default_guide(
@@ -205,7 +210,10 @@ def _seed_code_generation(
                 ) VALUES (%s, %s)
                 RETURNING connection_type_id
                 """,
-                (f"codegen_connection_{suffix}", f"Code Generation Connection {suffix}"),
+                (
+                    f"codegen_connection_{suffix}",
+                    f"Code Generation Connection {suffix}",
+                ),
             ).fetchone(),
             "connection_type_id",
         )
@@ -336,7 +344,11 @@ def _seed_code_generation(
                 VALUES (%s, %s, %s)
                 RETURNING system_id
                 """,
-                (f"CODEGEN_{suffix}", f"Code Generation System {suffix}", system_type_id),
+                (
+                    f"CODEGEN_{suffix}",
+                    f"Code Generation System {suffix}",
+                    system_type_id,
+                ),
             ).fetchone(),
             "system_id",
         )

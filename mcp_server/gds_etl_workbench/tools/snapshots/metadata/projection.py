@@ -80,9 +80,7 @@ def project_id_free_rows(
             f"{prefix}connection_code": connection["connection_code"],
         }
 
-    def object_connection_key(
-        row: Mapping[str, Any], prefix: str = ""
-    ) -> dict[str, object]:
+    def object_connection_key(row: Mapping[str, Any], prefix: str = "") -> dict[str, object]:
         connection = connection_by_id[row["connection_id"]]
         return {
             f"{prefix}tenant_code": tenant_code(row["object_tenant_id"]),

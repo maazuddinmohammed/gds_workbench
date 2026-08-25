@@ -108,7 +108,9 @@ def test_profile_query_rejects_inconsistent_batch_metadata() -> None:
         )
 
 
-def test_profile_query_chunks_only_oversized_objects_without_omitting_attributes() -> None:
+def test_profile_query_chunks_only_oversized_objects_without_omitting_attributes() -> (
+    None
+):
     target = ProfileObject(
         object_id=71,
         connection_id=12,
@@ -150,7 +152,9 @@ def test_profile_query_leaves_unsupported_complex_metrics_null(data_type: str) -
         schema="bronze_crm",
         table="complex_table",
         batch_attribute_name=None,
-        attributes=(ProfileAttribute(attribute_id=901, name="payload", data_type=data_type),),
+        attributes=(
+            ProfileAttribute(attribute_id=901, name="payload", data_type=data_type),
+        ),
     )
 
     sql = build_profile_queries(
@@ -231,7 +235,9 @@ class _FakeConnection:
 
 
 @pytest.mark.asyncio
-async def test_profiling_executor_uses_native_parameters_and_returns_only_metrics() -> None:
+async def test_profiling_executor_uses_native_parameters_and_returns_only_metrics() -> (
+    None
+):
     cursor = _FakeCursor(
         rows=[
             (801, 10, 8, 2, None, 8, None, None, None, 80.0, 0.0, 20.0, None, 100.0),

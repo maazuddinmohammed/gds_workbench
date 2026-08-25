@@ -22,7 +22,9 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 )
 
 
-def _request(*, retries: int = 2, context: JsonValue | None = None) -> AgentExecutionRequest:
+def _request(
+    *, retries: int = 2, context: JsonValue | None = None
+) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="conceptual",
@@ -138,7 +140,9 @@ async def test_repair_keeps_original_context_and_exact_run_configuration() -> No
         path=("entities", 0, "name"),
         message="Every entity requires a name.",
     )
-    executor = FakeExecutor(candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}])
+    executor = FakeExecutor(
+        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
+    )
     validator = FakeValidator(outcomes=[(issue,), ()])
     request = _request(retries=1)
 
@@ -185,7 +189,10 @@ async def test_repair_gives_each_adapter_attempt_a_fresh_original_context() -> N
     )
 
     assert result.attempt_count == 2
-    assert [cast(dict[str, JsonValue], item)["original_context"] for item in executor.requests] == [
+    assert [
+        cast(dict[str, JsonValue], item)["original_context"]
+        for item in executor.requests
+    ] == [
         {"scope": [1, 2]},
         {"scope": [1, 2]},
     ]
@@ -213,7 +220,9 @@ async def test_validation_exhaustion_fails_loudly_without_returning_candidate() 
 
 
 @pytest.mark.asyncio
-async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> None:
+async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> (
+    None
+):
     executor = FakeExecutor(candidates=[{}])
     validator = FakeValidator(outcomes=[()])
 

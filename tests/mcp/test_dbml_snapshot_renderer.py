@@ -3,7 +3,10 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
-from test_model_change_set_validation import complete_graph, model_scope_records
+from tests.mcp.test_model_change_set_validation import (
+    complete_graph,
+    model_scope_records,
+)
 
 from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
 from gds_etl_workbench.tools.snapshots.dbml.renderer import render_dbml_documents

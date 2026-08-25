@@ -158,13 +158,19 @@ def test_import_rejects_macro_payloads_even_when_the_workbook_xml_is_valid() -> 
 def test_import_requires_the_hidden_manifest() -> None:
     content = _save_modified(
         _canonical_workbook(),
-        lambda workbook: setattr(workbook[MANIFEST_SHEET_NAME], "sheet_state", "visible"),
+        lambda workbook: setattr(
+            workbook[MANIFEST_SHEET_NAME], "sheet_state", "visible"
+        ),
     )
 
-    with pytest.raises(MetadataWorkbookParseError, match="manifest visibility is invalid"):
+    with pytest.raises(
+        MetadataWorkbookParseError, match="manifest visibility is invalid"
+    ):
         parse_metadata_workbook(content, tenant_id=7)
 
 
 def test_manifest_schema_must_be_the_canonical_dataset_schema() -> None:
-    with pytest.raises(MetadataWorkbookParseError, match="manifest contract is invalid"):
+    with pytest.raises(
+        MetadataWorkbookParseError, match="manifest contract is invalid"
+    ):
         parse_metadata_workbook(_workbook(), tenant_id=7)

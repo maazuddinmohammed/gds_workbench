@@ -200,7 +200,9 @@ class StaticMetadataService:
         raise AssertionError((principal, tenant_id, sheet_codes))
 
 
-def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory() -> None:
+def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_metadata_router(
@@ -251,9 +253,13 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "process_group",
         "process",
     ]
-    assert [item["section"] for item in document["datasets"][:5]] == ["foundational"] * 5
+    assert [item["section"] for item in document["datasets"][:5]] == [
+        "foundational"
+    ] * 5
     assert [item["section"] for item in document["datasets"][5:13]] == ["reference"] * 8
-    assert [item["section"] for item in document["datasets"][13:]] == ["operational"] * 16
+    assert [item["section"] for item in document["datasets"][13:]] == [
+        "operational"
+    ] * 16
     assert all(item["read_only"] for item in document["datasets"][:13])
     assert all(not item["change_set_eligible"] for item in document["datasets"][:13])
     assert all(not item["read_only"] for item in document["datasets"][13:])
@@ -709,7 +715,9 @@ async def test_database_reference_rows_require_selected_tenant_authorization() -
 
 
 @pytest.mark.asyncio
-async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_paging() -> None:
+async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_paging() -> (
+    None
+):
     database = CatalogDatabase()
     repository = CatalogRepository()
     service = DatabaseMetadataService(
@@ -753,7 +761,9 @@ async def test_database_metadata_rows_reauthorize_and_use_query_bound_signed_pag
     ]
 
 
-def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filters() -> None:
+def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filters() -> (
+    None
+):
     service = StaticMetadataService()
     app = FastAPI()
     app.include_router(
@@ -809,7 +819,9 @@ def test_object_catalog_uses_only_normalized_zone_system_and_source_tenant_filte
 
 
 @pytest.mark.asyncio
-async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads() -> None:
+async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads() -> (
+    None
+):
     database = CatalogDatabase()
     repository = CatalogRepository()
     service = DatabaseMetadataService(
@@ -843,7 +855,9 @@ async def test_database_object_catalog_reauthorizes_and_bounds_repository_reads(
     assert database.isolations == [ReadIsolation.REPEATABLE_READ]
 
 
-def test_object_detail_returns_bounded_attributes_without_secret_or_raw_fields() -> None:
+def test_object_detail_returns_bounded_attributes_without_secret_or_raw_fields() -> (
+    None
+):
     app = FastAPI()
     app.include_router(
         create_metadata_router(

@@ -837,8 +837,7 @@ def _validate_active_downstream_dependencies(
             if (
                 source.support_source_type == "object"
                 and source.status in {"active", "needs_review"}
-                and _physical_object_key(source.source_object)
-                not in logical_object_witnesses
+                and _physical_object_key(source.source_object) not in logical_object_witnesses
             ):
                 _active_dependency_invalid(
                     issues,

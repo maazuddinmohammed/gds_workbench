@@ -13,6 +13,9 @@ INSTALL_DATABASE = ROOT / "web_app" / "local" / "install_database.sh"
 
 def test_local_compose_is_loopback_only_and_uses_one_backend_image() -> None:
     compose = COMPOSE.read_text(encoding="utf-8")
+    api = compose[compose.index("  api:\n") : compose.index("  worker:\n")]
+    worker = compose[compose.index("  worker:\n") : compose.index("  frontend:\n")]
+    frontend = compose[compose.index("  frontend:\n") : compose.index("\nvolumes:\n")]
 
     assert "postgres:18.4-bookworm@sha256:882236b897e39051" in compose
     assert '"127.0.0.1:${GDS_LOCAL_API_PORT}:8000"' in compose
@@ -24,10 +27,16 @@ def test_local_compose_is_loopback_only_and_uses_one_backend_image() -> None:
         )
         == 2
     )
+    assert compose.count("build: *backend-build") == 1
     assert 'command: ["gds-workbench-worker"]' in compose
     assert "GDS_WEB_AGENT_EXECUTION_MODE: fake" in compose
     assert "GDS_WEB_DATABRICKS_EXECUTION_MODE: fake" in compose
-    assert "internal: true" in compose
+    assert "local_backend:\n    internal: true" in compose
+    assert "local_edge:\n" in compose
+    assert "- local_backend" in api and "- local_edge" in api
+    assert "<<: *backend-security" in worker and "- local_edge" not in worker
+    assert "- local_edge" in frontend and "- local_backend" not in frontend
+    assert "healthcheck:\n      disable: true" in worker
     assert "cap_drop:" in compose and "- ALL" in compose
 
 
@@ -62,7 +71,9 @@ def test_frontend_proxy_has_api_proxy_spa_fallback_and_health_endpoint() -> None
     assert "listen 8080" in nginx
 
 
-def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> None:
+def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> (
+    None
+):
     initializer = INSTALL_DATABASE.read_text(encoding="utf-8")
     expected = [
         "01_reference.sql",

@@ -101,9 +101,7 @@ def test_model_object_eligibility_routes_active_scoped_zones(
 
     by_zone = {_required_str(row, "zone_code"): row for row in rows}
     assert set(by_zone) == {"bronze", "silver", "gold"}
-    assert {
-        _required_int(row, "object_tenant_id") for row in rows
-    } == {tenant_id}
+    assert {_required_int(row, "object_tenant_id") for row in rows} == {tenant_id}
     assert _required_bool(by_zone["bronze"], "is_bronze_source_eligible") is True
     assert _required_bool(by_zone["bronze"], "is_dimensional_source_eligible") is False
     assert (

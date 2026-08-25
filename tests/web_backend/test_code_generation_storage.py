@@ -114,7 +114,9 @@ async def test_storage_atomically_upserts_exact_artifacts_then_completes_run() -
 
 
 @pytest.mark.asyncio
-async def test_storage_rejects_context_or_candidate_coverage_mismatch_before_write() -> None:
+async def test_storage_rejects_context_or_candidate_coverage_mismatch_before_write() -> (
+    None
+):
     database = StorageDatabase()
     storage = DatabaseGeneratedSqlStorage(
         database=database,
@@ -143,7 +145,9 @@ async def test_storage_rejects_context_or_candidate_coverage_mismatch_before_wri
 
 
 @pytest.mark.asyncio
-async def test_storage_rejects_a_lost_claim_before_any_artifact_or_completion_write() -> None:
+async def test_storage_rejects_a_lost_claim_before_any_artifact_or_completion_write() -> (
+    None
+):
     diagnostic = "claim token=secret; SQL=SELECT raw_provider_output"
     database = StorageDatabase(fence_failure=RuntimeError(diagnostic))
     storage = DatabaseGeneratedSqlStorage(

@@ -6,7 +6,9 @@ from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import SecretStr
 
 from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.workflows.authoring.agent_execution import AgentExecutionRequest
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+)
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
     LangChainCreateAgentAdapter,

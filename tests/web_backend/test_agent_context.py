@@ -6,7 +6,10 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.domain.modeling_records import ModelScopeRecord, ObjectSupportRecord
+from gds_etl_workbench.domain.modeling_records import (
+    ModelScopeRecord,
+    ObjectSupportRecord,
+)
 from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
 
 from gds_workbench_api.capabilities import AgentRunSelection
@@ -25,7 +28,9 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 def _plan(
     *,
-    execution_mode: Literal["one_shot", "tool_assisted", "detailed_coverage"] = "one_shot",
+    execution_mode: Literal[
+        "one_shot", "tool_assisted", "detailed_coverage"
+    ] = "one_shot",
     model_workflow: Literal["conceptual", "dimensional"] = "conceptual",
     selected_object_ids: tuple[int, ...] = (501,),
 ) -> AgentRunPlan:
@@ -379,9 +384,11 @@ class DimensionalContextTransaction(ContextTransaction):
                 }
             ]
 
-        self.attribute_query_filtered = dimensional_filter in compact_query and compact_query.index(
-            dimensional_filter
-        ) < compact_query.index("LIMIT %s")
+        self.attribute_query_filtered = (
+            dimensional_filter in compact_query
+            and compact_query.index(dimensional_filter)
+            < compact_query.index("LIMIT %s")
+        )
         expected_parameters = ([701], 18, "dimensional", 2)
         if self.attribute_query_filtered:
             assert parameters == expected_parameters
@@ -452,8 +459,12 @@ def _snapshot_with_nested_supports(count: int) -> ModelSnapshot:
         )
         for index in range(count)
     )
-    conceptual_object = snapshot.conceptual.objects[0].model_copy(update={"supports": supports})
-    conceptual = snapshot.conceptual.model_copy(update={"objects": (conceptual_object,)})
+    conceptual_object = snapshot.conceptual.objects[0].model_copy(
+        update={"supports": supports}
+    )
+    conceptual = snapshot.conceptual.model_copy(
+        update={"objects": (conceptual_object,)}
+    )
     return snapshot.model_copy(update={"conceptual": conceptual})
 
 
@@ -461,7 +472,9 @@ def _json_keys(value: object) -> set[str]:
     if isinstance(value, dict):
         mapping = cast(dict[str, object], value)
         return set(mapping) | {
-            nested_key for nested in mapping.values() for nested_key in _json_keys(nested)
+            nested_key
+            for nested in mapping.values()
+            for nested_key in _json_keys(nested)
         }
     if isinstance(value, list):
         items = cast(list[object], value)
@@ -470,7 +483,9 @@ def _json_keys(value: object) -> set[str]:
 
 
 @pytest.mark.asyncio
-async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> None:
+async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> (
+    None
+):
     result = await PostgresAgentContextRepository(
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
@@ -484,16 +499,18 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     ).load(ContextTransaction(), tenant_id=7, plan=_plan())
 
     context = result.context
-    assert [item.object.object_name for item in context.selected_objects] == ["customers"]
+    assert [item.object.object_name for item in context.selected_objects] == [
+        "customers"
+    ]
     assert context.selected_objects[0].object.tenant_code == "SOURCE"
     assert [item.attribute_name for item in context.selected_objects[0].attributes] == [
         "customer_id"
     ]
     assert [item.object_name for item in context.profiles] == ["customers"]
     assert len(context.analysis_relationships) == 1
-    assert [item.modeling_assertion_record_key for item in context.assertion.records] == [
-        "customer-meaning"
-    ]
+    assert [
+        item.modeling_assertion_record_key for item in context.assertion.records
+    ] == ["customer-meaning"]
     assert context.applied.conceptual is not None
     assert context.applied.conceptual.objects[0].conceptual_object_status == "inactive"
     assert context.applied.conceptual.objects[0].conceptual_object_is_locked is True
@@ -503,13 +520,17 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     assert result.embedded_context["model_revision"] == 7
     assert "workflow_run_id" not in result.embedded_context
     assert "model_id" not in result.embedded_context
-    assert not {key for key in _json_keys(result.embedded_context) if key.endswith("_id")}
+    assert not {
+        key for key in _json_keys(result.embedded_context) if key.endswith("_id")
+    }
     assert "sensitive physical description" not in repr(result)
     assert "private system prompt" not in repr(result)
 
 
 @pytest.mark.asyncio
-async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes() -> None:
+async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes() -> (
+    None
+):
     transaction = DimensionalContextTransaction()
 
     async def load_dimensional_snapshot(*_: object) -> ModelSnapshot:
@@ -535,7 +556,8 @@ async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes(
     assert transaction.attribute_query_filtered is True
     assert result.context.selected_objects[0].object.zone_code == "silver"
     assert [
-        attribute.attribute_name for attribute in result.context.selected_objects[0].attributes
+        attribute.attribute_name
+        for attribute in result.context.selected_objects[0].attributes
     ] == ["customer_id"]
     assert result.context.selected_objects[0].attributes[0].is_mapped is True
 
@@ -569,7 +591,9 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
 
 
 @pytest.mark.asyncio
-async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> None:
+async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> (
+    None
+):
     result = await PostgresAgentContextRepository(
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
@@ -653,7 +677,9 @@ class UnavailableFenceTransaction(ContextTransaction):
 
 
 @pytest.mark.asyncio
-async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> None:
+async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> (
+    None
+):
     transaction = UnavailableFenceTransaction()
 
     with pytest.raises(WorkbenchError) as captured:
@@ -812,7 +838,9 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
             snapshot_loader=_load_snapshot,
-            limits=generous.model_copy(update={"max_tool_catalog_bytes": expected_bytes - 1}),
+            limits=generous.model_copy(
+                update={"max_tool_catalog_bytes": expected_bytes - 1}
+            ),
         ).load(
             ContextTransaction(),
             tenant_id=7,

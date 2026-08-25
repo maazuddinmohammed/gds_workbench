@@ -15,7 +15,9 @@ def test_workflow_execution_configuration_uses_packaged_defaults() -> None:
     assert configuration.error_poll_interval_seconds == 5
 
 
-def test_workflow_execution_configuration_accepts_bounded_environment_overrides() -> None:
+def test_workflow_execution_configuration_accepts_bounded_environment_overrides() -> (
+    None
+):
     configuration = WorkflowExecutionConfiguration.from_environment(
         {
             "GDS_WEB_WORKFLOW_LEASE_SECONDS": "60",

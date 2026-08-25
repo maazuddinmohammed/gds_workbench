@@ -124,7 +124,10 @@ async def test_repository_renews_and_releases_only_with_the_raw_claim_token() ->
     )
 
     assert lease.workflow_run_id == 701
-    assert lease.workflow_run_claim_expires_time == database.transaction.now + timedelta(seconds=40)
+    assert (
+        lease.workflow_run_claim_expires_time
+        == database.transaction.now + timedelta(seconds=40)
+    )
     assert released is True
     renew_query, renew_parameters = database.transaction.calls[0]
     release_query, release_parameters = database.transaction.calls[1]

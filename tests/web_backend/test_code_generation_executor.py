@@ -8,7 +8,11 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.authorization import (
+    ActorKind,
+    RequestPrincipal,
+    ToolPolicy,
+)
 from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
     InvalidRequestError,
@@ -91,12 +95,16 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
                     system="Generate SQL only.",
-                    instruction=("Use {{stage_context}} and guide {{sql_generation_guide}}."),
+                    instruction=(
+                        "Use {{stage_context}} and guide {{sql_generation_guide}}."
+                    ),
                 ),
                 variables=(
                     PromptVariableDefinition(
                         name="stage_context",
-                        resolver_key=("workflow.code_generation.common.sql_generation.context"),
+                        resolver_key=(
+                            "workflow.code_generation.common.sql_generation.context"
+                        ),
                         data_type="json",
                         is_required=True,
                     ),
@@ -177,7 +185,9 @@ class _Authorizer:
 @dataclass
 class _Database:
     transaction: object = field(default_factory=object)
-    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def read_transaction(
@@ -192,7 +202,9 @@ class _Database:
 @dataclass
 class _PlanRepository:
     plan: AgentRunPlan = field(default_factory=_plan)
-    calls: list[tuple[int, int, int]] = field(default_factory=lambda: list[tuple[int, int, int]]())
+    calls: list[tuple[int, int, int]] = field(
+        default_factory=lambda: list[tuple[int, int, int]]()
+    )
 
     async def load(
         self,
@@ -210,7 +222,9 @@ class _PlanRepository:
 @dataclass
 class _ContextRepository:
     context: CodeGenerationExecutionContext = field(default_factory=_execution_context)
-    calls: list[tuple[int, int]] = field(default_factory=lambda: list[tuple[int, int]]())
+    calls: list[tuple[int, int]] = field(
+        default_factory=lambda: list[tuple[int, int]]()
+    )
 
     async def load(
         self,
@@ -248,7 +262,9 @@ class _Storage:
     state: str = "completed"
     calls: list[dict[str, Any]] = field(default_factory=lambda: list[dict[str, Any]]())
 
-    async def store(self, principal: RequestPrincipal, **values: Any) -> GeneratedSqlStorageResult:
+    async def store(
+        self, principal: RequestPrincipal, **values: Any
+    ) -> GeneratedSqlStorageResult:
         assert principal == _principal()
         self.calls.append(values)
         artifacts = values["artifacts"]
@@ -269,7 +285,9 @@ class _Storage:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
     claim_tokens: list[UUID] = field(default_factory=lambda: list[UUID]())
     fail_error: Exception | None = None
@@ -358,11 +376,19 @@ async def test_executor_uses_frozen_plan_exact_context_and_atomic_storage() -> N
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -405,7 +431,9 @@ async def test_executor_uses_frozen_plan_exact_context_and_atomic_storage() -> N
     assert result.artifact_count == 2
     assert "SELECT" not in repr(result)
     assert lifecycle.failed is None
-    assert [(event.sequence, event.attempt, event.stage) for event in lifecycle.events] == [
+    assert [
+        (event.sequence, event.attempt, event.stage) for event in lifecycle.events
+    ] == [
         (2, 1, "code_generation.sql_generation"),
         (3, 1, "code_generation.sql_generation"),
         (4, 1, "code_generation.sql_generation"),
@@ -430,7 +458,9 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_store() 
     storage = _Storage(state="completed_with_repair")
     lifecycle = _Lifecycle()
     service, _database, _authorizer, storage, lifecycle = _service(
-        executor=_AgentExecutor(responses=[wrong_target, first_complete, second_complete]),
+        executor=_AgentExecutor(
+            responses=[wrong_target, first_complete, second_complete]
+        ),
         storage=storage,
         lifecycle=lifecycle,
     )
@@ -446,11 +476,15 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_store() 
 
     assert result.workflow_run_state == "completed_with_repair"
     assert len(storage.calls) == 1
-    assert any(event.attempt == 2 and event.status == "warning" for event in lifecycle.events)
+    assert any(
+        event.attempt == 2 and event.status == "warning" for event in lifecycle.events
+    )
 
 
 @pytest.mark.asyncio
-async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> None:
+async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> (
+    None
+):
     diagnostic = "token=secret; prompt=raw; SQL=DROP TABLE x; provider trace"
     lifecycle = _Lifecycle()
     storage = _Storage()
@@ -509,7 +543,9 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
 
 
 @pytest.mark.asyncio
-async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> None:
+async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> (
+    None
+):
     lifecycle = _Lifecycle(fail_error=DependencyUnavailableError())
     storage = _Storage()
     service, _database, _authorizer, storage, lifecycle = _service(

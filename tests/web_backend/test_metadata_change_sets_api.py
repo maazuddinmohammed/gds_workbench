@@ -319,13 +319,19 @@ def test_metadata_change_set_routes_derive_identity_and_expose_every_command() -
             content=b"bounded workbook",
         )
 
-    assert [response.status_code for response in (created, staged, fetched, validated)] == [
+    assert [
+        response.status_code for response in (created, staged, fetched, validated)
+    ] == [
         201,
         200,
         200,
         200,
     ]
-    assert [response.status_code for response in (applied, archived, imported)] == [200, 200, 200]
+    assert [response.status_code for response in (applied, archived, imported)] == [
+        200,
+        200,
+        200,
+    ]
     assert [name for name, _value in service.calls] == [
         "create",
         "stage",

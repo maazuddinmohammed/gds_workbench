@@ -616,7 +616,9 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -806,7 +808,9 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
     finally:
         await database.close()
 
-    candidate_keys = {(item.object_schema, item.object_name) for item in candidates.items}
+    candidate_keys = {
+        (item.object_schema, item.object_name) for item in candidates.items
+    }
     assert ("source_demo", "customer") in candidate_keys
     assert ("bronze_demo", "customer") in candidate_keys
     assert ("silver_demo", "customer") in candidate_keys

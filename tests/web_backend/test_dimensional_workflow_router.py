@@ -67,7 +67,9 @@ class _StaticDimensionalWorkflowService:
         expected_model_revision: int,
     ) -> None:
         del principal
-        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
+        self.executions.append(
+            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+        )
 
 
 def _client(service: _StaticDimensionalWorkflowService) -> TestClient:

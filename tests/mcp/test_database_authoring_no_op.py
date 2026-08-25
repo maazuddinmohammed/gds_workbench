@@ -5,9 +5,9 @@ from typing import TYPE_CHECKING
 from uuid import uuid4
 
 import pytest
-from database_test_support import require_row
+from tests.mcp.database_test_support import require_row
 from psycopg.errors import RaiseException
-from test_database_workflow_run_lifecycle import (
+from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     create_workflow_run_parameters,
     seed_workflow_context,
