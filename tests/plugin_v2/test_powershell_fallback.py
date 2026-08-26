@@ -13,10 +13,9 @@ from test_gds_readiness import write_ready_snapshots
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-HELPER = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "scripts" / "gds-local.ps1"
-JAVASCRIPT_HELPER = (
-    REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "scripts" / "gds-local.js"
-)
+SKILL_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "skills" / "gds"
+HELPER = SKILL_ROOT / "scripts" / "gds-local.ps1"
+JAVASCRIPT_HELPER = SKILL_ROOT / "scripts" / "gds-local.js"
 POWERSHELL_DOCKER_IMAGE = os.environ.get("GDS_POWERSHELL_DOCKER_IMAGE")
 POWERSHELL_DOCKER_WRITE_ROOT = os.environ.get("GDS_POWERSHELL_DOCKER_WRITE_ROOT")
 WINDOWS_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")

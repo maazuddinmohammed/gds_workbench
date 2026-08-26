@@ -6,7 +6,8 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds"
-WORKBENCH = PLUGIN_ROOT / "workbench"
+SKILL_ROOT = PLUGIN_ROOT / "skills" / "gds"
+WORKBENCH = SKILL_ROOT / "workbench"
 
 
 def test_workbench_is_classic_modular_and_network_blocked() -> None:
@@ -93,7 +94,10 @@ def test_workbench_shell_uses_a_calm_ledger_hierarchy() -> None:
     styles = (WORKBENCH / "styles.css").read_text()
 
     assert "grid-template-columns: 206px minmax(480px, 1fr) 300px;" in styles
-    assert ".dataset-rail,\n.validation-rail { min-height: 0; background: #fafbfc; }" in styles
+    assert (
+        ".dataset-rail,\n.validation-rail { min-height: 0; background: #fafbfc; }"
+        in styles
+    )
     assert "border-top: 2px solid var(--ink);" in styles
     assert ".statusbar" in styles and "background: var(--ink);" in styles
     assert "box-shadow: none;" in styles
@@ -112,14 +116,21 @@ def test_workbench_keeps_fluid_layout_and_restrained_panel_motion() -> None:
 def test_workbench_keeps_utility_controls_dense_and_fallback_boundaries_clear() -> None:
     styles = (WORKBENCH / "styles.css").read_text()
 
-    assert ".field-label { display: block; margin-bottom: 7px; font-size: 9px;" in styles
-    assert ".dataset-button span:last-child { color: var(--faint); font-size: 8px;" in styles
-    assert ".topbar,\n  .area-tabs { background: #fff; backdrop-filter: none; }" in styles
+    assert (
+        ".field-label { display: block; margin-bottom: 7px; font-size: 9px;" in styles
+    )
+    assert (
+        ".dataset-button span:last-child { color: var(--faint); font-size: 8px;"
+        in styles
+    )
+    assert (
+        ".topbar,\n  .area-tabs { background: #fff; backdrop-filter: none; }" in styles
+    )
     assert ".icon-button,\n  .segmented button,\n  .editor-grid" in styles
 
 
 def test_shell_launcher_is_static_and_syntax_valid() -> None:
-    launcher = PLUGIN_ROOT / "scripts" / "open-workbench.sh"
+    launcher = SKILL_ROOT / "scripts" / "open-workbench.sh"
     result = subprocess.run(
         ["bash", "-n", str(launcher)],
         text=True,
@@ -138,7 +149,7 @@ def test_shell_launcher_is_static_and_syntax_valid() -> None:
 
 
 def test_powershell_launcher_has_no_server_or_runtime_dependency() -> None:
-    source = (PLUGIN_ROOT / "scripts" / "open-workbench.ps1").read_text()
+    source = (SKILL_ROOT / "scripts" / "open-workbench.ps1").read_text()
 
     assert "Start-Process" in source
     assert "index.html" in source

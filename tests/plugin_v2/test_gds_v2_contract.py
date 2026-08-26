@@ -6,20 +6,53 @@ from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds"
+MARKETPLACE = REPOSITORY_ROOT / ".github" / "plugin" / "marketplace.json"
 
 
 def test_plugin_exposes_one_strict_gds_router() -> None:
-    manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
+    manifest = json.loads((PLUGIN_ROOT / "plugin.json").read_text())
+    mcp_manifest = json.loads((PLUGIN_ROOT / "mcp.json").read_text())
+    marketplace = json.loads(MARKETPLACE.read_text())
 
+    assert manifest["$schema"] == (
+        "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
+    )
     assert manifest["name"] == "gds"
-    assert manifest["version"] == "0.1.1"
-    assert manifest["skills"] == "./skills/"
-    assert manifest["mcpServers"] == "./.mcp.json"
-    assert manifest["interface"]["defaultPrompt"] == [
-        "Initialize GDS Workbench.",
-        "Resume my current GDS session.",
-        "Open the local GDS Workbench.",
+    assert manifest["version"] == "0.2.0"
+    assert mcp_manifest == {
+        "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
+        "mcpServers": {
+            "gds-workbench": {
+                "type": "streamable-http",
+                "url": (
+                    "https://gds-test-workbench-hsemb2a9cuacd0gx."
+                    "canadacentral-01.azurewebsites.net/mcp"
+                ),
+            }
+        },
+    }
+    assert not (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").exists()
+    assert not (PLUGIN_ROOT / ".mcp.json").exists()
+    assert not (PLUGIN_ROOT / "skills" / "gds" / "agents").exists()
+    assert marketplace["name"] == "gds-workbench"
+    assert marketplace["owner"] == {"name": "GDS Workbench"}
+    assert marketplace["metadata"] == {
+        "description": "GDS Workbench Agent Plugins marketplace.",
+        "version": "1.0.0",
+    }
+    matching_entries = [
+        entry for entry in marketplace["plugins"] if entry["name"] == manifest["name"]
     ]
+    assert matching_entries == [
+        {
+            "name": manifest["name"],
+            "description": manifest["description"],
+            "version": manifest["version"],
+            "source": "./plugins/v2/gds",
+            "strict": True,
+        }
+    ]
+    assert (REPOSITORY_ROOT / matching_entries[0]["source"]).resolve() == PLUGIN_ROOT
     assert [path.name for path in (PLUGIN_ROOT / "skills").iterdir()] == ["gds"]
 
     skill = (PLUGIN_ROOT / "skills" / "gds" / "SKILL.md").read_text()
@@ -45,7 +78,10 @@ def test_prompt_guide_covers_supported_routes_and_boundaries() -> None:
     assert guide_path.is_file()
     assert "human-readable documentation" in guide
     assert "agent does not load it as skill instructions" in guide
-    assert "codex plugin add gds@<MARKETPLACE>" in guide
+    assert '"chat.plugins.enabled": true' in guide
+    assert "**Chat: Configure Skills**" in guide
+    assert "**MCP: List Servers**" in guide
+    assert "Codex" not in guide
 
     assert all(
         category in guide

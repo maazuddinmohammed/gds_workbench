@@ -1,9 +1,9 @@
 # Local helper
 
-Use one runtime:
+Resolve a bundled helper link to its installed absolute path, then use one runtime:
 
-- macOS/Linux with Node available: `node <plugin>/scripts/gds-local.js <command> ...`
-- Windows PowerShell 5.1/7: `powershell -NoProfile -File <plugin>\scripts\gds-local.ps1 <command> ...`
+- macOS/Linux with Node available: [gds-local.js](../scripts/gds-local.js), then `node <resolved-helper-path> <command> ...`
+- Windows PowerShell 5.1/7: [gds-local.ps1](../scripts/gds-local.ps1), then `powershell -NoProfile -File <resolved-helper-path> <command> ...`
 
 Commands are local-only and emit compact JSON.
 
@@ -69,3 +69,7 @@ Every write needs the last digest; `empty` requires no files. `upsert-batch` acc
 Use one `upsert-batch` per reasoning batch, singular `upsert` for one record, and `copy` for a bounded Snapshot selection. Never write per field. `review` and `validate` return bounded summaries; Workbench provides the same local surface without server controls.
 
 Run `reconcile` after acceptance and fresh server Get. It requires the same task's cached draft; returns `exact`, `contained`, `non_overlap`, or `conflict` plus `cache_bound`; and never writes either side. A false binding requires Stage and a newer `active` Stage revision before local `staged`.
+
+## Local Workbench launcher
+
+After session creation, resolve and run [open-workbench.sh](../scripts/open-workbench.sh) with `bash` on macOS/Linux or [open-workbench.ps1](../scripts/open-workbench.ps1) with PowerShell on Windows. It opens the bundled static Workbench; select the existing session directory.

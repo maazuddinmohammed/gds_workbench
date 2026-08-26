@@ -4,7 +4,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const workspaceModule = require("../../plugins/v2/gds/workbench/workspace.js");
+const workspaceModule = require("../../plugins/v2/gds/skills/gds/workbench/workspace.js");
 
 class MemoryFileHandle {
   constructor(name, text = "") {

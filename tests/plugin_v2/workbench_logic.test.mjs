@@ -3,17 +3,17 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const core = require("../../plugins/v2/gds/workbench/core.js");
+const core = require("../../plugins/v2/gds/skills/gds/workbench/core.js");
 const commonValidation = require(
-  "../../plugins/v2/gds/workbench/validation/common.js",
+  "../../plugins/v2/gds/skills/gds/workbench/validation/common.js",
 );
 const metadataValidation = require(
-  "../../plugins/v2/gds/workbench/validation/metadata.js",
+  "../../plugins/v2/gds/skills/gds/workbench/validation/metadata.js",
 );
 const modelValidation = require(
-  "../../plugins/v2/gds/workbench/validation/model.js",
+  "../../plugins/v2/gds/skills/gds/workbench/validation/model.js",
 );
-const model = require("../../plugins/v2/gds/workbench/model.js");
+const model = require("../../plugins/v2/gds/skills/gds/workbench/model.js");
 
 const dataset = {
   name: "source_object",

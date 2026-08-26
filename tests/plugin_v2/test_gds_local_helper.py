@@ -7,7 +7,16 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-HELPER = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "scripts" / "gds-local.js"
+HELPER = (
+    REPOSITORY_ROOT
+    / "plugins"
+    / "v2"
+    / "gds"
+    / "skills"
+    / "gds"
+    / "scripts"
+    / "gds-local.js"
+)
 
 
 def run_helper(*arguments: str) -> subprocess.CompletedProcess[str]:

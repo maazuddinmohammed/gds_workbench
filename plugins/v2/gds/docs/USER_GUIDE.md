@@ -13,18 +13,39 @@ V2 combines four parts:
 
 ## Installation and distribution
 
-Administrators build and review an endpoint-specific V2 ZIP, then publish it through the approved marketplace. End users install and verify it with:
+V2 follows Agent Plugins 1.0. The plugin is the `gds/` directory whose root contains `plugin.json`, `mcp.json`, and `skills/gds/SKILL.md`. The ZIP is only a release transport, not the plugin root.
 
-```text
-codex plugin add gds@<MARKETPLACE>
-codex plugin list
+For local VS Code testing, extract the ZIP and register the inner `gds/` directory in VS Code `settings.json`:
+
+```json
+{
+  "chat.plugins.enabled": true,
+  "chat.pluginLocations": {
+    "/absolute/path/to/gds": true
+  }
+}
 ```
 
-Start a new Codex task and use the read-only Tenant smoke prompt below. Do not edit the bundled MCP endpoint or share credentials or temporary download URLs.
+Reload VS Code, then verify each portable component:
+
+1. Open the Extensions view and search `@agentPlugins`, or run **Chat: Open Customizations** and open **Plugins**. Confirm that `gds` is installed and enabled.
+2. Run **Chat: Configure Skills** and confirm that the `gds` skill appears.
+3. Run **MCP: List Servers** and confirm that `gds-workbench` appears. Start it if stopped. VS Code should prompt for Microsoft Entra sign-in through the server's OAuth discovery flow; the plugin contains no credential or token.
+4. Start a new agent chat and run the read-only Tenant smoke prompt below.
+
+Agent Plugins 1.0 defines the package format, not publication. This repository's `.github/plugin/marketplace.json` publishes the nested `plugins/v2/gds` source. After the repository is available to users, add its `owner/repository` value to `chat.plugins.marketplaces`, browse `@agentPlugins`, and install `gds`. A local clone can be registered as a `file:///absolute/path/to/repository` marketplace.
+
+```json
+{
+  "chat.plugins.marketplaces": ["owner/repository"]
+}
+```
+
+For **Chat: Install Plugin From Source**, use a dedicated Git repository whose root is this `gds/` directory; this monorepository's root is not the plugin root. Do not publish credentials, temporary download URLs, or an environment-specific package without review.
 
 ## Start here
 
-After installing the plugin and connecting/authenticating its configured MCP server, start a new Codex task. A safe connection check is:
+After installing the plugin and completing the Microsoft Entra prompt for its configured MCP server, a safe connection check is:
 
 > List the GDS Tenants I can access. Do not make any changes.
 

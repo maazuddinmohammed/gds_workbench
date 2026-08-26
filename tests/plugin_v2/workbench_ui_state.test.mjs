@@ -3,7 +3,7 @@ import { createRequire } from "node:module";
 import test from "node:test";
 
 const require = createRequire(import.meta.url);
-const uiState = require("../../plugins/v2/gds/workbench/ui-state.js");
+const uiState = require("../../plugins/v2/gds/skills/gds/workbench/ui-state.js");
 
 test("dirty drafts block navigation and validation until saved or discarded", () => {
   assert.throws(

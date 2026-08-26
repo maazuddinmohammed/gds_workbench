@@ -1,0 +1,16 @@
+{
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
+  "name": "gds",
+  "version": "0.2.0",
+  "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
+  "author": {
+    "name": "GDS Workbench"
+  },
+  "keywords": [
+    "data-governance",
+    "data-modeling",
+    "databricks",
+    "metadata",
+    "mcp"
+  ]
+}

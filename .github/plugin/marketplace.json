@@ -1,0 +1,19 @@
+{
+  "name": "gds-workbench",
+  "owner": {
+    "name": "GDS Workbench"
+  },
+  "metadata": {
+    "description": "GDS Workbench Agent Plugins marketplace.",
+    "version": "1.0.0"
+  },
+  "plugins": [
+    {
+      "name": "gds",
+      "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
+      "version": "0.2.0",
+      "source": "./plugins/v2/gds",
+      "strict": true
+    }
+  ]
+}

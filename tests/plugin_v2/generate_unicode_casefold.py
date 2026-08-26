@@ -7,7 +7,7 @@ from pathlib import Path
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-WORKBENCH = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "workbench"
+WORKBENCH = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "skills" / "gds" / "workbench"
 
 
 def main() -> None:
