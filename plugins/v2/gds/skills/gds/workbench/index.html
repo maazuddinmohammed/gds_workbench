@@ -55,18 +55,41 @@
         </div>
 
         <div class="record-filter-row">
-          <input id="record-filter" class="input" type="search" aria-label="Filter visible records" placeholder="Filter visible records" disabled>
-          <div class="segmented" aria-label="Preview source">
-            <button data-preview="effective" class="is-active" aria-pressed="true" disabled>Effective</button>
-            <button data-preview="snapshot" aria-pressed="false" disabled>Snapshot</button>
+          <input id="record-filter" class="input" type="search" aria-label="Filter visible records" placeholder="Filter results" disabled>
+          <div class="view-controls">
+            <div class="workspace-view-tabs" aria-label="Dataset view" role="tablist">
+              <button data-view="results" class="is-active" role="tab" aria-selected="true" aria-controls="results-view" disabled>Results</button>
+              <button data-view="json" role="tab" aria-selected="false" aria-controls="json-view" disabled>JSON</button>
+            </div>
+            <div class="segmented" aria-label="Preview source">
+              <button data-preview="effective" class="is-active" aria-pressed="true" disabled>Effective</button>
+              <button data-preview="snapshot" aria-pressed="false" disabled>Snapshot</button>
+            </div>
           </div>
         </div>
 
-        <div class="editor-grid">
-          <section class="pane pane-preview">
-            <div class="pane-heading">
+        <section id="results-view" class="results-pane" role="tabpanel">
+          <div class="pane-heading results-heading">
+            <div>
               <span id="preview-label">Effective records</span>
               <span id="preview-count" class="muted">0 records</span>
+            </div>
+            <button id="add-row-button" class="button" disabled>Add row</button>
+          </div>
+          <div class="results-table-scroll">
+            <table id="results-table" aria-label="Normalized dataset results" hidden>
+              <thead id="results-head"></thead>
+              <tbody id="results-body"></tbody>
+            </table>
+            <p id="results-empty" class="empty-copy">Choose a dataset to see normalized results.</p>
+          </div>
+        </section>
+
+        <div id="json-view" class="editor-grid is-hidden" role="tabpanel" hidden>
+          <section class="pane pane-preview">
+            <div class="pane-heading">
+              <span>Visible records</span>
+              <span class="muted">Read-only JSON</span>
             </div>
             <pre id="record-preview" tabindex="0" aria-label="Read-only Snapshot or effective record preview">[]</pre>
           </section>
@@ -122,6 +145,25 @@
         <div class="dialog-actions">
           <button value="cancel" class="button">Cancel</button>
           <button id="confirm-override" value="confirm" class="button button-danger">Accept failures</button>
+        </div>
+      </form>
+    </dialog>
+
+    <dialog id="row-editor-dialog" class="row-editor-dialog" aria-labelledby="row-editor-title">
+      <form id="row-editor-form" class="dialog-form row-editor-form">
+        <div class="row-editor-heading">
+          <div>
+            <span id="row-editor-eyebrow" class="eyebrow">Effective record</span>
+            <h2 id="row-editor-title">Row details</h2>
+            <p id="row-editor-key" class="row-editor-key"></p>
+          </div>
+          <button id="close-row-editor" type="button" class="dialog-close" aria-label="Close row editor">×</button>
+        </div>
+        <div id="row-editor-fields" class="row-editor-fields"></div>
+        <p id="row-editor-message" class="row-editor-message" role="alert"></p>
+        <div class="dialog-actions">
+          <button id="cancel-row-editor" type="button" class="button">Cancel</button>
+          <button id="save-row-editor" type="submit" class="button button-primary">Update local draft</button>
         </div>
       </form>
     </dialog>

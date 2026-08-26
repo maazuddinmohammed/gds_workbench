@@ -1,7 +1,19 @@
 from __future__ import annotations
 
+import json
 import subprocess
 from pathlib import Path
+
+from gds_etl_workbench.tools.snapshots.metadata.archive import build_dataset_document
+from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+    DATASETS as METADATA_DATASETS,
+)
+from gds_etl_workbench.tools.snapshots.model.contracts import (
+    DATASETS as MODEL_DATASETS,
+)
+from gds_etl_workbench.tools.snapshots.model.contracts import (
+    build_model_dataset_schema,
+)
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -47,6 +59,65 @@ def test_workbench_exposes_explicit_refresh_validate_and_override() -> None:
     assert 'data-area="metadata"' in html
     assert 'data-area="model"' in html
     assert "Save writes local JSON only." in html
+
+
+def test_workbench_exposes_results_table_and_json_fallback() -> None:
+    html = (WORKBENCH / "index.html").read_text()
+
+    assert 'data-view="results"' in html
+    assert 'data-view="json"' in html
+    assert 'id="results-table"' in html
+    assert 'aria-label="Normalized dataset results"' in html
+    assert 'id="row-editor-dialog"' in html
+
+
+def test_workbench_results_use_visible_spreadsheet_grid_lines() -> None:
+    styles = (WORKBENCH / "styles.css").read_text()
+
+    assert "border-right: 1px solid var(--grid-line);" in styles
+    assert "border-bottom: 1px solid var(--grid-line);" in styles
+    assert "border: 1px solid var(--grid-line-strong);" in styles
+
+
+def test_add_row_form_covers_every_snapshot_dataset_schema(tmp_path: Path) -> None:
+    datasets = [
+        {
+            "area": "metadata",
+            "name": definition.name,
+            "section": definition.section.value,
+            "canonical_key": list(definition.canonical_key),
+            "change_set_eligible": definition.change_set_eligible,
+            "schema": build_dataset_document(definition).schema,
+        }
+        for definition in METADATA_DATASETS
+    ]
+    datasets.extend(
+        {
+            "area": "model",
+            "name": definition.name,
+            "section": definition.section,
+            "canonical_key": list(definition.canonical_key),
+            "change_set_eligible": definition.change_set_eligible,
+            "schema": build_model_dataset_schema(definition),
+        }
+        for definition in MODEL_DATASETS
+    )
+    fixture = tmp_path / "workbench-dataset-schemas.json"
+    fixture.write_text(json.dumps(datasets))
+    result = subprocess.run(
+        [
+            "node",
+            str(REPOSITORY_ROOT / "tests/plugin_v2/workbench_all_forms.mjs"),
+            str(fixture),
+        ],
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+    assert result.returncode == 0, result.stdout + result.stderr
 
 
 def test_workbench_labels_dynamic_state_and_supports_narrow_screens() -> None:
