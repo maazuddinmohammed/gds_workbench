@@ -34,7 +34,7 @@ You need:
 6. The current deployment ZIPs:
 
    ```text
-   mcp_server/dist/gds-mcp-appservice.zip
+   mcp_server/dist/gds-mcp-appservice-0.2.0-role-fix.zip
    plugins/v2/dist/gds-agent-plugin-0.2.0.zip
    ```
 
@@ -344,7 +344,7 @@ Upload/select the ZIP in Cloud Shell, then run:
 az webapp deploy \
   --resource-group "<RESOURCE_GROUP>" \
   --name "<WEB_APP>" \
-  --src-path "gds-mcp-appservice.zip" \
+  --src-path "gds-mcp-appservice-0.2.0-role-fix.zip" \
   --type zip \
   --restart true \
   --track-status true
@@ -353,7 +353,7 @@ az webapp deploy \
 If running locally from the repository root, use:
 
 ```text
-mcp_server/dist/gds-mcp-appservice.zip
+mcp_server/dist/gds-mcp-appservice-0.2.0-role-fix.zip
 ```
 
 ### Step 13: verify the deployment
@@ -658,7 +658,7 @@ az webapp config set \
    az webapp deploy \
      --resource-group "$GDS_RG" \
      --name "$GDS_WEB_APP" \
-     --src-path "mcp_server/dist/gds-mcp-appservice.zip" \
+     --src-path "mcp_server/dist/gds-mcp-appservice-0.2.0-role-fix.zip" \
      --type zip \
      --restart true \
      --track-status true

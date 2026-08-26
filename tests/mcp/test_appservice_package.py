@@ -10,7 +10,7 @@ from pathlib import Path
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
 SOURCE_ROOT = BUILD_SCRIPT.parent
-CHECKED_IN_ARTIFACT = SOURCE_ROOT / "dist" / "gds-mcp-appservice.zip"
+CHECKED_IN_ARTIFACT = SOURCE_ROOT / "dist" / "gds-mcp-appservice-0.2.0-role-fix.zip"
 PROJECT_FILE = BUILD_SCRIPT.with_name("pyproject.toml")
 LOCK_FILE = BUILD_SCRIPT.with_name("uv.lock")
 

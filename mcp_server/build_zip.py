@@ -76,7 +76,9 @@ def main() -> None:
     parser.add_argument(
         "--output",
         type=Path,
-        default=Path(__file__).resolve().parent / "dist" / "gds-mcp-appservice.zip",
+        default=(
+            Path(__file__).resolve().parent / "dist" / "gds-mcp-appservice-0.2.0-role-fix.zip"
+        ),
     )
     args = parser.parse_args()
     artifact = build_zip(args.output)
