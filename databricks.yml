@@ -18,6 +18,7 @@ sync:
     - IMPLEMENTATION_PLAN.md
     - artifacts/**
     - database/**
+    - databricks_notebooks/**
     - databricks.yml
     - docs/**
     - load_and_merge_scripts/**
@@ -57,7 +58,7 @@ variables:
   databricks_environment_code_secret_key:
     description: Secret key containing the registered GDS environment code.
   model_endpoint_name:
-    description: Ready Databricks Model Serving endpoint name.
+    description: Ready same-workspace Databricks Model Serving endpoint name.
 
 resources:
   apps:
@@ -98,7 +99,7 @@ resources:
             key: ${var.databricks_environment_code_secret_key}
             permission: READ
         - name: agent-model-endpoint
-          description: Primary agent model endpoint.
+          description: Direct Databricks agent model endpoint.
           serving_endpoint:
             name: ${var.model_endpoint_name}
             permission: CAN_QUERY

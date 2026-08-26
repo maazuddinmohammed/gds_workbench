@@ -18,6 +18,8 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
     assert "GDS_WEB_STATIC_DIR" in app_config
     assert "value: web_app/frontend/dist" in app_config
     assert "GDS_WEB_AGENT_EXECUTION_MODE" in app_config
+    assert "GDS_WEB_AGENT_PROVIDER" in app_config
+    assert "value: databricks" in app_config
     assert "GDS_WEB_DATABRICKS_MODEL_ENDPOINT" in app_config
     assert "valueFrom: agent-model-endpoint" in app_config
     assert "GDS_WEB_FOUNDRY" not in app_config
@@ -27,6 +29,7 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
         "GDS_WEB_ENVIRONMENT",
         "GDS_WEB_STATIC_DIR",
         "GDS_WEB_AGENT_EXECUTION_MODE",
+        "GDS_WEB_AGENT_PROVIDER",
         "GDS_WEB_DATABRICKS_EXECUTION_MODE",
         "GDS_WEB_DATABASE_DSN",
         "GDS_WEB_CURSOR_SIGNING_KEY",

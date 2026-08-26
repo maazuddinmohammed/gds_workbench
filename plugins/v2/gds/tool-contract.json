@@ -1,6 +1,6 @@
 {
   "schema_version": "1.0",
   "mcp_server_version": "0.2.0",
-  "tool_count": 57,
-  "tool_contract_sha256": "cd051405c87b4203a1aa7f341d3751991bc3737cfc84d1d99fe2687cf8caac8b"
+  "tool_count": 60,
+  "tool_contract_sha256": "17b5cd8fc5464242fe9a411fe3d985a7b119c371e1da2fee7446c21182e4fe6b"
 }

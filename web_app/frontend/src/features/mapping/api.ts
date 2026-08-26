@@ -221,7 +221,14 @@ export type MappingApi = MappingTransport
   & Pick<ModelScopeApi, "listModelScope">
   & Pick<
     WorkflowsApi,
-    "readAgentCapabilities" | "createWorkflowRun" | "executeMappingRun"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeMappingRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >;
 
 export function createMappingApi(request: HttpRequest): MappingTransport {

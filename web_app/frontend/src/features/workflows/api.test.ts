@@ -39,7 +39,7 @@ describe("Workflow HTTP adapter", () => {
     const command = {
       expected_model_revision: 18,
       model_workflow: "analysis" as const,
-      workflow_execution_mode: "tool_assisted" as const,
+      workflow_execution_mode: "one_shot" as const,
       selected_object_ids: [501],
       requested_batch_id: null,
       agent: {
@@ -54,7 +54,11 @@ describe("Workflow HTTP adapter", () => {
     };
 
     await api.createWorkflowRun(7, 18, command, idempotencyKey);
+    await api.readWorkflowDraftReview(7, 18, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa");
+    await api.applyWorkflowDraft(7, 18, 1047, 18, 2, "d".repeat(64), idempotencyKey);
     await api.executeProfilingRun(7, 18, 1048, 18);
+    await api.executeAnalysisInferenceRun(7, 18, 1054, 18);
+    await api.executeAnalysisValidationRun(7, 18, 1055, 18);
     await api.executeConceptualRun(7, 18, 1049, "one_shot", 18);
     await api.executeLogicalRun(7, 18, 1050, "tool_assisted", 18);
     await api.executeDimensionalRun(7, 18, 1051, "detailed_coverage", 18);
@@ -63,7 +67,11 @@ describe("Workflow HTTP adapter", () => {
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
       "/api/v1/tenants/7/models/18/runs",
+      "/api/v1/tenants/7/models/18/change-sets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa",
+      "/api/v1/tenants/7/models/18/runs/1047/draft/apply",
       "/api/v1/tenants/7/models/18/profiling/runs/1048/execute",
+      "/api/v1/tenants/7/models/18/analysis/inference-runs/1054/execute",
+      "/api/v1/tenants/7/models/18/analysis/validation-runs/1055/execute",
       "/api/v1/tenants/7/models/18/conceptual/runs/1049/execute",
       "/api/v1/tenants/7/models/18/logical/runs/1050/execute",
       "/api/v1/tenants/7/models/18/dimensional/runs/1051/execute",
@@ -81,26 +89,52 @@ describe("Workflow HTTP adapter", () => {
       },
       body: JSON.stringify(command),
     });
-    expect(fetcher.mock.calls[1]?.[1]?.body).toBe(JSON.stringify({
-      expected_model_revision: 18,
-    }));
-    expect(fetcher.mock.calls[2]?.[1]?.body).toBe(JSON.stringify({
-      execution_mode: "one_shot",
-      expected_model_revision: 18,
-    }));
+    expect(fetcher.mock.calls[1]?.[1]).toEqual({
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: { accept: "application/json" },
+    });
+    expect(fetcher.mock.calls[2]?.[1]).toEqual({
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "Idempotency-Key": idempotencyKey,
+      },
+      body: JSON.stringify({
+        expected_model_revision: 18,
+        expected_draft_revision: 2,
+        expected_candidate_digest: "d".repeat(64),
+      }),
+    });
     expect(fetcher.mock.calls[3]?.[1]?.body).toBe(JSON.stringify({
-      execution_mode: "tool_assisted",
       expected_model_revision: 18,
     }));
     expect(fetcher.mock.calls[4]?.[1]?.body).toBe(JSON.stringify({
-      execution_mode: "detailed_coverage",
       expected_model_revision: 18,
     }));
     expect(fetcher.mock.calls[5]?.[1]?.body).toBe(JSON.stringify({
-      execution_mode: "tool_assisted",
       expected_model_revision: 18,
     }));
     expect(fetcher.mock.calls[6]?.[1]?.body).toBe(JSON.stringify({
+      execution_mode: "one_shot",
+      expected_model_revision: 18,
+    }));
+    expect(fetcher.mock.calls[7]?.[1]?.body).toBe(JSON.stringify({
+      execution_mode: "tool_assisted",
+      expected_model_revision: 18,
+    }));
+    expect(fetcher.mock.calls[8]?.[1]?.body).toBe(JSON.stringify({
+      execution_mode: "detailed_coverage",
+      expected_model_revision: 18,
+    }));
+    expect(fetcher.mock.calls[9]?.[1]?.body).toBe(JSON.stringify({
+      execution_mode: "tool_assisted",
+      expected_model_revision: 18,
+    }));
+    expect(fetcher.mock.calls[10]?.[1]?.body).toBe(JSON.stringify({
       expected_model_revision: 18,
     }));
   });

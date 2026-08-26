@@ -95,6 +95,23 @@ BEGIN
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'application'
            AND column_record.table_name = 'workflow_run'
+           AND column_record.column_name = 'tenant_id'
+           AND column_record.data_type = 'bigint'
+           AND column_record.is_nullable = 'NO'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'application.workflow_run'::REGCLASS
+           AND constraint_record.conname = 'fk_workflow_run_model'
+           AND constraint_record.contype = 'f'
+           AND pg_catalog.pg_get_constraintdef(constraint_record.oid) =
+               'FOREIGN KEY (model_id, tenant_id) REFERENCES model.model(model_id, tenant_id)'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'application'
+           AND column_record.table_name = 'workflow_run'
            AND column_record.column_name = 'workflow_run_recovery_count'
            AND column_record.data_type = 'integer'
            AND column_record.is_nullable = 'NO'
@@ -126,6 +143,30 @@ BEGIN
            AND index_relation.relname =
                'ix_workflow_run_claim_eligibility'
            AND index_record.indisvalid
+           AND pg_catalog.pg_get_expr(
+                   index_record.indpred,
+                   index_record.indrelid
+               ) = '((workflow_run_state)::text = ''running''::text)'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_index AS index_record
+          JOIN pg_catalog.pg_class AS relation_record
+            ON relation_record.oid = index_record.indrelid
+          JOIN pg_catalog.pg_class AS index_relation
+            ON index_relation.oid = index_record.indexrelid
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = relation_record.relnamespace
+         WHERE namespace_record.nspname = 'application'
+           AND relation_record.relname = 'workflow_run'
+           AND index_relation.relname = 'uq_workflow_run_running_tenant'
+           AND index_record.indisunique
+           AND index_record.indisvalid
+           AND index_record.indnkeyatts = 1
+           AND pg_catalog.pg_get_indexdef(
+                   index_relation.oid,
+                   1,
+                   TRUE
+               ) = 'tenant_id'
            AND pg_catalog.pg_get_expr(
                    index_record.indpred,
                    index_record.indrelid

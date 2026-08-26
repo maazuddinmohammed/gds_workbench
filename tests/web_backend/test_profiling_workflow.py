@@ -14,6 +14,7 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
+    TenantWorkflowConflictError,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
@@ -435,6 +436,7 @@ def test_execute_endpoint_does_not_duplicate_an_already_started_run() -> None:
 class _DatabaseTransaction:
     calls: list[tuple[str, tuple[Any, ...]]] = field(default_factory=lambda: [])
     claim_assertion_fails: bool = False
+    start_error: str | None = None
 
     async def fetch_one(
         self,
@@ -443,6 +445,8 @@ class _DatabaseTransaction:
     ) -> dict[str, Any] | None:
         self.calls.append((query, parameters))
         if "application.start_workflow_run" in query:
+            if self.start_error is not None:
+                raise RuntimeError(self.start_error)
             return {
                 "changed": True,
                 "workflow_run_id": 1048,
@@ -579,6 +583,25 @@ async def test_database_repository_starts_run_without_leaking_database_fields() 
         "workflow_run_state": "running",
         "model_revision": 4,
     }
+
+
+@pytest.mark.asyncio
+async def test_database_repository_maps_tenant_workflow_conflict() -> None:
+    database = _Database()
+    database.transaction.start_error = "tenant_workflow_conflict"
+    repository = DatabaseProfilingWorkflowRepository(
+        database=database,
+        environment_code="DEV",
+    )
+
+    with pytest.raises(TenantWorkflowConflictError):
+        await repository.start(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=4,
+        )
 
 
 @pytest.mark.asyncio

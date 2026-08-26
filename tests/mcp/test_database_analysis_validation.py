@@ -138,10 +138,13 @@ def _analysis_execution_parameters(
 
 def _seed_analysis_validation(
     postgres_database: DisposablePostgres,
+    *,
+    start: bool = True,
 ) -> AnalysisValidationSeed:
     execution = _seed_profiling_execution(
         postgres_database,
         workflow="analysis",
+        start=start,
     )
     with postgres_database.connect_owner() as connection:
         rows = connection.execute(
@@ -578,7 +581,7 @@ def test_analysis_validation_context_requires_exact_run_entra_identity(
 def test_analysis_validation_context_rejects_one_unselected_endpoint(
     postgres_database: DisposablePostgres,
 ) -> None:
-    seed = _seed_analysis_validation(postgres_database)
+    seed = _seed_analysis_validation(postgres_database, start=False)
     one_object_run_id = _create_run(
         postgres_database,
         seed.execution.context,
@@ -1190,12 +1193,14 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
         postgres_database,
         context,
         workflow="profiling",
+        start=False,
     )
     with postgres_database.connect_owner() as connection:
         agentic_run_id = require_row(
             connection.execute(
                 """
                 INSERT INTO application.workflow_run (
+                    tenant_id,
                     model_id,
                     model_revision,
                     model_workflow,
@@ -1211,10 +1216,10 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                     selected_scope_digest,
                     selected_scope_count,
                     workflow_run_state,
-                    correlation_id,
-                    started_time
+                    correlation_id
                 )
-                SELECT source_run.model_id,
+                SELECT source_run.tenant_id,
+                       source_run.model_id,
                        source_run.model_revision,
                        'analysis',
                        'one_shot',
@@ -1228,9 +1233,8 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                        target_model.default_validation_retry_count,
                        source_run.selected_scope_digest,
                        source_run.selected_scope_count,
-                       'running',
-                       %s,
-                       CURRENT_TIMESTAMP
+                       'queued',
+                       %s
                   FROM application.workflow_run AS source_run
                   JOIN model.model AS target_model
                     ON target_model.model_id = source_run.model_id
@@ -1258,7 +1262,7 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
             (agentic_run_id, seed.execution.workflow_run_id),
         )
 
-    for run_id in (queued_run_id, profiling_run_id, agentic_run_id):
+    def assert_rejected(run_id: int) -> None:
         with (
             psycopg.connect(
                 postgres_database.web_runtime_dsn(),
@@ -1279,6 +1283,76 @@ def test_analysis_validation_persistence_requires_running_deterministic_analysis
                     workflow_run_id=run_id,
                 ),
             ).fetchone()
+
+    assert_rejected(queued_run_id)
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            SELECT *
+              FROM application.complete_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                seed.execution.workflow_run_id,
+                context.model_revision,
+            ),
+        ).fetchone()
+        connection.execute(
+            """
+            SELECT *
+              FROM application.start_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                profiling_run_id,
+                context.model_revision,
+            ),
+        ).fetchone()
+
+    assert_rejected(profiling_run_id)
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            SELECT *
+              FROM application.complete_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                profiling_run_id,
+                context.model_revision,
+            ),
+        ).fetchone()
+        connection.execute(
+            """
+            SELECT *
+              FROM application.start_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                agentic_run_id,
+                context.model_revision,
+            ),
+        ).fetchone()
+
+    assert_rejected(agentic_run_id)
 
 
 def test_analysis_validation_payload_is_exact_strict_and_atomic(

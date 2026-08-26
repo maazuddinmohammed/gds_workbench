@@ -4,18 +4,22 @@
     {
       "code": "langchain_create_agent",
       "name": "Create Agent",
-      "provider_codes": ["databricks"]
+      "provider_codes": ["databricks", "microsoft_foundry"]
     },
     {
       "code": "openai_agents_sdk",
       "name": "OpenAI Agents SDK",
-      "provider_codes": ["databricks"]
+      "provider_codes": ["databricks", "microsoft_foundry"]
     }
   ],
   "providers": [
     {
       "code": "databricks",
       "name": "Databricks Model Serving"
+    },
+    {
+      "code": "microsoft_foundry",
+      "name": "Microsoft Foundry"
     }
   ],
   "models": [
@@ -23,6 +27,13 @@
       "code": "databricks-primary",
       "name": "Databricks Primary Model",
       "provider_code": "databricks",
+      "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
+      "reasoning_effort_codes": ["low", "medium", "high"]
+    },
+    {
+      "code": "foundry-primary",
+      "name": "Foundry Primary Model",
+      "provider_code": "microsoft_foundry",
       "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
       "reasoning_effort_codes": ["low", "medium", "high"]
     }

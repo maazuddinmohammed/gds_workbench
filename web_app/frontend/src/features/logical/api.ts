@@ -292,7 +292,14 @@ export interface LogicalTransport {
 export type LogicalApi = LogicalTransport
   & Pick<
     WorkflowsApi,
-    "createWorkflowRun" | "executeLogicalRun" | "readAgentCapabilities"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeLogicalRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >
   & Pick<ModelScopeApi, "listModelScope">;
 

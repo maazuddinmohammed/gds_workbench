@@ -3546,6 +3546,7 @@ REVOKE ALL ON FUNCTION application.transition_sql_generation_guide_version(
 
 CREATE TABLE application.workflow_run (
     workflow_run_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    tenant_id BIGINT NOT NULL,
     model_id BIGINT NOT NULL,
     model_revision BIGINT NOT NULL,
     model_workflow VARCHAR(30) NOT NULL,
@@ -3596,8 +3597,8 @@ CREATE TABLE application.workflow_run (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_workflow_run_model FOREIGN KEY (model_id)
-        REFERENCES model.model (model_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_model FOREIGN KEY (model_id, tenant_id)
+        REFERENCES model.model (model_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_actor FOREIGN KEY (actor_principal_id)
         REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_actor_identity FOREIGN KEY (
@@ -3910,6 +3911,9 @@ CREATE INDEX ix_workflow_run_claim_eligibility
         workflow_run_recovery_count
     )
     WHERE workflow_run_state = 'running';
+CREATE UNIQUE INDEX uq_workflow_run_running_tenant
+    ON application.workflow_run (tenant_id)
+    WHERE workflow_run_state = 'running';
 
 CREATE TABLE application.workflow_run_object_selection (
     workflow_run_object_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -4036,6 +4040,7 @@ BEGIN
     END IF;
 
     IF ROW(
+        NEW.tenant_id,
         NEW.model_id,
         NEW.model_revision,
         NEW.model_workflow,
@@ -4072,6 +4077,7 @@ BEGIN
         NEW.created_time,
         NEW.created_by
     ) IS DISTINCT FROM ROW(
+        OLD.tenant_id,
         OLD.model_id,
         OLD.model_revision,
         OLD.model_workflow,
@@ -5331,6 +5337,7 @@ BEGIN
     END IF;
 
     INSERT INTO application.workflow_run AS run (
+        tenant_id,
         model_id,
         model_revision,
         model_workflow,
@@ -5365,6 +5372,7 @@ BEGIN
         correlation_id,
         workflow_run_request_digest
     ) VALUES (
+        v_model.tenant_id,
         p_model_id,
         v_model.model_revision,
         p_model_workflow,
@@ -5549,6 +5557,7 @@ DECLARE
     v_run RECORD;
     v_decision RECORD;
     v_started_time TIMESTAMPTZ;
+    v_constraint_name TEXT;
 BEGIN
     SELECT run.workflow_run_id,
            run.model_id,
@@ -5599,13 +5608,31 @@ BEGIN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM application.workflow_run AS active_run
+         WHERE active_run.tenant_id = v_run.tenant_id
+           AND active_run.workflow_run_state = 'running'
+           AND active_run.workflow_run_id <> v_run.workflow_run_id
+    ) THEN
+        RAISE EXCEPTION 'tenant_workflow_conflict';
+    END IF;
+
     v_started_time := clock_timestamp();
-    UPDATE application.workflow_run AS run
-       SET workflow_run_state = 'running',
-           started_time = v_started_time,
-           updated_time = v_started_time,
-           updated_by = CURRENT_USER
-     WHERE run.workflow_run_id = p_workflow_run_id;
+    BEGIN
+        UPDATE application.workflow_run AS run
+           SET workflow_run_state = 'running',
+               started_time = v_started_time,
+               updated_time = v_started_time,
+               updated_by = CURRENT_USER
+         WHERE run.workflow_run_id = p_workflow_run_id;
+    EXCEPTION WHEN unique_violation THEN
+        GET STACKED DIAGNOSTICS v_constraint_name = CONSTRAINT_NAME;
+        IF v_constraint_name = 'uq_workflow_run_running_tenant' THEN
+            RAISE EXCEPTION 'tenant_workflow_conflict';
+        END IF;
+        RAISE;
+    END;
 
     INSERT INTO model.model_event_log (
         model_id,

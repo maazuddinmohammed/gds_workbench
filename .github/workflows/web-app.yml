@@ -6,6 +6,7 @@ on:
       - ".github/workflows/web-app.yml"
       - "app.yaml"
       - "databricks.yml"
+      - "databricks_notebooks/**"
       - "mcp_server/**"
       - "package-lock.json"
       - "package.json"
@@ -19,6 +20,7 @@ on:
       - ".github/workflows/web-app.yml"
       - "app.yaml"
       - "databricks.yml"
+      - "databricks_notebooks/**"
       - "mcp_server/**"
       - "package-lock.json"
       - "package.json"
@@ -52,12 +54,22 @@ jobs:
         run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
       - name: Test deployment packaging
         run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
+      - name: Test source-import notebooks
+        run: uv run --project web_app/backend python -m pytest databricks_notebooks/tests
       - name: Check formatting
-        run: uv run --project web_app/backend ruff format --check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+        working-directory: web_app/backend
+        run: uv run ruff format --check gds_workbench_api
       - name: Check lint
-        run: uv run --project web_app/backend ruff check web_app/backend/gds_workbench_api tests/web_backend tests/web_packaging
+        working-directory: web_app/backend
+        run: uv run ruff check gds_workbench_api
+      - name: Check notebook lint and format
+        run: |
+          uv run --project web_app/backend ruff check --config databricks_notebooks/ruff.toml databricks_notebooks
+          uv run --project web_app/backend ruff format --check --config databricks_notebooks/ruff.toml databricks_notebooks
       - name: Check types
         run: uv run --project web_app/backend pyright --project web_app/backend
+      - name: Check notebook types
+        run: uv run --project web_app/backend pyright databricks_notebooks/gds_workbench_notebooks
 
   frontend:
     runs-on: ubuntu-latest

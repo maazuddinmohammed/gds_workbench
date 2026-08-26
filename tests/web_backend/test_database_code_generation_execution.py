@@ -671,6 +671,7 @@ def _seed_code_generation(
             connection.execute(
                 """
                 INSERT INTO application.workflow_run (
+                    tenant_id,
                     model_id,
                     model_revision,
                     model_workflow,
@@ -697,7 +698,7 @@ def _seed_code_generation(
                     workflow_run_claim_heartbeat_time,
                     workflow_run_claim_expires_time
                 ) VALUES (
-                    %s, %s, 'code_generation', %s, %s, 'openai_agents_sdk',
+                    %s, %s, %s, 'code_generation', %s, %s, 'openai_agents_sdk',
                     'databricks', 'test-model', 'medium', 8, 1,
                     'logical_entity', 'selected_targets', %s, %s, %s,
                     %s, %s, 'running', %s, CURRENT_TIMESTAMP,
@@ -707,6 +708,7 @@ def _seed_code_generation(
                 RETURNING workflow_run_id
                 """,
                 (
+                    tenant_id,
                     model_id,
                     model_revision,
                     principal_id,

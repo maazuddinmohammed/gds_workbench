@@ -18,6 +18,7 @@ describe("stylesheet Module manifest", () => {
         '@import "./styles/model-workspace-overrides.css";',
         '@import "./styles/code-generation.css";',
         '@import "./styles/prompts.css";',
+        '@import "./styles/workflow-runs.css";',
         "",
       ].join("\n"),
     );

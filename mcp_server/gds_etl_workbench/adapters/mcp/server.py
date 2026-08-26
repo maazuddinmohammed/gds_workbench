@@ -44,10 +44,16 @@ from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_to
 from gds_etl_workbench.tools.modeling.assertions import (
     register_modeling_assertion_tools,
 )
+from gds_etl_workbench.tools.modeling.code_generation_authoring import (
+    register_code_generation_authoring_tools,
+)
 from gds_etl_workbench.tools.modeling.conceptual import register_conceptual_tools
 from gds_etl_workbench.tools.modeling.dimensional import register_dimensional_tools
 from gds_etl_workbench.tools.modeling.logical import register_logical_tools
 from gds_etl_workbench.tools.modeling.mapping import register_mapping_tools
+from gds_etl_workbench.tools.modeling.mapping_authoring import (
+    register_mapping_authoring_tools,
+)
 from gds_etl_workbench.tools.modeling.model_details import register_get_model_tool
 from gds_etl_workbench.tools.modeling.model_scope import register_get_model_scope_tool
 from gds_etl_workbench.tools.modeling.profiling_analysis import (
@@ -279,6 +285,20 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
+    )
+    register_mapping_authoring_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    register_code_generation_authoring_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
     )
     register_execute_databricks_sql_tool(
         server,

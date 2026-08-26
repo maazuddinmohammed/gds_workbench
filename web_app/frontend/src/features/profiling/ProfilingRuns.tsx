@@ -10,7 +10,12 @@ import type {
   WorkflowRunFilterState,
   WorkflowRunRecord,
 } from "../workflows/api";
-import { RunStateBadge, isActiveRun } from "../workflows/presentation";
+import {
+  isActiveRun,
+  isTenantWorkflowConflict,
+  RunStateBadge,
+  TENANT_WORKFLOW_CONFLICT_MESSAGE,
+} from "../workflows/presentation";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import {
   DrawerHeader,
@@ -221,7 +226,11 @@ export function ProfilingRunDrawer({
             </div>
           ) : null}
           {executeMutation.isError ? (
-            <p className="inline-error" role="alert">The queued run could not be started.</p>
+            <p className="inline-error" role="alert">
+              {isTenantWorkflowConflict(executeMutation.error)
+                ? TENANT_WORKFLOW_CONFLICT_MESSAGE
+                : "The queued run could not be started."}
+            </p>
           ) : null}
           {run.failure_message ? (
             <div className="run-failure" role="alert">

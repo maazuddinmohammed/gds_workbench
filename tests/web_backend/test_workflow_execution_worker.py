@@ -126,6 +126,10 @@ async def test_worker_returns_idle_without_dispatch_when_no_run_is_claimable() -
     assert dispatcher.claims == []
 
 
+def test_worker_does_not_expose_direct_exact_claim_execution() -> None:
+    assert not hasattr(WorkflowExecutionWorker, "execute_claim")
+
+
 @pytest.mark.asyncio
 async def test_worker_renews_a_live_claim_until_execution_completes() -> None:
     claim = _claim()

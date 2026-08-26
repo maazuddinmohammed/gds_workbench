@@ -92,6 +92,7 @@ class StaticWorkflowRunService:
             failure_message=None,
             model_change_set_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
             model_change_set_status="validated",
+            draft_revision=2,
             candidate_digest="c" * 64,
             validated_at=datetime(2026, 8, 24, 14, 0, 30, tzinfo=UTC),
         )
@@ -169,6 +170,7 @@ def test_run_detail_and_incremental_events_are_separate_bounded_reads() -> None:
         "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
     )
     assert detail.json()["model_change_set_status"] == "validated"
+    assert detail.json()["draft_revision"] == 2
     assert events.status_code == 200
     assert events.json() == {
         "items": [

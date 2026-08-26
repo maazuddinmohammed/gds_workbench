@@ -16,6 +16,7 @@ import {
   LogicalSubmodelsLedger,
 } from "./LogicalLedgers";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
 type LogicalView = "entities" | "attributes" | "relationships" | "submodels";
 
@@ -33,6 +34,7 @@ export function LogicalScreen({
   const queryClient = useQueryClient();
   const [view, setView] = useState<LogicalView>("entities");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [entityFilters, setEntityFilters] = useState<LogicalEntityFilters>({});
   const [attributeFilters, setAttributeFilters] = useState<LogicalAttributeFilters>({});
   const [relationshipFilters, setRelationshipFilters] = useState<LogicalRelationshipFilters>({});
@@ -109,6 +111,17 @@ export function LogicalScreen({
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
+  const invalidateLedgers = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({ queryKey: ["logical-submodels", tenantId, model.model_id] }),
+      queryClient.invalidateQueries({
+        queryKey: logicalQueryKeys.submodelOptions(tenantId, model.model_id),
+      }),
+    ]);
+  };
 
   return (
     <div className="logical-page page-enter">
@@ -151,6 +164,16 @@ export function LogicalScreen({
           </button>
         </div>
       </header>
+      <WorkflowRunMonitor
+        api={api}
+        tenantId={tenantId}
+        modelId={model.model_id}
+        modelRevision={model.model_revision}
+        workflow="logical"
+        hasTenantLock={hasTenantLock}
+        focusRunId={recentRunId}
+        onApplied={invalidateLedgers}
+      />
       {view === "entities" ? (
         <LogicalEntitiesLedger
           tenantId={tenantId}
@@ -215,15 +238,9 @@ export function LogicalScreen({
             model.model_revision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
-          onCreated={async () => {
+          onCreated={async (workflowRunId) => {
+            setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({ queryKey: ["logical-entities", tenantId, model.model_id] }),
-              queryClient.invalidateQueries({ queryKey: ["logical-attributes", tenantId, model.model_id] }),
-              queryClient.invalidateQueries({ queryKey: ["logical-relationships", tenantId, model.model_id] }),
-              queryClient.invalidateQueries({ queryKey: ["logical-submodels", tenantId, model.model_id] }),
-              queryClient.invalidateQueries({
-                queryKey: logicalQueryKeys.submodelOptions(tenantId, model.model_id),
-              }),
               queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

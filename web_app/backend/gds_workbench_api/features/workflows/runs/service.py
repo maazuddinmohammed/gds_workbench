@@ -76,6 +76,7 @@ SELECT run.workflow_run_id,
        run.failure_message,
        change_set.model_change_set_id,
        change_set.model_change_set_status,
+       change_set.draft_revision,
        change_set.candidate_digest,
        change_set.validated_time AS validated_at
   FROM application.workflow_run AS run

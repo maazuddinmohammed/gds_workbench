@@ -1,5 +1,6 @@
 """Validated, non-secret agent SDK/provider/model capability registry."""
 
+from collections.abc import Collection
 from importlib.resources import files
 from pathlib import Path
 from typing import Literal, Self
@@ -154,6 +155,41 @@ def load_default_agent_capabilities() -> AgentCapabilityRegistry:
     if len(raw) > _MAX_CONFIGURATION_BYTES:
         raise ValueError("agent capability configuration is too large")
     return AgentCapabilityRegistry.model_validate_json(raw, strict=True)
+
+
+def select_agent_provider_capabilities(
+    registry: AgentCapabilityRegistry,
+    *,
+    provider_codes: Collection[str],
+) -> AgentCapabilityRegistry:
+    """Expose only providers physically configured for this runtime."""
+    selected = frozenset(provider_codes)
+    if not selected:
+        raise ValueError("At least one Agent provider must be selected")
+    providers = tuple(provider for provider in registry.providers if provider.code in selected)
+    if frozenset(provider.code for provider in providers) != selected:
+        raise ValueError("A selected Agent provider is not registered")
+    models = tuple(model for model in registry.models if model.provider_code in selected)
+    sdks = tuple(
+        sdk.model_copy(
+            update={
+                "provider_codes": tuple(
+                    provider_code
+                    for provider_code in sdk.provider_codes
+                    if provider_code in selected
+                )
+            }
+        )
+        for sdk in registry.sdks
+        if any(provider_code in selected for provider_code in sdk.provider_codes)
+    )
+    return registry.model_copy(
+        update={
+            "sdks": sdks,
+            "providers": providers,
+            "models": models,
+        }
+    )
 
 
 def _unique_codes(

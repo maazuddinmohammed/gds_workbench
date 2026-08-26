@@ -12,6 +12,7 @@ from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     AgentRunSelection,
     load_default_agent_capabilities,
+    select_agent_provider_capabilities,
 )
 from gds_workbench_api.main import create_app
 
@@ -24,6 +25,10 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
         "langchain_create_agent",
         "openai_agents_sdk",
     }
+    assert {provider.code for provider in registry.providers} == {
+        "databricks",
+        "microsoft_foundry",
+    }
     selection = AgentRunSelection(
         sdk_code="langchain_create_agent",
         provider_code="databricks",
@@ -35,6 +40,14 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
     registry.validate_selection(selection)
     registry.validate_selection(
         selection.model_copy(update={"sdk_code": "openai_agents_sdk"})
+    )
+    registry.validate_selection(
+        selection.model_copy(
+            update={
+                "provider_code": "microsoft_foundry",
+                "model_code": "foundry-primary",
+            }
+        )
     )
 
 
@@ -65,6 +78,20 @@ def test_invalid_capability_cross_references_fail_before_startup(
 
     with pytest.raises(ValidationError):
         AgentCapabilityRegistry.from_path(invalid_path)
+
+
+def test_runtime_capabilities_include_only_the_configured_provider() -> None:
+    registry = select_agent_provider_capabilities(
+        load_default_agent_capabilities(),
+        provider_codes={"microsoft_foundry"},
+    )
+
+    assert [provider.code for provider in registry.providers] == ["microsoft_foundry"]
+    assert [model.code for model in registry.models] == ["foundry-primary"]
+    assert all(
+        sdk.provider_codes == ("microsoft_foundry",)
+        for sdk in registry.sdks
+    )
 
 
 def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:

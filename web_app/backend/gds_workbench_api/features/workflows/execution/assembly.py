@@ -48,6 +48,9 @@ from gds_workbench_api.features.profiling import (
     DatabaseProfilingWorkflowRepository,
     ProfilingWorkflowOrchestrator,
 )
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentExecutionRouter,
+)
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
 )
@@ -107,6 +110,7 @@ class RegisteredMappingProfileResolver:
 
 @dataclass(frozen=True, slots=True)
 class WorkflowRuntimeServices:
+    agent_executor: AgentExecutionRouter
     profiling: ProfilingWorkflowOrchestrator
     analysis_inference: AnalysisInferenceWorkflow
     analysis_validation: AnalysisValidationWorkflow
@@ -115,6 +119,9 @@ class WorkflowRuntimeServices:
     dimensional: DimensionalWorkflow
     mapping: MappingWorkflow
     code_generation: CodeGenerationWorkflow
+
+    async def close(self) -> None:
+        await self.agent_executor.close()
 
     def execution_services(self) -> WorkflowExecutionServices:
         return WorkflowExecutionServices(
@@ -204,6 +211,7 @@ def create_workflow_runtime_services(
     )
 
     return WorkflowRuntimeServices(
+        agent_executor=agent_executor,
         profiling=ProfilingWorkflowOrchestrator(
             repository=DatabaseProfilingWorkflowRepository(
                 database=database,

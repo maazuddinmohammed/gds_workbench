@@ -72,6 +72,7 @@ class WorkflowRunDetail(WorkflowRunLedgerRecord):
     failure_message: str | None = Field(default=None, max_length=2000)
     model_change_set_id: UUID | None = None
     model_change_set_status: ModelChangeSetStatus | None = None
+    draft_revision: int | None = Field(default=None, gt=0)
     candidate_digest: str | None = Field(
         default=None,
         pattern=r"^[0-9a-f]{64}$",

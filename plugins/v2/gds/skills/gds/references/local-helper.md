@@ -1,18 +1,20 @@
 # Local helper
 
-Use exactly one runtime:
+Use one runtime:
 
 - macOS/Linux with Node available: `node <plugin>/scripts/gds-local.js <command> ...`
 - Windows PowerShell 5.1/7: `powershell -NoProfile -File <plugin>\scripts\gds-local.ps1 <command> ...`
 
-PowerShell needs no Node, Python, npm, or module. Use one runtime per operation. Commands are local-only and emit one compact JSON object.
+Commands are local-only and emit compact JSON.
 
 ## Session and queue
 
 ```text
 session-init --root <working-directory> --tenant <TENANT_CODE>
 status --session <session>
-readiness --session <session> --target <workflow-target-slug>
+readiness --session <session> --target <workflow-target-slug> [--proof-units <target/source-pair-JSON-array>]
+mapping-proof --session <session> --target logical-mapping|dimensional-mapping --proof <server-proof-JSON>
+generator-proof --session <session> --target logical-code|dimensional-code --proof <server-proof-JSON>
 draft-cache --session <session> --area metadata|model --id <UUID> --revision <n> --status active|validated
 draft-cache --session <session> --area metadata|model --clear true --expected-id <UUID> --expected-revision <n>
 snapshot-refresh --session <session> --area metadata|model
@@ -25,13 +27,15 @@ task-restore --session <session> --task <ID> --expected-digest <digest>
 
 `task-state staged` requires acceptance and draft cache bound to the same task/digest. `applied` also requires validated cache. Invoke them only after matching server success; Apply marks that area stale.
 
-Use `status` once on resume. It returns Model, current/resume plan, queue, cache, staleness, Snapshot/pending summaries, and stashes without Snapshot rows. `resume` is the first waiting task without mutation. `task-plan` uses an expected digest.
+Use `status` once on resume. It returns state without rows; `resume` is the first waiting task. `task-plan` uses an expected digest.
 
-After governed Create/resume, Stage, or Validate, cache its exact ID, revision, and status. ID/task cannot change. A changed accepted digest binds only with a newer `active` Stage revision; Validate may then advance status/revision. Clear after confirmed Archive/expiry using cached ID/revision. Apply clears it. Cache is not server proof.
+After governed Create/resume, Stage, or Validate, cache its ID, revision, and status. ID/task cannot change. A changed digest requires a newer active Stage revision. Apply clears the cache.
 
-`task-stash` isolates current Metadata/Model pending files, invalidates acceptance, and waits. It requires valid nonempty JSON, exact digest, and no cached draft. `task-restore` requires that task, no current task, fresh Snapshot, empty live directory, and exact stash digest. Then review, validate, and accept again. Never orphan pending work with `task-state`.
+`task-stash` isolates pending files, invalidates acceptance, and waits. `task-restore` requires that task, fresh Snapshot, empty live directory, and exact digest. Then review, validate, and accept again.
 
-Run `readiness` once before planning a Workflow Target. Slugs are `logical-build`, `silver-registration`, `logical-mapping`, `logical-code`, `dimensional-build`, `gold-registration`, `dimensional-mapping`, and `dimensional-code`. It returns Snapshot inputs, counts, grouped blockers, at most ten examples, and a Resolution Prompt—never rows. `ready` proves local prerequisites, not the plan or human checkpoint.
+Run `readiness` before planning. Targets are `logical-build`, `silver-registration`, `logical-mapping`, `logical-code`, `dimensional-build`, `gold-registration`, `dimensional-mapping`, and `dimensional-code`. It returns inputs, counts, grouped blockers, ten examples at most, and a Resolution Prompt—never rows. `ready` proves only local prerequisites.
+
+Proof commands accept only their matching MCP proof, bind it to the current Model Snapshot, and store no payload. A replaced Snapshot invalidates it. Rerun proof-gated readiness with `--proof-units '[{"target_object_id":101,"source_system_id":201}]'`. Selected lists every requested unit; Full lists every eligible unit. Every listed pair needs a current proof; never omit one.
 
 `snapshot-refresh` requires a different Snapshot ID and, for Model, higher revision. It retires applied files only when every nonempty pending record exactly matches the signed replacement; otherwise files and staleness remain.
 
@@ -64,4 +68,4 @@ Every write needs the last digest; `empty` requires no files. `upsert-batch` acc
 
 Use one `upsert-batch` per reasoning batch, singular `upsert` for one record, and `copy` for a bounded Snapshot selection. Never write per field. `review` and `validate` return bounded summaries; Workbench provides the same local surface without server controls.
 
-Run `reconcile` after acceptance and fresh server Get. It requires the same task's cached draft; returns `exact`, `contained`, `non_overlap`, or `conflict` plus `cache_bound`; and never writes either side. A false binding requires Stage and a newer cache revision before local `staged`.
+Run `reconcile` after acceptance and fresh server Get. It requires the same task's cached draft; returns `exact`, `contained`, `non_overlap`, or `conflict` plus `cache_bound`; and never writes either side. A false binding requires Stage and a newer `active` Stage revision before local `staged`.

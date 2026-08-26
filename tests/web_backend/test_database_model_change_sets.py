@@ -629,6 +629,7 @@ def _make_scope_object_dimensional_eligible(
 def _create_running_conceptual_run(
     database: DisposablePostgresFixture,
     *,
+    tenant_id: int,
     model_id: int,
     entra_tenant_id: UUID,
     entra_object_id: UUID,
@@ -663,6 +664,7 @@ def _create_running_conceptual_run(
             connection.execute(
                 """
                 INSERT INTO application.workflow_run (
+                    tenant_id,
                     model_id,
                     model_revision,
                     model_workflow,
@@ -681,13 +683,14 @@ def _create_running_conceptual_run(
                     correlation_id,
                     started_time
                 ) VALUES (
-                    %s, 1, 'conceptual', 'one_shot', %s, %s,
+                    %s, %s, 1, 'conceptual', 'one_shot', %s, %s,
                     'openai_agents_sdk', 'databricks', 'test-model',
                     'medium', 8, 1, %s, 1, 'running', %s, CURRENT_TIMESTAMP
                 )
                 RETURNING workflow_run_id
                 """,
                 (
+                    tenant_id,
                     model_id,
                     actor["principal_id"],
                     actor["entra_principal_identity_id"],
@@ -1521,6 +1524,7 @@ async def test_workflow_handoff_rolls_back_invalid_output_then_replays_one_bound
     ) = _seed_profile_model(web_postgres_database)
     workflow_run_id = _create_running_conceptual_run(
         web_postgres_database,
+        tenant_id=tenant_id,
         model_id=model_id,
         entra_tenant_id=entra_tenant_id,
         entra_object_id=entra_object_id,
@@ -2130,6 +2134,7 @@ async def test_conceptual_executor_completes_with_one_validated_unapplied_draft(
     assert detail.workflow_run_state == "completed"
     assert detail.model_change_set_id == result.model_change_set_id
     assert detail.model_change_set_status == "validated"
+    assert detail.draft_revision == result.draft_revision
     assert detail.candidate_digest == result.candidate_digest
     assert detail.validated_at == result.validated_at
     assert detail.failure_code is None
@@ -2881,6 +2886,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             connection.execute(
                 """
                 INSERT INTO application.workflow_run (
+                    tenant_id,
                     model_id,
                     model_revision,
                     model_workflow,
@@ -2894,12 +2900,13 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
                     started_time,
                     completed_time
                 ) VALUES (
-                    %s, 1, 'analysis', NULL, %s, %s, %s, 1,
+                    %s, %s, 1, 'analysis', NULL, %s, %s, %s, 1,
                     'completed', %s, CURRENT_TIMESTAMP, CURRENT_TIMESTAMP
                 )
                 RETURNING workflow_run_id
                 """,
                 (
+                    tenant_id,
                     model_id,
                     principal_id,
                     principal_identity_id,

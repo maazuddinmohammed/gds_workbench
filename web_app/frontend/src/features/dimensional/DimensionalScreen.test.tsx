@@ -239,6 +239,9 @@ function dimensionalFetchStub(options: {
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(agentCapabilitiesPayload);
     }
+    if (url === "/api/v1/tenants/7/models/18/runs?workflow=dimensional&page_size=5") {
+      return jsonResponse({ items: [], next_cursor: null });
+    }
     if (url === "/api/v1/tenants/7/models/18/runs") {
       return jsonResponse({
         created: true,

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from dataclasses import dataclass, field, replace
+from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import TYPE_CHECKING
 from uuid import uuid4
@@ -692,8 +692,7 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
             ),
         )
 
-    multi_run_id = _create_run(postgres_database, seed.context)
-    multi_seed = replace(seed, workflow_run_id=multi_run_id)
+    multi_seed = seed
     with psycopg.connect(
         postgres_database.web_runtime_dsn(),
         row_factory=dict_row,

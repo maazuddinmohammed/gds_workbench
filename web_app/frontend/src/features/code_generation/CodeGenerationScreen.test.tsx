@@ -1,4 +1,4 @@
-import { render, screen, within } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -172,6 +172,57 @@ describe("Code Generation journey", () => {
     expect(JSON.stringify(createCalls(fetcher))).not.toContain("claim_token");
   });
 
+  it("retries a conflicted Code Generation start without creating another run", async () => {
+    const fetcher = codeGenerationFetchStub({ executeConflictOnce: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Objects" });
+
+    await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
+    await user.click(screen.getByRole("button", { name: "Generate selected" }));
+    const submit = await screen.findByRole("button", { name: "Regenerate stored SQL" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Another Workflow Run is already active for this Tenant. "
+      + "This run remains queued; retry after the active run finishes.",
+    );
+    await user.click(screen.getByRole("button", { name: "Retry start" }));
+
+    await waitFor(() => {
+      expect(createCalls(fetcher)).toHaveLength(1);
+      expect(fetcher.mock.calls.filter(([input, init]) => (
+        String(input) === "/api/v1/tenants/7/models/18/code-generation/runs/1151/execute"
+        && init?.method === "POST"
+      ))).toHaveLength(2);
+    });
+  });
+
+  it("cannot dismiss the dialog while a created run is still starting", async () => {
+    const fetcher = codeGenerationFetchStub({ executePending: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Objects" });
+
+    await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
+    await user.click(screen.getByRole("button", { name: "Generate selected" }));
+    await user.click(await screen.findByRole("button", { name: "Regenerate stored SQL" }));
+
+    const dialog = await screen.findByRole("dialog", { name: "Regenerate stored SQL" });
+    expect(await within(dialog).findByRole("button", { name: "Starting…" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Close Regenerate stored SQL" })).toBeDisabled();
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(dialog).toBeVisible();
+  });
+
   it("keeps empty, denied, error, and revision-drift states explicit and redacted", async () => {
     const empty = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ empty: true })),
@@ -217,7 +268,10 @@ function codeGenerationFetchStub(options: {
   modelRevision?: number;
   hasLock?: boolean;
   role?: string;
+  executeConflictOnce?: boolean;
+  executePending?: boolean;
 } = {}) {
+  let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
@@ -261,6 +315,11 @@ function codeGenerationFetchStub(options: {
       }, 201);
     }
     if (url === "/api/v1/tenants/7/models/18/code-generation/runs/1151/execute") {
+      executeAttempts += 1;
+      if (options.executePending) return new Promise<Response>(() => undefined);
+      if (options.executeConflictOnce && executeAttempts === 1) {
+        return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
+      }
       return jsonResponse({
         changed: true,
         workflow_run_id: 1151,

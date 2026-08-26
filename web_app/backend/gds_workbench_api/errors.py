@@ -40,7 +40,12 @@ async def workbench_error_response(
         status_code = 503
     elif (
         "conflict" in error.code
-        or error.code in {"tenant_locked", "tenant_lock_required"}
+        or error.code
+        in {
+            "tenant_locked",
+            "tenant_lock_required",
+            "tenant_workflow_conflict",
+        }
         or error.code.endswith("_not_active")
     ):
         status_code = 409

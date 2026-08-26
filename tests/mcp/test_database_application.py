@@ -251,16 +251,17 @@ def _create_agentic_workflow_run(
     workflow_execution_mode: str,
 ) -> int:
     with postgres_database.connect_owner() as connection:
-        model_revision = require_row(
+        model = require_row(
             connection.execute(
-                "SELECT model_revision FROM model.model WHERE model_id = %s",
+                "SELECT tenant_id, model_revision FROM model.model WHERE model_id = %s",
                 (model_id,),
             ).fetchone()
-        )["model_revision"]
+        )
         return require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -276,15 +277,16 @@ def _create_agentic_workflow_run(
                 selected_scope_count,
                 correlation_id
             ) VALUES (
-                %s, %s, %s, %s, %s, 'openai_agents_sdk',
+                %s, %s, %s, %s, %s, %s, 'openai_agents_sdk',
                 'microsoft_foundry', 'model-1', 'medium', 12, 2,
                 %s, 1, %s
             )
             RETURNING workflow_run_id
             """,
                 (
+                    model["tenant_id"],
                     model_id,
-                    model_revision,
+                    model["model_revision"],
                     model_workflow,
                     workflow_execution_mode,
                     principal_id,
@@ -823,16 +825,19 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
     digest = "a" * 64
 
     with postgres_database.connect_owner() as connection:
-        model_revision = require_row(
+        model = require_row(
             connection.execute(
-                "SELECT model_revision FROM model.model WHERE model_id = %s",
+                "SELECT tenant_id, model_revision FROM model.model WHERE model_id = %s",
                 (model_id,),
             ).fetchone()
-        )["model_revision"]
+        )
+        tenant_id = model["tenant_id"]
+        model_revision = model["model_revision"]
         deterministic_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -841,16 +846,17 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 selected_scope_digest,
                 selected_scope_count,
                 correlation_id
-            ) VALUES (%s, %s, 'profiling', NULL, %s, %s, 1, %s)
+            ) VALUES (%s, %s, %s, 'profiling', NULL, %s, %s, 1, %s)
             RETURNING workflow_run_id
             """,
-                (model_id, model_revision, principal_id, digest, uuid4()),
+                (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
             ).fetchone()
         )["workflow_run_id"]
         agentic_id = require_row(
             connection.execute(
                 """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -866,13 +872,13 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 selected_scope_count,
                 correlation_id
             ) VALUES (
-                %s, %s, 'conceptual', 'one_shot', %s,
+                %s, %s, %s, 'conceptual', 'one_shot', %s,
                 'openai_agents_sdk', 'microsoft_foundry', 'model-1',
                 'medium', 50, 5, %s, 1, %s
             )
             RETURNING workflow_run_id
             """,
-                (model_id, model_revision, principal_id, digest, uuid4()),
+                (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
             ).fetchone()
         )["workflow_run_id"]
 
@@ -887,6 +893,7 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
         connection.execute(
             """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -895,9 +902,9 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 selected_scope_digest,
                 selected_scope_count,
                 correlation_id
-            ) VALUES (%s, %s, 'logical', 'automatic', %s, %s, 1, %s)
+            ) VALUES (%s, %s, %s, 'logical', 'automatic', %s, %s, 1, %s)
             """,
-            (model_id, model_revision, principal_id, digest, uuid4()),
+            (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
         )
 
     with (
@@ -908,6 +915,7 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
         connection.execute(
             """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -916,9 +924,9 @@ def test_workflow_run_requires_only_agentic_runs_to_have_agent_configuration(
                 selected_scope_digest,
                 selected_scope_count,
                 correlation_id
-            ) VALUES (%s, %s, 'mapping', 'tool_assisted', %s, %s, 1, %s)
+            ) VALUES (%s, %s, %s, 'mapping', 'tool_assisted', %s, %s, 1, %s)
             """,
-            (model_id, model_revision, principal_id, digest, uuid4()),
+            (tenant_id, model_id, model_revision, principal_id, digest, uuid4()),
         )
 
 

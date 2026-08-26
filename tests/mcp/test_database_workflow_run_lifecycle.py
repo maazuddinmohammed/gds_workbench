@@ -1473,6 +1473,7 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
         connection.execute(
             """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -1491,6 +1492,7 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
             ) VALUES (
                 %s,
                 %s,
+                %s,
                 'mapping',
                 'one_shot',
                 %s,
@@ -1507,6 +1509,7 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
             )
             """,
             (
+                context.tenant_id,
                 context.model_id,
                 context.model_revision,
                 context.principal_id,

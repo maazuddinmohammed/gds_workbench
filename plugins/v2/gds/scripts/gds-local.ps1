@@ -34,6 +34,24 @@ $script:ReadinessStatusFields = @{
     mapping_object = 'object_mapping_status'
     mapping_attribute = 'attribute_mapping_status'
 }
+$script:MappingTargetEntityTypes = @{
+    'logical-mapping' = 'logical_entity'
+    'dimensional-mapping' = 'dimensional_entity'
+}
+$script:MappingProofFields = @(
+    'contract', 'model_id', 'model_revision', 'modeled_entity_type',
+    'target_object_id', 'source_system_id', 'profile_schema_digest',
+    'context_digest', 'candidate_digest', 'change_count', 'record_count'
+)
+$script:GeneratorTargetEntityTypes = @{
+    'logical-code' = 'logical_entity'
+    'dimensional-code' = 'dimensional_entity'
+}
+$script:GeneratorProofFields = @(
+    'contract', 'model_id', 'model_revision', 'modeled_entity_type',
+    'target_object_id', 'source_system_id', 'profile_schema_digest',
+    'mapping_context_digest', 'document_digest'
+)
 $script:Transitions = @{
     queued     = @('todo', 'doing', 'waiting', 'cancelled')
     todo       = @('doing', 'waiting', 'cancelled')
@@ -1744,6 +1762,295 @@ function Get-ReadinessRows($Snapshot, [string]$DatasetName) {
     return @($active)
 }
 
+function Test-ExactObjectFields($Value, [array]$Fields) {
+    if ($null -eq $Value -or $Value -is [Array] -or $Value -is [string] -or
+        $Value -is [ValueType]) { return $false }
+    $actual = @(Get-PropertyNames $Value | Sort-Object -CaseSensitive)
+    $expected = @($Fields | Sort-Object -CaseSensitive)
+    return (ConvertTo-GdsJson $actual) -ceq (ConvertTo-GdsJson $expected)
+}
+
+function Get-ProofUnits([hashtable]$Options) {
+    if (-not $Options.ContainsKey('proof-units')) { return ,@() }
+    try { $parsed = ConvertFrom-GdsJson ([string]$Options['proof-units']) }
+    catch { Fail '--proof-units must be a JSON array of exact target/source pairs.' }
+    if ($parsed -isnot [Array]) {
+        Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+    }
+    $units = @($parsed)
+    if ($units.Count -lt 1 -or $units.Count -gt 256) {
+        Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+    }
+    $keys = @{}
+    foreach ($unit in $units) {
+        $targetObjectId = Get-Property $unit 'target_object_id'
+        $sourceSystemId = Get-Property $unit 'source_system_id'
+        if (-not (Test-ExactObjectFields $unit @('target_object_id', 'source_system_id')) -or
+            -not (Test-SafeJsonInteger $targetObjectId $false) -or
+            -not (Test-SafeJsonInteger $sourceSystemId $false)) {
+            Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+        }
+        $key = ConvertTo-GdsJson @($targetObjectId, $sourceSystemId)
+        if ($keys.ContainsKey($key)) {
+            Fail '--proof-units must contain unique exact target/source pairs.'
+        }
+        $keys[$key] = $true
+    }
+    return ,@($units)
+}
+
+function Assert-MappingMaterializationProof($Value, [string]$Target) {
+    if (-not $script:MappingTargetEntityTypes.ContainsKey($Target)) {
+        Fail '--target must be logical-mapping or dimensional-mapping.'
+    }
+    $entityType = $script:MappingTargetEntityTypes[$Target]
+    $profileDigest = Get-Property $Value 'profile_schema_digest'
+    $contextDigest = Get-Property $Value 'context_digest'
+    $candidateDigest = Get-Property $Value 'candidate_digest'
+    $changeCount = Get-Property $Value 'change_count'
+    $recordCount = Get-Property $Value 'record_count'
+    if (-not (Test-ExactObjectFields $Value $script:MappingProofFields) -or
+        (Get-Property $Value 'contract') -cne 'mapping-authoring@1.0' -or
+        (Get-Property $Value 'modeled_entity_type') -cne $entityType -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'model_id') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'model_revision') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'target_object_id') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'source_system_id') $false) -or
+        $profileDigest -isnot [string] -or $profileDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        $contextDigest -isnot [string] -or $contextDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        $candidateDigest -isnot [string] -or $candidateDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        -not (Test-SafeJsonInteger $changeCount $true) -or [double]$changeCount -gt 2 -or
+        -not (Test-SafeJsonInteger $recordCount $true) -or [double]$recordCount -gt 10000) {
+        Fail '--proof must be an exact Mapping materialization proof for the selected target.'
+    }
+    return ,$Value
+}
+
+function Get-MappingProofPath([string]$Session) {
+    return Join-Path (Join-Path $Session 'tasks') '.mapping-proofs.json'
+}
+
+function Read-MappingProofs([string]$Session) {
+    $proofPath = Get-MappingProofPath $Session
+    if (-not (Test-Path -LiteralPath $proofPath -PathType Leaf)) { return @() }
+    $records = @(Read-Json $proofPath 'Mapping server proofs')
+    if ($records.Count -gt 256) { Fail 'Mapping server proofs have an invalid shape.' }
+    foreach ($record in $records) {
+        $target = [string](Get-Property $record 'target')
+        $snapshotId = Get-Property $record 'model_snapshot_id'
+        if (-not (Test-ExactObjectFields $record @('target', 'model_snapshot_id', 'proof')) -or
+            $snapshotId -isnot [string] -or [string]::IsNullOrWhiteSpace($snapshotId) -or
+            -not $script:MappingTargetEntityTypes.ContainsKey($target)) {
+            Fail 'Mapping server proofs have an invalid shape.'
+        }
+        [void](Assert-MappingMaterializationProof (Get-Property $record 'proof') $target)
+    }
+    return ,@($records)
+}
+
+function Set-MappingProof([hashtable]$Options) {
+    $session = Resolve-Session $Options
+    $target = Require-Option $Options 'target'
+    $proof = Assert-MappingMaterializationProof (Parse-Object $Options 'proof') $target
+    $snapshot = Find-Snapshot @{ session = $session; area = 'model' }
+    if ((Get-Property $proof 'model_id') -ne (Get-Property $snapshot.Manifest 'model_id') -or
+        (Get-Property $proof 'model_revision') -ne (Get-Property $snapshot.Manifest 'model_revision')) {
+        Fail 'Mapping materialization proof does not match the current Model Snapshot.'
+    }
+    $snapshotId = Get-Property $snapshot.Manifest 'snapshot_id'
+    if ($snapshotId -isnot [string] -or [string]::IsNullOrWhiteSpace($snapshotId) -or
+        $snapshotId.Length -gt 255) { Fail 'Model Snapshot ID is invalid.' }
+    $records = New-Object System.Collections.ArrayList
+    foreach ($record in @(Read-MappingProofs $session)) {
+        $existing = Get-Property $record 'proof'
+        if ((Get-Property $record 'target') -ceq $target -and
+            (Get-Property $existing 'target_object_id') -eq (Get-Property $proof 'target_object_id') -and
+            (Get-Property $existing 'source_system_id') -eq (Get-Property $proof 'source_system_id')) {
+            continue
+        }
+        [void]$records.Add($record)
+    }
+    [void]$records.Add([ordered]@{
+        target = $target
+        model_snapshot_id = $snapshotId
+        proof = $proof
+    })
+    if ($records.Count -gt 256) { Fail 'Mapping server proof limit exceeded.' }
+    $sorted = @($records | Sort-Object {
+        $itemProof = Get-Property $_ 'proof'
+        ConvertTo-GdsJson @(
+            (Get-Property $_ 'target'),
+            (Get-Property $itemProof 'target_object_id'),
+            (Get-Property $itemProof 'source_system_id')
+        )
+    })
+    Write-JsonAtomic (Get-MappingProofPath $session) $sorted
+    return [ordered]@{
+        target = $target
+        bound = $true
+        model_snapshot_id = $snapshotId
+        model_revision = Get-Property $proof 'model_revision'
+        target_object_id = Get-Property $proof 'target_object_id'
+        source_system_id = Get-Property $proof 'source_system_id'
+        candidate_digest = Get-Property $proof 'candidate_digest'
+    }
+}
+
+function Test-CurrentMappingProof(
+    [string]$Session,
+    $Snapshot,
+    [string]$Target,
+    [array]$ExpectedUnits
+) {
+    if ($ExpectedUnits.Count -eq 0) { return $false }
+    $current = @{}
+    foreach ($record in @(Read-MappingProofs $Session)) {
+        $proof = Get-Property $record 'proof'
+        if ((Get-Property $record 'target') -ceq $Target -and
+            (Get-Property $record 'model_snapshot_id') -ceq (Get-Property $Snapshot.Manifest 'snapshot_id') -and
+            (Get-Property $proof 'model_id') -eq (Get-Property $Snapshot.Manifest 'model_id') -and
+            (Get-Property $proof 'model_revision') -eq (Get-Property $Snapshot.Manifest 'model_revision')) {
+            $key = ConvertTo-GdsJson @(
+                (Get-Property $proof 'target_object_id'),
+                (Get-Property $proof 'source_system_id')
+            )
+            $current[$key] = $true
+        }
+    }
+    foreach ($unit in $ExpectedUnits) {
+        $key = ConvertTo-GdsJson @(
+            (Get-Property $unit 'target_object_id'),
+            (Get-Property $unit 'source_system_id')
+        )
+        if (-not $current.ContainsKey($key)) { return $false }
+    }
+    return $true
+}
+
+function Assert-GeneratorDocumentProof($Value, [string]$Target) {
+    if (-not $script:GeneratorTargetEntityTypes.ContainsKey($Target)) {
+        Fail '--target must be logical-code or dimensional-code.'
+    }
+    $entityType = $script:GeneratorTargetEntityTypes[$Target]
+    $profileDigest = Get-Property $Value 'profile_schema_digest'
+    $contextDigest = Get-Property $Value 'mapping_context_digest'
+    $documentDigest = Get-Property $Value 'document_digest'
+    if (-not (Test-ExactObjectFields $Value $script:GeneratorProofFields) -or
+        (Get-Property $Value 'contract') -cne 'generator-document@1.0' -or
+        (Get-Property $Value 'modeled_entity_type') -cne $entityType -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'model_id') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'model_revision') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'target_object_id') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $Value 'source_system_id') $false) -or
+        $profileDigest -isnot [string] -or $profileDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        $contextDigest -isnot [string] -or $contextDigest -cnotmatch '^[0-9a-f]{64}$' -or
+        $documentDigest -isnot [string] -or $documentDigest -cnotmatch '^[0-9a-f]{64}$') {
+        Fail '--proof must be an exact Generator document proof for the selected target.'
+    }
+    return ,$Value
+}
+
+function Get-GeneratorProofPath([string]$Session) {
+    return Join-Path (Join-Path $Session 'tasks') '.generator-proofs.json'
+}
+
+function Read-GeneratorProofs([string]$Session) {
+    $proofPath = Get-GeneratorProofPath $Session
+    if (-not (Test-Path -LiteralPath $proofPath -PathType Leaf)) { return @() }
+    $records = @(Read-Json $proofPath 'Generator server proofs')
+    if ($records.Count -gt 256) { Fail 'Generator server proofs have an invalid shape.' }
+    foreach ($record in $records) {
+        $target = [string](Get-Property $record 'target')
+        $snapshotId = Get-Property $record 'model_snapshot_id'
+        if (-not (Test-ExactObjectFields $record @('target', 'model_snapshot_id', 'proof')) -or
+            $snapshotId -isnot [string] -or [string]::IsNullOrWhiteSpace($snapshotId) -or
+            -not $script:GeneratorTargetEntityTypes.ContainsKey($target)) {
+            Fail 'Generator server proofs have an invalid shape.'
+        }
+        [void](Assert-GeneratorDocumentProof (Get-Property $record 'proof') $target)
+    }
+    return ,@($records)
+}
+
+function Set-GeneratorProof([hashtable]$Options) {
+    $session = Resolve-Session $Options
+    $target = Require-Option $Options 'target'
+    $proof = Assert-GeneratorDocumentProof (Parse-Object $Options 'proof') $target
+    $snapshot = Find-Snapshot @{ session = $session; area = 'model' }
+    if ((Get-Property $proof 'model_id') -ne (Get-Property $snapshot.Manifest 'model_id') -or
+        (Get-Property $proof 'model_revision') -ne (Get-Property $snapshot.Manifest 'model_revision')) {
+        Fail 'Generator document proof does not match the current Model Snapshot.'
+    }
+    $snapshotId = Get-Property $snapshot.Manifest 'snapshot_id'
+    if ($snapshotId -isnot [string] -or [string]::IsNullOrWhiteSpace($snapshotId) -or
+        $snapshotId.Length -gt 255) { Fail 'Model Snapshot ID is invalid.' }
+    $records = New-Object System.Collections.ArrayList
+    foreach ($record in @(Read-GeneratorProofs $session)) {
+        $existing = Get-Property $record 'proof'
+        if ((Get-Property $record 'target') -ceq $target -and
+            (Get-Property $existing 'target_object_id') -eq (Get-Property $proof 'target_object_id') -and
+            (Get-Property $existing 'source_system_id') -eq (Get-Property $proof 'source_system_id')) {
+            continue
+        }
+        [void]$records.Add($record)
+    }
+    [void]$records.Add([ordered]@{
+        target = $target
+        model_snapshot_id = $snapshotId
+        proof = $proof
+    })
+    if ($records.Count -gt 256) { Fail 'Generator server proof limit exceeded.' }
+    $sorted = @($records | Sort-Object {
+        $itemProof = Get-Property $_ 'proof'
+        ConvertTo-GdsJson @(
+            (Get-Property $_ 'target'),
+            (Get-Property $itemProof 'target_object_id'),
+            (Get-Property $itemProof 'source_system_id')
+        )
+    })
+    Write-JsonAtomic (Get-GeneratorProofPath $session) $sorted
+    return [ordered]@{
+        target = $target
+        bound = $true
+        model_snapshot_id = $snapshotId
+        model_revision = Get-Property $proof 'model_revision'
+        target_object_id = Get-Property $proof 'target_object_id'
+        source_system_id = Get-Property $proof 'source_system_id'
+        document_digest = Get-Property $proof 'document_digest'
+    }
+}
+
+function Test-CurrentGeneratorProof(
+    [string]$Session,
+    $Snapshot,
+    [string]$Target,
+    [array]$ExpectedUnits
+) {
+    if ($ExpectedUnits.Count -eq 0) { return $false }
+    $current = @{}
+    foreach ($record in @(Read-GeneratorProofs $Session)) {
+        $proof = Get-Property $record 'proof'
+        if ((Get-Property $record 'target') -ceq $Target -and
+            (Get-Property $record 'model_snapshot_id') -ceq (Get-Property $Snapshot.Manifest 'snapshot_id') -and
+            (Get-Property $proof 'model_id') -eq (Get-Property $Snapshot.Manifest 'model_id') -and
+            (Get-Property $proof 'model_revision') -eq (Get-Property $Snapshot.Manifest 'model_revision')) {
+            $key = ConvertTo-GdsJson @(
+                (Get-Property $proof 'target_object_id'),
+                (Get-Property $proof 'source_system_id')
+            )
+            $current[$key] = $true
+        }
+    }
+    foreach ($unit in $ExpectedUnits) {
+        $key = ConvertTo-GdsJson @(
+            (Get-Property $unit 'target_object_id'),
+            (Get-Property $unit 'source_system_id')
+        )
+        if (-not $current.ContainsKey($key)) { return $false }
+    }
+    return $true
+}
+
 function New-ReadinessIssues {
     return [pscustomobject]@{
         Counts = [ordered]@{}
@@ -1887,7 +2194,7 @@ function Get-LogicalBuildReadiness($Metadata, $Model, $Issues) {
     return [ordered]@{ scoped_objects = $scope.Count; catalog_objects = $objects.Count; attributes = $attributes.Count }
 }
 
-function Get-MappingReadiness($Metadata, $Model, [string]$Layer, [string]$Zone, $Issues) {
+function Get-MappingReadiness($Metadata, $Model, [string]$Layer, [string]$Zone, $Issues, [bool]$ContractAvailable) {
     $modeled = Get-ModeledLayerReadiness $Model $Layer $Issues
     $targets = @(Get-ActiveMetadataObjects $Metadata $Zone)
     $targetAttributes = @(Get-ActiveMetadataAttributes $Metadata $Zone)
@@ -1940,7 +2247,7 @@ function Get-MappingReadiness($Metadata, $Model, [string]$Layer, [string]$Zone, 
         }
         if (-not $found) { Add-ReadinessIssue $Issues 'lineage_missing' @((Get-Property $entity $entityNameField)) }
     }
-    Add-ReadinessIssue $Issues 'mapping_contract_unavailable'
+    if (-not $ContractAvailable) { Add-ReadinessIssue $Issues 'mapping_contract_unavailable' }
     return [ordered]@{
         targets = $targets.Count
         attributes = $targetAttributes.Count
@@ -1949,9 +2256,18 @@ function Get-MappingReadiness($Metadata, $Model, [string]$Layer, [string]$Zone, 
     }
 }
 
-function Get-CodeReadiness($Model, [string]$Layer, $Issues) {
+function Get-CodeReadiness(
+    [string]$Session,
+    $Model,
+    [string]$Layer,
+    [string]$Target,
+    $Issues,
+    [array]$ExpectedUnits
+) {
     $mapping = Get-CompleteMappingLayer $Model $Layer $Issues
-    Add-ReadinessIssue $Issues 'generator_contract_unavailable'
+    if (-not (Test-CurrentGeneratorProof $Session $Model $Target $ExpectedUnits)) {
+        Add-ReadinessIssue $Issues 'generator_contract_unavailable'
+    }
     return [ordered]@{
         packages = @($mapping.Objects).Count
         attributes = @($mapping.Attributes).Count
@@ -1968,10 +2284,10 @@ function Get-ReadinessPrompt($Issues) {
         [void]$prompts.Add('Ask the authorized scope owner to add and apply this target to Model Scope, download a fresh Model Snapshot, replace model/, then resume this task.')
     }
     if (Test-ReadinessIssue $Issues 'mapping_contract_unavailable') {
-        [void]$prompts.Add('Ask the platform owner to expose the committed mapper/materializer contract for this Mapping profile, download a fresh Model Snapshot, then resume.')
+        [void]$prompts.Add('Call the MCP Mapping authoring context and candidate materializer for each exact target/source pair, bind each returned server proof with mapping-proof, then rerun readiness.')
     }
     if (Test-ReadinessIssue $Issues 'generator_contract_unavailable') {
-        [void]$prompts.Add('Ask the platform owner to expose the committed name-based GeneratorDocumentV1, download a fresh Model Snapshot, then resume code generation.')
+        [void]$prompts.Add('Call get_model_code_generation_document for each exact target/source pair, bind each returned server proof with generator-proof, then rerun readiness.')
     }
     if ((Test-ReadinessIssue $Issues 'destination_pattern_missing') -or
         (Test-ReadinessIssue $Issues 'destination_pattern_ambiguous')) {
@@ -2018,8 +2334,13 @@ function Get-WorkflowReadiness([hashtable]$Options) {
         switch -CaseSensitive ($target) {
             'logical-build' { $counts = Get-LogicalBuildReadiness $metadata $model $issues }
             'silver-registration' { $counts = Get-RegistrationReadiness $metadata $model 'logical' 'silver' $issues }
-            'logical-mapping' { $counts = Get-MappingReadiness $metadata $model 'logical' 'silver' $issues }
-            'logical-code' { $counts = Get-CodeReadiness $model 'logical' $issues }
+            'logical-mapping' {
+                $proof = Test-CurrentMappingProof $session $model $target (Get-ProofUnits $Options)
+                $counts = Get-MappingReadiness $metadata $model 'logical' 'silver' $issues $proof
+            }
+            'logical-code' {
+                $counts = Get-CodeReadiness $session $model 'logical' $target $issues (Get-ProofUnits $Options)
+            }
             'dimensional-build' {
                 $mapping = Get-CompleteMappingLayer $model 'logical' $issues
                 $silver = @{}
@@ -2055,9 +2376,12 @@ function Get-WorkflowReadiness([hashtable]$Options) {
             'gold-registration' { $counts = Get-RegistrationReadiness $metadata $model 'dimensional' 'gold' $issues }
             'dimensional-mapping' {
                 [void](Get-CompleteMappingLayer $model 'logical' $issues)
-                $counts = Get-MappingReadiness $metadata $model 'dimensional' 'gold' $issues
+                $proof = Test-CurrentMappingProof $session $model $target (Get-ProofUnits $Options)
+                $counts = Get-MappingReadiness $metadata $model 'dimensional' 'gold' $issues $proof
             }
-            'dimensional-code' { $counts = Get-CodeReadiness $model 'dimensional' $issues }
+            'dimensional-code' {
+                $counts = Get-CodeReadiness $session $model 'dimensional' $target $issues (Get-ProofUnits $Options)
+            }
         }
     }
     $issueOutput = Get-ReadinessIssueOutput $issues
@@ -3816,6 +4140,8 @@ try {
         'session-init' { $output = Initialize-Session $options }
         'status' { $output = Get-SessionStatus $options }
         'readiness' { $output = Get-WorkflowReadiness $options }
+        'mapping-proof' { $output = Set-MappingProof $options }
+        'generator-proof' { $output = Set-GeneratorProof $options }
         'inspect' { $output = Inspect-Snapshot $options }
         'describe' { $output = Describe-Dataset $options }
         'select' { $output = Select-Snapshot $options }

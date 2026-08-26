@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -11,10 +11,27 @@ import {
   workflowCreationQueryKeys,
   type WorkflowCreationApi,
 } from "./api";
+import {
+  isTenantWorkflowConflict,
+  TENANT_WORKFLOW_CONFLICT_MESSAGE,
+} from "./presentation";
 
 type AnalysisRunKind = "inference" | "validation";
 type AgenticWorkflow = "analysis" | "conceptual" | "logical" | "dimensional";
 type WorkflowExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
+type PendingWorkflowStart =
+  | {
+    workflowRunId: number;
+    runKind: "inference";
+    executionMode: WorkflowExecutionMode;
+  }
+  | {
+    workflowRunId: number;
+    runKind: "validation";
+  };
+type WorkflowRunSubmission =
+  | { kind: "create"; command: CreateWorkflowRunCommand }
+  | ({ kind: "retry" } & PendingWorkflowStart);
 
 export function WorkflowRunDialog({
   api,
@@ -23,6 +40,7 @@ export function WorkflowRunDialog({
   kind,
   workflow = "analysis",
   executeCreated,
+  executeValidationCreated,
   onClose,
   onCreated,
 }: {
@@ -35,16 +53,19 @@ export function WorkflowRunDialog({
     workflowRunId: number,
     executionMode: WorkflowExecutionMode,
   ) => Promise<void>;
+  executeValidationCreated?: (workflowRunId: number) => Promise<void>;
   onClose: () => void;
   onCreated: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [pendingStart, setPendingStart] = useState<PendingWorkflowStart | null>(null);
   const isDimensional = workflow === "dimensional";
   const authoringWorkflowName = workflow === "conceptual"
     ? "Conceptual"
     : workflow === "logical"
       ? "Logical"
       : "Dimensional";
+  const workflowName = workflow === "analysis" ? "Analysis" : authoringWorkflowName;
   const scopeZoneName = isDimensional ? "Silver" : "Bronze";
   const scopeQuery = useQuery({
     queryKey: isDimensional
@@ -75,24 +96,31 @@ export function WorkflowRunDialog({
         : String(model.default_validation_retry_count),
     },
     onSubmit: ({ value }) => {
+      if (pendingStart) {
+        runMutation.mutate({ kind: "retry", ...pendingStart });
+        return;
+      }
       const selectedObjectIds = value.scopeMode === "all"
         ? (scopeQuery.data?.items.map((item) => item.object_id) ?? [])
         : value.selectedObjectIds;
-      createMutation.mutate({
-        expected_model_revision: model.model_revision,
-        model_workflow: workflow,
-        workflow_execution_mode: kind === "inference" ? value.executionMode : null,
-        selected_object_ids: selectedObjectIds,
-        requested_batch_id: value.requestedBatchId.trim() || null,
-        agent: kind === "inference" ? {
-          sdk_code: value.sdkCode,
-          provider_code: value.providerCode,
-          model_code: value.modelCode,
-          reasoning_effort_code: value.reasoningEffortCode,
-          max_turns: Number(value.maxTurns),
-          validation_retry_count: Number(value.validationRetryCount),
-        } : null,
-        prompt_overrides: {},
+      runMutation.mutate({
+        kind: "create",
+        command: {
+          expected_model_revision: model.model_revision,
+          model_workflow: workflow,
+          workflow_execution_mode: kind === "inference" ? value.executionMode : null,
+          selected_object_ids: selectedObjectIds,
+          requested_batch_id: value.requestedBatchId.trim() || null,
+          agent: kind === "inference" ? {
+            sdk_code: value.sdkCode,
+            provider_code: value.providerCode,
+            model_code: value.modelCode,
+            reasoning_effort_code: value.reasoningEffortCode,
+            max_turns: Number(value.maxTurns),
+            validation_retry_count: Number(value.validationRetryCount),
+          } : null,
+          prompt_overrides: {},
+        },
       });
     },
   });
@@ -115,8 +143,19 @@ export function WorkflowRunDialog({
   const batchIsIncoherent = Boolean(requestedBatchId.trim()) && batchSystems.size > 1;
   const revisionChanged = scopeQuery.data?.modelRevision !== undefined
     && scopeQuery.data.modelRevision !== model.model_revision;
-  const createMutation = useMutation({
-    mutationFn: async (command: Parameters<WorkflowCreationApi["createWorkflowRun"]>[2]) => {
+  const runMutation = useMutation({
+    mutationFn: async (submission: WorkflowRunSubmission) => {
+      if (submission.kind === "retry") {
+        if (submission.runKind === "validation") {
+          if (!executeValidationCreated) throw new Error("Workflow execution is unavailable.");
+          await executeValidationCreated(submission.workflowRunId);
+        } else {
+          if (!executeCreated) throw new Error("Workflow execution is unavailable.");
+          await executeCreated(submission.workflowRunId, submission.executionMode);
+        }
+        return submission.workflowRunId;
+      }
+      const { command } = submission;
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
@@ -124,12 +163,23 @@ export function WorkflowRunDialog({
         globalThis.crypto.randomUUID(),
       );
       if (executeCreated && command.workflow_execution_mode) {
+        setPendingStart({
+          workflowRunId: result.workflow_run_id,
+          runKind: "inference",
+          executionMode: command.workflow_execution_mode,
+        });
         await executeCreated(result.workflow_run_id, command.workflow_execution_mode);
+      } else if (executeValidationCreated && command.workflow_execution_mode === null) {
+        setPendingStart({
+          workflowRunId: result.workflow_run_id,
+          runKind: "validation",
+        });
+        await executeValidationCreated(result.workflow_run_id);
       }
-      return result;
+      return result.workflow_run_id;
     },
-    onSuccess: async (result) => {
-      await onCreated(result.workflow_run_id);
+    onSuccess: async (workflowRunId) => {
+      await onCreated(workflowRunId);
       onClose();
     },
   });
@@ -193,7 +243,7 @@ export function WorkflowRunDialog({
         aria-modal="true"
         aria-labelledby="workflow-run-dialog-heading"
         onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape" && !runMutation.isPending) onClose();
         }}
       >
         <header className="drawer-header">
@@ -210,6 +260,7 @@ export function WorkflowRunDialog({
             className="panel-close"
             type="button"
             aria-label={`Close ${title}`}
+            disabled={runMutation.isPending}
             onClick={onClose}
           >
             <span aria-hidden="true">×</span>
@@ -231,7 +282,14 @@ export function WorkflowRunDialog({
               </header>
               <div className="agent-run-grid">
                 <form.Field name="executionMode">
-                  {(field) => (
+                  {(field) => workflow === "analysis" ? (
+                    <label>
+                      <span>Execution mode</span>
+                      <select aria-label="Execution mode" value="one_shot" disabled>
+                        <option value="one_shot">One shot</option>
+                      </select>
+                    </label>
+                  ) : (
                     <SelectField
                       label="Execution mode"
                       value={field.state.value}
@@ -420,38 +478,57 @@ export function WorkflowRunDialog({
               The Model changed. Close this dialog and refresh before creating the run.
             </p>
           ) : null}
-          {createMutation.isError ? (
+          {runMutation.isError ? (
             <p className="inline-error" role="alert">
-              {workflow !== "analysis"
-                ? `The ${authoringWorkflowName} run could not be created or started.`
-                : "The queued Analysis run could not be created."}
+              {pendingStart && isTenantWorkflowConflict(runMutation.error)
+                ? TENANT_WORKFLOW_CONFLICT_MESSAGE
+                : pendingStart
+                  ? `The ${workflowName} run remains queued because it could not be started.`
+                  : workflow !== "analysis"
+                    ? `The ${authoringWorkflowName} run could not be created.`
+                    : "The Analysis run could not be created."}
             </p>
           ) : null}
 
           <footer className="dialog-actions">
             <p>The backend revalidates Scope, Model revision, agent options, and Tenant Lock.</p>
             <div>
-              <button className="button button-secondary button-small" type="button" onClick={onClose}>
+              <button
+                className="button button-secondary button-small"
+                type="button"
+                disabled={runMutation.isPending}
+                onClick={onClose}
+              >
                 Cancel
               </button>
               <button
                 className="button button-primary button-small"
                 type="submit"
                 disabled={
-                  createMutation.isPending
-                  || scopeQuery.isPending
-                  || scopeQuery.isError
-                  || effectiveObjects.length === 0
-                  || batchIsIncoherent
-                  || revisionChanged
-                  || (kind === "inference" && (capabilitiesQuery.isPending || !agentSelectionValid))
+                  runMutation.isPending
+                  || (pendingStart === null && (
+                    scopeQuery.isPending
+                    || scopeQuery.isError
+                    || effectiveObjects.length === 0
+                    || batchIsIncoherent
+                    || revisionChanged
+                    || (kind === "inference" && (capabilitiesQuery.isPending || !agentSelectionValid))
+                  ))
                 }
               >
-                {createMutation.isPending
-                  ? workflow !== "analysis" ? "Creating and starting…" : "Creating…"
-                  : workflow !== "analysis"
-                    ? `Create and run ${authoringWorkflowName}`
-                    : `Create queued ${kind} run`}
+                {runMutation.isPending
+                  ? pendingStart
+                    ? "Starting…"
+                    : workflow !== "analysis" || executeCreated || executeValidationCreated
+                      ? "Creating and starting…"
+                      : "Creating…"
+                  : pendingStart
+                    ? "Retry start"
+                    : workflow !== "analysis"
+                      ? `Create and run ${authoringWorkflowName}`
+                      : executeCreated || executeValidationCreated
+                        ? `Create and run ${kind}`
+                        : `Create queued ${kind} run`}
               </button>
             </div>
           </footer>

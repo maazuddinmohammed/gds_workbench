@@ -15,6 +15,7 @@ import {
   DimensionalRelationshipsLedger,
 } from "./DimensionalLedgers";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
 type DimensionalView = "objects" | "attributes" | "relationships";
 
@@ -32,6 +33,7 @@ export function DimensionalScreen({
   const queryClient = useQueryClient();
   const [view, setView] = useState<DimensionalView>("objects");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [objectFilters, setObjectFilters] = useState<DimensionalFilters>({});
   const [attributeFilters, setAttributeFilters] = useState<DimensionalAttributeFilters>({});
   const [relationshipFilters, setRelationshipFilters] = useState<DimensionalRelationshipFilters>({});
@@ -86,6 +88,19 @@ export function DimensionalScreen({
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
     ]);
   };
+  const invalidateLedgers = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["dimensional-objects", tenantId, model.model_id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["dimensional-attributes", tenantId, model.model_id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["dimensional-relationships", tenantId, model.model_id],
+      }),
+    ]);
+  };
 
   return (
     <div className="dimensional-page page-enter">
@@ -127,6 +142,16 @@ export function DimensionalScreen({
           </button>
         </div>
       </header>
+      <WorkflowRunMonitor
+        api={api}
+        tenantId={tenantId}
+        modelId={model.model_id}
+        modelRevision={model.model_revision}
+        workflow="dimensional"
+        hasTenantLock={hasTenantLock}
+        focusRunId={recentRunId}
+        onApplied={invalidateLedgers}
+      />
       {view === "objects" ? <DimensionalObjectsLedger
         tenantId={tenantId}
         modelId={model.model_id}
@@ -167,17 +192,9 @@ export function DimensionalScreen({
             model.model_revision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
-          onCreated={async () => {
+          onCreated={async (workflowRunId) => {
+            setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: ["dimensional-objects", tenantId, model.model_id],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ["dimensional-attributes", tenantId, model.model_id],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ["dimensional-relationships", tenantId, model.model_id],
-              }),
               queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

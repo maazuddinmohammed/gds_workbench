@@ -22,9 +22,7 @@ POWERSHELL_DOCKER_WRITE_ROOT = os.environ.get("GDS_POWERSHELL_DOCKER_WRITE_ROOT"
 WINDOWS_POWERSHELL = shutil.which("powershell.exe") or shutil.which("powershell")
 POWERSHELL_COMMAND = WINDOWS_POWERSHELL or shutil.which("pwsh")
 POWERSHELL_AVAILABLE = POWERSHELL_COMMAND is not None or bool(
-    POWERSHELL_DOCKER_IMAGE
-    and POWERSHELL_DOCKER_WRITE_ROOT
-    and shutil.which("docker")
+    POWERSHELL_DOCKER_IMAGE and POWERSHELL_DOCKER_WRITE_ROOT and shutil.which("docker")
 )
 
 
@@ -342,9 +340,7 @@ def write_model_structure_snapshot(session: Path) -> None:
         "object_name": "customer",
     }
     records = {
-        "modeling_assertion_document": [
-            {"modeling_assertion_document_name": "D"}
-        ],
+        "modeling_assertion_document": [{"modeling_assertion_document_name": "D"}],
         "modeling_assertion_record": [
             {
                 "modeling_assertion_record_key": "A",
@@ -699,7 +695,9 @@ def write_model_scope_snapshot(session: Path) -> None:
     write_model_snapshot_manifest(snapshot)
 
 
-def prepare_powershell_accepted_probe(tmp_path: Path) -> tuple[Path, dict[str, object], str]:
+def prepare_powershell_accepted_probe(
+    tmp_path: Path,
+) -> tuple[Path, dict[str, object], str]:
     initialized = run_powershell(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
     )
@@ -770,11 +768,18 @@ def test_powershell_fallback_is_native_local_only_and_command_compatible() -> No
     assert "$draft.Count -ne 5" in source
     assert "function Stash-Task" in source
     assert "function Restore-Task" in source
+    assert "generator-document@1.0" in source
+    assert "function Test-CurrentGeneratorProof" in source
+    assert "function Get-ProofUnits" in source
+    assert "--proof-units must contain unique exact target/source pairs." in source
+    assert "$ExpectedUnits.Count -eq 0" in source
     assert "cache_bound = [bool]$cacheBound" in source
     for command in (
         "session-init",
         "status",
         "readiness",
+        "mapping-proof",
+        "generator-proof",
         "draft-cache",
         "inspect",
         "describe",
@@ -814,6 +819,8 @@ def test_powershell_fallback_is_native_local_only_and_command_compatible() -> No
     assert "-ceq 'active'" in source
     assert "$active -is [bool]" in source
     assert "Complete and Apply the matching Logical or Dimensional Mapping" in source
+    assert "mapping-authoring@1.0" in source
+    assert "Test-CurrentMappingProof" in source
     assert "value must match exactly one allowed schema" in source
     assert "exclusiveMinimum" in source
     assert "minItems" in source
@@ -1196,9 +1203,7 @@ def test_powershell_snapshot_refresh_retires_only_exact_applied_records(
     (snapshot / "data" / "schema_probe.jsonl").write_text(
         json.dumps(record, separators=(",", ":")) + "\n"
     )
-    write_metadata_snapshot_manifest(
-        snapshot, "00000000-0000-4000-8000-000000000003"
-    )
+    write_metadata_snapshot_manifest(snapshot, "00000000-0000-4000-8000-000000000003")
 
     refreshed = run_powershell(
         "snapshot-refresh", "--session", str(session), "--area", "metadata"
@@ -1213,7 +1218,9 @@ def test_powershell_snapshot_refresh_retires_only_exact_applied_records(
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )
-def test_powershell_schema_validation_matches_workbench_contract(tmp_path: Path) -> None:
+def test_powershell_schema_validation_matches_workbench_contract(
+    tmp_path: Path,
+) -> None:
     initialized = run_powershell(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
     )
@@ -1292,7 +1299,9 @@ def test_powershell_schema_validation_matches_workbench_contract(tmp_path: Path)
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )
-def test_powershell_review_accept_and_reconcile_match_javascript(tmp_path: Path) -> None:
+def test_powershell_review_accept_and_reconcile_match_javascript(
+    tmp_path: Path,
+) -> None:
     initialized = run_powershell(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
     )
@@ -1333,8 +1342,12 @@ def test_powershell_review_accept_and_reconcile_match_javascript(tmp_path: Path)
     )
     assert upserted.returncode == 0, upserted.stderr
 
-    ps_review = run_powershell("review", "--session", str(session), "--area", "metadata")
-    js_review = run_javascript("review", "--session", str(session), "--area", "metadata")
+    ps_review = run_powershell(
+        "review", "--session", str(session), "--area", "metadata"
+    )
+    js_review = run_javascript(
+        "review", "--session", str(session), "--area", "metadata"
+    )
     assert ps_review.returncode == js_review.returncode == 0
     assert json.loads(ps_review.stdout) == json.loads(js_review.stdout)
     digest = json.loads(ps_review.stdout)["digest"]
@@ -1716,7 +1729,11 @@ def test_powershell_task_stash_restore_and_live_set_guards(tmp_path: Path) -> No
         '["Edit","Stash"]',
     )
     assert second.returncode == 0, second.stderr
-    other = {**record, "name": "Other", "identifier": "00000000-0000-4000-8000-000000000002"}
+    other = {
+        **record,
+        "name": "Other",
+        "identifier": "00000000-0000-4000-8000-000000000002",
+    }
     upserted = run_powershell(
         "upsert",
         "--session",
@@ -1776,7 +1793,9 @@ def test_powershell_task_stash_restore_and_live_set_guards(tmp_path: Path) -> No
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )
-def test_powershell_restore_and_add_reject_stale_or_orphaned_sets(tmp_path: Path) -> None:
+def test_powershell_restore_and_add_reject_stale_or_orphaned_sets(
+    tmp_path: Path,
+) -> None:
     stale_session = tmp_path / "stale" / "GDS" / "TENANT_A" / "01"
     (stale_session / "tasks" / "01" / "metadata-change-set").mkdir(parents=True)
     (stale_session / "session.json").write_text(
@@ -1937,7 +1956,9 @@ def test_powershell_metadata_validation_uses_effective_records(tmp_path: Path) -
     output = json.loads(validated.stdout)
     messages = [issue[2] for issue in output["issues"]]
     assert output["valid"] is False
-    assert any("Effective records duplicate (alias)." in message for message in messages)
+    assert any(
+        "Effective records duplicate (alias)." in message for message in messages
+    )
     assert any(
         "Effective zone datasets duplicate (alias)." in message for message in messages
     )
@@ -1976,9 +1997,7 @@ def test_powershell_batch_upsert_writes_multiple_datasets_once(tmp_path: Path) -
     unicode_parent = {"key": "ä", "alias": "OTHER", "is_active": True}
     changes = {
         "zone_b_object": [unicode_parent, parent],
-        "child": [
-            {"child_key": "C1", "parent_key": "z", "is_active": True}
-        ],
+        "child": [{"child_key": "C1", "parent_key": "z", "is_active": True}],
     }
 
     invalid = run_powershell(
@@ -2042,7 +2061,9 @@ def test_powershell_batch_upsert_writes_multiple_datasets_once(tmp_path: Path) -
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )
-def test_powershell_model_structure_validation_matches_javascript(tmp_path: Path) -> None:
+def test_powershell_model_structure_validation_matches_javascript(
+    tmp_path: Path,
+) -> None:
     initialized = run_powershell(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
     )
@@ -2062,19 +2083,20 @@ def test_powershell_model_structure_validation_matches_javascript(tmp_path: Path
     )
     assert added.returncode == 0, added.stderr
 
-    validated = run_powershell(
-        "validate", "--session", str(session), "--area", "model"
-    )
+    validated = run_powershell("validate", "--session", str(session), "--area", "model")
     assert validated.returncode == 0, validated.stderr
     output = json.loads(validated.stdout)
     messages = [issue[2] for issue in output["issues"]]
     assert output["valid"] is False
     assert sum("duplicate_nested_key" in message for message in messages) == 3
     assert sum("assertion_layer_invalid" in message for message in messages) == 2
-    assert len([issue for issue in output["issues"] if issue[0] == "mapping_object"]) == 1
-    assert len(
-        [issue for issue in output["issues"] if issue[0] == "logical_relationship"]
-    ) == 1
+    assert (
+        len([issue for issue in output["issues"] if issue[0] == "mapping_object"]) == 1
+    )
+    assert (
+        len([issue for issue in output["issues"] if issue[0] == "logical_relationship"])
+        == 1
+    )
     if shutil.which("node"):
         javascript = run_javascript(
             "validate", "--session", str(session), "--area", "model"
@@ -2422,9 +2444,10 @@ def test_powershell_model_physical_scope_matches_javascript(tmp_path: Path) -> N
     assert validated.returncode == 0, validated.stderr
     output = json.loads(validated.stdout)
     assert output["valid"] is False
-    assert sum(
-        "model_scope_reference_invalid" in issue[2] for issue in output["issues"]
-    ) == 10
+    assert (
+        sum("model_scope_reference_invalid" in issue[2] for issue in output["issues"])
+        == 10
+    )
     if shutil.which("node"):
         javascript = run_javascript(
             "validate", "--session", str(session), "--area", "model"
@@ -2512,9 +2535,14 @@ def test_powershell_remaining_model_record_policies_match_javascript(
         json.dumps({"payload": ""}, ensure_ascii=False, separators=(",", ":")).encode()
     )
     exact_package = {"payload": "<" * (524_288 - package_overhead)}
-    assert len(
-        json.dumps(exact_package, ensure_ascii=False, separators=(",", ":")).encode()
-    ) == 524_288
+    assert (
+        len(
+            json.dumps(
+                exact_package, ensure_ascii=False, separators=(",", ":")
+            ).encode()
+        )
+        == 524_288
+    )
     dimensional_mapping_object = {
         **physical,
         "source_system_code": "SILVER",

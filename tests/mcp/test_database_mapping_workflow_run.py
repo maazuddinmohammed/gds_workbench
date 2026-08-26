@@ -549,6 +549,7 @@ def test_mapping_run_template_id_digest_pair_is_authoritative(
         connection.execute(
             """
             INSERT INTO application.workflow_run (
+                tenant_id,
                 model_id,
                 model_revision,
                 model_workflow,
@@ -579,7 +580,8 @@ def test_mapping_run_template_id_digest_pair_is_authoritative(
                 correlation_id,
                 workflow_run_request_digest
             )
-            SELECT model_id,
+            SELECT tenant_id,
+                   model_id,
                    model_revision,
                    model_workflow,
                    workflow_execution_mode,

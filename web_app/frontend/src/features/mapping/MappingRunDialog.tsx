@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -10,6 +10,10 @@ import {
   type CreateWorkflowRunCommand,
 } from "../workflows/api";
 import {
+  isTenantWorkflowConflict,
+  TENANT_WORKFLOW_CONFLICT_MESSAGE,
+} from "../workflows/presentation";
+import {
   loadActiveMappingOutputTemplates,
   loadAllMappingScope,
   mappingQueryKeys,
@@ -19,6 +23,13 @@ import {
 import { MappingOutputTemplateSelection } from "./MappingOutputTemplateSelection";
 
 type ExecutionMode = NonNullable<CreateWorkflowRunCommand["workflow_execution_mode"]>;
+type PendingMappingStart = {
+  workflowRunId: number;
+  executionMode: ExecutionMode;
+};
+type MappingRunSubmission =
+  | { kind: "create"; command: CreateWorkflowRunCommand }
+  | ({ kind: "retry" } & PendingMappingStart);
 
 export function MappingRunDialog({
   api,
@@ -34,6 +45,7 @@ export function MappingRunDialog({
   onCompleted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [pendingStart, setPendingStart] = useState<PendingMappingStart | null>(null);
   const scopeQuery = useQuery({
     queryKey: mappingQueryKeys.runScope(tenantId, model.model_id),
     queryFn: () => loadAllMappingScope(api, tenantId, model.model_id),
@@ -66,6 +78,10 @@ export function MappingRunDialog({
         : String(model.default_validation_retry_count),
     },
     onSubmit: ({ value }) => {
+      if (pendingStart) {
+        runMutation.mutate({ kind: "retry", ...pendingStart });
+        return;
+      }
       const targetObjectId = Number(value.targetObjectId);
       const sourceSystemId = Number(value.sourceSystemId);
       const objectOutputTemplateId = value.objectOutputTemplateId
@@ -80,27 +96,30 @@ export function MappingRunDialog({
         || (objectOutputTemplateId !== null && !Number.isSafeInteger(objectOutputTemplateId))
         || (attributeOutputTemplateId !== null && !Number.isSafeInteger(attributeOutputTemplateId))
       ) return;
-      createMutation.mutate({
-        expected_model_revision: model.model_revision,
-        model_workflow: "mapping",
-        workflow_execution_mode: value.executionMode,
-        selected_object_ids: [targetObjectId],
-        requested_batch_id: null,
-        agent: {
-          sdk_code: value.sdkCode,
-          provider_code: value.providerCode,
-          model_code: value.modelCode,
-          reasoning_effort_code: value.reasoningEffortCode,
-          max_turns: Number(value.maxTurns),
-          validation_retry_count: Number(value.validationRetryCount),
+      runMutation.mutate({
+        kind: "create",
+        command: {
+          expected_model_revision: model.model_revision,
+          model_workflow: "mapping",
+          workflow_execution_mode: value.executionMode,
+          selected_object_ids: [targetObjectId],
+          requested_batch_id: null,
+          agent: {
+            sdk_code: value.sdkCode,
+            provider_code: value.providerCode,
+            model_code: value.modelCode,
+            reasoning_effort_code: value.reasoningEffortCode,
+            max_turns: Number(value.maxTurns),
+            validation_retry_count: Number(value.validationRetryCount),
+          },
+          prompt_overrides: {},
+          mapping_operation: value.operation,
+          mapping_coverage_mode: "selected_targets",
+          mapping_artifact_type: value.artifactType,
+          mapping_source_system_id: sourceSystemId,
+          mapping_object_output_template_id: objectOutputTemplateId,
+          mapping_attribute_output_template_id: attributeOutputTemplateId,
         },
-        prompt_overrides: {},
-        mapping_operation: value.operation,
-        mapping_coverage_mode: "selected_targets",
-        mapping_artifact_type: value.artifactType,
-        mapping_source_system_id: sourceSystemId,
-        mapping_object_output_template_id: objectOutputTemplateId,
-        mapping_attribute_output_template_id: attributeOutputTemplateId,
       });
     },
   });
@@ -161,25 +180,41 @@ export function MappingRunDialog({
     && parsedRetries <= capabilities.validation_retries.maximum;
   const revisionChanged = scopeQuery.data !== undefined
     && scopeQuery.data.modelRevision !== model.model_revision;
-  const createMutation = useMutation({
-    mutationFn: async (command: CreateWorkflowRunCommand) => {
+  const runMutation = useMutation({
+    mutationFn: async (submission: MappingRunSubmission) => {
+      if (submission.kind === "retry") {
+        await api.executeMappingRun(
+          tenantId,
+          model.model_id,
+          submission.workflowRunId,
+          submission.executionMode,
+          model.model_revision,
+        );
+        return submission.workflowRunId;
+      }
+      const { command } = submission;
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
         command,
         globalThis.crypto.randomUUID(),
       );
+      const pending = {
+        workflowRunId: result.workflow_run_id,
+        executionMode: command.workflow_execution_mode as ExecutionMode,
+      };
+      setPendingStart(pending);
       await api.executeMappingRun(
         tenantId,
         model.model_id,
-        result.workflow_run_id,
-        command.workflow_execution_mode as ExecutionMode,
+        pending.workflowRunId,
+        pending.executionMode,
         model.model_revision,
       );
-      return result;
+      return pending.workflowRunId;
     },
-    onSuccess: async (result) => {
-      await onCompleted(result.workflow_run_id);
+    onSuccess: async (workflowRunId) => {
+      await onCompleted(workflowRunId);
       onClose();
     },
   });
@@ -221,7 +256,7 @@ export function MappingRunDialog({
         aria-modal="true"
         aria-labelledby="mapping-run-dialog-heading"
         onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape" && !runMutation.isPending) onClose();
         }}
       >
         <header className="drawer-header">
@@ -234,6 +269,7 @@ export function MappingRunDialog({
             className="panel-close"
             type="button"
             aria-label="Close Configure Mapping run"
+            disabled={runMutation.isPending}
             onClick={onClose}
           >
             <span aria-hidden="true">×</span>
@@ -400,31 +436,46 @@ export function MappingRunDialog({
           {capabilities && !agentSelectionValid ? <p className="inline-error" role="alert">No compatible agent configuration is available.</p> : null}
           {scopeQuery.data && targets.length === 0 ? <p className="inline-error" role="alert">No eligible target Objects are available for this Entity type.</p> : null}
           {revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh before creating the run.</p> : null}
-          {createMutation.isError ? <p className="inline-error" role="alert">{mappingRunError(createMutation.error)}</p> : null}
+          {runMutation.isError ? (
+            <p className="inline-error" role="alert">
+              {mappingRunError(runMutation.error, pendingStart !== null)}
+            </p>
+          ) : null}
 
           <footer className="dialog-actions">
             <p>The backend revalidates eligibility, Output Templates, Model revision, agent options, App permission, and Tenant Lock.</p>
             <div>
-              <button className="button button-secondary button-small" type="button" onClick={onClose}>Cancel</button>
+              <button
+                className="button button-secondary button-small"
+                type="button"
+                disabled={runMutation.isPending}
+                onClick={onClose}
+              >
+                Cancel
+              </button>
               <button
                 className="button button-primary button-small"
                 type="submit"
                 disabled={
-                  scopeQuery.isPending
-                  || scopeQuery.isError
-                  || capabilitiesQuery.isPending
-                  || capabilitiesQuery.isError
-                  || outputTemplatesQuery.isPending
-                  || createMutation.isPending
-                  || revisionChanged
-                  || !targetSelectionValid
-                  || !sourceSystemSelectionValid
-                  || !objectOutputTemplateSelectionValid
-                  || !attributeOutputTemplateSelectionValid
-                  || !agentSelectionValid
+                  runMutation.isPending
+                  || (pendingStart === null && (
+                    scopeQuery.isPending
+                    || scopeQuery.isError
+                    || capabilitiesQuery.isPending
+                    || capabilitiesQuery.isError
+                    || outputTemplatesQuery.isPending
+                    || revisionChanged
+                    || !targetSelectionValid
+                    || !sourceSystemSelectionValid
+                    || !objectOutputTemplateSelectionValid
+                    || !attributeOutputTemplateSelectionValid
+                    || !agentSelectionValid
+                  ))
                 }
               >
-                {createMutation.isPending ? "Creating and starting…" : "Create and run Mapping"}
+                {runMutation.isPending
+                  ? pendingStart ? "Starting…" : "Creating and starting…"
+                  : pendingStart ? "Retry start" : "Create and run Mapping"}
               </button>
             </div>
           </footer>
@@ -486,7 +537,13 @@ function NumberField({
   );
 }
 
-function mappingRunError(error: Error): string {
+function mappingRunError(error: Error, runWasCreated: boolean): string {
+  if (runWasCreated && isTenantWorkflowConflict(error)) {
+    return TENANT_WORKFLOW_CONFLICT_MESSAGE;
+  }
+  if (runWasCreated) {
+    return "The Mapping run remains queued because it could not be started.";
+  }
   if (error instanceof ApiError && error.status === 403) {
     return "You no longer have permission or the required Tenant Lock to run Mapping.";
   }

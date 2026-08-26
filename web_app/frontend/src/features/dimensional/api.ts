@@ -261,7 +261,14 @@ export interface DimensionalTransport {
 export type DimensionalApi = DimensionalTransport
   & Pick<
     WorkflowsApi,
-    "createWorkflowRun" | "executeDimensionalRun" | "readAgentCapabilities"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeDimensionalRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >
   & Pick<ModelScopeApi, "listModelScope">;
 

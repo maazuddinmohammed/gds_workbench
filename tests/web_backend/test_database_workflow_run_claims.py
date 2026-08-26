@@ -9,7 +9,11 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
-from psycopg.errors import InsufficientPrivilege, RaiseException
+from psycopg.errors import (
+    InsufficientPrivilege,
+    ObjectNotInPrerequisiteState,
+    RaiseException,
+)
 from psycopg.rows import dict_row
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
@@ -54,8 +58,8 @@ def _start_run(
     connection: psycopg.Connection[dict[str, object]],
     context: WorkflowContext,
     workflow_run_id: int,
-) -> None:
-    require_row(
+) -> dict[str, object]:
+    return require_row(
         connection.execute(
             """
             SELECT *
@@ -177,9 +181,10 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(web_postgres_database)
+    newer_context = seed_workflow_context(web_postgres_database)
     with web_postgres_database.connect_owner() as connection:
         oldest_running_id = _create_run(connection, context, start=True)
-        newer_running_id = _create_run(connection, context, start=True)
+        newer_running_id = _create_run(connection, newer_context, start=True)
         queued_id = _create_run(connection, context, start=False)
 
     with psycopg.Connection[dict[str, object]].connect(
@@ -262,9 +267,164 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
 
     with web_postgres_database.connect_owner() as connection:
         _complete_run(connection, context, oldest_running_id)
-        _complete_run(connection, context, newer_running_id)
+        _complete_run(connection, newer_context, newer_running_id)
         _start_run(connection, context, queued_id)
         _complete_run(connection, context, queued_id)
+
+
+def test_only_one_workflow_run_can_be_running_for_a_tenant(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(web_postgres_database)
+    with web_postgres_database.connect_owner() as connection:
+        first_id = _create_run(connection, context, start=True)
+        second_id = _create_run(connection, context, start=False)
+        replayed = _start_run(connection, context, first_id)
+        assert replayed["changed"] is False
+        assert replayed["workflow_run_state"] == "running"
+
+        with (
+            pytest.raises(RaiseException, match="tenant_workflow_conflict"),
+            connection.transaction(),
+        ):
+            _start_run(connection, context, second_id)
+
+        states = connection.execute(
+            """
+            SELECT workflow_run_id, tenant_id, workflow_run_state
+              FROM application.workflow_run
+             WHERE workflow_run_id = ANY(%s)
+             ORDER BY workflow_run_id
+            """,
+            ([first_id, second_id],),
+        ).fetchall()
+        assert states == [
+            {
+                "workflow_run_id": first_id,
+                "tenant_id": context.tenant_id,
+                "workflow_run_state": "running",
+            },
+            {
+                "workflow_run_id": second_id,
+                "tenant_id": context.tenant_id,
+                "workflow_run_state": "queued",
+            },
+        ]
+
+        with (
+            pytest.raises(
+                ObjectNotInPrerequisiteState,
+                match="identity is immutable",
+            ),
+            connection.transaction(),
+        ):
+            connection.execute(
+                """
+                UPDATE application.workflow_run
+                   SET tenant_id = tenant_id + 1
+                 WHERE workflow_run_id = %s
+                """,
+                (second_id,),
+            )
+
+        _complete_run(connection, context, first_id)
+        _start_run(connection, context, second_id)
+        _complete_run(connection, context, second_id)
+
+
+def test_concurrent_starts_allow_one_running_run_per_tenant(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(web_postgres_database)
+    with web_postgres_database.connect_owner() as connection:
+        first_id = _create_run(connection, context, start=False)
+        second_model = require_row(
+            connection.execute(
+                """
+                INSERT INTO model.model (tenant_id, model_name)
+                VALUES (%s, %s)
+                RETURNING model_id, model_revision
+                """,
+                (context.tenant_id, f"Concurrent Model {uuid4().hex}"),
+            ).fetchone()
+        )
+        second_id = require_row(
+            connection.execute(
+                """
+                INSERT INTO application.workflow_run (
+                    tenant_id,
+                    model_id,
+                    model_revision,
+                    model_workflow,
+                    actor_principal_id,
+                    actor_entra_principal_identity_id,
+                    selected_scope_digest,
+                    selected_scope_count,
+                    correlation_id
+                ) VALUES (
+                    %s, %s, %s, 'profiling', %s,
+                    (
+                        SELECT entra_principal_identity_id
+                          FROM security.entra_principal_identity
+                         WHERE principal_id = %s
+                           AND entra_tenant_id = %s
+                           AND entra_object_id = %s
+                           AND is_active
+                    ),
+                    repeat('0', 64), 1, %s
+                )
+                RETURNING workflow_run_id
+                """,
+                (
+                    context.tenant_id,
+                    second_model["model_id"],
+                    second_model["model_revision"],
+                    context.principal_id,
+                    context.principal_id,
+                    context.entra_tenant_id,
+                    context.entra_object_id,
+                    uuid4(),
+                ),
+            ).fetchone()
+        )["workflow_run_id"]
+        assert isinstance(second_id, int)
+        run_ids = (first_id, second_id)
+
+    barrier = Barrier(2)
+
+    def start(workflow_run_id: int) -> tuple[int, str]:
+        with web_postgres_database.connect_owner() as connection:
+            barrier.wait(timeout=5)
+            try:
+                _start_run(connection, context, workflow_run_id)
+            except RaiseException as error:
+                connection.rollback()
+                return workflow_run_id, str(error)
+            connection.commit()
+            return workflow_run_id, "running"
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        results = tuple(executor.map(start, run_ids))
+
+    assert [state for _, state in results].count("running") == 1
+    assert sum("tenant_workflow_conflict" in state for _, state in results) == 1
+
+    running_id = next(run_id for run_id, state in results if state == "running")
+    with web_postgres_database.connect_owner() as connection:
+        persisted = connection.execute(
+            """
+            SELECT workflow_run_id, workflow_run_state
+              FROM application.workflow_run
+             WHERE workflow_run_id = ANY(%s)
+             ORDER BY workflow_run_id
+            """,
+            (list(run_ids),),
+        ).fetchall()
+        assert sorted(row["workflow_run_state"] for row in persisted) == [
+            "queued",
+            "running",
+        ]
+        _complete_run(connection, context, running_id)
 
 
 def test_claim_rejects_inactive_actor_or_exact_identity(
@@ -393,6 +553,7 @@ def test_nullable_actor_identity_requires_one_unambiguous_active_identity(
             connection.execute(
                 """
                 INSERT INTO application.workflow_run (
+                    tenant_id,
                     model_id,
                     model_revision,
                     model_workflow,
@@ -404,6 +565,7 @@ def test_nullable_actor_identity_requires_one_unambiguous_active_identity(
                     correlation_id,
                     started_time
                 ) VALUES (
+                    %s,
                     %s,
                     %s,
                     'profiling',
@@ -418,6 +580,7 @@ def test_nullable_actor_identity_requires_one_unambiguous_active_identity(
                 RETURNING workflow_run_id
                 """,
                 (
+                    context.tenant_id,
                     context.model_id,
                     context.model_revision,
                     context.principal_id,

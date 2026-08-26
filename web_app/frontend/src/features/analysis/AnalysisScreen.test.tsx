@@ -37,41 +37,51 @@ describe("Model Analysis", () => {
     expect(screen.getByText("2 missing targets")).toBeVisible();
   });
 
-  it("shows Analysis run history and creates explicit inference and validation queues", async () => {
+  it("shows Analysis run history and starts explicit inference and validation runs", async () => {
     const fetcher = analysisFetchStub();
     const user = userEvent.setup();
     render(<WorkbenchApp router={analysisRouter(fetcher)} />);
     await screen.findByRole("table", { name: "Analysis findings" });
 
     await user.click(screen.getByRole("button", { name: "Runs" }));
-    expect(await screen.findByRole("table", { name: "Analysis runs" })).toBeVisible();
-    expect(screen.getByText("Inference")).toBeVisible();
-    expect(screen.getByText("Validation")).toBeVisible();
+    expect(await screen.findByRole("region", { name: "Analysis recent runs" })).toBeVisible();
+    await waitFor(() => expect(screen.getAllByText("tool assisted authoring")).toHaveLength(2));
+    expect(screen.getByText("Deterministic validation")).toBeVisible();
+    expect(screen.getByRole("table", { name: "Analysis runs" })).toBeVisible();
 
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const inferenceDialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
-    await user.selectOptions(within(inferenceDialog).getByLabelText("Execution mode"), "tool_assisted");
-    await user.click(within(inferenceDialog).getByRole("button", { name: "Create queued inference run" }));
+    const executionMode = within(inferenceDialog).getByLabelText("Execution mode");
+    expect(within(executionMode).getAllByRole("option")).toHaveLength(1);
+    expect(executionMode).toHaveValue("one_shot");
+    await user.click(within(inferenceDialog).getByRole("button", { name: "Create and run inference" }));
 
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/runs",
       expect.objectContaining({ method: "POST" }),
     ));
     const inferenceCall = fetcher.mock.calls.find(([, init]) => (
-      init?.method === "POST" && String(init.body).includes('"workflow_execution_mode":"tool_assisted"')
+      init?.method === "POST" && String(init.body).includes('"workflow_execution_mode":"one_shot"')
     ));
     expect(JSON.parse(String(inferenceCall?.[1]?.body))).toEqual(expect.objectContaining({
       expected_model_revision: 18,
       model_workflow: "analysis",
-      workflow_execution_mode: "tool_assisted",
+      workflow_execution_mode: "one_shot",
       selected_object_ids: [501, 502],
       requested_batch_id: null,
       agent: expect.objectContaining({ model_code: "databricks-primary" }),
     }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ expected_model_revision: 18 }),
+      }),
+    );
 
     await user.click(screen.getByRole("button", { name: "Validate pending" }));
     const validationDialog = await screen.findByRole("dialog", { name: "Configure Analysis validation" });
-    await user.click(within(validationDialog).getByRole("button", { name: "Create queued validation run" }));
+    await user.click(within(validationDialog).getByRole("button", { name: "Create and run validation" }));
     const validationCall = fetcher.mock.calls.find(([, init]) => (
       init?.method === "POST" && String(init.body).includes('"workflow_execution_mode":null')
     ));
@@ -80,6 +90,44 @@ describe("Model Analysis", () => {
       workflow_execution_mode: null,
       agent: null,
     }));
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/analysis/validation-runs/1051/execute",
+      expect.objectContaining({
+        method: "POST",
+        body: JSON.stringify({ expected_model_revision: 18 }),
+      }),
+    );
+  });
+
+  it("retries a queued Analysis run without creating a duplicate", async () => {
+    const fetcher = analysisFetchStub({ inferenceStartConflictsOnce: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+
+    await user.click(screen.getByRole("button", { name: "Run inference" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
+    await user.click(within(dialog).getByRole("button", { name: "Create and run inference" }));
+
+    expect(await within(dialog).findByRole("button", { name: "Retry start" })).toBeEnabled();
+    expect(within(dialog).getByRole("alert")).toHaveTextContent(
+      "Another Workflow Run is already active for this Tenant.",
+    );
+    await user.click(within(dialog).getByRole("button", { name: "Retry start" }));
+    await waitFor(() => expect(screen.queryByRole(
+      "dialog",
+      { name: "Configure Analysis inference" },
+    )).not.toBeInTheDocument());
+
+    const createCalls = fetcher.mock.calls.filter(([input, init]) => (
+      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+    ));
+    const executeCalls = fetcher.mock.calls.filter(([input, init]) => (
+      String(input) === "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute"
+      && init?.method === "POST"
+    ));
+    expect(createCalls).toHaveLength(1);
+    expect(executeCalls).toHaveLength(2);
   });
 
   it("keeps empty, failed, and revision-mismatched results explicit", async () => {
@@ -115,8 +163,10 @@ function analysisRouter(fetcher: ReturnType<typeof analysisFetchStub>) {
 function analysisFetchStub(options: {
   empty?: boolean;
   error?: boolean;
+  inferenceStartConflictsOnce?: boolean;
   modelRevision?: number;
 } = {}) {
+  let inferenceStartAttempts = 0;
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
@@ -139,6 +189,37 @@ function analysisFetchStub(options: {
     if (url.startsWith("/api/v1/tenants/7/models/18/runs?workflow=analysis")) {
       return jsonResponse({ items: analysisRunsPayload, next_cursor: null });
     }
+    if (/\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049|1051)$/.test(url)) {
+      const runId = Number(url.split("/").at(-1));
+      const summary = analysisRunsPayload.find((item) => item.workflow_run_id === runId)
+        ?? {
+          ...analysisRunsPayload[0],
+          workflow_run_id: 1051,
+          workflow_execution_mode: "one_shot",
+          workflow_run_state: "running",
+          completed_at: null,
+        };
+      return jsonResponse({
+        ...summary,
+        correlation_id: "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb",
+        agent_sdk_code: summary.workflow_execution_mode ? "openai_agents" : null,
+        agent_provider_code: summary.workflow_execution_mode ? "databricks" : null,
+        agent_model_code: summary.workflow_execution_mode ? "databricks-primary" : null,
+        reasoning_effort_code: summary.workflow_execution_mode ? "medium" : null,
+        max_turns: summary.workflow_execution_mode ? 8 : null,
+        validation_retry_count: summary.workflow_execution_mode ? 1 : null,
+        failure_code: null,
+        failure_message: null,
+        model_change_set_id: null,
+        model_change_set_status: null,
+        draft_revision: null,
+        candidate_digest: null,
+        validated_at: null,
+      });
+    }
+    if (/\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049|1051)\/events\?/.test(url)) {
+      return jsonResponse({ items: [], next_after_sequence: 0 });
+    }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(capabilitiesPayload);
     if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
       return jsonResponse({
@@ -150,6 +231,16 @@ function analysisFetchStub(options: {
         created_at: "2026-08-24T15:00:00Z",
       }, 201);
     }
+    if (url === "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute") {
+      inferenceStartAttempts += 1;
+      if (options.inferenceStartConflictsOnce && inferenceStartAttempts === 1) {
+        return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
+      }
+      return jsonResponse(workflowStartPayload, 202);
+    }
+    if (url === "/api/v1/tenants/7/models/18/analysis/validation-runs/1051/execute") {
+      return jsonResponse(workflowStartPayload, 202);
+    }
     return jsonResponse({ error: { code: "not_found" } }, 404);
   });
 }
@@ -160,6 +251,13 @@ function jsonResponse(value: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+const workflowStartPayload = {
+  changed: true,
+  workflow_run_id: 1051,
+  workflow_run_state: "running",
+  model_revision: 18,
+};
 
 const tenantHomePayload = {
   tenant: {

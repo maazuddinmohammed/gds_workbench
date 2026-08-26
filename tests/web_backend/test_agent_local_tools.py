@@ -206,11 +206,12 @@ async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
         connections=(
             AgentProviderConnection(
                 provider_code="databricks",
+                model_code="databricks-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentication=_ModelAuthentication(),
+        model_authentications={"databricks": _ModelAuthentication()},
     )
 
     result = await adapter.execute(
@@ -280,11 +281,12 @@ async def test_openai_agents_adapter_wraps_only_the_attached_local_catalog(
         connections=(
             AgentProviderConnection(
                 provider_code="databricks",
+                model_code="databricks-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentication=_ModelAuthentication(),
+        model_authentications={"databricks": _ModelAuthentication()},
     )
 
     result = await adapter.execute(
@@ -312,11 +314,12 @@ async def test_tool_wrapper_construction_failure_is_redacted(
         connections=(
             AgentProviderConnection(
                 provider_code="databricks",
+                model_code="databricks-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentication=_ModelAuthentication(),
+        model_authentications={"databricks": _ModelAuthentication()},
     )
 
     with pytest.raises(WorkbenchError) as captured:

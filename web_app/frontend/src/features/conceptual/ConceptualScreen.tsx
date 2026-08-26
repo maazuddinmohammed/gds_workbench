@@ -6,6 +6,7 @@ import type { ModelDetail } from "../models/api";
 import { conceptualQueryKeys, type ConceptualApi, type ConceptualFilters } from "./api";
 import { ConceptualObjectsLedger, ConceptualRelationshipsLedger } from "./ConceptualLedgers";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
 type ConceptualView = "objects" | "relationships";
 
@@ -23,6 +24,7 @@ export function ConceptualScreen({
   const queryClient = useQueryClient();
   const [view, setView] = useState<ConceptualView>("objects");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [objectFilters, setObjectFilters] = useState<ConceptualFilters>({});
   const [relationshipFilters, setRelationshipFilters] = useState<ConceptualFilters>({});
   const objectsQuery = useInfiniteQuery({
@@ -61,6 +63,16 @@ export function ConceptualScreen({
       view === "objects" ? objectsQuery.refetch() : relationshipsQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
+    ]);
+  };
+  const invalidateLedgers = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["conceptual-objects", tenantId, model.model_id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["conceptual-relationships", tenantId, model.model_id],
+      }),
     ]);
   };
 
@@ -105,6 +117,17 @@ export function ConceptualScreen({
           </button>
         </div>
       </header>
+
+      <WorkflowRunMonitor
+        api={api}
+        tenantId={tenantId}
+        modelId={model.model_id}
+        modelRevision={model.model_revision}
+        workflow="conceptual"
+        hasTenantLock={hasTenantLock}
+        focusRunId={recentRunId}
+        onApplied={invalidateLedgers}
+      />
 
       {view === "objects" ? (
         <ConceptualObjectsLedger
@@ -161,14 +184,9 @@ export function ConceptualScreen({
             model.model_revision,
           ).then(() => undefined)}
           onClose={() => setRunDialogOpen(false)}
-          onCreated={async () => {
+          onCreated={async (workflowRunId) => {
+            setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: ["conceptual-objects", tenantId, model.model_id],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ["conceptual-relationships", tenantId, model.model_id],
-              }),
               queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

@@ -1,4 +1,14 @@
+import { ApiError } from "../../core/http";
 import type { WorkflowRunRecord } from "./api";
+
+export const TENANT_WORKFLOW_CONFLICT_MESSAGE = (
+  "Another Workflow Run is already active for this Tenant. "
+  + "This run remains queued; retry after the active run finishes."
+);
+
+export function isTenantWorkflowConflict(error: unknown): boolean {
+  return error instanceof ApiError && error.code === "tenant_workflow_conflict";
+}
 
 export function RunStateBadge({ state }: { state: WorkflowRunRecord["workflow_run_state"] }) {
   const tone = state === "completed" || state === "completed_with_repair"

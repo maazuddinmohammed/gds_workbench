@@ -149,7 +149,14 @@ export interface ConceptualTransport {
 export type ConceptualApi = ConceptualTransport
   & Pick<
     WorkflowsApi,
-    "createWorkflowRun" | "executeConceptualRun" | "readAgentCapabilities"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeConceptualRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >
   & Pick<ModelScopeApi, "listModelScope">;
 

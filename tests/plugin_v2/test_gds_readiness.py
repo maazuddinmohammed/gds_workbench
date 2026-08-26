@@ -385,6 +385,348 @@ def initialized_session(tmp_path: Path) -> Path:
     return Path(json.loads(result.stdout)["path"])
 
 
+def _mapping_materialization_proof(
+    modeled_entity_type: str = "logical_entity",
+) -> dict[str, object]:
+    return {
+        "contract": "mapping-authoring@1.0",
+        "model_id": 41,
+        "model_revision": 8,
+        "modeled_entity_type": modeled_entity_type,
+        "target_object_id": 101,
+        "source_system_id": 201,
+        "profile_schema_digest": "1" * 64,
+        "context_digest": "2" * 64,
+        "candidate_digest": "3" * 64,
+        "change_count": 2,
+        "record_count": 2,
+    }
+
+
+def _generator_document_proof(
+    modeled_entity_type: str = "logical_entity",
+) -> dict[str, object]:
+    return {
+        "contract": "generator-document@1.0",
+        "model_id": 41,
+        "model_revision": 8,
+        "modeled_entity_type": modeled_entity_type,
+        "target_object_id": 101,
+        "source_system_id": 201,
+        "profile_schema_digest": "1" * 64,
+        "mapping_context_digest": "2" * 64,
+        "document_digest": "3" * 64,
+    }
+
+
+def _proof_units(*pairs: tuple[int, int]) -> str:
+    return json.dumps(
+        [
+            {"target_object_id": target_object_id, "source_system_id": source_system_id}
+            for target_object_id, source_system_id in pairs
+        ],
+        separators=(",", ":"),
+    )
+
+
+def test_mapping_readiness_requires_bound_server_materialization_proof(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+
+    before = run_helper(
+        "readiness", "--session", str(session), "--target", "logical-mapping"
+    )
+    bound = run_helper(
+        "mapping-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof",
+        json.dumps(_mapping_materialization_proof(), separators=(",", ":")),
+    )
+    after = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof-units",
+        _proof_units((101, 201)),
+    )
+
+    assert before.returncode == 0, before.stderr
+    assert ["mapping_contract_unavailable", 1] in json.loads(before.stdout)["blockers"]
+    assert bound.returncode == 0, bound.stderr
+    assert json.loads(bound.stdout) == {
+        "target": "logical-mapping",
+        "bound": True,
+        "model_snapshot_id": "model-snapshot-01",
+        "model_revision": 8,
+        "target_object_id": 101,
+        "source_system_id": 201,
+        "candidate_digest": "3" * 64,
+    }
+    assert after.returncode == 0, after.stderr
+    output = json.loads(after.stdout)
+    assert output["ready"] is True
+    assert not any(
+        code == "mapping_contract_unavailable" for code, _ in output["blockers"]
+    )
+    stored = (session / "tasks" / ".mapping-proofs.json").read_text()
+    assert "records" not in stored
+    assert "changes" not in stored
+
+
+def test_mapping_proof_rejects_a_different_model_revision(tmp_path: Path) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    proof = _mapping_materialization_proof()
+    proof["model_revision"] = 9
+
+    result = run_helper(
+        "mapping-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof",
+        json.dumps(proof, separators=(",", ":")),
+    )
+
+    assert result.returncode != 0
+    assert "does not match the current Model Snapshot" in result.stderr
+    assert not (session / "tasks" / ".mapping-proofs.json").exists()
+
+
+def test_mapping_proof_is_not_reused_for_a_replaced_snapshot(tmp_path: Path) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    bound = run_helper(
+        "mapping-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof",
+        json.dumps(_mapping_materialization_proof(), separators=(",", ":")),
+    )
+    assert bound.returncode == 0, bound.stderr
+    manifest_path = session / "model" / "model-snapshot" / "manifest.json"
+    manifest = json.loads(manifest_path.read_text())
+    manifest["snapshot_id"] = "model-snapshot-02"
+    manifest_path.write_text(json.dumps(manifest) + "\n")
+
+    result = run_helper(
+        "readiness", "--session", str(session), "--target", "logical-mapping"
+    )
+
+    assert result.returncode == 0, result.stderr
+    assert ["mapping_contract_unavailable", 1] in json.loads(result.stdout)["blockers"]
+
+
+def test_code_readiness_requires_bound_server_generator_document_proof(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+
+    before = run_helper(
+        "readiness", "--session", str(session), "--target", "logical-code"
+    )
+    bound = run_helper(
+        "generator-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-code",
+        "--proof",
+        json.dumps(_generator_document_proof(), separators=(",", ":")),
+    )
+    after = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-code",
+        "--proof-units",
+        _proof_units((101, 201)),
+    )
+
+    assert before.returncode == 0, before.stderr
+    assert ["generator_contract_unavailable", 1] in json.loads(before.stdout)[
+        "blockers"
+    ]
+    assert bound.returncode == 0, bound.stderr
+    assert json.loads(bound.stdout) == {
+        "target": "logical-code",
+        "bound": True,
+        "model_snapshot_id": "model-snapshot-01",
+        "model_revision": 8,
+        "target_object_id": 101,
+        "source_system_id": 201,
+        "document_digest": "3" * 64,
+    }
+    assert after.returncode == 0, after.stderr
+    output = json.loads(after.stdout)
+    assert output["ready"] is True
+    assert not any(
+        code == "generator_contract_unavailable" for code, _ in output["blockers"]
+    )
+    stored = (session / "tasks" / ".generator-proofs.json").read_text()
+    assert '"document":' not in stored
+    assert "executable_sources" not in stored
+
+
+def test_mapping_readiness_requires_every_selected_work_unit_proof(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    first = _mapping_materialization_proof()
+    second = _mapping_materialization_proof()
+    second["target_object_id"] = 102
+    second["source_system_id"] = 202
+    units = _proof_units((101, 201), (102, 202))
+
+    bound_first = run_helper(
+        "mapping-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof",
+        json.dumps(first, separators=(",", ":")),
+    )
+    incomplete = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof-units",
+        units,
+    )
+    bound_second = run_helper(
+        "mapping-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof",
+        json.dumps(second, separators=(",", ":")),
+    )
+    complete = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof-units",
+        units,
+    )
+
+    assert bound_first.returncode == 0, bound_first.stderr
+    assert bound_second.returncode == 0, bound_second.stderr
+    assert incomplete.returncode == 0, incomplete.stderr
+    assert ["mapping_contract_unavailable", 1] in json.loads(incomplete.stdout)[
+        "blockers"
+    ]
+    assert complete.returncode == 0, complete.stderr
+    assert json.loads(complete.stdout)["ready"] is True
+
+
+def test_code_readiness_requires_every_selected_work_unit_proof(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    first = _generator_document_proof()
+    second = _generator_document_proof()
+    second["target_object_id"] = 102
+    second["source_system_id"] = 202
+    units = _proof_units((101, 201), (102, 202))
+
+    for proof in (first, second):
+        if proof is second:
+            before = run_helper(
+                "readiness",
+                "--session",
+                str(session),
+                "--target",
+                "logical-code",
+                "--proof-units",
+                units,
+            )
+        bound = run_helper(
+            "generator-proof",
+            "--session",
+            str(session),
+            "--target",
+            "logical-code",
+            "--proof",
+            json.dumps(proof, separators=(",", ":")),
+        )
+        assert bound.returncode == 0, bound.stderr
+    after = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-code",
+        "--proof-units",
+        units,
+    )
+
+    assert before.returncode == 0, before.stderr
+    assert ["generator_contract_unavailable", 1] in json.loads(before.stdout)[
+        "blockers"
+    ]
+    assert after.returncode == 0, after.stderr
+    assert json.loads(after.stdout)["ready"] is True
+
+
+def test_readiness_rejects_duplicate_proof_units(tmp_path: Path) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+
+    result = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-mapping",
+        "--proof-units",
+        _proof_units((101, 201), (101, 201)),
+    )
+
+    assert result.returncode != 0
+    assert "unique exact target/source pairs" in result.stderr
+
+
+def test_generator_proof_rejects_a_different_model_revision(tmp_path: Path) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    proof = _generator_document_proof()
+    proof["model_revision"] = 9
+
+    result = run_helper(
+        "generator-proof",
+        "--session",
+        str(session),
+        "--target",
+        "logical-code",
+        "--proof",
+        json.dumps(proof, separators=(",", ":")),
+    )
+
+    assert result.returncode != 0
+    assert "does not match the current Model Snapshot" in result.stderr
+    assert not (session / "tasks" / ".generator-proofs.json").exists()
+
+
 def test_readiness_supports_all_eight_targets_without_returning_rows(
     tmp_path: Path,
 ) -> None:

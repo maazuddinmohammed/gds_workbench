@@ -3,6 +3,7 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from typing import cast
+from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
@@ -11,7 +12,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, SecretStr
 from test_mapping_attribute_candidate import (
     _preparation as _mapping_preparation,  # pyright: ignore[reportPrivateUsage]
 )
@@ -70,6 +71,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.integrations.agents.configuration import (
     AgentProviderConnection,
     AgentRuntimeConfiguration,
+    FoundryClientCredentials,
 )
 from gds_workbench_api.integrations.agents import (
     create_agent_execution_router,
@@ -2065,6 +2067,7 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
 async def test_remote_runtime_constructs_without_contacting_a_provider() -> None:
     connection = AgentProviderConnection(
         provider_code="databricks",
+        model_code="databricks-primary",
         model_endpoint="production-agent-endpoint",
         timeout_seconds=90,
     )
@@ -2094,3 +2097,34 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
         await router.execute(request)
 
     assert captured.value.code == "invalid_request"
+
+
+async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
+    connection = AgentProviderConnection(
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
+        model_endpoint="production-foundry-model",
+        timeout_seconds=90,
+        openai_base_url="https://fixture.openai.azure.com/openai/v1/",
+        token_scope="https://ai.azure.com/.default",
+        foundry_client_credentials=FoundryClientCredentials(
+            tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            client_id=UUID("22222222-2222-2222-2222-222222222222"),
+            client_secret=SecretStr("never-log-this-foundry-client-secret"),
+        ),
+    )
+
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(
+            mode="remote",
+            timeout_seconds=90,
+            connections=(connection,),
+        ),
+        capabilities=load_default_agent_capabilities(),
+    )
+
+    with pytest.raises(WorkbenchError) as captured:
+        await router.execute(_request(sdk_code="langchain_create_agent"))
+
+    assert captured.value.code == "invalid_request"
+    assert "never-log-this-foundry-client-secret" not in repr(router)

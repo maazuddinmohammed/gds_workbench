@@ -79,7 +79,7 @@ describe("Model Profiling", () => {
   });
 
   it("creates a queued run, then requires a separate explicit execute action", async () => {
-    const fetcher = profilingFetchStub();
+    const fetcher = profilingFetchStub({ executeConflictOnce: true });
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
@@ -113,7 +113,17 @@ describe("Model Profiling", () => {
 
     await user.click(within(drawer).getByRole("button", { name: "Execute queued run" }));
 
+    expect(await within(drawer).findByRole("alert")).toHaveTextContent(
+      "Another Workflow Run is already active for this Tenant. "
+      + "This run remains queued; retry after the active run finishes.",
+    );
+    await user.click(within(drawer).getByRole("button", { name: "Execute queued run" }));
+
     await waitFor(() => {
+      expect(fetcher.mock.calls.filter(([input, init]) => (
+        String(input) === "/api/v1/tenants/7/models/18/runs"
+        && init?.method === "POST"
+      ))).toHaveLength(1);
       expect(fetcher).toHaveBeenCalledWith(
         "/api/v1/tenants/7/models/18/profiling/runs/1049/execute",
         expect.objectContaining({
@@ -121,6 +131,10 @@ describe("Model Profiling", () => {
           method: "POST",
         }),
       );
+      expect(fetcher.mock.calls.filter(([input, init]) => (
+        String(input) === "/api/v1/tenants/7/models/18/profiling/runs/1049/execute"
+        && init?.method === "POST"
+      ))).toHaveLength(2);
     });
     expect(await within(drawer).findByText("Running")).toBeVisible();
   });
@@ -156,9 +170,11 @@ function profilingRouter(fetcher: ReturnType<typeof profilingFetchStub>) {
 function profilingFetchStub(options: {
   emptyResults?: boolean;
   resultsError?: boolean;
+  executeConflictOnce?: boolean;
 } = {}): ReturnType<typeof vi.fn<typeof fetch>> {
   let runCreated = false;
   let runExecuted = false;
+  let executeAttempts = 0;
 
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
@@ -199,6 +215,10 @@ function profilingFetchStub(options: {
       }, 201);
     }
     if (url === "/api/v1/tenants/7/models/18/profiling/runs/1049/execute" && init?.method === "POST") {
+      executeAttempts += 1;
+      if (options.executeConflictOnce && executeAttempts === 1) {
+        return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
+      }
       runExecuted = true;
       return jsonResponse({
         changed: true,

@@ -12,6 +12,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
     DatabricksModelAuthentication,
+    FoundryModelAuthentication,
     LangChainCreateAgentAdapter,
     OpenAIProviderCredentials,
     OpenAIAgentsSdkAdapter,
@@ -98,11 +99,12 @@ async def test_langchain_adapter_uses_prompt_json_and_bounded_turns(
         connections=(
             AgentProviderConnection(
                 provider_code="databricks",
+                model_code="databricks-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentication=FakeModelAuthentication(),
+        model_authentications={"databricks": FakeModelAuthentication()},
     )
 
     result = await adapter.execute(
@@ -166,11 +168,12 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
         connections=(
             AgentProviderConnection(
                 provider_code="databricks",
+                model_code="databricks-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=80,
             ),
         ),
-        model_authentication=FakeModelAuthentication(),
+        model_authentications={"databricks": FakeModelAuthentication()},
     )
 
     result = await adapter.execute(
@@ -236,3 +239,88 @@ async def test_databricks_model_authentication_uses_unified_oauth(
     )
     assert credentials.api_key.get_secret_value() == "never-log-this-token"
     assert "never-log-this-token" not in repr(credentials)
+
+
+@pytest.mark.asyncio
+async def test_foundry_authentication_uses_direct_entra_token(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeCredential:
+        def __init__(self, **kwargs: object) -> None:
+            captured["created"] = cast(int, captured.get("created", 0)) + 1
+            captured["credential"] = kwargs
+
+        async def get_token(self, scope: str) -> SimpleNamespace:
+            scopes = cast(list[str], captured.setdefault("scopes", []))
+            scopes.append(scope)
+            return SimpleNamespace(token="never-log-this-foundry-token")
+
+        async def close(self) -> None:
+            captured["closed"] = cast(int, captured.get("closed", 0)) + 1
+
+    monkeypatch.setattr(
+        agent_adapters,
+        "AsyncClientSecretCredential",
+        FakeCredential,
+    )
+    authentication = FoundryModelAuthentication(
+        base_url="https://fixture.openai.azure.com/openai/v1/",
+        token_scope="https://ai.azure.com/.default",
+        tenant_id="11111111-1111-1111-1111-111111111111",
+        client_id="22222222-2222-2222-2222-222222222222",
+        client_secret=SecretStr("never-log-this-foundry-client-secret"),
+    )
+
+    credentials = await authentication.authenticate()
+    second_credentials = await authentication.authenticate()
+    await authentication.close()
+    await authentication.close()
+
+    with pytest.raises(RuntimeError, match="authentication is closed"):
+        await authentication.authenticate()
+
+    assert credentials.base_url == "https://fixture.openai.azure.com/openai/v1/"
+    assert credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
+    assert (
+        second_credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
+    )
+    assert captured == {
+        "created": 1,
+        "credential": {
+            "tenant_id": "11111111-1111-1111-1111-111111111111",
+            "client_id": "22222222-2222-2222-2222-222222222222",
+            "client_secret": "never-log-this-foundry-client-secret",
+        },
+        "scopes": ["https://ai.azure.com/.default", "https://ai.azure.com/.default"],
+        "closed": 1,
+    }
+    assert "never-log-this-foundry-token" not in repr(authentication)
+    assert "never-log-this-foundry-client-secret" not in repr(authentication)
+
+
+@pytest.mark.asyncio
+async def test_adapter_requires_selected_model_mapping() -> None:
+    adapter = LangChainCreateAgentAdapter(
+        connections=(
+            AgentProviderConnection(
+                provider_code="databricks",
+                model_code="databricks-primary",
+                model_endpoint="production-agent-endpoint",
+                timeout_seconds=90,
+            ),
+        ),
+        model_authentications={"databricks": FakeModelAuthentication()},
+    )
+
+    with pytest.raises(WorkbenchError) as caught:
+        await adapter.execute(
+            _request(
+                sdk_code="langchain_create_agent",
+                provider_code="databricks",
+                model_code="different-model",
+            )
+        )
+
+    assert caught.value.code == "invalid_request"

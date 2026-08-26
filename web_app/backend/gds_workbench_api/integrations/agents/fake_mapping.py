@@ -761,7 +761,12 @@ def _fake_mapping_transformation(
             transformation.update(
                 {
                     "source_aliases": list(source_aliases),
-                    "logic": "Use the selected source Objects directly.",
+                    "joins": [],
+                    "unions": [],
+                    "filters": [],
+                    "aggregations": [],
+                    "entity_contribution_logic": ("Use the selected source Objects directly."),
+                    "rationale": "Deterministic local Mapping candidate.",
                 }
             )
         else:

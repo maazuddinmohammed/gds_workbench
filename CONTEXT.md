@@ -157,8 +157,9 @@ An uncommitted workflow result that can become one or more Model Change Set Sect
 _Avoid_: Agent answer, model output
 
 **Workflow Run**:
-One execution by an active registered workload Principal. The MCP server maps
-the workload's Entra identity directly to its internal Principal.
+One durable, Tenant-owned execution request created by an authorized human or
+registered workload Principal. Runs move from queued to running to one terminal
+state. At most one Workflow Run may be running for a Tenant at a time.
 _Avoid_: Job, session
 
 **GDS Work Session**:

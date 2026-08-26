@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
@@ -10,9 +10,16 @@ import {
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
 } from "../workflows/api";
+import {
+  isTenantWorkflowConflict,
+  TENANT_WORKFLOW_CONFLICT_MESSAGE,
+} from "../workflows/presentation";
 import type { CodeGenerationApi, CodeGenerationTarget } from "./api";
 
 export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets";
+type CodeGenerationRunSubmission =
+  | { kind: "create"; command: CreateWorkflowRunCommand }
+  | { kind: "retry"; workflowRunId: number };
 
 export function CodeGenerationRunDialog({
   api,
@@ -34,6 +41,7 @@ export function CodeGenerationRunDialog({
   onStarted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const [pendingWorkflowRunId, setPendingWorkflowRunId] = useState<number | null>(null);
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -50,26 +58,33 @@ export function CodeGenerationRunDialog({
         : String(model.default_validation_retry_count),
     },
     onSubmit: ({ value }) => {
-      createMutation.mutate({
-        expected_model_revision: model.model_revision,
-        model_workflow: "code_generation",
-        workflow_execution_mode: null,
-        selected_object_ids: coverage === "selected_targets"
-          ? selectedTargets.map((item) => item.target.object_id)
-          : [],
-        modeled_entity_type: entityType,
-        requested_batch_id: null,
-        agent: {
-          sdk_code: value.sdkCode,
-          provider_code: value.providerCode,
-          model_code: value.modelCode,
-          reasoning_effort_code: value.reasoningEffortCode,
-          max_turns: Number(value.maxTurns),
-          validation_retry_count: Number(value.validationRetryCount),
+      if (pendingWorkflowRunId !== null) {
+        runMutation.mutate({ kind: "retry", workflowRunId: pendingWorkflowRunId });
+        return;
+      }
+      runMutation.mutate({
+        kind: "create",
+        command: {
+          expected_model_revision: model.model_revision,
+          model_workflow: "code_generation",
+          workflow_execution_mode: null,
+          selected_object_ids: coverage === "selected_targets"
+            ? selectedTargets.map((item) => item.target.object_id)
+            : [],
+          modeled_entity_type: entityType,
+          requested_batch_id: null,
+          agent: {
+            sdk_code: value.sdkCode,
+            provider_code: value.providerCode,
+            model_code: value.modelCode,
+            reasoning_effort_code: value.reasoningEffortCode,
+            max_turns: Number(value.maxTurns),
+            validation_retry_count: Number(value.validationRetryCount),
+          },
+          prompt_overrides: {},
+          code_generation_coverage_mode: coverage,
+          sql_generation_guide_version_id: null,
         },
-        prompt_overrides: {},
-        code_generation_coverage_mode: coverage,
-        sql_generation_guide_version_id: null,
       });
     },
   });
@@ -101,24 +116,35 @@ export function CodeGenerationRunDialog({
     && parsedRetries >= capabilities.validation_retries.minimum
     && parsedRetries <= capabilities.validation_retries.maximum;
   const selectionValid = coverage === "all_eligible_targets" || selectedTargets.length > 0;
-  const createMutation = useMutation({
-    mutationFn: async (command: CreateWorkflowRunCommand) => {
+  const runMutation = useMutation({
+    mutationFn: async (submission: CodeGenerationRunSubmission) => {
+      if (submission.kind === "retry") {
+        await api.executeCodeGenerationRun(
+          tenantId,
+          model.model_id,
+          submission.workflowRunId,
+          model.model_revision,
+        );
+        return submission.workflowRunId;
+      }
+      const { command } = submission;
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
         command,
         globalThis.crypto.randomUUID(),
       );
+      setPendingWorkflowRunId(result.workflow_run_id);
       await api.executeCodeGenerationRun(
         tenantId,
         model.model_id,
         result.workflow_run_id,
         model.model_revision,
       );
-      return result;
+      return result.workflow_run_id;
     },
-    onSuccess: async (result) => {
-      await onStarted(result.workflow_run_id);
+    onSuccess: async (workflowRunId) => {
+      await onStarted(workflowRunId);
       onClose();
     },
   });
@@ -158,7 +184,7 @@ export function CodeGenerationRunDialog({
         aria-modal="true"
         aria-labelledby="code-generation-run-heading"
         onKeyDown={(event) => {
-          if (event.key === "Escape") onClose();
+          if (event.key === "Escape" && !runMutation.isPending) onClose();
         }}
       >
         <header className="drawer-header">
@@ -171,6 +197,7 @@ export function CodeGenerationRunDialog({
             className="panel-close"
             type="button"
             aria-label={`Close ${title}`}
+            disabled={runMutation.isPending}
             onClick={onClose}
           >
             <span aria-hidden="true">×</span>
@@ -278,28 +305,39 @@ export function CodeGenerationRunDialog({
           {capabilities && !agentSelectionValid ? (
             <p className="inline-error" role="alert">No compatible generator configuration is available.</p>
           ) : null}
-          {createMutation.isError ? (
-            <p className="inline-error" role="alert">{runError(createMutation.error)}</p>
+          {runMutation.isError ? (
+            <p className="inline-error" role="alert">
+              {runError(runMutation.error, pendingWorkflowRunId !== null)}
+            </p>
           ) : null}
 
           <footer className="dialog-actions">
             <p>Nothing runs until you confirm. The backend rechecks role, lock, revision, eligibility, guide, and agent options.</p>
             <div>
-              <button className="button button-secondary button-small" type="button" onClick={onClose}>
+              <button
+                className="button button-secondary button-small"
+                type="button"
+                disabled={runMutation.isPending}
+                onClick={onClose}
+              >
                 Cancel
               </button>
               <button
                 className="button button-primary button-small"
                 type="submit"
                 disabled={
-                  capabilitiesQuery.isPending
-                  || capabilitiesQuery.isError
-                  || createMutation.isPending
-                  || !selectionValid
-                  || !agentSelectionValid
+                  runMutation.isPending
+                  || (pendingWorkflowRunId === null && (
+                    capabilitiesQuery.isPending
+                    || capabilitiesQuery.isError
+                    || !selectionValid
+                    || !agentSelectionValid
+                  ))
                 }
               >
-                {createMutation.isPending ? "Creating and starting…" : title}
+                {runMutation.isPending
+                  ? pendingWorkflowRunId === null ? "Creating and starting…" : "Starting…"
+                  : pendingWorkflowRunId === null ? title : "Retry start"}
               </button>
             </div>
           </footer>
@@ -376,7 +414,13 @@ function layerLabel(entityType: MappingEntityType): string {
   return entityType === "logical_entity" ? "Logical" : "Dimensional";
 }
 
-function runError(error: Error): string {
+function runError(error: Error, runWasCreated: boolean): string {
+  if (runWasCreated && isTenantWorkflowConflict(error)) {
+    return TENANT_WORKFLOW_CONFLICT_MESSAGE;
+  }
+  if (runWasCreated) {
+    return "The Code Generation run remains queued because it could not be started.";
+  }
   if (error instanceof ApiError && error.status === 403) {
     return "You no longer have permission or the required Tenant Lock to generate SQL.";
   }

@@ -131,6 +131,29 @@ class _FailingAdapter:
         raise RuntimeError("provider leaked a sensitive diagnostic")
 
 
+@dataclass
+class _Resource:
+    close_count: int = 0
+
+    async def close(self) -> None:
+        self.close_count += 1
+
+
+@pytest.mark.asyncio
+async def test_router_closes_shared_provider_resources_once() -> None:
+    resource = _Resource()
+    router = AgentExecutionRouter(
+        capabilities=load_default_agent_capabilities(),
+        adapters=(_Adapter(),),
+        resources=(resource,),
+    )
+
+    await router.close()
+    await router.close()
+
+    assert resource.close_count == 1
+
+
 @pytest.mark.asyncio
 async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error() -> (
     None

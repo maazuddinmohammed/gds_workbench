@@ -192,7 +192,7 @@ Registered workload identities map directly to active Super Admin Principals.
 
 The `application` schema has 15 normalized tables. A governed Workflow Run
 stores the exact active Entra identity used to create it, an optional bounded
-Profiling/Analysis batch ID, and one immutable
+Profiling/Analysis batch ID, its immutable Tenant witness, and one immutable
 `workflow_run_object_selection` row per selected Object. Mapping selected
 coverage also stores one normalized
 `workflow_run_mapping_target_selection` target Object/source System pair. The
@@ -205,6 +205,10 @@ canonicalizes Object IDs, and derives the SHA-256 digest and count inside
 PostgreSQL. Caller-supplied digest/count witnesses are not accepted. Profiling
 and Analysis batch requests also require every selected eligible Object to
 belong to one System; multi-System selection remains valid without a batch.
+The `(model_id, tenant_id)` foreign key proves ownership, and a partial unique
+index permits at most one `running` Workflow Run per Tenant while allowing
+multiple queued and terminal Runs. `start_workflow_run` maps index contention to
+one stable conflict without disclosing the competing Run.
 
 Model Scope itself remains zone-neutral. Run eligibility selects Bronze inputs
 for Profiling through Logical, applied-Logical Silver inputs for Dimensional,

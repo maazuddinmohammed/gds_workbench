@@ -8,7 +8,10 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import DependencyUnavailableError
+from gds_etl_workbench.domain.errors import (
+    DependencyUnavailableError,
+    TenantWorkflowConflictError,
+)
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
@@ -31,6 +34,7 @@ class LifecycleTransaction:
     def __init__(self) -> None:
         self.calls: list[tuple[str, tuple[Any, ...]]] = []
         self.claim_assertion_fails = False
+        self.start_error: str | None = None
 
     async def fetch_one(
         self,
@@ -46,6 +50,8 @@ class LifecycleTransaction:
         if "target_model.model_revision" in query:
             return {"model_revision": 7}
         if "start_workflow_run" in query:
+            if self.start_error is not None:
+                raise RuntimeError(self.start_error)
             return {
                 "changed": True,
                 "workflow_run_id": 1048,
@@ -159,6 +165,24 @@ async def test_lifecycle_uses_governed_functions_with_server_identity() -> None:
     assert "application.assert_workflow_run_claim" in database.transaction.calls[4][0]
     assert database.transaction.calls[4][1] == (1048, _CLAIM_TOKEN)
     assert database.transaction.calls[5][1] == identity + (1048, 7, 12)
+
+
+@pytest.mark.asyncio
+async def test_lifecycle_maps_tenant_workflow_conflict() -> None:
+    database = LifecycleDatabase()
+    database.transaction.start_error = "tenant_workflow_conflict"
+    lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
+
+    with pytest.raises(TenantWorkflowConflictError):
+        await lifecycle.start(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_workflow="conceptual",
+            expected_execution_mode="one_shot",
+            expected_model_revision=7,
+        )
 
 
 @pytest.mark.asyncio

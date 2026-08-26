@@ -4,6 +4,7 @@ import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { mappingQueryKeys, type MappingApi, type MappingFilters } from "./api";
 import {
   MappingAttributesLedger,
@@ -33,6 +34,7 @@ export function MappingScreen({
   const queryClient = useQueryClient();
   const [view, setView] = useState<MappingView>(initialView ?? "dependencies");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
+  const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [filters, setFilters] = useState<Record<MappingView, MappingFilters>>({
     dependencies: {},
     objects: {},
@@ -94,6 +96,19 @@ export function MappingScreen({
   const setViewFilters = (nextFilters: MappingFilters) => {
     setFilters((current) => ({ ...current, [view]: nextFilters }));
   };
+  const invalidateLedgers = async () => {
+    await Promise.all([
+      queryClient.invalidateQueries({
+        queryKey: ["mapping-dependencies", tenantId, model.model_id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["mapping-objects", tenantId, model.model_id],
+      }),
+      queryClient.invalidateQueries({
+        queryKey: ["mapping-attributes", tenantId, model.model_id],
+      }),
+    ]);
+  };
 
   return (
     <main className="workspace mapping-workspace page-enter">
@@ -147,6 +162,16 @@ export function MappingScreen({
         <strong>{model.model_name} · r{model.model_revision}</strong>
         <span>Logical mappings target eligible Silver Objects. Dimensional mappings target eligible Gold Objects.</span>
       </div>
+      <WorkflowRunMonitor
+        api={api}
+        tenantId={tenantId}
+        modelId={model.model_id}
+        modelRevision={model.model_revision}
+        workflow="mapping"
+        hasTenantLock={hasTenantLock && hasAppPermission}
+        focusRunId={recentRunId}
+        onApplied={invalidateLedgers}
+      />
       {view === "dependencies" ? (
         <MappingDependenciesLedger
           tenantId={tenantId}
@@ -184,17 +209,9 @@ export function MappingScreen({
           tenantId={tenantId}
           model={model}
           onClose={() => setRunDialogOpen(false)}
-          onCompleted={async () => {
+          onCompleted={async (workflowRunId) => {
+            setRecentRunId(workflowRunId);
             await Promise.all([
-              queryClient.invalidateQueries({
-                queryKey: ["mapping-dependencies", tenantId, model.model_id],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ["mapping-objects", tenantId, model.model_id],
-              }),
-              queryClient.invalidateQueries({
-                queryKey: ["mapping-attributes", tenantId, model.model_id],
-              }),
               queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
               queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
             ]);

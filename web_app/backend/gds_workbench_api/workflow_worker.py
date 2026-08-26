@@ -9,7 +9,10 @@ from typing import Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 
-from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.capabilities import (
+    load_default_agent_capabilities,
+    select_agent_provider_capabilities,
+)
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.workflows.execution import (
@@ -20,6 +23,7 @@ from gds_workbench_api.features.workflows.execution import (
 )
 from gds_workbench_api.features.workflows.execution.assembly import (
     WorkflowRuntimeDatabase,
+    WorkflowRuntimeServices,
     create_workflow_runtime_services,
 )
 from gds_workbench_api.features.workflows.execution.configuration import (
@@ -51,14 +55,18 @@ class WorkflowWorkerRuntime:
     database: WorkerProcessDatabase
     worker: WorkflowExecutionWorker
     configuration: WorkflowExecutionConfiguration
+    services: WorkflowRuntimeServices
 
     async def run(self, shutdown: asyncio.Event) -> None:
-        await run_worker_process(
-            database=self.database,
-            worker=self.worker,
-            configuration=self.configuration,
-            shutdown=shutdown,
-        )
+        try:
+            await run_worker_process(
+                database=self.database,
+                worker=self.worker,
+                configuration=self.configuration,
+                shutdown=shutdown,
+            )
+        finally:
+            await self.services.close()
 
 
 async def run_worker_loop(
@@ -93,7 +101,7 @@ async def run_worker_process(
     configuration: WorkflowExecutionConfiguration,
     shutdown: asyncio.Event,
 ) -> None:
-    """Own database lifecycle and cancel any active exact claim on shutdown."""
+    """Own database lifecycle; cancel execution and release its lease on shutdown."""
     await database.open()
     loop_task = asyncio.create_task(run_worker_loop(worker, configuration=configuration))
     shutdown_task = asyncio.create_task(shutdown.wait())
@@ -128,11 +136,23 @@ def create_worker_runtime(
         pool_timeout_seconds=runtime_settings.pool_timeout_seconds,
     )
     authorizer = AuthorizationService()
+    all_agent_capabilities = load_default_agent_capabilities()
+    agent_capabilities = (
+        all_agent_capabilities
+        if runtime_settings.agent_runtime.mode == "fake"
+        else select_agent_provider_capabilities(
+            all_agent_capabilities,
+            provider_codes={
+                connection.provider_code
+                for connection in runtime_settings.agent_runtime.connections
+            },
+        )
+    )
     services = create_workflow_runtime_services(
         database=runtime_database,
         authorizer=authorizer,
         agent_runtime=runtime_settings.agent_runtime,
-        agent_capability_registry=load_default_agent_capabilities(),
+        agent_capability_registry=agent_capabilities,
         databricks_environment_code=runtime_settings.databricks_environment_code,
         databricks_execution=create_databricks_execution_adapters(
             runtime_settings.databricks_execution_mode
@@ -149,6 +169,7 @@ def create_worker_runtime(
         database=runtime_database,
         worker=worker,
         configuration=configuration,
+        services=services,
     )
 
 

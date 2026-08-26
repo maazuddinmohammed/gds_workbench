@@ -96,6 +96,18 @@ export interface WorkflowRunDetail extends WorkflowRunRecord {
   validation_retry_count: number | null;
   failure_code: string | null;
   failure_message: string | null;
+  model_change_set_id: string | null;
+  model_change_set_status:
+    | "active"
+    | "validated"
+    | "applied"
+    | "expired"
+    | "discarded"
+    | "superseded"
+    | null;
+  draft_revision: number | null;
+  candidate_digest: string | null;
+  validated_at: string | null;
 }
 
 export interface WorkflowRunEvent {
@@ -132,6 +144,54 @@ export interface WorkflowRunStart {
   model_revision: number;
 }
 
+export interface ApplyWorkflowDraftResult {
+  schema_version: "1.0";
+  model_id: number;
+  workflow_run_id: number;
+  model_change_set_id: string;
+  replayed: boolean;
+  draft_revision: number;
+  candidate_digest: string;
+  action_count: number;
+  model_revision: number;
+  applied_at: string;
+}
+
+export interface WorkflowDraftActionReview {
+  dataset: string;
+  insert_count: number;
+  update_count: number;
+  deactivate_count: number;
+  reactivate_count: number;
+  no_change_count: number;
+}
+
+export interface WorkflowDraftReview {
+  schema_version: "1.0";
+  model_id: number;
+  model_change_set_id: string;
+  status: "active" | "validated" | "applied" | "expired" | "discarded" | "superseded";
+  draft_revision: number;
+  candidate_digest: string | null;
+  validation_outcome: {
+    schema_version: "1.0";
+    valid: boolean;
+    phase: string;
+    staged_record_count: number;
+    error_count: number;
+    action_review: WorkflowDraftActionReview[];
+  } | null;
+  dataset_counts: { dataset: string; record_count: number }[];
+  dataset: null;
+  records: null;
+  created_at: string;
+  last_activity_at: string;
+  expires_at: string;
+  validated_at: string | null;
+  applied_at: string | null;
+  terminal_at: string | null;
+}
+
 export interface WorkflowsApi {
   readAgentCapabilities: () => Promise<AgentCapabilities>;
   listWorkflowRuns: (
@@ -159,7 +219,33 @@ export interface WorkflowsApi {
     command: CreateWorkflowRunCommand,
     idempotencyKey: string,
   ) => Promise<WorkflowRunCommandResult>;
+  applyWorkflowDraft: (
+    tenantId: number,
+    modelId: number,
+    workflowRunId: number,
+    expectedModelRevision: number,
+    expectedDraftRevision: number,
+    expectedCandidateDigest: string,
+    idempotencyKey: string,
+  ) => Promise<ApplyWorkflowDraftResult>;
+  readWorkflowDraftReview: (
+    tenantId: number,
+    modelId: number,
+    modelChangeSetId: string,
+  ) => Promise<WorkflowDraftReview>;
   executeProfilingRun: (
+    tenantId: number,
+    modelId: number,
+    workflowRunId: number,
+    expectedModelRevision: number,
+  ) => Promise<WorkflowRunStart>;
+  executeAnalysisInferenceRun: (
+    tenantId: number,
+    modelId: number,
+    workflowRunId: number,
+    expectedModelRevision: number,
+  ) => Promise<WorkflowRunStart>;
+  executeAnalysisValidationRun: (
     tenantId: number,
     modelId: number,
     workflowRunId: number,
@@ -241,6 +327,33 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
           body: JSON.stringify(command),
         },
       ),
+    applyWorkflowDraft: (
+      tenantId,
+      modelId,
+      workflowRunId,
+      expectedModelRevision,
+      expectedDraftRevision,
+      expectedCandidateDigest,
+      idempotencyKey,
+    ) => request<ApplyWorkflowDraftResult>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/runs/${workflowRunId}/draft/apply`,
+      {
+        method: "POST",
+        headers: {
+          "content-type": "application/json",
+          "Idempotency-Key": idempotencyKey,
+        },
+        body: JSON.stringify({
+          expected_model_revision: expectedModelRevision,
+          expected_draft_revision: expectedDraftRevision,
+          expected_candidate_digest: expectedCandidateDigest,
+        }),
+      },
+    ),
+    readWorkflowDraftReview: (tenantId, modelId, modelChangeSetId) =>
+      request<WorkflowDraftReview>(
+        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/${modelChangeSetId}`,
+      ),
     executeProfilingRun: (
       tenantId,
       modelId,
@@ -248,6 +361,32 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
       expectedModelRevision,
     ) => request<WorkflowRunStart>(
       `/api/v1/tenants/${tenantId}/models/${modelId}/profiling/runs/${workflowRunId}/execute`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+      },
+    ),
+    executeAnalysisInferenceRun: (
+      tenantId,
+      modelId,
+      workflowRunId,
+      expectedModelRevision,
+    ) => request<WorkflowRunStart>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/inference-runs/${workflowRunId}/execute`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+      },
+    ),
+    executeAnalysisValidationRun: (
+      tenantId,
+      modelId,
+      workflowRunId,
+      expectedModelRevision,
+    ) => request<WorkflowRunStart>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/validation-runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -367,6 +506,30 @@ export type WorkflowCreationApi = Pick<
   WorkflowsApi,
   "createWorkflowRun" | "readAgentCapabilities"
 > & WorkflowScopeReader;
+
+export type WorkflowRunMonitorApi = Pick<
+  WorkflowsApi,
+  | "applyWorkflowDraft"
+  | "listWorkflowRunEvents"
+  | "listWorkflowRuns"
+  | "readWorkflowDraftReview"
+  | "readWorkflowRun"
+>;
+
+export const workflowRunQueryKeys = {
+  recent: (tenantId: number, modelId: number, workflow: ModelWorkflow) => (
+    ["workflow-runs", tenantId, modelId, workflow] as const
+  ),
+  detail: (tenantId: number, modelId: number, workflowRunId: number) => (
+    ["workflow-run", tenantId, modelId, workflowRunId] as const
+  ),
+  events: (tenantId: number, modelId: number, workflowRunId: number) => (
+    ["workflow-run-events", tenantId, modelId, workflowRunId] as const
+  ),
+  draftReview: (tenantId: number, modelId: number, modelChangeSetId: string) => (
+    ["workflow-draft-review", tenantId, modelId, modelChangeSetId] as const
+  ),
+};
 
 export const workflowCreationQueryKeys = {
   capabilities: ["agent-capabilities"] as const,

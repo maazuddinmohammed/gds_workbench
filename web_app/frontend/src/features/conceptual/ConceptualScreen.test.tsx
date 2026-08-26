@@ -161,6 +161,64 @@ describe("Model Conceptual", () => {
       }),
     );
   });
+
+  it("retries a conflicted Conceptual start without creating another run", async () => {
+    const fetcher = conceptualFetchStub({ executeConflictOnce: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Conceptual Objects" });
+
+    await user.click(screen.getByRole("button", { name: "Run Conceptual" }));
+    const createAndRun = await screen.findByRole("button", { name: "Create and run Conceptual" });
+    await waitFor(() => expect(createAndRun).toBeEnabled());
+    await user.click(createAndRun);
+
+    expect(await screen.findByRole("alert")).toHaveTextContent(
+      "Another Workflow Run is already active for this Tenant. "
+      + "This run remains queued; retry after the active run finishes.",
+    );
+    const retry = screen.getByRole("button", { name: "Retry start" });
+    await user.click(retry);
+
+    await waitFor(() => {
+      expect(fetcher.mock.calls.filter(([input, init]) => (
+        String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
+      ))).toHaveLength(1);
+      expect(fetcher.mock.calls.filter(([input, init]) => (
+        String(input) === "/api/v1/tenants/7/models/18/conceptual/runs/1150/execute"
+        && init?.method === "POST"
+      ))).toHaveLength(2);
+    });
+  });
+
+  it("cannot dismiss Conceptual configuration while create/start is pending", async () => {
+    let releaseExecute: (() => void) | undefined;
+    const executeGate = new Promise<void>((resolve) => {
+      releaseExecute = resolve;
+    });
+    const fetcher = conceptualFetchStub({ executeGate });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Conceptual Objects" });
+
+    await user.click(screen.getByRole("button", { name: "Run Conceptual" }));
+    const submit = await screen.findByRole("button", { name: "Create and run Conceptual" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    await user.click(submit);
+
+    await waitFor(() => expect(screen.getByRole("button", {
+      name: "Close Configure Conceptual run",
+    })).toBeDisabled());
+    expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    await user.keyboard("{Escape}");
+    expect(screen.getByRole("dialog", { name: "Configure Conceptual run" })).toBeVisible();
+
+    releaseExecute?.();
+    await waitFor(() => expect(screen.queryByRole(
+      "dialog",
+      { name: "Configure Conceptual run" },
+    )).not.toBeInTheDocument());
+  });
 });
 
 function conceptualRouter(fetcher: ReturnType<typeof conceptualFetchStub>) {
@@ -180,7 +238,10 @@ function conceptualFetchStub(options: {
   denied?: boolean;
   detailDenied?: boolean;
   hasNextPage?: boolean;
+  executeConflictOnce?: boolean;
+  executeGate?: Promise<void>;
 } = {}) {
+  let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
@@ -238,6 +299,9 @@ function conceptualFetchStub(options: {
     if (url === "/api/v1/config/agent-capabilities") {
       return jsonResponse(agentCapabilitiesPayload);
     }
+    if (url === "/api/v1/tenants/7/models/18/runs?workflow=conceptual&page_size=5") {
+      return jsonResponse({ items: [], next_cursor: null });
+    }
     if (url === "/api/v1/tenants/7/models/18/runs") {
       return jsonResponse({
         created: true,
@@ -249,6 +313,11 @@ function conceptualFetchStub(options: {
       }, 201);
     }
     if (url === "/api/v1/tenants/7/models/18/conceptual/runs/1150/execute") {
+      executeAttempts += 1;
+      await options.executeGate;
+      if (options.executeConflictOnce && executeAttempts === 1) {
+        return jsonResponse({ error: { code: "tenant_workflow_conflict" } }, 409);
+      }
       return jsonResponse({
         changed: true,
         workflow_run_id: 1150,

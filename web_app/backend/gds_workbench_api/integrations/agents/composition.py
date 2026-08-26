@@ -15,7 +15,10 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
 )
 from gds_workbench_api.integrations.agents.adapters import (
+    DatabricksModelAuthentication,
+    FoundryModelAuthentication,
     LangChainCreateAgentAdapter,
+    ManagedModelAuthentication,
     OpenAIAgentsSdkAdapter,
 )
 from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
@@ -233,11 +236,40 @@ def create_agent_execution_router(
     capabilities: AgentCapabilityRegistry,
 ) -> AgentExecutionRouter:
     adapters: tuple[AgentExecutionAdapter, ...]
+    authentications: dict[str, ManagedModelAuthentication] = {}
     if configuration.mode == "fake":
         adapters = tuple(LocalFakeAgentAdapter(sdk_code=sdk.code) for sdk in capabilities.sdks)
     else:
+        for connection in configuration.connections:
+            if connection.provider_code == "databricks":
+                authentications[connection.provider_code] = DatabricksModelAuthentication()
+            else:
+                if (
+                    connection.openai_base_url is None
+                    or connection.token_scope is None
+                    or connection.foundry_client_credentials is None
+                ):
+                    raise ValueError("Foundry authentication configuration is incomplete")
+                credentials = connection.foundry_client_credentials
+                authentications[connection.provider_code] = FoundryModelAuthentication(
+                    base_url=connection.openai_base_url,
+                    token_scope=connection.token_scope,
+                    tenant_id=str(credentials.tenant_id),
+                    client_id=str(credentials.client_id),
+                    client_secret=credentials.client_secret,
+                )
         adapters = (
-            LangChainCreateAgentAdapter(connections=configuration.connections),
-            OpenAIAgentsSdkAdapter(connections=configuration.connections),
+            LangChainCreateAgentAdapter(
+                connections=configuration.connections,
+                model_authentications=authentications,
+            ),
+            OpenAIAgentsSdkAdapter(
+                connections=configuration.connections,
+                model_authentications=authentications,
+            ),
         )
-    return AgentExecutionRouter(capabilities=capabilities, adapters=adapters)
+    return AgentExecutionRouter(
+        capabilities=capabilities,
+        adapters=adapters,
+        resources=tuple(authentications.values()),
+    )

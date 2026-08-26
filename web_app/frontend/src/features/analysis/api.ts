@@ -94,7 +94,15 @@ export interface AnalysisTransport {
 export type AnalysisApi = AnalysisTransport
   & Pick<
     WorkflowsApi,
-    "createWorkflowRun" | "listWorkflowRuns" | "readAgentCapabilities"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeAnalysisInferenceRun"
+    | "executeAnalysisValidationRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >
   & Pick<ModelScopeApi, "listModelScope">;
 

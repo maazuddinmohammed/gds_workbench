@@ -18,7 +18,10 @@ from gds_workbench_api.authentication import (
     WebAuthenticationMiddleware,
     WebIdentityProvider,
 )
-from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.capabilities import (
+    load_default_agent_capabilities,
+    select_agent_provider_capabilities,
+)
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis import (
@@ -174,7 +177,18 @@ def create_runtime_app(
         pool_timeout_seconds=runtime_settings.pool_timeout_seconds,
     )
     authorizer = AuthorizationService()
-    agent_capability_registry = load_default_agent_capabilities()
+    all_agent_capabilities = load_default_agent_capabilities()
+    agent_capability_registry = (
+        all_agent_capabilities
+        if runtime_settings.agent_runtime.mode == "fake"
+        else select_agent_provider_capabilities(
+            all_agent_capabilities,
+            provider_codes={
+                connection.provider_code
+                for connection in runtime_settings.agent_runtime.connections
+            },
+        )
+    )
     workflow_services = create_workflow_runtime_services(
         database=runtime_database,
         authorizer=authorizer,
@@ -207,7 +221,10 @@ def create_runtime_app(
         try:
             yield
         finally:
-            await runtime_database.close()
+            try:
+                await workflow_services.close()
+            finally:
+                await runtime_database.close()
 
     app = create_app(
         readiness=runtime_database,

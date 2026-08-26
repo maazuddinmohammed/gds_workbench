@@ -162,6 +162,10 @@ class AgentExecutionAdapter(Protocol):
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult: ...
 
 
+class AgentExecutionResource(Protocol):
+    async def close(self) -> None: ...
+
+
 class AgentExecutionFailedError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
@@ -178,6 +182,7 @@ class AgentExecutionRouter:
         *,
         capabilities: AgentCapabilityRegistry,
         adapters: tuple[AgentExecutionAdapter, ...],
+        resources: tuple[AgentExecutionResource, ...] = (),
     ) -> None:
         sdk_codes = [adapter.sdk_code for adapter in adapters]
         if len(sdk_codes) != len(set(sdk_codes)):
@@ -187,6 +192,8 @@ class AgentExecutionRouter:
             raise ValueError("Every agent adapter SDK code must be registered")
         self._capabilities = capabilities
         self._adapters = {adapter.sdk_code: adapter for adapter in adapters}
+        self._resources = resources
+        self._closed = False
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         self._capabilities.validate_selection(request.selection)
@@ -202,3 +209,10 @@ class AgentExecutionRouter:
             raise
         except Exception:
             raise AgentExecutionFailedError() from None
+
+    async def close(self) -> None:
+        if self._closed:
+            return
+        for resource in reversed(self._resources):
+            await resource.close()
+        self._closed = True

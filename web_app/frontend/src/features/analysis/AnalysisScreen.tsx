@@ -3,8 +3,13 @@ import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-quer
 
 import type { ModelDetail } from "../models/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
-import { loadAllBronzeScope, workflowCreationQueryKeys } from "../workflows/api";
+import {
+  loadAllBronzeScope,
+  workflowCreationQueryKeys,
+  workflowRunQueryKeys,
+} from "../workflows/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import { isActiveRun } from "../workflows/presentation";
 import {
   analysisQueryKeys,
@@ -34,6 +39,7 @@ export function AnalysisScreen({
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runState, setRunState] = useState<WorkflowRunFilterState>("");
   const [runDialog, setRunDialog] = useState<RunDialogKind>(null);
+  const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const findingsQuery = useInfiniteQuery({
     queryKey: analysisQueryKeys.findings(tenantId, model.model_id, filters),
     queryFn: ({ pageParam }) => api.listAnalysisFindings(
@@ -64,10 +70,16 @@ export function AnalysisScreen({
       query.state.data?.items.some(isActiveRun) ? 2_000 : false
     ),
   });
-
   const refresh = async () => {
     await Promise.all([
-      view === "results" ? findingsQuery.refetch() : runsQuery.refetch(),
+      view === "results"
+        ? findingsQuery.refetch()
+        : Promise.all([
+          runsQuery.refetch(),
+          queryClient.invalidateQueries({
+            queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "analysis"),
+          }),
+        ]),
       endpointOptionsQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
       queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
@@ -154,13 +166,29 @@ export function AnalysisScreen({
           }}
         />
       ) : (
-        <AnalysisRuns
-          items={runsQuery.data?.items ?? []}
-          state={runState}
-          isLoading={runsQuery.isPending}
-          isError={runsQuery.isError}
-          onStateChange={setRunState}
-        />
+        <>
+          <WorkflowRunMonitor
+            api={api}
+            tenantId={tenantId}
+            modelId={model.model_id}
+            modelRevision={model.model_revision}
+            workflow="analysis"
+            hasTenantLock={hasTenantLock}
+            focusRunId={recentRunId}
+            onApplied={async () => {
+              await queryClient.invalidateQueries({
+                queryKey: ["analysis-findings", tenantId, model.model_id],
+              });
+            }}
+          />
+          <AnalysisRuns
+            items={runsQuery.data?.items ?? []}
+            state={runState}
+            isLoading={runsQuery.isPending}
+            isError={runsQuery.isError}
+            onStateChange={setRunState}
+          />
+        </>
       )}
 
       {runDialog ? (
@@ -169,9 +197,25 @@ export function AnalysisScreen({
           tenantId={tenantId}
           model={model}
           kind={runDialog}
+          executeCreated={(workflowRunId) => api.executeAnalysisInferenceRun(
+            tenantId,
+            model.model_id,
+            workflowRunId,
+            model.model_revision,
+          ).then(() => undefined)}
+          executeValidationCreated={(workflowRunId) => api.executeAnalysisValidationRun(
+            tenantId,
+            model.model_id,
+            workflowRunId,
+            model.model_revision,
+          ).then(() => undefined)}
           onClose={() => setRunDialog(null)}
-          onCreated={async () => {
+          onCreated={async (workflowRunId) => {
+            setRecentRunId(workflowRunId);
             setView("runs");
+            await queryClient.invalidateQueries({
+              queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "analysis"),
+            });
             await queryClient.invalidateQueries({
               queryKey: analysisQueryKeys.runs(tenantId, model.model_id, runState),
             });

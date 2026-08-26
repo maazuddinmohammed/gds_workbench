@@ -278,6 +278,9 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_model_mapping_dependencies",
         "get_model_object_mappings",
         "get_model_attribute_mappings",
+        "get_model_mapping_authoring_context",
+        "validate_and_materialize_mapping_candidate",
+        "get_model_code_generation_document",
         "execute_databricks_sql",
         "describe_model_dataset",
         "get_model_snapshot",
@@ -286,6 +289,11 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_metadata_snapshot",
     ]
     tools_by_name = {tool.name: tool for tool in tools.tools}
+    generator = tools_by_name["get_model_code_generation_document"]
+    assert generator.annotations is not None
+    assert generator.annotations.read_only_hint is True
+    assert generator.annotations.destructive_hint is False
+    assert generator.annotations.idempotent_hint is True
     assert tools_by_name["validate_model_change_set"].annotations is not None
     assert (
         tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
@@ -631,7 +639,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 57
+    assert ready_body["tool_count"] == 60
     fingerprint = ready_body["tool_contract_sha256"]
     assert len(fingerprint) == 64
     assert all(character in "0123456789abcdef" for character in fingerprint)

@@ -15,6 +15,7 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     TenantLockedError,
     TenantLockRequiredError,
+    TenantWorkflowConflictError,
     WorkbenchError,
 )
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -375,6 +376,8 @@ def raise_workflow_lifecycle_error(error: Exception) -> Never:
         raise WorkflowRunNotFoundError() from error
     if message == "Workflow Run belongs to another Principal":
         raise AuthorizationDeniedError() from error
+    if message == "tenant_workflow_conflict":
+        raise TenantWorkflowConflictError() from error
     for prefix in (
         "Workflow Run start denied: ",
         "Workflow Run event denied: ",

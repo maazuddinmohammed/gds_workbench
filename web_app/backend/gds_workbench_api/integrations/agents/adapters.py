@@ -22,6 +22,7 @@ from agents import (
     Tool,
     ToolCallItem,
 )
+from azure.identity.aio import ClientSecretCredential as AsyncClientSecretCredential
 from databricks.sdk import WorkspaceClient
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from langchain_core.tools import BaseTool, StructuredTool
@@ -89,6 +90,10 @@ class ModelAuthentication(Protocol):
     async def authenticate(self) -> OpenAIProviderCredentials: ...
 
 
+class ManagedModelAuthentication(ModelAuthentication, Protocol):
+    async def close(self) -> None: ...
+
+
 class DatabricksModelAuthentication:
     """Resolve short-lived app service-principal credentials through unified auth."""
 
@@ -131,6 +136,53 @@ class DatabricksModelAuthentication:
     def __repr__(self) -> str:
         return "DatabricksModelAuthentication()"
 
+    async def close(self) -> None:
+        return None
+
+
+class FoundryModelAuthentication:
+    """Resolve a short-lived Entra token for one direct Foundry OpenAI endpoint."""
+
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        token_scope: str,
+        tenant_id: str,
+        client_id: str,
+        client_secret: SecretStr,
+    ) -> None:
+        self._base_url = base_url.rstrip("/") + "/"
+        self._token_scope = token_scope
+        self._credential = AsyncClientSecretCredential(
+            tenant_id=tenant_id,
+            client_id=client_id,
+            client_secret=client_secret.get_secret_value(),
+        )
+        self._close_lock = asyncio.Lock()
+        self._closed = False
+
+    async def authenticate(self) -> OpenAIProviderCredentials:
+        if self._closed:
+            raise RuntimeError("Foundry model authentication is closed")
+        token = await self._credential.get_token(self._token_scope)
+        if not token.token:
+            raise RuntimeError("Foundry model authentication is unavailable")
+        return OpenAIProviderCredentials(
+            api_key=SecretStr(token.token),
+            base_url=self._base_url,
+        )
+
+    async def close(self) -> None:
+        async with self._close_lock:
+            if self._closed:
+                return
+            await self._credential.close()
+            self._closed = True
+
+    def __repr__(self) -> str:
+        return "FoundryModelAuthentication()"
+
 
 class _ConfiguredAdapter:
     sdk_code: str
@@ -139,13 +191,22 @@ class _ConfiguredAdapter:
         self,
         *,
         connections: tuple[AgentProviderConnection, ...],
-        model_authentication: ModelAuthentication | None = None,
+        model_authentications: Mapping[str, ModelAuthentication] | None = None,
     ) -> None:
         provider_codes = [connection.provider_code for connection in connections]
         if len(provider_codes) != len(set(provider_codes)):
             raise ValueError("Agent provider connections must be unique")
         self._connections = {connection.provider_code: connection for connection in connections}
-        self._model_authentication = model_authentication or DatabricksModelAuthentication()
+        if model_authentications is None:
+            self._model_authentications = (
+                {"databricks": DatabricksModelAuthentication()}
+                if "databricks" in self._connections
+                else {}
+            )
+        else:
+            self._model_authentications = dict(model_authentications)
+        if set(self._connections) != set(self._model_authentications):
+            raise ValueError("Every Agent provider connection requires one authentication adapter")
 
     def __repr__(self) -> str:
         return f"{type(self).__name__}(configured_providers={len(self._connections)})"
@@ -154,9 +215,15 @@ class _ConfiguredAdapter:
         if request.selection.sdk_code != self.sdk_code:
             raise InvalidRequestError("The selected agent SDK is incompatible.")
         connection = self._connections.get(request.selection.provider_code)
-        if connection is None:
+        if connection is None or connection.model_code != request.selection.model_code:
             raise InvalidRequestError("The selected agent provider is unavailable.")
         return connection
+
+    def _authentication(self, connection: AgentProviderConnection) -> ModelAuthentication:
+        authentication = self._model_authentications.get(connection.provider_code)
+        if authentication is None:
+            raise InvalidRequestError("The selected agent provider is unavailable.")
+        return authentication
 
     @staticmethod
     def _tool_catalog(request: AgentExecutionRequest) -> LocalAgentToolCatalog | None:
@@ -179,7 +246,7 @@ class LangChainCreateAgentAdapter(_ConfiguredAdapter):
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         connection = self._connection(request)
         try:
-            credentials = await self._model_authentication.authenticate()
+            credentials = await self._authentication(connection).authenticate()
             with tracing_context(enabled=False):
                 tools: Sequence[BaseTool] = _langchain_tools(self._tool_catalog(request))
                 model = ChatOpenAI(
@@ -241,7 +308,7 @@ class OpenAIAgentsSdkAdapter(_ConfiguredAdapter):
         connection = self._connection(request)
         client: AsyncOpenAI | None = None
         try:
-            credentials = await self._model_authentication.authenticate()
+            credentials = await self._authentication(connection).authenticate()
             tools = cast(Sequence[Tool], _openai_tools(self._tool_catalog(request)))
             client = AsyncOpenAI(
                 api_key=credentials.api_key.get_secret_value(),

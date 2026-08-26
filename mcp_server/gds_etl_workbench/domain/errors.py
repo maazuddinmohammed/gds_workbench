@@ -46,6 +46,14 @@ class TenantLockedError(WorkbenchError):
         )
 
 
+class TenantWorkflowConflictError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="tenant_workflow_conflict",
+            message="Another Workflow Run is already active for this Tenant.",
+        )
+
+
 class MetadataChangeSetNotFoundError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

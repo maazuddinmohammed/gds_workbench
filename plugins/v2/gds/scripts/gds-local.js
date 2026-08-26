@@ -1710,6 +1710,329 @@ const READINESS_STATUS_FIELDS = {
   mapping_attribute: "attribute_mapping_status",
 };
 
+const MAPPING_TARGET_ENTITY_TYPES = {
+  "logical-mapping": "logical_entity",
+  "dimensional-mapping": "dimensional_entity",
+};
+
+const MAPPING_PROOF_FIELDS = [
+  "contract",
+  "model_id",
+  "model_revision",
+  "modeled_entity_type",
+  "target_object_id",
+  "source_system_id",
+  "profile_schema_digest",
+  "context_digest",
+  "candidate_digest",
+  "change_count",
+  "record_count",
+];
+
+const GENERATOR_TARGET_ENTITY_TYPES = {
+  "logical-code": "logical_entity",
+  "dimensional-code": "dimensional_entity",
+};
+
+const GENERATOR_PROOF_FIELDS = [
+  "contract",
+  "model_id",
+  "model_revision",
+  "modeled_entity_type",
+  "target_object_id",
+  "source_system_id",
+  "profile_schema_digest",
+  "mapping_context_digest",
+  "document_digest",
+];
+
+function exactObjectFields(value, fields) {
+  return (
+    value &&
+    !Array.isArray(value) &&
+    typeof value === "object" &&
+    stableStringify(Object.keys(value).sort()) === stableStringify([...fields].sort())
+  );
+}
+
+function proofUnits(options) {
+  if (options["proof-units"] === undefined) return [];
+  let units;
+  try {
+    units = JSON.parse(options["proof-units"]);
+  } catch {
+    fail("--proof-units must be a JSON array of exact target/source pairs.");
+  }
+  const fields = ["target_object_id", "source_system_id"];
+  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
+  if (
+    !Array.isArray(units) ||
+    units.length < 1 ||
+    units.length > 256 ||
+    units.some(
+      (unit) =>
+        !exactObjectFields(unit, fields) ||
+        !positiveId(unit.target_object_id) ||
+        !positiveId(unit.source_system_id),
+    )
+  ) {
+    fail("--proof-units must be a JSON array of 1..256 exact target/source pairs.");
+  }
+  const keys = units.map((unit) =>
+    stableStringify([unit.target_object_id, unit.source_system_id]),
+  );
+  if (new Set(keys).size !== keys.length) {
+    fail("--proof-units must contain unique exact target/source pairs.");
+  }
+  return units;
+}
+
+function validateMappingMaterializationProof(value, target) {
+  const entityType = MAPPING_TARGET_ENTITY_TYPES[target];
+  if (!entityType) fail("--target must be logical-mapping or dimensional-mapping.");
+  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
+  const digest = (item) => typeof item === "string" && /^[0-9a-f]{64}$/.test(item);
+  if (
+    !exactObjectFields(value, MAPPING_PROOF_FIELDS) ||
+    value.contract !== "mapping-authoring@1.0" ||
+    value.modeled_entity_type !== entityType ||
+    !positiveId(value.model_id) ||
+    !positiveId(value.model_revision) ||
+    !positiveId(value.target_object_id) ||
+    !positiveId(value.source_system_id) ||
+    !digest(value.profile_schema_digest) ||
+    !digest(value.context_digest) ||
+    !digest(value.candidate_digest) ||
+    !Number.isSafeInteger(value.change_count) ||
+    value.change_count < 0 ||
+    value.change_count > 2 ||
+    !Number.isSafeInteger(value.record_count) ||
+    value.record_count < 0 ||
+    value.record_count > 10000
+  ) {
+    fail("--proof must be an exact Mapping materialization proof for the selected target.");
+  }
+  return value;
+}
+
+function mappingProofPath(session) {
+  return path.join(session, "tasks", ".mapping-proofs.json");
+}
+
+function readMappingProofs(session) {
+  const filePath = mappingProofPath(session);
+  if (!fs.existsSync(filePath)) return [];
+  const records = readJsonFile(filePath, "Mapping server proofs");
+  if (!Array.isArray(records) || records.length > 256) {
+    fail("Mapping server proofs have an invalid shape.");
+  }
+  for (const record of records) {
+    const target = record?.target;
+    const proof = record?.proof;
+    if (
+      !exactObjectFields(record, ["target", "model_snapshot_id", "proof"]) ||
+      typeof record.model_snapshot_id !== "string" ||
+      !record.model_snapshot_id ||
+      !MAPPING_TARGET_ENTITY_TYPES[target]
+    ) {
+      fail("Mapping server proofs have an invalid shape.");
+    }
+    validateMappingMaterializationProof(proof, target);
+  }
+  return records;
+}
+
+function bindMappingProof(options) {
+  const session = requireSessionPath(options.session);
+  const target = options.target;
+  const proof = validateMappingMaterializationProof(
+    parseObjectOption(options.proof, "--proof"),
+    target,
+  );
+  const snapshot = locateSnapshot({ session, area: "model" });
+  if (
+    proof.model_id !== snapshot.manifest.model_id ||
+    proof.model_revision !== snapshot.manifest.model_revision
+  ) {
+    fail("Mapping materialization proof does not match the current Model Snapshot.");
+  }
+  const snapshotId = snapshot.manifest.snapshot_id;
+  if (typeof snapshotId !== "string" || !snapshotId || snapshotId.length > 255) {
+    fail("Model Snapshot ID is invalid.");
+  }
+  const records = readMappingProofs(session).filter(
+    (record) =>
+      record.target !== target ||
+      record.proof.target_object_id !== proof.target_object_id ||
+      record.proof.source_system_id !== proof.source_system_id,
+  );
+  records.push({ target, model_snapshot_id: snapshotId, proof });
+  if (records.length > 256) fail("Mapping server proof limit exceeded.");
+  records.sort((left, right) =>
+    stableStringify([
+      left.target,
+      left.proof.target_object_id,
+      left.proof.source_system_id,
+    ]).localeCompare(
+      stableStringify([
+        right.target,
+        right.proof.target_object_id,
+        right.proof.source_system_id,
+      ]),
+    ),
+  );
+  writeJsonAtomic(mappingProofPath(session), records);
+  return {
+    target,
+    bound: true,
+    model_snapshot_id: snapshotId,
+    model_revision: proof.model_revision,
+    target_object_id: proof.target_object_id,
+    source_system_id: proof.source_system_id,
+    candidate_digest: proof.candidate_digest,
+  };
+}
+
+function hasCurrentMappingProof(session, snapshot, target, units) {
+  if (units.length === 0) return false;
+  const current = new Set(
+    readMappingProofs(session)
+      .filter(
+        (record) =>
+          record.target === target &&
+          record.model_snapshot_id === snapshot.manifest.snapshot_id &&
+          record.proof.model_id === snapshot.manifest.model_id &&
+          record.proof.model_revision === snapshot.manifest.model_revision,
+      )
+      .map((record) =>
+        stableStringify([record.proof.target_object_id, record.proof.source_system_id]),
+      ),
+  );
+  return units.every((unit) =>
+    current.has(stableStringify([unit.target_object_id, unit.source_system_id])),
+  );
+}
+
+function validateGeneratorDocumentProof(value, target) {
+  const entityType = GENERATOR_TARGET_ENTITY_TYPES[target];
+  if (!entityType) fail("--target must be logical-code or dimensional-code.");
+  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
+  const digest = (item) => typeof item === "string" && /^[0-9a-f]{64}$/.test(item);
+  if (
+    !exactObjectFields(value, GENERATOR_PROOF_FIELDS) ||
+    value.contract !== "generator-document@1.0" ||
+    value.modeled_entity_type !== entityType ||
+    !positiveId(value.model_id) ||
+    !positiveId(value.model_revision) ||
+    !positiveId(value.target_object_id) ||
+    !positiveId(value.source_system_id) ||
+    !digest(value.profile_schema_digest) ||
+    !digest(value.mapping_context_digest) ||
+    !digest(value.document_digest)
+  ) {
+    fail("--proof must be an exact Generator document proof for the selected target.");
+  }
+  return value;
+}
+
+function generatorProofPath(session) {
+  return path.join(session, "tasks", ".generator-proofs.json");
+}
+
+function readGeneratorProofs(session) {
+  const filePath = generatorProofPath(session);
+  if (!fs.existsSync(filePath)) return [];
+  const records = readJsonFile(filePath, "Generator server proofs");
+  if (!Array.isArray(records) || records.length > 256) {
+    fail("Generator server proofs have an invalid shape.");
+  }
+  for (const record of records) {
+    const target = record?.target;
+    const proof = record?.proof;
+    if (
+      !exactObjectFields(record, ["target", "model_snapshot_id", "proof"]) ||
+      typeof record.model_snapshot_id !== "string" ||
+      !record.model_snapshot_id ||
+      !GENERATOR_TARGET_ENTITY_TYPES[target]
+    ) {
+      fail("Generator server proofs have an invalid shape.");
+    }
+    validateGeneratorDocumentProof(proof, target);
+  }
+  return records;
+}
+
+function bindGeneratorProof(options) {
+  const session = requireSessionPath(options.session);
+  const target = options.target;
+  const proof = validateGeneratorDocumentProof(
+    parseObjectOption(options.proof, "--proof"),
+    target,
+  );
+  const snapshot = locateSnapshot({ session, area: "model" });
+  if (
+    proof.model_id !== snapshot.manifest.model_id ||
+    proof.model_revision !== snapshot.manifest.model_revision
+  ) {
+    fail("Generator document proof does not match the current Model Snapshot.");
+  }
+  const snapshotId = snapshot.manifest.snapshot_id;
+  if (typeof snapshotId !== "string" || !snapshotId || snapshotId.length > 255) {
+    fail("Model Snapshot ID is invalid.");
+  }
+  const records = readGeneratorProofs(session).filter(
+    (record) =>
+      record.target !== target ||
+      record.proof.target_object_id !== proof.target_object_id ||
+      record.proof.source_system_id !== proof.source_system_id,
+  );
+  records.push({ target, model_snapshot_id: snapshotId, proof });
+  if (records.length > 256) fail("Generator server proof limit exceeded.");
+  records.sort((left, right) =>
+    stableStringify([
+      left.target,
+      left.proof.target_object_id,
+      left.proof.source_system_id,
+    ]).localeCompare(
+      stableStringify([
+        right.target,
+        right.proof.target_object_id,
+        right.proof.source_system_id,
+      ]),
+    ),
+  );
+  writeJsonAtomic(generatorProofPath(session), records);
+  return {
+    target,
+    bound: true,
+    model_snapshot_id: snapshotId,
+    model_revision: proof.model_revision,
+    target_object_id: proof.target_object_id,
+    source_system_id: proof.source_system_id,
+    document_digest: proof.document_digest,
+  };
+}
+
+function hasCurrentGeneratorProof(session, snapshot, target, units) {
+  if (units.length === 0) return false;
+  const current = new Set(
+    readGeneratorProofs(session)
+      .filter(
+        (record) =>
+          record.target === target &&
+          record.model_snapshot_id === snapshot.manifest.snapshot_id &&
+          record.proof.model_id === snapshot.manifest.model_id &&
+          record.proof.model_revision === snapshot.manifest.model_revision,
+      )
+      .map((record) =>
+        stableStringify([record.proof.target_object_id, record.proof.source_system_id]),
+      ),
+  );
+  return units.every((unit) =>
+    current.has(stableStringify([unit.target_object_id, unit.source_system_id])),
+  );
+}
+
 function readinessValue(value) {
   return typeof value === "string"
     ? unicode.casefold(value.replace(/^ +| +$/g, ""))
@@ -1890,7 +2213,7 @@ function logicalBuildReadiness(metadata, model, issues) {
   };
 }
 
-function mappingReadiness(metadata, model, layer, zone, issues) {
+function mappingReadiness(metadata, model, layer, zone, issues, contractAvailable) {
   const modeled = modeledLayerReadiness(model, layer, issues);
   const targets = activeMetadataObjects(metadata, zone);
   const targetAttributes = activeMetadataAttributes(metadata, zone);
@@ -1939,7 +2262,7 @@ function mappingReadiness(metadata, model, layer, zone, issues) {
       issues.add("lineage_missing", [name]);
     }
   }
-  issues.add("mapping_contract_unavailable");
+  if (!contractAvailable) issues.add("mapping_contract_unavailable");
   return {
     targets: targets.length,
     attributes: targetAttributes.length,
@@ -1948,9 +2271,11 @@ function mappingReadiness(metadata, model, layer, zone, issues) {
   };
 }
 
-function codeReadiness(model, layer, issues) {
+function codeReadiness(session, model, layer, target, issues, units) {
   const mapping = completeMappingLayer(model, layer, issues);
-  issues.add("generator_contract_unavailable");
+  if (!hasCurrentGeneratorProof(session, model, target, units)) {
+    issues.add("generator_contract_unavailable");
+  }
   return {
     packages: mapping.objects.length,
     attributes: mapping.attributes.length,
@@ -1972,12 +2297,12 @@ function readinessPrompt(issues) {
   }
   if (issues.has("mapping_contract_unavailable")) {
     prompts.push(
-      "Ask the platform owner to expose the committed mapper/materializer contract for this Mapping profile, download a fresh Model Snapshot, then resume.",
+      "Call the MCP Mapping authoring context and candidate materializer for each exact target/source pair, bind each returned server proof with mapping-proof, then rerun readiness.",
     );
   }
   if (issues.has("generator_contract_unavailable")) {
     prompts.push(
-      "Ask the platform owner to expose the committed name-based GeneratorDocumentV1, download a fresh Model Snapshot, then resume code generation.",
+      "Call get_model_code_generation_document for each exact target/source pair, bind each returned server proof with generator-proof, then rerun readiness.",
     );
   }
   if (issues.has("destination_pattern_missing") || issues.has("destination_pattern_ambiguous")) {
@@ -2032,9 +2357,24 @@ function workflowReadiness(options) {
     } else if (options.target === "silver-registration") {
       counts = registrationReadiness(metadata, model, "logical", "silver", issues);
     } else if (options.target === "logical-mapping") {
-      counts = mappingReadiness(metadata, model, "logical", "silver", issues);
+      const units = proofUnits(options);
+      counts = mappingReadiness(
+        metadata,
+        model,
+        "logical",
+        "silver",
+        issues,
+        hasCurrentMappingProof(session, model, options.target, units),
+      );
     } else if (options.target === "logical-code") {
-      counts = codeReadiness(model, "logical", issues);
+      counts = codeReadiness(
+        session,
+        model,
+        "logical",
+        options.target,
+        issues,
+        proofUnits(options),
+      );
     } else if (options.target === "dimensional-build") {
       const mapping = completeMappingLayer(model, "logical", issues);
       const silverKeys = new Set(activeMetadataObjects(metadata, "silver").map(readinessObjectKey));
@@ -2063,10 +2403,25 @@ function workflowReadiness(options) {
     } else if (options.target === "gold-registration") {
       counts = registrationReadiness(metadata, model, "dimensional", "gold", issues);
     } else if (options.target === "dimensional-mapping") {
+      const units = proofUnits(options);
       completeMappingLayer(model, "logical", issues);
-      counts = mappingReadiness(metadata, model, "dimensional", "gold", issues);
+      counts = mappingReadiness(
+        metadata,
+        model,
+        "dimensional",
+        "gold",
+        issues,
+        hasCurrentMappingProof(session, model, options.target, units),
+      );
     } else {
-      counts = codeReadiness(model, "dimensional", issues);
+      counts = codeReadiness(
+        session,
+        model,
+        "dimensional",
+        options.target,
+        issues,
+        proofUnits(options),
+      );
     }
   }
   const issueOutput = issues.output();
@@ -2149,6 +2504,8 @@ async function main() {
   if (command === "session-init") output = initializeSession(options);
   else if (command === "status") output = sessionStatus(options);
   else if (command === "readiness") output = workflowReadiness(options);
+  else if (command === "mapping-proof") output = bindMappingProof(options);
+  else if (command === "generator-proof") output = bindGeneratorProof(options);
   else if (command === "inspect") output = inspectSnapshot(options);
   else if (command === "describe") output = describeDataset(options);
   else if (command === "select") output = await selectRecords(options);

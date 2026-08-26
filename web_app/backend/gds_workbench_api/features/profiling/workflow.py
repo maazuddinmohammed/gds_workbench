@@ -24,6 +24,7 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     TenantLockedError,
     TenantLockRequiredError,
+    TenantWorkflowConflictError,
     WorkbenchError,
 )
 from gds_etl_workbench.infrastructure.postgres import (
@@ -852,6 +853,8 @@ def _raise_repository_error(error: Exception) -> Never:
     message = _primary_database_message(error)
     if message == "stale_model_revision":
         raise ModelRevisionConflictError() from error
+    if message == "tenant_workflow_conflict":
+        raise TenantWorkflowConflictError() from error
     if message.startswith("profiling_run_not_found:"):
         raise WorkflowRunNotFoundError() from error
     if message.startswith("workflow_run_owner_mismatch:"):
