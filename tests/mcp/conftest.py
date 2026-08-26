@@ -21,8 +21,8 @@ from psycopg.rows import dict_row
 type TestRow = dict[str, Any]
 
 POSTGRES_IMAGE = (
-    "postgres:18.4-bookworm@"
-    "sha256:882236b897e39051d2368c5ccc6cda944904723506b2dfc97f2a8f5bc9afa382"
+    "postgres:18.6-bookworm@"
+    "sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
 )
 DATABASE_ROOT = Path(__file__).parents[2] / "database"
 DATABASE_FILES = tuple(

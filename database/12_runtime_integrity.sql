@@ -4,7 +4,8 @@
 REVOKE ALL ON SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
 REVOKE ALL ON ALL TABLES IN SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA reference, core, security, model, workflow, application, mcp FROM PUBLIC;
-REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mcp FROM gds_app_write;
+REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA mcp
+FROM gds_app_write, gds_web_write;
 
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, mcp
     TO gds_app_write;
@@ -288,8 +289,8 @@ GRANT EXECUTE ON FUNCTION mcp.archive_metadata_change_set(
 
 GRANT EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
 TO gds_app_write;
-GRANT EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
-TO gds_web_write;
+REVOKE EXECUTE ON FUNCTION mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
+FROM gds_web_write;
 
 GRANT EXECUTE ON FUNCTION workflow.list_tenant_visible_objects(BIGINT)
 TO gds_app_write, gds_web_write;
@@ -372,6 +373,32 @@ BEGIN
                    'security.tenant_lock_event',
                    'model.model',
                    'model.model_scope',
+                   'model.modeling_assertion_document',
+                   'model.modeling_assertion_record',
+                   'workflow.attribute_profile',
+                   'workflow.analysis_result',
+                   'workflow.conceptual_object',
+                   'workflow.conceptual_relationship',
+                   'workflow.conceptual_support',
+                   'workflow.logical_submodel',
+                   'workflow.logical_entity',
+                   'workflow.logical_entity_submodel',
+                   'workflow.logical_entity_source_mapping',
+                   'workflow.logical_attribute',
+                   'workflow.logical_attribute_source_mapping',
+                   'workflow.logical_relationship',
+                   'workflow.dimensional_submodel',
+                   'workflow.dimensional_entity',
+                   'workflow.dimensional_entity_submodel',
+                   'workflow.dimensional_entity_source_mapping',
+                   'workflow.dimensional_attribute',
+                   'workflow.dimensional_attribute_source_mapping',
+                   'workflow.dimensional_relationship',
+                   'workflow.mapping_source_system_dependency',
+                   'workflow.mapping_object',
+                   'workflow.mapping_attribute',
+                   'mcp.model_change_set',
+                   'mcp.model_change_set_event',
                    'mcp.model_stage_batch',
                    'mcp.model_stage_chunk',
                    'mcp.metadata_change_set',
@@ -389,6 +416,7 @@ BEGIN
                               split_part(required_relation.name, '.', 1)
                       AND relation_record.relname =
                               split_part(required_relation.name, '.', 2)
+                      AND relation_record.relkind IN ('r', 'p')
                )
     ) AND NOT EXISTS (
         SELECT 1
@@ -668,7 +696,35 @@ BEGIN
                    'security.entra_principal_identity',
                    'security.tenant_principal_access',
                    'model.model',
-                   'model.model_scope'
+                   'model.model_scope',
+                   'model.modeling_assertion_document',
+                   'model.modeling_assertion_record',
+                   'workflow.attribute_profile',
+                   'workflow.analysis_result',
+                   'workflow.conceptual_object',
+                   'workflow.conceptual_relationship',
+                   'workflow.conceptual_support',
+                   'workflow.logical_submodel',
+                   'workflow.logical_entity',
+                   'workflow.logical_entity_submodel',
+                   'workflow.logical_entity_source_mapping',
+                   'workflow.logical_attribute',
+                   'workflow.logical_attribute_source_mapping',
+                   'workflow.logical_relationship',
+                   'workflow.dimensional_submodel',
+                   'workflow.dimensional_entity',
+                   'workflow.dimensional_entity_submodel',
+                   'workflow.dimensional_entity_source_mapping',
+                   'workflow.dimensional_attribute',
+                   'workflow.dimensional_attribute_source_mapping',
+                   'workflow.dimensional_relationship',
+                   'workflow.mapping_source_system_dependency',
+                   'workflow.mapping_object',
+                   'workflow.mapping_attribute',
+                   'mcp.model_change_set',
+                   'mcp.model_change_set_event',
+                   'mcp.model_stage_batch',
+                   'mcp.model_stage_chunk'
                ]) AS readable_relation(name)
          WHERE NOT has_table_privilege(
                    'gds_app_write', readable_relation.name, 'SELECT'
@@ -699,6 +755,36 @@ BEGIN
                ]) AS executable_function(signature)
          WHERE NOT has_function_privilege(
                    'gds_app_write', executable_function.signature, 'EXECUTE'
+               )
+    ) AND NOT EXISTS (
+        SELECT 1
+          FROM pg_proc AS mcp_function
+          JOIN pg_namespace AS namespace_record
+            ON namespace_record.oid = mcp_function.pronamespace
+         WHERE namespace_record.nspname = 'mcp'
+           AND has_function_privilege(
+                   'gds_app_write',
+                   mcp_function.oid,
+                   'EXECUTE'
+               )
+           AND NOT EXISTS (
+                   SELECT 1
+                     FROM unnest(ARRAY[
+                              'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
+                              'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
+                              'mcp.begin_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,bigint,uuid,character varying,integer,integer,character,uuid)',
+                              'mcp.put_metadata_stage_chunk(uuid,uuid,character varying,bigint,uuid,uuid,character varying,integer,character,jsonb)',
+                              'mcp.commit_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,uuid,bigint,uuid)',
+                              'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
+                              'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
+                              'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
+                              'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                              'mcp.get_databricks_sql_connection_values(bigint,text)',
+                              'mcp.runtime_readiness()'
+                          ]) AS allowed_mcp_function(signature)
+                    WHERE to_regprocedure(
+                              allowed_mcp_function.signature
+                          ) = mcp_function.oid
                )
     ) AND has_table_privilege(
         'gds_app_write', 'mcp.tool_call_log', 'INSERT'

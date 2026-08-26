@@ -21,6 +21,10 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ```
 
 Stop if it fails. Never run fresh-install DDL over existing release schemas.
+The cleanup reference at the top of `00_preflight.sql` is intentionally
+commented and is not part of preflight execution. Do not uncomment it to bypass
+a failed installation; it is reserved for the whole-server retirement process
+in section 7.
 
 ## 3. Run the ordered installation files
 
@@ -64,11 +68,16 @@ Workflow execution is claimed only through
 Leases are 1 through 300 seconds. The raw UUID claim token is internal worker
 state: never serialize it to a browser response, log it, or persist it. The Run
 stores only its SHA-256 digest. `renew_workflow_run_claim` heartbeats an exact
-live token, `release_workflow_run_claim` clears an exact token, and an expired
-lease may be reclaimed at most five times. Each reclaim rotates the token and
-increments the recovery count. A sixth expired lease is atomically failed with
-the bounded `workflow_run_recovery_exhausted` reason and one safe failed Run
-event; it never remains an unclaimable running Run. Final business writes must call
+live token, `release_workflow_run_claim` clears an exact live token, and an
+expired lease may be reclaimed at most five times. Each reclaim rotates the
+token and increments the recovery count. A sixth expired lease is atomically
+failed with the bounded `workflow_run_recovery_exhausted` reason and one safe
+failed Run event. A running Run whose Model, actor, or exact unambiguous actor
+identity is no longer active is similarly failed once with the bounded
+`workflow_run_context_unavailable` reason. Each claim call processes at most
+100 rows in each housekeeping class. Repeated claim calls drain any backlog;
+neither case can leave the Tenant-wide running guard wedged. Final business
+writes must call
 `assert_workflow_run_claim` inside the same database transaction before writing;
 the assertion locks the Run row and rejects stale, expired, terminal, or wrong
 tokens. Only `gds_web_write` may execute these four internal functions. It has
@@ -77,7 +86,8 @@ The internal claim result also returns the active owning Tenant, execution
 mode, and exact active Entra Principal identity needed to reconstruct the
 server-derived worker Principal. Those identity fields are internal too and
 must never enter browser responses, logs, or events. A Run with an inactive or
-missing actor/identity is not claimable. Nullable legacy identity provenance is
+missing Model, actor, or identity is never returned as a claim; bounded claim
+housekeeping terminalizes it safely. Nullable legacy identity provenance is
 claimable only when the Principal has exactly one active Entra identity.
 
 `workflow.list_code_generation_target_context` returns one canonical row per
@@ -135,7 +145,9 @@ Web Model authoring uses only `application.create_model`, `update_model`,
 `archive_model`, and `replace_model_scope`. These fixed-search-path functions
 derive authorization from the active identity and the Model's owning Tenant,
 require the caller to own the current Tenant Lock, fence updates with
-`model_revision`, and record one revision transaction per actual change. Scope
+`model_revision`, and record one revision transaction per actual change. Model
+archive also rejects while any Workflow Run is running for the owning Tenant.
+Scope
 replacement accepts an exact bounded set of active Object IDs from the canonical
 Tenant-visible closure. Empty sets remain valid; cross-Tenant and mixed-Zone
 Objects remain valid when reached by discovery, copy/process references, active
@@ -165,14 +177,48 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 The last row must show `schema_version = 1.0.0` and
 `verification_status = passed`.
 
-The MCP App Service DSN must use `user=gds_mcp_runtime`; the web App Service DSN
-must use `user=gds_web_runtime`. Both require `sslmode=verify-full`. Store each
-complete DSN in Key Vault; never commit it.
+The MCP App Service DSN must use `user=gds_mcp_runtime`; the Databricks web App
+DSN must use `user=gds_web_runtime`. Both require `sslmode=verify-full`. Store
+each complete DSN in its approved secret resource; never commit it.
 
-This repository intentionally provides no migration, backfill, reset, or repair
-helpers for populated databases. The numbered SQL is only for a new, empty
+This repository provides no executable migration, backfill, reset, or repair
+helper for populated databases. The numbered SQL is only for a new, empty
 database. Test databases are cleaned up only by disposing their containers.
 
-## 6. Optional test seed
+## 6. Install required web application reference data
 
-See `database/seed/README.md`. Demo seed data is only for a new test database.
+After `13_verify_install.sql` passes, install the canonical application
+reference seed:
+
+```bash
+psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
+  --single-transaction -f database/seed/04_application_reference.sql
+```
+
+This seed is required for the Databricks web App deployment. Web readiness
+requires exactly 47 active workflow stages and 78 active backend-resolved
+variables. The seed contains no prompt bodies, credentials, connection values,
+or business data and is safe to replay unchanged.
+
+## 7. Clean redeployment
+
+Provisioning a new server remains the preferred clean-redeployment path. If an
+authorized DBA must retire and reuse the entire GDS server environment, the top
+of `00_preflight.sql` contains an exhaustive but disabled cleanup reference for
+the seven release schemas and five release roles. Use it only after stopping
+clients, completing backup and retention checks, and confirming that no other
+database or application uses those cluster-wide roles.
+
+`DROP OWNED` is database-scoped, so its five statements must be considered in
+every database containing a role dependency before the roles are dropped.
+Schema `CASCADE` can remove cross-schema dependents; selective schema redeploy
+is therefore not supported. After full cleanup, run the unchanged read-only
+preflight, complete installation, required reference seed, and verification,
+then switch the approved application DSNs and validate both applications.
+
+## 8. Optional demo and identity seeds
+
+See `database/seed/README.md`. Only
+`04_application_reference.sql` is required application reference data. Demo
+metadata is optional and only for a new test database; identity templates are
+environment-specific operator inputs.

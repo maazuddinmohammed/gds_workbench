@@ -33,10 +33,18 @@ DECLARE
     v_action_count INTEGER := 0;
     v_applied_time TIMESTAMPTZ;
     v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
        OR p_expected_candidate_digest IS NULL
-       OR p_expected_candidate_digest !~ '^[0-9a-f]{64}$' THEN
+       OR p_expected_candidate_digest !~ '^[0-9a-f]{64}$'
+       OR p_correlation_id IS NULL THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), NULL::VARCHAR(20),
             NULL::BIGINT, NULL::TIMESTAMPTZ, NULL::INTEGER;
@@ -73,6 +81,32 @@ BEGIN
             NULL::VARCHAR(20), NULL::BIGINT, NULL::TIMESTAMPTZ, NULL::INTEGER;
         RETURN;
     END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
     IF v_change_set.metadata_change_set_status <> 'validated' THEN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_validated'::VARCHAR(50),
@@ -82,7 +116,7 @@ BEGIN
             0::INTEGER;
         RETURN;
     END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50),
             v_change_set.metadata_change_set_status::VARCHAR(20),
@@ -91,7 +125,8 @@ BEGIN
             0::INTEGER;
         RETURN;
     END IF;
-    IF v_change_set.candidate_digest <> p_expected_candidate_digest THEN
+    IF v_change_set.candidate_digest IS DISTINCT FROM
+           p_expected_candidate_digest THEN
         RETURN QUERY SELECT
             FALSE, 'candidate_digest_conflict'::VARCHAR(50),
             v_change_set.metadata_change_set_status::VARCHAR(20),
@@ -301,7 +336,7 @@ BEGIN
         zone_id = EXCLUDED.zone_id,
         is_locked = EXCLUDED.is_locked,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -412,7 +447,7 @@ BEGIN
         is_mapped = EXCLUDED.is_mapped,
         is_purge = EXCLUDED.is_purge,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -533,7 +568,7 @@ BEGIN
       FROM resolved
     ON CONFLICT ON CONSTRAINT uq_ingestion_object_source_target DO UPDATE SET
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -672,7 +707,7 @@ BEGIN
       FROM resolved
     ON CONFLICT ON CONSTRAINT uq_ingestion_attribute_source_target DO UPDATE SET
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -709,7 +744,7 @@ BEGIN
         copy_group_description = EXCLUDED.copy_group_description,
         is_member_group_required = EXCLUDED.is_member_group_required,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -745,7 +780,7 @@ BEGIN
         member_group_description = EXCLUDED.member_group_description,
         member_group_initial_load_date = EXCLUDED.member_group_initial_load_date,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -804,7 +839,7 @@ BEGIN
             = EXCLUDED.copy_group_control_initial_load_date,
         copy_group_control_last_run_time = EXCLUDED.copy_group_control_last_run_time,
         copy_group_control_last_run_value = EXCLUDED.copy_group_control_last_run_value,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -1003,7 +1038,7 @@ BEGIN
         source_data_operation_id = EXCLUDED.source_data_operation_id,
         target_data_operation_id = EXCLUDED.target_data_operation_id,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -1046,7 +1081,7 @@ BEGIN
         process_group_description = EXCLUDED.process_group_description,
         copy_group_id = EXCLUDED.copy_group_id,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -1137,7 +1172,7 @@ BEGIN
         object_id = EXCLUDED.object_id,
         process_type_id = EXCLUDED.process_type_id,
         is_active = EXCLUDED.is_active,
-        updated_time = CURRENT_TIMESTAMP,
+        updated_time = v_now,
         updated_by = EXCLUDED.updated_by;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
@@ -1147,10 +1182,10 @@ BEGIN
 
     UPDATE mcp.metadata_change_set AS change_set
        SET metadata_change_set_status = 'applied',
-           applied_time = CURRENT_TIMESTAMP,
-           terminal_time = CURRENT_TIMESTAMP,
-           last_activity_time = CURRENT_TIMESTAMP,
-           expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
+           applied_time = v_now,
+           terminal_time = v_now,
+           last_activity_time = v_now,
+           expires_time = v_now + INTERVAL '4 hours'
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
     RETURNING change_set.applied_time INTO v_applied_time;
 

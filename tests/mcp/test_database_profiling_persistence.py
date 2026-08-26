@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import hashlib
+import json
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import psycopg
 import pytest
 from tests.mcp.database_test_support import require_row
-from psycopg.errors import CheckViolation, InsufficientPrivilege, RaiseException
+from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
 from tests.mcp.test_database_workflow_run_lifecycle import (
@@ -113,11 +115,16 @@ def _profile(
     non_null_count: int = 8,
     null_count: int = 2,
     digest_character: str = "a",
+    source_context_digest: str | None = None,
 ) -> dict[str, Any]:
     return {
         "object_id": object_id,
         "attribute_id": attribute_id,
-        "source_context_digest": digest_character * 64,
+        "source_context_digest": (
+            digest_character * 64
+            if source_context_digest is None
+            else source_context_digest
+        ),
         "row_count": row_count,
         "non_null_count": non_null_count,
         "null_count": null_count,
@@ -131,6 +138,86 @@ def _profile(
         "percent_null": 20,
         "percent_blank": 12.5,
         "percent_distinct": 75,
+    }
+
+
+def _source_context_digests(
+    postgres_database: DisposablePostgres,
+    context: WorkflowContext,
+    workflow_run_id: int,
+) -> dict[int, str]:
+    with postgres_database.connect_owner() as connection:
+        rows = connection.execute(
+            """
+            SELECT attribute.attribute_id,
+                   attribute.attribute_name,
+                   attribute.attribute_data_type,
+                   object_record.object_id,
+                   object_record.object_name,
+                   object_record.object_schema,
+                   object_record.batch_attribute_name,
+                   source_tenant.tenant_catalog,
+                   run.requested_batch_id
+              FROM application.workflow_run AS run
+              JOIN application.workflow_run_object_selection AS selection
+                ON selection.workflow_run_id = run.workflow_run_id
+               AND selection.model_id = run.model_id
+              JOIN workflow.list_model_attribute_eligibility(run.model_id)
+                   AS eligible
+                ON eligible.model_id = selection.model_id
+               AND eligible.object_id = selection.object_id
+               AND eligible.is_bronze_source_eligible
+              JOIN core.attribute AS attribute
+                ON attribute.attribute_id = eligible.attribute_id
+               AND attribute.object_id = eligible.object_id
+               AND attribute.is_active
+              JOIN core.object AS object_record
+                ON object_record.object_id = selection.object_id
+               AND object_record.is_active
+              JOIN core.connection AS gds_connection
+                ON gds_connection.connection_id = object_record.connection_id
+               AND gds_connection.is_active
+              LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
+                ON gds_connection.is_global_data_store
+               AND discovery_scope.gds_connection_id =
+                   gds_connection.connection_id
+               AND discovery_scope.zone_id = object_record.zone_id
+               AND lower(btrim(discovery_scope.object_schema)) =
+                   lower(btrim(object_record.object_schema))
+               AND discovery_scope.is_active
+              JOIN core.tenant AS source_tenant
+                ON source_tenant.tenant_id = CASE
+                       WHEN gds_connection.is_global_data_store
+                           THEN discovery_scope.tenant_id
+                       ELSE gds_connection.tenant_id
+                   END
+               AND source_tenant.is_active
+             WHERE run.workflow_run_id = %s
+             ORDER BY attribute.attribute_id
+            """,
+            (workflow_run_id,),
+        ).fetchall()
+
+    return {
+        int(row["attribute_id"]): hashlib.sha256(
+            json.dumps(
+                {
+                    "attribute_data_type": row["attribute_data_type"],
+                    "attribute_id": row["attribute_id"],
+                    "attribute_name": row["attribute_name"],
+                    "batch_attribute_name": row["batch_attribute_name"],
+                    "catalog": row["tenant_catalog"],
+                    "object_id": row["object_id"],
+                    "requested_batch_id": row["requested_batch_id"],
+                    "schema": row["object_schema"],
+                    "table": row["object_name"],
+                },
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode()
+        ).hexdigest()
+        for row in rows
     }
 
 
@@ -217,13 +304,18 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
             ),
         )
 
+    source_context_digests = _source_context_digests(
+        postgres_database,
+        context,
+        workflow_run_id,
+    )
     profiles = [
-        _profile(object_id, attribute_id, digest_character=digest)
-        for (object_id, attribute_id), digest in zip(
-            selected_attributes,
-            ("e", "f"),
-            strict=True,
+        _profile(
+            object_id,
+            attribute_id,
+            source_context_digest=source_context_digests[attribute_id],
         )
+        for object_id, attribute_id in selected_attributes
     ]
     with psycopg.connect(
         postgres_database.web_runtime_dsn(),
@@ -315,7 +407,10 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
     ]
     assert stored[0]["agent_run_id"] is None
     assert stored[0]["workflow_run_id"] == workflow_run_id
-    assert stored[0]["source_context_digest"] == "e" * 64
+    assert (
+        stored[0]["source_context_digest"]
+        == source_context_digests[selected_attributes[0][1]]
+    )
     assert stored[0]["row_count"] == 10
     assert stored[1]["workflow_run_id"] == workflow_run_id
     assert stored[2]["agent_run_id"] == "manual-outside"
@@ -393,8 +488,18 @@ def test_gds_persistence_uses_discovery_assigned_tenant_not_connection_owner(
         )
 
     workflow_run_id = _create_run(postgres_database, context)
+    source_context_digests = _source_context_digests(
+        postgres_database,
+        context,
+        workflow_run_id,
+    )
     profiles = [
-        _profile(object_id, attribute_id) for object_id, attribute_id in attributes
+        _profile(
+            object_id,
+            attribute_id,
+            source_context_digest=source_context_digests[attribute_id],
+        )
+        for object_id, attribute_id in attributes
     ]
     with psycopg.connect(
         postgres_database.web_runtime_dsn(),
@@ -480,7 +585,7 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
             postgres_database.web_runtime_dsn(),
             row_factory=dict_row,
         ) as connection,
-        pytest.raises(CheckViolation, match="ck_attribute_profile_counts"),
+        pytest.raises(RaiseException, match="metrics do not reconcile"),
         connection.transaction(),
     ):
         connection.execute("SET ROLE gds_web_write")
@@ -523,6 +628,64 @@ def test_one_invalid_profile_rolls_back_every_profile_and_revision(
         },
     ]
     assert revision == context.model_revision
+
+
+def test_profiling_persistence_rejects_inconsistent_percentages(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    attributes = _seed_attributes(postgres_database, context)
+    workflow_run_id = _create_run(postgres_database, context)
+    profiles = [_profile(*attribute) for attribute in attributes]
+    profiles[0] = {**profiles[0], "percent_null": 19}
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="metrics do not reconcile"),
+    ):
+        connection.execute(
+            PERSIST_PROFILING_RESULTS_SQL,
+            _persist_parameters(context, workflow_run_id, profiles),
+        )
+
+
+def test_profiling_persistence_recomputes_source_context_digests(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    attributes = _seed_attributes(postgres_database, context)
+    workflow_run_id = _create_run(postgres_database, context)
+    source_context_digests = _source_context_digests(
+        postgres_database,
+        context,
+        workflow_run_id,
+    )
+    profiles = [
+        _profile(
+            object_id,
+            attribute_id,
+            source_context_digest=source_context_digests[attribute_id],
+        )
+        for object_id, attribute_id in attributes
+    ]
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE core.attribute
+               SET attribute_name = %s
+             WHERE attribute_id = %s
+            """,
+            (f"changed_profile_attribute_{uuid4().hex}", attributes[0][1]),
+        )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="source context"),
+    ):
+        connection.execute(
+            PERSIST_PROFILING_RESULTS_SQL,
+            _persist_parameters(context, workflow_run_id, profiles),
+        )
 
 
 def test_profiling_payload_requires_exact_selected_attribute_coverage(
@@ -756,6 +919,18 @@ def test_profiling_persistence_requires_owned_lock_and_current_revision(
                     profiles,
                     expected_model_revision=context.model_revision + 1,
                 ),
+            ).fetchone()
+        null_revision_parameters = list(
+            _persist_parameters(context, workflow_run_id, profiles)
+        )
+        null_revision_parameters[3] = None
+        with (
+            pytest.raises(RaiseException, match="stale_model_revision"),
+            connection.transaction(),
+        ):
+            connection.execute(
+                PERSIST_PROFILING_RESULTS_SQL,
+                null_revision_parameters,
             ).fetchone()
 
 

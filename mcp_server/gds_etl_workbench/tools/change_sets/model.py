@@ -161,37 +161,118 @@ SELECT system_code
  WHERE is_active
 """
 
+_SERIALIZE_CREATE_SQL: LiteralString = """
+SELECT pg_advisory_xact_lock(
+    hashtextextended(
+        'mcp.model_change_set:' || %s::TEXT || ':' || %s::TEXT,
+        0
+    )
+)
+"""
+
+_DATABASE_TIME_SQL: LiteralString = """
+SELECT clock_timestamp() AS current_time
+"""
+
+_LOCK_OWNED_CHANGE_SETS_SQL: LiteralString = """
+SELECT change_set.model_change_set_id
+  FROM mcp.model_change_set AS change_set
+ WHERE change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status IN ('active', 'validated')
+ ORDER BY change_set.model_change_set_id
+ FOR UPDATE
+"""
+
 _FIND_ONGOING_SQL: LiteralString = """
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+)
 SELECT model_change_set_id,
        model_change_set_status,
        draft_revision,
        created_time,
        expires_time
   FROM mcp.model_change_set
+ CROSS JOIN operation_time
  WHERE model_id = %s
    AND created_by_principal_id = %s
    AND workflow_run_id IS NULL
    AND model_change_set_status IN ('active', 'validated')
-   AND expires_time > CURRENT_TIMESTAMP
+   AND expires_time > operation_time.current_time
  ORDER BY created_time DESC
  LIMIT 1
  FOR UPDATE
 """
 
 _EXPIRE_OWNED_SQL: LiteralString = """
-UPDATE mcp.model_change_set
-   SET model_change_set_status = 'expired',
-       terminal_time = CURRENT_TIMESTAMP,
-       last_activity_time = CURRENT_TIMESTAMP
- WHERE model_id = %s
-   AND created_by_principal_id = %s
-   AND workflow_run_id IS NULL
-   AND model_change_set_status IN ('active', 'validated')
-   AND expires_time <= CURRENT_TIMESTAMP
-RETURNING model_change_set_id, draft_revision
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+),
+expired_change_set AS (
+    UPDATE mcp.model_change_set AS change_set
+       SET model_change_set_status = 'expired',
+           terminal_time = operation_time.current_time
+      FROM operation_time
+     WHERE change_set.model_id = %s
+       AND change_set.created_by_principal_id = %s
+       AND change_set.workflow_run_id IS NULL
+       AND change_set.model_change_set_status IN ('active', 'validated')
+       AND change_set.expires_time <= operation_time.current_time
+    RETURNING change_set.model_change_set_id,
+              change_set.draft_revision,
+              change_set.terminal_time
+),
+expired_batches AS (
+    UPDATE mcp.model_stage_batch AS batch
+       SET stage_batch_status = 'expired',
+           terminal_time = expired_change_set.terminal_time
+      FROM expired_change_set
+     WHERE batch.model_change_set_id = expired_change_set.model_change_set_id
+       AND batch.stage_batch_status = 'active'
+    RETURNING batch.stage_batch_id
+)
+SELECT expired_change_set.model_change_set_id,
+       expired_change_set.draft_revision
+  FROM expired_change_set
+"""
+
+_EXPIRE_CHANGE_SET_SQL: LiteralString = """
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+),
+expired_change_set AS (
+    UPDATE mcp.model_change_set AS change_set
+       SET model_change_set_status = 'expired',
+           terminal_time = operation_time.current_time
+      FROM operation_time
+     WHERE change_set.model_change_set_id = %s
+       AND change_set.model_id = %s
+       AND change_set.created_by_principal_id = %s
+       AND change_set.workflow_run_id IS NULL
+       AND change_set.model_change_set_status IN ('active', 'validated')
+       AND change_set.expires_time <= operation_time.current_time
+    RETURNING change_set.*
+),
+expired_batches AS (
+    UPDATE mcp.model_stage_batch AS batch
+       SET stage_batch_status = 'expired',
+           terminal_time = expired_change_set.terminal_time
+      FROM expired_change_set
+     WHERE batch.model_change_set_id = expired_change_set.model_change_set_id
+       AND batch.stage_batch_status = 'active'
+    RETURNING batch.stage_batch_id
+)
+SELECT expired_change_set.*,
+       (SELECT count(*) FROM expired_batches) AS expired_batch_count
+  FROM expired_change_set
 """
 
 _CREATE_SQL: LiteralString = """
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+)
 INSERT INTO mcp.model_change_set (
     model_change_set_id,
     model_id,
@@ -201,7 +282,10 @@ INSERT INTO mcp.model_change_set (
     base_assertion_digest,
     base_policy_digest,
     created_by_principal_id,
-    correlation_id
+    correlation_id,
+    created_time,
+    last_activity_time,
+    expires_time
 )
 SELECT %s,
        model.model_id,
@@ -225,8 +309,12 @@ SELECT %s,
            )::TEXT
        ), 2),
        %s,
-       %s
+       %s,
+       operation_time.current_time,
+       operation_time.current_time,
+       operation_time.current_time + INTERVAL '4 hours'
   FROM model.model
+ CROSS JOIN operation_time
  WHERE model.model_id = %s
 RETURNING model_change_set_id,
           model_change_set_status,
@@ -264,7 +352,8 @@ RETURNING model_change_set_event_id
 """
 
 _GET_FOR_UPDATE_SQL: LiteralString = """
-SELECT model_change_set.*
+SELECT model_change_set.*,
+       model_change_set.expires_time <= clock_timestamp() AS is_expired
   FROM mcp.model_change_set AS model_change_set
  WHERE model_change_set.model_change_set_id = %s
    AND model_change_set.model_id = %s
@@ -272,14 +361,18 @@ SELECT model_change_set.*
 """
 
 _GET_SQL: LiteralString = """
-SELECT model_change_set.*
+SELECT model_change_set.*,
+       model_change_set.expires_time <= clock_timestamp() AS is_expired
   FROM mcp.model_change_set AS model_change_set
  WHERE model_change_set.model_change_set_id = %s
    AND model_change_set.model_id = %s
 """
 
 _STAGE_SQL: LiteralString = """
-UPDATE mcp.model_change_set
+WITH operation_time AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time
+)
+UPDATE mcp.model_change_set AS change_set
    SET profiling_document = %s,
        analysis_document = %s,
        assertion_document = %s,
@@ -292,25 +385,75 @@ UPDATE mcp.model_change_set
        candidate_digest = NULL,
        validation_outcome = NULL,
        validated_time = NULL,
-       last_activity_time = CURRENT_TIMESTAMP,
-       expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
- WHERE model_change_set_id = %s
-RETURNING draft_revision, model_change_set_status, expires_time
+       last_activity_time = operation_time.current_time,
+       expires_time = operation_time.current_time + INTERVAL '4 hours'
+  FROM operation_time
+ WHERE change_set.model_change_set_id = %s
+   AND change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status IN ('active', 'validated')
+   AND change_set.expires_time > operation_time.current_time
+   AND change_set.draft_revision IS NOT DISTINCT FROM %s
+RETURNING change_set.draft_revision,
+          change_set.model_change_set_status,
+          change_set.expires_time
+"""
+
+_LOCK_ACTIVE_MODEL_STAGE_BATCHES_SQL: LiteralString = """
+SELECT batch.stage_batch_id
+  FROM mcp.model_stage_batch AS batch
+ WHERE batch.model_change_set_id = %s
+   AND batch.dataset_name = %s
+   AND batch.stage_batch_status = 'active'
+ ORDER BY batch.stage_batch_id
+ FOR UPDATE
 """
 
 _EXPIRE_MODEL_STAGE_BATCH_SQL: LiteralString = """
-UPDATE mcp.model_stage_batch
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+)
+UPDATE mcp.model_stage_batch AS batch
    SET stage_batch_status = 'expired',
-       terminal_time = CURRENT_TIMESTAMP
- WHERE model_change_set_id = %s
-   AND dataset_name = %s
-   AND stage_batch_status = 'active'
-   AND expires_time <= CURRENT_TIMESTAMP
-RETURNING stage_batch_id
+       terminal_time = operation_time.current_time
+  FROM operation_time
+ WHERE batch.model_change_set_id = %s
+   AND batch.dataset_name = %s
+   AND batch.stage_batch_status = 'active'
+   AND batch.expires_time <= operation_time.current_time
+RETURNING batch.stage_batch_id
+"""
+
+_LOCK_ACTIVE_MODEL_STAGE_BATCH_BY_ID_SQL: LiteralString = """
+SELECT batch.stage_batch_id
+  FROM mcp.model_stage_batch AS batch
+ WHERE batch.stage_batch_id = %s
+   AND batch.model_change_set_id = %s
+   AND batch.model_id = %s
+   AND batch.stage_batch_status = 'active'
+ FOR UPDATE
+"""
+
+_EXPIRE_MODEL_STAGE_BATCH_BY_ID_SQL: LiteralString = """
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+)
+UPDATE mcp.model_stage_batch AS batch
+   SET stage_batch_status = 'expired',
+       terminal_time = operation_time.current_time
+  FROM operation_time
+ WHERE batch.stage_batch_id = %s
+   AND batch.model_change_set_id = %s
+   AND batch.model_id = %s
+   AND batch.stage_batch_status = 'active'
+   AND batch.expires_time <= operation_time.current_time
+RETURNING batch.stage_batch_id
 """
 
 _FIND_MODEL_STAGE_BATCH_SQL: LiteralString = """
 SELECT batch.*,
+       batch.expires_time <= clock_timestamp() AS is_expired,
        (
            SELECT count(*)
              FROM mcp.model_stage_chunk AS chunk
@@ -324,6 +467,9 @@ SELECT batch.*,
 """
 
 _CREATE_MODEL_STAGE_BATCH_SQL: LiteralString = """
+WITH operation_time AS MATERIALIZED (
+    SELECT %s::TIMESTAMPTZ AS current_time
+)
 INSERT INTO mcp.model_stage_batch (
     stage_batch_id,
     model_change_set_id,
@@ -335,16 +481,30 @@ INSERT INTO mcp.model_stage_batch (
     batch_sha256,
     created_by_principal_id,
     correlation_id,
+    created_time,
+    last_activity_time,
     expires_time
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
-        least(%s, CURRENT_TIMESTAMP + INTERVAL '4 hours'))
+SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+       operation_time.current_time,
+       operation_time.current_time,
+       least(change_set.expires_time, operation_time.current_time + INTERVAL '4 hours')
+  FROM mcp.model_change_set AS change_set
+ CROSS JOIN operation_time
+ WHERE change_set.model_change_set_id = %s
+   AND change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status IN ('active', 'validated')
+   AND change_set.expires_time > operation_time.current_time
+   AND change_set.draft_revision IS NOT DISTINCT FROM %s
 RETURNING *, 0::BIGINT AS received_chunk_count
 """
 
 _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL: LiteralString = """
-SELECT *
-  FROM mcp.model_stage_batch
+SELECT batch.*,
+       batch.expires_time <= clock_timestamp() AS is_expired
+  FROM mcp.model_stage_batch AS batch
  WHERE stage_batch_id = %s
    AND model_change_set_id = %s
    AND model_id = %s
@@ -374,10 +534,16 @@ RETURNING record_count
 """
 
 _TOUCH_MODEL_STAGE_BATCH_SQL: LiteralString = """
-UPDATE mcp.model_stage_batch
-   SET last_activity_time = CURRENT_TIMESTAMP
+WITH operation_time AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time
+)
+UPDATE mcp.model_stage_batch AS batch
+   SET last_activity_time = operation_time.current_time
+  FROM operation_time
  WHERE stage_batch_id = %s
-RETURNING expires_time
+   AND batch.stage_batch_status = 'active'
+   AND batch.expires_time > operation_time.current_time
+RETURNING batch.expires_time
 """
 
 _GET_MODEL_STAGE_CHUNKS_SQL: LiteralString = """
@@ -388,31 +554,76 @@ SELECT chunk_index, record_count, chunk_sha256, records_document
 """
 
 _MARK_MODEL_STAGE_BATCH_COMMITTED_SQL: LiteralString = """
-UPDATE mcp.model_stage_batch
+WITH operation AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time,
+           %s::BIGINT AS committed_revision,
+           %s::TIMESTAMPTZ AS committed_expires_time,
+           %s::BIGINT AS expected_draft_revision
+)
+UPDATE mcp.model_stage_batch AS batch
    SET stage_batch_status = 'committed',
-       last_activity_time = CURRENT_TIMESTAMP,
-       committed_revision = %s,
-       committed_expires_time = %s,
-       terminal_time = CURRENT_TIMESTAMP
+       last_activity_time = operation.current_time,
+       committed_revision = operation.committed_revision,
+       committed_expires_time = operation.committed_expires_time,
+       terminal_time = operation.current_time
+  FROM operation
  WHERE stage_batch_id = %s
-   AND stage_batch_status = 'active'
-RETURNING committed_revision, committed_expires_time
+   AND batch.stage_batch_status = 'active'
+   AND batch.expires_time > operation.current_time
+   AND batch.expected_draft_revision IS NOT DISTINCT FROM
+       operation.expected_draft_revision
+   AND operation.committed_revision IS NOT DISTINCT FROM
+       operation.expected_draft_revision + 1
+   AND operation.committed_expires_time > operation.current_time
+RETURNING batch.committed_revision, batch.committed_expires_time
 """
 
 _RECORD_VALIDATION_SQL: LiteralString = """
-UPDATE mcp.model_change_set
-   SET model_change_set_status = %s,
-       candidate_digest = %s,
-       validation_outcome = %s,
-       validated_time = CASE WHEN %s THEN CURRENT_TIMESTAMP ELSE NULL END,
-       last_activity_time = CURRENT_TIMESTAMP,
-       expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
- WHERE model_change_set_id = %s
-RETURNING model_change_set_status,
-          draft_revision,
-          candidate_digest,
-          validated_time,
-          expires_time
+WITH operation AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time,
+           %s::BOOLEAN AS validation_succeeded,
+           %s::TEXT AS candidate_digest,
+           %s::JSONB AS validation_outcome
+)
+UPDATE mcp.model_change_set AS change_set
+   SET model_change_set_status = CASE
+           WHEN operation.validation_succeeded THEN 'validated'
+           ELSE 'active'
+       END,
+       candidate_digest = CASE
+           WHEN operation.validation_succeeded THEN operation.candidate_digest
+           ELSE NULL
+       END,
+       validation_outcome = operation.validation_outcome,
+       validated_time = CASE
+           WHEN operation.validation_succeeded THEN operation.current_time
+           ELSE NULL
+       END,
+       last_activity_time = operation.current_time,
+       expires_time = operation.current_time + INTERVAL '4 hours'
+  FROM operation
+ WHERE change_set.model_change_set_id = %s
+   AND change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status IN ('active', 'validated')
+   AND change_set.expires_time > operation.current_time
+   AND change_set.draft_revision IS NOT DISTINCT FROM %s
+   AND jsonb_typeof(operation.validation_outcome) = 'object'
+   AND (
+       (
+           operation.validation_succeeded
+           AND operation.candidate_digest ~ '^[0-9a-f]{64}$'
+       ) OR (
+           operation.validation_succeeded = FALSE
+           AND operation.candidate_digest IS NULL
+       )
+   )
+RETURNING change_set.model_change_set_status,
+          change_set.draft_revision,
+          change_set.candidate_digest,
+          change_set.validated_time,
+          change_set.expires_time
 """
 
 _ADVANCE_MODEL_REVISION_SQL: LiteralString = """
@@ -426,24 +637,50 @@ RETURNING model_revision
 """
 
 _MARK_APPLIED_SQL: LiteralString = """
-UPDATE mcp.model_change_set
+WITH operation AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time,
+           %s::BIGINT AS expected_draft_revision,
+           %s::TEXT AS expected_candidate_digest
+)
+UPDATE mcp.model_change_set AS change_set
    SET model_change_set_status = 'applied',
-       applied_time = CURRENT_TIMESTAMP,
-       terminal_time = CURRENT_TIMESTAMP,
-       last_activity_time = CURRENT_TIMESTAMP
- WHERE model_change_set_id = %s
-RETURNING model_change_set_status, applied_time
+       applied_time = operation.current_time,
+       terminal_time = operation.current_time,
+       last_activity_time = operation.current_time
+  FROM operation
+ WHERE change_set.model_change_set_id = %s
+   AND change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status = 'validated'
+   AND change_set.expires_time > operation.current_time
+   AND change_set.draft_revision IS NOT DISTINCT FROM
+       operation.expected_draft_revision
+   AND change_set.candidate_digest IS NOT DISTINCT FROM
+       operation.expected_candidate_digest
+   AND operation.expected_candidate_digest IS NOT NULL
+RETURNING change_set.model_change_set_status, change_set.applied_time
 """
 
 _ARCHIVE_SQL: LiteralString = """
-UPDATE mcp.model_change_set
+WITH operation AS MATERIALIZED (
+    SELECT clock_timestamp() AS current_time,
+           %s::BIGINT AS expected_draft_revision
+)
+UPDATE mcp.model_change_set AS change_set
    SET model_change_set_status = 'discarded',
-       terminal_time = CURRENT_TIMESTAMP,
-       last_activity_time = CURRENT_TIMESTAMP
- WHERE model_change_set_id = %s
-   AND model_id = %s
-   AND model_change_set_status IN ('active', 'validated')
-RETURNING draft_revision, terminal_time
+       terminal_time = operation.current_time,
+       last_activity_time = operation.current_time
+  FROM operation
+ WHERE change_set.model_change_set_id = %s
+   AND change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.workflow_run_id IS NULL
+   AND change_set.model_change_set_status IN ('active', 'validated')
+   AND change_set.expires_time > operation.current_time
+   AND change_set.draft_revision IS NOT DISTINCT FROM
+       operation.expected_draft_revision
+RETURNING change_set.draft_revision, change_set.terminal_time
 """
 
 
@@ -642,6 +879,8 @@ def register_model_change_set_tools(
         del schema_version
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
+            row: dict[str, Any] | None = None
+            created = False
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -652,11 +891,25 @@ def register_model_change_set_tools(
                 )
                 if principal.principal_id is None:
                     raise AuthorizationDeniedError()
-                expired = await transaction.fetch_all(
-                    _EXPIRE_OWNED_SQL,
+                await transaction.fetch_one(
+                    _SERIALIZE_CREATE_SQL,
                     (model.model_id, principal.principal_id),
                 )
-                for expired_row in expired:
+                await transaction.fetch_all(
+                    _LOCK_OWNED_CHANGE_SETS_SQL,
+                    (model.model_id, principal.principal_id),
+                )
+                operation_time = await transaction.fetch_one(_DATABASE_TIME_SQL, ())
+                assert operation_time is not None
+                expired_rows = await transaction.fetch_all(
+                    _EXPIRE_OWNED_SQL,
+                    (
+                        operation_time["current_time"],
+                        model.model_id,
+                        principal.principal_id,
+                    ),
+                )
+                for expired_row in expired_rows:
                     expired_correlation_id = uuid4()
                     await _insert_event(
                         transaction,
@@ -672,7 +925,11 @@ def register_model_change_set_tools(
                     )
                 row = await transaction.fetch_one(
                     _FIND_ONGOING_SQL,
-                    (model.model_id, principal.principal_id),
+                    (
+                        operation_time["current_time"],
+                        model.model_id,
+                        principal.principal_id,
+                    ),
                 )
                 created = row is None
                 if row is None:
@@ -681,6 +938,7 @@ def register_model_change_set_tools(
                     row = await transaction.fetch_one(
                         _CREATE_SQL,
                         (
+                            operation_time["current_time"],
                             change_set_id,
                             principal.principal_id,
                             correlation_id,
@@ -748,6 +1006,8 @@ def register_model_change_set_tools(
             staged = _validate_stage_changes(changes)
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            updated: dict[str, Any] | None = None
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -763,38 +1023,53 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                _require_mutable(row)
-                if row["draft_revision"] != expected_draft_revision:
-                    raise DraftRevisionConflictError(row["draft_revision"])
-                documents = _documents(row)
-                for dataset, records in staged.items():
-                    section = DATASETS_BY_NAME[dataset].section
-                    documents[section][dataset] = records
-                _validate_document_bounds(documents)
-                updated = await transaction.fetch_one(
-                    _STAGE_SQL,
-                    (
-                        *(
-                            Jsonb(documents[column.removesuffix("_document")])
-                            for column in WRITE_SECTION_COLUMNS
-                        ),
-                        model_change_set_id,
-                    ),
-                )
-                assert updated is not None
-                sections = sorted({DATASETS_BY_NAME[dataset].section for dataset in staged})
-                await _insert_event(
+                expired = await _expire_change_set_if_due(
                     transaction,
-                    change_set_id=model_change_set_id,
+                    row=row,
                     model_id=model.model_id,
-                    event_type="section_put",
-                    draft_revision=updated["draft_revision"],
-                    section=sections[0] if len(sections) == 1 else None,
-                    action_count=sum(len(records) for records in staged.values()),
-                    outcome="staged",
-                    metadata={"datasets": sorted(staged)},
+                    principal=principal,
                     correlation_id=correlation_id,
                 )
+                if expired is None:
+                    _require_mutable(row)
+                    if row["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(row["draft_revision"])
+                    documents = _documents(row)
+                    for dataset, records in staged.items():
+                        section = DATASETS_BY_NAME[dataset].section
+                        documents[section][dataset] = records
+                    _validate_document_bounds(documents)
+                    updated = await transaction.fetch_one(
+                        _STAGE_SQL,
+                        (
+                            *(
+                                Jsonb(documents[column.removesuffix("_document")])
+                                for column in WRITE_SECTION_COLUMNS
+                            ),
+                            model_change_set_id,
+                            model.model_id,
+                            principal.principal_id,
+                            expected_draft_revision,
+                        ),
+                    )
+                    if updated is None:
+                        raise ModelChangeSetNotActiveError()
+                    sections = sorted({DATASETS_BY_NAME[dataset].section for dataset in staged})
+                    await _insert_event(
+                        transaction,
+                        change_set_id=model_change_set_id,
+                        model_id=model.model_id,
+                        event_type="section_put",
+                        draft_revision=updated["draft_revision"],
+                        section=sections[0] if len(sections) == 1 else None,
+                        action_count=sum(len(records) for records in staged.values()),
+                        outcome="staged",
+                        metadata={"datasets": sorted(staged)},
+                        correlation_id=correlation_id,
+                    )
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            assert updated is not None
             return StageModelChangeSetResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -852,6 +1127,10 @@ def register_model_change_set_tools(
         del schema_version
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
+            correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            row: dict[str, Any] | None = None
+            created = False
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -869,46 +1148,72 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                _require_mutable(change_set)
-                if change_set["draft_revision"] != expected_draft_revision:
-                    raise DraftRevisionConflictError(change_set["draft_revision"])
-                await transaction.fetch_all(
-                    _EXPIRE_MODEL_STAGE_BATCH_SQL,
-                    (model_change_set_id, dataset),
+                expired = await _expire_change_set_if_due(
+                    transaction,
+                    row=change_set,
+                    model_id=model.model_id,
+                    principal=principal,
+                    correlation_id=correlation_id,
                 )
-                row = await transaction.fetch_one(
-                    _FIND_MODEL_STAGE_BATCH_SQL,
-                    (model_change_set_id, dataset),
-                )
-                created = row is None
-                if row is not None:
-                    if (
-                        row["created_by_principal_id"] != principal.principal_id
-                        or row["expected_draft_revision"] != expected_draft_revision
-                        or row["total_record_count"] != total_record_count
-                        or row["total_chunk_count"] != total_chunk_count
-                        or row["batch_sha256"] != batch_sha256
-                    ):
-                        raise StageBatchConflictError()
-                else:
-                    stage_batch_id = uuid4()
-                    row = await transaction.fetch_one(
-                        _CREATE_MODEL_STAGE_BATCH_SQL,
+                if expired is None:
+                    _require_mutable(change_set)
+                    if change_set["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(change_set["draft_revision"])
+                    await transaction.fetch_all(
+                        _LOCK_ACTIVE_MODEL_STAGE_BATCHES_SQL,
+                        (model_change_set_id, dataset),
+                    )
+                    operation_time = await transaction.fetch_one(_DATABASE_TIME_SQL, ())
+                    assert operation_time is not None
+                    await transaction.fetch_all(
+                        _EXPIRE_MODEL_STAGE_BATCH_SQL,
                         (
-                            stage_batch_id,
+                            operation_time["current_time"],
                             model_change_set_id,
-                            model.model_id,
                             dataset,
-                            expected_draft_revision,
-                            total_record_count,
-                            total_chunk_count,
-                            batch_sha256,
-                            principal.principal_id,
-                            uuid4(),
-                            change_set["expires_time"],
                         ),
                     )
-                    assert row is not None
+                    row = await transaction.fetch_one(
+                        _FIND_MODEL_STAGE_BATCH_SQL,
+                        (model_change_set_id, dataset),
+                    )
+                    created = row is None
+                    if row is not None:
+                        _require_model_stage_batch(row, principal, dataset)
+                        if (
+                            row["expected_draft_revision"] != expected_draft_revision
+                            or row["total_record_count"] != total_record_count
+                            or row["total_chunk_count"] != total_chunk_count
+                            or row["batch_sha256"] != batch_sha256
+                        ):
+                            raise StageBatchConflictError()
+                    else:
+                        stage_batch_id = uuid4()
+                        row = await transaction.fetch_one(
+                            _CREATE_MODEL_STAGE_BATCH_SQL,
+                            (
+                                operation_time["current_time"],
+                                stage_batch_id,
+                                model_change_set_id,
+                                model.model_id,
+                                dataset,
+                                expected_draft_revision,
+                                total_record_count,
+                                total_chunk_count,
+                                batch_sha256,
+                                principal.principal_id,
+                                correlation_id,
+                                model_change_set_id,
+                                model.model_id,
+                                principal.principal_id,
+                                expected_draft_revision,
+                            ),
+                        )
+                        if row is None:
+                            raise ModelChangeSetNotActiveError()
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            assert row is not None
             return BeginModelStageBatchResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -986,6 +1291,11 @@ def register_model_change_set_tools(
                     "The Stage chunk SHA-256 does not match its normalized records."
                 )
             request_principal = identity_provider.request_principal(ctx.request_context.request)
+            expired: dict[str, Any] | None = None
+            expired_batch: dict[str, Any] | None = None
+            batch: dict[str, Any] | None = None
+            totals: dict[str, Any] | None = None
+            duplicate = False
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -1001,57 +1311,95 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                _require_mutable(change_set)
-                batch = await transaction.fetch_one(
-                    _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
-                    (stage_batch_id, model_change_set_id, model.model_id),
+                expired = await _expire_change_set_if_due(
+                    transaction,
+                    row=change_set,
+                    model_id=model.model_id,
+                    principal=principal,
+                    correlation_id=change_set["correlation_id"],
                 )
-                _require_model_stage_batch(batch, principal, dataset)
-                assert batch is not None
-                if change_set["draft_revision"] != batch["expected_draft_revision"]:
-                    raise DraftRevisionConflictError(change_set["draft_revision"])
-                if chunk_index > batch["total_chunk_count"]:
-                    raise InvalidRequestError("Chunk index exceeds the Stage Batch manifest.")
-                existing = await transaction.fetch_one(
-                    _GET_MODEL_STAGE_CHUNK_SQL,
-                    (stage_batch_id, chunk_index),
-                )
-                duplicate = existing is not None
-                if existing is not None:
-                    if (
-                        existing["chunk_sha256"] != chunk_sha256
-                        or existing["records_document"] != normalized
-                    ):
-                        raise StageChunkConflictError()
-                else:
-                    totals = await transaction.fetch_one(
-                        _MODEL_STAGE_CHUNK_TOTALS_SQL,
-                        (stage_batch_id,),
+                if expired is None:
+                    _require_mutable(change_set)
+                    await transaction.fetch_all(
+                        _LOCK_ACTIVE_MODEL_STAGE_BATCH_BY_ID_SQL,
+                        (stage_batch_id, model_change_set_id, model.model_id),
                     )
-                    assert totals is not None
-                    if totals["record_count"] + len(normalized) > batch["total_record_count"]:
-                        raise InvalidRequestError("Stage chunks exceed the approved record count.")
-                    inserted = await transaction.fetch_one(
-                        _INSERT_MODEL_STAGE_CHUNK_SQL,
+                    operation_time = await transaction.fetch_one(_DATABASE_TIME_SQL, ())
+                    assert operation_time is not None
+                    expired_batch = await transaction.fetch_one(
+                        _EXPIRE_MODEL_STAGE_BATCH_BY_ID_SQL,
                         (
+                            operation_time["current_time"],
                             stage_batch_id,
-                            chunk_index,
-                            len(normalized),
-                            chunk_sha256,
-                            Jsonb(normalized),
+                            model_change_set_id,
+                            model.model_id,
                         ),
                     )
-                    assert inserted is not None
-                    touched = await transaction.fetch_one(
-                        _TOUCH_MODEL_STAGE_BATCH_SQL,
-                        (stage_batch_id,),
-                    )
-                    assert touched is not None
-                totals = await transaction.fetch_one(
-                    _MODEL_STAGE_CHUNK_TOTALS_SQL,
-                    (stage_batch_id,),
-                )
-                assert totals is not None
+                    if expired_batch is None:
+                        batch = await transaction.fetch_one(
+                            _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
+                            (stage_batch_id, model_change_set_id, model.model_id),
+                        )
+                        _require_model_stage_batch(batch, principal, dataset)
+                        assert batch is not None
+                        if change_set["draft_revision"] != batch["expected_draft_revision"]:
+                            raise DraftRevisionConflictError(change_set["draft_revision"])
+                        if chunk_index > batch["total_chunk_count"]:
+                            raise InvalidRequestError(
+                                "Chunk index exceeds the Stage Batch manifest."
+                            )
+                        existing = await transaction.fetch_one(
+                            _GET_MODEL_STAGE_CHUNK_SQL,
+                            (stage_batch_id, chunk_index),
+                        )
+                        duplicate = existing is not None
+                        if existing is not None:
+                            if (
+                                existing["chunk_sha256"] != chunk_sha256
+                                or existing["records_document"] != normalized
+                            ):
+                                raise StageChunkConflictError()
+                        else:
+                            totals = await transaction.fetch_one(
+                                _MODEL_STAGE_CHUNK_TOTALS_SQL,
+                                (stage_batch_id,),
+                            )
+                            assert totals is not None
+                            if (
+                                totals["record_count"] + len(normalized)
+                                > batch["total_record_count"]
+                            ):
+                                raise InvalidRequestError(
+                                    "Stage chunks exceed the approved record count."
+                                )
+                            inserted = await transaction.fetch_one(
+                                _INSERT_MODEL_STAGE_CHUNK_SQL,
+                                (
+                                    stage_batch_id,
+                                    chunk_index,
+                                    len(normalized),
+                                    chunk_sha256,
+                                    Jsonb(normalized),
+                                ),
+                            )
+                            assert inserted is not None
+                            touched = await transaction.fetch_one(
+                                _TOUCH_MODEL_STAGE_BATCH_SQL,
+                                (stage_batch_id,),
+                            )
+                            if touched is None:
+                                raise StageBatchNotActiveError()
+                        totals = await transaction.fetch_one(
+                            _MODEL_STAGE_CHUNK_TOTALS_SQL,
+                            (stage_batch_id,),
+                        )
+                        assert totals is not None
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            if expired_batch is not None:
+                raise StageBatchNotActiveError()
+            assert batch is not None
+            assert totals is not None
             return PutModelStageChunkResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -1107,6 +1455,13 @@ def register_model_change_set_tools(
         del schema_version
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
+            correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            expired_batch: dict[str, Any] | None = None
+            batch: dict[str, Any] | None = None
+            committed_revision: int | None = None
+            committed_expires_time: datetime | None = None
+            replayed = False
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -1122,89 +1477,132 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                batch = await transaction.fetch_one(
-                    _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
-                    (stage_batch_id, model_change_set_id, model.model_id),
+                expired = await _expire_change_set_if_due(
+                    transaction,
+                    row=change_set,
+                    model_id=model.model_id,
+                    principal=principal,
+                    correlation_id=correlation_id,
                 )
-                if batch is None or batch["created_by_principal_id"] != principal.principal_id:
-                    raise StageBatchNotFoundError()
-                if batch["expected_draft_revision"] != expected_draft_revision:
-                    raise InvalidRequestError(
-                        "Expected revision does not match the Stage Batch manifest."
-                    )
-                if batch["stage_batch_status"] == "committed":
-                    replayed = True
-                    committed_revision = batch["committed_revision"]
-                    committed_expires_time = batch["committed_expires_time"]
-                else:
-                    _require_model_stage_batch(batch, principal, None)
+                if expired is None:
                     _require_mutable(change_set)
-                    if change_set["draft_revision"] != expected_draft_revision:
-                        raise DraftRevisionConflictError(change_set["draft_revision"])
-                    chunks = await transaction.fetch_all(
-                        _GET_MODEL_STAGE_CHUNKS_SQL,
-                        (stage_batch_id,),
+                    await transaction.fetch_all(
+                        _LOCK_ACTIVE_MODEL_STAGE_BATCH_BY_ID_SQL,
+                        (stage_batch_id, model_change_set_id, model.model_id),
                     )
-                    if (
-                        len(chunks) != batch["total_chunk_count"]
-                        or sum(row["record_count"] for row in chunks) != batch["total_record_count"]
-                        or stage_batch_sha256([row["chunk_sha256"] for row in chunks])
-                        != batch["batch_sha256"]
-                    ):
-                        raise StageBatchIncompleteError()
-                    assembled = [
-                        cast(dict[str, object], record)
-                        for chunk in chunks
-                        for record in chunk["records_document"]
-                    ]
-                    staged = _validate_stage_changes(
-                        [
-                            StageModelChange(
-                                dataset=cast(ModelChangeSetDataset, batch["dataset_name"]),
-                                records=assembled,
-                            )
-                        ]
-                    )
-                    documents = _documents(change_set)
-                    dataset_name = batch["dataset_name"]
-                    section = DATASETS_BY_NAME[dataset_name].section
-                    documents[section][dataset_name] = staged[dataset_name]
-                    _validate_document_bounds(documents)
-                    updated = await transaction.fetch_one(
-                        _STAGE_SQL,
+                    operation_time = await transaction.fetch_one(_DATABASE_TIME_SQL, ())
+                    assert operation_time is not None
+                    expired_batch = await transaction.fetch_one(
+                        _EXPIRE_MODEL_STAGE_BATCH_BY_ID_SQL,
                         (
-                            *(
-                                Jsonb(documents[column.removesuffix("_document")])
-                                for column in WRITE_SECTION_COLUMNS
-                            ),
-                            model_change_set_id,
-                        ),
-                    )
-                    assert updated is not None
-                    await _insert_event(
-                        transaction,
-                        change_set_id=model_change_set_id,
-                        model_id=model.model_id,
-                        event_type="section_put",
-                        draft_revision=updated["draft_revision"],
-                        section=section,
-                        action_count=len(assembled),
-                        outcome="staged",
-                        metadata={"datasets": [dataset_name]},
-                        correlation_id=uuid4(),
-                    )
-                    marked = await transaction.fetch_one(
-                        _MARK_MODEL_STAGE_BATCH_COMMITTED_SQL,
-                        (
-                            updated["draft_revision"],
-                            updated["expires_time"],
+                            operation_time["current_time"],
                             stage_batch_id,
+                            model_change_set_id,
+                            model.model_id,
                         ),
                     )
-                    assert marked is not None
-                    replayed = False
-                    committed_revision = marked["committed_revision"]
-                    committed_expires_time = marked["committed_expires_time"]
+                    if expired_batch is None:
+                        batch = await transaction.fetch_one(
+                            _GET_MODEL_STAGE_BATCH_FOR_UPDATE_SQL,
+                            (stage_batch_id, model_change_set_id, model.model_id),
+                        )
+                        if (
+                            batch is None
+                            or batch["created_by_principal_id"] != principal.principal_id
+                        ):
+                            raise StageBatchNotFoundError()
+                        if batch["expected_draft_revision"] != expected_draft_revision:
+                            raise InvalidRequestError(
+                                "Expected revision does not match the Stage Batch manifest."
+                            )
+                        if batch["stage_batch_status"] == "committed":
+                            replayed = True
+                            committed_revision = batch["committed_revision"]
+                            committed_expires_time = batch["committed_expires_time"]
+                        else:
+                            _require_model_stage_batch(batch, principal, None)
+                            if change_set["draft_revision"] != expected_draft_revision:
+                                raise DraftRevisionConflictError(change_set["draft_revision"])
+                            chunks = await transaction.fetch_all(
+                                _GET_MODEL_STAGE_CHUNKS_SQL,
+                                (stage_batch_id,),
+                            )
+                            if (
+                                len(chunks) != batch["total_chunk_count"]
+                                or sum(row["record_count"] for row in chunks)
+                                != batch["total_record_count"]
+                                or stage_batch_sha256([row["chunk_sha256"] for row in chunks])
+                                != batch["batch_sha256"]
+                            ):
+                                raise StageBatchIncompleteError()
+                            assembled = [
+                                cast(dict[str, object], record)
+                                for chunk in chunks
+                                for record in chunk["records_document"]
+                            ]
+                            staged = _validate_stage_changes(
+                                [
+                                    StageModelChange(
+                                        dataset=cast(
+                                            ModelChangeSetDataset,
+                                            batch["dataset_name"],
+                                        ),
+                                        records=assembled,
+                                    )
+                                ]
+                            )
+                            documents = _documents(change_set)
+                            dataset_name = batch["dataset_name"]
+                            section = DATASETS_BY_NAME[dataset_name].section
+                            documents[section][dataset_name] = staged[dataset_name]
+                            _validate_document_bounds(documents)
+                            updated = await transaction.fetch_one(
+                                _STAGE_SQL,
+                                (
+                                    *(
+                                        Jsonb(documents[column.removesuffix("_document")])
+                                        for column in WRITE_SECTION_COLUMNS
+                                    ),
+                                    model_change_set_id,
+                                    model.model_id,
+                                    principal.principal_id,
+                                    expected_draft_revision,
+                                ),
+                            )
+                            if updated is None:
+                                raise ModelChangeSetNotActiveError()
+                            await _insert_event(
+                                transaction,
+                                change_set_id=model_change_set_id,
+                                model_id=model.model_id,
+                                event_type="section_put",
+                                draft_revision=updated["draft_revision"],
+                                section=section,
+                                action_count=len(assembled),
+                                outcome="staged",
+                                metadata={"datasets": [dataset_name]},
+                                correlation_id=correlation_id,
+                            )
+                            marked = await transaction.fetch_one(
+                                _MARK_MODEL_STAGE_BATCH_COMMITTED_SQL,
+                                (
+                                    updated["draft_revision"],
+                                    updated["expires_time"],
+                                    expected_draft_revision,
+                                    stage_batch_id,
+                                ),
+                            )
+                            if marked is None:
+                                raise StageBatchNotActiveError()
+                            committed_revision = marked["committed_revision"]
+                            committed_expires_time = marked["committed_expires_time"]
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            if expired_batch is not None:
+                raise StageBatchNotActiveError()
+            assert batch is not None
+            assert committed_revision is not None
+            assert committed_expires_time is not None
             return CommitModelStageBatchResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -1266,8 +1664,17 @@ def register_model_change_set_tools(
                     change_set_id=model_change_set_id,
                     model_id=model.model_id,
                     principal=principal,
-                    for_update=False,
+                    for_update=True,
                 )
+                expired = await _expire_change_set_if_due(
+                    transaction,
+                    row=row,
+                    model_id=model.model_id,
+                    principal=principal,
+                    correlation_id=row["correlation_id"],
+                )
+                if expired is not None:
+                    row = expired
             pending = _pending_datasets(row)
             return GetModelChangeSetResult(
                 model_id=model_id,
@@ -1322,6 +1729,9 @@ def register_model_change_set_tools(
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            validation: ValidatedModelChangeSet | None = None
+            updated: dict[str, Any] | None = None
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -1337,38 +1747,55 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                _require_mutable(row)
-                if row["draft_revision"] != expected_draft_revision:
-                    raise DraftRevisionConflictError(row["draft_revision"])
-                _require_mcp_writable_pending(row)
-                validation = await _validate_locked_change_set(transaction, model, row)
-                outcome = _validation_outcome(validation)
-                updated = await transaction.fetch_one(
-                    _RECORD_VALIDATION_SQL,
-                    (
-                        "validated" if validation.valid else "active",
-                        validation.candidate_digest if validation.valid else None,
-                        Jsonb(outcome),
-                        validation.valid,
-                        model_change_set_id,
-                    ),
-                )
-                assert updated is not None
-                await _insert_event(
+                expired = await _expire_change_set_if_due(
                     transaction,
-                    change_set_id=model_change_set_id,
+                    row=row,
                     model_id=model.model_id,
-                    event_type=("validated" if validation.valid else "validation_failed"),
-                    draft_revision=row["draft_revision"],
-                    section=None,
-                    action_count=sum(len(records) for records in validation.records.values()),
-                    outcome="valid" if validation.valid else "invalid",
-                    metadata={
-                        "phase": validation.phase,
-                        "error_count": len(validation.issues),
-                    },
+                    principal=principal,
                     correlation_id=correlation_id,
                 )
+                if expired is None:
+                    _require_mutable(row)
+                    if row["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(row["draft_revision"])
+                    _require_mcp_writable_pending(row)
+                    validation = await _validate_locked_change_set(transaction, model, row)
+                    if validation.valid:
+                        assert validation.candidate_digest is not None
+                    outcome = _validation_outcome(validation)
+                    updated = await transaction.fetch_one(
+                        _RECORD_VALIDATION_SQL,
+                        (
+                            validation.valid,
+                            validation.candidate_digest if validation.valid else None,
+                            Jsonb(outcome),
+                            model_change_set_id,
+                            model.model_id,
+                            principal.principal_id,
+                            expected_draft_revision,
+                        ),
+                    )
+                    if updated is None:
+                        raise ModelChangeSetNotActiveError()
+                    await _insert_event(
+                        transaction,
+                        change_set_id=model_change_set_id,
+                        model_id=model.model_id,
+                        event_type=("validated" if validation.valid else "validation_failed"),
+                        draft_revision=row["draft_revision"],
+                        section=None,
+                        action_count=sum(len(records) for records in validation.records.values()),
+                        outcome="valid" if validation.valid else "invalid",
+                        metadata={
+                            "phase": validation.phase,
+                            "error_count": len(validation.issues),
+                        },
+                        correlation_id=correlation_id,
+                    )
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            assert validation is not None
+            assert updated is not None
             return ValidateModelChangeSetResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -1425,6 +1852,11 @@ def register_model_change_set_tools(
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            validation: ValidatedModelChangeSet | None = None
+            revision: dict[str, Any] | None = None
+            applied: dict[str, Any] | None = None
+            action_count = 0
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -1440,50 +1872,72 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                if row["model_change_set_status"] != "validated":
-                    raise ModelChangeSetNotValidatedError()
-                if row["draft_revision"] != expected_draft_revision:
-                    raise DraftRevisionConflictError(row["draft_revision"])
-                _require_mcp_writable_pending(row)
-                validation = await _validate_locked_change_set(transaction, model, row)
-                if not validation.valid:
-                    raise CandidateDigestConflictError()
-                assert validation.candidate_digest is not None
-                if validation.candidate_digest != row["candidate_digest"]:
-                    raise CandidateDigestConflictError()
-                materializer = ModelMaterializer(
-                    transaction=transaction,
-                    model_id=model.model_id,
-                    source_context_digest=row["base_source_context_digest"],
-                )
-                action_count = await materializer.apply(validation.records)
-                revision = await transaction.fetch_one(
-                    _ADVANCE_MODEL_REVISION_SQL,
-                    (
-                        1 if action_count > 0 else 0,
-                        model.model_id,
-                        model.model_revision,
-                    ),
-                )
-                if revision is None:
-                    raise InvalidRequestError("Model revision changed during apply.")
-                applied = await transaction.fetch_one(
-                    _MARK_APPLIED_SQL,
-                    (model_change_set_id,),
-                )
-                assert applied is not None
-                await _insert_event(
+                expired = await _expire_change_set_if_due(
                     transaction,
-                    change_set_id=model_change_set_id,
+                    row=row,
                     model_id=model.model_id,
-                    event_type="applied",
-                    draft_revision=row["draft_revision"],
-                    section=None,
-                    action_count=action_count,
-                    outcome="applied",
-                    metadata={"model_revision": revision["model_revision"]},
+                    principal=principal,
                     correlation_id=correlation_id,
                 )
+                if expired is None:
+                    _require_mutable(row)
+                    if row["model_change_set_status"] != "validated":
+                        raise ModelChangeSetNotValidatedError()
+                    if row["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(row["draft_revision"])
+                    _require_mcp_writable_pending(row)
+                    validation = await _validate_locked_change_set(transaction, model, row)
+                    if not validation.valid:
+                        raise CandidateDigestConflictError()
+                    assert validation.candidate_digest is not None
+                    if validation.candidate_digest != row["candidate_digest"]:
+                        raise CandidateDigestConflictError()
+                    materializer = ModelMaterializer(
+                        transaction=transaction,
+                        model_id=model.model_id,
+                        source_context_digest=row["base_source_context_digest"],
+                    )
+                    action_count = await materializer.apply(validation.records)
+                    revision = await transaction.fetch_one(
+                        _ADVANCE_MODEL_REVISION_SQL,
+                        (
+                            1 if action_count > 0 else 0,
+                            model.model_id,
+                            model.model_revision,
+                        ),
+                    )
+                    if revision is None:
+                        raise InvalidRequestError("Model revision changed during apply.")
+                    applied = await transaction.fetch_one(
+                        _MARK_APPLIED_SQL,
+                        (
+                            expected_draft_revision,
+                            validation.candidate_digest,
+                            model_change_set_id,
+                            model.model_id,
+                            principal.principal_id,
+                        ),
+                    )
+                    if applied is None:
+                        raise ModelChangeSetNotActiveError()
+                    await _insert_event(
+                        transaction,
+                        change_set_id=model_change_set_id,
+                        model_id=model.model_id,
+                        event_type="applied",
+                        draft_revision=row["draft_revision"],
+                        section=None,
+                        action_count=action_count,
+                        outcome="applied",
+                        metadata={"model_revision": revision["model_revision"]},
+                        correlation_id=correlation_id,
+                    )
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            assert validation is not None
+            assert validation.candidate_digest is not None
+            assert revision is not None
+            assert applied is not None
             return ApplyModelChangeSetResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -1534,6 +1988,8 @@ def register_model_change_set_tools(
         try:
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
+            expired: dict[str, Any] | None = None
+            archived: dict[str, Any] | None = None
             async with database.write_transaction() as transaction:
                 model, principal = await _authorize_model(
                     transaction,
@@ -1549,26 +2005,43 @@ def register_model_change_set_tools(
                     principal=principal,
                     for_update=True,
                 )
-                _require_mutable(row)
-                if row["draft_revision"] != expected_draft_revision:
-                    raise DraftRevisionConflictError(row["draft_revision"])
-                archived = await transaction.fetch_one(
-                    _ARCHIVE_SQL,
-                    (model_change_set_id, model.model_id),
-                )
-                assert archived is not None
-                await _insert_event(
+                expired = await _expire_change_set_if_due(
                     transaction,
-                    change_set_id=model_change_set_id,
+                    row=row,
                     model_id=model.model_id,
-                    event_type="discarded",
-                    draft_revision=archived["draft_revision"],
-                    section=None,
-                    action_count=0,
-                    outcome="archived",
-                    metadata={},
+                    principal=principal,
                     correlation_id=correlation_id,
                 )
+                if expired is None:
+                    _require_mutable(row)
+                    if row["draft_revision"] != expected_draft_revision:
+                        raise DraftRevisionConflictError(row["draft_revision"])
+                    archived = await transaction.fetch_one(
+                        _ARCHIVE_SQL,
+                        (
+                            expected_draft_revision,
+                            model_change_set_id,
+                            model.model_id,
+                            principal.principal_id,
+                        ),
+                    )
+                    if archived is None:
+                        raise ModelChangeSetNotActiveError()
+                    await _insert_event(
+                        transaction,
+                        change_set_id=model_change_set_id,
+                        model_id=model.model_id,
+                        event_type="discarded",
+                        draft_revision=archived["draft_revision"],
+                        section=None,
+                        action_count=0,
+                        outcome="archived",
+                        metadata={},
+                        correlation_id=correlation_id,
+                    )
+            if expired is not None:
+                raise ModelChangeSetNotActiveError()
+            assert archived is not None
             return ArchiveModelChangeSetResult(
                 model_id=model_id,
                 model_change_set_id=model_change_set_id,
@@ -1669,11 +2142,49 @@ async def _owned_change_set(
     return row
 
 
+async def _expire_change_set_if_due(
+    transaction: WriteTransaction,
+    *,
+    row: Mapping[str, Any],
+    model_id: int,
+    principal: ResolvedPrincipal,
+    correlation_id: UUID,
+) -> dict[str, Any] | None:
+    if principal.principal_id is None:
+        return None
+    operation_time = await transaction.fetch_one(_DATABASE_TIME_SQL, ())
+    assert operation_time is not None
+    expired = await transaction.fetch_one(
+        _EXPIRE_CHANGE_SET_SQL,
+        (
+            operation_time["current_time"],
+            row["model_change_set_id"],
+            model_id,
+            principal.principal_id,
+        ),
+    )
+    if expired is None:
+        return None
+    await _insert_event(
+        transaction,
+        change_set_id=expired["model_change_set_id"],
+        model_id=model_id,
+        event_type="expired",
+        draft_revision=expired["draft_revision"],
+        section=None,
+        action_count=0,
+        outcome="expired",
+        metadata={},
+        correlation_id=correlation_id,
+    )
+    return expired
+
+
 def _require_mutable(row: Mapping[str, Any]) -> None:
     _require_generic_change_set(row)
     if row["model_change_set_status"] not in ("active", "validated"):
         raise ModelChangeSetNotActiveError()
-    if row["expires_time"] <= datetime.now(row["expires_time"].tzinfo):
+    if row.get("is_expired") is True:
         raise ModelChangeSetNotActiveError()
 
 
@@ -1690,7 +2201,7 @@ def _require_model_stage_batch(
         raise InvalidRequestError("The Stage Batch dataset is not writable through MCP.")
     if row["stage_batch_status"] != "active":
         raise StageBatchNotActiveError()
-    if row["expires_time"] <= datetime.now(row["expires_time"].tzinfo):
+    if row.get("is_expired") is True:
         raise StageBatchNotActiveError()
 
 

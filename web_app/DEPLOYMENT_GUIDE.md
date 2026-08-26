@@ -112,7 +112,12 @@ Databricks App while leaving MCP runtime behavior unchanged.
   reviewed, non-destructive schema/function change before this App revision is
   deployed.
 - The runtime DSN uses the least-privilege `gds_web_runtime` account and includes
-  a host, database, and `sslmode=verify-full`.
+  a host, database, and `sslmode=verify-full`. Production startup rejects every
+  other database login name.
+- The required application reference seed is installed from
+  `database/seed/04_application_reference.sql`. Readiness requires exactly 47
+  active workflow stages and 78 active backend-resolved variables; missing,
+  inactive, or additional reference rows keep the App unavailable.
 - Every intended user has an active `security.entra_principal_identity` for the
   configured Entra tenant and object UUID, plus the required active Tenant role.
 - Databricks Apps serverless compute can reach PostgreSQL. Configure an approved

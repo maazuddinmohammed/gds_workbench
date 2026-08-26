@@ -180,6 +180,67 @@ def test_runtime_integrity_replaces_legacy_databricks_lookup_access(
     assert posture == {"legacy_execute": False, "current_execute": True}
 
 
+def test_runtime_integrity_revokes_web_databricks_secret_lookup(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            GRANT EXECUTE ON FUNCTION
+                mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
+            TO gds_web_write
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"),
+            )
+        )
+        posture = connection.execute(
+            """
+            SELECT has_function_privilege(
+                       'gds_app_write',
+                       'mcp.get_databricks_sql_connection_values(bigint,text)',
+                       'EXECUTE'
+                   ) AS mcp_execute,
+                   has_function_privilege(
+                       'gds_web_write',
+                       'mcp.get_databricks_sql_connection_values(bigint,text)',
+                       'EXECUTE'
+                   ) AS web_execute
+            """
+        ).fetchone()
+
+    assert posture == {"mcp_execute": True, "web_execute": False}
+
+
+def test_runtime_integrity_revokes_an_unlisted_web_mcp_function(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"),
+            )
+        )
+        web_execute = connection.execute(
+            """
+            SELECT has_function_privilege(
+                       'gds_web_write',
+                       'mcp.runtime_readiness()',
+                       'EXECUTE'
+                   ) AS allowed
+            """
+        ).fetchone()
+
+    assert web_execute == {"allowed": False}
+
+
 def test_mcp_role_cannot_mutate_model_scope_or_web_agent_defaults(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -336,6 +397,51 @@ async def test_runtime_readiness_rejects_a_missing_canonical_model_policy_column
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("schema_name", "relation_name"),
+    [
+        ("mcp", "model_change_set"),
+        ("model", "modeling_assertion_record"),
+        ("workflow", "mapping_object"),
+    ],
+)
+async def test_runtime_readiness_rejects_a_missing_current_mcp_relation(
+    postgres_database: DisposablePostgres,
+    schema_name: str,
+    relation_name: str,
+) -> None:
+    missing_name = f"missing_{relation_name}"
+    relation = sql.Identifier(schema_name, relation_name)
+    missing = sql.Identifier(schema_name, missing_name)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            sql.SQL("ALTER TABLE {} RENAME TO {}").format(
+                relation,
+                sql.Identifier(missing_name),
+            )
+        )
+
+    try:
+        database = postgres_database.create_runtime_adapter()
+        await database.open()
+        try:
+            readiness = await database.readiness()
+        finally:
+            await database.close()
+    finally:
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                sql.SQL("ALTER TABLE {} RENAME TO {}").format(
+                    missing,
+                    sql.Identifier(relation_name),
+                )
+            )
+
+    assert readiness.ready is False
+    assert readiness.code == "database_schema_unavailable"
+
+
+@pytest.mark.asyncio
 async def test_runtime_readiness_rejects_a_missing_governed_function_grant(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -362,6 +468,38 @@ async def test_runtime_readiness_rejects_a_missing_governed_function_grant(
                 GRANT EXECUTE ON FUNCTION security.check_tenant_lock(
                     UUID, UUID, VARCHAR, BIGINT
                 ) TO gds_app_write
+                """
+            )
+
+    assert readiness.ready is False
+    assert readiness.code == "database_role_invalid"
+
+
+@pytest.mark.asyncio
+async def test_runtime_readiness_rejects_an_unlisted_mcp_group_function(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            GRANT EXECUTE ON FUNCTION mcp.reject_tool_call_log_mutation()
+            TO gds_app_write
+            """
+        )
+
+    try:
+        database = postgres_database.create_runtime_adapter()
+        await database.open()
+        try:
+            readiness = await database.readiness()
+        finally:
+            await database.close()
+    finally:
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                """
+                REVOKE EXECUTE ON FUNCTION mcp.reject_tool_call_log_mutation()
+                FROM gds_app_write
                 """
             )
 
@@ -523,6 +661,101 @@ def test_verify_install_rejects_missing_application_schema_usage(
         connection.transaction(),
     ):
         connection.execute("REVOKE USAGE ON SCHEMA application FROM gds_web_write")
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_web_databricks_secret_lookup(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="runtime function privileges"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            """
+            GRANT EXECUTE ON FUNCTION
+                mcp.get_databricks_sql_connection_values(BIGINT, TEXT)
+            TO gds_web_write
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_an_unlisted_web_mcp_function(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="runtime function privileges"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+def test_verify_install_rejects_an_unlisted_mcp_group_function(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="runtime function privileges"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            """
+            GRANT EXECUTE ON FUNCTION mcp.reject_tool_call_log_mutation()
+            TO gds_app_write
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
+@pytest.mark.parametrize(
+    "function_signature",
+    [
+        "workflow.list_tenant_visible_objects(bigint)",
+        "workflow.list_model_object_eligibility(bigint)",
+        "workflow.list_model_attribute_eligibility(bigint)",
+        "workflow.list_code_generation_target_context(bigint,character varying)",
+    ],
+)
+def test_verify_install_rejects_missing_web_workflow_read_grant(
+    postgres_database: DisposablePostgres,
+    function_signature: str,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="runtime function privileges"),
+        connection.transaction(),
+    ):
+        connection.execute(
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
+                sql.SQL(function_signature)
+            )
+        )
         connection.execute(
             cast(
                 LiteralString,

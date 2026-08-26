@@ -336,8 +336,8 @@ def _transition_prompt_template_version(
     actor: PromptActor,
     *,
     prompt_template_version_id: int,
-    expected_status: str,
-    target_status: str,
+    expected_status: str | None,
+    target_status: str | None,
 ) -> TestRow:
     with postgres_database.connect_owner() as connection:
         return require_row(
@@ -1040,6 +1040,76 @@ def test_retired_prompt_replay_still_enforces_expected_source_status(
             prompt_template_version_id=published["prompt_template_version_id"],
             expected_status="draft",
             target_status="retired",
+        )
+
+
+def test_prompt_transition_rejects_a_null_target_status(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_prompt_context(postgres_database)
+    prompt = _save_prompt_template(
+        postgres_database,
+        context.architect,
+        prompt_template_id=None,
+        workflow_stage_id=context.workflow_stage_id,
+        ownership_scope="tenant",
+        owner_tenant_id=context.tenant_id,
+        code=f"null_transition_target_{uuid4().hex}",
+        name="NULL transition target prompt",
+    )
+    draft = _save_prompt_template_draft(
+        postgres_database,
+        context.architect,
+        prompt_template_id=prompt["prompt_template_id"],
+        expected_prompt_template_version_id=None,
+        system_prompt="NULL transition target system prompt.",
+        instruction_prompt="NULL transition target instruction prompt.",
+        tool_instruction_prompt=None,
+        expected_updated_time=None,
+    )
+
+    with pytest.raises(RaiseException, match="transition"):
+        _transition_prompt_template_version(
+            postgres_database,
+            context.architect,
+            prompt_template_version_id=draft["prompt_template_version_id"],
+            expected_status="draft",
+            target_status=None,
+        )
+
+
+def test_prompt_transition_rejects_a_null_expected_status(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_prompt_context(postgres_database)
+    prompt = _save_prompt_template(
+        postgres_database,
+        context.architect,
+        prompt_template_id=None,
+        workflow_stage_id=context.workflow_stage_id,
+        ownership_scope="tenant",
+        owner_tenant_id=context.tenant_id,
+        code=f"null_transition_source_{uuid4().hex}",
+        name="NULL transition source prompt",
+    )
+    draft = _save_prompt_template_draft(
+        postgres_database,
+        context.architect,
+        prompt_template_id=prompt["prompt_template_id"],
+        expected_prompt_template_version_id=None,
+        system_prompt="NULL transition source system prompt.",
+        instruction_prompt="NULL transition source instruction prompt.",
+        tool_instruction_prompt=None,
+        expected_updated_time=None,
+    )
+
+    with pytest.raises(RaiseException, match="transition"):
+        _transition_prompt_template_version(
+            postgres_database,
+            context.architect,
+            prompt_template_version_id=draft["prompt_template_version_id"],
+            expected_status=None,
+            target_status="published",
         )
 
 

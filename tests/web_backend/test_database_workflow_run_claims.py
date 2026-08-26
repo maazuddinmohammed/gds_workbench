@@ -427,8 +427,10 @@ def test_concurrent_starts_allow_one_running_run_per_tenant(
         _complete_run(connection, context, running_id)
 
 
-def test_claim_rejects_inactive_actor_or_exact_identity(
+@pytest.mark.parametrize("inactive_record", ("actor", "identity"))
+def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
     web_postgres_database: DisposablePostgres,
+    inactive_record: str,
 ) -> None:
     context = seed_workflow_context(web_postgres_database)
     with web_postgres_database.connect_owner() as connection:
@@ -443,14 +445,24 @@ def test_claim_rejects_inactive_actor_or_exact_identity(
                 (workflow_run_id,),
             ).fetchone()
         )["actor_entra_principal_identity_id"]
-        connection.execute(
-            """
-            UPDATE security.entra_principal_identity
-               SET is_active = FALSE
-             WHERE entra_principal_identity_id = %s
-            """,
-            (actor_identity_id,),
-        )
+        if inactive_record == "actor":
+            connection.execute(
+                """
+                UPDATE security.principal
+                   SET is_active = FALSE
+                 WHERE principal_id = %s
+                """,
+                (context.principal_id,),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE security.entra_principal_identity
+                   SET is_active = FALSE
+                 WHERE entra_principal_identity_id = %s
+                """,
+                (actor_identity_id,),
+            )
 
     with psycopg.Connection[dict[str, object]].connect(
         web_postgres_database.web_runtime_dsn(),
@@ -466,22 +478,24 @@ def test_claim_rejects_inactive_actor_or_exact_identity(
         )
 
         with web_postgres_database.connect_owner() as connection:
-            connection.execute(
-                """
-                UPDATE security.entra_principal_identity
-                   SET is_active = TRUE
-                 WHERE entra_principal_identity_id = %s
-                """,
-                (actor_identity_id,),
-            )
-            connection.execute(
-                """
-                UPDATE security.principal
-                   SET is_active = FALSE
-                 WHERE principal_id = %s
-                """,
-                (context.principal_id,),
-            )
+            if inactive_record == "actor":
+                connection.execute(
+                    """
+                    UPDATE security.principal
+                       SET is_active = TRUE
+                     WHERE principal_id = %s
+                    """,
+                    (context.principal_id,),
+                )
+            else:
+                connection.execute(
+                    """
+                    UPDATE security.entra_principal_identity
+                       SET is_active = TRUE
+                     WHERE entra_principal_identity_id = %s
+                    """,
+                    (actor_identity_id,),
+                )
 
         assert (
             worker.execute(
@@ -490,41 +504,42 @@ def test_claim_rejects_inactive_actor_or_exact_identity(
             is None
         )
 
-        with web_postgres_database.connect_owner() as connection:
+    with web_postgres_database.connect_owner() as connection:
+        terminal = require_row(
             connection.execute(
                 """
-                UPDATE security.principal
-                   SET is_active = TRUE
-                 WHERE principal_id = %s
+                SELECT workflow_run_state, failure_code, failure_message
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
                 """,
-                (context.principal_id,),
-            )
-
-        claimed = require_row(
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
+                (workflow_run_id,),
             ).fetchone()
         )
-        assert claimed["workflow_run_id"] == workflow_run_id
-        assert claimed["actor_principal_type"] == "user"
-        assert claimed["actor_entra_tenant_id"] == context.entra_tenant_id
-        assert claimed["actor_entra_object_id"] == context.entra_object_id
-        claim_token = claimed["workflow_run_claim_token"]
-        assert isinstance(claim_token, UUID)
-        worker.execute(
-            """
-            SELECT application.release_workflow_run_claim(
-                %s::BIGINT, %s::UUID
-            )
-            """,
-            (workflow_run_id, claim_token),
+        failure_events = require_row(
+            connection.execute(
+                """
+                SELECT count(*) AS event_count,
+                       min(model_event_log_message) AS event_message
+                  FROM model.model_event_log
+                 WHERE workflow_run_id = %s
+                   AND model_event_log_status = 'failed'
+                """,
+                (workflow_run_id,),
+            ).fetchone()
         )
 
-    with web_postgres_database.connect_owner() as connection:
-        _complete_run(connection, context, workflow_run_id)
+    assert terminal == {
+        "workflow_run_state": "failed",
+        "failure_code": "workflow_run_context_unavailable",
+        "failure_message": "Workflow Run execution context is unavailable.",
+    }
+    assert failure_events == {
+        "event_count": 1,
+        "event_message": "Workflow Run execution context is unavailable.",
+    }
 
 
-def test_nullable_actor_identity_requires_one_unambiguous_active_identity(
+def test_ambiguous_nullable_actor_identity_terminalizes_once(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(web_postgres_database)
@@ -612,30 +627,46 @@ def test_nullable_actor_identity_requires_one_unambiguous_active_identity(
                 (second_identity_id,),
             )
 
-        claimed = require_row(
+        assert (
             worker.execute(
                 "SELECT * FROM application.claim_next_workflow_run(30)"
             ).fetchone()
-        )
-        assert claimed["workflow_run_id"] == workflow_run_id
-        assert claimed["tenant_id"] == context.tenant_id
-        assert claimed["workflow_execution_mode"] is None
-        assert claimed["actor_principal_type"] == "user"
-        assert claimed["actor_entra_tenant_id"] == context.entra_tenant_id
-        assert claimed["actor_entra_object_id"] == context.entra_object_id
-        claim_token = claimed["workflow_run_claim_token"]
-        assert isinstance(claim_token, UUID)
-        worker.execute(
-            """
-            SELECT application.release_workflow_run_claim(
-                %s::BIGINT, %s::UUID
-            )
-            """,
-            (workflow_run_id, claim_token),
+            is None
         )
 
     with web_postgres_database.connect_owner() as connection:
-        _complete_run(connection, context, workflow_run_id)
+        terminal = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state, failure_code, failure_message
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )
+        failure_events = require_row(
+            connection.execute(
+                """
+                SELECT count(*) AS event_count,
+                       min(model_event_log_message) AS event_message
+                  FROM model.model_event_log
+                 WHERE workflow_run_id = %s
+                   AND model_event_log_status = 'failed'
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )
+
+    assert terminal == {
+        "workflow_run_state": "failed",
+        "failure_code": "workflow_run_context_unavailable",
+        "failure_message": "Workflow Run execution context is unavailable.",
+    }
+    assert failure_events == {
+        "event_count": 1,
+        "event_message": "Workflow Run execution context is unavailable.",
+    }
 
 
 def test_terminal_and_queued_runs_are_not_claimable(

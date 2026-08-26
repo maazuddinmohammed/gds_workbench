@@ -1,6 +1,9 @@
 from __future__ import annotations
 
 import hashlib
+import time
+from concurrent.futures import ThreadPoolExecutor
+from queue import Queue
 from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
@@ -38,6 +41,180 @@ NEW_SECTION_NAMES = (
     "member_group",
     "copy_group_control",
 )
+
+REQUIRED_METADATA_ARGUMENTS = {
+    "create_metadata_change_set": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "new_metadata_change_set_id",
+        "correlation_id",
+    ),
+    "stage_metadata_change_set": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "expected_draft_revision",
+        "documents",
+        "correlation_id",
+    ),
+    "begin_metadata_stage_batch": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "expected_draft_revision",
+        "new_stage_batch_id",
+        "dataset_name",
+        "total_record_count",
+        "total_chunk_count",
+        "batch_sha256",
+        "correlation_id",
+    ),
+    "put_metadata_stage_chunk": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "stage_batch_id",
+        "dataset_name",
+        "chunk_index",
+        "chunk_sha256",
+        "records",
+    ),
+    "commit_metadata_stage_batch": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "stage_batch_id",
+        "expected_draft_revision",
+        "correlation_id",
+    ),
+    "get_metadata_change_set": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+    ),
+    "record_metadata_change_set_validation": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "expected_draft_revision",
+        "validation_succeeded",
+        "candidate_digest",
+        "validation_outcome",
+        "correlation_id",
+    ),
+    "archive_metadata_change_set": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "expected_draft_revision",
+        "correlation_id",
+    ),
+    "apply_metadata_change_set": (
+        "entra_tenant_id",
+        "entra_object_id",
+        "expected_principal_type",
+        "tenant_id",
+        "metadata_change_set_id",
+        "expected_draft_revision",
+        "candidate_digest",
+        "correlation_id",
+    ),
+}
+
+
+def _required_metadata_argument_cases() -> tuple[tuple[str, str], ...]:
+    return tuple(
+        (function_name, argument_name)
+        for function_name, argument_names in REQUIRED_METADATA_ARGUMENTS.items()
+        for argument_name in argument_names
+    )
+
+
+def _metadata_call_arguments(
+    function_name: str,
+) -> list[tuple[str, str, object]]:
+    common = [
+        ("entra_tenant_id", "UUID", uuid4()),
+        ("entra_object_id", "UUID", uuid4()),
+        ("expected_principal_type", "VARCHAR", "user"),
+        ("tenant_id", "BIGINT", 1),
+    ]
+    specific = {
+        "create_metadata_change_set": [
+            ("new_metadata_change_set_id", "UUID", uuid4()),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "stage_metadata_change_set": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("documents", "JSONB", Jsonb({"copy_group": []})),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "begin_metadata_stage_batch": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("new_stage_batch_id", "UUID", uuid4()),
+            ("dataset_name", "VARCHAR", "copy_group"),
+            ("total_record_count", "INTEGER", 1),
+            ("total_chunk_count", "INTEGER", 1),
+            ("batch_sha256", "CHAR(64)", "a" * 64),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "put_metadata_stage_chunk": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("stage_batch_id", "UUID", uuid4()),
+            ("dataset_name", "VARCHAR", "copy_group"),
+            ("chunk_index", "INTEGER", 1),
+            ("chunk_sha256", "CHAR(64)", "a" * 64),
+            ("records", "JSONB", Jsonb([{}])),
+        ],
+        "commit_metadata_stage_batch": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("stage_batch_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "get_metadata_change_set": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+        ],
+        "record_metadata_change_set_validation": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("validation_succeeded", "BOOLEAN", True),
+            ("candidate_digest", "CHAR(64)", "a" * 64),
+            ("validation_outcome", "JSONB", Jsonb({"valid": True})),
+            ("validation_report_id", "UUID", uuid4()),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "archive_metadata_change_set": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+        "apply_metadata_change_set": [
+            ("metadata_change_set_id", "UUID", uuid4()),
+            ("expected_draft_revision", "BIGINT", 1),
+            ("candidate_digest", "CHAR(64)", "a" * 64),
+            ("correlation_id", "UUID", uuid4()),
+        ],
+    }
+    return [*common, *specific[function_name]]
 
 
 def test_metadata_change_set_has_exact_sixteen_documents(
@@ -234,6 +411,29 @@ def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions
         "multi_dataset_stage_exists": True,
         "single_dataset_stage_removed": True,
     }
+
+
+@pytest.mark.parametrize(
+    ("function_name", "null_argument"),
+    _required_metadata_argument_cases(),
+)
+def test_metadata_entrypoints_reject_every_required_null_argument(
+    postgres_database: DisposablePostgres,
+    function_name: str,
+    null_argument: str,
+) -> None:
+    arguments = _metadata_call_arguments(function_name)
+    assert sum(name == null_argument for name, _, _ in arguments) == 1
+    placeholders = ", ".join(f"%s::{sql_type}" for _, sql_type, _ in arguments)
+    values = [None if name == null_argument else value for name, _, value in arguments]
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            f"SELECT denial_code FROM mcp.{function_name}({placeholders})",
+            values,
+        ).fetchone()
+
+    assert result == {"denial_code": "invalid_request"}
 
 
 def test_metadata_change_set_enforces_new_document_and_event_contract(
@@ -455,6 +655,77 @@ def test_create_metadata_change_set_requires_owned_lock_and_reuses_ongoing_draft
     }
 
 
+def test_create_metadata_change_set_expires_stale_draft_once_and_creates_new(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    stale_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    new_id = uuid4()
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, stale_id)
+
+    with postgres_database.connect_runtime() as connection:
+        created = connection.execute(
+            """
+            SELECT created, denial_code, metadata_change_set_id
+              FROM mcp.create_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id, new_id, uuid4()),
+        ).fetchone()
+        blocked = connection.execute(
+            """
+            SELECT created, denial_code, metadata_change_set_id
+              FROM mcp.create_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID
+              )
+            """,
+            (entra_tenant_id, entra_object_id, tenant_id, uuid4(), uuid4()),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stale = connection.execute(
+            """
+            SELECT metadata_change_set_status, terminal_time IS NOT NULL AS terminal
+              FROM mcp.metadata_change_set
+             WHERE metadata_change_set_id = %s
+            """,
+            (stale_id,),
+        ).fetchone()
+        expired_events = connection.execute(
+            """
+            SELECT count(*) AS count, min(outcome) AS outcome,
+                   min(action_count) AS action_count
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type = 'expired'
+            """,
+            (stale_id,),
+        ).fetchone()
+
+    assert created == {
+        "created": True,
+        "denial_code": None,
+        "metadata_change_set_id": new_id,
+    }
+    assert blocked == {
+        "created": False,
+        "denial_code": "metadata_change_set_exists",
+        "metadata_change_set_id": new_id,
+    }
+    assert stale == {"metadata_change_set_status": "expired", "terminal": True}
+    assert expired_events == {"count": 1, "outcome": "expired", "action_count": 0}
+
+
 def test_stage_metadata_change_set_replaces_multiple_documents_with_one_revision(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -647,6 +918,25 @@ def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
                 uuid4(),
             ),
         ).fetchone()
+        null_dataset = connection.execute(
+            """
+            SELECT accepted, denial_code
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, NULL::VARCHAR,
+                  1::INTEGER, %s::CHAR(64), %s::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256s[0],
+                Jsonb(chunks[0]),
+            ),
+        ).fetchone()
         first = connection.execute(
             """
             SELECT accepted, denial_code, duplicate, received_chunk_count
@@ -820,6 +1110,7 @@ def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
         "created": False,
         "received_chunk_count": 0,
     }
+    assert null_dataset == {"accepted": False, "denial_code": "invalid_request"}
     assert first == {
         "accepted": True,
         "denial_code": None,
@@ -863,6 +1154,216 @@ def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
     assert stored == {"draft_revision": 2, "copy_group_document": chunks[0] + chunks[1]}
     assert batch == {"stage_batch_status": "committed", "committed_revision": 2}
     assert event_count == {"count": 1}
+
+
+def test_metadata_stage_batches_reject_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_runtime() as connection:
+        begun = connection.execute(
+            """
+            SELECT started, denial_code
+              FROM mcp.begin_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, 1::BIGINT,
+                  %s::UUID, NULL::BIGINT, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, 1::INTEGER, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (uuid4(), uuid4(), uuid4(), uuid4(), "a" * 64, uuid4()),
+        ).fetchone()
+        committed = connection.execute(
+            """
+            SELECT committed, denial_code
+              FROM mcp.commit_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, 1::BIGINT,
+                  %s::UUID, %s::UUID, NULL::BIGINT, %s::UUID
+              )
+            """,
+            (uuid4(), uuid4(), uuid4(), uuid4(), uuid4()),
+        ).fetchone()
+
+    assert begun == {"started": False, "denial_code": "invalid_request"}
+    assert committed == {"committed": False, "denial_code": "invalid_request"}
+
+
+def test_begin_metadata_stage_batch_expires_stale_parent(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT started, denial_code
+              FROM mcp.begin_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, 1::INTEGER, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                uuid4(),
+                "a" * 64,
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.metadata_change_set_status,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count,
+                   count(batch.stage_batch_id) AS batch_count
+              FROM mcp.metadata_change_set AS change_set
+              LEFT JOIN mcp.metadata_change_set_event AS event
+                ON event.metadata_change_set_id = change_set.metadata_change_set_id
+              LEFT JOIN mcp.metadata_stage_batch AS batch
+                ON batch.metadata_change_set_id = change_set.metadata_change_set_id
+             WHERE change_set.metadata_change_set_id = %s
+             GROUP BY change_set.metadata_change_set_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert result == {
+        "started": False,
+        "denial_code": "metadata_change_set_not_active",
+    }
+    assert stored == {
+        "metadata_change_set_status": "expired",
+        "expired_event_count": 1,
+        "batch_count": 0,
+    }
+
+
+def test_put_and_commit_metadata_stage_batch_cannot_use_stale_parent(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    stage_batch_id = uuid4()
+    chunk_sha256 = hashlib.sha256(b"expired-chunk").hexdigest()
+    batch_sha256 = hashlib.sha256(chunk_sha256.encode("ascii")).hexdigest()
+    with postgres_database.connect_runtime() as connection:
+        begun = connection.execute(
+            """
+            SELECT started
+              FROM mcp.begin_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, 1::INTEGER, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                batch_sha256,
+                uuid4(),
+            ),
+        ).fetchone()
+    assert begun == {"started": True}
+
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+        _age_metadata_stage_batch_past_expiry(connection, stage_batch_id)
+
+    with postgres_database.connect_runtime() as connection:
+        put = connection.execute(
+            """
+            SELECT accepted, denial_code
+              FROM mcp.put_metadata_stage_chunk(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 'copy_group'::VARCHAR,
+                  1::INTEGER, %s::CHAR(64), '[{}]'::JSONB
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                chunk_sha256,
+            ),
+        ).fetchone()
+        committed = connection.execute(
+            """
+            SELECT committed, denial_code
+              FROM mcp.commit_metadata_stage_batch(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::UUID, 1::BIGINT, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                stage_batch_id,
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.metadata_change_set_status,
+                   batch.stage_batch_status,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count,
+                   count(chunk.stage_batch_id) AS chunk_count
+              FROM mcp.metadata_change_set AS change_set
+              JOIN mcp.metadata_stage_batch AS batch
+                ON batch.metadata_change_set_id = change_set.metadata_change_set_id
+              LEFT JOIN mcp.metadata_change_set_event AS event
+                ON event.metadata_change_set_id = change_set.metadata_change_set_id
+              LEFT JOIN mcp.metadata_stage_chunk AS chunk
+                ON chunk.stage_batch_id = batch.stage_batch_id
+             WHERE change_set.metadata_change_set_id = %s
+             GROUP BY change_set.metadata_change_set_id, batch.stage_batch_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert put == {
+        "accepted": False,
+        "denial_code": "metadata_change_set_not_active",
+    }
+    assert committed == {
+        "committed": False,
+        "denial_code": "metadata_change_set_not_active",
+    }
+    assert stored == {
+        "metadata_change_set_status": "expired",
+        "stage_batch_status": "expired",
+        "expired_event_count": 1,
+        "chunk_count": 0,
+    }
 
 
 def test_stage_metadata_change_set_rejects_the_whole_invalid_request(
@@ -929,6 +1430,198 @@ def test_stage_metadata_change_set_rejects_the_whole_invalid_request(
     assert stage_event_count == {"count": 0}
 
 
+def test_stage_metadata_change_set_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT staged, denial_code
+              FROM mcp.stage_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, 1::BIGINT,
+                  %s::UUID, NULL::BIGINT,
+                  '{"copy_group": []}'::JSONB, %s::UUID
+              )
+            """,
+            (uuid4(), uuid4(), uuid4(), uuid4()),
+        ).fetchone()
+
+    assert result == {"staged": False, "denial_code": "invalid_request"}
+
+
+def test_stage_metadata_change_set_expires_stale_draft_once_without_mutating(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    results = []
+    with postgres_database.connect_runtime() as connection:
+        for _ in range(2):
+            results.append(
+                connection.execute(
+                    """
+                    SELECT staged, denial_code, draft_revision
+                      FROM mcp.stage_metadata_change_set(
+                          %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                          %s::UUID, 1::BIGINT,
+                          '{"copy_group": []}'::JSONB, %s::UUID
+                      )
+                    """,
+                    (
+                        entra_tenant_id,
+                        entra_object_id,
+                        tenant_id,
+                        change_set_id,
+                        uuid4(),
+                    ),
+                ).fetchone()
+            )
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.metadata_change_set_status,
+                   change_set.draft_revision,
+                   change_set.copy_group_document,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count
+              FROM mcp.metadata_change_set AS change_set
+              LEFT JOIN mcp.metadata_change_set_event AS event
+                ON event.metadata_change_set_id = change_set.metadata_change_set_id
+             WHERE change_set.metadata_change_set_id = %s
+             GROUP BY change_set.metadata_change_set_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert results == [
+        {
+            "staged": False,
+            "denial_code": "metadata_change_set_not_active",
+            "draft_revision": 1,
+        },
+        {
+            "staged": False,
+            "denial_code": "metadata_change_set_not_active",
+            "draft_revision": 1,
+        },
+    ]
+    assert stored == {
+        "metadata_change_set_status": "expired",
+        "draft_revision": 1,
+        "copy_group_document": [],
+        "expired_event_count": 1,
+    }
+
+
+def test_metadata_expiry_clock_is_captured_after_waiting_for_row_lock(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    backend_pid: Queue[int] = Queue()
+
+    def stage_after_lock_wait() -> dict[str, Any]:
+        with postgres_database.connect_runtime() as connection:
+            pid = connection.execute("SELECT pg_backend_pid() AS pid").fetchone()
+            assert pid is not None
+            backend_pid.put(pid["pid"])
+            result = connection.execute(
+                """
+                SELECT staged, denial_code, draft_revision
+                  FROM mcp.stage_metadata_change_set(
+                      %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                      %s::UUID, 1::BIGINT,
+                      '{"copy_group": []}'::JSONB, %s::UUID
+                  )
+                """,
+                (
+                    entra_tenant_id,
+                    entra_object_id,
+                    tenant_id,
+                    change_set_id,
+                    uuid4(),
+                ),
+            ).fetchone()
+            assert result is not None
+            return result
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        with postgres_database.connect_owner() as blocker:
+            blocker.execute(
+                """
+                UPDATE mcp.metadata_change_set
+                   SET created_time = clock_timestamp() - INTERVAL '2 hours',
+                       last_activity_time = clock_timestamp() - INTERVAL '1 hour',
+                       expires_time = clock_timestamp() + INTERVAL '1 second'
+                 WHERE metadata_change_set_id = %s
+                """,
+                (change_set_id,),
+            )
+            future = executor.submit(stage_after_lock_wait)
+            pid = backend_pid.get(timeout=2)
+
+            deadline = time.monotonic() + 2
+            while True:
+                with postgres_database.connect_owner() as observer:
+                    waiting = observer.execute(
+                        """
+                        SELECT wait_event_type = 'Lock' AS waiting
+                          FROM pg_stat_activity
+                         WHERE pid = %s
+                        """,
+                        (pid,),
+                    ).fetchone()
+                if waiting == {"waiting": True}:
+                    break
+                if time.monotonic() >= deadline:
+                    raise AssertionError(
+                        "runtime did not wait for the change-set row lock"
+                    )
+                time.sleep(0.01)
+
+            deadline = time.monotonic() + 2
+            while True:
+                expired = blocker.execute(
+                    """
+                    SELECT clock_timestamp() >= expires_time AS expired
+                      FROM mcp.metadata_change_set
+                     WHERE metadata_change_set_id = %s
+                    """,
+                    (change_set_id,),
+                ).fetchone()
+                if expired == {"expired": True}:
+                    break
+                if time.monotonic() >= deadline:
+                    raise AssertionError("change set did not reach its expiry time")
+                time.sleep(0.01)
+            blocker.commit()
+
+        result = future.result(timeout=2)
+
+    assert result == {
+        "staged": False,
+        "denial_code": "metadata_change_set_not_active",
+        "draft_revision": 1,
+    }
+
+
 def test_get_metadata_change_set_requires_ownership_but_not_current_lock(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -973,6 +1666,70 @@ def test_get_metadata_change_set_requires_ownership_but_not_current_lock(
         "draft_revision": 1,
         "copy_group_count": 0,
     }
+
+
+def test_get_metadata_change_set_persists_expiration_once(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    results = []
+    with postgres_database.connect_runtime() as connection:
+        for _ in range(2):
+            results.append(
+                connection.execute(
+                    """
+                    SELECT found, denial_code, metadata_change_set_status,
+                           terminal_time IS NOT NULL AS terminal
+                      FROM mcp.get_metadata_change_set(
+                          %s::UUID, %s::UUID, 'user'::VARCHAR,
+                          %s::BIGINT, %s::UUID
+                      )
+                    """,
+                    (
+                        entra_tenant_id,
+                        entra_object_id,
+                        tenant_id,
+                        change_set_id,
+                    ),
+                ).fetchone()
+            )
+
+    with postgres_database.connect_owner() as connection:
+        expired_event_count = connection.execute(
+            """
+            SELECT count(*) AS count
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type = 'expired'
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert results == [
+        {
+            "found": True,
+            "denial_code": None,
+            "metadata_change_set_status": "expired",
+            "terminal": True,
+        },
+        {
+            "found": True,
+            "denial_code": None,
+            "metadata_change_set_status": "expired",
+            "terminal": True,
+        },
+    ]
+    assert expired_event_count == {"count": 1}
 
 
 def test_record_metadata_change_set_validation_seals_or_reopens_draft(
@@ -1045,6 +1802,235 @@ def test_record_metadata_change_set_validation_seals_or_reopens_draft(
     }
 
 
+@pytest.mark.parametrize(
+    ("expected_revision", "validation_succeeded", "validation_outcome"),
+    (
+        (None, True, {"valid": True}),
+        (1, None, {"valid": False}),
+        (1, True, None),
+    ),
+)
+def test_metadata_validation_rejects_null_control_inputs(
+    postgres_database: DisposablePostgres,
+    expected_revision: int | None,
+    validation_succeeded: bool | None,
+    validation_outcome: dict[str, bool] | None,
+) -> None:
+    suffix = uuid4().hex.upper()
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=suffix,
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT recorded, denial_code
+              FROM mcp.record_metadata_change_set_validation(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, %s::BIGINT, %s::BOOLEAN, %s::CHAR(64),
+                  %s::JSONB, %s::UUID, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                expected_revision,
+                validation_succeeded,
+                "a" * 64 if validation_succeeded is not False else None,
+                Jsonb(validation_outcome) if validation_outcome is not None else None,
+                uuid4(),
+                uuid4(),
+            ),
+        ).fetchone()
+
+    assert result == {"recorded": False, "denial_code": "invalid_request"}
+
+
+def test_metadata_validation_expires_stale_draft_without_recording(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT recorded, denial_code, metadata_change_set_status
+              FROM mcp.record_metadata_change_set_validation(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, TRUE, %s::CHAR(64),
+                  '{"valid": true}'::JSONB, %s::UUID, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                "a" * 64,
+                uuid4(),
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.metadata_change_set_status,
+                   change_set.candidate_digest,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'validated'
+                   ) AS validated_event_count
+              FROM mcp.metadata_change_set AS change_set
+              LEFT JOIN mcp.metadata_change_set_event AS event
+                ON event.metadata_change_set_id = change_set.metadata_change_set_id
+             WHERE change_set.metadata_change_set_id = %s
+             GROUP BY change_set.metadata_change_set_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert result == {
+        "recorded": False,
+        "denial_code": "metadata_change_set_not_active",
+        "metadata_change_set_status": "expired",
+    }
+    assert stored == {
+        "metadata_change_set_status": "expired",
+        "candidate_digest": None,
+        "expired_event_count": 1,
+        "validated_event_count": 0,
+    }
+
+
+def test_apply_metadata_change_set_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT applied, denial_code
+              FROM mcp.apply_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, 1::BIGINT,
+                  %s::UUID, NULL::BIGINT, %s::CHAR(64), %s::UUID
+              )
+            """,
+            (uuid4(), uuid4(), uuid4(), "a" * 64, uuid4()),
+        ).fetchone()
+
+    assert result == {"applied": False, "denial_code": "invalid_request"}
+
+
+def test_apply_metadata_change_set_expires_stale_approval_once_without_applying(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    digest = "b" * 64
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE mcp.metadata_change_set
+               SET metadata_change_set_status = 'validated',
+                   candidate_digest = %s,
+                   validation_outcome = '{"valid": true}'::JSONB,
+                   validated_time = clock_timestamp() - INTERVAL '90 minutes'
+             WHERE metadata_change_set_id = %s
+            """,
+            (digest, change_set_id),
+        )
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    results = []
+    with postgres_database.connect_runtime() as connection:
+        for _ in range(2):
+            results.append(
+                connection.execute(
+                    """
+                    SELECT applied, denial_code, metadata_change_set_status,
+                           action_count
+                      FROM mcp.apply_metadata_change_set(
+                          %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                          %s::UUID, 1::BIGINT, %s::CHAR(64), %s::UUID
+                      )
+                    """,
+                    (
+                        entra_tenant_id,
+                        entra_object_id,
+                        tenant_id,
+                        change_set_id,
+                        digest,
+                        uuid4(),
+                    ),
+                ).fetchone()
+            )
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.metadata_change_set_status,
+                   change_set.applied_time,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count,
+                   count(event.metadata_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'applied'
+                   ) AS applied_event_count
+              FROM mcp.metadata_change_set AS change_set
+              LEFT JOIN mcp.metadata_change_set_event AS event
+                ON event.metadata_change_set_id = change_set.metadata_change_set_id
+             WHERE change_set.metadata_change_set_id = %s
+             GROUP BY change_set.metadata_change_set_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert results == [
+        {
+            "applied": False,
+            "denial_code": "metadata_change_set_not_validated",
+            "metadata_change_set_status": "expired",
+            "action_count": 0,
+        },
+        {
+            "applied": False,
+            "denial_code": "metadata_change_set_not_validated",
+            "metadata_change_set_status": "expired",
+            "action_count": 0,
+        },
+    ]
+    assert stored == {
+        "metadata_change_set_status": "expired",
+        "applied_time": None,
+        "expired_event_count": 1,
+        "applied_event_count": 0,
+    }
+
+
 def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -1075,13 +2061,27 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
             """
         ).fetchone()
         assert system_type is not None
-        connection.execute(
+        system = connection.execute(
             """
             INSERT INTO core.system (
                 system_code, system_name, system_type_id
             ) VALUES ('CRM_APPLY', 'CRM Apply', %s)
+            RETURNING system_id
             """,
             (system_type["system_type_id"],),
+        ).fetchone()
+        assert system is not None
+        connection.execute(
+            """
+            INSERT INTO core.copy_group (
+                tenant_id, system_id, copy_group_name,
+                copy_group_description, updated_time
+            ) VALUES (
+                %s, %s, 'CUSTOMERS', 'Existing description',
+                clock_timestamp() - INTERVAL '1 day'
+            )
+            """,
+            (tenant_id, system["system_id"]),
         )
         connection.execute(
             """
@@ -1116,7 +2116,8 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
         ).fetchone()
         applied = connection.execute(
             """
-            SELECT applied, denial_code, metadata_change_set_status, action_count
+            SELECT applied, denial_code, metadata_change_set_status,
+                   applied_time, action_count
               FROM mcp.apply_metadata_change_set(
                   %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
                   %s::UUID, 1::BIGINT, %s::CHAR(64), %s::UUID
@@ -1135,7 +2136,8 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
             """
             SELECT copy_group.copy_group_name,
                    copy_group.copy_group_description,
-                   copy_group.is_active
+                   copy_group.is_active,
+                   copy_group.updated_time
               FROM core.copy_group AS copy_group
              WHERE copy_group.tenant_id = %s
             """,
@@ -1152,12 +2154,14 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
         "applied": True,
         "denial_code": None,
         "metadata_change_set_status": "applied",
+        "applied_time": stored["updated_time"],
         "action_count": 1,
     }
     assert stored == {
         "copy_group_name": "CUSTOMERS",
         "copy_group_description": "Customer ingestion",
         "is_active": True,
+        "updated_time": applied["applied_time"],
     }
 
 
@@ -1617,6 +2621,76 @@ def test_archive_metadata_change_set_requires_ownership_but_not_current_lock(
         "metadata_change_set_status": "archived",
         "draft_revision": 1,
     }
+
+
+def test_archive_metadata_change_set_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT archived, denial_code
+              FROM mcp.archive_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, 1::BIGINT,
+                  %s::UUID, NULL::BIGINT, %s::UUID
+              )
+            """,
+            (uuid4(), uuid4(), uuid4(), uuid4()),
+        ).fetchone()
+
+    assert result == {"archived": False, "denial_code": "invalid_request"}
+
+
+def test_archive_metadata_change_set_expires_stale_draft_instead_of_archiving(
+    postgres_database: DisposablePostgres,
+) -> None:
+    entra_tenant_id = uuid4()
+    entra_object_id = uuid4()
+    change_set_id, tenant_id = _seed_locked_change_set(
+        postgres_database,
+        suffix=uuid4().hex.upper(),
+        entra_tenant_id=entra_tenant_id,
+        entra_object_id=entra_object_id,
+    )
+    with postgres_database.connect_owner() as connection:
+        _age_metadata_change_set_past_expiry(connection, change_set_id)
+
+    with postgres_database.connect_runtime() as connection:
+        result = connection.execute(
+            """
+            SELECT archived, denial_code, metadata_change_set_status
+              FROM mcp.archive_metadata_change_set(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR, %s::BIGINT,
+                  %s::UUID, 1::BIGINT, %s::UUID
+              )
+            """,
+            (
+                entra_tenant_id,
+                entra_object_id,
+                tenant_id,
+                change_set_id,
+                uuid4(),
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        events = connection.execute(
+            """
+            SELECT event_type, outcome
+              FROM mcp.metadata_change_set_event
+             WHERE metadata_change_set_id = %s
+               AND event_type IN ('expired', 'archived')
+             ORDER BY event_sequence
+            """,
+            (change_set_id,),
+        ).fetchall()
+
+    assert result == {
+        "archived": False,
+        "denial_code": "metadata_change_set_not_active",
+        "metadata_change_set_status": "expired",
+    }
+    assert events == [{"event_type": "expired", "outcome": "expired"}]
 
 
 def test_apply_metadata_change_set_writes_all_sixteen_datasets(
@@ -2196,6 +3270,36 @@ def _all_apply_documents(
             }
         ],
     }
+
+
+def _age_metadata_change_set_past_expiry(
+    connection: Connection[Any], change_set_id: UUID
+) -> None:
+    connection.execute(
+        """
+        UPDATE mcp.metadata_change_set
+           SET created_time = clock_timestamp() - INTERVAL '3 hours',
+               last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+               expires_time = clock_timestamp() - INTERVAL '1 hour'
+         WHERE metadata_change_set_id = %s
+        """,
+        (change_set_id,),
+    )
+
+
+def _age_metadata_stage_batch_past_expiry(
+    connection: Connection[Any], stage_batch_id: UUID
+) -> None:
+    connection.execute(
+        """
+        UPDATE mcp.metadata_stage_batch
+           SET created_time = clock_timestamp() - INTERVAL '3 hours',
+               last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+               expires_time = clock_timestamp() - INTERVAL '1 hour'
+         WHERE stage_batch_id = %s
+        """,
+        (stage_batch_id,),
+    )
 
 
 def _seed_change_set_parents(

@@ -1291,6 +1291,78 @@ BEGIN
         'gds_app_write',
         'mcp.runtime_readiness()',
         'EXECUTE'
+    ) OR has_function_privilege(
+        'gds_web_write',
+        'mcp.get_databricks_sql_connection_values(bigint,text)',
+        'EXECUTE'
+    ) OR EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+                   'workflow.list_tenant_visible_objects(bigint)',
+                   'workflow.list_model_object_eligibility(bigint)',
+                   'workflow.list_model_attribute_eligibility(bigint)',
+                   'workflow.list_code_generation_target_context(bigint,character varying)'
+               ]) AS web_workflow_function(signature)
+         WHERE NOT has_function_privilege(
+                   'gds_web_write',
+                   web_workflow_function.signature,
+                   'EXECUTE'
+               )
+    ) OR EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS mcp_function
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = mcp_function.pronamespace
+         WHERE namespace_record.nspname = 'mcp'
+           AND has_function_privilege(
+                   'gds_web_write',
+                   mcp_function.oid,
+                   'EXECUTE'
+               )
+           AND NOT EXISTS (
+                   SELECT 1
+                     FROM unnest(ARRAY[
+                              'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
+                              'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
+                              'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
+                              'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
+                              'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
+                              'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)'
+                          ]) AS allowed_web_mcp_function(signature)
+                    WHERE to_regprocedure(
+                              allowed_web_mcp_function.signature
+                          ) = mcp_function.oid
+               )
+    ) OR EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS mcp_function
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = mcp_function.pronamespace
+         WHERE namespace_record.nspname = 'mcp'
+           AND has_function_privilege(
+                   'gds_app_write',
+                   mcp_function.oid,
+                   'EXECUTE'
+               )
+           AND NOT EXISTS (
+                   SELECT 1
+                     FROM unnest(ARRAY[
+                              'mcp.create_metadata_change_set(uuid,uuid,character varying,bigint,uuid,uuid)',
+                              'mcp.stage_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
+                              'mcp.begin_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,bigint,uuid,character varying,integer,integer,character,uuid)',
+                              'mcp.put_metadata_stage_chunk(uuid,uuid,character varying,bigint,uuid,uuid,character varying,integer,character,jsonb)',
+                              'mcp.commit_metadata_stage_batch(uuid,uuid,character varying,bigint,uuid,uuid,bigint,uuid)',
+                              'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
+                              'mcp.record_metadata_change_set_validation(uuid,uuid,character varying,bigint,uuid,bigint,boolean,character,jsonb,uuid,uuid)',
+                              'mcp.apply_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,character,uuid)',
+                              'mcp.archive_metadata_change_set(uuid,uuid,character varying,bigint,uuid,bigint,uuid)',
+                              'mcp.get_databricks_sql_connection_values(bigint,text)',
+                              'mcp.runtime_readiness()'
+                          ]) AS allowed_mcp_function(signature)
+                    WHERE to_regprocedure(
+                              allowed_mcp_function.signature
+                          ) = mcp_function.oid
+               )
     ) OR EXISTS (
         SELECT 1
           FROM unnest(ARRAY[

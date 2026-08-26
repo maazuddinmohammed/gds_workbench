@@ -557,7 +557,22 @@ DECLARE
     v_decision RECORD;
     v_existing RECORD;
     v_created RECORD;
+    v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_new_metadata_change_set_id IS NULL
+       OR p_correlation_id IS NULL THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), NULL::UUID,
+            NULL::VARCHAR(20), NULL::BIGINT, NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
     PERFORM 1
       FROM core.tenant AS tenant
      WHERE tenant.tenant_id = p_tenant_id
@@ -596,28 +611,74 @@ BEGIN
        AND change_set.created_by_principal_id = v_decision.principal_id
        AND change_set.metadata_change_set_status IN ('active', 'validated')
      FOR UPDATE;
+    v_now := clock_timestamp();
     IF FOUND THEN
-        RETURN QUERY SELECT
-            FALSE,
-            'metadata_change_set_exists'::VARCHAR(50),
-            v_existing.metadata_change_set_id::UUID,
-            v_existing.metadata_change_set_status::VARCHAR(20),
-            v_existing.draft_revision::BIGINT,
-            v_existing.created_time::TIMESTAMPTZ,
-            v_existing.expires_time::TIMESTAMPTZ;
-        RETURN;
+        IF v_existing.expires_time <= v_now THEN
+            UPDATE mcp.metadata_change_set AS change_set
+               SET metadata_change_set_status = 'expired',
+                   terminal_time = v_now
+             WHERE change_set.metadata_change_set_id =
+                   v_existing.metadata_change_set_id;
+            UPDATE mcp.metadata_stage_batch AS batch
+               SET stage_batch_status = 'expired',
+                   terminal_time = v_now
+             WHERE batch.metadata_change_set_id =
+                   v_existing.metadata_change_set_id
+               AND batch.stage_batch_status = 'active';
+
+            SELECT coalesce(max(event.event_sequence), 0) + 1
+              INTO v_event_sequence
+              FROM mcp.metadata_change_set_event AS event
+             WHERE event.metadata_change_set_id =
+                   v_existing.metadata_change_set_id;
+            INSERT INTO mcp.metadata_change_set_event (
+                metadata_change_set_id,
+                tenant_id,
+                event_sequence,
+                event_type,
+                draft_revision,
+                action_count,
+                outcome,
+                correlation_id
+            ) VALUES (
+                v_existing.metadata_change_set_id,
+                p_tenant_id,
+                v_event_sequence,
+                'expired',
+                v_existing.draft_revision,
+                0,
+                'expired',
+                p_correlation_id
+            );
+        ELSE
+            RETURN QUERY SELECT
+                FALSE,
+                'metadata_change_set_exists'::VARCHAR(50),
+                v_existing.metadata_change_set_id::UUID,
+                v_existing.metadata_change_set_status::VARCHAR(20),
+                v_existing.draft_revision::BIGINT,
+                v_existing.created_time::TIMESTAMPTZ,
+                v_existing.expires_time::TIMESTAMPTZ;
+            RETURN;
+        END IF;
     END IF;
 
     INSERT INTO mcp.metadata_change_set AS created_change_set (
         metadata_change_set_id,
         tenant_id,
         created_by_principal_id,
-        correlation_id
+        correlation_id,
+        created_time,
+        last_activity_time,
+        expires_time
     ) VALUES (
         p_new_metadata_change_set_id,
         p_tenant_id,
         v_decision.principal_id,
-        p_correlation_id
+        p_correlation_id,
+        v_now,
+        v_now,
+        v_now + INTERVAL '4 hours'
     )
     RETURNING created_change_set.metadata_change_set_id,
               created_change_set.metadata_change_set_status,
@@ -687,11 +748,20 @@ DECLARE
     v_dataset_counts JSONB;
     v_record_count INTEGER;
     v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
+       OR p_documents IS NULL
        OR jsonb_typeof(p_documents) <> 'object'
        OR p_documents = '{}'::JSONB
        OR octet_length(p_documents::TEXT) > 16777216
+       OR p_correlation_id IS NULL
        OR EXISTS (
            SELECT 1
              FROM jsonb_each(p_documents) AS document(name, records)
@@ -745,6 +815,32 @@ BEGIN
             NULL::JSONB, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
     IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_active'::VARCHAR(50),
@@ -752,7 +848,7 @@ BEGIN
             v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50),
             v_change_set.draft_revision::BIGINT, NULL::JSONB,
@@ -803,8 +899,8 @@ BEGIN
            candidate_digest = NULL,
            validation_outcome = NULL,
            validated_time = NULL,
-           last_activity_time = CURRENT_TIMESTAMP,
-           expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
+           last_activity_time = v_now,
+           expires_time = v_now + INTERVAL '4 hours'
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
     RETURNING change_set.draft_revision, change_set.expires_time
          INTO v_new_revision, v_expires_time;
@@ -866,8 +962,18 @@ DECLARE
     v_change_set RECORD;
     v_existing RECORD;
     v_expires_time TIMESTAMPTZ;
+    v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
+       OR p_new_stage_batch_id IS NULL
+       OR p_dataset_name IS NULL
        OR p_dataset_name NOT IN (
            'source_object', 'source_attribute',
            'bronze_object', 'bronze_attribute',
@@ -877,10 +983,13 @@ BEGIN
            'copy_group', 'member_group', 'copy_group_control', 'copy',
            'process_group', 'process'
        )
+       OR p_total_record_count IS NULL
        OR p_total_record_count NOT BETWEEN 1 AND 50000
+       OR p_total_chunk_count IS NULL
        OR p_total_chunk_count NOT BETWEEN 1 AND 64
        OR p_batch_sha256 IS NULL
-       OR p_batch_sha256 !~ '^[0-9a-f]{64}$' THEN
+       OR p_batch_sha256 !~ '^[0-9a-f]{64}$'
+       OR p_correlation_id IS NULL THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), NULL::UUID, FALSE,
             NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER, NULL::INTEGER,
@@ -922,15 +1031,40 @@ BEGIN
             NULL::INTEGER, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
-       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_active'::VARCHAR(50), NULL::UUID,
             FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER,
             NULL::INTEGER, v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50), NULL::UUID,
             FALSE, NULL::VARCHAR(40), NULL::INTEGER, NULL::INTEGER,
@@ -940,11 +1074,11 @@ BEGIN
 
     UPDATE mcp.metadata_stage_batch AS batch
        SET stage_batch_status = 'expired',
-           terminal_time = CURRENT_TIMESTAMP
+           terminal_time = v_now
      WHERE batch.metadata_change_set_id = p_metadata_change_set_id
        AND batch.dataset_name = p_dataset_name
        AND batch.stage_batch_status = 'active'
-       AND batch.expires_time <= CURRENT_TIMESTAMP;
+       AND batch.expires_time <= v_now;
 
     SELECT batch.stage_batch_id,
            batch.expected_draft_revision,
@@ -964,7 +1098,8 @@ BEGIN
        AND batch.stage_batch_status = 'active'
      FOR UPDATE;
     IF FOUND THEN
-        IF v_existing.expected_draft_revision = p_expected_draft_revision
+        IF v_existing.expected_draft_revision IS NOT DISTINCT FROM
+               p_expected_draft_revision
            AND v_existing.total_record_count = p_total_record_count
            AND v_existing.total_chunk_count = p_total_chunk_count
            AND v_existing.batch_sha256 = p_batch_sha256 THEN
@@ -988,7 +1123,7 @@ BEGIN
 
     v_expires_time := least(
         v_change_set.expires_time,
-        CURRENT_TIMESTAMP + INTERVAL '4 hours'
+        v_now + INTERVAL '4 hours'
     );
     INSERT INTO mcp.metadata_stage_batch (
         stage_batch_id,
@@ -1001,6 +1136,8 @@ BEGIN
         batch_sha256,
         created_by_principal_id,
         correlation_id,
+        created_time,
+        last_activity_time,
         expires_time
     ) VALUES (
         p_new_stage_batch_id,
@@ -1013,6 +1150,8 @@ BEGIN
         p_batch_sha256,
         v_decision.principal_id,
         p_correlation_id,
+        v_now,
+        v_now,
         v_expires_time
     );
 
@@ -1057,10 +1196,21 @@ DECLARE
     v_received_chunk_count INTEGER;
     v_received_record_count INTEGER;
     v_record_count INTEGER;
+    v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_chunk_index NOT BETWEEN 1 AND 64
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_stage_batch_id IS NULL
+       OR p_dataset_name IS NULL
+       OR p_chunk_index IS NULL
+       OR p_chunk_index NOT BETWEEN 1 AND 64
        OR p_chunk_sha256 IS NULL
        OR p_chunk_sha256 !~ '^[0-9a-f]{64}$'
+       OR p_records IS NULL
        OR jsonb_typeof(p_records) <> 'array'
        OR jsonb_array_length(p_records) < 1
        OR octet_length(p_records::TEXT) > 524288 THEN
@@ -1091,7 +1241,8 @@ BEGIN
 
     SELECT change_set.metadata_change_set_status,
            change_set.draft_revision,
-           change_set.expires_time
+           change_set.expires_time,
+           change_set.correlation_id
       INTO v_change_set
       FROM mcp.metadata_change_set AS change_set
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
@@ -1102,6 +1253,40 @@ BEGIN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_found'::VARCHAR(50), FALSE,
             NULL::INTEGER, NULL::INTEGER, NULL::INTEGER, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired',
+            v_change_set.correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
+            NULL::INTEGER, NULL::INTEGER, NULL::INTEGER,
+            v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
 
@@ -1120,11 +1305,11 @@ BEGIN
         RETURN;
     END IF;
     IF v_batch.stage_batch_status <> 'active'
-       OR v_batch.expires_time <= CURRENT_TIMESTAMP THEN
+       OR v_batch.expires_time <= v_now THEN
         IF v_batch.stage_batch_status = 'active' THEN
             UPDATE mcp.metadata_stage_batch
                SET stage_batch_status = 'expired',
-                   terminal_time = CURRENT_TIMESTAMP
+                   terminal_time = v_now
              WHERE stage_batch_id = p_stage_batch_id;
         END IF;
         RETURN QUERY SELECT
@@ -1133,22 +1318,15 @@ BEGIN
             NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
-       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
-        RETURN QUERY SELECT
-            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
-            NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
-            NULL::INTEGER, v_change_set.expires_time::TIMESTAMPTZ;
-        RETURN;
-    END IF;
-    IF v_change_set.draft_revision <> v_batch.expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM
+           v_batch.expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50), FALSE,
             NULL::INTEGER, v_batch.total_chunk_count::INTEGER,
             NULL::INTEGER, v_batch.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_batch.dataset_name <> p_dataset_name
+    IF v_batch.dataset_name IS DISTINCT FROM p_dataset_name
        OR p_chunk_index > v_batch.total_chunk_count THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), FALSE,
@@ -1211,7 +1389,7 @@ BEGIN
         p_records
     );
     UPDATE mcp.metadata_stage_batch
-       SET last_activity_time = CURRENT_TIMESTAMP
+       SET last_activity_time = v_now
      WHERE stage_batch_id = p_stage_batch_id;
     SELECT count(*)::INTEGER
       INTO v_received_chunk_count
@@ -1258,8 +1436,18 @@ DECLARE
     v_batch_sha256 TEXT;
     v_document JSONB;
     v_staged RECORD;
+    v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1 THEN
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_stage_batch_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
+       OR p_correlation_id IS NULL THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), FALSE,
             NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
@@ -1299,6 +1487,40 @@ BEGIN
             NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
+    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
+        RETURN QUERY SELECT
+            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
+            NULL::VARCHAR(40), NULL::INTEGER,
+            v_change_set.draft_revision::BIGINT,
+            v_change_set.expires_time::TIMESTAMPTZ;
+        RETURN;
+    END IF;
 
     SELECT *
       INTO v_batch
@@ -1314,7 +1536,8 @@ BEGIN
             NULL::VARCHAR(40), NULL::INTEGER, NULL::BIGINT, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_batch.expected_draft_revision <> p_expected_draft_revision THEN
+    IF v_batch.expected_draft_revision IS DISTINCT FROM
+           p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), FALSE,
             v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
@@ -1331,11 +1554,11 @@ BEGIN
         RETURN;
     END IF;
     IF v_batch.stage_batch_status <> 'active'
-       OR v_batch.expires_time <= CURRENT_TIMESTAMP THEN
+       OR v_batch.expires_time <= v_now THEN
         IF v_batch.stage_batch_status = 'active' THEN
             UPDATE mcp.metadata_stage_batch
                SET stage_batch_status = 'expired',
-                   terminal_time = CURRENT_TIMESTAMP
+                   terminal_time = v_now
              WHERE stage_batch_id = p_stage_batch_id;
         END IF;
         RETURN QUERY SELECT
@@ -1344,16 +1567,7 @@ BEGIN
             NULL::BIGINT, v_batch.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated')
-       OR v_change_set.expires_time <= CURRENT_TIMESTAMP THEN
-        RETURN QUERY SELECT
-            FALSE, 'metadata_change_set_not_active'::VARCHAR(50), FALSE,
-            v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
-            v_change_set.draft_revision::BIGINT,
-            v_change_set.expires_time::TIMESTAMPTZ;
-        RETURN;
-    END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50), FALSE,
             v_batch.dataset_name::VARCHAR(40), NULL::INTEGER,
@@ -1435,10 +1649,10 @@ BEGIN
 
     UPDATE mcp.metadata_stage_batch
        SET stage_batch_status = 'committed',
-           last_activity_time = CURRENT_TIMESTAMP,
+           last_activity_time = v_now,
            committed_revision = v_staged.draft_revision,
            committed_expires_time = v_staged.expires_time,
-           terminal_time = CURRENT_TIMESTAMP
+           terminal_time = v_now
      WHERE stage_batch_id = p_stage_batch_id;
 
     RETURN QUERY SELECT
@@ -1486,13 +1700,33 @@ RETURNS TABLE (
     terminal_time TIMESTAMPTZ
 )
 LANGUAGE plpgsql
-STABLE
+VOLATILE
 SECURITY DEFINER
 SET search_path = pg_catalog, mcp, security, core
 AS $get_metadata_change_set$
 DECLARE
     v_decision RECORD;
+    v_change_set RECORD;
+    v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL THEN
+        RETURN QUERY SELECT
+            FALSE, 'invalid_request'::VARCHAR(50), NULL::VARCHAR(20),
+            NULL::BIGINT, NULL::CHAR(64), NULL::JSONB,
+            NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::JSONB, NULL::JSONB, NULL::JSONB, NULL::JSONB,
+            NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
     SELECT *
       INTO v_decision
       FROM security.authorize_tenant_operation(
@@ -1517,6 +1751,44 @@ BEGIN
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ,
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
         RETURN;
+    END IF;
+
+    SELECT change_set.metadata_change_set_status,
+           change_set.draft_revision,
+           change_set.expires_time,
+           change_set.correlation_id
+      INTO v_change_set
+      FROM mcp.metadata_change_set AS change_set
+     WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
+       AND change_set.tenant_id = p_tenant_id
+       AND change_set.created_by_principal_id = v_decision.principal_id
+     FOR UPDATE;
+    v_now := clock_timestamp();
+    IF FOUND
+       AND v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired',
+            v_change_set.correlation_id
+        );
     END IF;
 
     RETURN QUERY
@@ -1602,15 +1874,25 @@ DECLARE
     v_change_set RECORD;
     v_updated RECORD;
     v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
+       OR p_validation_succeeded IS NULL
+       OR p_validation_outcome IS NULL
        OR jsonb_typeof(p_validation_outcome) <> 'object'
        OR octet_length(p_validation_outcome::TEXT) > 1048576
        OR (p_validation_succeeded AND (
            p_candidate_digest IS NULL
            OR p_candidate_digest !~ '^[0-9a-f]{64}$'
        ))
-       OR (NOT p_validation_succeeded AND p_candidate_digest IS NOT NULL) THEN
+       OR (NOT p_validation_succeeded AND p_candidate_digest IS NOT NULL)
+       OR p_correlation_id IS NULL THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), NULL::VARCHAR(20),
             NULL::BIGINT, NULL::CHAR(64), NULL::TIMESTAMPTZ,
@@ -1654,6 +1936,32 @@ BEGIN
             NULL::TIMESTAMPTZ, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+    END IF;
     IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_active'::VARCHAR(50),
@@ -1664,7 +1972,7 @@ BEGIN
             v_change_set.expires_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50),
             v_change_set.metadata_change_set_status::VARCHAR(20),
@@ -1686,11 +1994,11 @@ BEGIN
            END,
            validation_outcome = p_validation_outcome,
            validated_time = CASE
-               WHEN p_validation_succeeded THEN CURRENT_TIMESTAMP
+               WHEN p_validation_succeeded THEN v_now
                ELSE NULL
            END,
-           last_activity_time = CURRENT_TIMESTAMP,
-           expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
+           last_activity_time = v_now,
+           expires_time = v_now + INTERVAL '4 hours'
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
     RETURNING change_set.metadata_change_set_status,
               change_set.draft_revision,
@@ -1762,8 +2070,16 @@ DECLARE
     v_change_set RECORD;
     v_terminal_time TIMESTAMPTZ;
     v_event_sequence BIGINT;
+    v_now TIMESTAMPTZ;
 BEGIN
-    IF p_expected_draft_revision < 1 THEN
+    IF p_entra_tenant_id IS NULL
+       OR p_entra_object_id IS NULL
+       OR p_expected_principal_type IS NULL
+       OR p_tenant_id IS NULL
+       OR p_metadata_change_set_id IS NULL
+       OR p_expected_draft_revision IS NULL
+       OR p_expected_draft_revision < 1
+       OR p_correlation_id IS NULL THEN
         RETURN QUERY SELECT
             FALSE, 'invalid_request'::VARCHAR(50), NULL::VARCHAR(20),
             NULL::BIGINT, NULL::TIMESTAMPTZ;
@@ -1789,7 +2105,8 @@ BEGIN
 
     SELECT change_set.metadata_change_set_status,
            change_set.draft_revision,
-           change_set.terminal_time
+           change_set.terminal_time,
+           change_set.expires_time
       INTO v_change_set
       FROM mcp.metadata_change_set AS change_set
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
@@ -1802,6 +2119,33 @@ BEGIN
             NULL::VARCHAR(20), NULL::BIGINT, NULL::TIMESTAMPTZ;
         RETURN;
     END IF;
+    v_now := clock_timestamp();
+    IF v_change_set.metadata_change_set_status IN ('active', 'validated')
+       AND v_change_set.expires_time <= v_now THEN
+        UPDATE mcp.metadata_change_set AS change_set
+           SET metadata_change_set_status = 'expired',
+               terminal_time = v_now
+         WHERE change_set.metadata_change_set_id = p_metadata_change_set_id;
+        UPDATE mcp.metadata_stage_batch AS batch
+           SET stage_batch_status = 'expired',
+               terminal_time = v_now
+         WHERE batch.metadata_change_set_id = p_metadata_change_set_id
+           AND batch.stage_batch_status = 'active';
+
+        SELECT coalesce(max(event.event_sequence), 0) + 1
+          INTO v_event_sequence
+          FROM mcp.metadata_change_set_event AS event
+         WHERE event.metadata_change_set_id = p_metadata_change_set_id;
+        INSERT INTO mcp.metadata_change_set_event (
+            metadata_change_set_id, tenant_id, event_sequence, event_type,
+            draft_revision, action_count, outcome, correlation_id
+        ) VALUES (
+            p_metadata_change_set_id, p_tenant_id, v_event_sequence, 'expired',
+            v_change_set.draft_revision, 0, 'expired', p_correlation_id
+        );
+        v_change_set.metadata_change_set_status := 'expired';
+        v_change_set.terminal_time := v_now;
+    END IF;
     IF v_change_set.metadata_change_set_status NOT IN ('active', 'validated') THEN
         RETURN QUERY SELECT
             FALSE, 'metadata_change_set_not_active'::VARCHAR(50),
@@ -1810,7 +2154,7 @@ BEGIN
             v_change_set.terminal_time::TIMESTAMPTZ;
         RETURN;
     END IF;
-    IF v_change_set.draft_revision <> p_expected_draft_revision THEN
+    IF v_change_set.draft_revision IS DISTINCT FROM p_expected_draft_revision THEN
         RETURN QUERY SELECT
             FALSE, 'draft_revision_conflict'::VARCHAR(50),
             v_change_set.metadata_change_set_status::VARCHAR(20),
@@ -1821,9 +2165,9 @@ BEGIN
 
     UPDATE mcp.metadata_change_set AS change_set
        SET metadata_change_set_status = 'archived',
-           terminal_time = CURRENT_TIMESTAMP,
-           last_activity_time = CURRENT_TIMESTAMP,
-           expires_time = CURRENT_TIMESTAMP + INTERVAL '4 hours'
+           terminal_time = v_now,
+           last_activity_time = v_now,
+           expires_time = v_now + INTERVAL '4 hours'
      WHERE change_set.metadata_change_set_id = p_metadata_change_set_id
     RETURNING change_set.terminal_time INTO v_terminal_time;
 

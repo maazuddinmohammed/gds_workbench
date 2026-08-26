@@ -19,7 +19,14 @@ the `running` state for each Tenant through a partial unique index.
 Queued and terminal Runs may coexist. Starting the same already-running Run is
 an idempotent replay. A different Run receives the stable
 `tenant_workflow_conflict` response. Completing or failing the active Run frees
-the Tenant for the next start. Different Tenants may run concurrently.
+the Tenant for the next start. Model archive also rejects while any Run is
+running for its Tenant. Different Tenants may run concurrently.
+
+The worker claim boundary terminalizes a running Run when its Model, actor, or
+exact unambiguous actor identity has become unavailable. It records one generic
+safe failure event and exposes no identity detail. This recovery covers
+out-of-band administrative state changes so the partial unique index cannot
+leave a Tenant permanently wedged.
 
 This execution invariant is distinct from the governed Tenant Lock. The Tenant
 Lock authorizes writes by one Principal; Workflow Run exclusivity schedules

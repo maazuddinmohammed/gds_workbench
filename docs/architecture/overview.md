@@ -57,9 +57,14 @@ outputs.
 - Anonymous `GET /health/ready`
 - Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
 - Protected stateless `/mcp`
-- Ten read-only MCP tools: `list_tenants`, `get_tenant_details`, `list_objects`,
-  `get_objects`, `get_object_lineage`, `list_copy_groups`, `get_copy_group`,
-  `list_process_groups`, `get_process_group`, and `get_metadata_snapshot`
+- 60 governed MCP tools spanning Tenant/catalog reads, Metadata and Model
+  Snapshots, model graph reads, Mapping and code-generation authoring context,
+  governed Databricks SQL, Tenant Locks, and Metadata/Model Change Sets.
+
+The checked-in [tool contract](../../plugins/v2/gds/tool-contract.json) binds the
+exact registered input/output schemas by count, MCP server version, and digest.
+Packaging tests regenerate that contract from the runtime before accepting the
+plugin archive.
 
 `list_tenants` returns active global Tenants plus private Tenants for which the
 human has active, unexpired Viewer-or-higher access. Registered workload
@@ -79,9 +84,11 @@ resolved through Copy Groups belonging to the requested Tenant. Detail tools
 return bounded safe projections and omit scripts, raw checkpoint values,
 connection values, secret references, transformations, and executable paths.
 
-No write or Tenant Lock MCP tool is registered. The database already exposes
-governed authorization and acquire/renew/release/override/expiry functions for
-future tool or FastAPI adapters.
+Mutation is available only through governed Tenant Lock and Change Set lifecycle
+tools. The MCP surface exposes no foundational CRUD, direct lock-table toggle,
+arbitrary PostgreSQL, file upload, or code-execution tool. Databricks SQL is the
+single governed arbitrary-SQL exception and remains bounded to reads plus
+unqualified temporary objects.
 
 ## Deployment boundary
 

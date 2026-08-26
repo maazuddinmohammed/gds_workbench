@@ -14,8 +14,8 @@ deployment unit:
 1. `reference` lookup tables and shared validation helpers;
 2. `core` projects, Tenants, Systems, Connections, Objects, Attributes,
    and ingestion mappings;
-3. `security` identities, Tenant membership, governed Tenant Locks,
-   centralized authorization functions, and the two database roles;
+3. `security` identities, Tenant membership, governed Tenant Locks, and
+   centralized authorization functions;
 4. Model, environment targets, Scope, safe event projection, exactly two
    Modeling Assertion tables, and revision machinery;
 5. Attribute Profile and Analysis;
@@ -23,13 +23,14 @@ deployment unit:
 7. the exact seven Logical families;
 8. the exact seven Dimensional families;
 9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
-10. MCP-owned Model and Metadata Change Sets, their events, and tool-call log;
-11. group roles, the passwordless `gds_mcp_runtime` login, and its sole group
-    membership;
+10. web Application orchestration, MCP-owned Model and Metadata Change Sets,
+    canonical workflow eligibility, their events, and tool-call log;
+11. governed Metadata Apply plus three group roles and the separate passwordless
+    `gds_mcp_runtime` and `gds_web_runtime` logins;
 12. final runtime privileges.
 
-There are 73 tables across `reference`, `core`, `security`, `model`, `workflow`,
-and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
+There are 93 tables across `reference`, `core`, `security`, `model`, `workflow`,
+`application`, and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
 application boundary where the public contract requires them.
@@ -151,6 +152,14 @@ to `active`, clear validation, and refresh activity/expiry. Validation seals a
 digest/outcome without advancing the draft revision. Terminal payloads are
 retained and immutable. Event sequences are unique and append-only.
 
+Direct Model Change Set paths use PostgreSQL row locks and database wall-clock
+time for expiry. A due `active|validated` draft becomes `expired`, its active
+Stage Batches expire with it, and one retained `expired` event is appended in
+the same transaction. Create is serialized per Model and Principal before it
+expires/resumes or creates a draft. Stage, validation, apply, archive, and Stage
+Batch completion keep revision/digest compare-and-swap predicates in their final
+write, so a late expiry or stale/null fence cannot revive or terminalize a row.
+
 Tenant-owned Metadata Change Sets store sixteen bounded list-shaped documents:
 Source/Bronze/Silver/Gold Objects and Attributes, both Ingestion Mappings, Copy
 Group, Member Group, Copy Group Control, Copy, Process Group, and Process. One
@@ -170,14 +179,13 @@ bounded typed chunks without changing the draft; Commit verifies the manifest an
 calls the same atomic complete-list Stage operation once. Object mutation is restricted to the
 locked Tenant's connections or its active global Metadata Discovery Scopes.
 
-The `ChangeSetsFeature` draft-expiry worker asks the repository to select one
-bounded batch. In
-PostgreSQL, `CURRENT_TIMESTAMP`, persisted status, and `FOR UPDATE SKIP LOCKED`
-jointly decide eligibility; application wall-clock state never does. The same
-transaction changes each due `active|validated` draft to `expired`, records its
-terminal timestamp, and appends exactly one `expired` event with a worker actor,
-correlation ID, draft revision, and `ttl_elapsed` reason. Repeated or concurrent
-worker calls cannot append a second terminal event.
+Metadata Change Set expiry is enforced lazily by governed PostgreSQL paths, not
+by an application background worker. Every create, stage, begin, put, commit,
+get, validate, archive, and apply path uses one post-lock PostgreSQL wall-clock
+value. A due `active|validated` draft and all its active Stage Batches become
+`expired`, receive terminal times, and append exactly one retained `expired`
+event in the same transaction. The requested mutation or apply is then refused;
+create may continue with a fresh draft.
 
 The production lifespan calls `security.expire_tenant_locks` immediately and
 every 60 seconds. PostgreSQL selects at most 100 expired rows with
@@ -241,7 +249,8 @@ They resolve the active actor, derive the owning Tenant from the target Model,
 apply `tenant_model_write` authorization and current Tenant Lock ownership, and
 fence existing Models with `model_revision`. Each actual change increments the
 revision once and records one `model_revision_transaction`; an equivalent update
-or Scope set is a no-op.
+or Scope set is a no-op. Archive rejects while any Workflow Run is running for
+the Model's Tenant, preventing an active Run from losing its Model context.
 
 Scope replacement stores the exact unique active Object IDs supplied by the
 caller only when every ID is in the canonical Tenant-visible closure. Empty sets
@@ -254,13 +263,13 @@ not a Model Scope rule.
 
 ## Roles and privileges
 
-The fresh cluster defines two non-login, non-superuser group roles:
+The fresh cluster defines three non-login, non-superuser group roles:
 
 - `gds_migration`: schema creation plus all release objects;
 - `gds_app_write`: safe reads, constrained Model/workflow DML,
   sequence use, the pure `CHECK` validator, centralized authorization,
   governed Tenant Lock functions, and governed Metadata Change Set functions;
-- `gds_web_write`: web reads plus the exact 23 secure `application` functions
+- `gds_web_write`: web reads plus the exact 32 secure `application` functions
   used for Models, Scope, preferences, prompts, runs, events, output templates,
   guides, and stored SQL artifacts.
 

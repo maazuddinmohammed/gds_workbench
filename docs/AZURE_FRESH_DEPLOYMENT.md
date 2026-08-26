@@ -34,7 +34,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice.zip
-   plugins/v2/dist/gds-agent-plugin-0.1.0.zip
+   plugins/v2/dist/gds-agent-plugin-0.1.1.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -118,6 +118,10 @@ psql -X -v ON_ERROR_STOP=1 -f database/00_preflight.sql
 Stop if preflight fails. For a new empty database, install files `01` through
 `12` exactly once and in this exact order:
 
+`00_preflight.sql` also contains a disabled whole-server cleanup reference.
+Never uncomment it during installation, retry, or migration. It is only for a
+separate, backup-approved DBA retirement of the complete GDS server environment.
+
 ```bash
 for file in \
   database/01_reference.sql \
@@ -129,7 +133,9 @@ for file in \
   database/07_workflow_logical.sql \
   database/08_workflow_dimensional.sql \
   database/09_workflow_mapping.sql \
+  database/10_application.sql \
   database/10_mcp.sql \
+  database/10_workflow_eligibility.sql \
   database/11_mcp_metadata_apply.sql \
   database/11_runtime_account.sql \
   database/12_runtime_integrity.sql
@@ -141,7 +147,7 @@ done
 If a file fails, save the error and stop. Do not rerun earlier files and do not
 drop, truncate, or reset the database.
 
-Set the runtime login password interactively:
+Set distinct runtime login passwords interactively:
 
 ```bash
 psql -X
@@ -151,10 +157,11 @@ Then run these commands inside `psql`:
 
 ```text
 \password gds_mcp_runtime
+\password gds_web_runtime
 \quit
 ```
 
-Store that generated password in your approved password manager. Finally,
+Store both generated passwords in your approved password manager. Finally,
 verify the installation:
 
 ```bash
@@ -169,6 +176,17 @@ verification_status = passed
 ```
 
 ### Step 5: add initial data and user access
+
+Install the required web application reference data first:
+
+```bash
+psql -X -v ON_ERROR_STOP=1 --single-transaction \
+  -f database/seed/04_application_reference.sql
+```
+
+This installs exactly 47 workflow stages and 78 backend-resolved prompt
+variables. It contains no credentials, prompt bodies, connection values, or
+business data and is safe to replay unchanged.
 
 Choose one route:
 

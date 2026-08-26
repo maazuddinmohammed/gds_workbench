@@ -45,6 +45,8 @@ class Connection:
                     "schema_ready": True,
                     "role_ready": True,
                     "privileges_ready": True,
+                    "workflow_guard_ready": True,
+                    "application_reference_ready": True,
                 }
             )
         return Result()
@@ -118,6 +120,15 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert "application.generated_sql_artifact" in readiness_sql
     assert "application.create_model" in readiness_sql
     assert "workflow.list_tenant_visible_objects" in readiness_sql
+    assert "workflow.list_model_object_eligibility" in readiness_sql
+    assert "workflow.list_model_attribute_eligibility" in readiness_sql
+    assert "workflow.list_code_generation_target_context" in readiness_sql
+    assert "mcp.get_databricks_sql_connection_values" in readiness_sql
+    assert "uq_workflow_run_running_tenant" in readiness_sql
+    assert "fk_workflow_run_model" in readiness_sql
+    assert "count(*) = 47" in readiness_sql
+    assert "count(*) = 78" in readiness_sql
+    assert "pg_auth_members" in readiness_sql
     assert "mcp.model_change_set" in readiness_sql
     assert "workflow.conceptual_object" in readiness_sql
     assert "workflow.attribute_profile" in readiness_sql

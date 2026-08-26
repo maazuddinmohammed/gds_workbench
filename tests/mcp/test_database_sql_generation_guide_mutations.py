@@ -800,6 +800,54 @@ def test_sql_generation_guide_version_lifecycle_is_governed_and_immutable(
         )
 
 
+@pytest.mark.parametrize(
+    ("expected_status", "target_status"),
+    ((None, "published"), ("draft", None)),
+)
+def test_sql_generation_guide_transition_rejects_null_statuses(
+    postgres_database: DisposablePostgres,
+    expected_status: str | None,
+    target_status: str | None,
+) -> None:
+    actor = _seed_guide_actor(postgres_database, is_super_admin=True)
+    suffix = uuid4().hex
+    guide = _save_guide(
+        postgres_database,
+        actor,
+        code=f"null_transition_source_{suffix}",
+        name="NULL transition source guide",
+    )
+    with postgres_database.connect_owner() as connection:
+        draft = require_row(
+            connection.execute(
+                SAVE_GUIDE_DRAFT_SQL,
+                (
+                    actor.entra_tenant_id,
+                    actor.entra_object_id,
+                    guide["sql_generation_guide_id"],
+                    None,
+                    "NULL transition source guidance.",
+                    None,
+                ),
+            ).fetchone()
+        )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="transition"),
+    ):
+        connection.execute(
+            TRANSITION_GUIDE_VERSION_SQL,
+            (
+                actor.entra_tenant_id,
+                actor.entra_object_id,
+                draft["sql_generation_guide_version_id"],
+                expected_status,
+                target_status,
+            ),
+        )
+
+
 def test_sql_generation_guide_mutations_are_web_only_security_definer_functions(
     postgres_database: DisposablePostgres,
 ) -> None:

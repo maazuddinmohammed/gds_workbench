@@ -1525,6 +1525,8 @@ def test_analysis_validation_persistence_revalidates_actor_lock_and_revision(
             count_base=20,
         ),
     ]
+    null_revision_parameters = list(_persist_validation_parameters(seed, results))
+    null_revision_parameters[3] = None
 
     attempts = (
         (
@@ -1544,6 +1546,7 @@ def test_analysis_validation_persistence_revalidates_actor_lock_and_revision(
             ),
             "stale_model_revision",
         ),
+        (null_revision_parameters, "stale_model_revision"),
     )
     for parameters, message in attempts:
         with (

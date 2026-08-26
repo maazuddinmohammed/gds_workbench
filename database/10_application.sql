@@ -237,7 +237,8 @@ BEGIN
         RAISE EXCEPTION 'Model update denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF v_existing.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_existing.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
     IF ROW(
@@ -374,8 +375,17 @@ BEGIN
         RAISE EXCEPTION 'Model archive denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF v_existing.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_existing.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
+    END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM application.workflow_run AS run
+         WHERE run.tenant_id = v_existing.tenant_id
+           AND run.workflow_run_state = 'running'
+    ) THEN
+        RAISE EXCEPTION 'tenant_workflow_conflict';
     END IF;
 
     UPDATE model.model AS target_model
@@ -487,7 +497,8 @@ BEGIN
         RAISE EXCEPTION 'Model Scope replacement denied: %',
             coalesce(v_decision.denial_code, 'authorization_denied');
     END IF;
-    IF v_existing.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_existing.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
@@ -1739,7 +1750,9 @@ BEGIN
         v_actor := v_decision;
     END IF;
 
-    IF NOT (
+    IF p_expected_status IS NULL
+       OR p_target_status IS NULL
+       OR NOT (
         (
             p_expected_status = 'draft'
             AND p_target_status = 'published'
@@ -3486,7 +3499,9 @@ BEGIN
         RAISE EXCEPTION 'SQL generation guide version is unavailable';
     END IF;
 
-    IF NOT (
+    IF p_expected_status IS NULL
+       OR p_target_status IS NULL
+       OR NOT (
         (
             p_expected_status = 'draft'
             AND p_target_status = 'published'
@@ -3718,6 +3733,7 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_workflow_run_code_generation_request CHECK (
         (
             model_workflow = 'code_generation'
+            AND code_generation_coverage_mode IS NOT NULL
             AND code_generation_coverage_mode IN (
                 'selected_targets', 'all_eligible_targets'
             )
@@ -4739,7 +4755,8 @@ BEGIN
         RAISE EXCEPTION 'Selected Scope Object IDs are required';
     END IF;
     IF p_model_workflow = 'code_generation' THEN
-        IF p_code_generation_coverage_mode NOT IN (
+        IF p_code_generation_coverage_mode IS NULL
+           OR p_code_generation_coverage_mode NOT IN (
                'selected_targets', 'all_eligible_targets'
            ) THEN
             RAISE EXCEPTION
@@ -5055,7 +5072,8 @@ BEGIN
         RETURN;
     END IF;
 
-    IF v_model.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_model.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
@@ -5604,7 +5622,8 @@ BEGIN
             v_run.started_time;
         RETURN;
     END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
@@ -5711,7 +5730,100 @@ BEGIN
     v_claimed_time := clock_timestamp();
 
     RETURN QUERY
-    WITH exhausted AS (
+    WITH invalid AS (
+        SELECT run.workflow_run_id,
+               run.model_id,
+               run.correlation_id,
+               run.model_workflow,
+               coalesce(event.maximum_attempt, 1) AS event_attempt,
+               coalesce(event.maximum_sequence, 0) + 1 AS event_sequence
+          FROM application.workflow_run AS run
+          LEFT JOIN model.model AS target_model
+            ON target_model.model_id = run.model_id
+           AND target_model.tenant_id = run.tenant_id
+          LEFT JOIN security.principal AS actor
+            ON actor.principal_id = run.actor_principal_id
+          LEFT JOIN LATERAL (
+              SELECT count(*) AS active_identity_count
+                FROM security.entra_principal_identity AS identity
+               WHERE identity.principal_id = run.actor_principal_id
+                 AND identity.principal_type = actor.principal_type
+                 AND identity.is_active
+                 AND (
+                     run.actor_entra_principal_identity_id IS NULL
+                     OR identity.entra_principal_identity_id =
+                        run.actor_entra_principal_identity_id
+                 )
+          ) AS identity_context ON TRUE
+          LEFT JOIN LATERAL (
+              SELECT max(log.model_event_log_attempt) AS maximum_attempt,
+                     max(log.model_event_log_sequence) AS maximum_sequence
+                FROM model.model_event_log AS log
+               WHERE log.workflow_run_id = run.workflow_run_id
+          ) AS event ON TRUE
+         WHERE run.workflow_run_state = 'running'
+           AND (
+               target_model.model_id IS NULL
+               OR NOT target_model.is_active
+               OR actor.principal_id IS NULL
+               OR NOT actor.is_active
+               OR identity_context.active_identity_count <> 1
+           )
+         ORDER BY run.created_time, run.workflow_run_id
+         FOR UPDATE OF run SKIP LOCKED
+         LIMIT 100
+    ),
+    invalid_failed AS (
+        UPDATE application.workflow_run AS run
+           SET workflow_run_state = 'failed',
+               completed_time = v_claimed_time,
+               failure_code = 'workflow_run_context_unavailable',
+               failure_message =
+                   'Workflow Run execution context is unavailable.',
+               workflow_run_claim_token_digest = NULL,
+               workflow_run_claimed_time = NULL,
+               workflow_run_claim_heartbeat_time = NULL,
+               workflow_run_claim_expires_time = NULL,
+               updated_time = v_claimed_time,
+               updated_by = CURRENT_USER
+          FROM invalid
+         WHERE run.workflow_run_id = invalid.workflow_run_id
+        RETURNING run.workflow_run_id,
+                  run.model_id,
+                  run.correlation_id,
+                  run.model_workflow
+    ),
+    invalid_failure_events AS (
+        INSERT INTO model.model_event_log (
+            model_id,
+            correlation_id,
+            workflow_run_id,
+            model_event_log_sequence,
+            model_event_log_attempt,
+            model_workflow,
+            model_event_log_stage,
+            model_event_log_status,
+            model_event_log_message,
+            finding_count,
+            created_time
+        )
+        SELECT invalid_failed.model_id,
+               invalid_failed.correlation_id,
+               invalid_failed.workflow_run_id,
+               invalid.event_sequence,
+               invalid.event_attempt,
+               invalid_failed.model_workflow,
+               'workflow_run',
+               'failed',
+               'Workflow Run execution context is unavailable.',
+               0,
+               v_claimed_time
+          FROM invalid_failed
+          JOIN invalid
+            ON invalid.workflow_run_id = invalid_failed.workflow_run_id
+        RETURNING model_event_log_id
+    ),
+    exhausted AS (
         SELECT run.workflow_run_id,
                run.model_id,
                run.correlation_id,
@@ -5726,11 +5838,17 @@ BEGIN
                WHERE log.workflow_run_id = run.workflow_run_id
           ) AS event ON TRUE
          WHERE run.workflow_run_state = 'running'
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM invalid_failed
+                WHERE invalid_failed.workflow_run_id = run.workflow_run_id
+           )
            AND run.workflow_run_claim_token_digest IS NOT NULL
            AND run.workflow_run_claim_expires_time <= v_claimed_time
            AND run.workflow_run_recovery_count >= 5
          ORDER BY run.created_time, run.workflow_run_id
          FOR UPDATE OF run SKIP LOCKED
+         LIMIT 100
     ),
     failed AS (
         UPDATE application.workflow_run AS run
@@ -5810,6 +5928,11 @@ BEGIN
                    run.actor_entra_principal_identity_id
            )
          WHERE run.workflow_run_state = 'running'
+           AND NOT EXISTS (
+               SELECT 1
+                 FROM invalid_failed
+                WHERE invalid_failed.workflow_run_id = run.workflow_run_id
+           )
            AND (
                run.actor_entra_principal_identity_id IS NOT NULL
                OR NOT EXISTS (
@@ -5958,18 +6081,20 @@ SET search_path = pg_catalog
 AS $release_workflow_run_claim$
 DECLARE
     v_released BOOLEAN;
+    v_released_time TIMESTAMPTZ;
 BEGIN
     IF p_workflow_run_id IS NULL OR p_workflow_run_id <= 0
        OR p_workflow_run_claim_token IS NULL THEN
         RAISE EXCEPTION 'Workflow Run claim is unavailable';
     END IF;
 
+    v_released_time := clock_timestamp();
     UPDATE application.workflow_run AS run
        SET workflow_run_claim_token_digest = NULL,
            workflow_run_claimed_time = NULL,
            workflow_run_claim_heartbeat_time = NULL,
            workflow_run_claim_expires_time = NULL,
-           updated_time = clock_timestamp(),
+           updated_time = v_released_time,
            updated_by = CURRENT_USER
      WHERE run.workflow_run_id = p_workflow_run_id
        AND run.workflow_run_state = 'running'
@@ -5979,6 +6104,7 @@ BEGIN
                ),
                'hex'
            )
+       AND run.workflow_run_claim_expires_time > v_released_time
     RETURNING TRUE INTO v_released;
 
     IF NOT FOUND THEN
@@ -6065,15 +6191,19 @@ DECLARE
     v_percent NUMERIC(5, 2);
     v_max_attempt INTEGER;
 BEGIN
-    IF p_event_sequence <= 1 THEN
+    IF p_event_sequence IS NULL OR p_event_sequence <= 1 THEN
         RAISE EXCEPTION 'Workflow Run event sequence must follow the start event';
     END IF;
     IF p_stage_code IS NULL
        OR p_stage_code !~ '^[a-z][a-z0-9_.-]{0,99}$' THEN
         RAISE EXCEPTION 'Workflow Run event stage is invalid';
     END IF;
-    IF p_status NOT IN ('running', 'warning', 'blocked') THEN
+    IF p_status IS NULL
+       OR p_status NOT IN ('running', 'warning', 'blocked') THEN
         RAISE EXCEPTION 'Workflow Run event status is invalid';
+    END IF;
+    IF p_attempt IS NULL THEN
+        RAISE EXCEPTION 'Workflow Run event attempt is invalid';
     END IF;
     IF NOT reference.is_nonblank(p_safe_message)
        OR octet_length(p_safe_message) > 2000
@@ -6132,20 +6262,24 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
 
     SELECT event.*
       INTO v_existing
       FROM model.model_event_log AS event
-     WHERE event.workflow_run_id = p_workflow_run_id
+    WHERE event.workflow_run_id = p_workflow_run_id
        AND event.model_event_log_sequence = p_event_sequence;
     IF FOUND THEN
-        IF v_existing.model_event_log_attempt <> p_attempt
-           OR v_existing.model_event_log_stage <> p_stage_code
-           OR v_existing.model_event_log_status <> p_status
-           OR v_existing.model_event_log_message <> p_safe_message
+        IF v_existing.model_event_log_attempt IS DISTINCT FROM p_attempt
+           OR v_existing.model_event_log_stage IS DISTINCT FROM p_stage_code
+           OR v_existing.model_event_log_status IS DISTINCT FROM p_status
+           OR v_existing.model_event_log_message IS DISTINCT FROM p_safe_message
            OR v_existing.model_event_log_current IS DISTINCT FROM p_current_count
            OR v_existing.model_event_log_total IS DISTINCT FROM p_total_count
-           OR v_existing.finding_count <> p_finding_count THEN
+           OR v_existing.finding_count IS DISTINCT FROM p_finding_count THEN
             RAISE EXCEPTION 'Workflow Run event sequence conflict';
         END IF;
         RETURN NEXT v_existing;
@@ -6154,9 +6288,6 @@ BEGIN
 
     IF v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION 'Workflow Run must be running to append an event';
-    END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
     v_max_attempt := CASE
@@ -6301,6 +6432,10 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
 
     IF v_run.authoring_no_op_candidate_digest IS NOT NULL THEN
         RAISE EXCEPTION 'Workflow Run completion conflict';
@@ -6328,9 +6463,6 @@ BEGIN
     END IF;
     IF v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION 'Workflow Run must be running to complete';
-    END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
     SELECT coalesce(max(event.model_event_log_attempt), 1),
@@ -6827,6 +6959,10 @@ BEGIN
     IF v_run.actor_principal_id <> v_decision.principal_id THEN
         RAISE EXCEPTION 'Workflow Run belongs to another Principal';
     END IF;
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'stale_model_revision';
+    END IF;
 
     IF v_run.authoring_no_op_candidate_digest IS NOT NULL
        OR EXISTS (
@@ -6852,9 +6988,6 @@ BEGIN
     END IF;
     IF v_run.workflow_run_state <> 'running' THEN
         RAISE EXCEPTION 'Workflow Run must be running to fail';
-    END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
-        RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
     SELECT coalesce(max(event.model_event_log_attempt), 1),
@@ -8525,7 +8658,8 @@ BEGIN
         RAISE EXCEPTION
             'analysis_validation_run_not_running: A running deterministic Analysis Workflow Run is required';
     END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
@@ -8739,8 +8873,10 @@ DECLARE
     v_eligible_selected_object_count INTEGER;
     v_expected_attribute_ids BIGINT[];
     v_expected_object_ids BIGINT[];
+    v_expected_context_digests JSONB;
     v_payload_attribute_ids BIGINT[];
     v_payload_object_ids BIGINT[];
+    v_payload_context_digests JSONB;
     v_removed_profile_count INTEGER;
     v_changed_profile_count INTEGER;
     v_model_revision BIGINT;
@@ -8852,12 +8988,81 @@ BEGIN
     ) THEN
         RAISE EXCEPTION 'Profiling result Attribute IDs must be unique';
     END IF;
+    IF EXISTS (
+        SELECT 1
+          FROM jsonb_to_recordset(p_profiles) AS profile(
+                   row_count BIGINT,
+                   non_null_count BIGINT,
+                   null_count BIGINT,
+                   blank_count BIGINT,
+                   distinct_count BIGINT,
+                   min_data_length INTEGER,
+                   max_data_length INTEGER,
+                   percent_populated NUMERIC(7, 4),
+                   percent_duplicates NUMERIC(7, 4),
+                   percent_null NUMERIC(7, 4),
+                   percent_blank NUMERIC(7, 4),
+                   percent_distinct NUMERIC(7, 4)
+               )
+         WHERE profile.non_null_count::NUMERIC + profile.null_count <>
+               profile.row_count
+            OR profile.blank_count > profile.non_null_count
+            OR profile.distinct_count > profile.non_null_count
+            OR profile.min_data_length > profile.max_data_length
+            OR profile.percent_populated IS DISTINCT FROM CASE
+                   WHEN profile.row_count = 0 THEN 0::NUMERIC
+                   ELSE round(
+                       100::NUMERIC * profile.non_null_count /
+                       profile.row_count,
+                       4
+                   )
+               END
+            OR profile.percent_null IS DISTINCT FROM CASE
+                   WHEN profile.row_count = 0 THEN 0::NUMERIC
+                   ELSE round(
+                       100::NUMERIC * profile.null_count /
+                       profile.row_count,
+                       4
+                   )
+               END
+            OR profile.percent_duplicates IS DISTINCT FROM CASE
+                   WHEN profile.distinct_count IS NULL THEN NULL::NUMERIC
+                   WHEN profile.non_null_count = 0 THEN 0::NUMERIC
+                   ELSE round(
+                       100::NUMERIC * (
+                           profile.non_null_count - profile.distinct_count
+                       ) / profile.non_null_count,
+                       4
+                   )
+               END
+            OR profile.percent_blank IS DISTINCT FROM CASE
+                   WHEN profile.blank_count IS NULL THEN NULL::NUMERIC
+                   WHEN profile.non_null_count = 0 THEN 0::NUMERIC
+                   ELSE round(
+                       100::NUMERIC * profile.blank_count /
+                       profile.non_null_count,
+                       4
+                   )
+               END
+            OR profile.percent_distinct IS DISTINCT FROM CASE
+                   WHEN profile.distinct_count IS NULL THEN NULL::NUMERIC
+                   WHEN profile.non_null_count = 0 THEN 0::NUMERIC
+                   ELSE round(
+                       100::NUMERIC * profile.distinct_count /
+                       profile.non_null_count,
+                       4
+                   )
+               END
+    ) THEN
+        RAISE EXCEPTION 'Profiling result metrics do not reconcile';
+    END IF;
 
     SELECT run.workflow_run_id,
            run.model_id,
            run.actor_principal_id,
            run.model_workflow,
            run.workflow_run_state,
+           run.requested_batch_id,
            run.selected_scope_count,
            target_model.tenant_id,
            target_model.model_revision
@@ -8893,7 +9098,8 @@ BEGIN
         RAISE EXCEPTION
             'A running Profiling Workflow Run is required';
     END IF;
-    IF v_run.model_revision <> p_expected_model_revision THEN
+    IF p_expected_model_revision IS NULL
+       OR v_run.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
@@ -9009,6 +9215,100 @@ BEGIN
        OR v_payload_object_ids IS DISTINCT FROM v_expected_object_ids THEN
         RAISE EXCEPTION
             'Profiling results must exactly cover the eligible Selected Scope Attributes';
+    END IF;
+
+    SELECT coalesce(
+               jsonb_object_agg(
+                   attribute.attribute_id::TEXT,
+                   encode(
+                       sha256(
+                           convert_to(
+                               '{"attribute_data_type":' ||
+                               to_jsonb(attribute.attribute_data_type)::TEXT ||
+                               ',"attribute_id":' ||
+                               attribute.attribute_id::TEXT ||
+                               ',"attribute_name":' ||
+                               to_jsonb(attribute.attribute_name)::TEXT ||
+                               ',"batch_attribute_name":' ||
+                               coalesce(
+                                   to_jsonb(
+                                       object_record.batch_attribute_name
+                                   )::TEXT,
+                                   'null'
+                               ) ||
+                               ',"catalog":' ||
+                               to_jsonb(source_tenant.tenant_catalog)::TEXT ||
+                               ',"object_id":' ||
+                               object_record.object_id::TEXT ||
+                               ',"requested_batch_id":' ||
+                               coalesce(
+                                   to_jsonb(v_run.requested_batch_id)::TEXT,
+                                   'null'
+                               ) ||
+                               ',"schema":' ||
+                               to_jsonb(object_record.object_schema)::TEXT ||
+                               ',"table":' ||
+                               to_jsonb(object_record.object_name)::TEXT ||
+                               '}',
+                               'UTF8'
+                           )
+                       ),
+                       'hex'
+                   )
+                   ORDER BY attribute.attribute_id
+               ),
+               '{}'::JSONB
+           )
+      INTO v_expected_context_digests
+      FROM application.workflow_run_object_selection AS selection
+      JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
+           AS eligible
+        ON eligible.model_id = selection.model_id
+       AND eligible.object_id = selection.object_id
+       AND eligible.is_bronze_source_eligible
+      JOIN core.attribute AS attribute
+        ON attribute.attribute_id = eligible.attribute_id
+       AND attribute.object_id = eligible.object_id
+       AND attribute.is_active
+      JOIN core.object AS object_record
+        ON object_record.object_id = selection.object_id
+       AND object_record.is_active
+      JOIN core.connection AS connection
+        ON connection.connection_id = object_record.connection_id
+       AND connection.is_active
+      LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
+        ON connection.is_global_data_store
+       AND discovery_scope.gds_connection_id = connection.connection_id
+       AND discovery_scope.zone_id = object_record.zone_id
+       AND lower(btrim(discovery_scope.object_schema)) =
+           lower(btrim(object_record.object_schema))
+       AND discovery_scope.is_active
+      JOIN core.tenant AS source_tenant
+        ON source_tenant.tenant_id = CASE
+               WHEN connection.is_global_data_store
+                   THEN discovery_scope.tenant_id
+               ELSE connection.tenant_id
+           END
+       AND source_tenant.is_active
+     WHERE selection.workflow_run_id = p_workflow_run_id
+       AND selection.model_id = v_run.model_id;
+
+    SELECT coalesce(
+               jsonb_object_agg(
+                   profile.attribute_id::TEXT,
+                   profile.source_context_digest
+                   ORDER BY profile.attribute_id
+               ),
+               '{}'::JSONB
+           )
+      INTO v_payload_context_digests
+      FROM jsonb_to_recordset(p_profiles) AS profile(
+               attribute_id BIGINT,
+               source_context_digest TEXT
+           );
+    IF v_payload_context_digests IS DISTINCT FROM
+       v_expected_context_digests THEN
+        RAISE EXCEPTION 'Profiling result source context has changed';
     END IF;
 
     WITH profile_payload AS MATERIALIZED (

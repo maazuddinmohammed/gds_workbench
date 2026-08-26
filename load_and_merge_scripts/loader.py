@@ -80,6 +80,7 @@ BOOTSTRAP_ACTIVITY_TABLES = (
     ("workflow", "mapping_source_system_dependency"),
     ("workflow", "mapping_object"),
     ("workflow", "mapping_attribute"),
+    ("application", "workflow_run"),
     ("mcp", "model_change_set"),
     ("mcp", "model_change_set_event"),
     ("mcp", "metadata_change_set"),

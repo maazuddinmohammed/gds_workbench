@@ -11,7 +11,7 @@ These rules apply to every file and command in this repository.
 ## Database and external safety
 
 - Local and CI database tests may use only a fixture-created disposable PostgreSQL container with random credentials, a random database, and a per-run sentinel. Reject user-supplied, environment, default, local-service, Azure, staging, and production DSNs before any connection.
-- Never add drop, truncate, reset, destructive cleanup, migration, or backfill helpers for populated databases. Container disposal is the only local database cleanup.
+- Never add drop, truncate, reset, destructive cleanup, migration, or backfill helpers for populated databases. Container disposal is the only local database cleanup. It can be added in comments if it is part of server cleanup.
 - Do not deploy, push, open a pull request, alter cloud identity/policy, run Databricks, or write to Azure/external systems without explicit approval.
 
 ## Security and public surface

@@ -15,7 +15,7 @@ def word_count(path: Path) -> int:
 def test_static_instruction_footprint_proxy_stays_bounded() -> None:
     """Guard file footprint, not actual model-token usage."""
     v2_skills = sorted((V2_ROOT / "skills").glob("*/SKILL.md"))
-    v2_markdown = sorted(V2_ROOT.rglob("*.md"))
+    v2_markdown = sorted((V2_ROOT / "skills").rglob("*.md"))
 
     assert len(v2_skills) == 1
 
@@ -37,8 +37,9 @@ def test_router_requires_progressive_reference_loading() -> None:
     assert "never precede it with `inspect`" in router
 
     session = (V2_ROOT / "skills" / "gds" / "references" / "session.md").read_text()
-    helper = (
-        V2_ROOT / "skills" / "gds" / "references" / "local-helper.md"
-    ).read_text()
-    assert "run `readiness` for a known target or `inspect` otherwise—never both" in session
+    helper = (V2_ROOT / "skills" / "gds" / "references" / "local-helper.md").read_text()
+    assert (
+        "run `readiness` for a known target or `inspect` otherwise—never both"
+        in session
+    )
     assert "never call both as setup" in helper

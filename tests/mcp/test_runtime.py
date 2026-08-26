@@ -980,7 +980,7 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
             terminate_on_close=False,
         )
         async with Client(transport) as client:
-            result = await client.call_tool("list_tenants", {})
+            result = await client.call_tool("list_tenants", {"page_size": 200})
             lock_result = await client.call_tool(
                 "acquire_tenant_lock",
                 {

@@ -4,6 +4,7 @@ from typing import TYPE_CHECKING, cast
 from uuid import UUID
 
 import pytest
+from psycopg.errors import InvalidParameterValue
 
 from gds_etl_workbench.application.authorization import (
     AuthorizationService,
@@ -39,6 +40,44 @@ def test_greenfield_schema_omits_workflow_grant_structures(
         ).fetchone()
 
     assert row == {"workflow_grant": None, "workflow_run_summary": None}
+
+
+def test_authorization_rejects_a_null_policy(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(InvalidParameterValue, match="unsupported authorization policy"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM security.authorize_tenant_operation(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  1::BIGINT, NULL::VARCHAR
+              )
+            """,
+            (UUID(int=1), UUID(int=2)),
+        )
+
+
+def test_authorization_rejects_a_null_expected_principal_type(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(InvalidParameterValue, match="unsupported Principal type"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM security.authorize_tenant_operation(
+                  %s::UUID, %s::UUID, NULL::VARCHAR,
+                  1::BIGINT, 'tenant_read'::VARCHAR
+              )
+            """,
+            (UUID(int=1), UUID(int=2)),
+        )
 
 
 def test_modeling_assertion_tables_replace_modeling_evidence_tables(
@@ -1746,6 +1785,16 @@ def test_expiry_operation_removes_stale_locks_and_records_events(
         "last_event": "expired",
         "acted_by": None,
     }
+
+
+def test_expiry_operation_rejects_a_null_batch_limit(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_runtime() as connection,
+        pytest.raises(InvalidParameterValue, match="expiry batch limit"),
+    ):
+        connection.execute("SELECT security.expire_tenant_locks(NULL)")
 
 
 @pytest.mark.asyncio

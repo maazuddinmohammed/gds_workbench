@@ -5,13 +5,17 @@ on:
     paths:
       - ".github/workflows/web-app.yml"
       - "app.yaml"
+      - "database/**"
       - "databricks.yml"
       - "databricks_notebooks/**"
+      - "docs/**"
+      - "load_and_merge_scripts/**"
       - "mcp_server/**"
       - "package-lock.json"
       - "package.json"
       - "pyproject.toml"
       - "tests/web_backend/**"
+      - "tests/mcp/**"
       - "tests/web_packaging/**"
       - "uv.lock"
       - "web_app/**"
@@ -19,13 +23,17 @@ on:
     paths:
       - ".github/workflows/web-app.yml"
       - "app.yaml"
+      - "database/**"
       - "databricks.yml"
       - "databricks_notebooks/**"
+      - "docs/**"
+      - "load_and_merge_scripts/**"
       - "mcp_server/**"
       - "package-lock.json"
       - "package.json"
       - "pyproject.toml"
       - "tests/web_backend/**"
+      - "tests/mcp/**"
       - "tests/web_packaging/**"
       - "uv.lock"
       - "web_app/**"
@@ -38,6 +46,50 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  loader:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package manager
+        run: python -m pip install uv==0.10.2
+      - name: Verify frozen loader dependencies
+        run: uv sync --frozen --project load_and_merge_scripts
+      - name: Test the Excel loader
+        run: >-
+          uv run --frozen --project load_and_merge_scripts python -m pytest
+          -c load_and_merge_scripts/pyproject.toml load_and_merge_scripts/tests
+
+  database-and-mcp:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.14"
+      - name: Install package manager
+        run: python -m pip install uv==0.10.2
+      - name: Verify frozen MCP dependencies
+        run: uv sync --frozen --project mcp_server
+      - name: Test MCP and disposable PostgreSQL contracts
+        run: >-
+          uv run --frozen --project mcp_server python -m pytest
+          -c mcp_server/pyproject.toml tests/mcp
+      - name: Check MCP formatting
+        run: >-
+          uv run --frozen --project mcp_server ruff format --check
+          mcp_server/gds_etl_workbench
+      - name: Check MCP lint
+        run: >-
+          uv run --frozen --project mcp_server ruff check
+          mcp_server/gds_etl_workbench
+      - name: Check MCP types
+        run: uv run --frozen --project mcp_server pyright --project mcp_server
+
   backend-and-packaging:
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -51,25 +103,33 @@ jobs:
       - name: Verify frozen dependencies
         run: uv sync --frozen
       - name: Test backend
-        run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_backend
+        run: >-
+          uv run --frozen --project web_app/backend python -m pytest
+          -c web_app/backend/pyproject.toml tests/web_backend
       - name: Test deployment packaging
-        run: uv run --project web_app/backend python -m pytest -c web_app/backend/pyproject.toml tests/web_packaging
+        run: >-
+          uv run --frozen --project web_app/backend python -m pytest
+          -c web_app/backend/pyproject.toml tests/web_packaging
       - name: Test source-import notebooks
-        run: uv run --project web_app/backend python -m pytest databricks_notebooks/tests
+        run: >-
+          uv run --frozen --project web_app/backend python -m pytest
+          databricks_notebooks/tests
       - name: Check formatting
         working-directory: web_app/backend
-        run: uv run ruff format --check gds_workbench_api
+        run: uv run --frozen ruff format --check gds_workbench_api
       - name: Check lint
         working-directory: web_app/backend
-        run: uv run ruff check gds_workbench_api
+        run: uv run --frozen ruff check gds_workbench_api
       - name: Check notebook lint and format
         run: |
-          uv run --project web_app/backend ruff check --config databricks_notebooks/ruff.toml databricks_notebooks
-          uv run --project web_app/backend ruff format --check --config databricks_notebooks/ruff.toml databricks_notebooks
+          uv run --frozen --project web_app/backend ruff check --config databricks_notebooks/ruff.toml databricks_notebooks
+          uv run --frozen --project web_app/backend ruff format --check --config databricks_notebooks/ruff.toml databricks_notebooks
       - name: Check types
-        run: uv run --project web_app/backend pyright --project web_app/backend
+        run: uv run --frozen --project web_app/backend pyright --project web_app/backend
       - name: Check notebook types
-        run: uv run --project web_app/backend pyright databricks_notebooks/gds_workbench_notebooks
+        run: >-
+          uv run --frozen --project web_app/backend pyright
+          databricks_notebooks/gds_workbench_notebooks
 
   frontend:
     runs-on: ubuntu-latest

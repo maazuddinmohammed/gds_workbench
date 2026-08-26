@@ -12,13 +12,20 @@ BACKEND_DOCKERFILE = ROOT / "web_app" / "backend" / "Dockerfile"
 FRONTEND_PACKAGE = ROOT / "web_app" / "frontend" / "package.json"
 FRONTEND_BUILD_TSCONFIG = ROOT / "web_app" / "frontend" / "tsconfig.build.json"
 INSTALL_DATABASE = ROOT / "web_app" / "local" / "install_database.sh"
+DATABASE_ROOT = ROOT / "database"
+AZURE_FRESH_DEPLOYMENT = ROOT / "docs" / "AZURE_FRESH_DEPLOYMENT.md"
+WEB_APP_WORKFLOW = ROOT / ".github" / "workflows" / "web-app.yml"
+PLUGIN_WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "plugin-windows.yml"
+DATABASE_ARCHITECTURE = ROOT / "docs" / "architecture" / "database.md"
+MCP_ARCHITECTURE = ROOT / "docs" / "architecture" / "overview.md"
+MCP_TOOL_CONTRACT = ROOT / "plugins" / "v2" / "gds" / "tool-contract.json"
 
 
 def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
     compose = COMPOSE.read_text(encoding="utf-8")
     app = compose[compose.index("  app:\n") : compose.index("\nvolumes:\n")]
 
-    assert "postgres:18.4-bookworm@sha256:882236b897e39051" in compose
+    assert "postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0" in compose
     assert '"127.0.0.1:${GDS_LOCAL_API_PORT}:8000"' in compose
     assert '"127.0.0.1:${GDS_LOCAL_FRONTEND_PORT}:8000"' in compose
     assert not re.search(r"ports:\s*\n(?:\s+-.*\n)*\s+-\s*[\"']?5432:", compose)
@@ -125,25 +132,21 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
 ):
     initializer = INSTALL_DATABASE.read_text(encoding="utf-8")
     expected = [
-        "01_reference.sql",
-        "02_core.sql",
-        "03_security.sql",
-        "04_model.sql",
-        "05_workflow_analysis.sql",
-        "06_workflow_conceptual.sql",
-        "07_workflow_logical.sql",
-        "08_workflow_dimensional.sql",
-        "09_workflow_mapping.sql",
-        "10_application.sql",
-        "10_mcp.sql",
-        "10_workflow_eligibility.sql",
-        "11_mcp_metadata_apply.sql",
-        "11_runtime_account.sql",
-        "12_runtime_integrity.sql",
+        path.name
+        for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+        if 1 <= int(path.name[:2]) <= 12
     ]
+    release_block = re.search(
+        r"release_files=\(\n(?P<files>.*?)\n\)", initializer, re.DOTALL
+    )
 
-    positions = [initializer.index(name) for name in expected]
-    assert positions == sorted(positions)
+    assert release_block is not None
+    assert (
+        re.findall(
+            r"^\s+([0-9][0-9]_[a-z0-9_]+\.sql)$", release_block["files"], re.MULTILINE
+        )
+        == expected
+    )
     assert "00_preflight.sql" in initializer
     assert "13_verify_install.sql" in initializer
     assert "--single-transaction" in initializer
@@ -151,3 +154,118 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert "03_local_super_admin.template.sql" in initializer
     assert "04_application_reference.sql" in initializer
     assert not re.search(r"\b(?:DROP|TRUNCATE|RESET)\b", initializer, re.IGNORECASE)
+
+
+def test_documented_fresh_install_matches_the_exact_canonical_database_release() -> (
+    None
+):
+    guide = AZURE_FRESH_DEPLOYMENT.read_text(encoding="utf-8")
+    expected = [
+        path.name
+        for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+        if 1 <= int(path.name[:2]) <= 12
+    ]
+    install_block = re.search(r"for file in \\\n(?P<files>.*?)\ndo", guide, re.DOTALL)
+
+    assert install_block is not None
+    assert (
+        re.findall(r"database/([0-9][0-9]_[a-z0-9_]+\.sql)", install_block["files"])
+        == expected
+    )
+    assert "\\password gds_mcp_runtime" in guide
+    assert "\\password gds_web_runtime" in guide
+    assert "database/seed/04_application_reference.sql" in guide
+    assert guide.index("database/13_verify_install.sql") < guide.index(
+        "database/seed/04_application_reference.sql"
+    )
+
+
+def test_database_cleanup_reference_is_complete_and_remains_commented() -> None:
+    sql = "\n".join(
+        path.read_text(encoding="utf-8")
+        for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
+    )
+    preflight = (DATABASE_ROOT / "00_preflight.sql").read_text(encoding="utf-8")
+    expected_cleanup = [
+        "DROP SCHEMA mcp CASCADE;",
+        "DROP SCHEMA application CASCADE;",
+        "DROP SCHEMA workflow CASCADE;",
+        "DROP SCHEMA model CASCADE;",
+        "DROP SCHEMA security CASCADE;",
+        "DROP SCHEMA core CASCADE;",
+        "DROP SCHEMA reference CASCADE;",
+        "DROP OWNED BY gds_mcp_runtime CASCADE;",
+        "DROP OWNED BY gds_web_runtime CASCADE;",
+        "DROP OWNED BY gds_app_write CASCADE;",
+        "DROP OWNED BY gds_web_write CASCADE;",
+        "DROP OWNED BY gds_migration CASCADE;",
+        "DROP ROLE gds_mcp_runtime;",
+        "DROP ROLE gds_web_runtime;",
+        "DROP ROLE gds_app_write;",
+        "DROP ROLE gds_web_write;",
+        "DROP ROLE gds_migration;",
+    ]
+
+    assert not re.search(
+        r"^\s*(?:DROP|TRUNCATE|RESET)\b",
+        sql,
+        re.IGNORECASE | re.MULTILINE,
+    )
+    assert (
+        re.findall(
+            r"^--(DROP (?:SCHEMA|OWNED BY|ROLE) .+;)$",
+            preflight,
+            re.MULTILINE,
+        )
+        == expected_cleanup
+    )
+
+
+def test_database_and_mcp_changes_trigger_the_disposable_postgres_ci_suite() -> None:
+    workflow = WEB_APP_WORKFLOW.read_text(encoding="utf-8")
+
+    assert workflow.count('      - "database/**"') == 2
+    assert workflow.count('      - "tests/mcp/**"') == 2
+    assert "uv sync --frozen --project mcp_server" in workflow
+    assert "uv run --frozen --project mcp_server python -m pytest" in workflow
+    assert "-c mcp_server/pyproject.toml tests/mcp" in workflow
+
+
+def test_loader_has_an_independent_frozen_python_312_ci_job() -> None:
+    workflow = WEB_APP_WORKFLOW.read_text(encoding="utf-8")
+    loader_job = workflow[
+        workflow.index("  loader:\n") : workflow.index("\n  database-and-mcp:\n")
+    ]
+
+    assert 'python-version: "3.12"' in loader_job
+    assert "uv sync --frozen --project load_and_merge_scripts" in loader_job
+    assert (
+        "uv run --frozen --project load_and_merge_scripts python -m pytest"
+        in loader_job
+    )
+    assert "load_and_merge_scripts/tests" in loader_job
+
+
+def test_windows_plugin_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
+    workflow = PLUGIN_WINDOWS_WORKFLOW.read_text(encoding="utf-8")
+
+    assert '      - "mcp_server/**"' in workflow
+    assert "uv sync --frozen --project mcp_server" in workflow
+    assert "uv run --frozen --project mcp_server python -m pytest" in workflow
+    assert "tests/plugin_v2 -q" in workflow
+    assert "pip install pytest" not in workflow
+
+
+def test_current_architecture_counts_match_checked_in_contracts() -> None:
+    database_architecture = DATABASE_ARCHITECTURE.read_text(encoding="utf-8")
+    mcp_architecture = MCP_ARCHITECTURE.read_text(encoding="utf-8")
+    tool_contract = json.loads(MCP_TOOL_CONTRACT.read_text(encoding="utf-8"))
+
+    assert "There are 93 tables" in database_architecture
+    assert "defines three non-login, non-superuser group roles" in database_architecture
+    assert "exact 32 secure `application` functions" in database_architecture
+    assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture
+    assert "post-lock PostgreSQL wall-clock" in database_architecture
+    assert f"{tool_contract['tool_count']} governed MCP tools" in mcp_architecture
+    assert "Ten read-only MCP tools" not in mcp_architecture
+    assert "No write or Tenant Lock MCP tool is registered" not in mcp_architecture

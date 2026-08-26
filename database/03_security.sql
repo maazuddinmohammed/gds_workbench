@@ -236,10 +236,12 @@ DECLARE
     v_lock_owner_display_name VARCHAR(200);
     v_lock_expires_time TIMESTAMPTZ;
 BEGIN
-    IF p_expected_principal_type NOT IN ('user', 'service_principal') THEN
+    IF p_expected_principal_type IS NULL
+       OR p_expected_principal_type NOT IN ('user', 'service_principal') THEN
         RAISE EXCEPTION 'unsupported Principal type' USING ERRCODE = '22023';
     END IF;
-    IF p_policy NOT IN (
+    IF p_policy IS NULL
+       OR p_policy NOT IN (
         'tenant_read',
         'tenant_metadata_write',
         'tenant_model_write',
@@ -1141,7 +1143,7 @@ DECLARE
     v_lock RECORD;
     v_expired_count INTEGER := 0;
 BEGIN
-    IF p_limit NOT BETWEEN 1 AND 1000 THEN
+    IF p_limit IS NULL OR p_limit NOT BETWEEN 1 AND 1000 THEN
         RAISE EXCEPTION 'expiry batch limit must be between 1 and 1000'
             USING ERRCODE = '22023';
     END IF;

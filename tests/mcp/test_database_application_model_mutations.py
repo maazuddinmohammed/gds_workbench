@@ -640,6 +640,40 @@ def test_model_update_rejects_stale_revision_without_writes(
     assert stored == {"model_name": "Customer 360", "model_revision": 1}
 
 
+def test_model_update_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_model_mutation_context(postgres_database)
+    created = _create_model(postgres_database, context)
+
+    with (
+        _connect_web(postgres_database) as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            UPDATE_MODEL_SQL,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                created["model_id"],
+                None,
+                "Changed without a revision fence",
+                created["model_description"],
+                created["silver_model_naming_instructions"],
+                '[{"name":"created_time","type":"timestamp"}]',
+                created["gold_model_naming_instructions"],
+                '[{"name":"effective_date","type":"date"}]',
+                '[{"name":"updated_time","type":"timestamp"}]',
+                created["default_agent_sdk_code"],
+                created["default_agent_provider_code"],
+                created["default_agent_model_code"],
+                created["default_reasoning_effort_code"],
+                created["default_max_turns"],
+                created["default_validation_retry_count"],
+            ),
+        )
+
+
 def test_web_can_archive_model_and_advance_revision_once(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -676,6 +710,27 @@ def test_web_can_archive_model_and_advance_revision_once(
         "web_model_create",
         "web_model_archive",
     ]
+
+
+def test_model_mutation_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_model_mutation_context(postgres_database)
+    created = _create_model(postgres_database, context)
+
+    with (
+        _connect_web(postgres_database) as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            ARCHIVE_MODEL_SQL,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                created["model_id"],
+                None,
+            ),
+        )
 
 
 def test_model_mutation_derives_owning_tenant_from_model(
@@ -762,6 +817,33 @@ def test_archive_and_scope_replacement_reject_stale_revision(
         )
 
     assert stored == {"is_active": True, "model_revision": 1}
+
+
+def test_scope_replacement_rejects_a_null_expected_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_model_mutation_context(postgres_database)
+    created = _create_model(postgres_database, context)
+    object_id, _, _ = _seed_scope_objects(
+        postgres_database,
+        context,
+        model_id=int(created["model_id"]),
+    )
+
+    with (
+        _connect_web(postgres_database) as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            REPLACE_MODEL_SCOPE_SQL,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                created["model_id"],
+                None,
+                [object_id],
+            ),
+        )
 
 
 def test_web_can_replace_scope_with_cross_tenant_any_zone_objects(

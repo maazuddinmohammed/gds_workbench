@@ -60,7 +60,7 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
         {
             "GDS_WEB_ENVIRONMENT": "production",
             "GDS_WEB_DATABASE_DSN": (
-                "postgresql://fixture_user:fixture_password@db.example/workbench"
+                "postgresql://gds_web_runtime:fixture_password@db.example/workbench"
                 "?sslmode=verify-full"
             ),
             "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
@@ -104,6 +104,28 @@ def test_production_requires_a_verified_postgres_connection() -> None:
         )
 
     assert str(captured.value) == "production database DSN requires sslmode=verify-full"
+    assert "top-secret" not in str(captured.value)
+
+
+def test_production_requires_the_exact_web_runtime_database_login() -> None:
+    with pytest.raises(ConfigurationError) as captured:
+        RuntimeSettings.from_environment(
+            {
+                "GDS_WEB_ENVIRONMENT": "production",
+                "GDS_WEB_DATABASE_DSN": (
+                    "postgresql://gds_app_write:top-secret@db.example/workbench"
+                    "?sslmode=verify-full"
+                ),
+                "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
+                "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "PRODUCTION",
+                "GDS_WEB_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
+                "GDS_WEB_STATIC_DIR": "web_app/frontend/dist",
+            }
+        )
+
+    assert str(captured.value) == (
+        "production database DSN requires user=gds_web_runtime"
+    )
     assert "top-secret" not in str(captured.value)
 
 
@@ -287,7 +309,8 @@ def test_production_rejects_fake_agent_execution() -> None:
             {
                 "GDS_WEB_ENVIRONMENT": "production",
                 "GDS_WEB_DATABASE_DSN": (
-                    "postgresql://fixture_user:top-secret@db.example/workbench?sslmode=verify-full"
+                    "postgresql://gds_web_runtime:top-secret@db.example/workbench"
+                    "?sslmode=verify-full"
                 ),
                 "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
                 "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "PRODUCTION",
@@ -326,7 +349,7 @@ def test_databricks_execution_mode_is_explicit_and_production_safe() -> None:
         **local_values,
         "GDS_WEB_ENVIRONMENT": "production",
         "GDS_WEB_DATABASE_DSN": (
-            "postgresql://fixture.invalid/workbench?sslmode=verify-full"
+            "postgresql://gds_web_runtime@fixture.invalid/workbench?sslmode=verify-full"
         ),
         "GDS_WEB_STATIC_DIR": "web_app/frontend/dist",
         "GDS_WEB_DATABRICKS_EXECUTION_MODE": "fake",

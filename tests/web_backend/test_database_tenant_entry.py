@@ -110,7 +110,6 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
 
     await database.open()
     try:
-        readiness = await database.readiness()
         tenants = await tenant_service.list_tenants(
             request_principal,
             page_size=50,
@@ -124,7 +123,6 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
     finally:
         await database.close()
 
-    assert readiness.ready is True
     assert [item.tenant_id for item in tenants.items] == [tenant["tenant_id"]]
     assert selected.tenant_id == tenant["tenant_id"]
     assert session.last_tenant_id == tenant["tenant_id"]

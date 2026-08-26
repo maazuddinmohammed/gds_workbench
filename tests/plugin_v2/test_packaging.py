@@ -24,8 +24,15 @@ from gds_etl_workbench.infrastructure.postgres import Database
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds"
 BUILDER = REPOSITORY_ROOT / "plugins" / "build_gds_v2_plugin_zip.py"
+PLUGIN_VERSION = json.loads(
+    (PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text(encoding="utf-8")
+)["version"]
 DIST_ARCHIVE = (
-    REPOSITORY_ROOT / "plugins" / "v2" / "dist" / "gds-agent-plugin-0.1.0.zip"
+    REPOSITORY_ROOT
+    / "plugins"
+    / "v2"
+    / "dist"
+    / f"gds-agent-plugin-{PLUGIN_VERSION}.zip"
 )
 
 
@@ -103,14 +110,22 @@ def test_builder_creates_deterministic_complete_archive(tmp_path: Path) -> None:
     assert outputs[0].read_bytes() == outputs[1].read_bytes()
     with zipfile.ZipFile(outputs[0]) as archive:
         names = archive.namelist()
+        source_files = sorted(path for path in PLUGIN_ROOT.rglob("*") if path.is_file())
+        expected_names = [
+            (Path(PLUGIN_ROOT.name) / path.relative_to(PLUGIN_ROOT)).as_posix()
+            for path in source_files
+        ]
         assert "gds/.codex-plugin/plugin.json" in names
         assert "gds/.mcp.json" in names
+        assert "gds/docs/USER_GUIDE.md" in names
         assert "gds/skills/gds/SKILL.md" in names
         assert "gds/scripts/gds-local.js" in names
         assert "gds/scripts/gds-local.ps1" in names
         assert "gds/tool-contract.json" in names
         assert "gds/workbench/index.html" in names
-        assert names == sorted(names)
+        assert names == expected_names
+        for source, archive_name in zip(source_files, expected_names, strict=True):
+            assert archive.read(archive_name) == source.read_bytes()
 
 
 def test_checked_in_archive_is_the_current_deterministic_build(tmp_path: Path) -> None:
@@ -121,6 +136,7 @@ def test_checked_in_archive_is_the_current_deterministic_build(tmp_path: Path) -
     assert DIST_ARCHIVE.read_bytes() == expected.read_bytes()
     with zipfile.ZipFile(DIST_ARCHIVE) as archive:
         assert "gds/tool-contract.json" in archive.namelist()
+        assert "gds/docs/USER_GUIDE.md" in archive.namelist()
 
 
 def test_mcp_override_changes_archive_only(tmp_path: Path) -> None:

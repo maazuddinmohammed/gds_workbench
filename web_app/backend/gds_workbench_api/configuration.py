@@ -120,6 +120,8 @@ class RuntimeSettings:
                 raise ConfigurationError("production database DSN requires host and dbname")
             if dsn_parts.get("sslmode") != "verify-full":
                 raise ConfigurationError("production database DSN requires sslmode=verify-full")
+            if dsn_parts.get("user") != "gds_web_runtime":
+                raise ConfigurationError("production database DSN requires user=gds_web_runtime")
 
         cursor_signing_key = _required(source, "GDS_WEB_CURSOR_SIGNING_KEY").encode()
         if not 32 <= len(cursor_signing_key) <= 4096:

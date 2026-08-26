@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import zipfile
@@ -13,6 +14,7 @@ from mcp import Client
 from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
 from psycopg import sql
+from psycopg.types.json import Jsonb
 from tests.mcp.test_model_change_set_validation import (
     complete_graph,
     model_scope_records,
@@ -24,7 +26,14 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.modeling_records import ANALYSIS_VALIDATION_FIELDS
-from gds_etl_workbench.tools.change_sets.model import register_model_change_set_tools
+from gds_etl_workbench.tools.change_sets.model import (
+    _DATABASE_TIME_SQL,
+    _EXPIRE_OWNED_SQL,
+    _LOCK_OWNED_CHANGE_SETS_SQL,
+    _STAGE_SQL,
+    _TOUCH_MODEL_STAGE_BATCH_SQL,
+    register_model_change_set_tools,
+)
 from gds_etl_workbench.tools.change_sets.common import (
     canonical_records_sha256,
     stage_batch_sha256,
@@ -113,6 +122,872 @@ class RecordingSnapshotStore:
         assert snapshot_kind in {"model", "dbml"}
         assert schema_version == "2.0"
         return f"https://snapshot.example.test/{snapshot_kind}.zip?read-only"
+
+
+def test_model_change_set_expiry_preserves_the_last_valid_activity_time(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, _ = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_EXPIRY",
+    )
+    change_set_id = UUID("30000000-0000-4000-8000-000000000071")
+    correlation_id = UUID("40000000-0000-4000-8000-000000000071")
+    with postgres_database.connect_owner() as connection:
+        principal = connection.execute(
+            """
+            SELECT principal.principal_id
+              FROM security.entra_principal_identity AS identity
+              JOIN security.principal AS principal
+                ON principal.principal_id = identity.principal_id
+             WHERE identity.entra_tenant_id = %s
+               AND identity.entra_object_id = %s
+            """,
+            (ENTRA_TENANT_ID, ENTRA_OBJECT_ID),
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO mcp.model_change_set (
+                model_change_set_id,
+                model_id,
+                base_model_revision,
+                base_source_context_digest,
+                base_assertion_digest,
+                base_policy_digest,
+                created_by_principal_id,
+                correlation_id,
+                created_time,
+                last_activity_time,
+                expires_time
+            ) VALUES (
+                %s, %s, 1, %s, %s, %s, %s, %s,
+                clock_timestamp() - INTERVAL '3 hours',
+                clock_timestamp() - INTERVAL '2 hours',
+                clock_timestamp() - INTERVAL '1 hour'
+            )
+            """,
+            (
+                change_set_id,
+                model_id,
+                "a" * 64,
+                "b" * 64,
+                "c" * 64,
+                principal["principal_id"],
+                correlation_id,
+            ),
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        connection.execute(
+            _LOCK_OWNED_CHANGE_SETS_SQL,
+            (model_id, principal["principal_id"]),
+        ).fetchall()
+        operation_time = connection.execute(_DATABASE_TIME_SQL).fetchone()
+        assert operation_time is not None
+        expired = connection.execute(
+            _EXPIRE_OWNED_SQL,
+            (operation_time["current_time"], model_id, principal["principal_id"]),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT model_change_set_status,
+                   last_activity_time < expires_time AS activity_precedes_expiry,
+                   terminal_time IS NOT NULL AS terminal
+              FROM mcp.model_change_set
+             WHERE model_change_set_id = %s
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert expired == {
+        "model_change_set_id": change_set_id,
+        "draft_revision": 1,
+    }
+    assert stored == {
+        "model_change_set_status": "expired",
+        "activity_precedes_expiry": True,
+        "terminal": True,
+    }
+
+
+def test_expired_model_stage_batch_touch_is_a_safe_no_op(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, _ = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_BATCH_TOUCH",
+    )
+    change_set_id = UUID("30000000-0000-4000-8000-000000000072")
+    stage_batch_id = UUID("40000000-0000-4000-8000-000000000072")
+    with postgres_database.connect_owner() as connection:
+        principal = connection.execute(
+            """
+            SELECT principal.principal_id
+              FROM security.entra_principal_identity AS identity
+              JOIN security.principal AS principal
+                ON principal.principal_id = identity.principal_id
+             WHERE identity.entra_tenant_id = %s
+               AND identity.entra_object_id = %s
+            """,
+            (ENTRA_TENANT_ID, ENTRA_OBJECT_ID),
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO mcp.model_change_set (
+                model_change_set_id, model_id, base_model_revision,
+                base_source_context_digest, base_assertion_digest,
+                base_policy_digest, created_by_principal_id, correlation_id
+            ) VALUES (%s, %s, 1, %s, %s, %s, %s, %s)
+            """,
+            (
+                change_set_id,
+                model_id,
+                "a" * 64,
+                "b" * 64,
+                "c" * 64,
+                principal["principal_id"],
+                UUID("50000000-0000-4000-8000-000000000072"),
+            ),
+        )
+        connection.execute(
+            """
+            INSERT INTO mcp.model_stage_batch (
+                stage_batch_id, model_change_set_id, model_id, dataset_name,
+                expected_draft_revision, total_record_count, total_chunk_count,
+                batch_sha256, created_by_principal_id, correlation_id,
+                created_time, last_activity_time, expires_time
+            ) VALUES (
+                %s, %s, %s, 'conceptual_object', 1, 1, 1, %s, %s, %s,
+                clock_timestamp() - INTERVAL '3 hours',
+                clock_timestamp() - INTERVAL '2 hours',
+                clock_timestamp() - INTERVAL '1 hour'
+            )
+            """,
+            (
+                stage_batch_id,
+                change_set_id,
+                model_id,
+                "d" * 64,
+                principal["principal_id"],
+                UUID("60000000-0000-4000-8000-000000000072"),
+            ),
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        touched = connection.execute(
+            _TOUCH_MODEL_STAGE_BATCH_SQL,
+            (stage_batch_id,),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT last_activity_time < expires_time AS activity_precedes_expiry
+              FROM mcp.model_stage_batch
+             WHERE stage_batch_id = %s
+            """,
+            (stage_batch_id,),
+        ).fetchone()
+
+    assert touched is None
+    assert stored == {"activity_precedes_expiry": True}
+
+
+def test_model_stage_sql_null_revision_cannot_bypass_compare_and_swap(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, _ = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_STAGE_CAS",
+    )
+    change_set_id = UUID("30000000-0000-4000-8000-000000000073")
+    with postgres_database.connect_owner() as connection:
+        principal = connection.execute(
+            """
+            SELECT principal.principal_id
+              FROM security.entra_principal_identity AS identity
+              JOIN security.principal AS principal
+                ON principal.principal_id = identity.principal_id
+             WHERE identity.entra_tenant_id = %s
+               AND identity.entra_object_id = %s
+            """,
+            (ENTRA_TENANT_ID, ENTRA_OBJECT_ID),
+        ).fetchone()
+        assert principal is not None
+        connection.execute(
+            """
+            INSERT INTO mcp.model_change_set (
+                model_change_set_id, model_id, base_model_revision,
+                base_source_context_digest, base_assertion_digest,
+                base_policy_digest, created_by_principal_id, correlation_id
+            ) VALUES (%s, %s, 1, %s, %s, %s, %s, %s)
+            """,
+            (
+                change_set_id,
+                model_id,
+                "a" * 64,
+                "b" * 64,
+                "c" * 64,
+                principal["principal_id"],
+                UUID("40000000-0000-4000-8000-000000000073"),
+            ),
+        )
+
+    with postgres_database.connect_runtime() as connection:
+        staged = connection.execute(
+            _STAGE_SQL,
+            (
+                *(Jsonb({}) for _ in range(7)),
+                change_set_id,
+                model_id,
+                principal["principal_id"],
+                None,
+            ),
+        ).fetchone()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT model_change_set_status, draft_revision
+              FROM mcp.model_change_set
+             WHERE model_change_set_id = %s
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert staged is None
+    assert stored == {"model_change_set_status": "active", "draft_revision": 1}
+
+
+@pytest.mark.asyncio
+async def test_get_model_change_set_persists_parent_and_batch_expiry_once(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_GET_EXPIRY",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-get-expiry-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
+            assert created.is_error is False
+            change_set_id = created.structured_content["model_change_set_id"]
+            begun = await client.call_tool(
+                "begin_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "expected_draft_revision": 1,
+                    "dataset": "conceptual_object",
+                    "total_record_count": 1,
+                    "total_chunk_count": 1,
+                    "batch_sha256": "a" * 64,
+                },
+            )
+            assert begun.is_error is False
+            stage_batch_id = begun.structured_content["stage_batch_id"]
+            with postgres_database.connect_owner() as connection:
+                connection.execute(
+                    """
+                    UPDATE mcp.model_change_set
+                       SET created_time = clock_timestamp() - INTERVAL '3 hours',
+                           last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+                           expires_time = clock_timestamp() - INTERVAL '1 hour'
+                     WHERE model_change_set_id = %s
+                    """,
+                    (change_set_id,),
+                )
+
+            first = await client.call_tool(
+                "get_model_change_set",
+                {"model_id": model_id, "model_change_set_id": change_set_id},
+            )
+            second = await client.call_tool(
+                "get_model_change_set",
+                {"model_id": model_id, "model_change_set_id": change_set_id},
+            )
+            assert first.is_error is False
+            assert second.is_error is False
+            assert first.structured_content["status"] == "expired"
+            assert first.structured_content["terminal_at"] is not None
+            assert second.structured_content["status"] == "expired"
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT batch.stage_batch_status,
+                   count(event.model_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count
+              FROM mcp.model_stage_batch AS batch
+              LEFT JOIN mcp.model_change_set_event AS event
+                ON event.model_change_set_id = batch.model_change_set_id
+             WHERE batch.stage_batch_id = %s
+             GROUP BY batch.stage_batch_id
+            """,
+            (stage_batch_id,),
+        ).fetchone()
+
+    assert stored == {"stage_batch_status": "expired", "expired_event_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_stage_model_change_set_persists_expiry_before_rejecting_mutation(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_STAGE_EXPIRY",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-stage-expiry-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
+            assert created.is_error is False
+            change_set_id = created.structured_content["model_change_set_id"]
+            with postgres_database.connect_owner() as connection:
+                connection.execute(
+                    """
+                    UPDATE mcp.model_change_set
+                       SET created_time = clock_timestamp() - INTERVAL '3 hours',
+                           last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+                           expires_time = clock_timestamp() - INTERVAL '1 hour'
+                     WHERE model_change_set_id = %s
+                    """,
+                    (change_set_id,),
+                )
+
+            staged = await client.call_tool(
+                "stage_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "expected_draft_revision": 1,
+                    "changes": [{"dataset": "conceptual_object", "records": []}],
+                },
+            )
+            assert staged.is_error is True
+            assert isinstance(staged.content[0], TextContent)
+            assert "model_change_set_not_active" in staged.content[0].text
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT change_set.model_change_set_status,
+                   change_set.draft_revision,
+                   count(event.model_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'expired'
+                   ) AS expired_event_count
+              FROM mcp.model_change_set AS change_set
+              LEFT JOIN mcp.model_change_set_event AS event
+                ON event.model_change_set_id = change_set.model_change_set_id
+             WHERE change_set.model_change_set_id = %s
+             GROUP BY change_set.model_change_set_id
+            """,
+            (change_set_id,),
+        ).fetchone()
+
+    assert stored == {
+        "model_change_set_status": "expired",
+        "draft_revision": 1,
+        "expired_event_count": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_concurrent_model_change_set_create_is_one_idempotent_draft(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_CREATE_RACE",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-create-race-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            results = await asyncio.gather(
+                client.call_tool("create_model_change_set", {"model_id": model_id}),
+                client.call_tool("create_model_change_set", {"model_id": model_id}),
+            )
+            assert all(result.is_error is False for result in results)
+            assert sorted(
+                result.structured_content["created"] for result in results
+            ) == [
+                False,
+                True,
+            ]
+            assert (
+                len(
+                    {
+                        result.structured_content["model_change_set_id"]
+                        for result in results
+                    }
+                )
+                == 1
+            )
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT count(DISTINCT change_set.model_change_set_id) AS draft_count,
+                   count(event.model_change_set_event_id) FILTER (
+                       WHERE event.event_type = 'created'
+                   ) AS created_event_count
+              FROM mcp.model_change_set AS change_set
+              LEFT JOIN mcp.model_change_set_event AS event
+                ON event.model_change_set_id = change_set.model_change_set_id
+             WHERE change_set.model_id = %s
+               AND change_set.model_change_set_status IN ('active', 'validated')
+            """,
+            (model_id,),
+        ).fetchone()
+
+    assert stored == {"draft_count": 1, "created_event_count": 1}
+
+
+@pytest.mark.asyncio
+async def test_create_expiry_clock_is_captured_after_waiting_for_the_draft_lock(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_EXPIRY_WAIT",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-expiry-wait-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            initial = await client.call_tool(
+                "create_model_change_set",
+                {"model_id": model_id},
+            )
+            assert initial.is_error is False
+            initial_id = initial.structured_content["model_change_set_id"]
+            with postgres_database.connect_owner() as blocker:
+                blocker.execute(
+                    """
+                    SELECT model_change_set_id
+                      FROM mcp.model_change_set
+                     WHERE model_change_set_id = %s
+                     FOR UPDATE
+                    """,
+                    (initial_id,),
+                ).fetchone()
+                lock_time = blocker.execute(
+                    "SELECT clock_timestamp() AS current_time"
+                ).fetchone()
+                assert lock_time is not None
+                blocker.execute(
+                    """
+                    UPDATE mcp.model_change_set
+                       SET created_time = %s - INTERVAL '1 hour',
+                           last_activity_time = %s,
+                           expires_time = %s + INTERVAL '100 milliseconds'
+                     WHERE model_change_set_id = %s
+                    """,
+                    (
+                        lock_time["current_time"],
+                        lock_time["current_time"],
+                        lock_time["current_time"],
+                        initial_id,
+                    ),
+                )
+                waiting_create = asyncio.create_task(
+                    client.call_tool("create_model_change_set", {"model_id": model_id})
+                )
+                await asyncio.sleep(0.2)
+                assert waiting_create.done() is False
+                blocker.commit()
+                replacement = await asyncio.wait_for(waiting_create, timeout=5)
+
+            assert replacement.is_error is False
+            assert replacement.structured_content["created"] is True
+            assert replacement.structured_content["model_change_set_id"] != initial_id
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+                SELECT count(DISTINCT change_set.model_change_set_id) FILTER (
+                           WHERE model_change_set_status IN ('active', 'validated')
+                       ) AS ongoing_count,
+                       count(DISTINCT change_set.model_change_set_id) FILTER (
+                               WHERE change_set.model_change_set_id = %s
+                                 AND change_set.model_change_set_status = 'expired'
+                   ) AS original_expired_count,
+                   count(event.model_change_set_event_id) FILTER (
+                       WHERE event.model_change_set_id = %s
+                         AND event.event_type = 'expired'
+                   ) AS expiry_event_count
+              FROM mcp.model_change_set AS change_set
+              LEFT JOIN mcp.model_change_set_event AS event
+                ON event.model_change_set_id = change_set.model_change_set_id
+             WHERE change_set.model_id = %s
+            """,
+            (initial_id, initial_id, model_id),
+        ).fetchone()
+
+    assert stored == {
+        "ongoing_count": 1,
+        "original_expired_count": 1,
+        "expiry_event_count": 1,
+    }
+
+
+@pytest.mark.asyncio
+async def test_all_model_change_set_mutation_paths_persist_due_expiry_once(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_ALL_EXPIRY",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-all-expiry-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    conceptual_record = _replace_codes(
+        complete_graph()["conceptual_object"][0],
+        code_prefix="MODEL_ALL_EXPIRY",
+    )
+    assert isinstance(conceptual_record, dict)
+    chunk_sha256 = canonical_records_sha256([conceptual_record])
+    batch_sha256 = stage_batch_sha256([chunk_sha256])
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            for operation in ("begin", "put", "commit", "validate", "apply", "archive"):
+                created = await client.call_tool(
+                    "create_model_change_set",
+                    {"model_id": model_id},
+                )
+                assert created.is_error is False
+                change_set_id = created.structured_content["model_change_set_id"]
+                stage_batch_id: str | None = None
+                if operation in {"put", "commit"}:
+                    begun = await client.call_tool(
+                        "begin_model_stage_batch",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "expected_draft_revision": 1,
+                            "dataset": "conceptual_object",
+                            "total_record_count": 1,
+                            "total_chunk_count": 1,
+                            "batch_sha256": batch_sha256,
+                        },
+                    )
+                    assert begun.is_error is False
+                    stage_batch_id = begun.structured_content["stage_batch_id"]
+
+                with postgres_database.connect_owner() as connection:
+                    connection.execute(
+                        """
+                        UPDATE mcp.model_change_set
+                           SET created_time = clock_timestamp() - INTERVAL '3 hours',
+                               last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+                               expires_time = clock_timestamp() - INTERVAL '1 hour'
+                         WHERE model_change_set_id = %s
+                        """,
+                        (change_set_id,),
+                    )
+
+                if operation == "begin":
+                    result = await client.call_tool(
+                        "begin_model_stage_batch",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "expected_draft_revision": 1,
+                            "dataset": "conceptual_object",
+                            "total_record_count": 1,
+                            "total_chunk_count": 1,
+                            "batch_sha256": batch_sha256,
+                        },
+                    )
+                elif operation == "put":
+                    assert stage_batch_id is not None
+                    result = await client.call_tool(
+                        "put_model_stage_chunk",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "stage_batch_id": stage_batch_id,
+                            "dataset": "conceptual_object",
+                            "chunk_index": 1,
+                            "records": [conceptual_record],
+                            "chunk_sha256": chunk_sha256,
+                        },
+                    )
+                elif operation == "commit":
+                    assert stage_batch_id is not None
+                    result = await client.call_tool(
+                        "commit_model_stage_batch",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "stage_batch_id": stage_batch_id,
+                            "expected_draft_revision": 1,
+                        },
+                    )
+                else:
+                    result = await client.call_tool(
+                        f"{operation}_model_change_set",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "expected_draft_revision": 1,
+                        },
+                    )
+
+                assert result.is_error is True, operation
+                assert isinstance(result.content[0], TextContent)
+                assert "model_change_set_not_active" in result.content[0].text
+                with postgres_database.connect_owner() as connection:
+                    stored = connection.execute(
+                        """
+                        SELECT change_set.model_change_set_status,
+                               count(event.model_change_set_event_id) FILTER (
+                                   WHERE event.event_type = 'expired'
+                               ) AS expired_event_count,
+                               count(batch.stage_batch_id) FILTER (
+                                   WHERE batch.stage_batch_status = 'active'
+                               ) AS active_batch_count
+                          FROM mcp.model_change_set AS change_set
+                          LEFT JOIN mcp.model_change_set_event AS event
+                            ON event.model_change_set_id =
+                               change_set.model_change_set_id
+                          LEFT JOIN mcp.model_stage_batch AS batch
+                            ON batch.model_change_set_id =
+                               change_set.model_change_set_id
+                         WHERE change_set.model_change_set_id = %s
+                         GROUP BY change_set.model_change_set_id
+                        """,
+                        (change_set_id,),
+                    ).fetchone()
+                assert stored == {
+                    "model_change_set_status": "expired",
+                    "expired_event_count": 1,
+                    "active_batch_count": 0,
+                }, operation
+    finally:
+        await database.close()
+
+
+@pytest.mark.asyncio
+async def test_put_and_commit_persist_due_model_stage_batch_expiry(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_BATCH_EXPIRY",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-batch-expiry-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+    conceptual_record = _replace_codes(
+        complete_graph()["conceptual_object"][0],
+        code_prefix="MODEL_BATCH_EXPIRY",
+    )
+    assert isinstance(conceptual_record, dict)
+    chunk_sha256 = canonical_records_sha256([conceptual_record])
+    batch_sha256 = stage_batch_sha256([chunk_sha256])
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            created = await client.call_tool(
+                "create_model_change_set",
+                {"model_id": model_id},
+            )
+            assert created.is_error is False
+            change_set_id = created.structured_content["model_change_set_id"]
+            expired_batch_ids: list[str] = []
+            for operation in ("put", "commit"):
+                begun = await client.call_tool(
+                    "begin_model_stage_batch",
+                    {
+                        "model_id": model_id,
+                        "model_change_set_id": change_set_id,
+                        "expected_draft_revision": 1,
+                        "dataset": "conceptual_object",
+                        "total_record_count": 1,
+                        "total_chunk_count": 1,
+                        "batch_sha256": batch_sha256,
+                    },
+                )
+                assert begun.is_error is False
+                stage_batch_id = begun.structured_content["stage_batch_id"]
+                expired_batch_ids.append(stage_batch_id)
+                with postgres_database.connect_owner() as connection:
+                    connection.execute(
+                        """
+                        UPDATE mcp.model_stage_batch
+                           SET created_time = clock_timestamp() - INTERVAL '3 hours',
+                               last_activity_time = clock_timestamp() - INTERVAL '2 hours',
+                               expires_time = clock_timestamp() - INTERVAL '1 hour'
+                         WHERE stage_batch_id = %s
+                        """,
+                        (stage_batch_id,),
+                    )
+
+                if operation == "put":
+                    result = await client.call_tool(
+                        "put_model_stage_chunk",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "stage_batch_id": stage_batch_id,
+                            "dataset": "conceptual_object",
+                            "chunk_index": 1,
+                            "records": [conceptual_record],
+                            "chunk_sha256": chunk_sha256,
+                        },
+                    )
+                else:
+                    result = await client.call_tool(
+                        "commit_model_stage_batch",
+                        {
+                            "model_id": model_id,
+                            "model_change_set_id": change_set_id,
+                            "stage_batch_id": stage_batch_id,
+                            "expected_draft_revision": 1,
+                        },
+                    )
+                assert result.is_error is True
+                assert isinstance(result.content[0], TextContent)
+                assert "stage_batch_not_active" in result.content[0].text
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        stored = connection.execute(
+            """
+            SELECT count(*) FILTER (
+                       WHERE stage_batch_status = 'expired'
+                   ) AS expired_batch_count
+              FROM mcp.model_stage_batch
+             WHERE stage_batch_id = ANY(%s::UUID[])
+            """,
+            (expired_batch_ids,),
+        ).fetchone()
+
+    assert stored == {"expired_batch_count": 2}
 
 
 @pytest.mark.asyncio
@@ -289,6 +1164,18 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             )
             assert applied.is_error is False
             assert applied.structured_content["applied"] is True
+            terminal_replay = await client.call_tool(
+                "commit_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "stage_batch_id": stage_batch_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert terminal_replay.is_error is True
+            assert isinstance(terminal_replay.content[0], TextContent)
+            assert "model_change_set_not_active" in terminal_replay.content[0].text
     finally:
         await database.close()
 

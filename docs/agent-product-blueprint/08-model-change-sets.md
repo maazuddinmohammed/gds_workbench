@@ -163,13 +163,16 @@ owned by the locked Tenant or active global discovery scopes owned by it.
 - Same key and same request digest return the stored response with
   `replayed=true`.
 - Same key and different digest return `idempotency_key_reused`.
-- Successful create, put, and validation refresh the draft TTL; reads do not.
-- A 30-second worker asks PostgreSQL to expire bounded batches using database
-  time and `FOR UPDATE SKIP LOCKED`.
+- Creating, complete-section staging, and validation establish or refresh the
+  draft TTL; reads do not extend it. Chunk puts only refresh batch activity
+  within the parent draft expiry.
+- Governed Model Change Set calls enforce expiry lazily with PostgreSQL-owned
+  wall-clock time after row locking. Expiring a draft also expires its active
+  Stage Batches and appends one retained expiry event.
 - PostgreSQL sequence increments may leave gaps after rollback; row changes do
   not partially commit.
 
-Implementation:
-[`change_sets/feature.py`](../../mcp_server/src/gds_etl_workbench/change_sets/feature.py),
-[`application/compiler.py`](../../mcp_server/src/gds_etl_workbench/application/compiler.py),
-and [`infrastructure/postgres.py`](../../mcp_server/src/gds_etl_workbench/infrastructure/postgres.py).
+Current implementation:
+[`tools/change_sets/model.py`](../../mcp_server/gds_etl_workbench/tools/change_sets/model.py),
+[`tools/change_sets/model_validation.py`](../../mcp_server/gds_etl_workbench/tools/change_sets/model_validation.py),
+and [`tools/change_sets/model_apply.py`](../../mcp_server/gds_etl_workbench/tools/change_sets/model_apply.py).

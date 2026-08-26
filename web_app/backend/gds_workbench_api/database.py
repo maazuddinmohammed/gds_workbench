@@ -22,11 +22,41 @@ type QueryParameters = tuple[Any, ...]
 _READINESS_SQL = """
 SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        to_regclass('application.workflow_run') IS NOT NULL
+       AND to_regclass('application.workflow_stage') IS NOT NULL
+       AND to_regclass('application.workflow_stage_variable') IS NOT NULL
        AND to_regclass('application.prompt_template') IS NOT NULL
        AND to_regclass('application.workflow_run_object_selection') IS NOT NULL
        AND to_regclass('application.generated_sql_artifact') IS NOT NULL
        AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
-       pg_has_role(session_user, 'gds_web_write', 'SET') AS role_ready,
+       current_user = 'gds_web_write'
+       AND EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_roles AS runtime_login
+            WHERE runtime_login.rolname = session_user
+              AND runtime_login.rolcanlogin
+              AND NOT runtime_login.rolsuper
+              AND NOT runtime_login.rolinherit
+              AND NOT runtime_login.rolcreatedb
+              AND NOT runtime_login.rolcreaterole
+              AND NOT runtime_login.rolreplication
+              AND NOT runtime_login.rolbypassrls
+              AND (
+                  SELECT count(*)
+                    FROM pg_catalog.pg_auth_members AS membership
+                   WHERE membership.member = runtime_login.oid
+              ) = 1
+              AND EXISTS (
+                  SELECT 1
+                    FROM pg_catalog.pg_auth_members AS membership
+                    JOIN pg_catalog.pg_roles AS runtime_group
+                      ON runtime_group.oid = membership.roleid
+                   WHERE membership.member = runtime_login.oid
+                     AND runtime_group.rolname = 'gds_web_write'
+                     AND NOT membership.admin_option
+                     AND NOT membership.inherit_option
+                     AND membership.set_option
+              )
+       ) AS role_ready,
        has_table_privilege(
            'gds_web_write',
            'application.workflow_run',
@@ -45,6 +75,22 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'workflow.list_tenant_visible_objects(bigint)',
            'EXECUTE'
        )
+       AND has_function_privilege(
+           'gds_web_write',
+           'workflow.list_model_object_eligibility(bigint)',
+           'EXECUTE'
+       )
+       AND has_function_privilege(
+           'gds_web_write',
+           'workflow.list_model_attribute_eligibility(bigint)',
+           'EXECUTE'
+       )
+       AND has_function_privilege(
+           'gds_web_write',
+           'workflow.list_code_generation_target_context('
+           'bigint,character varying)',
+           'EXECUTE'
+       )
        AND has_table_privilege(
            'gds_web_write',
            'mcp.model_change_set',
@@ -55,6 +101,27 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'mcp.create_metadata_change_set('
            'uuid,uuid,character varying,bigint,uuid,uuid)',
            'EXECUTE'
+       )
+       AND NOT EXISTS (
+           SELECT 1
+             FROM unnest(ARRAY[
+                      'mcp.stage_metadata_change_set('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,jsonb,uuid)',
+                      'mcp.get_metadata_change_set(uuid,uuid,character varying,bigint,uuid)',
+                      'mcp.record_metadata_change_set_validation('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,'
+                      || 'boolean,character,jsonb,uuid,uuid)',
+                      'mcp.apply_metadata_change_set('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,'
+                      || 'character,uuid)',
+                      'mcp.archive_metadata_change_set('
+                      || 'uuid,uuid,character varying,bigint,uuid,bigint,uuid)'
+                  ]) AS required_web_mcp_function(signature)
+            WHERE NOT has_function_privilege(
+                      'gds_web_write',
+                      required_web_mcp_function.signature,
+                      'EXECUTE'
+                  )
        )
        AND NOT has_table_privilege(
            'gds_web_write',
@@ -67,6 +134,46 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'uuid,uuid,character varying,bigint,uuid,bigint,uuid,'
            'character varying,integer,integer,character,uuid)',
            'EXECUTE'
+       )
+       AND NOT has_function_privilege(
+           'gds_web_write',
+           'mcp.get_databricks_sql_connection_values(bigint,text)',
+           'EXECUTE'
+       )
+       AND NOT EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_proc AS mcp_function
+             JOIN pg_catalog.pg_namespace AS namespace_record
+               ON namespace_record.oid = mcp_function.pronamespace
+            WHERE namespace_record.nspname = 'mcp'
+              AND has_function_privilege(
+                      'gds_web_write',
+                      mcp_function.oid,
+                      'EXECUTE'
+                  )
+              AND NOT EXISTS (
+                      SELECT 1
+                        FROM unnest(ARRAY[
+                                 'mcp.create_metadata_change_set('
+                                 || 'uuid,uuid,character varying,bigint,uuid,uuid)',
+                                 'mcp.stage_metadata_change_set('
+                                 || 'uuid,uuid,character varying,bigint,uuid,'
+                                 || 'bigint,jsonb,uuid)',
+                                 'mcp.get_metadata_change_set('
+                                 || 'uuid,uuid,character varying,bigint,uuid)',
+                                 'mcp.record_metadata_change_set_validation('
+                                 || 'uuid,uuid,character varying,bigint,uuid,bigint,'
+                                 || 'boolean,character,jsonb,uuid,uuid)',
+                                 'mcp.apply_metadata_change_set('
+                                 || 'uuid,uuid,character varying,bigint,uuid,bigint,'
+                                 || 'character,uuid)',
+                                 'mcp.archive_metadata_change_set('
+                                 || 'uuid,uuid,character varying,bigint,uuid,bigint,uuid)'
+                             ]) AS allowed_web_mcp_function(signature)
+                       WHERE to_regprocedure(
+                                 allowed_web_mcp_function.signature
+                             ) = mcp_function.oid
+                  )
        )
        AND has_table_privilege(
            'gds_web_write',
@@ -82,7 +189,76 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'gds_web_write',
            'core.connection_value',
            'SELECT'
-       ) AS privileges_ready
+       ) AS privileges_ready,
+       EXISTS (
+           SELECT 1
+             FROM information_schema.columns AS column_record
+            WHERE column_record.table_schema = 'application'
+              AND column_record.table_name = 'workflow_run'
+              AND column_record.column_name = 'tenant_id'
+              AND column_record.data_type = 'bigint'
+              AND column_record.is_nullable = 'NO'
+       )
+       AND EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_constraint AS constraint_record
+            WHERE constraint_record.conrelid =
+                  'application.workflow_run'::REGCLASS
+              AND constraint_record.conname = 'fk_workflow_run_model'
+              AND constraint_record.contype = 'f'
+              AND constraint_record.convalidated
+              AND pg_catalog.pg_get_constraintdef(constraint_record.oid) =
+                  'FOREIGN KEY (model_id, tenant_id) '
+                  'REFERENCES model.model(model_id, tenant_id)'
+       )
+       AND EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_index AS index_record
+             JOIN pg_catalog.pg_class AS index_relation
+               ON index_relation.oid = index_record.indexrelid
+            WHERE index_record.indrelid = 'application.workflow_run'::REGCLASS
+              AND index_relation.relname = 'uq_workflow_run_running_tenant'
+              AND index_record.indisunique
+              AND index_record.indisvalid
+              AND index_record.indisready
+              AND index_record.indnkeyatts = 1
+              AND pg_catalog.pg_get_indexdef(
+                      index_relation.oid,
+                      1,
+                      TRUE
+                  ) = 'tenant_id'
+              AND pg_catalog.pg_get_expr(
+                      index_record.indpred,
+                      index_record.indrelid
+                  ) = '((workflow_run_state)::text = ''running''::text)'
+       )
+       AND EXISTS (
+           SELECT 1
+             FROM pg_catalog.pg_proc AS function_record
+            WHERE function_record.oid = pg_catalog.to_regprocedure(
+                      'application.start_workflow_run('
+                      'uuid,uuid,character varying,bigint,bigint)'
+                  )
+              AND function_record.prosecdef
+              AND function_record.provolatile = 'v'
+              AND function_record.proconfig =
+                  ARRAY['search_path=pg_catalog']::TEXT[]
+              AND function_record.prosrc LIKE
+                  '%active_run.tenant_id = v_run.tenant_id%'
+              AND function_record.prosrc LIKE
+                  '%uq_workflow_run_running_tenant%'
+              AND function_record.prosrc LIKE '%tenant_workflow_conflict%'
+       ) AS workflow_guard_ready,
+       (SELECT count(*) = 47
+          FROM application.workflow_stage)
+       AND (SELECT count(*) = 47
+              FROM application.workflow_stage
+             WHERE is_active)
+       AND (SELECT count(*) = 78
+              FROM application.workflow_stage_variable)
+       AND (SELECT count(*) = 78
+              FROM application.workflow_stage_variable
+             WHERE is_active) AS application_reference_ready
 """
 
 
@@ -142,6 +318,8 @@ class WebPostgresDatabase:
             if row is None or row["postgres_major"] != 18:
                 return ReadinessRecord(ready=False, code="database_version_invalid")
             if not row["schema_ready"]:
+                return ReadinessRecord(ready=False, code="database_schema_unavailable")
+            if not row["workflow_guard_ready"] or not row["application_reference_ready"]:
                 return ReadinessRecord(ready=False, code="database_schema_unavailable")
             if not row["role_ready"] or not row["privileges_ready"]:
                 return ReadinessRecord(ready=False, code="database_role_invalid")

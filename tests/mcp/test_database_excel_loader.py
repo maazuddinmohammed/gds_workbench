@@ -6,8 +6,10 @@ import sys
 import textwrap
 from pathlib import Path
 from typing import TYPE_CHECKING, Any, Literal, LiteralString, cast
+from uuid import uuid4
 
 import psycopg
+import pytest
 from psycopg import sql
 
 REPOSITORY_ROOT = Path(__file__).parents[2]
@@ -320,6 +322,69 @@ def test_all_configured_merges_parse_and_environment_is_idempotent(
             "FROM reference.environment WHERE environment_code = 'INTEGRATION_TEST'"
         ).fetchone()
         assert stored == (1, "Integration Test Updated", role_name, role_name)
+    finally:
+        connection.rollback()
+        connection.close()
+
+
+def test_bootstrap_loader_refuses_after_a_queued_application_workflow_run(
+    bootstrap_postgres_database: DisposablePostgres,
+) -> None:
+    postgres_database = bootstrap_postgres_database
+    suffix = secrets.token_hex(8)
+    with postgres_database.connect_owner() as owner:
+        project_id = owner.execute(
+            "INSERT INTO core.project (project_code, project_name) "
+            "VALUES (%s, %s) RETURNING project_id",
+            (f"LOADER_RUN_{suffix}", f"Loader Run {suffix}"),
+        ).fetchone()["project_id"]
+        tenant_id = owner.execute(
+            "INSERT INTO core.tenant "
+            "(project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog) "
+            "VALUES (%s, %s, %s, %s, %s) RETURNING tenant_id",
+            (
+                project_id,
+                f"LOADER_RUN_{suffix}",
+                f"Loader Run {suffix}",
+                f"loader_run_{suffix}",
+                f"loader_admin_{suffix}",
+            ),
+        ).fetchone()["tenant_id"]
+        principal_id = owner.execute(
+            "INSERT INTO security.principal "
+            "(principal_type, principal_display_name, principal_email) "
+            "VALUES ('user', %s, %s) RETURNING principal_id",
+            (f"Loader Run {suffix}", f"loader-run-{suffix}@example.test"),
+        ).fetchone()["principal_id"]
+        model_id = owner.execute(
+            "INSERT INTO model.model (tenant_id, model_name) "
+            "VALUES (%s, %s) RETURNING model_id",
+            (tenant_id, f"Loader Run {suffix}"),
+        ).fetchone()["model_id"]
+        owner.execute(
+            "INSERT INTO application.workflow_run "
+            "(tenant_id, model_id, model_revision, model_workflow, "
+            "actor_principal_id, selected_scope_digest, selected_scope_count, "
+            "correlation_id) VALUES (%s, %s, 1, 'profiling', %s, %s, 1, %s)",
+            (tenant_id, model_id, principal_id, "0" * 64, str(uuid4())),
+        )
+
+    definitions = _configured_definitions()
+    environment = next(
+        definition
+        for definition in definitions
+        if definition.selection == ("reference.xlsx", "Environment")
+    )
+    role_name = f"gds_excel_loader_{secrets.token_hex(8)}"
+    connection = _connect_as_loader(postgres_database, role_name, definitions)
+    try:
+        with pytest.raises(
+            loader.LoaderError, match="before governed runtime activity"
+        ):
+            loader.execute_prepared_loads(
+                connection,
+                (loader.PreparedLoad(environment, ()),),
+            )
     finally:
         connection.rollback()
         connection.close()

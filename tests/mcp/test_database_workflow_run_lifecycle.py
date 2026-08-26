@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass, replace
 from hashlib import sha256
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -395,6 +395,93 @@ def create_workflow_run_parameters(
         correlation_id,
         "{}",
     )
+
+
+def _create_and_start_profiling_run(
+    postgres_database: DisposablePostgres,
+    context: WorkflowContext,
+) -> int:
+    with postgres_database.connect_owner() as connection:
+        created = require_row(
+            connection.execute(
+                CREATE_WORKFLOW_RUN_SQL,
+                create_workflow_run_parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    workflow="profiling",
+                    execution_mode=None,
+                ),
+            ).fetchone()
+        )
+        connection.execute(
+            """
+            SELECT *
+              FROM application.start_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                created["workflow_run_id"],
+                context.model_revision,
+            ),
+        )
+    return int(created["workflow_run_id"])
+
+
+def _claim_specific_workflow_run(
+    postgres_database: DisposablePostgres,
+    workflow_run_id: int,
+) -> dict[str, object]:
+    held_claims: list[dict[str, object]] = []
+    with postgres_database.connect_owner() as connection:
+        running_count = require_row(
+            connection.execute(
+                """
+                SELECT count(*)::INTEGER AS running_count
+                  FROM application.workflow_run
+                 WHERE workflow_run_state = 'running'
+                """
+            ).fetchone()
+        )["running_count"]
+        for _ in range(running_count + 1):
+            claim = connection.execute(
+                "SELECT * FROM application.claim_next_workflow_run(30)"
+            ).fetchone()
+            if claim is None:
+                break
+            claim_record = dict(claim)
+            if claim_record["workflow_run_id"] == workflow_run_id:
+                for held in held_claims:
+                    connection.execute(
+                        "SELECT application.release_workflow_run_claim(%s, %s)",
+                        (
+                            held["workflow_run_id"],
+                            held["workflow_run_claim_token"],
+                        ),
+                    )
+                return claim_record
+            held_claims.append(claim_record)
+
+        for held in held_claims:
+            connection.execute(
+                "SELECT application.release_workflow_run_claim(%s, %s)",
+                (held["workflow_run_id"], held["workflow_run_claim_token"]),
+            )
+    raise AssertionError("Target Workflow Run was not claimable")
+
+
+def _release_claim_if_present(
+    connection: Any,
+    claim: dict[str, object] | None,
+) -> None:
+    if claim is not None:
+        connection.execute(
+            "SELECT application.release_workflow_run_claim(%s, %s)",
+            (claim["workflow_run_id"], claim["workflow_run_claim_token"]),
+        )
 
 
 def _seed_bronze_model_scope(
@@ -1011,7 +1098,7 @@ def _code_generation_parameters(
     *,
     object_ids: list[int],
     correlation_id: UUID,
-    coverage_mode: str,
+    coverage_mode: str | None,
     guide_version_id: int | None,
 ) -> tuple[object, ...]:
     return (
@@ -1138,6 +1225,33 @@ def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
     assert created["sql_generation_guide_version_id"] == guide_version_id
     assert created["sql_generation_guide_digest"] == guide_digest
     assert selection == [{"object_id": target_id, "selection_order": 1}]
+
+
+def test_create_code_generation_run_rejects_a_null_coverage_mode(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    target_id = _seed_code_generation_target(postgres_database, context)
+    _guide_id, guide_version_id, _guide_digest = _seed_published_sql_generation_guide(
+        postgres_database,
+        context,
+        is_default=False,
+    )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="coverage mode"),
+    ):
+        connection.execute(
+            CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL,
+            _code_generation_parameters(
+                context,
+                object_ids=[target_id],
+                correlation_id=uuid4(),
+                coverage_mode=None,
+                guide_version_id=guide_version_id,
+            ),
+        )
 
 
 def test_create_code_generation_run_derives_all_eligible_targets_only_from_empty_input(
@@ -1513,6 +1627,77 @@ def test_workflow_run_constraint_requires_mapping_entity_type(
                 context.model_id,
                 context.model_revision,
                 context.principal_id,
+                uuid4(),
+            ),
+        )
+
+
+def test_workflow_run_constraint_requires_code_generation_coverage_mode(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    guide_id, guide_version_id, guide_digest = _seed_published_sql_generation_guide(
+        postgres_database,
+        context,
+        is_default=False,
+    )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(CheckViolation),
+    ):
+        connection.execute(
+            """
+            INSERT INTO application.workflow_run (
+                tenant_id,
+                model_id,
+                model_revision,
+                model_workflow,
+                actor_principal_id,
+                agent_sdk_code,
+                agent_provider_code,
+                agent_model_code,
+                reasoning_effort_code,
+                max_turns,
+                validation_retry_count,
+                modeled_entity_type,
+                code_generation_coverage_mode,
+                sql_generation_guide_id,
+                sql_generation_guide_version_id,
+                sql_generation_guide_digest,
+                selected_scope_digest,
+                selected_scope_count,
+                correlation_id
+            ) VALUES (
+                %s,
+                %s,
+                %s,
+                'code_generation',
+                %s,
+                'openai_agents_sdk',
+                'microsoft_foundry',
+                'default-model',
+                'medium',
+                12,
+                2,
+                'logical_entity',
+                NULL,
+                %s,
+                %s,
+                %s,
+                repeat('0', 64),
+                1,
+                %s
+            )
+            """,
+            (
+                context.tenant_id,
+                context.model_id,
+                context.model_revision,
+                context.principal_id,
+                guide_id,
+                guide_version_id,
+                guide_digest,
                 uuid4(),
             ),
         )
@@ -2054,6 +2239,578 @@ def test_create_and_complete_require_identity_role_owned_lock_and_revision(
         )["count"]
 
     assert rejected_count == 0
+
+
+def test_create_workflow_run_rejects_a_null_expected_model_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    correlation_id = uuid4()
+    parameters = list(
+        create_workflow_run_parameters(context, correlation_id=correlation_id)
+    )
+    parameters[3] = None
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(CREATE_WORKFLOW_RUN_SQL, parameters)
+
+
+def test_start_workflow_run_rejects_a_null_expected_model_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        created = require_row(
+            connection.execute(
+                CREATE_WORKFLOW_RUN_SQL,
+                create_workflow_run_parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    workflow="profiling",
+                    execution_mode=None,
+                ),
+            ).fetchone()
+        )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.start_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, NULL::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                created["workflow_run_id"],
+            ),
+        )
+
+
+def test_append_workflow_event_rejects_a_null_expected_model_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.append_workflow_run_event(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, NULL::BIGINT, 2::BIGINT, 1::INTEGER,
+                  'prepare'::VARCHAR, 'running'::VARCHAR,
+                  'Preparing bounded workflow context.'::VARCHAR,
+                  0::INTEGER, 1::INTEGER, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+            ),
+        )
+
+
+def test_append_workflow_event_rejects_a_null_event_sequence(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="event sequence"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.append_workflow_run_event(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT, NULL::BIGINT, 1::INTEGER,
+                  'prepare'::VARCHAR, 'running'::VARCHAR,
+                  'Preparing bounded workflow context.'::VARCHAR,
+                  0::INTEGER, 1::INTEGER, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                context.model_revision,
+            ),
+        )
+
+
+def test_append_workflow_event_rejects_a_null_status(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="event status"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.append_workflow_run_event(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT, 2::BIGINT, 1::INTEGER,
+                  'prepare'::VARCHAR, NULL::VARCHAR,
+                  'Preparing bounded workflow context.'::VARCHAR,
+                  0::INTEGER, 1::INTEGER, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                context.model_revision,
+            ),
+        )
+
+
+def test_append_workflow_event_rejects_a_null_attempt(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="event attempt"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.append_workflow_run_event(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT, 2::BIGINT, NULL::INTEGER,
+                  'prepare'::VARCHAR, 'running'::VARCHAR,
+                  'Preparing bounded workflow context.'::VARCHAR,
+                  0::INTEGER, 1::INTEGER, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                context.model_revision,
+            ),
+        )
+
+
+def test_append_workflow_event_replay_still_requires_a_revision_fence(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+    statement = """
+        SELECT *
+          FROM application.append_workflow_run_event(
+              %s::UUID, %s::UUID, 'user'::VARCHAR,
+              %s::BIGINT, %s::BIGINT, 2::BIGINT, 1::INTEGER,
+              'prepare'::VARCHAR, 'running'::VARCHAR,
+              'Preparing bounded workflow context.'::VARCHAR,
+              0::INTEGER, 1::INTEGER, 0::INTEGER
+          )
+    """
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            statement,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                context.model_revision,
+            ),
+        )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            statement,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                None,
+            ),
+        )
+
+
+def test_complete_workflow_run_rejects_a_null_expected_model_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.complete_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, NULL::BIGINT, 0::INTEGER
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+            ),
+        )
+
+
+def test_fail_workflow_run_rejects_a_null_expected_model_revision(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.fail_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, NULL::BIGINT,
+                  'provider_timeout'::VARCHAR,
+                  'Registered provider timed out.'::VARCHAR
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+            ),
+        )
+
+
+def test_release_workflow_run_claim_rejects_an_expired_lease(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+    claim = _claim_specific_workflow_run(postgres_database, workflow_run_id)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE application.workflow_run
+               SET workflow_run_claimed_time =
+                       clock_timestamp() - INTERVAL '3 seconds',
+                   workflow_run_claim_heartbeat_time =
+                       clock_timestamp() - INTERVAL '2 seconds',
+                   workflow_run_claim_expires_time =
+                       clock_timestamp() - INTERVAL '1 second'
+             WHERE workflow_run_id = %s
+            """,
+            (workflow_run_id,),
+        )
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="claim is unavailable"),
+    ):
+        connection.execute(
+            "SELECT application.release_workflow_run_claim(%s, %s)",
+            (workflow_run_id, claim["workflow_run_claim_token"]),
+        )
+
+
+def test_archive_model_rejects_a_running_tenant_workflow(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="tenant_workflow_conflict"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.archive_model(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                context.model_id,
+                context.model_revision,
+            ),
+        )
+
+
+def test_claim_terminalizes_a_running_run_with_an_inactive_model(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE model.model SET is_active = FALSE WHERE model_id = %s",
+            (context.model_id,),
+        )
+        claim = connection.execute(
+            "SELECT * FROM application.claim_next_workflow_run(30)"
+        ).fetchone()
+        _release_claim_if_present(
+            connection,
+            None if claim is None else dict(claim),
+        )
+        repeated_claim = connection.execute(
+            "SELECT * FROM application.claim_next_workflow_run(30)"
+        ).fetchone()
+        _release_claim_if_present(
+            connection,
+            None if repeated_claim is None else dict(repeated_claim),
+        )
+        run = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state, failure_code, failure_message
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )
+        events = connection.execute(
+            """
+            SELECT model_event_log_status, model_event_log_message
+              FROM model.model_event_log
+             WHERE workflow_run_id = %s
+               AND model_event_log_status = 'failed'
+            """,
+            (workflow_run_id,),
+        ).fetchall()
+        connection.execute(
+            "UPDATE model.model SET is_active = TRUE WHERE model_id = %s",
+            (context.model_id,),
+        )
+        replacement = require_row(
+            connection.execute(
+                CREATE_WORKFLOW_RUN_SQL,
+                create_workflow_run_parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    workflow="profiling",
+                    execution_mode=None,
+                ),
+            ).fetchone()
+        )
+        replacement_state = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state
+                  FROM application.start_workflow_run(
+                      %s::UUID, %s::UUID, 'user'::VARCHAR,
+                      %s::BIGINT, %s::BIGINT
+                  )
+                """,
+                (
+                    context.entra_tenant_id,
+                    context.entra_object_id,
+                    replacement["workflow_run_id"],
+                    context.model_revision,
+                ),
+            ).fetchone()
+        )["workflow_run_state"]
+
+    assert run == {
+        "workflow_run_state": "failed",
+        "failure_code": "workflow_run_context_unavailable",
+        "failure_message": "Workflow Run execution context is unavailable.",
+    }
+    assert events == [
+        {
+            "model_event_log_status": "failed",
+            "model_event_log_message": (
+                "Workflow Run execution context is unavailable."
+            ),
+        }
+    ]
+    assert replacement_state == "running"
+
+
+@pytest.mark.parametrize("inactive_record", ("actor", "identity"))
+def test_claim_terminalizes_a_running_run_with_an_inactive_actor_identity(
+    postgres_database: DisposablePostgres,
+    inactive_record: str,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+    with postgres_database.connect_owner() as connection:
+        if inactive_record == "actor":
+            connection.execute(
+                """
+                UPDATE security.principal
+                   SET is_active = FALSE
+                 WHERE principal_id = %s
+                """,
+                (context.principal_id,),
+            )
+        else:
+            connection.execute(
+                """
+                UPDATE security.entra_principal_identity
+                   SET is_active = FALSE
+                 WHERE principal_id = %s
+                   AND principal_type = 'user'
+                """,
+                (context.principal_id,),
+            )
+        claim = connection.execute(
+            "SELECT * FROM application.claim_next_workflow_run(30)"
+        ).fetchone()
+        _release_claim_if_present(
+            connection,
+            None if claim is None else dict(claim),
+        )
+        run = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state, failure_code
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )
+        failed_event_count = require_row(
+            connection.execute(
+                """
+                SELECT count(*) AS event_count
+                  FROM model.model_event_log
+                 WHERE workflow_run_id = %s
+                   AND model_event_log_status = 'failed'
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )["event_count"]
+
+    assert run == {
+        "workflow_run_state": "failed",
+        "failure_code": "workflow_run_context_unavailable",
+    }
+    assert failed_event_count == 1
+
+
+def test_claim_terminalizes_a_running_run_with_an_ambiguous_unbound_identity(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    correlation_id = uuid4()
+    with postgres_database.connect_owner() as connection:
+        workflow_run_id = require_row(
+            connection.execute(
+                """
+                INSERT INTO application.workflow_run (
+                    tenant_id,
+                    model_id,
+                    model_revision,
+                    model_workflow,
+                    actor_principal_id,
+                    actor_entra_principal_identity_id,
+                    selected_scope_digest,
+                    selected_scope_count,
+                    workflow_run_state,
+                    correlation_id,
+                    started_time
+                ) VALUES (
+                    %s, %s, %s, 'profiling', %s, NULL,
+                    repeat('0', 64), 1, 'running', %s, clock_timestamp()
+                )
+                RETURNING workflow_run_id
+                """,
+                (
+                    context.tenant_id,
+                    context.model_id,
+                    context.model_revision,
+                    context.principal_id,
+                    correlation_id,
+                ),
+            ).fetchone()
+        )["workflow_run_id"]
+        connection.execute(
+            """
+            INSERT INTO model.model_event_log (
+                model_id,
+                correlation_id,
+                workflow_run_id,
+                model_event_log_sequence,
+                model_event_log_attempt,
+                model_workflow,
+                model_event_log_stage,
+                model_event_log_status,
+                model_event_log_message,
+                finding_count
+            ) VALUES (
+                %s, %s, %s, 1, 1, 'profiling', 'workflow_run',
+                'started', 'Workflow run started.', 0
+            )
+            """,
+            (context.model_id, correlation_id, workflow_run_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO security.entra_principal_identity (
+                principal_id,
+                principal_type,
+                entra_tenant_id,
+                entra_object_id
+            ) VALUES (%s, 'user', %s, %s)
+            """,
+            (context.principal_id, uuid4(), uuid4()),
+        )
+        claim = connection.execute(
+            "SELECT * FROM application.claim_next_workflow_run(30)"
+        ).fetchone()
+        _release_claim_if_present(
+            connection,
+            None if claim is None else dict(claim),
+        )
+        run = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state, failure_code
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
+                """,
+                (workflow_run_id,),
+            ).fetchone()
+        )
+
+    assert run == {
+        "workflow_run_state": "failed",
+        "failure_code": "workflow_run_context_unavailable",
+    }
 
 
 def test_fail_workflow_run_requires_the_owned_lock_and_records_safe_failure(

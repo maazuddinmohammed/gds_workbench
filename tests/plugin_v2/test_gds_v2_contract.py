@@ -12,8 +12,14 @@ def test_plugin_exposes_one_strict_gds_router() -> None:
     manifest = json.loads((PLUGIN_ROOT / ".codex-plugin" / "plugin.json").read_text())
 
     assert manifest["name"] == "gds"
+    assert manifest["version"] == "0.1.1"
     assert manifest["skills"] == "./skills/"
     assert manifest["mcpServers"] == "./.mcp.json"
+    assert manifest["interface"]["defaultPrompt"] == [
+        "Initialize GDS Workbench.",
+        "Resume my current GDS session.",
+        "Open the local GDS Workbench.",
+    ]
     assert [path.name for path in (PLUGIN_ROOT / "skills").iterdir()] == ["gds"]
 
     skill = (PLUGIN_ROOT / "skills" / "gds" / "SKILL.md").read_text()
@@ -27,6 +33,68 @@ def test_plugin_exposes_one_strict_gds_router() -> None:
     assert "Pure explanations must answer directly" in skill
     assert "For predefined Model work" in skill
     assert "generic Metadata mutation or assertion preparation" in skill
+    assert "docs/USER_GUIDE.md" not in skill
+    assert "references/getting-started.md" not in skill
+    assert "references/prompt-guide.md" not in skill
+
+
+def test_prompt_guide_covers_supported_routes_and_boundaries() -> None:
+    guide_path = PLUGIN_ROOT / "docs" / "USER_GUIDE.md"
+    guide = guide_path.read_text()
+
+    assert guide_path.is_file()
+    assert "human-readable documentation" in guide
+    assert "agent does not load it as skill instructions" in guide
+    assert "codex plugin add gds@<MARKETPLACE>" in guide
+
+    assert all(
+        category in guide
+        for category in (
+            "Metadata",
+            "Profiling",
+            "Analysis",
+            "Conceptual",
+            "Logical",
+            "Dimensional",
+            "Mapping",
+            "Code Generation",
+            "Validation",
+            "Ad Hoc",
+        )
+    )
+    assert all(
+        mode in guide for mode in ("Guided", "Automatic", "Custom", "Full", "Selected")
+    )
+    assert all(
+        target in guide
+        for target in (
+            "Logical Build",
+            "Silver Target Registration",
+            "Logical Mapping",
+            "Logical Code Generation",
+            "Dimensional Build",
+            "Gold Target Registration",
+            "Dimensional Mapping",
+            "Dimensional Code Generation",
+        )
+    )
+    assert "Profiling is not a V2 execution target" in guide
+    assert "Fresh Apply approval" in guide
+    assert "never executed, uploaded, or deployed" in guide
+    assert "Mutate Model Scope" in guide
+    assert "`GeneratorDocumentV1`" in guide
+    assert "four parts" in guide
+    assert "one Tenant Code and one Model" in guide
+    assert "download and unzip exactly one fresh" in guide
+    assert "does not precede it with inspect" in guide
+    assert "not unattended" in guide
+    assert "Local Workbench" in guide
+    assert "Gold target Object plus source System" in guide
+    assert "if it is already `validated`" in guide
+    assert "`<environment_code>`" in guide
+    assert "`catalog.schema.table`" in guide
+    assert "approval before acquiring an unowned lock" in guide
+    assert "explicit user direction and a reason" in guide
 
 
 def test_session_contract_is_compact_and_gate_driven() -> None:
@@ -126,7 +194,10 @@ def test_registration_scope_and_mapping_are_separate_boundaries() -> None:
     assert "outside public MCP and this plugin" in router
     assert "Mapping remains a separate later task" in registration
     assert "never creates or stages `model_scope`" in registration
-    assert "`model_scope` is Snapshot-readable but never Change Set-writable" in change_sets
+    assert (
+        "`model_scope` is Snapshot-readable but never Change Set-writable"
+        in change_sets
+    )
     assert "model-change-set/model_scope.json" in change_sets
 
 
@@ -151,12 +222,7 @@ def test_target_registration_applies_independently_optional_model_policies() -> 
 
 def test_analysis_allows_inference_without_fabricated_validation() -> None:
     workflow = (
-        PLUGIN_ROOT
-        / "skills"
-        / "gds"
-        / "references"
-        / "workflows"
-        / "logical-build.md"
+        PLUGIN_ROOT / "skills" / "gds" / "references" / "workflows" / "logical-build.md"
     ).read_text()
 
     assert "An Analysis row may be inference-only" in workflow
@@ -167,9 +233,7 @@ def test_analysis_allows_inference_without_fabricated_validation() -> None:
 
 
 def test_mapping_and_code_never_invent_missing_executable_contracts() -> None:
-    workflow_root = (
-        PLUGIN_ROOT / "skills" / "gds" / "references" / "workflows"
-    )
+    workflow_root = PLUGIN_ROOT / "skills" / "gds" / "references" / "workflows"
     mapping = (workflow_root / "mapping.md").read_text()
     code = (workflow_root / "code-generation.md").read_text()
 
@@ -184,7 +248,9 @@ def test_mapping_and_code_never_invent_missing_executable_contracts() -> None:
     assert "Python file or notebook" in code
 
 
-def test_local_authority_excludes_application_prompt_and_workflow_run_surfaces() -> None:
+def test_local_authority_excludes_application_prompt_and_workflow_run_surfaces() -> (
+    None
+):
     skill = (PLUGIN_ROOT / "skills" / "gds" / "SKILL.md").read_text()
     workbench = (
         PLUGIN_ROOT / "skills" / "gds" / "references" / "workbench.md"
@@ -199,12 +265,7 @@ def test_local_authority_excludes_application_prompt_and_workflow_run_surfaces()
 
 def test_logical_automatic_build_has_complete_ordered_coverage() -> None:
     workflow = (
-        PLUGIN_ROOT
-        / "skills"
-        / "gds"
-        / "references"
-        / "workflows"
-        / "logical-build.md"
+        PLUGIN_ROOT / "skills" / "gds" / "references" / "workflows" / "logical-build.md"
     ).read_text()
 
     assert "Analysis → Conceptual → Logical" in workflow
