@@ -47,4 +47,5 @@ if ($browserItem.PSIsContainer -or ($browserItem.Attributes -band [IO.FileAttrib
     throw 'Chrome or Edge executable is unsafe.'
 }
 
-Start-Process -FilePath $browserItem.FullName -ArgumentList @($indexItem.FullName)
+$indexUri = [Uri]$indexItem.FullName
+Start-Process -FilePath $browserItem.FullName -ArgumentList @($indexUri.AbsoluteUri)

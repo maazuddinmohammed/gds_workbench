@@ -60,6 +60,51 @@ def run_powershell(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def parse_powershell(script: Path) -> subprocess.CompletedProcess[str]:
+    script_literal = str(script).replace("'", "''")
+    parser = (
+        "$tokens = $null; $errors = $null; "
+        "[void][System.Management.Automation.Language.Parser]::ParseFile("
+        f"'{script_literal}', [ref]$tokens, [ref]$errors); "
+        "if ($errors.Count -gt 0) { "
+        "$errors | ForEach-Object { [Console]::Error.WriteLine($_.Message) }; exit 1 }"
+    )
+    if POWERSHELL_DOCKER_IMAGE:
+        command = [
+            "docker",
+            "run",
+            "--rm",
+            "--network",
+            "none",
+            "--entrypoint",
+            "pwsh",
+            "-v",
+            f"{REPOSITORY_ROOT}:{REPOSITORY_ROOT}:ro",
+            "-w",
+            str(REPOSITORY_ROOT),
+            POWERSHELL_DOCKER_IMAGE,
+            "-NoProfile",
+            "-Command",
+            parser,
+        ]
+    else:
+        assert POWERSHELL_COMMAND is not None
+        command = [
+            POWERSHELL_COMMAND,
+            "-NoProfile",
+            "-Command",
+            parser,
+        ]
+    return subprocess.run(
+        command,
+        cwd=REPOSITORY_ROOT,
+        text=True,
+        capture_output=True,
+        timeout=30,
+        check=False,
+    )
+
+
 def run_javascript(*arguments: str) -> subprocess.CompletedProcess[str]:
     return subprocess.run(
         ["node", str(JAVASCRIPT_HELPER), *arguments],
@@ -69,6 +114,16 @@ def run_javascript(*arguments: str) -> subprocess.CompletedProcess[str]:
         timeout=20,
         check=False,
     )
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+@pytest.mark.parametrize("script", (HELPER, SKILL_ROOT / "scripts/open-workbench.ps1"))
+def test_powershell_scripts_parse_without_errors(script: Path) -> None:
+    result = parse_powershell(script)
+
+    assert result.returncode == 0, result.stderr
 
 
 def write_metadata_snapshot_manifest(
@@ -2445,7 +2500,7 @@ def test_powershell_model_physical_scope_matches_javascript(tmp_path: Path) -> N
     assert output["valid"] is False
     assert (
         sum("model_scope_reference_invalid" in issue[2] for issue in output["issues"])
-        == 10
+        == 11
     )
     if shutil.which("node"):
         javascript = run_javascript(

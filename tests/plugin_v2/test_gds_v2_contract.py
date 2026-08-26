@@ -18,7 +18,7 @@ def test_plugin_exposes_one_strict_gds_router() -> None:
         "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
     )
     assert manifest["name"] == "gds"
-    assert manifest["version"] == "0.2.0"
+    assert manifest["version"] == "0.2.1"
     assert mcp_manifest == {
         "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
         "mcpServers": {

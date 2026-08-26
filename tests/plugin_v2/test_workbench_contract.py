@@ -229,3 +229,5 @@ def test_powershell_launcher_has_no_server_or_runtime_dependency() -> None:
     assert "npm" not in source.lower()
     assert "msedge.exe" in source
     assert "chrome.exe" in source
+    assert "$indexUri = [Uri]$indexItem.FullName" in source
+    assert "-ArgumentList @($indexUri.AbsoluteUri)" in source
