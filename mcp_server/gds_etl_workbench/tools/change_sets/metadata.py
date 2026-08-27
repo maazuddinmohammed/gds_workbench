@@ -1222,7 +1222,7 @@ def _stage_document(change: StageChange) -> list[dict[str, object]]:
                 ensure_ascii=False,
                 separators=(",", ":"),
             )
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             raise InvalidRequestError(
                 f"{change.dataset} record {record_number} field record "
                 "does not match its published schema."

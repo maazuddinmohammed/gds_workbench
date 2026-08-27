@@ -1,5 +1,7 @@
 """Read contracts for profiled Objects and Attribute Profiles."""
 
+from __future__ import annotations
+
 from datetime import datetime
 from decimal import Decimal
 

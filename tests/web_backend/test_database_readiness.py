@@ -7,11 +7,10 @@ from typing import LiteralString, cast
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
+from gds_workbench_api.database import WebPostgresDatabase
 from psycopg import sql
 
-from gds_workbench_api.database import WebPostgresDatabase
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
-
 
 APPLICATION_REFERENCE_SEED = (
     Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
@@ -60,6 +59,25 @@ async def test_readiness_accepts_a_random_fixture_login_with_exact_web_posture(
     assert readiness_postgres.web_runtime_user != "gds_web_runtime"
 
     readiness = await _readiness(readiness_postgres)
+
+    assert readiness == ReadinessRecord(ready=True, code="ready")
+
+
+@pytest.mark.asyncio
+async def test_readiness_accepts_notebook_login_with_exact_web_posture(
+    readiness_postgres: DisposablePostgres,
+) -> None:
+    database = WebPostgresDatabase(
+        dsn=readiness_postgres.notebook_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
+    )
+    await database.open()
+    try:
+        readiness = await database.readiness()
+    finally:
+        await database.close()
 
     assert readiness == ReadinessRecord(ready=True, code="ready")
 
@@ -144,7 +162,8 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
         "mcp.create_metadata_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, UUID)",
         "mcp.stage_metadata_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, JSONB, UUID)",
         "mcp.get_metadata_change_set(UUID, UUID, VARCHAR, BIGINT, UUID)",
-        "mcp.record_metadata_change_set_validation(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, BOOLEAN, CHAR, JSONB, UUID, UUID)",
+        "mcp.record_metadata_change_set_validation("
+        "UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, BOOLEAN, CHAR, JSONB, UUID, UUID)",
         "mcp.apply_metadata_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, CHAR, UUID)",
         "mcp.archive_metadata_change_set(UUID, UUID, VARCHAR, BIGINT, UUID, BIGINT, UUID)",
     ],

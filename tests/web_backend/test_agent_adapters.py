@@ -14,8 +14,8 @@ from gds_workbench_api.integrations.agents.adapters import (
     DatabricksModelAuthentication,
     FoundryModelAuthentication,
     LangChainCreateAgentAdapter,
-    OpenAIProviderCredentials,
     OpenAIAgentsSdkAdapter,
+    OpenAIProviderCredentials,
 )
 from gds_workbench_api.integrations.agents.configuration import (
     AgentProviderConnection,
@@ -239,6 +239,40 @@ async def test_databricks_model_authentication_uses_unified_oauth(
     )
     assert credentials.api_key.get_secret_value() == "never-log-this-token"
     assert "never-log-this-token" not in repr(credentials)
+
+
+@pytest.mark.asyncio
+async def test_databricks_notebook_authentication_uses_default_unified_auth(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    captured: dict[str, object] = {}
+
+    class FakeConfig:
+        host = "https://fixture.azuredatabricks.net"
+
+        @staticmethod
+        def authenticate() -> dict[str, str]:
+            return {"Authorization": "Bearer never-log-this-notebook-token"}
+
+    class FakeWorkspace:
+        def __init__(self, **kwargs: object) -> None:
+            captured.update(kwargs)
+            self.config = FakeConfig()
+
+    monkeypatch.setattr(agent_adapters, "WorkspaceClient", FakeWorkspace)
+
+    authentication = DatabricksModelAuthentication(mode="notebook")
+    credentials = await authentication.authenticate()
+
+    assert captured == {
+        "debug_headers": False,
+        "product": "gds-workbench-notebook",
+        "product_version": "0.1.0",
+    }
+    assert "auth_type" not in captured
+    assert credentials.api_key.get_secret_value() == "never-log-this-notebook-token"
+    assert "never-log-this-notebook-token" not in repr(credentials)
+    assert "never-log-this-notebook-token" not in repr(authentication)
 
 
 @pytest.mark.asyncio

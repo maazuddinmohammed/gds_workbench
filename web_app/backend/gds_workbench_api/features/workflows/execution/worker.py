@@ -10,13 +10,7 @@ from .contracts import WorkflowExecutionClaim
 from .repository import WorkflowClaimLease
 
 
-class WorkflowClaimRepository(Protocol):
-    async def claim_next(
-        self,
-        *,
-        lease_duration_seconds: int,
-    ) -> WorkflowExecutionClaim | None: ...
-
+class WorkflowClaimLeaseRepository(Protocol):
     async def renew(
         self,
         *,
@@ -33,6 +27,14 @@ class WorkflowClaimRepository(Protocol):
     ) -> bool: ...
 
 
+class WorkflowClaimRepository(WorkflowClaimLeaseRepository, Protocol):
+    async def claim_next(
+        self,
+        *,
+        lease_duration_seconds: int,
+    ) -> WorkflowExecutionClaim | None: ...
+
+
 class WorkflowClaimDispatcher(Protocol):
     async def execute(self, claim: WorkflowExecutionClaim) -> object: ...
 
@@ -44,11 +46,11 @@ class WorkerRunResult(StrEnum):
     CLAIM_LOST = "claim_lost"
 
 
-class WorkflowExecutionWorker:
+class WorkflowClaimRunner:
     def __init__(
         self,
         *,
-        claims: WorkflowClaimRepository,
+        claims: WorkflowClaimLeaseRepository,
         dispatcher: WorkflowClaimDispatcher,
         lease_duration_seconds: int,
         heartbeat_interval_seconds: float,
@@ -62,11 +64,8 @@ class WorkflowExecutionWorker:
         self._lease_duration_seconds = lease_duration_seconds
         self._heartbeat_interval_seconds = heartbeat_interval_seconds
 
-    async def run_once(self) -> WorkerRunResult:
-        claim = await self._claims.claim_next(lease_duration_seconds=self._lease_duration_seconds)
-        if claim is None:
-            return WorkerRunResult.IDLE
-
+    async def run(self, claim: WorkflowExecutionClaim) -> WorkerRunResult:
+        """Execute one already-acquired claim with the shared lease behavior."""
         execution = asyncio.create_task(self._dispatcher.execute(claim))
         heartbeat = asyncio.create_task(self._heartbeat(claim, execution))
         try:
@@ -128,9 +127,38 @@ class WorkflowExecutionWorker:
             )
 
 
+class WorkflowExecutionWorker:
+    def __init__(
+        self,
+        *,
+        claims: WorkflowClaimRepository,
+        dispatcher: WorkflowClaimDispatcher,
+        lease_duration_seconds: int,
+        heartbeat_interval_seconds: float,
+    ) -> None:
+        self._claims = claims
+        self._runner = WorkflowClaimRunner(
+            claims=claims,
+            dispatcher=dispatcher,
+            lease_duration_seconds=lease_duration_seconds,
+            heartbeat_interval_seconds=heartbeat_interval_seconds,
+        )
+        self._lease_duration_seconds = lease_duration_seconds
+
+    async def run_once(self) -> WorkerRunResult:
+        claim = await self._claims.claim_next(
+            lease_duration_seconds=self._lease_duration_seconds
+        )
+        if claim is None:
+            return WorkerRunResult.IDLE
+        return await self._runner.run(claim)
+
+
 __all__ = [
     "WorkerRunResult",
     "WorkflowClaimDispatcher",
+    "WorkflowClaimLeaseRepository",
     "WorkflowClaimRepository",
+    "WorkflowClaimRunner",
     "WorkflowExecutionWorker",
 ]

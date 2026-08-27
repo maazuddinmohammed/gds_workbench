@@ -416,7 +416,7 @@ def _parse_candidate(candidate: JsonValue) -> _DimensionalCandidate | None:
             json.dumps(candidate, ensure_ascii=False, allow_nan=False, separators=(",", ":")),
             strict=True,
         )
-    except TypeError, ValueError, ValidationError:
+    except (TypeError, ValueError, ValidationError):
         return None
 
 

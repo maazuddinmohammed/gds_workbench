@@ -1,5 +1,7 @@
 """Validated, non-secret agent SDK/provider/model capability registry."""
 
+from __future__ import annotations
+
 from collections.abc import Collection
 from importlib.resources import files
 from pathlib import Path

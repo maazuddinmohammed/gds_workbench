@@ -6,13 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
-import stat
 import shutil
+import stat
 import tempfile
 from pathlib import Path, PurePosixPath
 from typing import NamedTuple
 from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "databricks-ui"
@@ -37,21 +36,6 @@ _FRONTEND_ROOT_FILES = (
     "tsconfig.build.json",
     "tsconfig.json",
     "vite.config.mjs",
-)
-_NOTEBOOK_PACKAGE_FILES = (
-    "__init__.py",
-    "app_client.py",
-    "notebook.py",
-)
-_NOTEBOOK_SOURCE_FILES = (
-    "analysis_inference.py",
-    "analysis_validation.py",
-    "code_generation.py",
-    "conceptual.py",
-    "dimensional.py",
-    "logical.py",
-    "mapping.py",
-    "profiling.py",
 )
 _IGNORED_SOURCE_PARTS = frozenset(
     {
@@ -144,7 +128,11 @@ def _build_app_source(destination: Path) -> None:
         destination / "web_app" / "backend" / "gds_workbench_api",
         allowed_suffixes=frozenset({".json", ".py"}),
     )
-
+    _copy_tree(
+        REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_runtime",
+        destination / "web_app" / "backend" / "gds_workbench_runtime",
+        allowed_suffixes=frozenset({".json", ".py"}),
+    )
     for relative in _FRONTEND_ROOT_FILES:
         _copy_file(
             REPOSITORY_ROOT / "web_app" / "frontend" / relative,
@@ -159,17 +147,40 @@ def _build_app_source(destination: Path) -> None:
 
 def _build_notebook_source(destination: Path) -> None:
     source_root = REPOSITORY_ROOT / "databricks_notebooks"
+    _copy_file(source_root / ".env.example", destination / ".env.example")
     _copy_file(source_root / "requirements.txt", destination / "requirements.txt")
-    for relative in _NOTEBOOK_PACKAGE_FILES:
-        _copy_file(
-            source_root / "gds_workbench_notebooks" / relative,
-            destination / "gds_workbench_notebooks" / relative,
+    for package_name, package_root, allowed_suffixes in (
+        (
+            "gds_workbench_notebooks",
+            source_root / "src" / "gds_workbench_notebooks",
+            frozenset({".py"}),
+        ),
+        (
+            "gds_workbench_runtime",
+            REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_runtime",
+            frozenset({".json", ".py"}),
+        ),
+        (
+            "gds_workbench_api",
+            REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api",
+            frozenset({".json", ".py"}),
+        ),
+        (
+            "gds_etl_workbench",
+            REPOSITORY_ROOT / "mcp_server" / "gds_etl_workbench",
+            frozenset({".py"}),
+        ),
+    ):
+        _copy_tree(
+            package_root,
+            destination / "src" / package_name,
+            allowed_suffixes=allowed_suffixes,
         )
-    for relative in _NOTEBOOK_SOURCE_FILES:
-        _copy_file(
-            source_root / "notebooks" / relative,
-            destination / "notebooks" / relative,
-        )
+    _copy_tree(
+        source_root / "notebooks",
+        destination / "notebooks",
+        allowed_suffixes=frozenset({".py"}),
+    )
 
 
 def _tree_manifest(directory: Path) -> list[dict[str, object]]:

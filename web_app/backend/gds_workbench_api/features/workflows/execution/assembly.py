@@ -1,8 +1,11 @@
 """Shared Workflow executor assembly for API and worker processes."""
 
+from __future__ import annotations
+
+from collections.abc import Mapping
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol
+from typing import TYPE_CHECKING, Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.infrastructure.postgres import (
@@ -44,10 +47,7 @@ from gds_workbench_api.features.mapping.profile_registry import (
     MappingProfileRegistration,
     load_mapping_profile_registry,
 )
-from gds_workbench_api.features.profiling import (
-    DatabaseProfilingWorkflowRepository,
-    ProfilingWorkflowOrchestrator,
-)
+from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
 )
@@ -60,13 +60,16 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 from gds_workbench_api.features.workflows.authoring.no_op import (
     DatabaseAuthoringNoOpService,
 )
-from gds_workbench_api.integrations.agents import create_agent_execution_router
-from gds_workbench_api.integrations.agents.configuration import (
-    AgentRuntimeConfiguration,
-)
 from gds_workbench_api.integrations.databricks import DatabricksExecutionAdapters
+from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from .dispatcher import WorkflowExecutionServices
+
+if TYPE_CHECKING:
+    from gds_workbench_api.integrations.agents import ManagedModelAuthentication
+    from gds_workbench_api.integrations.agents.configuration import (
+        AgentRuntimeConfiguration,
+    )
 
 
 class WorkflowRuntimeDatabase(Protocol):
@@ -144,11 +147,15 @@ def create_workflow_runtime_services(
     agent_capability_registry: AgentCapabilityRegistry,
     databricks_environment_code: str,
     databricks_execution: DatabricksExecutionAdapters,
+    provider_authentications: Mapping[str, ManagedModelAuthentication] | None = None,
 ) -> WorkflowRuntimeServices:
     """Assemble one cohesive executor graph shared by both process types."""
+    from gds_workbench_api.integrations.agents import create_agent_execution_router
+
     agent_executor = create_agent_execution_router(
         configuration=agent_runtime,
         capabilities=agent_capability_registry,
+        provider_authentications=provider_authentications,
     )
     lifecycle = DatabaseAgentWorkflowLifecycle(database=database)
     handoff = WorkflowChangeSetHandoff(database=database, authorizer=authorizer)

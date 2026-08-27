@@ -8,15 +8,13 @@ from __future__ import annotations
 import json
 from collections.abc import Mapping
 from datetime import datetime
-from typing import Annotated, Any, Literal, LiteralString, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, LiteralString, cast
 from uuid import UUID, uuid4
 
-from mcp.server.mcpserver import Context, MCPServer
 from psycopg.types.json import Jsonb
 from pydantic import Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService, ResolvedPrincipal
 from gds_etl_workbench.domain.assertion_safety import ASSERTION_SECTION_MAX_BYTES
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
@@ -66,6 +64,11 @@ from .model_validation import (
     validate_future_graph,
     validate_staged_records,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import Context, MCPServer
+
+    from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 
 POLICY = ToolPolicy.TENANT_MODEL_WRITE
 READ_POLICY = ToolPolicy.TENANT_READ
@@ -862,6 +865,10 @@ def register_model_change_set_tools(
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
 ) -> None:
+    from mcp.server.mcpserver import Context as McpContext
+
+    globals()["Context"] = McpContext
+
     @server.tool(
         description=(
             "Create or resume the current Principal's governed Model Change Set. A "

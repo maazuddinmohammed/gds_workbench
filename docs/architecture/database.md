@@ -280,6 +280,14 @@ membership, `gds_app_write`, and each transaction activates that group with
 `gds_web_runtime` is the separate web LOGIN. Its only direct membership is
 `gds_web_write`; it never grants MCP access to the `application` schema.
 
+`gds_notebook_runtime` is the fixed Databricks notebook LOGIN. Its only direct
+membership is also `gds_web_write`, with administration and inheritance
+disabled and explicit role activation enabled. Base notebook connections can
+use only the governed identity, Tenant Lock, and Workflow Run wrappers. Shared
+in-process workflow code uses `SET LOCAL ROLE gds_web_write` for each execution
+transaction; `SESSION_USER` remains `gds_notebook_runtime`, so the database
+continues to derive the fixed Super Admin workload identity.
+
 `PUBLIC` loses schema, table, and function rights. The application role is
 explicitly denied `core.connection_value`. Append-only events, revision
 transactions, and audit projections cannot be

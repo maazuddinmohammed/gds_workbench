@@ -16,7 +16,9 @@ from .repository import (
 from .worker import (
     WorkerRunResult,
     WorkflowClaimDispatcher,
+    WorkflowClaimLeaseRepository,
     WorkflowClaimRepository,
+    WorkflowClaimRunner,
     WorkflowExecutionWorker,
 )
 
@@ -34,6 +36,8 @@ __all__ = [
     "WorkflowClaimLease",
     "WorkerRunResult",
     "WorkflowClaimDispatcher",
+    "WorkflowClaimLeaseRepository",
     "WorkflowClaimRepository",
+    "WorkflowClaimRunner",
     "WorkflowExecutionWorker",
 ]

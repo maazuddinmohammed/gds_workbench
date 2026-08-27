@@ -11,6 +11,7 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
@@ -21,24 +22,24 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
-
-from gds_workbench_api.features.profiling.execution import (
+from gds_workbench_api.features.profiling.workflow import (
+    DatabaseProfilingWorkflowRepository,
+    ExecuteProfilingRunRequest,
+)
+from gds_workbench_api.main import create_app
+from gds_workbench_runtime.profiling.execution import (
     ProfileAttribute,
     ProfileMetric,
     ProfileObject,
     ProfileQuery,
 )
-from gds_workbench_api.features.profiling.workflow import (
-    DatabaseProfilingWorkflowRepository,
-    ExecuteProfilingRunRequest,
+from gds_workbench_runtime.profiling.workflow import (
     ProfilingCommitResult,
     ProfilingExecutionContext,
     ProfilingExecutionTarget,
     ProfilingRunStart,
     ProfilingWorkflowOrchestrator,
 )
-from gds_workbench_api.main import create_app
 
 _CLAIM_TOKEN = UUID("33333333-3333-3333-3333-333333333333")
 

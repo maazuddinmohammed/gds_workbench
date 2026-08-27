@@ -6,14 +6,11 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Annotated, Any, Literal, LiteralString, cast
+from typing import TYPE_CHECKING, Annotated, Any, Literal, LiteralString, cast
 
-from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from pydantic import Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
@@ -24,6 +21,12 @@ from gds_etl_workbench.domain.modeling_records import (
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
 from .common import MAX_OBJECT_FILTER, POLICY, ContractModel, authorize_model_read
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import Context, MCPServer
+    from mcp.types import ToolAnnotations
+
+    from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 
 _MAX_PAGE_SIZE = 200
 
@@ -122,6 +125,9 @@ def register_modeling_assertion_tools(
     audit: ToolCallAuditMiddleware,
     cursor_signing_key: bytes,
 ) -> None:
+    from mcp.server.mcpserver import Context as McpContext
+
+    globals()["Context"] = McpContext
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
@@ -276,6 +282,8 @@ def register_modeling_assertion_tools(
 
 
 def _annotations() -> ToolAnnotations:
+    from mcp.types import ToolAnnotations
+
     return ToolAnnotations(
         read_only_hint=True,
         destructive_hint=False,

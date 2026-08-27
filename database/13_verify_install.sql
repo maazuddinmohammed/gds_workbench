@@ -8,10 +8,28 @@ DECLARE
     v_group_role_count INTEGER;
     v_membership_count INTEGER;
     v_web_membership_count INTEGER;
+    v_notebook_membership_count INTEGER;
     v_security_definer_count INTEGER;
     v_metadata_change_set_function_count INTEGER;
     v_databricks_function_count INTEGER;
     v_application_web_function_count INTEGER;
+    v_notebook_function_signatures TEXT[] := ARRAY[
+        'security.current_notebook_principal()',
+        'security.check_notebook_tenant_lock(bigint)',
+        'security.acquire_notebook_tenant_lock(bigint,integer,character varying)',
+        'security.renew_notebook_tenant_lock(bigint,integer)',
+        'security.release_notebook_tenant_lock(bigint)',
+        'application.create_notebook_workflow_run(bigint,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying,character varying,uuid,jsonb,character varying,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
+        'application.start_and_claim_notebook_workflow_run(bigint,bigint,bigint,bigint,character varying,integer)',
+        'application.renew_notebook_workflow_run_claim(bigint,uuid,integer)',
+        'application.release_notebook_workflow_run_claim(bigint,uuid)',
+        'application.assert_notebook_workflow_run_claim(bigint,uuid)',
+        'application.get_notebook_profiling_execution_context(bigint,bigint,bigint,bigint,uuid)',
+        'application.get_notebook_profiling_connection_values(bigint,bigint,bigint,bigint,uuid)',
+        'application.append_notebook_profiling_event(bigint,bigint,bigint,bigint,uuid,bigint,character varying,character varying,character varying,integer,integer,integer)',
+        'application.persist_and_complete_notebook_profiling_run(bigint,bigint,bigint,bigint,uuid,jsonb)',
+        'application.fail_notebook_profiling_run(bigint,bigint,bigint,bigint,uuid,character varying,character varying)'
+    ];
     v_application_web_function_signatures TEXT[] := ARRAY[
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
@@ -176,6 +194,24 @@ BEGIN
           FROM pg_catalog.pg_proc AS function_record
          WHERE function_record.oid =
                'application.claim_next_workflow_run(integer)'::REGPROCEDURE
+           AND pg_catalog.pg_get_function_result(function_record.oid)
+               LIKE '%tenant_id bigint%'
+           AND pg_catalog.pg_get_function_result(function_record.oid)
+               LIKE '%workflow_execution_mode character varying%'
+           AND pg_catalog.pg_get_function_result(function_record.oid)
+               LIKE '%actor_principal_type character varying%'
+           AND pg_catalog.pg_get_function_result(function_record.oid)
+               LIKE '%actor_entra_tenant_id uuid%'
+           AND pg_catalog.pg_get_function_result(function_record.oid)
+               LIKE '%actor_entra_object_id uuid%'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+         WHERE function_record.oid =
+               'application.claim_workflow_run_exact(bigint,character varying,integer)'::REGPROCEDURE
+           AND function_record.prosecdef
+           AND function_record.proconfig =
+               ARRAY['search_path=pg_catalog']::TEXT[]
            AND pg_catalog.pg_get_function_result(function_record.oid)
                LIKE '%tenant_id bigint%'
            AND pg_catalog.pg_get_function_result(function_record.oid)
@@ -559,6 +595,21 @@ BEGIN
         RAISE EXCEPTION 'gds_web_runtime posture is invalid';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_roles AS role_record
+         WHERE role_record.rolname = 'gds_notebook_runtime'
+           AND role_record.rolcanlogin
+           AND NOT role_record.rolsuper
+           AND NOT role_record.rolinherit
+           AND NOT role_record.rolcreatedb
+           AND NOT role_record.rolcreaterole
+           AND NOT role_record.rolreplication
+           AND NOT role_record.rolbypassrls
+    ) THEN
+        RAISE EXCEPTION 'gds_notebook_runtime posture is invalid';
+    END IF;
+
     SELECT count(*)
       INTO v_membership_count
       FROM pg_catalog.pg_auth_members AS membership
@@ -607,6 +658,30 @@ BEGIN
             'gds_web_runtime gds_web_write membership options are invalid';
     END IF;
 
+    SELECT count(*)
+      INTO v_notebook_membership_count
+      FROM pg_catalog.pg_auth_members AS membership
+      JOIN pg_catalog.pg_roles AS member_role
+        ON member_role.oid = membership.member
+     WHERE member_role.rolname = 'gds_notebook_runtime';
+
+    IF v_notebook_membership_count <> 1 OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_auth_members AS membership
+          JOIN pg_catalog.pg_roles AS member_role
+            ON member_role.oid = membership.member
+          JOIN pg_catalog.pg_roles AS group_role
+            ON group_role.oid = membership.roleid
+         WHERE member_role.rolname = 'gds_notebook_runtime'
+           AND group_role.rolname = 'gds_web_write'
+           AND NOT membership.admin_option
+           AND NOT membership.inherit_option
+           AND membership.set_option
+    ) THEN
+        RAISE EXCEPTION
+            'gds_notebook_runtime gds_web_write membership options are invalid';
+    END IF;
+
     IF NOT has_database_privilege(
         'gds_mcp_runtime',
         current_database(),
@@ -623,11 +698,83 @@ BEGIN
         RAISE EXCEPTION 'gds_web_runtime cannot connect to this database';
     END IF;
 
+    IF NOT has_database_privilege(
+        'gds_notebook_runtime',
+        current_database(),
+        'CONNECT'
+    ) THEN
+        RAISE EXCEPTION 'gds_notebook_runtime cannot connect to this database';
+    END IF;
+
     IF to_regclass('core.tenant_metadata_discovery_scope') IS NULL
        OR to_regclass('workflow.mapping_object') IS NULL
        OR to_regclass('workflow.mapping_attribute') IS NULL
-       OR to_regclass('mcp.tool_call_log') IS NULL THEN
+       OR to_regclass('mcp.tool_call_log') IS NULL
+       OR to_regclass('security.notebook_runtime_principal') IS NULL THEN
         RAISE EXCEPTION 'required release tables are missing';
+    END IF;
+
+    IF EXISTS (
+        SELECT 1
+          FROM (VALUES
+                   ('database_role_oid', 'oid'),
+                   ('database_role_name', 'name'),
+                   ('entra_principal_identity_id', 'bigint'),
+                   ('principal_id', 'bigint'),
+                   ('principal_type', 'character varying'),
+                   ('databricks_environment_code', 'character varying'),
+                   ('is_active', 'boolean')
+               ) AS required_column(column_name, type_name)
+         WHERE NOT EXISTS (
+                   SELECT 1
+                     FROM pg_catalog.pg_attribute AS attribute_record
+                    WHERE attribute_record.attrelid =
+                          'security.notebook_runtime_principal'::REGCLASS
+                      AND attribute_record.attname = required_column.column_name
+                      AND attribute_record.atttypid =
+                          to_regtype(required_column.type_name)
+                      AND attribute_record.attnotnull
+                      AND attribute_record.attnum > 0
+                      AND NOT attribute_record.attisdropped
+               )
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'security.notebook_runtime_principal'::REGCLASS
+           AND constraint_record.conname =
+               'notebook_runtime_principal_pkey'
+           AND constraint_record.contype = 'p'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'security.notebook_runtime_principal'::REGCLASS
+           AND constraint_record.conname =
+               'uq_notebook_runtime_principal_role_name'
+           AND constraint_record.contype = 'u'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'security.notebook_runtime_principal'::REGCLASS
+           AND constraint_record.conname =
+               'fk_notebook_runtime_principal_identity'
+           AND constraint_record.contype = 'f'
+    ) OR (
+        SELECT count(*)
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'security.notebook_runtime_principal'::REGCLASS
+           AND constraint_record.conname IN (
+                   'ck_notebook_runtime_principal_type',
+                   'ck_notebook_runtime_principal_environment_code',
+                   'ck_notebook_runtime_principal_role_name'
+               )
+           AND constraint_record.contype = 'c'
+           AND constraint_record.convalidated
+    ) <> 3 THEN
+        RAISE EXCEPTION 'notebook runtime Principal binding is invalid';
     END IF;
 
     IF NOT EXISTS (
@@ -761,7 +908,12 @@ BEGIN
                'override_tenant_lock',
                'renew_tenant_lock',
                'release_tenant_lock',
-               'expire_tenant_locks'
+               'expire_tenant_locks',
+               'current_notebook_principal',
+               'check_notebook_tenant_lock',
+               'acquire_notebook_tenant_lock',
+               'renew_notebook_tenant_lock',
+               'release_notebook_tenant_lock'
            )
        AND function_record.prosecdef
        AND EXISTS (
@@ -770,8 +922,120 @@ BEGIN
                 WHERE setting.value LIKE 'search_path=pg_catalog%'
            );
 
-    IF v_security_definer_count <> 7 THEN
+    IF v_security_definer_count <> 12 THEN
         RAISE EXCEPTION 'security function posture is invalid';
+    END IF;
+
+    IF NOT has_schema_privilege(
+        'gds_notebook_runtime', 'security', 'USAGE'
+    ) OR has_schema_privilege(
+        'gds_notebook_runtime', 'security', 'CREATE'
+    ) OR NOT has_schema_privilege(
+        'gds_notebook_runtime', 'application', 'USAGE'
+    ) OR has_schema_privilege(
+        'gds_notebook_runtime', 'application', 'CREATE'
+    ) OR EXISTS (
+        SELECT 1
+          FROM unnest(ARRAY[
+                   'reference', 'core', 'model', 'workflow', 'mcp'
+               ]) AS forbidden_schema(name)
+         WHERE has_schema_privilege(
+                   'gds_notebook_runtime', forbidden_schema.name, 'USAGE'
+               )
+            OR has_schema_privilege(
+                   'gds_notebook_runtime', forbidden_schema.name, 'CREATE'
+               )
+    ) OR EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_class AS relation_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = relation_record.relnamespace
+         WHERE namespace_record.nspname IN (
+                   'reference', 'core', 'security', 'model', 'workflow',
+                   'application', 'mcp'
+               )
+           AND relation_record.relkind IN ('r', 'p', 'v', 'm', 'f')
+           AND (
+               has_table_privilege(
+                   'gds_notebook_runtime',
+                   relation_record.oid,
+                   'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER,MAINTAIN'
+               )
+               OR has_any_column_privilege(
+                   'gds_notebook_runtime',
+                   relation_record.oid,
+                   'SELECT,INSERT,UPDATE,REFERENCES'
+               )
+           )
+    ) OR EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_class AS sequence_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = sequence_record.relnamespace
+         WHERE CASE
+                   WHEN namespace_record.nspname IN (
+                            'reference', 'core', 'security', 'model',
+                            'workflow', 'application', 'mcp'
+                        )
+                        AND sequence_record.relkind = 'S'
+                   THEN has_sequence_privilege(
+                            'gds_notebook_runtime',
+                            sequence_record.oid,
+                            'USAGE,SELECT,UPDATE'
+                        )
+                   ELSE FALSE
+               END
+    ) OR EXISTS (
+        SELECT 1
+          FROM unnest(v_notebook_function_signatures)
+               AS allowed_function(signature)
+         WHERE NOT has_function_privilege(
+                   'gds_notebook_runtime',
+                   allowed_function.signature,
+                   'EXECUTE'
+               )
+            OR has_function_privilege(
+                   'public',
+                   allowed_function.signature,
+                   'EXECUTE'
+               )
+            OR NOT EXISTS (
+                   SELECT 1
+                     FROM pg_catalog.pg_proc AS allowed_procedure
+                    WHERE allowed_procedure.oid =
+                          to_regprocedure(allowed_function.signature)
+                      AND allowed_procedure.prosecdef
+                      AND EXISTS (
+                              SELECT 1
+                                FROM unnest(allowed_procedure.proconfig)
+                                     AS setting(value)
+                               WHERE setting.value LIKE 'search_path=pg_catalog%'
+                          )
+               )
+    ) OR EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = function_record.pronamespace
+         WHERE namespace_record.nspname IN (
+                   'reference', 'core', 'security', 'model', 'workflow',
+                   'application', 'mcp'
+               )
+           AND has_function_privilege(
+                   'gds_notebook_runtime', function_record.oid, 'EXECUTE'
+               )
+           AND NOT has_function_privilege(
+                   'public', function_record.oid, 'EXECUTE'
+               )
+           AND NOT EXISTS (
+                   SELECT 1
+                     FROM unnest(v_notebook_function_signatures)
+                          AS allowed_function(signature)
+                    WHERE to_regprocedure(allowed_function.signature) =
+                          function_record.oid
+               )
+    ) THEN
+        RAISE EXCEPTION 'notebook runtime privilege surface is invalid';
     END IF;
 
     SELECT count(*)
@@ -1222,6 +1486,10 @@ BEGIN
     IF NOT has_function_privilege(
         'gds_app_write',
         'security.authorize_tenant_operation(uuid,uuid,character varying,bigint,character varying)',
+        'EXECUTE'
+    ) OR NOT has_function_privilege(
+        'gds_web_write',
+        'security.current_notebook_principal()',
         'EXECUTE'
     ) OR NOT has_function_privilege(
         'gds_app_write',

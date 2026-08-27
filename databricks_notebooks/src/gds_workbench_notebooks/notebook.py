@@ -4,16 +4,13 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
-from .app_client import (
-    DatabricksAppApiClient,
-    NotebookConfigurationError,
-    WorkflowLaunchResult,
-)
+from .errors import NotebookConfigurationError
 
 _WORKFLOWS = {
     "profiling",
@@ -46,25 +43,21 @@ class WidgetSpec:
 
 @dataclass(frozen=True)
 class NotebookWorkflowRequest:
-    app_name: str
     tenant_id: int
     model_id: int
     workflow: str
     analysis_operation: str | None
     expected_model_revision: int
     idempotency_key: UUID
-    wait_timeout_seconds: int
     create_payload: dict[str, object]
 
 
 _COMMON_WIDGETS = (
-    WidgetSpec("AppName", "", "Databricks App name"),
     WidgetSpec("TenantID", "", "Tenant ID"),
     WidgetSpec("ModelID", "", "Model ID"),
     WidgetSpec("ExpectedModelRevision", "", "Expected Model revision"),
     WidgetSpec("SelectedObjectIDsJSON", "[]", "Selected Object IDs (JSON array)"),
     WidgetSpec("IdempotencyKey", "", "Idempotency key (UUID; reuse on retry)"),
-    WidgetSpec("WaitTimeoutSeconds", "0", "Wait timeout in seconds (0 returns after start)"),
 )
 _AGENT_WIDGETS = (
     WidgetSpec(
@@ -77,9 +70,14 @@ _AGENT_WIDGETS = (
         "AgentProvider",
         "databricks",
         "Agent provider",
-        ("databricks", "microsoft_foundry"),
+        ("databricks",),
     ),
-    WidgetSpec("AgentModel", "databricks-primary", "Agent model code"),
+    WidgetSpec(
+        "AgentModel",
+        "databricks-primary",
+        "Agent model code",
+        ("databricks-primary",),
+    ),
     WidgetSpec("ReasoningEffort", "medium", "Reasoning effort", ("low", "medium", "high")),
     WidgetSpec("MaxTurns", "10", "Maximum agent turns"),
     WidgetSpec("ValidationRetryCount", "2", "Validation retry count"),
@@ -162,14 +160,10 @@ def build_notebook_request(
 ) -> NotebookWorkflowRequest:
     """Validate widgets locally and construct the backend-owned command shape."""
     _validate_workflow(workflow)
-    app_name = _required(values, "AppName", maximum=100)
-    if re.fullmatch(r"[a-z0-9][a-z0-9-]{0,99}", app_name) is None:
-        raise NotebookConfigurationError("AppName must be a Databricks App name.")
     tenant_id = _positive_int(values, "TenantID")
     model_id = _positive_int(values, "ModelID")
     expected_revision = _positive_int(values, "ExpectedModelRevision")
     selected_ids = _positive_int_array(values, "SelectedObjectIDsJSON")
-    wait_timeout = _bounded_int(values, "WaitTimeoutSeconds", minimum=0, maximum=86_400)
     idempotency_key = _uuid(values, "IdempotencyKey")
 
     model_workflow = "analysis" if workflow.startswith("analysis_") else workflow
@@ -262,10 +256,18 @@ def build_notebook_request(
 
     if workflow in _AGENT_WORKFLOWS:
         payload["agent"] = {
-            "sdk_code": _code(values, "AgentSDK", maximum=100),
-            "provider_code": _code(values, "AgentProvider", maximum=100),
-            "model_code": _model_code(values, "AgentModel"),
-            "reasoning_effort_code": _code(values, "ReasoningEffort", maximum=50),
+            "sdk_code": _choice(
+                values,
+                "AgentSDK",
+                {"langchain_create_agent", "openai_agents_sdk"},
+            ),
+            "provider_code": _choice(values, "AgentProvider", {"databricks"}),
+            "model_code": _choice(values, "AgentModel", {"databricks-primary"}),
+            "reasoning_effort_code": _choice(
+                values,
+                "ReasoningEffort",
+                {"low", "medium", "high"},
+            ),
             "max_turns": _bounded_int(values, "MaxTurns", minimum=1, maximum=50),
             "validation_retry_count": _bounded_int(
                 values, "ValidationRetryCount", minimum=0, maximum=5
@@ -274,14 +276,12 @@ def build_notebook_request(
         payload["prompt_overrides"] = _prompt_overrides(values, "PromptOverridesJSON")
 
     return NotebookWorkflowRequest(
-        app_name=app_name,
         tenant_id=tenant_id,
         model_id=model_id,
         workflow=model_workflow,
         analysis_operation=analysis_operation,
         expected_model_revision=expected_revision,
         idempotency_key=idempotency_key,
-        wait_timeout_seconds=wait_timeout,
         create_payload=payload,
     )
 
@@ -290,9 +290,9 @@ def run_notebook(
     workflow: str,
     *,
     dbutils: Any,
-    client_factory: Callable[..., DatabricksAppApiClient] = DatabricksAppApiClient.from_notebook,
-) -> WorkflowLaunchResult:
-    """Create widgets, invoke the App, and print only a bounded safe result."""
+    uploaded_root: Path | None = None,
+) -> Any:
+    """Validate widgets and execute one independent source-imported Workflow."""
     specs = widget_specs(workflow)
     for spec in specs:
         if spec.choices:
@@ -300,32 +300,23 @@ def run_notebook(
         else:
             dbutils.widgets.text(spec.name, spec.default, spec.label)
     values = {spec.name: dbutils.widgets.get(spec.name) for spec in specs}
-    command = build_notebook_request(workflow, values)
-    client = client_factory(app_name=command.app_name, dbutils=dbutils)
-    result = client.launch_workflow(
-        tenant_id=command.tenant_id,
-        model_id=command.model_id,
-        workflow=command.workflow,
-        analysis_operation=command.analysis_operation,
-        expected_model_revision=command.expected_model_revision,
-        idempotency_key=command.idempotency_key,
-        create_payload=command.create_payload,
-        wait_timeout_seconds=command.wait_timeout_seconds,
+    request = build_notebook_request(workflow, values)
+
+    from .runtime import load_notebook_runtime_settings, locate_uploaded_root
+    from .workflow_execution import execute_notebook_workflow
+
+    root = uploaded_root or locate_uploaded_root(Path.cwd())
+    result = execute_notebook_workflow(
+        request,
+        settings=load_notebook_runtime_settings(root),
     )
-    print(json.dumps(result.as_dict(), sort_keys=True, separators=(",", ":")))
+    print(json.dumps(result.as_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True))
     return result
 
 
 def _validate_workflow(workflow: str) -> None:
     if workflow not in _WORKFLOWS:
         raise NotebookConfigurationError("The requested notebook Workflow is unavailable.")
-
-
-def _required(values: Mapping[str, str], key: str, *, maximum: int) -> str:
-    value = values.get(key, "").strip()
-    if not value or len(value.encode("utf-8")) > maximum or re.search(r"[\x00-\x1f\x7f]", value):
-        raise NotebookConfigurationError(f"{key} is required and must be valid text.")
-    return value
 
 
 def _optional(values: Mapping[str, str], key: str, *, maximum: int) -> str | None:
@@ -376,20 +367,6 @@ def _choice(values: Mapping[str, str], key: str, choices: set[str]) -> str:
     value = values.get(key, "").strip()
     if value not in choices:
         raise NotebookConfigurationError(f"{key} has an unavailable value.")
-    return value
-
-
-def _code(values: Mapping[str, str], key: str, *, maximum: int) -> str:
-    value = values.get(key, "").strip()
-    if len(value) > maximum or re.fullmatch(r"[a-z][a-z0-9_.-]*", value) is None:
-        raise NotebookConfigurationError(f"{key} must be a valid capability code.")
-    return value
-
-
-def _model_code(values: Mapping[str, str], key: str) -> str:
-    value = values.get(key, "").strip()
-    if len(value) > 200 or re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]*", value) is None:
-        raise NotebookConfigurationError(f"{key} must be a valid model code.")
     return value
 
 

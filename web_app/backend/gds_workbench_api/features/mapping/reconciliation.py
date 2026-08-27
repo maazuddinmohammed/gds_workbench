@@ -492,7 +492,7 @@ def _revalidate_normalized_inputs(
             )
             for item in batches
         )
-    except AttributeError, TypeError, ValueError, ValidationError:
+    except (AttributeError, TypeError, ValueError, ValidationError):
         raise InvalidRequestError(
             "Mapping reconciliation failed normalized candidate validation."
         ) from None
@@ -529,7 +529,7 @@ def _revalidate_attribute_semantics(
             batch_plan=plan,
         )
         validated = validator.parse_validated(document)
-    except InvalidRequestError, ValueError:
+    except (InvalidRequestError, ValueError):
         raise InvalidRequestError(
             "Mapping reconciliation Attribute semantic validation failed."
         ) from None

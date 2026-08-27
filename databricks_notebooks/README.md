@@ -1,140 +1,320 @@
-# Workbench Workflow notebooks
+# Independent Azure Databricks notebooks
 
-These are interactive source notebooks, not Jobs and not a wheel. Each notebook
-collects non-secret widgets and calls the deployed Databricks App API. FastAPI
-creates, authorizes, starts, and reports the same Workflow Run used by the web
-application. The App worker executes the existing workflow engine. No workflow
-logic, PostgreSQL access, model credential, or lock mutation is duplicated here.
+These notebooks are a second entry point to the Workbench workflows. They do
+not call the Databricks App, its HTTP API, or an MCP server. Each notebook:
 
-## Prerequisites
+1. adds the uploaded `<root>/src` folder to `sys.path`;
+2. reads the root `.env` file;
+3. authenticates to PostgreSQL as `gds_notebook_runtime`;
+4. lets PostgreSQL resolve the one fixed Super Admin workload identity;
+5. creates, claims, and runs the selected workflow in the notebook process; and
+6. writes the same governed results used by the web application.
 
-- Deploy and start the Workbench Databricks App first. Its `/api/*` routes must be
-  reachable.
-- Use Databricks CLI 0.294.0 or newer for upload. Older legacy clients can convert
-  ordinary package `.py` files into notebooks, which breaks source imports.
-- Grant the notebook user `CAN USE` on that App.
-- Enable App user authorization with `iam.access-control:read` and
-  `iam.current-user:read`. The notebook exchanges its internal token for an
-  App-audience token with `all-apis`; no token is entered in a widget.
-- Use Databricks Runtime 14.0 or newer so the notebook directory is the current
-  working directory. Python 3.10 or newer is required.
-- The user must already have the existing PostgreSQL Principal, Tenant/Model
-  authorization, and an owned active Tenant Lock required by the backend.
+The App can be deployed separately, or not at all. The notebook path needs no
+App configuration or App authorization. PostgreSQL authentication, Tenant
+Locks, revision checks, and Databricks model-serving authorization still apply.
 
-See the official Databricks documentation for
-[notebook-to-App token exchange](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/connect-local),
-[App user authorization](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/auth),
-and [workspace Python modules](https://learn.microsoft.com/en-us/azure/databricks/notebooks/share-code).
+## Required runtime
 
-## Upload the source folders
+Use **Azure Databricks Runtime 16.4 LTS**, **Apache Spark 3.5.2**, **Scala
+2.13**, and **Python 3.12.3**. Scala does not affect these Python notebooks; it
+only identifies the selected DBR image. See the official
+[DBR 16.4 LTS release notes](https://learn.microsoft.com/en-us/azure/databricks/release-notes/runtime/16.4lts)
+and [Workspace files documentation](https://learn.microsoft.com/en-us/azure/databricks/files/workspace).
 
-Keep `notebooks/` and `gds_workbench_notebooks/` as siblings. From the repository
-root, authenticate the Databricks CLI to the target workspace, then run:
+Use an access-controlled single-user or otherwise approved compute policy. The
+compute identity must be able to use Databricks unified authentication and
+query the configured Model Serving endpoint.
 
-```bash
-databricks workspace mkdirs /Users/<user>/gds-workbench-notebooks
-databricks workspace import-dir databricks_notebooks/gds_workbench_notebooks /Users/<user>/gds-workbench-notebooks/gds_workbench_notebooks --overwrite
-databricks workspace import-dir databricks_notebooks/notebooks /Users/<user>/gds-workbench-notebooks/notebooks --overwrite
-databricks workspace import /Users/<user>/gds-workbench-notebooks/requirements.txt --file databricks_notebooks/requirements.txt --format AUTO --overwrite
+## Database prerequisites
+
+These steps are DBA work and happen before the notebooks are uploaded:
+
+1. Install and verify the database in the order documented in
+   `database/README.md`. This includes `gds_notebook_runtime`, its governed
+   wrappers, and transaction-scoped workflow role membership.
+2. Set a unique password interactively. Do not put the password in SQL or shell
+   history:
+
+   ```text
+   \password gds_notebook_runtime
+   ```
+
+3. Create or select one active `service_principal` row with
+   `is_super_admin = true` and one active Entra identity row for it.
+4. Bind that exact Principal, exact database role OID/name, and the registered
+   Databricks environment code in `security.notebook_runtime_principal`.
+
+For an already-created Super Admin service Principal, the DBA can use this
+shape after replacing every placeholder:
+
+```sql
+INSERT INTO security.notebook_runtime_principal (
+    database_role_oid,
+    database_role_name,
+    entra_principal_identity_id,
+    principal_id,
+    principal_type,
+    databricks_environment_code
+)
+SELECT 'gds_notebook_runtime'::regrole::oid,
+       'gds_notebook_runtime',
+       identity.entra_principal_identity_id,
+       principal.principal_id,
+       'service_principal',
+       '<registered-environment-code>'
+  FROM security.principal AS principal
+  JOIN security.entra_principal_identity AS identity
+    ON identity.principal_id = principal.principal_id
+   AND identity.principal_type = principal.principal_type
+ WHERE principal.principal_type = 'service_principal'
+   AND principal.is_super_admin
+   AND principal.is_active
+   AND identity.is_active
+   AND identity.entra_tenant_id = '<entra-tenant-id>'::uuid
+   AND identity.entra_object_id = '<entra-object-id>'::uuid;
 ```
 
-Use a controlled team folder instead of a personal folder when several users
-need the notebooks, and apply workspace ACLs there. Do not use `/Shared` for a
-production source location.
+The statement must insert exactly one row. The environment code is the code
+registered for the Databricks environment in PostgreSQL; it is not a URL,
+workspace ID, Tenant ID, or value chosen by a notebook user.
 
-The notebook adds its parent source folder to `sys.path`, then imports
-`gds_workbench_notebooks`. No wheel build or installation is involved. The
-package files must remain regular `.py` workspace files; the files under
-`notebooks/` are Databricks source notebooks. If the compute image does not
-already satisfy `requirements.txt`, install that file as a notebook-scoped
-library before running a workflow.
+### Security consequence of the fixed identity
 
-## Widgets
+This is a high-trust shared workload design. Anyone who can read the root
+`.env` obtains the same database credential and acts as the same Super Admin
+service Principal. Actions cannot be attributed to individual notebook users.
+That identity can operate across authorized Tenants, acquire governed Tenant
+Locks, and explicitly activate the shared workflow database role for a
+transaction. Restrict Workspace folder, file, compute, and log access; do not
+share the credential; rotate it when access changes.
 
-Every notebook has these widgets:
+## Expected uploaded tree
 
-| Widget | Value |
+Upload the built `gds-workbench-notebooks` folder without changing this shape:
+
+```text
+gds-workbench-notebooks/
+├── .env.example
+├── .env                         # created manually; never committed
+├── requirements.txt
+├── src/
+│   ├── gds_workbench_notebooks/ # widgets, bootstrap, DB control
+│   ├── gds_workbench_runtime/   # transport-neutral Profiling runtime
+│   ├── gds_workbench_api/       # shared workflow execution modules
+│   └── gds_etl_workbench/       # shared domain/application code
+└── notebooks/
+    ├── 00_tenant_lock.py
+    ├── 01_runtime_preflight.py
+    ├── profiling.py
+    ├── analysis_inference.py
+    ├── analysis_validation.py
+    ├── conceptual.py
+    ├── logical.py
+    ├── dimensional.py
+    ├── mapping.py
+    ├── code_generation.py
+    ├── 90_review_workflow_draft.py
+    └── 91_apply_workflow_draft.py
+```
+
+The notebook files find this root, prepend `<root>/src`, and import ordinary
+Python source files. No wheel or other distribution is built or installed.
+Keep all four packages under `src/`.
+
+The Workspace browser or `workspace import-dir` can display the entries under
+`notebooks/` without their `.py` suffix because their first line marks them as
+Databricks notebooks. That is expected. The ordinary modules below `src/` must
+remain files with their `.py` suffix and nested package folders intact. See the
+official [Workspace command reference](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/workspace-commands).
+
+`gds_etl_workbench` is the historical package name for shared Workbench domain
+and workflow code. Its presence does not deploy an MCP server.
+`requirements.txt` pins the Python `mcp` library because `openai-agents`
+requires it transitively when both supported agent SDKs are retained. That is
+an installed library, not a running MCP process. None of these notebook entry
+points starts an MCP server, FastAPI server, or Databricks App.
+
+## Upload and configure in the UI
+
+The expanded folder is the primary upload input. Do not import the ZIP into the
+Workspace UI: the ZIP importer can flatten a mixed notebook/source tree.
+
+1. Build the upload artifacts from the repository root:
+
+   ```bash
+   python3 deployment/databricks_ui/build_uploads.py
+   ```
+
+   Add `--replace` only when replacing an earlier builder-created output.
+
+2. If the artifact was transported as a ZIP, verify it, then extract it on the
+   VM. Drag the extracted `gds-workbench-notebooks` folder, not the ZIP, into an
+   access-controlled Workspace parent folder.
+3. Compare the Workspace tree with the tree above. Stop if folders were
+   flattened. Files under `src/` must remain regular Workspace files; files
+   under `notebooks/` are Python notebook objects.
+4. Create `.env` in the uploaded root by copying `.env.example` and replacing
+   every placeholder. Browser/OS upload dialogs sometimes omit dotfiles; if
+   `.env.example` or `.env` is missing, create or upload that file explicitly in
+   the Workspace file editor.
+5. Attach DBR 16.4 LTS compute.
+6. Install the source package dependencies in a setup cell:
+
+   ```python
+   %pip install -r /Workspace/Users/<workspace-user>/gds-workbench-notebooks/requirements.txt
+   dbutils.library.restartPython()
+   ```
+
+   An administrator may instead install the same pinned requirements as a
+   compute-scoped library. Repeat the install when a new compute environment
+   does not retain notebook-scoped libraries.
+
+Workspace files support ordinary Python modules and make the notebook
+directory the current working directory on this DBR generation. See the
+official [Workspace files basics](https://learn.microsoft.com/en-us/azure/databricks/files/workspace-basics).
+
+## Root `.env`
+
+Use exactly this syntax and replace all angle-bracket placeholders. Do not add
+unknown fields or inline comments:
+
+```dotenv
+GDS_NOTEBOOK_POSTGRES_HOST=<postgresql-hostname>
+GDS_NOTEBOOK_POSTGRES_PORT=5432
+GDS_NOTEBOOK_POSTGRES_DATABASE=<postgresql-database>
+GDS_NOTEBOOK_POSTGRES_USER=gds_notebook_runtime
+GDS_NOTEBOOK_POSTGRES_PASSWORD=<notebook-runtime-password>
+GDS_NOTEBOOK_POSTGRES_SSLMODE=require
+GDS_NOTEBOOK_POSTGRES_CONNECT_TIMEOUT_SECONDS=10
+GDS_NOTEBOOK_POSTGRES_STATEMENT_TIMEOUT_SECONDS=30
+GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS=30
+GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS=10
+GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS=120
+GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=<serving-endpoint-name>
+```
+
+| Field | Meaning |
 |---|---|
-| `AppName` | Deployed App resource name. The SDK resolves its URL automatically. |
-| `TenantID` | Positive Tenant ID. |
-| `ModelID` | Positive Model ID. |
-| `ExpectedModelRevision` | Current positive Model revision; the backend rejects stale input. |
-| `SelectedObjectIDsJSON` | Unique positive IDs, for example `[101,102]`. |
-| `IdempotencyKey` | Nonzero UUID. Reuse the same value and unchanged inputs when retrying. |
-| `WaitTimeoutSeconds` | `0` returns after start; `1`-`86400` polls for a terminal state. |
+| `POSTGRES_HOST` | PostgreSQL DNS name only, without `https://` or a DSN. |
+| `POSTGRES_PORT` | PostgreSQL port, normally `5432`. |
+| `POSTGRES_DATABASE` | Installed Workbench database name. |
+| `POSTGRES_USER` | Must be exactly `gds_notebook_runtime`. |
+| `POSTGRES_PASSWORD` | Password set by the DBA for that role. Quote it only when needed. |
+| `POSTGRES_SSLMODE` | `require`, `verify-ca`, or `verify-full`; use the strongest mode supported by the approved CA setup. |
+| `POSTGRES_CONNECT_TIMEOUT_SECONDS` | Connection timeout, `1` through `60`. |
+| `POSTGRES_STATEMENT_TIMEOUT_SECONDS` | Control-statement timeout, `1` through `300`. |
+| `WORKFLOW_LEASE_SECONDS` | Exact Run claim duration, `1` through `300`. |
+| `WORKFLOW_HEARTBEAT_SECONDS` | Claim heartbeat, `1` through `299` and shorter than the lease. |
+| `AGENT_TIMEOUT_SECONDS` | Agent call timeout, `1` through `600`. |
+| `DATABRICKS_MODEL_ENDPOINT` | Model Serving endpoint name; do not use its URL. |
 
-Notebook-specific widgets:
+The code reads this file directly and does not copy its contents to widgets or
+process environment. `.env` is intentionally excluded from the repository and
+generated artifacts. It is still a plaintext Workspace file, so its ACL is a
+security boundary.
+
+## Run order
+
+```text
+01 preflight -> 00 lock check/acquire -> workflow -> 90 review -> 91 apply
+-> next workflow/review/apply -> 00 lock release
+```
+
+1. Run `01_runtime_preflight.py`. It checks Python 3.12, the `.env`, database
+   readiness, the fixed Super Admin binding, shared source imports, and
+   Databricks unified authentication/model endpoint readiness.
+2. Run `00_tenant_lock.py` with `Action=check`, then `Action=acquire` for the
+   intended `TenantID`. Supply a bounded reason and duration. The numeric file
+   prefix groups lock management first in the tree, but running preflight before
+   acquire avoids holding a lock while setup is broken. A simple lock check may
+   also be run before preflight when diagnosing database access.
+3. Run one workflow notebook. Fill its widgets and use a new nonzero UUID for
+   `IdempotencyKey`. Reuse the same UUID only when retrying identical inputs.
+4. For an authoring workflow that returns a draft, run
+   `90_review_workflow_draft.py` with `TenantID`, `ModelID`, `WorkflowRunID`,
+   and optionally `Dataset`. Blank `Dataset` returns the bounded summary; a
+   selected dataset returns its bounded review records.
+5. When the draft is correct, run `91_apply_workflow_draft.py` with `TenantID`,
+   `ModelID`, `WorkflowRunID`, `ExpectedModelRevision`,
+   `ExpectedDraftRevision`, `ExpectedCandidateDigest`, a new `IdempotencyKey`,
+   and `Confirmation=APPLY`. Apply revalidates all fences; it does not trust the
+   earlier review.
+6. Refresh the current Model revision before the next workflow. Follow the
+   normal dependency order:
+
+   ```text
+   profiling -> analysis_inference -> review/apply -> analysis_validation
+   -> conceptual -> review/apply -> logical -> review/apply
+   -> logical mapping -> review/apply -> optional logical code_generation
+   -> optional dimensional -> review/apply -> dimensional mapping
+   -> review/apply -> dimensional code_generation
+   ```
+
+   Review and Apply are manual gates after each applicable Analysis Inference,
+   Conceptual, Logical, Dimensional, or Mapping authoring run. An applied
+   logical Mapping unlocks logical Code Generation and is required before
+   Dimensional inputs become eligible. Code Generation reads applied Mapping
+   and does not create its own Apply draft.
+
+7. Run `00_tenant_lock.py` with `Action=release` when all work is finished. Use
+   `renew` before expiry during a long controlled session. There is no force
+   unlock action in the notebook.
+
+Drafts are durable PostgreSQL data in `mcp.model_change_set` and related
+change-set tables. Here `mcp` is a PostgreSQL schema name, not evidence that an
+MCP server is running. Profiling and Code Generation do not necessarily create
+an Apply draft; a no-op authoring run also has nothing to apply.
+
+Only one workflow may run for a Tenant at a time. A conflict or expired claim
+is reported as a bounded error. Do not change inputs under the same
+`IdempotencyKey`; retry only after the active run/claim is clear.
+
+### Workflow widget essentials
+
+Every workflow notebook creates `TenantID`, `ModelID`,
+`ExpectedModelRevision`, `SelectedObjectIDsJSON`, and `IdempotencyKey` widgets.
+Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 
 | Notebook | Additional widgets |
 |---|---|
-| `profiling` | `RequestedBatchID` (optional) |
-| `analysis_inference` | `RequestedBatchID` (optional), agent widgets |
-| `analysis_validation` | `RequestedBatchID` (optional) |
-| `conceptual` | `ExecutionMode`, agent widgets |
-| `logical` | `ExecutionMode`, agent widgets |
-| `dimensional` | `ExecutionMode`, agent widgets |
-| `mapping` | `ExecutionMode`, `MappingOperation`, `MappingArtifactType`, `MappingSourceSystemID`, `MappingObjectOutputTemplateID` (optional), `MappingAttributeOutputTemplateID` (optional), agent widgets |
-| `code_generation` | `ModeledEntityType`, `CodeGenerationCoverage`, `SqlGenerationGuideVersionID` (optional), agent widgets |
+| `profiling` | Optional `RequestedBatchID`. |
+| `analysis_inference` | Optional `RequestedBatchID` plus agent widgets. |
+| `analysis_validation` | Optional `RequestedBatchID`. |
+| `conceptual`, `logical`, `dimensional` | `ExecutionMode` plus agent widgets. |
+| `mapping` | `ExecutionMode`, operation, artifact type, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
+| `code_generation` | Modeled entity type, selected/all-eligible coverage, optional SQL Guide Version ID, and agent widgets. |
 
-Agent widgets are `AgentSDK`, `AgentProvider`, `AgentModel`, `ReasoningEffort`,
-`MaxTurns`, `ValidationRetryCount`, and `PromptOverridesJSON`. Defaults select
-the registered Databricks provider. To use Foundry, select
-`microsoft_foundry` and its registered model code. The backend remains the
-authority and rejects unavailable or incompatible combinations.
+Agent widgets select one of the retained SDKs, the fixed Databricks provider
+and registered model code, reasoning effort, maximum turns, validation retry
+count, and optional Stage-to-Prompt-Version overrides. PostgreSQL and the shared
+runtime revalidate every widget; a widget never selects the acting identity or
+Databricks environment.
 
-`ExecutionMode` accepts `one_shot`, `tool_assisted`, or `detailed_coverage`.
-Analysis inference is fixed to `one_shot`; Analysis validation and Profiling are
-deterministic. Mapping requires exactly one selected target and always uses
-selected coverage. Code Generation requires selected IDs for
-`selected_targets`, or `[]` for `all_eligible_targets`.
+## CLI upload alternative
 
-## Draft validation and Apply gates
+The UI remains the deployment method. The current Databricks CLI can preserve
+the expanded folder tree when browser drag-and-drop is unreliable:
 
-Typical dependency order:
-`profiling` → `analysis_inference` → `analysis_validation` → `conceptual` →
-`logical` → logical `mapping` → optional logical `code_generation` →
-optional `dimensional` → dimensional `mapping` → dimensional
-`code_generation`.
+```bash
+databricks workspace mkdirs "/Users/<workspace-user>/gds-workbench-notebooks"
+databricks workspace import-dir \
+  artifacts/databricks-ui/gds-workbench-notebooks \
+  "/Users/<workspace-user>/gds-workbench-notebooks" \
+  --overwrite
+```
 
-This order pauses at each applicable gate before moving right:
+Inspect the remote tree afterward. Create the real `.env` outside the
+repository with restrictive local permissions, then explicitly import it if
+the recursive command omitted dotfiles:
 
-1. Run Profiling, then Analysis Inference.
-2. When Analysis Inference produces changes, open its backend-validated draft in
-   the web application, review it, and explicitly select Apply. Apply revalidates
-   all fences and atomically materializes the draft.
-3. Run Analysis Validation only after the Analysis draft is applied.
-4. Run Conceptual and Logical in order. After each Run that produces changes,
-   review and Apply its validated draft in the web application.
-5. Before logical Mapping, the Silver targets must already be registered and
-   eligible in Model Scope. Run Mapping against a logical/Silver target and
-   Apply its draft. This applied Mapping unlocks logical Code Generation and is
-   also required before Dimensional inputs become eligible.
-6. If Dimensional modeling is needed, run it only after logical Mapping is
-   applied. Apply its draft, register and scope the Gold targets through the
-   existing governed application path, then run and Apply dimensional Mapping.
-7. Run each Code Generation route only after its matching Mapping is applied.
-   Code Generation reads applied Mapping and does not create an Apply draft.
+```bash
+databricks workspace import \
+  "/Users/<workspace-user>/gds-workbench-notebooks/.env" \
+  --file "/secure/local/path/.env" \
+  --format AUTO \
+  --overwrite
+```
 
-After each Apply, refresh `ExpectedModelRevision` before creating the next Run.
-A no-op authoring Run has no draft to apply. The notebooks never apply a draft,
-mutate a Tenant Lock, or automatically start a downstream workflow.
-
-## Run and retry
-
-1. Open one notebook, attach supported compute, and fill all required widgets.
-2. Create a new UUID for the first attempt and keep it with the run inputs.
-3. Run the notebook. It prints only Run ID, workflow, state, creation status,
-   and bounded failure details when present.
-4. Review the Run in the web application or set `WaitTimeoutSeconds` to poll with
-   bounded 2-to-30-second backoff.
-
-Only one Workflow Run may be running per Tenant. If another Run is running, the
-notebook reports HTTP `409` in plain language and states that its new Run remains
-queued. Wait for the active Run to finish, then rerun with the same
-`IdempotencyKey` and unchanged inputs. The notebook never acquires, extends, or
-releases a Tenant Lock.
-
-No `.env` file, App URL, database DSN, Azure credential, Databricks token, model
-secret, or MCP setting belongs in these notebooks. `AppName` is the only App
-locator; unified authentication supplies the workspace context and the client
-performs the required App-audience token exchange.
+Never pass a password on the command line. Complete compute attachment,
+dependency installation, `.env` ACL checks, and notebook execution in the UI.

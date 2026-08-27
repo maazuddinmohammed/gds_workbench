@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Mapping
 from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -234,30 +235,52 @@ def create_agent_execution_router(
     *,
     configuration: AgentRuntimeConfiguration,
     capabilities: AgentCapabilityRegistry,
+    provider_authentications: Mapping[str, ManagedModelAuthentication] | None = None,
 ) -> AgentExecutionRouter:
     adapters: tuple[AgentExecutionAdapter, ...]
-    authentications: dict[str, ManagedModelAuthentication] = {}
+    configured_provider_codes = {
+        connection.provider_code for connection in configuration.connections
+    }
+    authentications = (
+        {}
+        if provider_authentications is None
+        else dict(provider_authentications)
+    )
+    if (
+        provider_authentications is not None
+        and set(authentications) != configured_provider_codes
+    ):
+        raise ValueError(
+            "Every configured Agent provider requires exactly one authentication adapter"
+        )
     if configuration.mode == "fake":
         adapters = tuple(LocalFakeAgentAdapter(sdk_code=sdk.code) for sdk in capabilities.sdks)
     else:
-        for connection in configuration.connections:
-            if connection.provider_code == "databricks":
-                authentications[connection.provider_code] = DatabricksModelAuthentication()
-            else:
-                if (
-                    connection.openai_base_url is None
-                    or connection.token_scope is None
-                    or connection.foundry_client_credentials is None
-                ):
-                    raise ValueError("Foundry authentication configuration is incomplete")
-                credentials = connection.foundry_client_credentials
-                authentications[connection.provider_code] = FoundryModelAuthentication(
-                    base_url=connection.openai_base_url,
-                    token_scope=connection.token_scope,
-                    tenant_id=str(credentials.tenant_id),
-                    client_id=str(credentials.client_id),
-                    client_secret=credentials.client_secret,
-                )
+        if provider_authentications is None:
+            for connection in configuration.connections:
+                if connection.provider_code == "databricks":
+                    authentications[connection.provider_code] = (
+                        DatabricksModelAuthentication()
+                    )
+                else:
+                    if (
+                        connection.openai_base_url is None
+                        or connection.token_scope is None
+                        or connection.foundry_client_credentials is None
+                    ):
+                        raise ValueError(
+                            "Foundry authentication configuration is incomplete"
+                        )
+                    credentials = connection.foundry_client_credentials
+                    authentications[connection.provider_code] = (
+                        FoundryModelAuthentication(
+                            base_url=connection.openai_base_url,
+                            token_scope=connection.token_scope,
+                            tenant_id=str(credentials.tenant_id),
+                            client_id=str(credentials.client_id),
+                            client_secret=credentials.client_secret,
+                        )
+                    )
         adapters = (
             LangChainCreateAgentAdapter(
                 connections=configuration.connections,

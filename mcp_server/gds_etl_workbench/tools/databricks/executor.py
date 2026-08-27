@@ -10,7 +10,7 @@ import base64
 import json
 import logging
 from collections.abc import Callable, Mapping, Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, datetime, time
 from decimal import Decimal
 from math import isfinite
@@ -19,6 +19,7 @@ from typing import Any, Protocol, Self, cast
 
 from pydantic import JsonValue
 
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (
     DatabricksConnectionFailedError,
     DatabricksResultTooLargeError,
@@ -43,13 +44,6 @@ _MAX_ROWS = 50
 _MAX_CELL_CHARACTERS = 20_000
 _MAX_COLLECTION_ITEMS = 1_000
 _MAX_RESULT_BYTES = 1_000_000
-
-
-@dataclass(frozen=True, slots=True)
-class DatabricksSqlConnection:
-    server_hostname: str = field(repr=False)
-    http_path: str = field(repr=False)
-    access_token: str = field(repr=False)
 
 
 @dataclass(frozen=True, slots=True)

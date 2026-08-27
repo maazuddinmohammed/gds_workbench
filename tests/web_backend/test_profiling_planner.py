@@ -6,10 +6,9 @@ from types import TracebackType
 from typing import Any, Self
 
 import pytest
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
-
-from gds_workbench_api.features.profiling.execution import (
+from gds_workbench_runtime.profiling.execution import (
     ConnectorProfilingExecutor,
     ProfileAttribute,
     ProfileMetric,

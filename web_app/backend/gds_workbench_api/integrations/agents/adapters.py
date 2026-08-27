@@ -95,19 +95,30 @@ class ManagedModelAuthentication(ModelAuthentication, Protocol):
 
 
 class DatabricksModelAuthentication:
-    """Resolve short-lived app service-principal credentials through unified auth."""
+    """Resolve short-lived Databricks credentials through unified auth."""
+
+    def __init__(self, *, mode: Literal["app", "notebook"] = "app") -> None:
+        if mode not in ("app", "notebook"):
+            raise ValueError("Databricks model authentication mode is invalid")
+        self._mode = mode
 
     async def authenticate(self) -> OpenAIProviderCredentials:
         return await asyncio.to_thread(self._authenticate)
 
-    @staticmethod
-    def _authenticate() -> OpenAIProviderCredentials:
-        workspace = WorkspaceClient(
-            auth_type="oauth-m2m",
-            debug_headers=False,
-            product="gds-workbench-web",
-            product_version="0.1.0",
-        )
+    def _authenticate(self) -> OpenAIProviderCredentials:
+        if self._mode == "app":
+            workspace = WorkspaceClient(
+                auth_type="oauth-m2m",
+                debug_headers=False,
+                product="gds-workbench-web",
+                product_version="0.1.0",
+            )
+        else:
+            workspace = WorkspaceClient(
+                debug_headers=False,
+                product="gds-workbench-notebook",
+                product_version="0.1.0",
+            )
         headers = workspace.config.authenticate()
         authorization = next(
             (value for name, value in headers.items() if name.lower() == "authorization"),
@@ -134,7 +145,9 @@ class DatabricksModelAuthentication:
         )
 
     def __repr__(self) -> str:
-        return "DatabricksModelAuthentication()"
+        if self._mode == "app":
+            return "DatabricksModelAuthentication()"
+        return "DatabricksModelAuthentication(mode='notebook')"
 
     async def close(self) -> None:
         return None

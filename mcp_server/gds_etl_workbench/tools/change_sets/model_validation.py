@@ -89,7 +89,7 @@ def validate_staged_records(
         try:
             encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
             record = definition.row_model.model_validate_json(encoded, strict=True)
-        except TypeError, ValueError, ValidationError:
+        except (TypeError, ValueError, ValidationError):
             issues.append(
                 ModelValidationIssue(
                     code="record_schema_invalid",

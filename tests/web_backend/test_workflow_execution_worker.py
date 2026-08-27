@@ -7,6 +7,7 @@ import pytest
 from gds_workbench_api.features.workflows.execution import (
     WorkerRunResult,
     WorkflowClaimLease,
+    WorkflowClaimRunner,
     WorkflowExecutionClaim,
     WorkflowExecutionWorker,
 )
@@ -128,6 +129,26 @@ async def test_worker_returns_idle_without_dispatch_when_no_run_is_claimable() -
 
 def test_worker_does_not_expose_direct_exact_claim_execution() -> None:
     assert not hasattr(WorkflowExecutionWorker, "execute_claim")
+
+
+@pytest.mark.asyncio
+async def test_claim_runner_executes_a_supplied_claim_without_global_acquisition() -> None:
+    claim = _claim()
+    repository = FakeClaimRepository(claim)
+    dispatcher = BlockingDispatcher()
+    dispatcher.finish.set()
+    runner = WorkflowClaimRunner(
+        claims=repository,
+        dispatcher=dispatcher,
+        lease_duration_seconds=30,
+        heartbeat_interval_seconds=0.01,
+    )
+
+    result = await runner.run(claim)
+
+    assert result is WorkerRunResult.COMPLETED
+    assert repository.claim_calls == []
+    assert dispatcher.claims == [claim]
 
 
 @pytest.mark.asyncio

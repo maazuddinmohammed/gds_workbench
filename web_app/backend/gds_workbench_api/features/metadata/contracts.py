@@ -1,5 +1,7 @@
 """Contracts for the authorized Metadata catalog."""
 
+from __future__ import annotations
+
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass

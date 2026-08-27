@@ -77,6 +77,44 @@ CREATE TABLE security.entra_principal_identity (
         UNIQUE (principal_id, entra_tenant_id)
 );
 
+-- Bind the dedicated notebook database login to one governed workload
+-- Principal. Both the role OID and name must still match SESSION_USER, so a
+-- dropped, recreated, or renamed login cannot silently inherit the binding.
+CREATE TABLE security.notebook_runtime_principal (
+    database_role_oid OID PRIMARY KEY,
+    database_role_name NAME NOT NULL,
+    entra_principal_identity_id BIGINT NOT NULL,
+    principal_id BIGINT NOT NULL,
+    principal_type VARCHAR(30) NOT NULL DEFAULT 'service_principal',
+    databricks_environment_code VARCHAR(100) NOT NULL,
+    is_active BOOLEAN NOT NULL DEFAULT TRUE,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT uq_notebook_runtime_principal_role_name
+        UNIQUE (database_role_name),
+    CONSTRAINT fk_notebook_runtime_principal_identity FOREIGN KEY (
+        entra_principal_identity_id,
+        principal_id,
+        principal_type
+    ) REFERENCES security.entra_principal_identity (
+        entra_principal_identity_id,
+        principal_id,
+        principal_type
+    ) ON DELETE NO ACTION,
+    CONSTRAINT ck_notebook_runtime_principal_type CHECK (
+        principal_type = 'service_principal'
+    ),
+    CONSTRAINT ck_notebook_runtime_principal_environment_code CHECK (
+        databricks_environment_code ~
+            '^[A-Za-z][A-Za-z0-9_.-]{0,99}$'
+    ),
+    CONSTRAINT ck_notebook_runtime_principal_role_name CHECK (
+        reference.is_nonblank(database_role_name::TEXT)
+    )
+);
+
 CREATE TABLE security.tenant_principal_access (
     tenant_principal_access_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     tenant_id BIGINT NOT NULL,
@@ -1184,3 +1222,238 @@ BEGIN
     RETURN v_expired_count;
 END;
 $expire_tenant_locks$;
+
+-- Resolve the notebook actor from SESSION_USER. Editable notebook input and
+-- environment values never select the Principal. Only an active binding to an
+-- active Super Admin service Principal is returned.
+CREATE FUNCTION security.current_notebook_principal()
+RETURNS TABLE (
+    database_role_oid OID,
+    database_role_name NAME,
+    entra_principal_identity_id BIGINT,
+    principal_id BIGINT,
+    principal_display_name VARCHAR(200),
+    entra_tenant_id UUID,
+    entra_object_id UUID,
+    principal_type VARCHAR(30),
+    databricks_environment_code VARCHAR(100),
+    is_super_admin BOOLEAN
+)
+LANGUAGE sql
+STABLE
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $current_notebook_principal$
+    SELECT role_record.oid,
+           role_record.rolname,
+           binding.entra_principal_identity_id,
+           principal.principal_id,
+           principal.principal_display_name,
+           identity.entra_tenant_id,
+           identity.entra_object_id,
+           principal.principal_type,
+           binding.databricks_environment_code,
+           principal.is_super_admin
+      FROM pg_catalog.pg_roles AS role_record
+      JOIN security.notebook_runtime_principal AS binding
+        ON binding.database_role_oid = role_record.oid
+       AND binding.database_role_name = role_record.rolname
+      JOIN security.entra_principal_identity AS identity
+        ON identity.entra_principal_identity_id =
+               binding.entra_principal_identity_id
+       AND identity.principal_id = binding.principal_id
+       AND identity.principal_type = binding.principal_type
+      JOIN security.principal AS principal
+        ON principal.principal_id = identity.principal_id
+       AND principal.principal_type = identity.principal_type
+     WHERE role_record.rolname = SESSION_USER
+       AND role_record.rolcanlogin
+       AND binding.is_active
+       AND identity.is_active
+       AND principal.is_active
+       AND principal.principal_type = 'service_principal'
+       AND principal.is_super_admin;
+$current_notebook_principal$;
+
+-- Notebook lock entry points intentionally accept no actor fields and expose
+-- no force-unlock operation. Their signatures remain independent of any later
+-- expansion of the notebook runtime's governed workflow privilege surface.
+CREATE FUNCTION security.check_notebook_tenant_lock(p_tenant_id BIGINT)
+RETURNS TABLE (
+    authorized BOOLEAN,
+    denial_code VARCHAR(50),
+    is_locked BOOLEAN,
+    owner_display_name VARCHAR(200),
+    owned_by_current_principal BOOLEAN,
+    purpose VARCHAR(500),
+    acquired_time TIMESTAMPTZ,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $check_notebook_tenant_lock$
+DECLARE
+    v_principal RECORD;
+BEGIN
+    SELECT *
+      INTO v_principal
+      FROM security.current_notebook_principal();
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'authorization_denied'::VARCHAR(50),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(200),
+            NULL::BOOLEAN,
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+      FROM security.check_tenant_lock(
+          v_principal.entra_tenant_id,
+          v_principal.entra_object_id,
+          'service_principal'::VARCHAR,
+          p_tenant_id
+      );
+END;
+$check_notebook_tenant_lock$;
+
+CREATE FUNCTION security.acquire_notebook_tenant_lock(
+    p_tenant_id BIGINT,
+    p_requested_duration_minutes INTEGER,
+    p_purpose VARCHAR(500)
+)
+RETURNS TABLE (
+    acquired BOOLEAN,
+    denial_code VARCHAR(50),
+    owner_display_name VARCHAR(200),
+    purpose VARCHAR(500),
+    acquired_time TIMESTAMPTZ,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $acquire_notebook_tenant_lock$
+DECLARE
+    v_principal RECORD;
+BEGIN
+    SELECT *
+      INTO v_principal
+      FROM security.current_notebook_principal();
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'authorization_denied'::VARCHAR(50),
+            NULL::VARCHAR(200),
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+      FROM security.acquire_tenant_lock(
+          v_principal.entra_tenant_id,
+          v_principal.entra_object_id,
+          'service_principal'::VARCHAR,
+          p_tenant_id,
+          p_requested_duration_minutes,
+          p_purpose
+      );
+END;
+$acquire_notebook_tenant_lock$;
+
+CREATE FUNCTION security.renew_notebook_tenant_lock(
+    p_tenant_id BIGINT,
+    p_requested_duration_minutes INTEGER
+)
+RETURNS TABLE (
+    renewed BOOLEAN,
+    denial_code VARCHAR(50),
+    owner_display_name VARCHAR(200),
+    purpose VARCHAR(500),
+    acquired_time TIMESTAMPTZ,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $renew_notebook_tenant_lock$
+DECLARE
+    v_principal RECORD;
+BEGIN
+    SELECT *
+      INTO v_principal
+      FROM security.current_notebook_principal();
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'authorization_denied'::VARCHAR(50),
+            NULL::VARCHAR(200),
+            NULL::VARCHAR(500),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+      FROM security.renew_tenant_lock(
+          v_principal.entra_tenant_id,
+          v_principal.entra_object_id,
+          'service_principal'::VARCHAR,
+          p_tenant_id,
+          p_requested_duration_minutes
+      );
+END;
+$renew_notebook_tenant_lock$;
+
+CREATE FUNCTION security.release_notebook_tenant_lock(p_tenant_id BIGINT)
+RETURNS TABLE (
+    released BOOLEAN,
+    denial_code VARCHAR(50),
+    owner_display_name VARCHAR(200),
+    acquired_time TIMESTAMPTZ,
+    expires_time TIMESTAMPTZ
+)
+LANGUAGE plpgsql
+VOLATILE
+SECURITY DEFINER
+SET search_path = pg_catalog, security
+AS $release_notebook_tenant_lock$
+DECLARE
+    v_principal RECORD;
+BEGIN
+    SELECT *
+      INTO v_principal
+      FROM security.current_notebook_principal();
+    IF NOT FOUND THEN
+        RETURN QUERY SELECT
+            FALSE,
+            'authorization_denied'::VARCHAR(50),
+            NULL::VARCHAR(200),
+            NULL::TIMESTAMPTZ,
+            NULL::TIMESTAMPTZ;
+        RETURN;
+    END IF;
+
+    RETURN QUERY
+    SELECT *
+      FROM security.release_tenant_lock(
+          v_principal.entra_tenant_id,
+          v_principal.entra_object_id,
+          'service_principal'::VARCHAR,
+          p_tenant_id
+      );
+END;
+$release_notebook_tenant_lock$;

@@ -591,6 +591,31 @@ def test_verify_install_rejects_unsafe_runtime_membership_options(
         )
 
 
+def test_verify_install_rejects_unsafe_notebook_execution_membership_options(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(
+            RaiseException,
+            match="gds_notebook_runtime gds_web_write membership options",
+        ),
+        connection.transaction(),
+    ):
+        connection.execute(
+            """
+            GRANT gds_web_write TO gds_notebook_runtime
+                WITH ADMIN TRUE, INHERIT TRUE, SET FALSE
+            """
+        )
+        connection.execute(
+            cast(
+                LiteralString,
+                VERIFY_INSTALL_SQL.read_text(encoding="utf-8"),
+            )
+        )
+
+
 def test_verify_install_rejects_missing_runtime_schema_usage(
     postgres_database: DisposablePostgres,
 ) -> None:

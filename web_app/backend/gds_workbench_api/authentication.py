@@ -103,7 +103,7 @@ class DatabricksUserResolver:
                 message="Databricks user authorization is unavailable.",
                 http_status=403,
             ) from None
-        except DatabricksError, TimeoutError, OSError:
+        except (DatabricksError, TimeoutError, OSError):
             raise AuthenticationError(
                 public_code="dependency_unavailable",
                 message="Databricks user authentication is temporarily unavailable.",

@@ -3,7 +3,7 @@ from uuid import UUID
 import pytest
 from gds_workbench_notebooks import (
     NotebookConfigurationError,
-    WorkflowLaunchResult,
+    NotebookWorkflowExecutionResult,
     build_notebook_request,
     run_notebook,
     widget_specs,
@@ -20,13 +20,11 @@ _WORKFLOWS = (
     "code_generation",
 )
 _COMMON_NAMES = (
-    "AppName",
     "TenantID",
     "ModelID",
     "ExpectedModelRevision",
     "SelectedObjectIDsJSON",
     "IdempotencyKey",
-    "WaitTimeoutSeconds",
 )
 _AGENT_NAMES = (
     "AgentSDK",
@@ -43,7 +41,6 @@ def _values(workflow: str) -> dict[str, str]:
     values = {spec.name: spec.default for spec in widget_specs(workflow)}
     values.update(
         {
-            "AppName": "gds-workbench",
             "TenantID": "2",
             "ModelID": "3",
             "ExpectedModelRevision": "4",
@@ -166,8 +163,9 @@ def test_all_eligible_code_generation_requires_empty_selection() -> None:
         ("SelectedObjectIDsJSON", "[true]"),
         ("SelectedObjectIDsJSON", "[11,11]"),
         ("IdempotencyKey", "not-a-uuid"),
-        ("WaitTimeoutSeconds", "86401"),
         ("PromptOverridesJSON", '{"0": 5}'),
+        ("AgentProvider", "microsoft_foundry"),
+        ("AgentModel", "unregistered-model"),
     ),
 )
 def test_rejects_invalid_widget_values(key: str, value: str) -> None:
@@ -177,7 +175,9 @@ def test_rejects_invalid_widget_values(key: str, value: str) -> None:
         build_notebook_request("conceptual", values)
 
 
-def test_run_notebook_registers_widgets_and_prints_only_safe_result(capsys) -> None:
+def test_run_notebook_executes_after_widget_and_env_validation(
+    tmp_path, capsys, monkeypatch
+) -> None:
     class FakeWidgets:
         def __init__(self) -> None:
             self.values = _values("profiling")
@@ -192,24 +192,41 @@ def test_run_notebook_registers_widgets_and_prints_only_safe_result(capsys) -> N
         def get(self, name: str) -> str:
             return self.values[name]
 
-    class FakeClient:
-        def launch_workflow(self, **kwargs: object) -> WorkflowLaunchResult:
-            assert kwargs["workflow"] == "profiling"
-            return WorkflowLaunchResult(71, "profiling", "running", True)
-
     widgets = FakeWidgets()
     dbutils = type("Dbutils", (), {"widgets": widgets})()
-    factory_calls: list[dict[str, object]] = []
+    (tmp_path / ".env").write_text(
+        """\
+GDS_NOTEBOOK_POSTGRES_HOST=workbench.postgres.database.azure.com
+GDS_NOTEBOOK_POSTGRES_PORT=5432
+GDS_NOTEBOOK_POSTGRES_DATABASE=gds_workbench
+GDS_NOTEBOOK_POSTGRES_USER=gds_notebook_runtime
+GDS_NOTEBOOK_POSTGRES_PASSWORD=fixture-password
+"""
+    )
+    calls = []
 
-    def factory(**kwargs: object) -> FakeClient:
-        factory_calls.append(kwargs)
-        return FakeClient()
+    def execute(request, *, settings):
+        calls.append((request, settings))
+        return NotebookWorkflowExecutionResult(
+            workflow_run_id=71,
+            workflow="profiling",
+            state="completed",
+            created=True,
+            model_revision=4,
+        )
 
-    result = run_notebook("profiling", dbutils=dbutils, client_factory=factory)
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.workflow_execution.execute_notebook_workflow",
+        execute,
+    )
+
+    result = run_notebook("profiling", dbutils=dbutils, uploaded_root=tmp_path)
 
     assert widgets.created == [spec.name for spec in widget_specs("profiling")]
-    assert factory_calls == [{"app_name": "gds-workbench", "dbutils": dbutils}]
-    assert result.state == "running"
+    assert result.workflow_run_id == 71
+    assert calls[0][0].workflow == "profiling"
+    assert calls[0][1].database.user == "gds_notebook_runtime"
     assert capsys.readouterr().out == (
-        '{"created":true,"state":"running","workflow":"profiling","workflow_run_id":71}\n'
+        '{"created":true,"model_revision":4,"state":"completed",'
+        '"workflow":"profiling","workflow_run_id":71}\n'
     )

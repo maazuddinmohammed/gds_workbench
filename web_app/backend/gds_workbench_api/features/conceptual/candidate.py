@@ -304,7 +304,7 @@ def _parse_candidate(candidate: JsonValue) -> _ConceptualCandidate | None:
             ),
             strict=True,
         )
-    except TypeError, ValueError, ValidationError:
+    except (TypeError, ValueError, ValidationError):
         return None
 
 

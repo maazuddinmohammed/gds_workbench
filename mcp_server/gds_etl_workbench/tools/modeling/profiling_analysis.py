@@ -7,14 +7,11 @@ from __future__ import annotations
 
 from collections.abc import Mapping
 from decimal import Decimal
-from typing import Annotated, Any, Literal, LiteralString
+from typing import TYPE_CHECKING, Annotated, Any, Literal, LiteralString
 
-from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from pydantic import Field, model_validator
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.errors import WorkbenchError
@@ -30,6 +27,11 @@ from .common import (
     summarize_model_object_input,
     validate_model_object_selection,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import Context, MCPServer
+
+    from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 
 _MAX_PAGE_SIZE = 200
 
@@ -280,6 +282,10 @@ def register_profiling_analysis_tools(
     audit: ToolCallAuditMiddleware,
     cursor_signing_key: bytes,
 ) -> None:
+    from mcp.server.mcpserver import Context as McpContext
+    from mcp.types import ToolAnnotations
+
+    globals()["Context"] = McpContext
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(

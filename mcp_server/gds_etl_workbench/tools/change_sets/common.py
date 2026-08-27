@@ -4,9 +4,12 @@ from __future__ import annotations
 
 import hashlib
 import json
+from typing import TYPE_CHECKING
 
-from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict
+
+if TYPE_CHECKING:
+    from mcp.types import ToolAnnotations
 
 MAX_STAGE_CHUNK_BYTES = 450 * 1024
 MAX_STAGE_CHUNKS = 64
@@ -38,6 +41,8 @@ def change_set_annotations(
     idempotent: bool,
     destructive: bool = False,
 ) -> ToolAnnotations:
+    from mcp.types import ToolAnnotations
+
     return ToolAnnotations(
         read_only_hint=read_only,
         destructive_hint=destructive,

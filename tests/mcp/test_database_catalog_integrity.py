@@ -150,7 +150,7 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
         )
         for trigger in triggers
     )
-    assert row == {"table_count": 93, "function_count": 71, "trigger_count": 16}
+    assert row == {"table_count": 94, "function_count": 88, "trigger_count": 16}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(
@@ -330,7 +330,8 @@ def test_release_functions_and_object_ownership_remain_hardened(
                        'gds_app_write',
                        'gds_web_write',
                        'gds_mcp_runtime',
-                       'gds_web_runtime'
+                       'gds_web_runtime',
+                       'gds_notebook_runtime'
                    )
              ORDER BY name
             """,

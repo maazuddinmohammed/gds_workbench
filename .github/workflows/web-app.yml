@@ -131,7 +131,7 @@ jobs:
       - name: Check notebook types
         run: >-
           uv run --frozen --project web_app/backend pyright
-          databricks_notebooks/gds_workbench_notebooks
+          databricks_notebooks/src/gds_workbench_notebooks
 
   frontend:
     runs-on: ubuntu-latest

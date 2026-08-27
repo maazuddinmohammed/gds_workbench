@@ -1,5 +1,6 @@
 from collections.abc import Callable
 from contextlib import AbstractAsyncContextManager
+from typing import cast
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -13,6 +14,7 @@ from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.features.workflows.execution.assembly import (
     create_workflow_runtime_services,
 )
+from gds_workbench_api.integrations.agents import ManagedModelAuthentication
 from gds_workbench_api.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
 )
@@ -43,6 +45,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, dict[str, object]] = {}
+    agent_router_arguments: dict[str, object] = {}
     shared_agent_executor = object()
 
     def capture(name: str) -> Callable[..., object]:
@@ -52,11 +55,12 @@ def test_workflow_runtime_services_share_one_executor_graph(
 
         return create
 
-    def create_agent_executor(**_kwargs: object) -> object:
+    def create_agent_executor(**kwargs: object) -> object:
+        agent_router_arguments.update(kwargs)
         return shared_agent_executor
 
     monkeypatch.setattr(
-        "gds_workbench_api.features.workflows.execution.assembly.create_agent_execution_router",
+        "gds_workbench_api.integrations.agents.create_agent_execution_router",
         create_agent_executor,
     )
     for executor_name in (
@@ -80,6 +84,8 @@ def test_workflow_runtime_services_share_one_executor_graph(
         databricks_environment_code="TEST",
         databricks_execution=create_databricks_execution_adapters("fake"),
     )
+
+    assert agent_router_arguments["provider_authentications"] is None
 
     authoring = tuple(
         captured[name]
@@ -112,3 +118,39 @@ def test_workflow_runtime_services_share_one_executor_graph(
     assert execution.dimensional is services.dimensional
     assert execution.mapping is services.mapping
     assert execution.code_generation is services.code_generation
+
+
+def test_workflow_runtime_services_forward_provider_authentications(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    class StopAssemblyError(Exception):
+        pass
+
+    captured: dict[str, object] = {}
+
+    def capture_agent_executor(**kwargs: object) -> object:
+        captured.update(kwargs)
+        raise StopAssemblyError
+
+    monkeypatch.setattr(
+        "gds_workbench_api.integrations.agents.create_agent_execution_router",
+        capture_agent_executor,
+    )
+    authentication = cast(ManagedModelAuthentication, object())
+    provider_authentications = {"databricks": authentication}
+
+    with pytest.raises(StopAssemblyError):
+        create_workflow_runtime_services(
+            database=AssemblyDatabase(),
+            authorizer=AuthorizationService(),
+            agent_runtime=AgentRuntimeConfiguration.from_environment(
+                {},
+                production=False,
+            ),
+            agent_capability_registry=load_default_agent_capabilities(),
+            databricks_environment_code="TEST",
+            databricks_execution=create_databricks_execution_adapters("fake"),
+            provider_authentications=provider_authentications,
+        )
+
+    assert captured["provider_authentications"] is provider_authentications

@@ -360,7 +360,7 @@ def register_code_generation_authoring_tools(
             ) from None
         except WorkbenchError as error:
             raise CodeGenerationAuthoringToolError(f"{error.code}: {error.message}") from None
-        except TypeError, ValueError:
+        except (TypeError, ValueError):
             raise CodeGenerationAuthoringToolError(
                 "invalid_request: The applied Mapping cannot produce an exact GeneratorDocumentV1."
             ) from None
