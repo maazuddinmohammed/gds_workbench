@@ -565,7 +565,7 @@ class PostgresAgentContextRepository:
                 embedded_context=embedded,
                 tool_catalog=tool_catalog,
             )
-        except (AgentContextTooLargeError, AgentContextUnavailableError):
+        except AgentContextTooLargeError, AgentContextUnavailableError:
             raise
         except Exception:
             raise AgentContextUnavailableError() from None
@@ -1025,5 +1025,5 @@ def _json_bytes(value: JsonValue) -> int:
                 sort_keys=True,
             ).encode("utf-8")
         )
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise AgentContextUnavailableError() from None

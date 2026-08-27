@@ -241,15 +241,8 @@ def create_agent_execution_router(
     configured_provider_codes = {
         connection.provider_code for connection in configuration.connections
     }
-    authentications = (
-        {}
-        if provider_authentications is None
-        else dict(provider_authentications)
-    )
-    if (
-        provider_authentications is not None
-        and set(authentications) != configured_provider_codes
-    ):
+    authentications = {} if provider_authentications is None else dict(provider_authentications)
+    if provider_authentications is not None and set(authentications) != configured_provider_codes:
         raise ValueError(
             "Every configured Agent provider requires exactly one authentication adapter"
         )
@@ -259,27 +252,21 @@ def create_agent_execution_router(
         if provider_authentications is None:
             for connection in configuration.connections:
                 if connection.provider_code == "databricks":
-                    authentications[connection.provider_code] = (
-                        DatabricksModelAuthentication()
-                    )
+                    authentications[connection.provider_code] = DatabricksModelAuthentication()
                 else:
                     if (
                         connection.openai_base_url is None
                         or connection.token_scope is None
                         or connection.foundry_client_credentials is None
                     ):
-                        raise ValueError(
-                            "Foundry authentication configuration is incomplete"
-                        )
+                        raise ValueError("Foundry authentication configuration is incomplete")
                     credentials = connection.foundry_client_credentials
-                    authentications[connection.provider_code] = (
-                        FoundryModelAuthentication(
-                            base_url=connection.openai_base_url,
-                            token_scope=connection.token_scope,
-                            tenant_id=str(credentials.tenant_id),
-                            client_id=str(credentials.client_id),
-                            client_secret=credentials.client_secret,
-                        )
+                    authentications[connection.provider_code] = FoundryModelAuthentication(
+                        base_url=connection.openai_base_url,
+                        token_scope=connection.token_scope,
+                        tenant_id=str(credentials.tenant_id),
+                        client_id=str(credentials.client_id),
+                        client_secret=credentials.client_secret,
                     )
         adapters = (
             LangChainCreateAgentAdapter(

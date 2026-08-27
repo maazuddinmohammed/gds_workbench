@@ -587,7 +587,7 @@ def _parse[CandidateT: BaseModel](
             ),
             strict=True,
         )
-    except (TypeError, ValueError, ValidationError):
+    except TypeError, ValueError, ValidationError:
         return None
 
 

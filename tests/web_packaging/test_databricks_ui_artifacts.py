@@ -45,6 +45,76 @@ NOTEBOOK_PACKAGE_SOURCES = {
     ),
 }
 NOTEBOOK_SOURCE_ROOT = ROOT / "databricks_notebooks" / "notebooks"
+NOTEBOOK_PACKAGE_EXCLUSIONS = {
+    "gds_workbench_api": (
+        {
+            "app_process.py",
+            "authentication.py",
+            "config/workflow_execution.json",
+            "configuration.py",
+            "errors.py",
+            "features/model_change_sets/router.py",
+            "features/workflows/authoring/change_set_apply_router.py",
+            "features/workflows/execution/configuration.py",
+            "frontend.py",
+            "main.py",
+            "runtime.py",
+            "workflow_worker.py",
+        },
+        {
+            "features/metadata",
+            "features/metadata_change_sets",
+            "features/model_scope",
+            "features/output_templates",
+            "features/prompts",
+            "features/session",
+            "features/sql_generation_guides",
+            "features/tenant_locks",
+            "features/tenants",
+            "features/workflows/commands",
+            "features/workflows/overview",
+        },
+    ),
+    "gds_etl_workbench": (
+        {
+            "adapters/auth/middleware.py",
+            "runtime.py",
+            "tools/catalog/get_object_lineage.py",
+            "tools/catalog/get_objects.py",
+            "tools/catalog/list_objects.py",
+            "tools/change_sets/metadata.py",
+            "tools/change_sets/validation.py",
+            "tools/databricks/execute_sql.py",
+            "tools/modeling/code_generation_authoring.py",
+            "tools/modeling/dimensional.py",
+            "tools/modeling/logical.py",
+            "tools/modeling/mapping_authoring.py",
+            "tools/modeling/model_details.py",
+            "tools/modeling/model_scope.py",
+            "tools/snapshots/archive.py",
+            "tools/snapshots/dataset_description.py",
+            "tools/snapshots/metadata/archive.py",
+            "tools/snapshots/metadata/describe_metadata_dataset.py",
+            "tools/snapshots/metadata/get_metadata_snapshot.py",
+            "tools/snapshots/metadata/guidance.py",
+            "tools/snapshots/metadata/projection.py",
+            "tools/snapshots/metadata/sql.py",
+            "tools/snapshots/model/archive.py",
+            "tools/snapshots/model/describe_model_dataset.py",
+            "tools/snapshots/model/get_model_snapshot.py",
+            "tools/snapshots/service.py",
+            "tools/snapshots/storage.py",
+        },
+        {
+            "adapters/mcp",
+            "diagnostics",
+            "tools/ingestion",
+            "tools/processing",
+            "tools/snapshots/dbml",
+            "tools/tenants",
+        },
+    ),
+}
 IGNORED_RUNTIME_PARTS = {
     ".pytest_cache",
     ".ruff_cache",
@@ -111,6 +181,16 @@ def _expected_runtime_files(source_root: Path, suffixes: set[str]) -> set[str]:
     }
 
 
+def _is_notebook_excluded(package_name: str, relative: str) -> bool:
+    excluded_files, excluded_prefixes = NOTEBOOK_PACKAGE_EXCLUSIONS.get(
+        package_name, (set(), set())
+    )
+    return relative in excluded_files or any(
+        relative == prefix or relative.startswith(f"{prefix}/")
+        for prefix in excluded_prefixes
+    )
+
+
 def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
     builder = _load_builder()
 
@@ -135,13 +215,47 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
     }
     for package_name, (source_root, suffixes) in NOTEBOOK_PACKAGE_SOURCES.items():
         generated_root = notebook_root / "src" / package_name
-        expected_files = _expected_runtime_files(source_root, suffixes)
+        expected_files = {
+            relative
+            for relative in _expected_runtime_files(source_root, suffixes)
+            if not _is_notebook_excluded(package_name, relative)
+        }
         assert _relative_files(generated_root) == expected_files
         for relative in expected_files:
             assert (generated_root / relative).read_bytes() == (
                 source_root / relative
             ).read_bytes()
     assert "/artifacts/databricks-ui/" in ROOT_GITIGNORE.read_text(encoding="utf-8")
+
+
+def test_notebook_pruning_does_not_remove_sources_from_the_app_artifact(
+    tmp_path: Path,
+) -> None:
+    builder = _load_builder()
+    result = builder.build_uploads(tmp_path / "release")
+    app_roots = {
+        "gds_workbench_api": (
+            result.app_source_directory / "web_app/backend/gds_workbench_api"
+        ),
+        "gds_etl_workbench": result.app_source_directory
+        / "mcp_server/gds_etl_workbench",
+    }
+
+    for package_name, (source_root, suffixes) in NOTEBOOK_PACKAGE_SOURCES.items():
+        if package_name not in NOTEBOOK_PACKAGE_EXCLUSIONS:
+            continue
+        generated_root = result.notebook_source_directory / "src" / package_name
+        excluded = {
+            relative
+            for relative in _expected_runtime_files(source_root, suffixes)
+            if _is_notebook_excluded(package_name, relative)
+        }
+        assert excluded
+        for relative in excluded:
+            assert not (generated_root / relative).exists()
+            assert (app_roots[package_name] / relative).read_bytes() == (
+                source_root / relative
+            ).read_bytes()
 
 
 def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
@@ -152,7 +266,7 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "mcp_server/pyproject.toml" in app_files
     assert "mcp_server/gds_etl_workbench/runtime.py" in app_files
     assert "web_app/backend/pyproject.toml" in app_files
-    assert "web_app/backend/uv.lock" in app_files
+    assert "web_app/backend/uv.lock" not in app_files
     assert "web_app/backend/gds_workbench_api/app_process.py" in app_files
     assert (
         "web_app/backend/gds_workbench_api/config/agent_capabilities.json" in app_files
@@ -405,7 +519,7 @@ def test_extracted_notebook_package_imports_without_repository_paths(
                 "from pathlib import Path; "
                 "import gds_etl_workbench, gds_workbench_api, gds_workbench_notebooks, "
                 "gds_workbench_runtime; "
-                "from gds_workbench_notebooks import run_notebook; "
+                "from gds_workbench_notebooks.notebook import run_notebook; "
                 "source = Path('src').resolve(); "
                 "modules = (gds_etl_workbench, gds_workbench_api, "
                 "gds_workbench_notebooks, gds_workbench_runtime); "
@@ -413,6 +527,43 @@ def test_extracted_notebook_package_imports_without_repository_paths(
                 "assert all(Path(module.__file__).resolve().is_relative_to(source) "
                 "for module in modules)"
             ),
+        ],
+        check=False,
+        capture_output=True,
+        text=True,
+        env=environment,
+        cwd=extracted,
+    )
+    assert completed.returncode == 0, completed.stderr
+
+
+def test_every_packaged_notebook_module_imports_from_the_extracted_artifact(
+    tmp_path: Path,
+) -> None:
+    builder = _load_builder()
+    result = builder.build_uploads(tmp_path / "release")
+    extracted = tmp_path / "extracted-all-modules"
+    with ZipFile(result.notebook_archive) as package:
+        package.extractall(extracted)
+
+    source_root = extracted / "src"
+    modules = set()
+    for path in source_root.rglob("*.py"):
+        relative = path.relative_to(source_root)
+        parts = relative.with_suffix("").parts
+        modules.add(".".join(parts[:-1] if parts[-1] == "__init__" else parts))
+
+    environment = os.environ.copy()
+    environment["PYTHONPATH"] = str(source_root)
+    completed = subprocess.run(
+        [
+            sys.executable,
+            "-c",
+            (
+                "import importlib, json, sys; "
+                "[importlib.import_module(name) for name in json.loads(sys.argv[1])]"
+            ),
+            json.dumps(sorted(modules)),
         ],
         check=False,
         capture_output=True,
@@ -455,7 +606,10 @@ def test_extracted_notebook_shared_workflow_runtime_assembles_from_source(
                 "agent_capability_registry=load_default_agent_capabilities(), "
                 "databricks_environment_code='PROD', "
                 "databricks_execution=create_databricks_execution_adapters('fake')); "
-                "assert services.execution_services().profiling is services.profiling; "
+                "execution = services.execution_services(); "
+                "assert all(getattr(execution, name) is getattr(services, name) for name in ("
+                "'profiling', 'analysis_inference', 'analysis_validation', 'conceptual', "
+                "'logical', 'dimensional', 'mapping', 'code_generation')); "
                 "asyncio.run(services.close())"
             ),
         ],

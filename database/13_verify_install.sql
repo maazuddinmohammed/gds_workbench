@@ -22,13 +22,7 @@ DECLARE
         'application.create_notebook_workflow_run(bigint,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying,character varying,uuid,jsonb,character varying,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
         'application.start_and_claim_notebook_workflow_run(bigint,bigint,bigint,bigint,character varying,integer)',
         'application.renew_notebook_workflow_run_claim(bigint,uuid,integer)',
-        'application.release_notebook_workflow_run_claim(bigint,uuid)',
-        'application.assert_notebook_workflow_run_claim(bigint,uuid)',
-        'application.get_notebook_profiling_execution_context(bigint,bigint,bigint,bigint,uuid)',
-        'application.get_notebook_profiling_connection_values(bigint,bigint,bigint,bigint,uuid)',
-        'application.append_notebook_profiling_event(bigint,bigint,bigint,bigint,uuid,bigint,character varying,character varying,character varying,integer,integer,integer)',
-        'application.persist_and_complete_notebook_profiling_run(bigint,bigint,bigint,bigint,uuid,jsonb)',
-        'application.fail_notebook_profiling_run(bigint,bigint,bigint,bigint,uuid,character varying,character varying)'
+        'application.release_notebook_workflow_run_claim(bigint,uuid)'
     ];
     v_application_web_function_signatures TEXT[] := ARRAY[
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',

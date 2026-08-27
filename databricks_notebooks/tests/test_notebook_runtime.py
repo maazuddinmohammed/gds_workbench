@@ -4,9 +4,11 @@ import re
 from pathlib import Path
 
 import pytest
-from gds_workbench_notebooks import (
+from gds_workbench_notebooks.errors import (
     NotebookConfigurationError,
     NotebookDatabaseError,
+)
+from gds_workbench_notebooks.runtime import (
     load_notebook_database_settings,
     load_notebook_runtime_settings,
     locate_uploaded_root,

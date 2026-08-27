@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from .errors import (
@@ -345,7 +345,12 @@ def _agent_runtime(
         raise NotebookConfigurationError(
             "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT is required for an agent Workflow."
         )
-    if not isinstance(selected_agent, dict) or selected_agent.get("provider_code") != "databricks":
+    if not isinstance(selected_agent, Mapping):
+        raise NotebookConfigurationError(
+            "Independent notebooks support the Databricks agent provider only."
+        )
+    selected_agent_mapping = cast(Mapping[str, object], selected_agent)
+    if selected_agent_mapping.get("provider_code") != "databricks":
         raise NotebookConfigurationError(
             "Independent notebooks support the Databricks agent provider only."
         )

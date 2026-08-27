@@ -667,8 +667,9 @@ def test_notebook_exact_claim_recovers_only_its_requested_run_and_leases_are_bou
         ):
             connection.execute(
                 """
-                SELECT application.assert_notebook_workflow_run_claim(
-                    %s::BIGINT, %s::UUID
+                SELECT *
+                  FROM application.renew_notebook_workflow_run_claim(
+                      %s::BIGINT, %s::UUID, 60::INTEGER
                 )
                 """,
                 (workflow_run_id, first_token),
@@ -684,14 +685,6 @@ def test_notebook_exact_claim_recovers_only_its_requested_run_and_leases_are_bou
                 (workflow_run_id, recovered_token),
             ).fetchone()
         )
-        connection.execute(
-            """
-            SELECT application.assert_notebook_workflow_run_claim(
-                %s::BIGINT, %s::UUID
-            )
-            """,
-            (workflow_run_id, recovered_token),
-        ).fetchone()
         released = require_row(
             connection.execute(
                 """
@@ -1056,7 +1049,6 @@ def test_notebook_workflow_acl_is_wrapper_only_and_verified(
         "bigint,bigint,bigint,bigint,character varying,integer)",
         "application.renew_notebook_workflow_run_claim(bigint,uuid,integer)",
         "application.release_notebook_workflow_run_claim(bigint,uuid)",
-        "application.assert_notebook_workflow_run_claim(bigint,uuid)",
     )
     forbidden = (
         "application.create_workflow_run("

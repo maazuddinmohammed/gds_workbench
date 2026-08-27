@@ -81,56 +81,6 @@ GRANT EXECUTE ON FUNCTION application.release_notebook_workflow_run_claim(
     BIGINT,
     UUID
 ) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.assert_notebook_workflow_run_claim(
-    BIGINT,
-    UUID
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.get_notebook_profiling_execution_context(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    UUID
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.get_notebook_profiling_connection_values(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    UUID
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.append_notebook_profiling_event(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    UUID,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    VARCHAR,
-    INTEGER,
-    INTEGER,
-    INTEGER
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION
-application.persist_and_complete_notebook_profiling_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    UUID,
-    JSONB
-) TO gds_notebook_runtime;
-GRANT EXECUTE ON FUNCTION application.fail_notebook_profiling_run(
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    BIGINT,
-    UUID,
-    VARCHAR,
-    VARCHAR
-) TO gds_notebook_runtime;
 
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, mcp
     TO gds_app_write;

@@ -330,7 +330,7 @@ class ConnectorAnalysisValidationExecutor:
                 dict(zip(_RESULT_COLUMNS, rows[0], strict=True)),
                 strict=True,
             )
-        except (TypeError, ValidationError):
+        except TypeError, ValidationError:
             raise AnalysisValidationResultInvalidError() from None
 
 

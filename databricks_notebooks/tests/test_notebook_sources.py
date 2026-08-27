@@ -29,7 +29,7 @@ def test_all_workflow_notebooks_are_source_importable_and_thin() -> None:
         assert text.startswith("# Databricks notebook source\n")
         ast.parse(text)
         assert text.count("run_notebook(") == 1
-        assert f'run_notebook("{workflow}", dbutils=dbutils)' in text
+        assert f'run_notebook("{workflow}", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)' in text
         assert "sys.path.insert" in text
         assert "psycopg" not in text
         assert "dbutils.secrets" not in text

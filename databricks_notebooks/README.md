@@ -293,14 +293,23 @@ Databricks environment.
 
 ## CLI upload alternative
 
-The UI remains the deployment method. The current Databricks CLI can preserve
-the expanded folder tree when browser drag-and-drop is unreliable:
+The UI remains the deployment method. When browser drag-and-drop is unreliable,
+use [`sync`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/sync-commands)
+for ordinary source files and
+[`workspace import-dir`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/workspace-commands)
+only for the marked notebook entry points. Databricks documents that
+`import-dir` strips extensions from notebooks, so using it on `src/` would
+break Python imports.
 
 ```bash
 databricks workspace mkdirs "/Users/<workspace-user>/gds-workbench-notebooks"
-databricks workspace import-dir \
+databricks sync \
   artifacts/databricks-ui/gds-workbench-notebooks \
   "/Users/<workspace-user>/gds-workbench-notebooks" \
+  --exclude "notebooks/**"
+databricks workspace import-dir \
+  artifacts/databricks-ui/gds-workbench-notebooks/notebooks \
+  "/Users/<workspace-user>/gds-workbench-notebooks/notebooks" \
   --overwrite
 ```
 

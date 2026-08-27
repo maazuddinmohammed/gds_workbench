@@ -425,13 +425,14 @@ and the
 
 ### Upload the optional interactive notebooks separately
 
-The App bundle deliberately excludes `databricks_notebooks/`. Deploy and start
-the App first, then upload the notebook source folders to an access-controlled
-Workspace user folder. The notebooks import the sibling Python client through
-`sys.path`, collect non-secret widgets, and call the deployed App API; they do
-not duplicate workflow logic, connect directly to PostgreSQL, or need an
-`.env` file. The App and notebooks therefore use the same authorization,
-validation, tenant-wide running-workflow guard, and worker implementation.
+The App bundle deliberately excludes `databricks_notebooks/`. Upload the
+notebook artifact separately to an access-controlled Workspace user folder.
+These notebooks are an independent entry point: they load their own `.env`,
+connect directly to PostgreSQL, resolve the database-owned notebook workload
+identity, and run the shared workflow implementation in-process. They do not
+call the App API or require the App or MCP server to be running. The App and
+notebooks share source and authoritative database controls, but have separate
+deployment, configuration, identity, and process lifecycles.
 
 Follow [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) for
 the exact CLI upload commands, compute requirements, widget list, run order,

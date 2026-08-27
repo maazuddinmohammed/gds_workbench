@@ -32,7 +32,6 @@ sync:
     - mcp_server/dist/**
     - mcp_server/requirements.txt
     - mcp_server/startup.sh
-    - mcp_server/useful_commands.txt
     - mcp_server/uv.lock
     - web_app/compose.local.yaml
     - web_app/local/**

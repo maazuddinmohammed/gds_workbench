@@ -1,0 +1,6 @@
+{
+  "include": ["src/gds_workbench_notebooks"],
+  "extraPaths": ["src", "../web_app/backend", "../mcp_server"],
+  "pythonVersion": "3.12",
+  "typeCheckingMode": "strict"
+}

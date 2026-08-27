@@ -5,9 +5,11 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 import pytest
-from gds_workbench_notebooks import (
+from gds_workbench_notebooks.errors import (
     NotebookAuthorizationError,
     NotebookConfigurationError,
+)
+from gds_workbench_notebooks.tenant_lock import (
     TenantLockRequest,
     build_tenant_lock_request,
     execute_tenant_lock_request,

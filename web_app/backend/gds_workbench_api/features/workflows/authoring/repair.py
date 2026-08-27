@@ -179,7 +179,7 @@ def _json_bytes(value: JsonValue) -> int:
             separators=(",", ":"),
             sort_keys=True,
         ).encode("utf-8")
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise AgentCandidateValidationError() from None
     return len(encoded)
 

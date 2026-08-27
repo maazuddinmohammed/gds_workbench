@@ -7,7 +7,7 @@ import re
 from collections.abc import Mapping
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
 
 from .errors import (
@@ -65,13 +65,6 @@ class NotebookPrincipal:
     entra_tenant_id: UUID = field(repr=False)
     entra_object_id: UUID = field(repr=False)
 
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "display_name": self.display_name,
-            "principal_type": self.principal_type,
-            "databricks_environment_code": self.databricks_environment_code,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class WorkflowCreateResult:
@@ -87,26 +80,6 @@ class WorkflowCreateResult:
     denial_code: str | None = None
     code_generation_coverage_mode: str | None = None
     sql_generation_guide_version_id: int | None = None
-
-    def as_dict(self) -> dict[str, object]:
-        result: dict[str, object] = {
-            "workflow_run_id": self.workflow_run_id,
-            "workflow": self.workflow,
-            "state": self.state,
-            "created": self.created,
-            "correlation_id": str(self.correlation_id),
-            "model_revision": self.model_revision,
-            "selected_scope_count": self.selected_scope_count,
-            "prompt_snapshot_count": self.prompt_snapshot_count,
-            "created_time": self.created_time.isoformat(),
-        }
-        if self.denial_code is not None:
-            result["denial_code"] = self.denial_code
-        if self.code_generation_coverage_mode is not None:
-            result["code_generation_coverage_mode"] = self.code_generation_coverage_mode
-        if self.sql_generation_guide_version_id is not None:
-            result["sql_generation_guide_version_id"] = self.sql_generation_guide_version_id
-        return result
 
 
 @dataclass(frozen=True, slots=True)
@@ -126,40 +99,13 @@ class WorkflowClaimResult:
     expires_time: datetime
     recovery_count: int
 
-    def as_dict(self) -> dict[str, object]:
-        return {
-            "workflow_run_id": self.workflow_run_id,
-            "tenant_id": self.tenant_id,
-            "model_id": self.model_id,
-            "model_revision": self.model_revision,
-            "workflow": self.workflow,
-            "workflow_execution_mode": self.workflow_execution_mode,
-            "correlation_id": str(self.correlation_id),
-            "claimed_time": self.claimed_time.isoformat(),
-            "expires_time": self.expires_time.isoformat(),
-            "recovery_count": self.recovery_count,
-        }
-
 
 @dataclass(frozen=True, slots=True)
 class WorkflowLeaseResult:
     workflow_run_id: int
-    action: str
     succeeded: bool
     heartbeat_time: datetime | None = None
     expires_time: datetime | None = None
-
-    def as_dict(self) -> dict[str, object]:
-        result: dict[str, object] = {
-            "workflow_run_id": self.workflow_run_id,
-            "action": self.action,
-            "succeeded": self.succeeded,
-        }
-        if self.heartbeat_time is not None:
-            result["heartbeat_time"] = self.heartbeat_time.isoformat()
-        if self.expires_time is not None:
-            result["expires_time"] = self.expires_time.isoformat()
-        return result
 
 
 class NotebookWorkflowControlClient:
@@ -416,7 +362,6 @@ class NotebookWorkflowControlClient:
             )
         return WorkflowLeaseResult(
             workflow_run_id=workflow_run_id,
-            action="renew",
             succeeded=True,
             heartbeat_time=heartbeat_time,
             expires_time=expires_time,
@@ -444,7 +389,6 @@ class NotebookWorkflowControlClient:
             )
         return WorkflowLeaseResult(
             workflow_run_id=claim.workflow_run_id,
-            action="release",
             succeeded=released,
         )
 
@@ -467,12 +411,12 @@ class NotebookWorkflowControlClient:
             raise NotebookDatabaseError(
                 "The notebook database returned an invalid Workflow control result."
             )
-        return row
+        return cast(Mapping[str, Any], row)
 
 
 def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
     payload = request.create_payload
-    if request.workflow not in _WORKFLOWS or set(payload) != _CREATE_PAYLOAD_KEYS:
+    if request.workflow not in _WORKFLOWS or frozenset(payload) != _CREATE_PAYLOAD_KEYS:
         raise NotebookConfigurationError("The notebook Workflow create payload is invalid.")
     if (
         payload["expected_model_revision"] != request.expected_model_revision
@@ -482,34 +426,40 @@ def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
             "The notebook Workflow create payload does not match its request."
         )
     selected_object_ids = payload["selected_object_ids"]
-    if not isinstance(selected_object_ids, list) or any(
-        type(object_id) is not int for object_id in selected_object_ids
-    ):
+    if not isinstance(selected_object_ids, list):
         raise NotebookConfigurationError("The notebook Workflow selected scope is invalid.")
+    selected_values = cast(list[object], selected_object_ids)
+    if any(type(object_id) is not int for object_id in selected_values):
+        raise NotebookConfigurationError("The notebook Workflow selected scope is invalid.")
+    selected_ids = cast(list[int], selected_values)
     agent = payload["agent"]
     if agent is None:
         agent_values: tuple[object, ...] = (None, None, None, None, None, None)
-    elif isinstance(agent, Mapping) and set(agent) == {
-        "sdk_code",
-        "provider_code",
-        "model_code",
-        "reasoning_effort_code",
-        "max_turns",
-        "validation_retry_count",
-    }:
+    elif isinstance(agent, Mapping):
+        agent_mapping = cast(Mapping[str, object], agent)
+        if set(agent_mapping) != {
+            "sdk_code",
+            "provider_code",
+            "model_code",
+            "reasoning_effort_code",
+            "max_turns",
+            "validation_retry_count",
+        }:
+            raise NotebookConfigurationError("The notebook Workflow agent input is invalid.")
         agent_values = (
-            agent["sdk_code"],
-            agent["provider_code"],
-            agent["model_code"],
-            agent["reasoning_effort_code"],
-            agent["max_turns"],
-            agent["validation_retry_count"],
+            agent_mapping["sdk_code"],
+            agent_mapping["provider_code"],
+            agent_mapping["model_code"],
+            agent_mapping["reasoning_effort_code"],
+            agent_mapping["max_turns"],
+            agent_mapping["validation_retry_count"],
         )
     else:
         raise NotebookConfigurationError("The notebook Workflow agent input is invalid.")
     prompt_overrides = payload["prompt_overrides"]
     if not isinstance(prompt_overrides, Mapping):
         raise NotebookConfigurationError("The notebook Workflow prompt overrides are invalid.")
+    prompt_override_mapping = cast(Mapping[str, object], prompt_overrides)
     return (
         request.tenant_id,
         request.model_id,
@@ -517,11 +467,11 @@ def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
         request.workflow,
         payload["workflow_execution_mode"],
         *agent_values,
-        selected_object_ids,
+        selected_ids,
         payload["modeled_entity_type"],
         payload["requested_batch_id"],
         request.idempotency_key,
-        json.dumps(prompt_overrides, sort_keys=True, separators=(",", ":")),
+        json.dumps(prompt_override_mapping, sort_keys=True, separators=(",", ":")),
         payload["mapping_operation"],
         payload["mapping_coverage_mode"],
         payload["mapping_artifact_type"],

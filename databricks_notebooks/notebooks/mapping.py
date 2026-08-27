@@ -17,6 +17,6 @@ _SOURCE_ROOT = str(_UPLOAD_ROOT / "src")
 if _SOURCE_ROOT not in sys.path:
     sys.path.insert(0, _SOURCE_ROOT)
 
-from gds_workbench_notebooks import run_notebook
+from gds_workbench_notebooks.notebook import run_notebook
 
-run_notebook("mapping", dbutils=dbutils)
+run_notebook("mapping", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)

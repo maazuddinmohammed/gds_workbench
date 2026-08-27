@@ -10,7 +10,6 @@ from pathlib import Path
 
 BUILD_SCRIPT = Path(__file__).parents[2] / "mcp_server" / "build_zip.py"
 SOURCE_ROOT = BUILD_SCRIPT.parent
-CHECKED_IN_ARTIFACT = SOURCE_ROOT / "dist" / "gds-mcp-appservice-0.2.0-role-fix.zip"
 PROJECT_FILE = BUILD_SCRIPT.with_name("pyproject.toml")
 LOCK_FILE = BUILD_SCRIPT.with_name("uv.lock")
 
@@ -102,15 +101,6 @@ def test_appservice_zip_uses_runtime_only_allowlist(tmp_path: Path) -> None:
         assert "GDS_REQUEST_TIMEOUT_SECONDS" not in startup
         assert "WEB_CONCURRENCY" not in startup
         assert "${PORT" not in startup
-
-
-def test_checked_in_appservice_zip_matches_clean_build(tmp_path: Path) -> None:
-    artifact = tmp_path / "app.zip"
-    completed = build_zip(artifact)
-
-    assert completed.returncode == 0
-    assert CHECKED_IN_ARTIFACT.is_file()
-    assert CHECKED_IN_ARTIFACT.read_bytes() == artifact.read_bytes()
 
 
 def test_appservice_zip_builder_refuses_overwrite(tmp_path: Path) -> None:

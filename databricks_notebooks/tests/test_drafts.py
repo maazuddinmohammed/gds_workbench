@@ -150,14 +150,17 @@ def test_review_widget_values_are_strictly_validated() -> None:
             "Dataset": "logical_entity",
         }
     ) == _review_request("logical_entity")
-    assert build_draft_review_request(
-        {
-            "TenantID": "7",
-            "ModelID": "18",
-            "WorkflowRunID": "1047",
-            "Dataset": "",
-        }
-    ) == _review_request()
+    assert (
+        build_draft_review_request(
+            {
+                "TenantID": "7",
+                "ModelID": "18",
+                "WorkflowRunID": "1047",
+                "Dataset": "",
+            }
+        )
+        == _review_request()
+    )
 
     for field, value in (
         ("TenantID", "0"),
@@ -351,9 +354,7 @@ def test_review_notebook_installs_widgets_and_prints_bounded_lines(
     tmp_path: Path,
     capsys: pytest.CaptureFixture[str],
 ) -> None:
-    widgets = _Widgets(
-        {"TenantID": "7", "ModelID": "18", "WorkflowRunID": "1047", "Dataset": ""}
-    )
+    widgets = _Widgets({"TenantID": "7", "ModelID": "18", "WorkflowRunID": "1047", "Dataset": ""})
     expected = WorkflowDraftReviewResult(
         tenant_id=7,
         model_id=18,
@@ -443,9 +444,7 @@ def test_notebook_sources_are_thin_source_imports_and_start_no_server() -> None:
         "90_review_workflow_draft.py": "run_workflow_draft_review_notebook",
         "91_apply_workflow_draft.py": "run_workflow_draft_apply_notebook",
     }
-    combined = (
-        _ROOT / "src" / "gds_workbench_notebooks" / "drafts.py"
-    ).read_text()
+    combined = (_ROOT / "src" / "gds_workbench_notebooks" / "drafts.py").read_text()
     for name, entry_point in notebook_expectations.items():
         source = (_ROOT / "notebooks" / name).read_text()
         ast.parse(source, feature_version=(3, 12))

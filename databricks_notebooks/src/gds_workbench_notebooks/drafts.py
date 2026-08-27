@@ -55,12 +55,8 @@ _MODEL_CHANGE_SET_DATASETS = (
     "mapping_attribute",
 )
 _MODEL_CHANGE_SET_DATASET_SET = frozenset(_MODEL_CHANGE_SET_DATASETS)
-_WORKFLOWS = frozenset(
-    {"profiling", "analysis", "conceptual", "logical", "dimensional", "mapping"}
-)
-_WORKFLOW_STATES = frozenset(
-    {"queued", "running", "completed", "completed_with_repair", "failed"}
-)
+_WORKFLOWS = frozenset({"profiling", "analysis", "conceptual", "logical", "dimensional", "mapping"})
+_WORKFLOW_STATES = frozenset({"queued", "running", "completed", "completed_with_repair", "failed"})
 _DRAFT_STATUSES = frozenset(
     {"active", "validated", "applied", "expired", "discarded", "superseded"}
 )
@@ -533,10 +529,7 @@ def _apply_result(request: WorkflowDraftApplyRequest, result: Any) -> WorkflowDr
     action_count = getattr(result, "action_count", None)
     model_revision = getattr(result, "model_revision", None)
     applied_at = getattr(result, "applied_at", None)
-    if (
-        model_id != request.model_id
-        or workflow_run_id != request.workflow_run_id
-    ):
+    if model_id != request.model_id or workflow_run_id != request.workflow_run_id:
         raise NotebookDatabaseError("The draft apply returned an invalid Workflow Run.")
     if not isinstance(change_set_id, UUID):
         raise NotebookDatabaseError("The draft apply returned an invalid Change Set.")

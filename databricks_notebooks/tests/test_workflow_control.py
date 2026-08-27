@@ -7,13 +7,14 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
-from gds_workbench_notebooks import (
+from gds_workbench_notebooks.errors import (
     NotebookAuthorizationError,
     NotebookDatabaseError,
+)
+from gds_workbench_notebooks.notebook import build_notebook_request, widget_specs
+from gds_workbench_notebooks.workflow_control import (
     NotebookWorkflowControlClient,
     WorkflowClaimResult,
-    build_notebook_request,
-    widget_specs,
 )
 
 _CORRELATION_ID = UUID("12345678-1234-4234-8234-123456789abc")
@@ -133,11 +134,9 @@ def test_resolves_only_the_database_owned_notebook_principal() -> None:
 
     principal = NotebookWorkflowControlClient(connection).current_principal()
 
-    assert principal.as_dict() == {
-        "display_name": "Databricks Notebook Runtime",
-        "principal_type": "service_principal",
-        "databricks_environment_code": "PROD",
-    }
+    assert principal.display_name == "Databricks Notebook Runtime"
+    assert principal.principal_type == "service_principal"
+    assert principal.databricks_environment_code == "PROD"
     assert principal.entra_tenant_id == _ACTOR_TENANT_ID
     assert principal.entra_object_id == _ACTOR_OBJECT_ID
     assert str(_ACTOR_TENANT_ID) not in repr(principal)
@@ -242,18 +241,14 @@ def test_start_claim_renew_and_release_use_exact_wrapper_parameters() -> None:
     assert connection.calls[2][1] == (71, _CLAIM_TOKEN, 30)
     assert "release_notebook_workflow_run_claim(" in connection.calls[3][0]
     assert connection.calls[3][1] == (71, _CLAIM_TOKEN)
-    assert renewed.as_dict() == {
-        "workflow_run_id": 71,
-        "action": "renew",
-        "succeeded": True,
-        "heartbeat_time": (_NOW + timedelta(seconds=10)).isoformat(),
-        "expires_time": (_NOW + timedelta(seconds=40)).isoformat(),
-    }
-    assert released.as_dict() == {
-        "workflow_run_id": 71,
-        "action": "release",
-        "succeeded": True,
-    }
+    assert renewed.workflow_run_id == 71
+    assert renewed.succeeded is True
+    assert renewed.heartbeat_time == _NOW + timedelta(seconds=10)
+    assert renewed.expires_time == _NOW + timedelta(seconds=40)
+    assert released.workflow_run_id == 71
+    assert released.succeeded is True
+    assert released.heartbeat_time is None
+    assert released.expires_time is None
 
 
 def test_claim_token_is_available_to_execution_but_never_rendered() -> None:
@@ -261,8 +256,6 @@ def test_claim_token_is_available_to_execution_but_never_rendered() -> None:
 
     assert claim.claim_token == _CLAIM_TOKEN
     assert str(_CLAIM_TOKEN) not in repr(claim)
-    assert str(_CLAIM_TOKEN) not in str(claim.as_dict())
-    assert "claim_token" not in claim.as_dict()
 
 
 def test_public_control_methods_accept_no_actor_identity_input() -> None:

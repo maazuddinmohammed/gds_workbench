@@ -6,24 +6,29 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
+import gds_workbench_notebooks.workflow_execution as workflow_execution
 import pytest
-from gds_workbench_notebooks import (
+from gds_workbench_notebooks.errors import (
     NotebookConfigurationError,
     NotebookDatabaseError,
+)
+from gds_workbench_notebooks.notebook import build_notebook_request, widget_specs
+from gds_workbench_notebooks.runtime import (
     NotebookDatabaseSettings,
-    NotebookPrincipal,
     NotebookRuntimeSettings,
-    NotebookWorkflowClaimLeaseRepository,
-    NotebookWorkflowExecutionResult,
-    WorkflowClaimResult,
-    WorkflowCreateResult,
-    build_notebook_request,
-    widget_specs,
-    workflow_execution,
 )
 from gds_workbench_notebooks.shared_runtime import (
     notebook_database_conninfo,
     run_coroutine_in_thread,
+)
+from gds_workbench_notebooks.workflow_control import (
+    NotebookPrincipal,
+    WorkflowClaimResult,
+    WorkflowCreateResult,
+)
+from gds_workbench_notebooks.workflow_execution import (
+    NotebookWorkflowClaimLeaseRepository,
+    NotebookWorkflowExecutionResult,
 )
 
 _CORRELATION_ID = UUID("12345678-1234-4234-8234-123456789abc")
@@ -185,9 +190,11 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
     monkeypatch.setattr(
         workflow_execution,
         "_resolve_principal_and_create",
-        lambda _settings, received: (principal, created)
-        if received is request
-        else pytest.fail("unexpected Workflow request"),
+        lambda _settings, received: (
+            (principal, created)
+            if received is request
+            else pytest.fail("unexpected Workflow request")
+        ),
     )
     monkeypatch.setattr(
         workflow_execution,
@@ -329,9 +336,11 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
     monkeypatch.setattr(
         workflow_execution,
         "_resolve_principal_and_create",
-        lambda _settings, received: (principal, created)
-        if received is request
-        else pytest.fail("unexpected Workflow request"),
+        lambda _settings, received: (
+            (principal, created)
+            if received is request
+            else pytest.fail("unexpected Workflow request")
+        ),
     )
 
     def exact_claim(database_settings, received_request, received_created, lease_seconds):

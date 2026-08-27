@@ -9,9 +9,6 @@ from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.tools.databricks.executor import (
     DatabricksSqlConnection as LegacyDatabricksSqlConnection,
 )
-from gds_workbench_api.features.profiling.execution import (
-    ProfileObject as LegacyProfileObject,
-)
 from gds_workbench_api.features.profiling.workflow import (
     DatabaseProfilingWorkflowRepository,
     ExecuteProfilingRunRequest,
@@ -20,7 +17,6 @@ from gds_workbench_api.features.profiling.workflow import (
 from gds_workbench_api.features.profiling.workflow import (
     ProfilingWorkflowOrchestrator as LegacyProfilingWorkflowOrchestrator,
 )
-from gds_workbench_runtime.profiling.execution import ProfileObject
 from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 _ROOT = Path(__file__).resolve().parents[2]
@@ -57,8 +53,7 @@ for forbidden in ("fastapi", "mcp", "sqlglot"):
     assert completed.returncode == 0, completed.stderr
 
 
-def test_existing_profiling_and_connection_imports_are_compatible() -> None:
-    assert LegacyProfileObject is ProfileObject
+def test_existing_connection_import_is_compatible() -> None:
     assert LegacyProfilingWorkflowOrchestrator is ProfilingWorkflowOrchestrator
     assert LegacyDatabricksSqlConnection is DatabricksSqlConnection
 

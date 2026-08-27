@@ -49,6 +49,78 @@ _IGNORED_SOURCE_PARTS = frozenset(
     }
 )
 _IGNORED_SOURCE_NAMES = frozenset({".DS_Store", "README.md"})
+_NOTEBOOK_API_EXCLUDED_PREFIXES = frozenset(
+    {
+        "features/metadata",
+        "features/metadata_change_sets",
+        "features/model_scope",
+        "features/output_templates",
+        "features/prompts",
+        "features/session",
+        "features/sql_generation_guides",
+        "features/tenant_locks",
+        "features/tenants",
+        "features/workflows/commands",
+        "features/workflows/overview",
+    }
+)
+_NOTEBOOK_API_EXCLUDED_FILES = frozenset(
+    {
+        "app_process.py",
+        "authentication.py",
+        "config/workflow_execution.json",
+        "configuration.py",
+        "errors.py",
+        "features/model_change_sets/router.py",
+        "features/workflows/authoring/change_set_apply_router.py",
+        "features/workflows/execution/configuration.py",
+        "frontend.py",
+        "main.py",
+        "runtime.py",
+        "workflow_worker.py",
+    }
+)
+_NOTEBOOK_ETL_EXCLUDED_PREFIXES = frozenset(
+    {
+        "adapters/mcp",
+        "diagnostics",
+        "tools/ingestion",
+        "tools/processing",
+        "tools/snapshots/dbml",
+        "tools/tenants",
+    }
+)
+_NOTEBOOK_ETL_EXCLUDED_FILES = frozenset(
+    {
+        "adapters/auth/middleware.py",
+        "runtime.py",
+        "tools/catalog/get_object_lineage.py",
+        "tools/catalog/get_objects.py",
+        "tools/catalog/list_objects.py",
+        "tools/change_sets/metadata.py",
+        "tools/change_sets/validation.py",
+        "tools/databricks/execute_sql.py",
+        "tools/modeling/code_generation_authoring.py",
+        "tools/modeling/dimensional.py",
+        "tools/modeling/logical.py",
+        "tools/modeling/mapping_authoring.py",
+        "tools/modeling/model_details.py",
+        "tools/modeling/model_scope.py",
+        "tools/snapshots/archive.py",
+        "tools/snapshots/dataset_description.py",
+        "tools/snapshots/metadata/archive.py",
+        "tools/snapshots/metadata/describe_metadata_dataset.py",
+        "tools/snapshots/metadata/get_metadata_snapshot.py",
+        "tools/snapshots/metadata/guidance.py",
+        "tools/snapshots/metadata/projection.py",
+        "tools/snapshots/metadata/sql.py",
+        "tools/snapshots/model/archive.py",
+        "tools/snapshots/model/describe_model_dataset.py",
+        "tools/snapshots/model/get_model_snapshot.py",
+        "tools/snapshots/service.py",
+        "tools/snapshots/storage.py",
+    }
+)
 
 
 class ArtifactBuildError(RuntimeError):
@@ -87,21 +159,50 @@ def _copy_tree(
     destination_root: Path,
     *,
     allowed_suffixes: frozenset[str],
+    excluded_relative_files: frozenset[str] = frozenset(),
+    excluded_relative_prefixes: frozenset[str] = frozenset(),
 ) -> None:
     if not source_root.is_dir() or source_root.is_symlink():
         raise ArtifactBuildError(
             f"required source directory is unavailable: {source_root}"
         )
+    for exclusion in excluded_relative_files | excluded_relative_prefixes:
+        path = PurePosixPath(exclusion)
+        if (
+            not exclusion
+            or "\\" in exclusion
+            or path.is_absolute()
+            or path.as_posix() != exclusion
+            or any(part in {"", ".", ".."} for part in path.parts)
+        ):
+            raise ArtifactBuildError(f"invalid source exclusion: {exclusion}")
+    for relative in excluded_relative_files:
+        excluded_source = source_root / relative
+        if excluded_source.is_symlink() or not excluded_source.is_file():
+            raise ArtifactBuildError(f"excluded source file is unavailable: {excluded_source}")
+    for relative in excluded_relative_prefixes:
+        excluded_source = source_root / relative
+        if excluded_source.is_symlink() or not excluded_source.is_dir():
+            raise ArtifactBuildError(
+                f"excluded source directory is unavailable: {excluded_source}"
+            )
+
     for source in sorted(source_root.rglob("*")):
         if source.is_symlink():
             raise ArtifactBuildError(f"source symlinks are not allowed: {source}")
         if source.is_dir() or _is_ignored_source(source, source_root):
             continue
+        relative = source.relative_to(source_root).as_posix()
+        if relative in excluded_relative_files or any(
+            relative == prefix or relative.startswith(f"{prefix}/")
+            for prefix in excluded_relative_prefixes
+        ):
+            continue
         if not source.is_file():
             raise ArtifactBuildError(f"source is not a regular file: {source}")
         if source.suffix not in allowed_suffixes:
             raise ArtifactBuildError(f"unexpected runtime source file: {source}")
-        _copy_file(source, destination_root / source.relative_to(source_root))
+        _copy_file(source, destination_root / relative)
 
 
 def _build_app_source(destination: Path) -> None:
@@ -118,11 +219,10 @@ def _build_app_source(destination: Path) -> None:
         allowed_suffixes=frozenset({".py"}),
     )
 
-    for relative in ("pyproject.toml", "uv.lock"):
-        _copy_file(
-            REPOSITORY_ROOT / "web_app" / "backend" / relative,
-            destination / "web_app" / "backend" / relative,
-        )
+    _copy_file(
+        REPOSITORY_ROOT / "web_app" / "backend" / "pyproject.toml",
+        destination / "web_app" / "backend" / "pyproject.toml",
+    )
     _copy_tree(
         REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api",
         destination / "web_app" / "backend" / "gds_workbench_api",
@@ -149,32 +249,48 @@ def _build_notebook_source(destination: Path) -> None:
     source_root = REPOSITORY_ROOT / "databricks_notebooks"
     _copy_file(source_root / ".env.example", destination / ".env.example")
     _copy_file(source_root / "requirements.txt", destination / "requirements.txt")
-    for package_name, package_root, allowed_suffixes in (
+    for (
+        package_name,
+        package_root,
+        allowed_suffixes,
+        excluded_files,
+        excluded_prefixes,
+    ) in (
         (
             "gds_workbench_notebooks",
             source_root / "src" / "gds_workbench_notebooks",
             frozenset({".py"}),
+            frozenset(),
+            frozenset(),
         ),
         (
             "gds_workbench_runtime",
             REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_runtime",
             frozenset({".json", ".py"}),
+            frozenset(),
+            frozenset(),
         ),
         (
             "gds_workbench_api",
             REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api",
             frozenset({".json", ".py"}),
+            _NOTEBOOK_API_EXCLUDED_FILES,
+            _NOTEBOOK_API_EXCLUDED_PREFIXES,
         ),
         (
             "gds_etl_workbench",
             REPOSITORY_ROOT / "mcp_server" / "gds_etl_workbench",
             frozenset({".py"}),
+            _NOTEBOOK_ETL_EXCLUDED_FILES,
+            _NOTEBOOK_ETL_EXCLUDED_PREFIXES,
         ),
     ):
         _copy_tree(
             package_root,
             destination / "src" / package_name,
             allowed_suffixes=allowed_suffixes,
+            excluded_relative_files=excluded_files,
+            excluded_relative_prefixes=excluded_prefixes,
         )
     _copy_tree(
         source_root / "notebooks",

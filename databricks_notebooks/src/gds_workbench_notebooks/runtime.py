@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import ipaddress
 import re
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -224,7 +224,7 @@ def notebook_database_connection(
     settings: NotebookDatabaseSettings,
     *,
     connector: Callable[..., Any] = psycopg.connect,
-) -> Iterator[Any]:
+) -> Generator[Any, None, None]:
     """Open one explicit connection while keeping its password out of output."""
     try:
         connection = connector(

@@ -76,7 +76,6 @@ from an expanded folder if any level was flattened.
 │   └── web_app/
 │       ├── backend/
 │       │   ├── pyproject.toml
-│       │   ├── uv.lock
 │       │   ├── gds_workbench_api/...
 │       │   └── gds_workbench_runtime/...
 │       └── frontend/
@@ -248,14 +247,23 @@ Use this only when UI drag-and-drop is unreliable. Authenticate the current
 Databricks CLI profile to the target workspace, then run from the repository
 root.
 
-The notebook tree may use `workspace import-dir` because its marked notebook
-files are expected to become notebook objects:
+Use [`sync`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/sync-commands)
+for the notebook artifact's ordinary source files, excluding the marked entry
+points. Then use
+[`workspace import-dir`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/cli/reference/workspace-commands)
+only for `notebooks/` so those files become notebook objects. Databricks
+documents that imported notebooks have their extensions stripped; applying
+`import-dir` to `src/` would therefore break Python imports.
 
 ```bash
 databricks workspace mkdirs "/Users/<workspace-user>/gds-workbench-notebooks"
-databricks workspace import-dir \
+databricks sync \
   artifacts/databricks-ui/gds-workbench-notebooks \
   "/Users/<workspace-user>/gds-workbench-notebooks" \
+  --exclude "notebooks/**"
+databricks workspace import-dir \
+  artifacts/databricks-ui/gds-workbench-notebooks/notebooks \
+  "/Users/<workspace-user>/gds-workbench-notebooks/notebooks" \
   --overwrite
 ```
 

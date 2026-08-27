@@ -146,9 +146,7 @@ class WorkflowExecutionWorker:
         self._lease_duration_seconds = lease_duration_seconds
 
     async def run_once(self) -> WorkerRunResult:
-        claim = await self._claims.claim_next(
-            lease_duration_seconds=self._lease_duration_seconds
-        )
+        claim = await self._claims.claim_next(lease_duration_seconds=self._lease_duration_seconds)
         if claim is None:
             return WorkerRunResult.IDLE
         return await self._runner.run(claim)

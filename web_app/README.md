@@ -79,7 +79,7 @@ image or Azure Container App.
 | [`app.yaml`](../app.yaml) | Starts the combined process, binds resources, and explicitly selects provider `databricks`. |
 | [`pyproject.toml`](../pyproject.toml) and [`uv.lock`](../uv.lock) | Root Python application dependencies. |
 | [`package.json`](../package.json) and [`package-lock.json`](../package-lock.json) | Root React build and pinned Node dependencies. |
-| [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) | Separate source upload, widgets, workflow order, retries, and manual Apply gates for interactive notebooks that call the deployed App. |
+| [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) | Independent source upload, PostgreSQL configuration, widgets, workflow order, retries, and manual Apply gates for interactive notebooks. |
 
 Use [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for prerequisites, authentication,
 resource permissions, the Foundry deployment variant, exact operator commands,

@@ -4,15 +4,18 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID
 
+import gds_workbench_notebooks.preflight as preflight
 import pytest
-from gds_workbench_notebooks import (
-    NotebookConfigurationError,
-    NotebookDatabaseSettings,
+from gds_workbench_notebooks.errors import NotebookConfigurationError
+from gds_workbench_notebooks.preflight import (
     NotebookPreflightResult,
-    NotebookRuntimeSettings,
     execute_notebook_preflight,
-    preflight,
 )
+from gds_workbench_notebooks.runtime import (
+    NotebookDatabaseSettings,
+    NotebookRuntimeSettings,
+)
+from gds_workbench_notebooks.workflow_control import NotebookPrincipal
 
 _TENANT_ID = UUID("22345678-1234-4234-8234-123456789abc")
 _OBJECT_ID = UUID("32345678-1234-4234-8234-123456789abc")
@@ -46,8 +49,6 @@ def test_preflight_checks_fixed_identity_then_async_runtime(
 
         def current_principal(self):
             calls.append("identity")
-            from gds_workbench_notebooks import NotebookPrincipal
-
             return NotebookPrincipal(
                 display_name="Databricks Notebook Runtime",
                 principal_type="service_principal",

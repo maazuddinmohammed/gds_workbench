@@ -1,13 +1,13 @@
 from uuid import UUID
 
 import pytest
-from gds_workbench_notebooks import (
-    NotebookConfigurationError,
-    NotebookWorkflowExecutionResult,
+from gds_workbench_notebooks.errors import NotebookConfigurationError
+from gds_workbench_notebooks.notebook import (
     build_notebook_request,
     run_notebook,
     widget_specs,
 )
+from gds_workbench_notebooks.workflow_execution import NotebookWorkflowExecutionResult
 
 _WORKFLOWS = (
     "profiling",

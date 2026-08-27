@@ -112,26 +112,46 @@ jobs:
         run: >-
           uv run --frozen --project web_app/backend python -m pytest
           -c web_app/backend/pyproject.toml tests/web_packaging
-      - name: Test source-import notebooks
-        run: >-
-          uv run --frozen --project web_app/backend python -m pytest
-          databricks_notebooks/tests
       - name: Check formatting
         working-directory: web_app/backend
-        run: uv run --frozen ruff format --check gds_workbench_api
+        run: uv run --frozen ruff format --check gds_workbench_api gds_workbench_runtime
       - name: Check lint
         working-directory: web_app/backend
-        run: uv run --frozen ruff check gds_workbench_api
-      - name: Check notebook lint and format
-        run: |
-          uv run --frozen --project web_app/backend ruff check --config databricks_notebooks/ruff.toml databricks_notebooks
-          uv run --frozen --project web_app/backend ruff format --check --config databricks_notebooks/ruff.toml databricks_notebooks
+        run: uv run --frozen ruff check gds_workbench_api gds_workbench_runtime
       - name: Check types
         run: uv run --frozen --project web_app/backend pyright --project web_app/backend
-      - name: Check notebook types
+
+  notebooks:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install package manager
+        run: python -m pip install uv==0.10.2
+      - name: Install pinned notebook dependencies
+        run: |
+          uv venv --python 3.12 .venv-notebooks
+          uv pip install --python .venv-notebooks/bin/python --requirement databricks_notebooks/requirements-dev.txt
+      - name: Test source-import notebooks
+        env:
+          PYTHONPATH: databricks_notebooks/src:mcp_server:web_app/backend
+        run: .venv-notebooks/bin/python -m pytest databricks_notebooks/tests
+      - name: Probe extracted artifact on Databricks Python
         run: >-
-          uv run --frozen --project web_app/backend pyright
-          databricks_notebooks/src/gds_workbench_notebooks
+          .venv-notebooks/bin/python -m pytest
+          tests/web_packaging/test_databricks_ui_artifacts.py::test_every_packaged_notebook_module_imports_from_the_extracted_artifact
+          tests/web_packaging/test_databricks_ui_artifacts.py::test_extracted_notebook_shared_workflow_runtime_assembles_from_source
+      - name: Check notebook lint and format
+        run: |
+          .venv-notebooks/bin/ruff check --config databricks_notebooks/ruff.toml databricks_notebooks
+          .venv-notebooks/bin/ruff format --check --config databricks_notebooks/ruff.toml databricks_notebooks
+      - name: Check notebook types for Python 3.12
+        run: >-
+          .venv-notebooks/bin/pyright --project databricks_notebooks
+          --pythonpath .venv-notebooks/bin/python
 
   frontend:
     runs-on: ubuntu-latest

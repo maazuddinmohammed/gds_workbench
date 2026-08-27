@@ -1094,7 +1094,7 @@ async def load_mapping_authoring_context(
     try:
         context = MappingAuthoringContext.model_validate(row["context"], strict=False)
         reject_secret_shaped_values(context.model_dump(mode="json"))
-    except (TypeError, ValueError):
+    except TypeError, ValueError:
         raise InvalidRequestError("The Mapping authoring context is unavailable.") from None
     expected_zone = "silver" if modeled_entity_type == "logical_entity" else "gold"
     if (

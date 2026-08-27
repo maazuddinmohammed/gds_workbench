@@ -8,13 +8,14 @@ from collections.abc import Callable, Mapping
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 from .errors import (
     NotebookAuthorizationError,
     NotebookConfigurationError,
     NotebookDatabaseError,
 )
+from .notebook import WidgetSpec
 from .runtime import load_notebook_database_settings, notebook_database_connection
 
 _ACTIONS = ("check", "acquire", "renew", "release")
@@ -24,14 +25,6 @@ _DENIAL_CODES = {
     "tenant_locked",
     "tenant_lock_required",
 }
-
-
-@dataclass(frozen=True, slots=True)
-class TenantLockWidgetSpec:
-    name: str
-    default: str
-    label: str
-    choices: tuple[str, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -76,18 +69,18 @@ class TenantLockResult:
 
 
 _WIDGETS = (
-    TenantLockWidgetSpec("Action", "check", "Tenant Lock action", _ACTIONS),
-    TenantLockWidgetSpec("TenantID", "", "Tenant ID"),
-    TenantLockWidgetSpec(
+    WidgetSpec("Action", "check", "Tenant Lock action", _ACTIONS),
+    WidgetSpec("TenantID", "", "Tenant ID"),
+    WidgetSpec(
         "Reason",
         "Databricks notebook workflow",
         "Lock reason (used by acquire)",
     ),
-    TenantLockWidgetSpec("DurationMinutes", "60", "Lock duration in minutes"),
+    WidgetSpec("DurationMinutes", "60", "Lock duration in minutes"),
 )
 
 
-def tenant_lock_widget_specs() -> tuple[TenantLockWidgetSpec, ...]:
+def tenant_lock_widget_specs() -> tuple[WidgetSpec, ...]:
     return _WIDGETS
 
 
@@ -291,7 +284,7 @@ def run_tenant_lock_notebook(
 def _required_row(row: Any) -> Mapping[str, Any]:
     if not isinstance(row, Mapping):
         raise NotebookDatabaseError("The notebook database returned an invalid lock result.")
-    return row
+    return cast(Mapping[str, Any], row)
 
 
 def _denial_code(value: Any) -> str | None:
@@ -348,7 +341,6 @@ def _bounded_integer(raw: str, *, label: str, minimum: int, maximum: int) -> int
 __all__ = [
     "TenantLockRequest",
     "TenantLockResult",
-    "TenantLockWidgetSpec",
     "build_tenant_lock_request",
     "execute_tenant_lock_request",
     "run_tenant_lock_notebook",

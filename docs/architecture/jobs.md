@@ -1,9 +1,10 @@
 # Historical Databricks jobs architecture
 
 > This records the superseded Workflow Grant and source-loaded `jobs/` design.
-> It does not describe the current application-calling notebooks. See
+> It does not describe the current independent source-imported notebooks. See
 > [`databricks_notebooks/README.md`](../../databricks_notebooks/README.md) for the
-> eight current notebook entry points and their shared client boundary.
+> eight current workflow entry points, prerequisite notebooks, and shared-code
+> boundary.
 
 ## Boundary and authority
 
