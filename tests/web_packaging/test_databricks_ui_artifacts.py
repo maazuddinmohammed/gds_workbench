@@ -4,17 +4,18 @@ import hashlib
 import importlib.util
 import json
 import os
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 import stat
 import subprocess
 import sys
-from zipfile import ZipFile
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile
 
 import pytest
 
 
 ROOT = Path(__file__).resolve().parents[2]
 BUILDER_PATH = ROOT / "deployment" / "databricks_ui" / "build_uploads.py"
+INSTRUCTIONS_PATH = ROOT / "deployment" / "databricks_ui" / "README.md"
 ROOT_GITIGNORE = ROOT / ".gitignore"
 
 APP_ROOT_FILES = {
@@ -66,6 +67,14 @@ def _relative_files(directory: Path) -> set[str]:
         path.relative_to(directory).as_posix()
         for path in directory.rglob("*")
         if path.is_file()
+    }
+
+
+def _relative_directories(directory: Path) -> set[str]:
+    return {
+        f"{path.relative_to(directory).as_posix()}/"
+        for path in directory.rglob("*")
+        if path.is_dir()
     }
 
 
@@ -149,7 +158,17 @@ def test_generated_notebook_object_markers_are_unambiguous(tmp_path: Path) -> No
         )
 
 
-def test_archives_have_no_extra_outer_directory_and_match_expanded_trees(
+def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> None:
+    instructions = INSTRUCTIONS_PATH.read_text(encoding="utf-8")
+    normalized = " ".join(instructions.split())
+
+    assert "Do not import either ZIP directly into the Databricks UI" in normalized
+    assert "Drag the entire local `gds-workbench-app-source` folder" in normalized
+    assert "Drag the entire local `gds-workbench-notebooks` folder" in normalized
+    assert "ZIP compatibility fallback" in instructions
+
+
+def test_archives_have_explicit_hierarchy_and_match_expanded_trees(
     tmp_path: Path,
 ) -> None:
     builder = _load_builder()
@@ -159,14 +178,41 @@ def test_archives_have_no_extra_outer_directory_and_match_expanded_trees(
         (result.app_source_directory, result.app_archive),
         (result.notebook_source_directory, result.notebook_archive),
     ):
-        expected = _relative_files(source_directory)
+        expected_files = _relative_files(source_directory)
+        expected_directories = _relative_directories(source_directory)
         with ZipFile(archive) as package:
-            actual = {name for name in package.namelist() if not name.endswith("/")}
+            infos = package.infolist()
+            actual_files = {info.filename for info in infos if not info.is_dir()}
+            actual_directories = {info.filename for info in infos if info.is_dir()}
             assert package.testzip() is None
-        assert actual == expected
+        assert actual_files == expected_files
+        assert actual_directories == expected_directories
+        assert not any(
+            name.startswith(f"{source_directory.name}/")
+            for name in actual_files | actual_directories
+        )
+
+        names = [info.filename for info in infos]
+        positions = {name: index for index, name in enumerate(names)}
+        for filename in actual_files:
+            parent = PurePosixPath(filename).parent
+            while parent != PurePosixPath("."):
+                directory_name = f"{parent.as_posix()}/"
+                assert directory_name in positions
+                assert positions[directory_name] < positions[filename]
+                parent = parent.parent
+
+        extracted = tmp_path / f"extracted-{archive.stem}"
+        with ZipFile(archive) as package:
+            package.extractall(extracted)
+        assert _relative_files(extracted) == expected_files
+        assert _relative_directories(extracted) == expected_directories
+        assert not (extracted / source_directory.name).exists()
 
 
-def test_archive_members_are_safe_regular_reproducible_files(tmp_path: Path) -> None:
+def test_archive_members_are_safe_reproducible_files_and_directories(
+    tmp_path: Path,
+) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
 
@@ -176,14 +222,25 @@ def test_archive_members_are_safe_regular_reproducible_files(tmp_path: Path) -> 
             assert names == sorted(names)
             assert len(names) == len(set(names))
             for info in package.infolist():
-                path = Path(info.filename)
+                raw_name = info.filename.removesuffix("/")
+                path = PurePosixPath(raw_name)
                 mode = info.external_attr >> 16
                 assert not path.is_absolute()
                 assert ".." not in path.parts
-                assert not info.is_dir()
+                assert "." not in path.parts
+                assert "\\" not in info.filename
                 assert info.date_time == (1980, 1, 1, 0, 0, 0)
-                assert stat.S_ISREG(mode)
-                assert stat.S_IMODE(mode) == 0o644
+                assert info.create_system == 3
+                if info.is_dir():
+                    assert info.file_size == 0
+                    assert info.compress_size == 0
+                    assert info.compress_type == ZIP_STORED
+                    assert stat.S_ISDIR(mode)
+                    assert stat.S_IMODE(mode) == 0o755
+                else:
+                    assert info.compress_type == ZIP_DEFLATED
+                    assert stat.S_ISREG(mode)
+                    assert stat.S_IMODE(mode) == 0o644
 
 
 def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:

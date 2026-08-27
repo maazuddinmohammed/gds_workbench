@@ -6,11 +6,12 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import stat
 import shutil
 import tempfile
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 from typing import NamedTuple
-from zipfile import ZIP_DEFLATED, ZipFile, ZipInfo
+from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -20,7 +21,8 @@ NOTEBOOK_DIRECTORY_NAME = "gds-workbench-notebooks"
 GENERATED_MARKER = ".gds-databricks-ui-artifact"
 GENERATED_MARKER_VALUE = "gds-databricks-ui-artifacts-v1\n"
 _ZIP_TIMESTAMP = (1980, 1, 1, 0, 0, 0)
-_ZIP_FILE_MODE = 0o100644 << 16
+_ZIP_FILE_MODE = (stat.S_IFREG | 0o644) << 16
+_ZIP_DIRECTORY_MODE = ((stat.S_IFDIR | 0o755) << 16) | 0x10
 
 _APP_ROOT_FILES = (
     "app.yaml",
@@ -193,23 +195,45 @@ def _tree_manifest(directory: Path) -> list[dict[str, object]]:
 
 
 def _write_zip(source_directory: Path, archive: Path) -> None:
+    entries: list[tuple[str, Path, bool]] = []
+    for path in source_directory.rglob("*"):
+        if path.is_symlink():
+            raise ArtifactBuildError(f"generated symlinks are not allowed: {path}")
+        relative = path.relative_to(source_directory).as_posix()
+        parts = relative.split("/")
+        if (
+            not relative
+            or "\\" in relative
+            or PurePosixPath(relative).is_absolute()
+            or any(part in {"", ".", ".."} for part in parts)
+        ):
+            raise ArtifactBuildError(f"unsafe generated ZIP member: {relative}")
+        if path.is_dir():
+            entries.append((f"{relative}/", path, True))
+        elif path.is_file():
+            entries.append((relative, path, False))
+        else:
+            raise ArtifactBuildError(f"generated entry is not regular: {path}")
+
+    entries.sort(key=lambda entry: entry[0])
+    names = [name for name, _path, _is_directory in entries]
+    if len(names) != len(set(names)):
+        raise ArtifactBuildError("generated ZIP member names are not unique")
+
     with ZipFile(
         archive, mode="w", compression=ZIP_DEFLATED, compresslevel=9
     ) as package:
-        paths = sorted(
-            source_directory.rglob("*"),
-            key=lambda path: path.relative_to(source_directory).as_posix(),
-        )
-        for path in paths:
-            if not path.is_file():
-                continue
-            relative = path.relative_to(source_directory).as_posix()
-            info = ZipInfo(relative, date_time=_ZIP_TIMESTAMP)
-            info.compress_type = ZIP_DEFLATED
+        for name, path, is_directory in entries:
+            compression = ZIP_STORED if is_directory else ZIP_DEFLATED
+            info = ZipInfo(name, date_time=_ZIP_TIMESTAMP)
+            info.compress_type = compression
             info.create_system = 3
-            info.external_attr = _ZIP_FILE_MODE
+            info.external_attr = _ZIP_DIRECTORY_MODE if is_directory else _ZIP_FILE_MODE
             package.writestr(
-                info, path.read_bytes(), compress_type=ZIP_DEFLATED, compresslevel=9
+                info,
+                b"" if is_directory else path.read_bytes(),
+                compress_type=compression,
+                compresslevel=9,
             )
     with ZipFile(archive) as package:
         if package.testzip() is not None:
