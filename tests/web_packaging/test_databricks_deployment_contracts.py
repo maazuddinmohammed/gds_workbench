@@ -69,6 +69,7 @@ def test_bundle_grants_only_required_app_resources() -> None:
     assert '"**/*.pem"' in bundle
     assert '"**/*.pfx"' in bundle
     assert "database/**" in bundle
+    assert "deployment/**" in bundle
     assert "artifacts/**" in bundle
     assert "plugins/**" in bundle
     assert "IMPLEMENTATION_PLAN.md" in bundle
@@ -139,3 +140,4 @@ def test_ci_uses_the_deployment_engines_and_frozen_release_inputs() -> None:
     assert "tests/web_packaging" in workflow
     assert "contents: read" in workflow
     assert "databricks bundle deploy" not in workflow
+    assert workflow.count('      - "deployment/**"') == 2

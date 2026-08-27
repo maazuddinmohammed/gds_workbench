@@ -18,6 +18,7 @@ sync:
     - IMPLEMENTATION_PLAN.md
     - artifacts/**
     - database/**
+    - deployment/**
     - databricks_notebooks/**
     - databricks.yml
     - docs/**

@@ -13,3 +13,4 @@ __pycache__/
 .venv/
 node_modules/
 web_app/frontend/dist/
+/artifacts/databricks-ui/

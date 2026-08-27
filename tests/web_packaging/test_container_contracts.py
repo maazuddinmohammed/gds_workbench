@@ -90,6 +90,7 @@ def test_combined_image_context_excludes_local_and_generated_content() -> None:
         "**/dist",
         "**/node_modules",
         "database",
+        "deployment",
         "docs",
         "artifacts",
         "plugins",

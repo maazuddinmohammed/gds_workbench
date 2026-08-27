@@ -88,10 +88,7 @@ def test_runtime_capabilities_include_only_the_configured_provider() -> None:
 
     assert [provider.code for provider in registry.providers] == ["microsoft_foundry"]
     assert [model.code for model in registry.models] == ["foundry-primary"]
-    assert all(
-        sdk.provider_codes == ("microsoft_foundry",)
-        for sdk in registry.sdks
-    )
+    assert all(sdk.provider_codes == ("microsoft_foundry",) for sdk in registry.sdks)
 
 
 def test_agent_capabilities_are_authenticated_and_exposed_read_only() -> None:
