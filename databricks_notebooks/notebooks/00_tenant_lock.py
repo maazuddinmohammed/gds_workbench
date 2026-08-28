@@ -21,6 +21,15 @@ _SOURCE_ROOT = str(_UPLOAD_ROOT / "src")
 if _SOURCE_ROOT not in sys.path:
     sys.path.insert(0, _SOURCE_ROOT)
 
-from gds_workbench_notebooks.tenant_lock import run_tenant_lock_notebook
+from gds_workbench_notebooks.tenant_lock import (
+    create_tenant_lock_widgets,
+    run_tenant_lock_notebook,
+)
 
+# Run this cell first, then fill the Tenant Lock widgets above.
+create_tenant_lock_widgets(dbutils=dbutils)
+
+# COMMAND ----------
+
+# Run this cell after filling TenantID and the action inputs.
 run_tenant_lock_notebook(dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)

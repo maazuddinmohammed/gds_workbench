@@ -142,6 +142,7 @@ jobs:
       - name: Probe extracted artifact on Databricks Python
         run: >-
           .venv-notebooks/bin/python -m pytest
+          tests/web_packaging/test_databricks_ui_artifacts.py::test_generated_notebook_python_is_valid_for_databricks_runtime_16_4
           tests/web_packaging/test_databricks_ui_artifacts.py::test_every_packaged_notebook_module_imports_from_the_extracted_artifact
           tests/web_packaging/test_databricks_ui_artifacts.py::test_extracted_notebook_shared_workflow_runtime_assembles_from_source
       - name: Check notebook lint and format

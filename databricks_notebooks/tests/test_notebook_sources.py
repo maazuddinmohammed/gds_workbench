@@ -28,8 +28,11 @@ def test_all_workflow_notebooks_are_source_importable_and_thin() -> None:
         text = sources[name].read_text()
         assert text.startswith("# Databricks notebook source\n")
         ast.parse(text)
+        assert text.count("# COMMAND ----------") == 1
+        setup = f'create_workflow_widgets("{workflow}", dbutils=dbutils)'
+        execute = f'run_notebook("{workflow}", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)'
+        assert text.index(setup) < text.index("# COMMAND ----------") < text.index(execute)
         assert text.count("run_notebook(") == 1
-        assert f'run_notebook("{workflow}", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)' in text
         assert "sys.path.insert" in text
         assert "psycopg" not in text
         assert "dbutils.secrets" not in text
@@ -45,11 +48,25 @@ def test_tenant_lock_notebook_uses_the_source_tree_and_independent_entry_point()
     assert 'directory / "src" / "gds_workbench_notebooks"' in text
     assert 'str(_UPLOAD_ROOT / "src")' in text
     assert "sys.path.insert(0, _SOURCE_ROOT)" in text
+    assert text.count("# COMMAND ----------") == 1
+    assert (
+        text.index("create_tenant_lock_widgets(dbutils=dbutils)")
+        < text.index("# COMMAND ----------")
+        < text.index("run_tenant_lock_notebook(dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)")
+    )
     assert text.count("run_tenant_lock_notebook(") == 1
     assert "AppName" not in text
     assert "ModelID" not in text
     assert "Principal" not in text
     assert "force" not in text.lower()
+
+
+def test_preflight_has_no_user_inputs_or_widgets() -> None:
+    text = (_ROOT / "notebooks" / "01_runtime_preflight.py").read_text()
+
+    assert "dbutils.widgets" not in text
+    assert "create_" not in text
+    assert text.count("run_notebook_preflight(") == 1
 
 
 def test_notebook_runtime_dependencies_are_explicit_and_pinned() -> None:

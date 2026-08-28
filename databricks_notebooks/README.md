@@ -229,8 +229,10 @@ security boundary.
    prefix groups lock management first in the tree, but running preflight before
    acquire avoids holding a lock while setup is broken. A simple lock check may
    also be run before preflight when diagnosing database access.
-3. Run one workflow notebook. Fill its widgets and use a new nonzero UUID for
-   `IdempotencyKey`. Reuse the same UUID only when retrying identical inputs.
+3. Open one workflow notebook. Run its first cell to create that notebook's
+   widget bar. Fill the widgets, then run the second cell to execute. Use a new
+   nonzero UUID for `IdempotencyKey`; reuse it only when retrying identical
+   inputs. `Run all` with blank required widgets is expected to stop validation.
 4. For an authoring workflow that returns a draft, run
    `90_review_workflow_draft.py` with `TenantID`, `ModelID`, `WorkflowRunID`,
    and optionally `Dataset`. Blank `Dataset` returns the bounded summary; a
@@ -279,7 +281,7 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 | Notebook | Additional widgets |
 |---|---|
 | `profiling` | Optional `RequestedBatchID`. |
-| `analysis_inference` | Optional `RequestedBatchID` plus agent widgets. |
+| `analysis_inference` | Optional `RequestedBatchID`, fixed `ExecutionMode=one_shot`, and agent widgets. |
 | `analysis_validation` | Optional `RequestedBatchID`. |
 | `conceptual`, `logical`, `dimensional` | `ExecutionMode` plus agent widgets. |
 | `mapping` | `ExecutionMode`, operation, artifact type, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
@@ -290,6 +292,10 @@ and registered model code, reasoning effort, maximum turns, validation retry
 count, and optional Stage-to-Prompt-Version overrides. PostgreSQL and the shared
 runtime revalidate every widget; a widget never selects the acting identity or
 Databricks environment.
+
+The Tenant Lock and draft review/apply notebooks use the same two-cell pattern:
+run the first cell to create their own widgets, fill them, then run the second
+cell. Runtime Preflight has no user inputs, so it correctly has no widgets.
 
 ## CLI upload alternative
 

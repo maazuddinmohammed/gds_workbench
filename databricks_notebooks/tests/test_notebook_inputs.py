@@ -1,9 +1,11 @@
 from uuid import UUID
 
 import pytest
+from gds_workbench_api.features.workflows.commands.contracts import CreateWorkflowRunRequest
 from gds_workbench_notebooks.errors import NotebookConfigurationError
 from gds_workbench_notebooks.notebook import (
     build_notebook_request,
+    create_workflow_widgets,
     run_notebook,
     widget_specs,
 )
@@ -108,10 +110,20 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         }
 
 
+@pytest.mark.parametrize("workflow", _WORKFLOWS)
+def test_each_notebook_payload_passes_the_shared_backend_contract(workflow: str) -> None:
+    command = build_notebook_request(workflow, _values(workflow))
+
+    validated = CreateWorkflowRunRequest.model_validate(command.create_payload, strict=True)
+
+    assert validated.model_workflow == command.workflow
+    assert validated.expected_model_revision == command.expected_model_revision
+
+
 def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
     expected_extras = {
         "profiling": ("RequestedBatchID",),
-        "analysis_inference": ("RequestedBatchID", *_AGENT_NAMES),
+        "analysis_inference": ("RequestedBatchID", "ExecutionMode", *_AGENT_NAMES),
         "analysis_validation": ("RequestedBatchID",),
         "conceptual": ("ExecutionMode", *_AGENT_NAMES),
         "logical": ("ExecutionMode", *_AGENT_NAMES),
@@ -136,6 +148,12 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
         names = tuple(spec.name for spec in widget_specs(workflow))
         assert names == (*_COMMON_NAMES, *expected_extras[workflow])
         assert not any("token" in name.lower() or "secret" in name.lower() for name in names)
+
+    inference_mode = next(
+        spec for spec in widget_specs("analysis_inference") if spec.name == "ExecutionMode"
+    )
+    assert inference_mode.default == "one_shot"
+    assert inference_mode.choices == ("one_shot",)
 
 
 def test_mapping_requires_exactly_one_target() -> None:
@@ -175,21 +193,24 @@ def test_rejects_invalid_widget_values(key: str, value: str) -> None:
         build_notebook_request("conceptual", values)
 
 
-def test_run_notebook_executes_after_widget_and_env_validation(
-    tmp_path, capsys, monkeypatch
+@pytest.mark.parametrize("workflow", _WORKFLOWS)
+def test_each_notebook_creates_reads_and_executes_its_complete_widget_contract(
+    workflow, tmp_path, capsys, monkeypatch
 ) -> None:
     class FakeWidgets:
         def __init__(self) -> None:
-            self.values = _values("profiling")
-            self.created: list[str] = []
+            self.values = _values(workflow)
+            self.created: list[tuple[str, str, str, tuple[str, ...]]] = []
+            self.read: list[str] = []
 
         def text(self, name: str, default: str, label: str) -> None:
-            self.created.append(name)
+            self.created.append(("text", name, default, ()))
 
         def dropdown(self, name: str, default: str, choices: list[str], label: str) -> None:
-            self.created.append(name)
+            self.created.append(("dropdown", name, default, tuple(choices)))
 
         def get(self, name: str) -> str:
+            self.read.append(name)
             return self.values[name]
 
     widgets = FakeWidgets()
@@ -209,7 +230,7 @@ GDS_NOTEBOOK_POSTGRES_PASSWORD=fixture-password
         calls.append((request, settings))
         return NotebookWorkflowExecutionResult(
             workflow_run_id=71,
-            workflow="profiling",
+            workflow=request.workflow,
             state="completed",
             created=True,
             model_revision=4,
@@ -220,13 +241,24 @@ GDS_NOTEBOOK_POSTGRES_PASSWORD=fixture-password
         execute,
     )
 
-    result = run_notebook("profiling", dbutils=dbutils, uploaded_root=tmp_path)
+    create_workflow_widgets(workflow, dbutils=dbutils)
+    result = run_notebook(workflow, dbutils=dbutils, uploaded_root=tmp_path)
 
-    assert widgets.created == [spec.name for spec in widget_specs("profiling")]
+    specs = widget_specs(workflow)
+    assert widgets.created == [
+        (
+            "dropdown" if spec.choices else "text",
+            spec.name,
+            spec.default,
+            spec.choices,
+        )
+        for spec in specs
+    ]
+    assert widgets.read == [spec.name for spec in specs]
     assert result.workflow_run_id == 71
-    assert calls[0][0].workflow == "profiling"
-    assert calls[0][1].database.user == "gds_notebook_runtime"
-    assert capsys.readouterr().out == (
-        '{"created":true,"model_revision":4,"state":"completed",'
-        '"workflow":"profiling","workflow_run_id":71}\n'
+    assert calls[0][0].workflow == ("analysis" if workflow.startswith("analysis_") else workflow)
+    assert calls[0][0].analysis_operation == (
+        workflow.removeprefix("analysis_") if workflow.startswith("analysis_") else None
     )
+    assert calls[0][1].database.user == "gds_notebook_runtime"
+    assert f'"workflow":"{calls[0][0].workflow}"' in capsys.readouterr().out

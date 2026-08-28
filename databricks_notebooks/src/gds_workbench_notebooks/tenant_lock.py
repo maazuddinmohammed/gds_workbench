@@ -84,6 +84,15 @@ def tenant_lock_widget_specs() -> tuple[WidgetSpec, ...]:
     return _WIDGETS
 
 
+def create_tenant_lock_widgets(*, dbutils: Any) -> None:
+    """Create the visible widget bar for the Tenant Lock notebook."""
+    for spec in _WIDGETS:
+        if spec.choices:
+            dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)
+        else:
+            dbutils.widgets.text(spec.name, spec.default, spec.label)
+
+
 def build_tenant_lock_request(values: Mapping[str, str]) -> TenantLockRequest:
     action = values.get("Action", "").strip()
     if action not in _ACTIONS:
@@ -256,17 +265,7 @@ def run_tenant_lock_notebook(
     uploaded_root: Path,
     connector: Callable[..., Any] | None = None,
 ) -> TenantLockResult:
-    """Register widgets, run one lock action, and print one bounded JSON result."""
-    for spec in _WIDGETS:
-        if spec.choices:
-            dbutils.widgets.dropdown(
-                spec.name,
-                spec.default,
-                list(spec.choices),
-                spec.label,
-            )
-        else:
-            dbutils.widgets.text(spec.name, spec.default, spec.label)
+    """Read existing widgets, run one lock action, and print bounded JSON."""
     values = {spec.name: dbutils.widgets.get(spec.name) for spec in _WIDGETS}
     request = build_tenant_lock_request(values)
     settings = load_notebook_database_settings(uploaded_root)

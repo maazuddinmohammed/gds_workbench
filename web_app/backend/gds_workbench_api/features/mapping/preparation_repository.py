@@ -1042,7 +1042,7 @@ class PostgresMappingRunPlanRepository:
             )
         except MappingRunPlanUnavailableError:
             raise
-        except TypeError, ValueError, ValidationError:
+        except (TypeError, ValueError, ValidationError):
             raise MappingRunPlanUnavailableError() from None
 
 
@@ -1281,5 +1281,5 @@ class PostgresMappingRunContextRepository:
             return context
         except MappingRunContextUnavailableError:
             raise
-        except TypeError, ValueError, ValidationError:
+        except (TypeError, ValueError, ValidationError):
             raise MappingRunContextUnavailableError() from None

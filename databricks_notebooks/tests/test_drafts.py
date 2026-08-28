@@ -374,6 +374,7 @@ def test_review_notebook_installs_widgets_and_prints_bounded_lines(
     monkeypatch.setattr(drafts, "load_notebook_runtime_settings", lambda _root: object())
     monkeypatch.setattr(drafts, "execute_workflow_draft_review", lambda *_args, **_kw: expected)
 
+    drafts.create_workflow_draft_review_widgets(dbutils=SimpleNamespace(widgets=widgets))
     result = drafts.run_workflow_draft_review_notebook(
         dbutils=SimpleNamespace(widgets=widgets),
         uploaded_root=tmp_path,
@@ -427,6 +428,7 @@ def test_apply_notebook_installs_all_gates_before_calling_service(
         lambda request, **_kwargs: received.append(request) or expected,
     )
 
+    drafts.create_workflow_draft_apply_widgets(dbutils=SimpleNamespace(widgets=widgets))
     result = drafts.run_workflow_draft_apply_notebook(
         dbutils=SimpleNamespace(widgets=widgets),
         uploaded_root=tmp_path,
@@ -441,16 +443,28 @@ def test_apply_notebook_installs_all_gates_before_calling_service(
 
 def test_notebook_sources_are_thin_source_imports_and_start_no_server() -> None:
     notebook_expectations = {
-        "90_review_workflow_draft.py": "run_workflow_draft_review_notebook",
-        "91_apply_workflow_draft.py": "run_workflow_draft_apply_notebook",
+        "90_review_workflow_draft.py": (
+            "create_workflow_draft_review_widgets",
+            "run_workflow_draft_review_notebook",
+        ),
+        "91_apply_workflow_draft.py": (
+            "create_workflow_draft_apply_widgets",
+            "run_workflow_draft_apply_notebook",
+        ),
     }
     combined = (_ROOT / "src" / "gds_workbench_notebooks" / "drafts.py").read_text()
-    for name, entry_point in notebook_expectations.items():
+    for name, (setup, entry_point) in notebook_expectations.items():
         source = (_ROOT / "notebooks" / name).read_text()
         ast.parse(source, feature_version=(3, 12))
         assert source.startswith("# Databricks notebook source\n")
         assert 'str(_UPLOAD_ROOT / "src")' in source
         assert "sys.path.insert(0, _SOURCE_ROOT)" in source
+        assert source.count("# COMMAND ----------") == 1
+        assert (
+            source.index(f"{setup}(dbutils=dbutils)")
+            < source.index("# COMMAND ----------")
+            < source.index(f"{entry_point}(dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)")
+        )
         assert source.count(f"{entry_point}(") == 1
         combined += source
 

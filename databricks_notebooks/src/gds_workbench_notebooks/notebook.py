@@ -30,7 +30,7 @@ _AGENT_WORKFLOWS = {
     "mapping",
     "code_generation",
 }
-_MODE_WORKFLOWS = {"conceptual", "logical", "dimensional", "mapping"}
+_CONFIGURABLE_MODE_WORKFLOWS = {"conceptual", "logical", "dimensional", "mapping"}
 
 
 @dataclass(frozen=True)
@@ -97,7 +97,16 @@ def widget_specs(workflow: str) -> tuple[WidgetSpec, ...]:
     specs = list(_COMMON_WIDGETS)
     if workflow in {"profiling", "analysis_inference", "analysis_validation"}:
         specs.append(WidgetSpec("RequestedBatchID", "", "Requested batch ID (optional)"))
-    if workflow in _MODE_WORKFLOWS:
+    if workflow == "analysis_inference":
+        specs.append(
+            WidgetSpec(
+                "ExecutionMode",
+                "one_shot",
+                "Execution mode",
+                ("one_shot",),
+            )
+        )
+    elif workflow in _CONFIGURABLE_MODE_WORKFLOWS:
         specs.append(_MODE_WIDGET)
     if workflow == "mapping":
         specs.extend(
@@ -172,8 +181,8 @@ def build_notebook_request(
     )
     execution_mode: str | None = None
     if workflow == "analysis_inference":
-        execution_mode = "one_shot"
-    elif workflow in _MODE_WORKFLOWS:
+        execution_mode = _choice(values, "ExecutionMode", {"one_shot"})
+    elif workflow in _CONFIGURABLE_MODE_WORKFLOWS:
         execution_mode = _choice(
             values,
             "ExecutionMode",
@@ -286,19 +295,23 @@ def build_notebook_request(
     )
 
 
+def create_workflow_widgets(workflow: str, *, dbutils: Any) -> None:
+    """Create the visible widget bar for one workflow notebook."""
+    for spec in widget_specs(workflow):
+        if spec.choices:
+            dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)
+        else:
+            dbutils.widgets.text(spec.name, spec.default, spec.label)
+
+
 def run_notebook(
     workflow: str,
     *,
     dbutils: Any,
     uploaded_root: Path | None = None,
 ) -> Any:
-    """Validate widgets and execute one independent source-imported Workflow."""
+    """Read existing widgets and execute one independent imported Workflow."""
     specs = widget_specs(workflow)
-    for spec in specs:
-        if spec.choices:
-            dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)
-        else:
-            dbutils.widgets.text(spec.name, spec.default, spec.label)
     values = {spec.name: dbutils.widgets.get(spec.name) for spec in specs}
     request = build_notebook_request(workflow, values)
 

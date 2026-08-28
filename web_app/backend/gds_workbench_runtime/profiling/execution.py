@@ -308,7 +308,7 @@ class ConnectorProfilingExecutor:
                 )
                 for row in rows
             )
-        except TypeError, ValidationError:
+        except (TypeError, ValidationError):
             raise DatabricksResultTooLargeError() from None
         if tuple(metric.attribute_id for metric in metrics) != query.attribute_ids:
             raise DatabricksResultTooLargeError()

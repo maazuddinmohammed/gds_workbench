@@ -125,7 +125,7 @@ class PostgresCodeGenerationContextRepository:
             return _assemble_context(plan=plan, rows=rows)
         except InvalidRequestError:
             raise
-        except TypeError, ValueError, ValidationError:
+        except (TypeError, ValueError, ValidationError):
             raise InvalidRequestError("The Code Generation context is unavailable.") from None
 
 

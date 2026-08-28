@@ -21,6 +21,15 @@ _SOURCE_ROOT = str(_UPLOAD_ROOT / "src")
 if _SOURCE_ROOT not in sys.path:
     sys.path.insert(0, _SOURCE_ROOT)
 
-from gds_workbench_notebooks.drafts import run_workflow_draft_apply_notebook
+from gds_workbench_notebooks.drafts import (
+    create_workflow_draft_apply_widgets,
+    run_workflow_draft_apply_notebook,
+)
 
+# Run this cell first, then fill the draft apply widgets above.
+create_workflow_draft_apply_widgets(dbutils=dbutils)
+
+# COMMAND ----------
+
+# Run this cell only after reviewing and filling every apply fence.
 run_workflow_draft_apply_notebook(dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)

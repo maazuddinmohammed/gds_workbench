@@ -151,12 +151,16 @@ binding and `.env` shape.
 
    A compute-scoped installation of the same pinned file is also valid.
 8. Run `01_runtime_preflight.py`.
-9. Run `00_tenant_lock.py`: check, then acquire the intended Tenant Lock. The
-   lock notebook can be checked before preflight while diagnosing DB access,
-   but preflight-first avoids holding a lock while the full runtime is broken.
-10. Run a workflow notebook. For an authoring draft, run
-    `90_review_workflow_draft.py`, then `91_apply_workflow_draft.py` with exact
-    current revision/digest fences and `Confirmation=APPLY`.
+9. Open `00_tenant_lock.py`. Run its first cell to create its widget bar, fill
+   the inputs, then run the second cell: check first, then acquire the intended
+   Tenant Lock. The lock notebook can be checked before preflight while
+   diagnosing DB access, but preflight-first avoids holding a lock while the
+   full runtime is broken.
+10. Open a workflow notebook. Run its first cell to create that workflow's own
+    widgets, fill them, then run its second cell to execute. For an authoring
+    draft, use the same two-cell pattern in `90_review_workflow_draft.py`, then
+    `91_apply_workflow_draft.py` with exact current revision/digest fences and
+    `Confirmation=APPLY`. Preflight alone has no widgets.
 11. Renew a long-running lock when required, and release it after the last
     workflow.
 

@@ -224,6 +224,16 @@ def draft_apply_widget_specs() -> tuple[WidgetSpec, ...]:
     )
 
 
+def create_workflow_draft_review_widgets(*, dbutils: Any) -> None:
+    """Create the visible widget bar for the draft review notebook."""
+    _create_widgets(dbutils, draft_review_widget_specs())
+
+
+def create_workflow_draft_apply_widgets(*, dbutils: Any) -> None:
+    """Create the visible widget bar for the draft apply notebook."""
+    _create_widgets(dbutils, draft_apply_widget_specs())
+
+
 def build_draft_review_request(values: Mapping[str, str]) -> WorkflowDraftReviewRequest:
     dataset = values.get("Dataset", "")
     if dataset and dataset not in _MODEL_CHANGE_SET_DATASET_SET:
@@ -397,7 +407,7 @@ def run_workflow_draft_review_notebook(
     dbutils: Any,
     uploaded_root: Path | None = None,
 ) -> WorkflowDraftReviewResult:
-    values = _install_and_read_widgets(dbutils, draft_review_widget_specs())
+    values = _read_widgets(dbutils, draft_review_widget_specs())
     request = build_draft_review_request(values)
     root = uploaded_root or locate_uploaded_root(Path.cwd())
     result = execute_workflow_draft_review(
@@ -415,7 +425,7 @@ def run_workflow_draft_apply_notebook(
     dbutils: Any,
     uploaded_root: Path | None = None,
 ) -> WorkflowDraftApplyResult:
-    values = _install_and_read_widgets(dbutils, draft_apply_widget_specs())
+    values = _read_widgets(dbutils, draft_apply_widget_specs())
     request = build_draft_apply_request(values)
     root = uploaded_root or locate_uploaded_root(Path.cwd())
     result = execute_workflow_draft_apply(
@@ -632,15 +642,21 @@ def _json_default(value: object) -> object:
     raise TypeError("unsupported notebook display value")
 
 
-def _install_and_read_widgets(
+def _create_widgets(
     dbutils: Any,
     specs: tuple[WidgetSpec, ...],
-) -> dict[str, str]:
+) -> None:
     for spec in specs:
         if spec.choices:
             dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)
         else:
             dbutils.widgets.text(spec.name, spec.default, spec.label)
+
+
+def _read_widgets(
+    dbutils: Any,
+    specs: tuple[WidgetSpec, ...],
+) -> dict[str, str]:
     return {spec.name: dbutils.widgets.get(spec.name) for spec in specs}
 
 
@@ -674,6 +690,8 @@ __all__ = [
     "apply_workflow_draft",
     "build_draft_apply_request",
     "build_draft_review_request",
+    "create_workflow_draft_apply_widgets",
+    "create_workflow_draft_review_widgets",
     "draft_apply_widget_specs",
     "draft_review_widget_specs",
     "execute_workflow_draft_apply",

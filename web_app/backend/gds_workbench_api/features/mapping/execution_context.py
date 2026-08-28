@@ -372,7 +372,7 @@ def _json_size(value: JsonValue) -> int:
                 separators=(",", ":"),
             ).encode("utf-8")
         )
-    except TypeError, ValueError:
+    except (TypeError, ValueError):
         raise AgentContextToolRequestError() from None
 
 

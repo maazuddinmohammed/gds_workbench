@@ -25,14 +25,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field
-
-from gds_workbench_api.features.models import ModelRevisionConflictError
-from gds_workbench_api.features.workflows.execution.fence import (
-    assert_workflow_run_claim,
-)
-from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 from gds_workbench_runtime.profiling.execution import (
     ProfileAttribute,
     ProfileObject,
@@ -45,6 +37,14 @@ from gds_workbench_runtime.profiling.workflow import (
     ProfilingWorkflowOrchestrator,
     ProfilingWorkflowRepository,
 )
+from psycopg.types.json import Jsonb
+from pydantic import BaseModel, ConfigDict, Field
+
+from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.workflows.execution.fence import (
+    assert_workflow_run_claim,
+)
+from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _RUN_BINDING_SQL = """
 SELECT target_model.model_revision,

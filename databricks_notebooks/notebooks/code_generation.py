@@ -17,6 +17,12 @@ _SOURCE_ROOT = str(_UPLOAD_ROOT / "src")
 if _SOURCE_ROOT not in sys.path:
     sys.path.insert(0, _SOURCE_ROOT)
 
-from gds_workbench_notebooks.notebook import run_notebook
+from gds_workbench_notebooks.notebook import create_workflow_widgets, run_notebook
 
+# Run this cell first, then fill the Code Generation widgets above.
+create_workflow_widgets("code_generation", dbutils=dbutils)
+
+# COMMAND ----------
+
+# Run this cell after filling every required widget.
 run_notebook("code_generation", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)

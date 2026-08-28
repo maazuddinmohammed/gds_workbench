@@ -240,7 +240,7 @@ def inspect_deployment(root: Path) -> DeploymentInspection:
     try:
         manifest_content = manifest_path.read_bytes()
         raw_manifest: object = json.loads(manifest_content)
-    except OSError, UnicodeDecodeError, json.JSONDecodeError:
+    except (OSError, UnicodeDecodeError, json.JSONDecodeError):
         return _failed_inspection("manifest_unreadable")
 
     manifest_sha256 = hashlib.sha256(manifest_content).hexdigest()

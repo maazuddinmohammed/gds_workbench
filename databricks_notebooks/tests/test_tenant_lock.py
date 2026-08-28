@@ -12,6 +12,7 @@ from gds_workbench_notebooks.errors import (
 from gds_workbench_notebooks.tenant_lock import (
     TenantLockRequest,
     build_tenant_lock_request,
+    create_tenant_lock_widgets,
     execute_tenant_lock_request,
     run_tenant_lock_notebook,
     tenant_lock_widget_specs,
@@ -266,6 +267,7 @@ def test_run_registers_widgets_and_prints_only_bounded_result(
         connector_calls.append(kwargs)
         return connection
 
+    create_tenant_lock_widgets(dbutils=dbutils)
     result = run_tenant_lock_notebook(
         dbutils=dbutils,
         uploaded_root=_uploaded_root(tmp_path),

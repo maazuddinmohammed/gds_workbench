@@ -80,11 +80,17 @@ def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
     python_project = tomllib.loads(
         (ROOT / "pyproject.toml").read_text(encoding="utf-8")
     )
+    backend_project = tomllib.loads(
+        (ROOT / "web_app" / "backend" / "pyproject.toml").read_text(encoding="utf-8")
+    )
     node_project = json.loads((ROOT / "package.json").read_text(encoding="utf-8"))
 
     assert (ROOT / "uv.lock").is_file()
     assert (ROOT / "package-lock.json").is_file()
     assert python_project["project"]["requires-python"] == ">=3.14,<3.15"
+    assert backend_project["project"]["requires-python"] == ">=3.14,<3.15"
+    assert backend_project["tool"]["pyright"]["pythonVersion"] == "3.14"
+    assert backend_project["tool"]["ruff"]["target-version"] == "py312"
     assert set(python_project["tool"]["uv"]["sources"]) == {
         "gds-etl-workbench-mcp",
         "gds-workbench-api",

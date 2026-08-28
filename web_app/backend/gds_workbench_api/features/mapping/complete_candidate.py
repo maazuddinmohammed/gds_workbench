@@ -135,7 +135,7 @@ class CompleteMappingCandidateValidator:
                 preparation=self._preparation,
                 package=header.package,
             )
-        except InvalidRequestError, ValueError:
+        except (InvalidRequestError, ValueError):
             return AgentCandidateValidation(
                 issues=(
                     _issue(
@@ -168,7 +168,7 @@ class CompleteMappingCandidateValidator:
                     batch_plan=plan,
                 )
                 validation = await validator.validate(document)
-            except InvalidRequestError, ValidationError, ValueError:
+            except (InvalidRequestError, ValidationError, ValueError):
                 issues.append(
                     _issue(
                         "candidate.attribute_batch_invalid",
@@ -190,7 +190,7 @@ class CompleteMappingCandidateValidator:
             return AgentCandidateValidation(issues=tuple(issues))
         try:
             self.parse_validated(candidate)
-        except InvalidRequestError, ValueError:
+        except (InvalidRequestError, ValueError):
             return AgentCandidateValidation(
                 issues=(
                     _issue(

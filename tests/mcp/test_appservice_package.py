@@ -158,12 +158,12 @@ assert MCP_SERVER_VERSION == sys.argv[1]
     assert import_check.returncode == 0, import_check.stderr
 
 
-def test_runtime_configuration_targets_python_314() -> None:
+def test_runtime_targets_python_314_but_preserves_python_312_shared_syntax() -> None:
     project = tomllib.loads(PROJECT_FILE.read_text())
     lock = tomllib.loads(LOCK_FILE.read_text())
 
     assert project["project"]["requires-python"] == ">=3.14,<3.15"
-    assert project["tool"]["ruff"]["target-version"] == "py314"
+    assert project["tool"]["ruff"]["target-version"] == "py312"
     assert project["tool"]["pyright"]["pythonVersion"] == "3.14"
     assert lock["requires-python"] == "==3.14.*"
 
