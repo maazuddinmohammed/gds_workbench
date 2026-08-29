@@ -85,6 +85,17 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'workflow.list_model_attribute_eligibility(bigint)',
            'EXECUTE'
        )
+       AND coalesce(
+           has_function_privilege(
+               'gds_web_write',
+               to_regprocedure(
+                   'application.get_profiling_execution_context('
+                   'uuid,uuid,character varying,bigint,bigint)'
+               ),
+               'EXECUTE'
+           ),
+           FALSE
+       )
        AND has_function_privilege(
            'gds_web_write',
            'workflow.list_code_generation_target_context('

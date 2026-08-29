@@ -20,11 +20,15 @@ from gds_etl_workbench.domain.errors import (
     TenantWorkflowConflictError,
     WorkbenchError,
 )
-from gds_etl_workbench.infrastructure.postgres import (
-    ReadIsolation,
-    ReadTransaction,
-    WriteTransaction,
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
+from psycopg.types.json import Jsonb
+from pydantic import BaseModel, ConfigDict, Field
+
+from gds_workbench_api.features.models import ModelRevisionConflictError
+from gds_workbench_api.features.workflows.execution.fence import (
+    assert_workflow_run_claim,
 )
+from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 from gds_workbench_runtime.profiling.execution import (
     ProfileAttribute,
     ProfileObject,
@@ -37,14 +41,6 @@ from gds_workbench_runtime.profiling.workflow import (
     ProfilingWorkflowOrchestrator,
     ProfilingWorkflowRepository,
 )
-from psycopg.types.json import Jsonb
-from pydantic import BaseModel, ConfigDict, Field
-
-from gds_workbench_api.features.models import ModelRevisionConflictError
-from gds_workbench_api.features.workflows.execution.fence import (
-    assert_workflow_run_claim,
-)
-from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _RUN_BINDING_SQL = """
 SELECT target_model.model_revision,
@@ -119,13 +115,11 @@ class ExecuteProfilingRunRequest(BaseModel):
 
 
 class ProfilingWorkflowDatabase(Protocol):
-    def read_transaction(
+    def write_transaction(
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
-
-    def write_transaction(self) -> AbstractAsyncContextManager[WriteTransaction]: ...
+    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
 class DatabaseProfilingWorkflowRepository:
@@ -189,7 +183,7 @@ class DatabaseProfilingWorkflowRepository:
     ) -> ProfilingExecutionContext:
         identity = _identity_triple(principal)
         try:
-            async with self._database.read_transaction(
+            async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
                 await _require_profiling_binding(
@@ -444,7 +438,7 @@ class ProfilingWorkflowService(Protocol):
 
 
 async def _require_profiling_binding(
-    transaction: ReadTransaction | WriteTransaction,
+    transaction: WriteTransaction,
     *,
     tenant_id: int,
     model_id: int,

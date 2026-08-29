@@ -4,12 +4,6 @@ from dataclasses import dataclass
 from typing import Literal
 
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_workbench_runtime.profiling.execution import (
-    ConnectorProfilingExecutor,
-    ProfileMetric,
-    ProfileQuery,
-    ProfilingExecutor,
-)
 
 from gds_workbench_api.features.analysis.validation_execution import (
     AnalysisValidationEvidence,
@@ -18,6 +12,12 @@ from gds_workbench_api.features.analysis.validation_execution import (
 )
 from gds_workbench_api.features.analysis.validation_service import (
     AnalysisValidationQueryExecutor,
+)
+from gds_workbench_runtime.profiling.execution import (
+    ConnectorProfilingExecutor,
+    ProfileMetric,
+    ProfileQuery,
+    ProfilingExecutor,
 )
 
 

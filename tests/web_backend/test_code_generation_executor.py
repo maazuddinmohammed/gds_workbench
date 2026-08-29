@@ -18,7 +18,7 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     WorkbenchError,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import AgentRunSelection
@@ -185,18 +185,18 @@ class _Authorizer:
 @dataclass
 class _Database:
     transaction: object = field(default_factory=object)
-    isolations: list[ReadIsolation] = field(
+    write_isolations: list[ReadIsolation] = field(
         default_factory=lambda: list[ReadIsolation]()
     )
 
     @asynccontextmanager
-    async def read_transaction(
+    async def write_transaction(
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncGenerator[ReadTransaction]:
-        self.isolations.append(isolation)
-        yield cast(ReadTransaction, self.transaction)
+    ) -> AsyncGenerator[WriteTransaction]:
+        self.write_isolations.append(isolation)
+        yield cast(WriteTransaction, self.transaction)
 
 
 @dataclass
@@ -403,7 +403,7 @@ async def test_executor_uses_frozen_plan_exact_context_and_atomic_storage() -> N
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
-    assert database.isolations == [ReadIsolation.REPEATABLE_READ]
+    assert database.write_isolations == [ReadIsolation.REPEATABLE_READ]
     assert authorizer.calls == [(7, ToolPolicy.TENANT_MODEL_WRITE)]
     assert len(agent.requests) == 2
     request = agent.requests[0]

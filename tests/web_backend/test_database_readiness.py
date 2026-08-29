@@ -4,11 +4,13 @@ from collections.abc import AsyncGenerator, Iterator
 from contextlib import asynccontextmanager
 from pathlib import Path
 from typing import LiteralString, cast
+from uuid import UUID
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
 from gds_workbench_api.database import WebPostgresDatabase
 from psycopg import sql
+from psycopg.errors import InsufficientPrivilege
 
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 
@@ -149,6 +151,62 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
             connection.execute(
                 sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(
                     signature
+                )
+            )
+
+    assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
+
+
+@pytest.mark.asyncio
+async def test_notebook_readiness_rejects_a_missing_profiling_context_grant(
+    readiness_postgres: DisposablePostgres,
+) -> None:
+    signature = (
+        "application.get_profiling_execution_context("
+        "UUID, UUID, VARCHAR, BIGINT, BIGINT)"
+    )
+    with readiness_postgres.connect_owner() as connection:
+        connection.execute(
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
+                sql.SQL(cast(LiteralString, signature))
+            )
+        )
+
+    try:
+        database = WebPostgresDatabase(
+            dsn=readiness_postgres.notebook_runtime_dsn(),
+            pool_min=1,
+            pool_max=1,
+            pool_timeout_seconds=5,
+        )
+        await database.open()
+        try:
+            readiness = await database.readiness()
+        finally:
+            await database.close()
+
+        with (
+            readiness_postgres.connect_notebook_runtime() as connection,
+            pytest.raises(InsufficientPrivilege),
+            connection.transaction(),
+        ):
+            connection.execute("SET LOCAL ROLE gds_web_write")
+            connection.execute(
+                "SELECT * FROM application.get_profiling_execution_context("
+                "%s, %s, %s, %s, %s)",
+                (
+                    UUID("00000000-0000-0000-0000-000000000001"),
+                    UUID("00000000-0000-0000-0000-000000000002"),
+                    "service_principal",
+                    1,
+                    1,
+                ),
+            ).fetchall()
+    finally:
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute(
+                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(
+                    sql.SQL(cast(LiteralString, signature))
                 )
             )
 

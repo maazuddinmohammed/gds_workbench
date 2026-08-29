@@ -19,7 +19,6 @@ from gds_etl_workbench.domain.errors import (
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
-    ReadTransaction,
     WriteTransaction,
 )
 from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
@@ -537,23 +536,19 @@ class _DatabaseTransaction:
 class _Database:
     context_rows: list[dict[str, object]]
     transaction: _DatabaseTransaction = field(init=False)
-    read_isolations: list[ReadIsolation] = field(default_factory=lambda: [])
+    write_isolations: list[ReadIsolation] = field(default_factory=lambda: [])
     write_transactions: int = 0
 
     def __post_init__(self) -> None:
         self.transaction = _DatabaseTransaction(context_rows=self.context_rows)
 
     @asynccontextmanager
-    async def read_transaction(
+    async def write_transaction(
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AsyncGenerator[ReadTransaction]:
-        self.read_isolations.append(isolation)
-        yield cast(ReadTransaction, self.transaction)
-
-    @asynccontextmanager
-    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
+    ) -> AsyncGenerator[WriteTransaction]:
+        self.write_isolations.append(isolation)
         self.write_transactions += 1
         yield cast(WriteTransaction, self.transaction)
 
@@ -574,7 +569,7 @@ async def test_database_repository_fences_context_credentials_and_environment() 
         expected_model_revision=4,
     )
 
-    assert database.read_isolations == [ReadIsolation.REPEATABLE_READ]
+    assert database.write_isolations == [ReadIsolation.REPEATABLE_READ]
     assert len(context.targets) == 1
     assert context.targets[0].relationship.source_context_digest == f"{401:064x}"
     assert "sensitive-host" not in repr(context)

@@ -13,7 +13,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from gds_workbench_api.capabilities import AgentCapabilityRegistry
 from gds_workbench_api.features.analysis import (
@@ -62,6 +61,7 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
     DatabaseAuthoringNoOpService,
 )
 from gds_workbench_api.integrations.databricks import DatabricksExecutionAdapters
+from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from .dispatcher import WorkflowExecutionServices
 

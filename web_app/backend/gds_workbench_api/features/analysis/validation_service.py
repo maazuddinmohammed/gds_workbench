@@ -22,7 +22,6 @@ from gds_etl_workbench.domain.errors import (
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
-    ReadTransaction,
     WriteTransaction,
 )
 from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
@@ -147,14 +146,10 @@ class AnalysisValidationExecutionFailedError(WorkbenchError):
 
 
 class AnalysisValidationDatabase(Protocol):
-    def read_transaction(
+    def write_transaction(
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
-
-    def write_transaction(
-        self,
     ) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
@@ -251,7 +246,7 @@ class DatabaseAnalysisValidationRepository:
     ) -> AnalysisValidationExecutionContext:
         identity = _identity_triple(principal)
         try:
-            async with self._database.read_transaction(
+            async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
                 binding = await transaction.fetch_one(

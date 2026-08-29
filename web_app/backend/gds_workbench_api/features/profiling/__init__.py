@@ -1,17 +1,5 @@
 """Profiling review, planning, and execution feature."""
 
-from gds_workbench_runtime.profiling.execution import (
-    ConnectorProfilingExecutor,
-    ProfileAttribute,
-    ProfileMetric,
-    ProfileObject,
-    ProfileQuery,
-    ProfilingExecutor,
-    ProfilingPolicy,
-    build_profile_queries,
-    load_default_profiling_policy,
-)
-
 from gds_workbench_api.features.profiling.read_contracts import (
     AttributeProfile,
     ProfileWorkflowProvenance,
@@ -39,6 +27,17 @@ from gds_workbench_api.features.profiling.workflow import (
     ProfilingWorkflowRepository,
     ProfilingWorkflowService,
     create_profiling_workflow_router,
+)
+from gds_workbench_runtime.profiling.execution import (
+    ConnectorProfilingExecutor,
+    ProfileAttribute,
+    ProfileMetric,
+    ProfileObject,
+    ProfileQuery,
+    ProfilingExecutor,
+    ProfilingPolicy,
+    build_profile_queries,
+    load_default_profiling_policy,
 )
 
 __all__ = [

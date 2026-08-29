@@ -557,7 +557,12 @@ class _Database:
         yield cast(ReadTransaction, self.transaction)
 
     @asynccontextmanager
-    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
+    async def write_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncGenerator[WriteTransaction]:
+        del isolation
         self.write_transactions += 1
         yield cast(WriteTransaction, self.transaction)
 
@@ -632,6 +637,7 @@ async def test_database_repository_groups_context_without_exposing_credentials()
     assert "sensitive-host" not in repr(context)
     assert "sensitive-path" not in repr(context)
     assert "sensitive-token" not in repr(context)
+    assert database.write_transactions == 1
 
 
 @pytest.mark.asyncio

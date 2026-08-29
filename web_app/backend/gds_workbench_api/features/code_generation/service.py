@@ -10,7 +10,11 @@ from uuid import UUID
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadIsolation,
+    ReadTransaction,
+    WriteTransaction,
+)
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
@@ -49,11 +53,11 @@ _logger = logging.getLogger(__name__)
 
 
 class CodeGenerationExecutionDatabase(Protocol):
-    def read_transaction(
+    def write_transaction(
         self,
         *,
         isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
-    ) -> AbstractAsyncContextManager[ReadTransaction]: ...
+    ) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
 class CodeGenerationPlanRepository(Protocol):
@@ -238,7 +242,7 @@ class DatabaseCodeGenerationExecutor:
         workflow_run_claim_token: UUID,
     ) -> GeneratedSqlStorageResult:
         try:
-            async with self._database.read_transaction(
+            async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
             ) as transaction:
                 await self._authorizer.authorize_tenant(
