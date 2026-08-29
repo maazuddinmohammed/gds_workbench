@@ -507,6 +507,7 @@ version = "0.1.0"
 source = { directory = "web_app/backend" }
 dependencies = [
     { name = "azure-identity" },
+    { name = "certifi" },
     { name = "databricks-sdk" },
     { name = "fastapi" },
     { name = "gds-etl-workbench-mcp" },
@@ -524,6 +525,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "azure-identity", specifier = "==1.25.3" },
+    { name = "certifi", specifier = "==2026.7.22" },
     { name = "databricks-sdk", specifier = "==0.133.0" },
     { name = "fastapi", specifier = "==0.141.1" },
     { name = "gds-etl-workbench-mcp", directory = "mcp_server" },

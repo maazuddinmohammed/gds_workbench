@@ -405,7 +405,15 @@ class NotebookWorkflowControlClient:
             row = self._connection.execute(statement, parameters).fetchone()
         except (NotebookAuthorizationError, NotebookConfigurationError, NotebookDatabaseError):
             raise
-        except Exception:
+        except Exception as error:
+            message = _primary_database_message(error)
+            if message.startswith("No usable prompt is assigned to Workflow Stage "):
+                raise NotebookConfigurationError(
+                    "This Workflow requires an active published prompt for every agentic "
+                    "stage. In the web application Prompt Library, publish a prompt and "
+                    "assign it as the Model default or Global default, then retry with a "
+                    "new IdempotencyKey."
+                ) from None
             raise NotebookDatabaseError(f"The notebook database could not {operation}.") from None
         if row is None:
             return None
@@ -414,6 +422,19 @@ class NotebookWorkflowControlClient:
                 "The notebook database returned an invalid Workflow control result."
             )
         return cast(Mapping[str, Any], row)
+
+
+def _primary_database_message(error: Exception) -> str:
+    current: BaseException = error
+    for _ in range(4):
+        diagnostic = getattr(current, "diag", None)
+        primary = getattr(diagnostic, "message_primary", None)
+        if isinstance(primary, str) and primary:
+            return primary
+        if current.__cause__ is None:
+            return str(current)
+        current = current.__cause__
+    return ""
 
 
 def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:

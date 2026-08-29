@@ -41,6 +41,14 @@ It requires an already installed, compatible PostgreSQL database.
 | Run profiling and analysis validation | The existing registered GDS Databricks environment and governed connection remain unchanged. |
 | Use MCP | The separate MCP server and its Azure authentication remain unchanged. |
 
+The web App and MCP server should normally use the same Entra directory/Tenant
+ID so the same human `(tenant ID, object ID)` resolves to the same PostgreSQL
+Principal. They do **not** share an OAuth application/client identity. The MCP
+App Service has its own Entra API app registration, audience, scopes, and app
+roles. Databricks creates a different, non-reusable service principal for this
+App and handles its user OAuth. The web App therefore needs the shared Entra
+Tenant ID, but no MCP client ID or MCP client secret.
+
 Only `/api/*` requires the backend identity resolver. Databricks still protects
 the entire app URL before a request reaches FastAPI. Never expose the FastAPI
 port separately or accept identity from a browser-provided body or query value.
@@ -112,8 +120,12 @@ Databricks App while leaving MCP runtime behavior unchanged.
   reviewed, non-destructive schema/function change before this App revision is
   deployed.
 - The runtime DSN uses the least-privilege `gds_web_runtime` account and includes
-  a host, database, and `sslmode=verify-full`. Production startup rejects every
-  other database login name.
+  a host, database, and TLS. `sslmode=verify-full` is the recommended default;
+  when its CA source is omitted or set to `system`, the App supplies the pinned
+  `certifi` CA bundle containing the Azure PostgreSQL roots. An explicit
+  `sslmode=require` is accepted as a development fallback but encrypts without
+  authenticating the server. Production startup rejects every other database
+  login and rejects `disable`, `allow`, and `prefer`.
 - The required application reference seed is installed from
   `database/seed/04_application_reference.sql`. Readiness requires exactly 47
   active workflow stages and 78 active backend-resolved variables; missing,
@@ -525,6 +537,9 @@ and
 |---|---|
 | Build fails before startup | Root `package-lock.json`, `uv.lock`, Python 3.14 compatibility, and restricted-egress access to approved npm/PyPI domains. |
 | App is `Crashed` | `app.yaml` resource resolution, dependency installation, and bounded app/system logs. |
+| Crash says `production database DSN requires sslmode=require or verify-full` | Replace the value stored behind the `postgres-dsn` App resource with the exact `gds_web_runtime` DSN shape documented above and one accepted TLS mode. Keep the DSN out of `app.yaml`. |
+| Connection says `root certificate file ... does not exist` or `certificate verify failed` | Upload the current App source. It supplies the pinned CA bundle when `sslrootcert` is omitted or says `system`. Use the Azure PostgreSQL DNS hostname, not an IP address. For development only, `sslmode=require` is an accepted encrypted fallback. |
+| Crash says `DATABRICKS_HOST must be a valid HTTPS origin` | Upload the current App source. It safely normalizes a platform-supplied bare workspace hostname to HTTPS. Do not add or override the Databricks-managed `DATABRICKS_HOST` setting in `app.yaml`. |
 | React returns “built frontend unavailable” | Confirm the root Node build ran and produced `web_app/frontend/dist/index.html` plus `assets/`. |
 | API returns `401` | User authorization is enabled, both default identity scopes are granted, the forwarded token is present, and SCIM `externalId` is the Entra object UUID. |
 | API returns `403` | App `CAN_USE`, active SCIM user, PostgreSQL Principal mapping, Tenant access, Model ownership, and Tenant Lock. |

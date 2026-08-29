@@ -11,6 +11,7 @@ from typing import Literal, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
+import certifi
 from gds_etl_workbench.configuration import (
     DATABASE_POOL_MAX,
     DATABASE_POOL_MIN,
@@ -18,7 +19,7 @@ from gds_etl_workbench.configuration import (
     ConfigurationError,
     Environment,
 )
-from psycopg.conninfo import conninfo_to_dict
+from psycopg.conninfo import conninfo_to_dict, make_conninfo
 
 from gds_workbench_api.features.workflows.execution.configuration import (
     WorkflowExecutionConfiguration,
@@ -120,10 +121,27 @@ class RuntimeSettings:
                 raise ConfigurationError("GDS_WEB_DATABASE_DSN is invalid") from exc
             if not dsn_parts.get("host") or not dsn_parts.get("dbname"):
                 raise ConfigurationError("production database DSN requires host and dbname")
-            if dsn_parts.get("sslmode") != "verify-full":
-                raise ConfigurationError("production database DSN requires sslmode=verify-full")
+            sslmode = dsn_parts.get("sslmode")
+            if sslmode not in {"require", "verify-full"}:
+                raise ConfigurationError(
+                    "production database DSN requires sslmode=require or verify-full"
+                )
             if dsn_parts.get("user") != "gds_web_runtime":
                 raise ConfigurationError("production database DSN requires user=gds_web_runtime")
+            if sslmode == "verify-full" and dsn_parts.get("sslrootcert") in {
+                None,
+                "",
+                "system",
+            }:
+                database_dsn = make_conninfo(database_dsn, sslrootcert=certifi.where())
+            elif sslmode == "require" and dsn_parts.get("sslrootcert") == "system":
+                database_dsn = make_conninfo(
+                    **{
+                        key: str(value)
+                        for key, value in dsn_parts.items()
+                        if key != "sslrootcert"
+                    }
+                )
 
         cursor_signing_key = _required(source, "GDS_WEB_CURSOR_SIGNING_KEY").encode()
         if not 32 <= len(cursor_signing_key) <= 4096:
@@ -211,7 +229,18 @@ def _optional_uuid(source: Mapping[str, str], key: str) -> UUID | None:
 
 
 def _https_origin(value: str, *, setting: str) -> str:
-    parsed = urlsplit(value)
+    candidate = value
+    if "://" not in candidate:
+        if (
+            re.fullmatch(r"[A-Za-z0-9.-]+", candidate) is None
+            or candidate.startswith((".", "-"))
+            or candidate.endswith((".", "-"))
+            or ".." in candidate
+        ):
+            raise ConfigurationError(f"{setting} must be a valid HTTPS origin")
+        candidate = f"https://{candidate}"
+
+    parsed = urlsplit(candidate)
     if (
         parsed.scheme != "https"
         or not parsed.hostname
@@ -222,4 +251,4 @@ def _https_origin(value: str, *, setting: str) -> str:
         or parsed.fragment
     ):
         raise ConfigurationError(f"{setting} must be a valid HTTPS origin")
-    return value.rstrip("/")
+    return candidate.rstrip("/")

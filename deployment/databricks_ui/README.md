@@ -211,6 +211,20 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    uses the separate `gds_web_runtime` login. Never put resource values in
    `app.yaml`.
 
+   If startup reports `production database DSN requires sslmode=require or verify-full`,
+   the value stored behind `postgres-dsn` is wrong or stale. Replace that secret
+   value, keep the same App resource key, and redeploy. Do not change
+   `GDS_WEB_ENVIRONMENT`.
+
+   If startup reports `DATABRICKS_HOST must be a valid HTTPS origin`, upload the
+   current App source. It normalizes a Databricks-supplied bare workspace host
+   to HTTPS. Do not add `DATABRICKS_HOST` to `app.yaml`; Databricks owns it.
+
+   If PostgreSQL reports that `~/.postgresql/root.crt` does not exist or that
+   certificate verification failed, upload the current App source. It replaces
+   an omitted or `system` CA source with its pinned CA bundle. For development,
+   `sslmode=require` is also accepted as an encrypted, non-verifying fallback.
+
    Use these placeholder value shapes in the selected resources:
 
    | Resource key | Value shape |
@@ -220,6 +234,13 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    | `entra-tenant-id` | Nonzero Entra Tenant UUID accepted by the application. |
    | `databricks-environment-code` | Existing registered database Environment code; not a Tenant ID or URL. |
    | `agent-model-endpoint` | Existing Model Serving endpoint name; not its URL. |
+
+   Development-only TLS fallback for `postgres-dsn`:
+
+   `host=<postgresql-host> port=5432 dbname=<database> user=gds_web_runtime password='<password>' sslmode=require`
+
+   Do not combine `sslmode=require` with `sslrootcert=system`; the App removes
+   that incompatible combination, but omitting it keeps the configuration clear.
 
    Keep these non-secret `app.yaml` values unchanged:
 

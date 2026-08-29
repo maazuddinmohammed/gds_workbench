@@ -1,8 +1,10 @@
 from pathlib import Path
 from uuid import UUID
 
+import certifi
 import pytest
 from gds_etl_workbench.configuration import ConfigurationError
+from psycopg.conninfo import conninfo_to_dict
 
 from gds_workbench_api.configuration import Environment, RuntimeSettings
 
@@ -61,7 +63,7 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
             "GDS_WEB_ENVIRONMENT": "production",
             "GDS_WEB_DATABASE_DSN": (
                 "postgresql://gds_web_runtime:fixture_password@db.example/workbench"
-                "?sslmode=verify-full"
+                "?sslmode=verify-full&sslrootcert=system"
             ),
             "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
             "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "PRODUCTION",
@@ -86,6 +88,57 @@ def test_complete_databricks_app_environment_builds_production_settings() -> Non
     assert settings.databricks_host == "https://fixture.azuredatabricks.net"
     assert settings.databricks_app_name == "gds-workbench"
     assert settings.databricks_workspace_id == 123456789
+    assert conninfo_to_dict(settings.database_dsn)["sslrootcert"] == certifi.where()
+
+
+def test_databricks_app_environment_normalizes_a_bare_workspace_host() -> None:
+    settings = RuntimeSettings.from_environment(
+        {
+            "GDS_WEB_ENVIRONMENT": "production",
+            "GDS_WEB_DATABASE_DSN": (
+                "postgresql://gds_web_runtime:fixture_password@db.example/workbench"
+                "?sslmode=verify-full"
+            ),
+            "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
+            "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "PRODUCTION",
+            "GDS_WEB_DATABRICKS_EXECUTION_MODE": "remote",
+            "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
+            "GDS_WEB_DATABRICKS_MODEL_ENDPOINT": "production-agent-endpoint",
+            "GDS_WEB_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_WEB_STATIC_DIR": "web_app/frontend/dist",
+            "DATABRICKS_HOST": "fixture.azuredatabricks.net",
+            "DATABRICKS_APP_NAME": "gds-workbench",
+            "DATABRICKS_WORKSPACE_ID": "123456789",
+        }
+    )
+
+    assert settings.databricks_host == "https://fixture.azuredatabricks.net"
+
+
+def test_production_accepts_require_tls_fallback_without_a_root_certificate() -> None:
+    settings = RuntimeSettings.from_environment(
+        {
+            "GDS_WEB_ENVIRONMENT": "production",
+            "GDS_WEB_DATABASE_DSN": (
+                "postgresql://gds_web_runtime:fixture_password@db.example/workbench"
+                "?sslmode=require&sslrootcert=system"
+            ),
+            "GDS_WEB_CURSOR_SIGNING_KEY": "production-only-key-32-bytes-long",
+            "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "DEVELOPMENT",
+            "GDS_WEB_DATABRICKS_EXECUTION_MODE": "remote",
+            "GDS_WEB_AGENT_EXECUTION_MODE": "remote",
+            "GDS_WEB_DATABRICKS_MODEL_ENDPOINT": "development-agent-endpoint",
+            "GDS_WEB_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
+            "GDS_WEB_STATIC_DIR": "web_app/frontend/dist",
+            "DATABRICKS_HOST": "https://fixture.azuredatabricks.net",
+            "DATABRICKS_APP_NAME": "gds-workbench",
+            "DATABRICKS_WORKSPACE_ID": "123456789",
+        }
+    )
+
+    dsn = conninfo_to_dict(settings.database_dsn)
+    assert dsn["sslmode"] == "require"
+    assert "sslrootcert" not in dsn
 
 
 def test_production_requires_a_verified_postgres_connection() -> None:
@@ -103,7 +156,9 @@ def test_production_requires_a_verified_postgres_connection() -> None:
             }
         )
 
-    assert str(captured.value) == "production database DSN requires sslmode=verify-full"
+    assert str(captured.value) == (
+        "production database DSN requires sslmode=require or verify-full"
+    )
     assert "top-secret" not in str(captured.value)
 
 

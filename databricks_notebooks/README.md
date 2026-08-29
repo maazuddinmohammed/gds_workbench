@@ -44,6 +44,21 @@ These steps are DBA work and happen before the notebooks are uploaded:
    `is_super_admin = true` and one active Entra identity row for it.
 4. Bind that exact Principal, exact database role OID/name, and the registered
    Databricks environment code in `security.notebook_runtime_principal`.
+5. Before running an agentic notebook, configure an effective published Prompt
+   for every agentic stage used by its execution mode. The reference seed adds
+   stage and variable definitions only; it intentionally contains no Prompt
+   bodies or assignments. For `analysis_inference` with `one_shot`, configure
+   **Analysis / Relationship Inference**:
+
+   - in the web application, acquire the Tenant Lock;
+   - under **Prompts**, create a Tenant Prompt Template for that stage, add its
+     first version, and publish it;
+   - under the target Model's **Prompts** settings, configure that published
+     version as the Model default.
+
+   `PromptOverridesJSON={}` then uses that effective Model default. An override
+   is optional and is only for selecting another already-published Prompt
+   version for the same stage.
 
 For an already-created Super Admin service Principal, the DBA can use this
 shape after replacing every placeholder:

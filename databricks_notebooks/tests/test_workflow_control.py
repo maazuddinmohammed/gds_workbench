@@ -9,6 +9,7 @@ from uuid import UUID
 import pytest
 from gds_workbench_notebooks.errors import (
     NotebookAuthorizationError,
+    NotebookConfigurationError,
     NotebookDatabaseError,
 )
 from gds_workbench_notebooks.notebook import build_notebook_request, widget_specs
@@ -325,5 +326,29 @@ def test_driver_error_is_bounded_and_does_not_disclose_raw_text() -> None:
         NotebookWorkflowControlClient(FailingConnection()).create_workflow_run(request)
 
     assert "raw-row" not in str(captured.value)
+    assert "fixture-password" not in str(captured.value)
+    assert "fixture-token" not in str(captured.value)
+
+
+def test_create_reports_missing_prompt_assignment_without_raw_database_details() -> None:
+    class Diagnostic:
+        message_primary = "No usable prompt is assigned to Workflow Stage 31"
+
+    class MissingPromptError(RuntimeError):
+        diag = Diagnostic()
+
+    class FailingConnection:
+        def execute(self, statement: str, parameters: object = None) -> None:
+            raise MissingPromptError("raw-row fixture-password fixture-token")
+
+    request = build_notebook_request("analysis_inference", _values("analysis_inference"))
+
+    with pytest.raises(
+        NotebookConfigurationError,
+        match="active published prompt",
+    ) as captured:
+        NotebookWorkflowControlClient(FailingConnection()).create_workflow_run(request)
+
+    assert "Workflow Stage 31" not in str(captured.value)
     assert "fixture-password" not in str(captured.value)
     assert "fixture-token" not in str(captured.value)
