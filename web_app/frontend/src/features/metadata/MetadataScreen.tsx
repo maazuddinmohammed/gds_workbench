@@ -397,7 +397,10 @@ export function MetadataScreen({
           canEdit={canStage}
           editDisabledReason={editDisabledReason}
           onClose={() => setSelectedRow(null)}
-          onEdit={() => setEditor({ mode: "edit", row: effectiveSelectedRow })}
+          onEdit={() => {
+            setEditor({ mode: "edit", row: effectiveSelectedRow });
+            setSelectedRow(null);
+          }}
         />
       ) : null}
       {editor ? (
@@ -405,6 +408,7 @@ export function MetadataScreen({
           mode={editor.mode}
           descriptor={descriptor}
           rowSchema={datasetDetailQuery.data?.row_schema ?? { properties: {} }}
+          fixedValues={datasetDetailQuery.data?.fixed_values ?? {}}
           baseRow={editor.row}
           isSaving={stageMutation.isPending}
           onClose={() => setEditor(null)}

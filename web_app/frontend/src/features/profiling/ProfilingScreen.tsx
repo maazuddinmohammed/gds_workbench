@@ -10,7 +10,7 @@ import {
   type ProfilingFilters,
 } from "./api";
 import { ProfilingRunConfiguration } from "./ProfilingRunConfiguration";
-import { ProfilingObjectDrawer, ProfilingResults } from "./ProfilingResults";
+import { ProfilingResults } from "./ProfilingResults";
 import { ProfilingRunDrawer, ProfilingRuns } from "./ProfilingRuns";
 
 type ProfilingView = "results" | "runs";
@@ -20,21 +20,27 @@ export function ProfilingScreen({
   tenantId,
   model,
   hasTenantLock,
+  resultFilters,
+  returnObjectId,
+  onApplyResultFilters,
+  onReturnFocusHandled,
 }: {
   api: ProfilingApi;
   tenantId: number;
   model: ModelDetail;
   hasTenantLock: boolean;
+  resultFilters: ProfilingFilters;
+  returnObjectId?: number;
+  onApplyResultFilters: (filters: ProfilingFilters) => void;
+  onReturnFocusHandled: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<ProfilingView>("results");
-  const [resultFilters, setResultFilters] = useState<ProfilingFilters>({});
   const [runState, setRunState] = useState<WorkflowRunFilterState>("");
-  const [selectedObjectId, setSelectedObjectId] = useState<number | null>(null);
   const [selectedRunId, setSelectedRunId] = useState<number | null>(null);
   const [runConfigurationOpen, setRunConfigurationOpen] = useState(false);
-  const objectReturnId = useRef<number | null>(null);
   const runReturnId = useRef<number | null>(null);
+  const handledReturnObjectId = useRef<number | null>(null);
 
   const resultsQuery = useQuery({
     queryKey: profilingQueryKeys.results(tenantId, model.model_id, resultFilters),
@@ -43,16 +49,7 @@ export function ProfilingScreen({
       model.model_id,
       resultFilters,
     ),
-    enabled: view === "results" || selectedObjectId !== null,
-  });
-  const resultDetailQuery = useQuery({
-    queryKey: profilingQueryKeys.result(tenantId, model.model_id, selectedObjectId),
-    queryFn: () => api.readProfilingObject(
-      tenantId,
-      model.model_id,
-      selectedObjectId as number,
-    ),
-    enabled: selectedObjectId !== null,
+    enabled: view === "results",
   });
   const runsQuery = useQuery({
     queryKey: profilingQueryKeys.runs(tenantId, model.model_id, runState),
@@ -69,13 +66,6 @@ export function ProfilingScreen({
   });
 
   useEffect(() => {
-    if (selectedObjectId !== null || objectReturnId.current === null) return;
-    document
-      .getElementById(`profiling-detail-trigger-${objectReturnId.current}`)
-      ?.focus();
-    objectReturnId.current = null;
-  }, [selectedObjectId]);
-  useEffect(() => {
     if (selectedRunId !== null) return;
     if (runReturnId.current !== null) {
       document
@@ -84,15 +74,28 @@ export function ProfilingScreen({
       runReturnId.current = null;
     }
   }, [selectedRunId]);
+  useEffect(() => {
+    if (
+      returnObjectId === undefined
+      || handledReturnObjectId.current === returnObjectId
+      || resultsQuery.isPending
+    ) return;
+    handledReturnObjectId.current = returnObjectId;
+    const restoreFocus = () => {
+      const origin = document.getElementById(`profiling-detail-trigger-${returnObjectId}`);
+      const target = origin ?? document.getElementById("profiling-results-surface");
+      if (!target) return;
+      target.focus({ preventScroll: true });
+      if (typeof target.scrollIntoView === "function") {
+        target.scrollIntoView({ block: "center" });
+      }
+    };
+    void onReturnFocusHandled().then(restoreFocus, restoreFocus);
+  }, [onReturnFocusHandled, resultsQuery.isPending, returnObjectId]);
 
   const refresh = async () => {
     const requests = view === "results"
-      ? [
-          resultsQuery.refetch(),
-          selectedObjectId === null
-            ? Promise.resolve()
-            : resultDetailQuery.refetch(),
-        ]
+      ? [resultsQuery.refetch()]
       : [
           runsQuery.refetch(),
           selectedRunId === null
@@ -171,6 +174,8 @@ export function ProfilingScreen({
 
       {view === "results" ? (
         <ProfilingResults
+          tenantId={tenantId}
+          modelId={model.model_id}
           filters={resultFilters}
           items={resultsQuery.data?.items ?? []}
           isLoading={resultsQuery.isPending}
@@ -179,12 +184,7 @@ export function ProfilingScreen({
             resultsQuery.data !== undefined
             && resultsQuery.data.model_revision !== model.model_revision
           }
-          selectedObjectId={selectedObjectId}
-          onApplyFilters={(filters) => {
-            setSelectedObjectId(null);
-            setResultFilters(filters);
-          }}
-          onShowDetails={setSelectedObjectId}
+          onApplyFilters={onApplyResultFilters}
         />
       ) : (
         <ProfilingRuns
@@ -200,21 +200,6 @@ export function ProfilingScreen({
           onShowDetails={setSelectedRunId}
         />
       )}
-
-      {selectedObjectId !== null ? (
-        <ProfilingObjectDrawer
-          detail={resultDetailQuery.data}
-          fallback={resultsQuery.data?.items.find(
-            (item) => item.object_id === selectedObjectId,
-          )}
-          isLoading={resultDetailQuery.isPending}
-          isError={resultDetailQuery.isError}
-          onClose={() => {
-            objectReturnId.current = selectedObjectId;
-            setSelectedObjectId(null);
-          }}
-        />
-      ) : null}
 
       {selectedRunId !== null ? (
         <ProfilingRunDrawer

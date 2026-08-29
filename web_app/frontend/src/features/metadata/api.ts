@@ -51,6 +51,7 @@ export interface MetadataDatasetDetail extends MetadataDatasetDescription {
   schema_version: "1.0";
   tenant_id: number;
   row_schema: MetadataRowSchema;
+  fixed_values: MetadataRow;
 }
 
 export interface MetadataRowPage {
@@ -440,6 +441,11 @@ export const metadataQueryKeys = {
 };
 
 export function metadataFieldLabel(field: string): string {
+  const domainLabels: Record<string, string> = {
+    scope_tenant_code: "Assigned Tenant",
+    connection_tenant_code: "GDS Connection Owner",
+  };
+  if (domainLabels[field]) return domainLabels[field];
   return field
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());

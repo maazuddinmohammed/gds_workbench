@@ -7,6 +7,7 @@ describe("Workbench API client", () => {
     const fetcher = vi.fn<typeof fetch>()
       .mockResolvedValueOnce(jsonResponse({
         display_name: "Maaz",
+        email: "maaz@example.test",
         actor_kind: "human",
         is_super_admin: false,
         last_tenant_id: 7,
@@ -343,6 +344,7 @@ describe("Workbench API client", () => {
       .mockResolvedValueOnce(jsonResponse({
         schema_version: "1.0",
         dataset: "source_object",
+        fixed_values: { zone_code: "source" },
         row_schema: { properties: { tenant_code: { type: "string" } } },
       }))
       .mockResolvedValueOnce(jsonResponse({ schema_version: "1.0", items: [] }))

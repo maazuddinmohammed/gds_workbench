@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from "@testing-library/react";
+import { act, render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -7,7 +7,7 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Model Profiling", () => {
-  it("shows normalized result filters and opens Object evidence only on request", async () => {
+  it("shows normalized result filters and opens complete Object evidence on its own page", async () => {
     const fetcher = profilingFetchStub();
     const router = profilingRouter(fetcher);
     const user = userEvent.setup();
@@ -32,18 +32,101 @@ describe("Model Profiling", () => {
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
-    const showDetails = screen.getByRole("button", { name: "Show profiling details for customer_raw" });
+    const showDetails = screen.getByRole("link", { name: "Open profiling details for customer_raw" });
     await user.click(showDetails);
 
-    const drawer = await screen.findByRole("complementary", { name: "Profiling Object details" });
-    expect(within(drawer).getByRole("heading", { name: "customer_raw" })).toBeVisible();
-    expect(within(drawer).getByText("customer_id")).toBeVisible();
-    expect(within(drawer).getByText("80%")).toBeVisible();
+    expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling/501");
+    expect(router.state.location.search).toMatchObject({
+      objectId: 501,
+      sourceTenantCode: " GRDM ",
+      systemCode: " CRM ",
+      objectSchema: " Bronze_CRM ",
+      objectName: " Customer_Raw ",
+      returnObjectId: 501,
+    });
+    expect(await screen.findByRole("heading", { name: "customer_raw" })).toBeVisible();
+    expect(screen.getByText("This response contains 2 of 12 Attribute profiles.")).toBeVisible();
 
-    await user.click(within(drawer).getByRole("button", { name: "Close profiling Object details" }));
+    const context = screen.getByRole("region", { name: "Profiled Object context" });
+    expectFact(context, "Object ID", "501");
+    expectFact(context, "Model ID", "18");
+    expectFact(context, "Model revision", "r18");
+    expectFact(context, "Object", "bronze_crm.customer_raw");
+    expectFact(context, "Source Tenant", "Global Reference Data (GRDM)");
+    expectFact(context, "Source Tenant ID", "8");
+    expectFact(context, "System", "Customer Relationship Management (CRM)");
+    expectFact(context, "System ID", "31");
+    expectFact(context, "Connection", "CRM_DBR");
+    expectFact(context, "Connection ID", "21");
+    expectFact(context, "Profiles returned", "2");
+    expectFact(context, "Last profiled", "Aug 24");
 
-    expect(screen.queryByRole("complementary", { name: "Profiling Object details" })).not.toBeInTheDocument();
-    expect(screen.getByRole("button", { name: "Show profiling details for customer_raw" })).toHaveFocus();
+    const identity = factGroup("Identity", "customer_id");
+    expect(within(screen.getByRole("article", { name: "customer_id" }))
+      .queryAllByRole("region")).toHaveLength(0);
+    expectFact(identity, "Attribute ID", "601");
+    expectFact(identity, "Ordinal position", "1");
+    expectFact(identity, "Data type", "bigint");
+    const counts = factGroup("Counts", "customer_id");
+    expectFact(counts, "Rows", "10");
+    expectFact(counts, "Non-null rows", "8");
+    expectFact(counts, "Null rows", "2");
+    expectFact(counts, "Blank rows", "0");
+    expectFact(counts, "Distinct values", "8");
+    const lengths = factGroup("Data lengths", "customer_id");
+    expectFact(lengths, "Minimum length", "1");
+    expectFact(lengths, "Maximum length", "8");
+    expectFact(lengths, "Average length", "4.2");
+    const percentages = factGroup("Percentages", "customer_id");
+    expectFact(percentages, "Populated", "80%");
+    expectFact(percentages, "Duplicate rate", "0%");
+    expectFact(percentages, "Null rate", "20%");
+    expectFact(percentages, "Blank rate", "0%");
+    expectFact(percentages, "Distinct rate", "100%");
+    const provenance = factGroup("Provenance", "customer_id");
+    expectFact(provenance, "Workflow run", "Run 1048");
+    expectFact(provenance, "Agent run", "Not recorded");
+    expectFact(provenance, "Created", "Aug 24");
+    expectFact(provenance, "Updated", "Aug 24");
+    expectFact(provenance, "Source context digest", "a".repeat(64));
+
+    const nullableCounts = factGroup("Counts", "status");
+    expectFact(nullableCounts, "Blank rows", "Not recorded");
+    expectFact(nullableCounts, "Distinct values", "Not recorded");
+    const nullableLengths = factGroup("Data lengths", "status");
+    expectFact(nullableLengths, "Minimum length", "Not recorded");
+    expectFact(nullableLengths, "Average length", "Not recorded");
+    const nullablePercentages = factGroup("Percentages", "status");
+    expectFact(nullablePercentages, "Duplicate rate", "—");
+    expectFact(nullablePercentages, "Blank rate", "—");
+
+    await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
+    expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
+    expect(router.state.location.pathname).toBe("/tenants/7/models/18/profiling");
+    expect(screen.getByLabelText("Object ID")).toHaveValue("501");
+    expect(screen.getByLabelText("Source Tenant code")).toHaveValue(" GRDM ");
+    expect(screen.getByLabelText("System code")).toHaveValue(" CRM ");
+    expect(screen.getByLabelText("Object schema")).toHaveValue(" Bronze_CRM ");
+    expect(screen.getByLabelText("Object name")).toHaveValue(" Customer_Raw ");
+    await waitFor(() => {
+      expect(screen.getByRole("link", {
+        name: "Open profiling details for customer_raw",
+      })).toHaveFocus();
+    });
+    expect(router.state.location.search).not.toHaveProperty("returnObjectId");
+
+    await act(async () => {
+      await router.navigate({
+        to: "/tenants/$tenantId/models/$modelId/profiling",
+        params: { tenantId: "7", modelId: "18" },
+        search: { systemCode: "ERP" },
+      });
+    });
+    await waitFor(() => {
+      expect(screen.getByLabelText("Object ID")).toHaveValue("");
+      expect(screen.getByLabelText("Source Tenant code")).toHaveValue("");
+      expect(screen.getByLabelText("System code")).toHaveValue("ERP");
+    });
   });
 
   it("filters run history and shows bounded events in a closable drawer", async () => {
@@ -263,6 +346,17 @@ function jsonResponse(value: unknown, status = 200): Response {
   });
 }
 
+function expectFact(scope: HTMLElement, label: string, value: string): void {
+  expect(within(scope).getByText(label).parentElement).toHaveTextContent(value);
+}
+
+function factGroup(heading: string, attributeName: string): HTMLElement {
+  const card = screen.getByRole("article", { name: attributeName });
+  const section = within(card).getByRole("heading", { name: heading }).closest("section");
+  if (!section) throw new Error(`${heading} fact group was not rendered.`);
+  return section;
+}
+
 const tenantHomePayload = {
   tenant: {
     tenant_id: 7,
@@ -364,30 +458,55 @@ const profilingDetailPayload = {
   ...profilingPagePayload.items[0],
   model_id: 18,
   model_revision: 18,
-  attribute_profiles: [{
-    attribute_id: 601,
-    attribute_name: "customer_id",
-    attribute_ordinal_position: 1,
-    attribute_data_type: "bigint",
-    source_context_digest: "a".repeat(64),
-    row_count: 10,
-    non_null_count: 8,
-    null_count: 2,
-    blank_count: 0,
-    distinct_count: 8,
-    min_data_length: 1,
-    max_data_length: 8,
-    avg_data_length: "4.2",
-    percent_populated: "80",
-    percent_duplicates: "0",
-    percent_null: "20",
-    percent_blank: "0",
-    percent_distinct: "100",
-    provenance: { agent_run_id: null, workflow_run_id: 1048 },
-    created_at: "2026-08-24T14:00:00Z",
-    updated_at: "2026-08-24T14:00:00Z",
-  }],
-  profiles_truncated: false,
+  attribute_profiles: [
+    {
+      attribute_id: 601,
+      attribute_name: "customer_id",
+      attribute_ordinal_position: 1,
+      attribute_data_type: "bigint",
+      source_context_digest: "a".repeat(64),
+      row_count: 10,
+      non_null_count: 8,
+      null_count: 2,
+      blank_count: 0,
+      distinct_count: 8,
+      min_data_length: 1,
+      max_data_length: 8,
+      avg_data_length: "4.2",
+      percent_populated: "80",
+      percent_duplicates: "0",
+      percent_null: "20",
+      percent_blank: "0",
+      percent_distinct: "100",
+      provenance: { agent_run_id: null, workflow_run_id: 1048 },
+      created_at: "2026-08-24T14:00:00Z",
+      updated_at: "2026-08-24T14:00:00Z",
+    },
+    {
+      attribute_id: 602,
+      attribute_name: "status",
+      attribute_ordinal_position: 2,
+      attribute_data_type: "string",
+      source_context_digest: "b".repeat(64),
+      row_count: 10,
+      non_null_count: 10,
+      null_count: 0,
+      blank_count: null,
+      distinct_count: null,
+      min_data_length: null,
+      max_data_length: null,
+      avg_data_length: null,
+      percent_populated: "100",
+      percent_duplicates: null,
+      percent_null: "0",
+      percent_blank: null,
+      percent_distinct: null,
+      provenance: { agent_run_id: null, workflow_run_id: null },
+      created_at: "2026-08-24T14:00:00Z",
+      updated_at: "2026-08-24T14:00:00Z",
+    },
+  ],
+  profiles_truncated: true,
 };
 
 function profilingRunPayload(

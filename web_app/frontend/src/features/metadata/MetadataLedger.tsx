@@ -95,8 +95,10 @@ export function MetadataLedger({
           <p className="eyebrow">Normalized sheet · {descriptor.section}</p>
           <h2 id="metadata-sheet-heading">{descriptor.label}</h2>
           <p>
-            {descriptor.columns.length} canonical columns · {descriptor.filter_fields.length}{" "}
-            sheet-specific filters
+            {descriptor.dataset === "tenant_metadata_discovery_scope"
+              ? "Each scope belongs to the Assigned Tenant. GDS Connection Owner identifies the Tenant that owns the shared global-data-store connection."
+              : <>{descriptor.columns.length} canonical columns · {descriptor.filter_fields.length}{" "}
+                sheet-specific filters</>}
           </p>
         </div>
         {descriptor.section === "operational" ? (

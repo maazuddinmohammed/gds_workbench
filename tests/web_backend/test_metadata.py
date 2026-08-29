@@ -313,6 +313,7 @@ def test_dataset_detail_exposes_canonical_ordered_field_schema() -> None:
         {"type": "null"},
     ]
     assert "tenant_code" in document["row_schema"]["required"]
+    assert document["fixed_values"] == {"zone_code": "source"}
     assert "connection_value" not in response.text
 
 

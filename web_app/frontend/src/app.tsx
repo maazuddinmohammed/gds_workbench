@@ -14,6 +14,8 @@ import {
 } from "@tanstack/react-router";
 
 import type { WorkbenchApi } from "./api";
+import { validateProfilingRouteSearch } from "./features/profiling/api";
+import { ProfilingObjectDetailPage } from "./features/profiling/ProfilingDetail";
 import { ProfilingScreen } from "./features/profiling/ProfilingScreen";
 import { AnalysisDetail } from "./features/analysis/AnalysisDetail";
 import { AnalysisScreen } from "./features/analysis/AnalysisScreen";
@@ -192,7 +194,15 @@ const tenantModelScopeRoute = createRoute({
 const tenantModelProfilingRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/profiling",
+  validateSearch: validateProfilingRouteSearch,
   component: ModelProfiling,
+});
+
+const tenantModelProfilingDetailRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/models/$modelId/profiling/$objectId",
+  validateSearch: validateProfilingRouteSearch,
+  component: ModelProfilingDetail,
 });
 
 const tenantModelAnalysisRoute = createRoute({
@@ -315,6 +325,7 @@ const routeTree = rootRoute.addChildren([
   tenantModelRoute,
   tenantModelScopeRoute,
   tenantModelProfilingRoute,
+  tenantModelProfilingDetailRoute,
   tenantModelAnalysisRoute,
   tenantModelAnalysisDetailRoute,
   tenantModelAssertionsRoute,
@@ -707,6 +718,8 @@ function ModelScope() {
 function ModelProfiling() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelProfilingRoute.useParams();
+  const { returnObjectId, ...resultFilters } = tenantModelProfilingRoute.useSearch();
+  const navigate = useNavigate({ from: "/tenants/$tenantId/models/$modelId/profiling" });
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
@@ -723,6 +736,41 @@ function ModelProfiling() {
           tenantId={numericTenantId}
           model={model}
           hasTenantLock={home.lock.owned_by_current_principal === true}
+          resultFilters={resultFilters}
+          {...(returnObjectId === undefined ? {} : { returnObjectId })}
+          onApplyResultFilters={(filters) => {
+            void navigate({ search: filters, replace: true });
+          }}
+          onReturnFocusHandled={() => navigate({ search: resultFilters, replace: true })}
+        />
+      )}
+    </ModelRouteFrame>
+  );
+}
+
+function ModelProfilingDetail() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, modelId, objectId } = tenantModelProfilingDetailRoute.useParams();
+  const returnSearch = tenantModelProfilingDetailRoute.useSearch();
+  const numericTenantId = Number(tenantId);
+  const numericModelId = Number(modelId);
+  const numericObjectId = Number(objectId);
+  if (!Number.isSafeInteger(numericObjectId) || numericObjectId <= 0) return <ErrorPage />;
+  return (
+    <ModelRouteFrame
+      api={api}
+      tenantId={numericTenantId}
+      modelId={numericModelId}
+      activeStage="profiling"
+      loadingLabel="Loading profile evidence"
+    >
+      {() => (
+        <ProfilingObjectDetailPage
+          api={api}
+          tenantId={numericTenantId}
+          modelId={numericModelId}
+          objectId={numericObjectId}
+          returnSearch={returnSearch}
         />
       )}
     </ModelRouteFrame>

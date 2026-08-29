@@ -12,25 +12,38 @@ from gds_etl_workbench.infrastructure.postgres import (
 
 from gds_workbench_api.features.session.contracts import SessionRecord
 
-_VISIBLE_LAST_TENANT_SQL = """
-SELECT preference.last_tenant_id
-  FROM application.principal_preference AS preference
-  JOIN core.tenant AS tenant
+_SESSION_DETAILS_SQL = """
+WITH session_principal AS (
+    SELECT principal.principal_id,
+           principal.principal_email
+      FROM security.principal AS principal
+     WHERE principal.principal_id = %s
+       AND principal.is_active
+)
+SELECT session_principal.principal_email,
+       CASE
+           WHEN tenant.tenant_id IS NOT NULL
+            AND (
+                %s::BOOLEAN
+                OR tenant.tenant_visibility = 'global'
+                OR access.tenant_id IS NOT NULL
+            )
+           THEN tenant.tenant_id
+           ELSE NULL
+       END AS last_tenant_id
+  FROM session_principal
+  LEFT JOIN application.principal_preference AS preference
+    ON preference.principal_id = session_principal.principal_id
+  LEFT JOIN core.tenant AS tenant
     ON tenant.tenant_id = preference.last_tenant_id
    AND tenant.is_active
   LEFT JOIN security.tenant_principal_access AS access
     ON access.tenant_id = tenant.tenant_id
-   AND access.principal_id = preference.principal_id
+   AND access.principal_id = session_principal.principal_id
    AND access.is_active
    AND (
        access.access_expires_time IS NULL
        OR access.access_expires_time > CURRENT_TIMESTAMP
-   )
- WHERE preference.principal_id = %s
-   AND (
-       %s::BOOLEAN
-       OR tenant.tenant_visibility = 'global'
-       OR access.tenant_id IS NOT NULL
    )
 """
 
@@ -60,16 +73,17 @@ class DatabaseSessionService:
     async def read_session(self, principal: RequestPrincipal) -> SessionRecord:
         async with self._database.read_transaction() as transaction:
             actor = await self._authorizer.resolve_principal(transaction, principal)
-            preference = None
+            details = None
             if actor.principal_id is not None:
-                preference = await transaction.fetch_one(
-                    _VISIBLE_LAST_TENANT_SQL,
+                details = await transaction.fetch_one(
+                    _SESSION_DETAILS_SQL,
                     (actor.principal_id, actor.is_super_admin),
                 )
 
         return SessionRecord(
             display_name=actor.display_name,
+            email=None if details is None else details["principal_email"],
             actor_kind=actor.actor_kind,
             is_super_admin=actor.is_super_admin,
-            last_tenant_id=(None if preference is None else preference["last_tenant_id"]),
+            last_tenant_id=None if details is None else details["last_tenant_id"],
         )

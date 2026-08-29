@@ -620,6 +620,124 @@ async def test_object_detail_rechecks_visibility_and_bounds_attributes() -> None
 
 
 @pytest.mark.asyncio
+async def test_discovery_scope_rows_do_not_cross_selected_tenant(
+    web_postgres_database: DisposablePostgres,
+) -> None:
+    suffix = uuid4().hex[:12]
+    selected_schema = f"selected_{suffix}"
+    other_schema = f"other_{suffix}"
+    other_tenant_code = f"SCOPE_OTHER_{suffix}"
+    with web_postgres_database.connect_owner() as connection:
+        existing = connection.execute(
+            "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
+        ).fetchone()
+        if existing is None:
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
+        selected_tenant = connection.execute(
+            """
+            SELECT tenant_id, project_id
+              FROM core.tenant
+             WHERE tenant_code = 'DEMO_TENANT'
+            """
+        ).fetchone()
+        scope_parent = connection.execute(
+            """
+            SELECT connection.connection_id, zone.zone_id
+              FROM core.connection AS connection
+              JOIN core.tenant AS connection_tenant
+                ON connection_tenant.tenant_id = connection.tenant_id
+             CROSS JOIN reference.zone AS zone
+             WHERE connection.connection_code = 'DEMO_GDS'
+               AND connection_tenant.tenant_code = 'DEMO_GDS_TENANT'
+               AND zone.zone_code = 'bronze'
+            """
+        ).fetchone()
+        assert selected_tenant is not None
+        assert scope_parent is not None
+        other_tenant = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id,
+                tenant_code,
+                tenant_name,
+                tenant_catalog,
+                gds_admin_catalog
+            )
+            VALUES (%s, %s, %s, %s, %s)
+            RETURNING tenant_id
+            """,
+            (
+                selected_tenant["project_id"],
+                other_tenant_code,
+                f"Scope Other Tenant {suffix}",
+                f"scope_other_{suffix}",
+                f"scope_other_admin_{suffix}",
+            ),
+        ).fetchone()
+        assert other_tenant is not None
+        connection.execute(
+            """
+            INSERT INTO core.tenant_metadata_discovery_scope (
+                tenant_id,
+                gds_connection_id,
+                zone_id,
+                object_schema
+            )
+            VALUES (%s, %s, %s, %s),
+                   (%s, %s, %s, %s)
+            """,
+            (
+                selected_tenant["tenant_id"],
+                scope_parent["connection_id"],
+                scope_parent["zone_id"],
+                selected_schema,
+                other_tenant["tenant_id"],
+                scope_parent["connection_id"],
+                scope_parent["zone_id"],
+                other_schema,
+            ),
+        )
+
+    database = WebPostgresDatabase(
+        dsn=web_postgres_database.web_runtime_dsn(),
+        pool_min=1,
+        pool_max=1,
+        pool_timeout_seconds=5,
+    )
+    repository = PostgresMetadataRepository()
+    await database.open()
+    try:
+        async with database.read_transaction() as transaction:
+            selected_rows = await repository.list_rows(
+                transaction,
+                tenant_id=selected_tenant["tenant_id"],
+                dataset="tenant_metadata_discovery_scope",
+                filters=(),
+                limit=200,
+                offset=0,
+            )
+            other_rows = await repository.list_rows(
+                transaction,
+                tenant_id=other_tenant["tenant_id"],
+                dataset="tenant_metadata_discovery_scope",
+                filters=(),
+                limit=200,
+                offset=0,
+            )
+    finally:
+        await database.close()
+
+    assert selected_schema in {row["object_schema"] for row in selected_rows}
+    assert other_schema not in {row["object_schema"] for row in selected_rows}
+    assert {row["scope_tenant_code"] for row in selected_rows} == {"DEMO_TENANT"}
+    assert {row["object_schema"] for row in other_rows} == {other_schema}
+    assert {row["scope_tenant_code"] for row in other_rows} == {other_tenant_code}
+    assert {row["connection_tenant_code"] for row in other_rows} == {"DEMO_GDS_TENANT"}
+
+
+@pytest.mark.asyncio
 async def test_all_repository_queries_execute_with_the_web_role(
     web_postgres_database: DisposablePostgres,
 ) -> None:

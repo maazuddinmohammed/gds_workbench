@@ -81,8 +81,13 @@ export function TenantEntryScreen({
       <header className="entry-topbar">
         <Brand />
         <div className="signed-in">
-          <span>Signed in as</span>
-          <strong>{sessionQuery.data.display_name}</strong>
+          <div className="signed-in-identity">
+            <span>Signed in as</span>
+            <strong>{sessionQuery.data.display_name}</strong>
+            {sessionQuery.data.email ? (
+              <span className="signed-in-email">{sessionQuery.data.email}</span>
+            ) : null}
+          </div>
           <Avatar name={sessionQuery.data.display_name} />
         </div>
       </header>

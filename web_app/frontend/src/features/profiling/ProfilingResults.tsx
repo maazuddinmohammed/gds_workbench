@@ -1,38 +1,33 @@
-import { useEffect, useMemo, useRef } from "react";
+import { useMemo } from "react";
 import { useForm } from "@tanstack/react-form";
+import { Link } from "@tanstack/react-router";
 import { getCoreRowModel, useReactTable, type ColumnDef } from "@tanstack/react-table";
 
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import type {
   ProfilingFilters,
   ProfilingObject,
-  ProfilingObjectDetail,
 } from "./api";
-import {
-  DrawerHeader,
-  Fact,
-  WorkflowTable,
-  formatPercent,
-} from "./shared";
+import { WorkflowTable } from "./shared";
 
 export function ProfilingResults({
+  tenantId,
+  modelId,
   filters,
   items,
   isLoading,
   isError,
   revisionMismatch,
-  selectedObjectId,
   onApplyFilters,
-  onShowDetails,
 }: {
+  tenantId: number;
+  modelId: number;
   filters: ProfilingFilters;
   items: ProfilingObject[];
   isLoading: boolean;
   isError: boolean;
   revisionMismatch: boolean;
-  selectedObjectId: number | null;
   onApplyFilters: (filters: ProfilingFilters) => void;
-  onShowDetails: (objectId: number) => void;
 }) {
   const columns = useMemo<ColumnDef<ProfilingObject>[]>(() => [
     {
@@ -80,23 +75,32 @@ export function ProfilingResults({
       id: "actions",
       header: "Actions",
       cell: ({ row }) => (
-        <button
+        <Link
           id={`profiling-detail-trigger-${row.original.object_id}`}
           className="text-action"
-          type="button"
-          aria-label={`Show profiling details for ${row.original.object_name}`}
-          aria-expanded={selectedObjectId === row.original.object_id}
-          onClick={() => onShowDetails(row.original.object_id)}
+          aria-label={`Open profiling details for ${row.original.object_name}`}
+          to="/tenants/$tenantId/models/$modelId/profiling/$objectId"
+          params={{
+            tenantId: String(tenantId),
+            modelId: String(modelId),
+            objectId: String(row.original.object_id),
+          }}
+          search={{ ...filters, returnObjectId: row.original.object_id }}
         >
           Show details
-        </button>
+        </Link>
       ),
     },
-  ], [onShowDetails, selectedObjectId]);
+  ], [filters, modelId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
-    <section className="workflow-surface" aria-label="Profiling result review">
+    <section
+      id="profiling-results-surface"
+      className="workflow-surface"
+      aria-label="Profiling result review"
+      tabIndex={-1}
+    >
       <ProfilingFilterForm filters={filters} onApply={onApplyFilters} />
       {isLoading ? (
         <div className="surface-state" aria-busy="true">Loading profiling results…</div>
@@ -109,7 +113,7 @@ export function ProfilingResults({
           Profiling results could not be loaded.
         </div>
       ) : (
-        <WorkflowTable table={table} label="Profiling results" selectedId={selectedObjectId} />
+        <WorkflowTable table={table} label="Profiling results" selectedId={null} />
       )}
       {!isLoading && !isError && !revisionMismatch && !items.length ? (
         <div className="empty-state compact">No profiling results match these filters.</div>
@@ -135,12 +139,7 @@ function ProfilingFilterForm({
     },
     onSubmit: ({ value }) => {
       const parsedObjectId = value.objectId.trim() ? Number(value.objectId) : undefined;
-      const nextFilters: ProfilingFilters = {
-        sourceTenantCode: value.sourceTenantCode,
-        systemCode: value.systemCode,
-        objectSchema: value.objectSchema,
-        objectName: value.objectName,
-      };
+      const nextFilters: ProfilingFilters = {};
       if (
         typeof parsedObjectId === "number"
         && Number.isSafeInteger(parsedObjectId)
@@ -148,6 +147,10 @@ function ProfilingFilterForm({
       ) {
         nextFilters.objectId = parsedObjectId;
       }
+      if (value.sourceTenantCode.trim()) nextFilters.sourceTenantCode = value.sourceTenantCode;
+      if (value.systemCode.trim()) nextFilters.systemCode = value.systemCode;
+      if (value.objectSchema.trim()) nextFilters.objectSchema = value.objectSchema;
+      if (value.objectName.trim()) nextFilters.objectName = value.objectName;
       onApply(nextFilters);
     },
   });
@@ -244,93 +247,5 @@ function ProfilingFilterForm({
         </button>
       </div>
     </form>
-  );
-}
-
-export function ProfilingObjectDrawer({
-  detail,
-  fallback,
-  isLoading,
-  isError,
-  onClose,
-}: {
-  detail: ProfilingObjectDetail | undefined;
-  fallback: ProfilingObject | undefined;
-  isLoading: boolean;
-  isError: boolean;
-  onClose: () => void;
-}) {
-  const closeButton = useRef<HTMLButtonElement>(null);
-  useEffect(() => closeButton.current?.focus(), []);
-
-  return (
-    <aside
-      className="workflow-drawer"
-      aria-label="Profiling Object details"
-      onKeyDown={(event) => {
-        if (event.key === "Escape") onClose();
-      }}
-    >
-      <DrawerHeader
-        eyebrow="Profile evidence"
-        title={detail?.object_name ?? fallback?.object_name ?? "Profiled Object"}
-        closeLabel="Close profiling Object details"
-        closeRef={closeButton}
-        onClose={onClose}
-      />
-      {isLoading ? (
-        <div className="surface-state" aria-busy="true">Loading profile evidence…</div>
-      ) : isError || !detail ? (
-        <div className="surface-state is-error" role="alert">
-          Profile evidence could not be loaded.
-        </div>
-      ) : (
-        <>
-          <dl className="drawer-facts">
-            <Fact label="System" value={detail.system_code} />
-            <Fact label="Source Tenant" value={detail.source_tenant_code} />
-            <Fact label="Object" value={`${detail.object_schema}.${detail.object_name}`} />
-            <Fact label="Profiles" value={String(detail.profiled_attribute_count)} />
-          </dl>
-          {detail.profiles_truncated ? (
-            <p className="drawer-warning">
-              This bounded response does not include every Attribute profile.
-            </p>
-          ) : null}
-          <div className="drawer-table-scroll">
-            <table aria-label={`Attribute profiles for ${detail.object_name}`}>
-              <thead>
-                <tr>
-                  <th>Attribute</th>
-                  <th>Rows</th>
-                  <th>Populated</th>
-                  <th>Null</th>
-                  <th>Distinct</th>
-                </tr>
-              </thead>
-              <tbody>
-                {detail.attribute_profiles.map((profile) => (
-                  <tr key={profile.attribute_id}>
-                    <td>
-                      <span className="profile-attribute">
-                        <strong>{profile.attribute_name}</strong>
-                        <span>{profile.attribute_data_type}</span>
-                      </span>
-                    </td>
-                    <td>{profile.row_count}</td>
-                    <td>{formatPercent(profile.percent_populated)}</td>
-                    <td>{formatPercent(profile.percent_null)}</td>
-                    <td>{formatPercent(profile.percent_distinct)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-          <p className="drawer-footnote">
-            Last profiled {formatDateTime(detail.last_profiled_at)}
-          </p>
-        </>
-      )}
-    </aside>
   );
 }

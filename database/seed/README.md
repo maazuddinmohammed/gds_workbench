@@ -18,6 +18,51 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
   --single-transaction -f database/seed/04_application_reference.sql
 ```
 
+## Global default Prompts
+
+`05_global_prompt_defaults.template.sql` creates the governed global default
+for all 35 agentic Workflow Stages. The 12 deterministic stages, including
+Profiling, do not accept Prompts.
+
+Run `04_application_reference.sql` first. Then find one active Super Admin
+identity:
+
+```sql
+SELECT principal.principal_display_name,
+       principal.principal_type,
+       identity.entra_tenant_id,
+       identity.entra_object_id
+  FROM security.principal AS principal
+  JOIN security.entra_principal_identity AS identity
+    ON identity.principal_id = principal.principal_id
+   AND identity.principal_type = principal.principal_type
+ WHERE principal.is_super_admin
+   AND principal.is_active
+   AND identity.is_active;
+```
+
+Copy the template outside the repository and replace the Entra Tenant ID,
+Entra Object ID, and Principal type placeholders with one row from that query:
+
+```bash
+cp database/seed/05_global_prompt_defaults.template.sql \
+  /tmp/gds_global_prompt_defaults.sql
+psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
+  --single-transaction -f /tmp/gds_global_prompt_defaults.sql
+```
+
+The seed refuses a missing or non-Super-Admin identity. Exact replay is a
+no-op. Changed seed content publishes a new immutable version and moves the
+seed-owned global assignment without duplicating the template or overwriting
+history. It refuses to replace an active global default owned by another
+template.
+
+The agent runtime already supplies bounded context, naming rules, Mapping
+output templates, SQL guides, and the required output schema separately. The
+defaults therefore do not duplicate those potentially large values. Only the
+outer reconciliation stages interpolate their allowlisted
+`validation_failures` value.
+
 ## Demo metadata
 
 `01_metadata_snapshot_demo.sql` creates a small test-only dataset containing:

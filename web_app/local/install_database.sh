@@ -111,8 +111,10 @@ do
 done
 
 local_identity_seed="$(mktemp /tmp/gds-local-identity.XXXXXX.sql)"
+local_prompt_seed="$(mktemp /tmp/gds-local-prompts.XXXXXX.sql)"
 chmod 600 "$local_identity_seed"
-trap 'rm -f "$local_identity_seed"' EXIT
+chmod 600 "$local_prompt_seed"
+trap 'rm -f "$local_identity_seed" "$local_prompt_seed"' EXIT
 sed \
     -e "s/__REPLACE_WITH_EXPECTED_DATABASE_NAME__/${POSTGRES_DB}/g" \
     -e "s/__REPLACE_WITH_ENTRA_TENANT_ID__/${GDS_LOCAL_ENTRA_TENANT_ID}/g" \
@@ -122,3 +124,11 @@ sed \
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_identity_seed"
 
+sed \
+    -e "s/__REPLACE_WITH_ENTRA_TENANT_ID__/${GDS_LOCAL_ENTRA_TENANT_ID}/g" \
+    -e "s/__REPLACE_WITH_ENTRA_OBJECT_ID__/${GDS_LOCAL_PRINCIPAL_OBJECT_ID}/g" \
+    -e "s/__REPLACE_WITH_PRINCIPAL_TYPE__/user/g" \
+    "$database_root/seed/05_global_prompt_defaults.template.sql" \
+    > "$local_prompt_seed"
+psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+    -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_prompt_seed"

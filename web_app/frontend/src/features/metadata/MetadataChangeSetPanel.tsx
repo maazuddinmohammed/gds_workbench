@@ -269,7 +269,7 @@ function MetadataChangeSetConfirmation({
   const apply = action === "apply";
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
-      <section className="prompt-dialog metadata-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="metadata-confirm-title">
+      <section className="run-configuration-dialog prompt-dialog metadata-confirm-dialog" role="dialog" aria-modal="true" aria-labelledby="metadata-confirm-title">
         <header>
           <div><p className="eyebrow">Governed transition</p><h2 id="metadata-confirm-title">{apply ? "Apply validated Metadata" : "Archive Change Set"}</h2></div>
           <button ref={closeRef} className="dialog-close" type="button" aria-label="Close Metadata confirmation" disabled={isBusy} onClick={onClose}>×</button>

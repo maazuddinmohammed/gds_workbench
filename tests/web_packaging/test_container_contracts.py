@@ -1,7 +1,9 @@
 from __future__ import annotations
 
+import base64
 import json
 import re
+import xml.etree.ElementTree as ET
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -10,6 +12,7 @@ ROOT_PACKAGE_LOCK = ROOT / "package-lock.json"
 COMPOSE = ROOT / "web_app" / "compose.local.yaml"
 BACKEND_DOCKERFILE = ROOT / "web_app" / "backend" / "Dockerfile"
 FRONTEND_PACKAGE = ROOT / "web_app" / "frontend" / "package.json"
+FRONTEND_INDEX = ROOT / "web_app" / "frontend" / "index.html"
 FRONTEND_BUILD_TSCONFIG = ROOT / "web_app" / "frontend" / "tsconfig.build.json"
 INSTALL_DATABASE = ROOT / "web_app" / "local" / "install_database.sh"
 DATABASE_ROOT = ROOT / "database"
@@ -128,6 +131,21 @@ def test_frontend_production_build_does_not_require_test_dependencies() -> None:
     assert not (ROOT / "web_app" / "frontend" / "package-lock.json").exists()
 
 
+def test_frontend_declares_a_self_contained_svg_favicon() -> None:
+    index = FRONTEND_INDEX.read_text(encoding="utf-8")
+
+    match = re.search(
+        r'<link\s+rel="icon"\s+type="image/svg\+xml"\s+sizes="any"\s+'
+        r'href="data:image/svg\+xml;base64,([A-Za-z0-9+/=]+)"\s*/>',
+        index,
+    )
+    assert match is not None
+    root = ET.fromstring(base64.b64decode(match.group(1), validate=True))
+    assert root.tag == "{http://www.w3.org/2000/svg}svg"
+    assert root.attrib["viewBox"] == "0 0 64 64"
+    assert root.find("{http://www.w3.org/2000/svg}path") is not None
+
+
 def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql() -> (
     None
 ):
@@ -154,6 +172,10 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert "01_metadata_snapshot_demo.sql" in initializer
     assert "03_local_super_admin.template.sql" in initializer
     assert "04_application_reference.sql" in initializer
+    assert "05_global_prompt_defaults.template.sql" in initializer
+    assert initializer.index("03_local_super_admin.template.sql") < initializer.index(
+        "05_global_prompt_defaults.template.sql"
+    )
     assert not re.search(r"\b(?:DROP|TRUNCATE|RESET)\b", initializer, re.IGNORECASE)
 
 
@@ -176,8 +198,12 @@ def test_documented_fresh_install_matches_the_exact_canonical_database_release()
     assert "\\password gds_mcp_runtime" in guide
     assert "\\password gds_web_runtime" in guide
     assert "database/seed/04_application_reference.sql" in guide
+    assert "database/seed/05_global_prompt_defaults.template.sql" in guide
     assert guide.index("database/13_verify_install.sql") < guide.index(
         "database/seed/04_application_reference.sql"
+    )
+    assert guide.index("database/seed/04_application_reference.sql") < guide.index(
+        "database/seed/05_global_prompt_defaults.template.sql"
     )
 
 

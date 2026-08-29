@@ -52,6 +52,27 @@ describe("governed Metadata experience", () => {
     expect(screen.queryByRole("dialog", { name: "Row details" })).not.toBeInTheDocument();
   });
 
+  it("distinguishes the assigned Tenant from the shared GDS Connection owner", async () => {
+    const fetcher = metadataFetchStub();
+    const user = userEvent.setup();
+    renderMetadata(fetcher);
+
+    await screen.findByRole("table", { name: "System Types normalized Metadata" });
+    await user.click(screen.getByRole("button", { name: /Foundational 5 sheets/ }));
+    await user.click(screen.getByRole("button", { name: "Tenant Metadata Discovery Scopes" }));
+
+    const table = await screen.findByRole("table", {
+      name: "Tenant Metadata Discovery Scopes normalized Metadata",
+    });
+    expect(within(table).getByRole("columnheader", { name: "Assigned Tenant" })).toBeVisible();
+    expect(within(table).getByRole("columnheader", { name: "GDS Connection Owner" })).toBeVisible();
+    expect(screen.getByText(
+      "Each scope belongs to the Assigned Tenant. GDS Connection Owner identifies the Tenant that owns the shared global-data-store connection.",
+    )).toBeVisible();
+    expect(within(table).getByText("NWA")).toBeVisible();
+    expect(within(table).getByText("GDS")).toBeVisible();
+  });
+
   it("stages a typed complete Operational row, validates review, and explicitly applies it", async () => {
     const fetcher = metadataFetchStub({ hasLock: true });
     const user = userEvent.setup();
@@ -65,6 +86,8 @@ describe("governed Metadata experience", () => {
     await user.click(screen.getByRole("button", { name: "Show details" }));
     await user.click(screen.getByRole("button", { name: "Edit row" }));
     const editor = await screen.findByRole("dialog", { name: "Edit Source Objects row" });
+    expect(screen.queryByRole("dialog", { name: "Row details" })).not.toBeInTheDocument();
+    expect(screen.getAllByRole("dialog")).toHaveLength(1);
     expect(within(editor).getByLabelText("Tenant Code")).toBeDisabled();
     await user.selectOptions(within(editor).getByLabelText("Is Active"), "false");
     await user.click(within(editor).getByRole("button", { name: "Stage complete row" }));
@@ -206,6 +229,7 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
         ...item,
         schema_version: "1.0",
         tenant_id: 7,
+        fixed_values: {},
         row_schema: {
           type: "object",
           additionalProperties: false,
@@ -227,6 +251,16 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
         dataset,
         items: dataset === "system_type"
           ? [{ system_type_code: "CRM", system_type_name: "Customer system", is_active: true }]
+          : dataset === "tenant_metadata_discovery_scope"
+            ? [{
+                scope_tenant_code: "NWA",
+                connection_tenant_code: "GDS",
+                connection_system_code: "DATABRICKS",
+                connection_code: "SHARED",
+                zone_code: "silver",
+                object_schema: "shared_reference",
+                is_active: true,
+              }]
           : dataset === "source_object" && !options.emptySource
             ? [{ tenant_code: "NWA", object_name: "Customer", is_active: true }]
             : [],
@@ -295,7 +329,22 @@ function descriptor(dataset: string, label: string, section: MetadataDatasetDesc
 }
 
 const registry: MetadataDatasetDescription[] = [
-  ...["project", "tenant", "system", "connection", "tenant_metadata_discovery_scope"].map((name) => descriptor(name, title(name), "foundational", [`${name}_code`, `${name}_name`])),
+  ...["project", "tenant", "system", "connection"].map((name) => descriptor(name, title(name), "foundational", [`${name}_code`, `${name}_name`])),
+  descriptor(
+    "tenant_metadata_discovery_scope",
+    "Tenant Metadata Discovery Scopes",
+    "foundational",
+    [
+      "scope_tenant_code",
+      "connection_tenant_code",
+      "connection_system_code",
+      "connection_code",
+      "zone_code",
+      "object_schema",
+      "is_active",
+    ],
+    ["scope_tenant_code", "connection_tenant_code", "connection_code", "zone_code", "object_schema"],
+  ),
   descriptor("system_type", "System Types", "reference", ["system_type_code", "system_type_name", "is_active"], ["system_type_code"]),
   ...["connection_type", "object_type", "zone", "chunk_type", "file_type", "data_operation", "process_type"].map((name) => descriptor(name, title(name), "reference", [`${name}_code`, `${name}_name`])),
   descriptor("source_object", "Source Objects", "operational", ["tenant_code", "object_name", "is_active"], ["tenant_code", "object_name"]),

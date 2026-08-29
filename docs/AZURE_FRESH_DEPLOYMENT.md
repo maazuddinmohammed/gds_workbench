@@ -200,6 +200,12 @@ Choose one route:
 Do not run demo seed data in production. A successfully authenticated Entra
 user must also have an active matching database Principal and Tenant access.
 
+After the active Super Admin identity exists, install the 35 agentic global
+defaults from `database/seed/05_global_prompt_defaults.template.sql` by
+following `database/seed/README.md`. Replace its identity placeholders with
+that exact Super Admin identity. The script is replay-safe and does not create
+Prompts for deterministic stages such as Profiling.
+
 ### Step 6: create private snapshot storage
 
 1. Create a **Storage account** in the same region/resource group.

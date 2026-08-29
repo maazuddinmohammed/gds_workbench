@@ -58,7 +58,7 @@ export function MetadataExportDialog({
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
       <section
-        className="prompt-dialog metadata-export-dialog"
+        className="run-configuration-dialog prompt-dialog metadata-export-dialog"
         role="dialog"
         aria-modal="true"
         aria-labelledby="metadata-export-title"

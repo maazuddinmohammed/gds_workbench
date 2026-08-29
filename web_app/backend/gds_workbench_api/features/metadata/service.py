@@ -4,7 +4,7 @@ import json
 from collections.abc import Mapping
 from datetime import date, datetime
 from hashlib import sha256
-from typing import Literal
+from typing import Literal, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
@@ -16,7 +16,7 @@ from gds_etl_workbench.tools.snapshots.metadata.contracts import (
     MetadataDataset,
     normalize_natural_key_value,
 )
-from pydantic import ValidationError
+from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.features.metadata.contracts import (
     MAX_METADATA_EXPORT_ROWS,
@@ -328,10 +328,12 @@ def metadata_dataset_detail(
 ) -> MetadataDatasetDetail:
     """Expose canonical field types and bounds for one authorized Metadata sheet."""
     description = _metadata_dataset_description(dataset)
+    definition = DATASETS_BY_NAME[dataset]
     return MetadataDatasetDetail(
         **description.model_dump(),
         tenant_id=tenant_id,
-        row_schema=DATASETS_BY_NAME[dataset].row_model.model_json_schema(),
+        row_schema=definition.row_model.model_json_schema(),
+        fixed_values=cast(dict[str, JsonValue], dict(definition.fixed_values)),
     )
 
 

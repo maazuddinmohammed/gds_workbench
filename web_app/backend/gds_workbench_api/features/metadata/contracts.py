@@ -125,6 +125,7 @@ class MetadataDatasetDetail(MetadataDatasetDescription):
     schema_version: Literal["1.0"] = "1.0"
     tenant_id: int = Field(gt=0)
     row_schema: dict[str, JsonValue]
+    fixed_values: dict[str, JsonValue]
 
 
 type MetadataFilterValue = str | bool | int | date | datetime | None

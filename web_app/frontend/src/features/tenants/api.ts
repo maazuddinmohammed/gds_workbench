@@ -13,6 +13,7 @@ export type TenantRole =
 
 export interface SessionRecord {
   display_name: string;
+  email: string | null;
   actor_kind: string;
   is_super_admin: boolean;
   last_tenant_id: number | null;

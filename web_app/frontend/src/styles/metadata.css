@@ -639,14 +639,18 @@
   white-space: pre-wrap;
 }
 
-.metadata-row-editor,
-.metadata-export-dialog {
+.run-configuration-dialog.metadata-row-editor,
+.run-configuration-dialog.metadata-export-dialog {
   width: min(68rem, 100%);
+  background: white;
+  backdrop-filter: none;
 }
 
-.metadata-row-editor {
-  max-height: min(52rem, calc(100vh - 3rem));
-  overflow: auto;
+.run-configuration-dialog.metadata-row-editor {
+  display: flex;
+  max-height: min(52rem, calc(100dvh - 3rem));
+  flex-direction: column;
+  overflow: hidden;
 }
 
 .metadata-row-editor > header,
@@ -674,11 +678,20 @@
 
 .metadata-row-fields {
   display: grid;
+  min-height: 0;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.65rem;
-  max-height: 31rem;
+  flex: 1;
   padding: 0.25rem 0.15rem 0.25rem 0;
   overflow: auto;
+  scrollbar-gutter: stable;
+}
+
+.metadata-row-form {
+  display: flex;
+  min-height: 0;
+  flex: 1;
+  flex-direction: column;
 }
 
 .metadata-row-fields label.is-wide {
@@ -688,11 +701,13 @@
 .metadata-row-fields label > span {
   display: flex;
   justify-content: space-between;
+  color: #4d5b68;
+  font-size: 0.65rem;
 }
 
 .metadata-row-fields label small {
   color: var(--blue-dark);
-  font-size: 0.5rem;
+  font-size: 0.56rem;
 }
 
 .metadata-null-toggle {
@@ -785,6 +800,13 @@
 
 .metadata-confirm-dialog {
   width: min(35rem, 100%);
+}
+
+@media (max-width: 48rem) {
+  .run-configuration-dialog.metadata-row-editor {
+    max-height: 100vh;
+    max-height: 100dvh;
+  }
 }
 
 @media (max-width: 76rem) {

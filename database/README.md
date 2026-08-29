@@ -204,7 +204,15 @@ requires exactly 47 active workflow stages and 78 active backend-resolved
 variables. The seed contains no prompt bodies, credentials, connection values,
 or business data and is safe to replay unchanged.
 
-## 7. Clean redeployment
+## 7. Install global default Prompts
+
+After an active Super Admin Principal and Entra identity exist, install
+`database/seed/05_global_prompt_defaults.template.sql` as documented in
+`database/seed/README.md`. It supplies all 35 agentic stage defaults required
+when a Workflow Run has no run or Model override. Profiling and the other
+deterministic stages do not use Prompts.
+
+## 8. Clean redeployment
 
 Provisioning a new server remains the preferred clean-redeployment path. If an
 authorized DBA must retire and reuse the entire GDS server environment, the top
@@ -220,9 +228,9 @@ is therefore not supported. After full cleanup, run the unchanged read-only
 preflight, complete installation, required reference seed, and verification,
 then switch the approved application DSNs and validate both applications.
 
-## 8. Optional demo and identity seeds
+## 9. Optional demo and identity seeds
 
-See `database/seed/README.md`. Only
-`04_application_reference.sql` is required application reference data. Demo
-metadata is optional and only for a new test database; identity templates are
-environment-specific operator inputs.
+See `database/seed/README.md`. `04_application_reference.sql` is required
+application reference data. The global Prompt seed is installed after its
+explicit Super Admin identity exists. Demo metadata is optional and only for a
+new test database; identity templates are environment-specific operator inputs.

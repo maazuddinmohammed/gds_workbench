@@ -295,6 +295,115 @@
   font-size: 0.61rem;
 }
 
+.profiling-object-facts {
+  margin-top: 0;
+}
+
+.profiling-detail-page .drawer-warning {
+  margin: 0 0 1rem;
+}
+
+.profile-evidence-list {
+  display: grid;
+  gap: 1rem;
+}
+
+.profile-evidence-card {
+  overflow: hidden;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-medium);
+  background: var(--surface);
+}
+
+.profile-evidence-card > header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 1rem 1.1rem;
+  border-bottom: 1px solid var(--line-strong);
+  background: var(--soft);
+}
+
+.profile-evidence-card > header > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.profile-evidence-card > header small,
+.profile-fact-group h4 {
+  color: var(--muted);
+  font-size: 0.6rem;
+  font-weight: 820;
+  letter-spacing: 0.075em;
+  text-transform: uppercase;
+}
+
+.profile-evidence-card > header h3 {
+  margin: 0;
+  font-size: 1rem;
+  overflow-wrap: anywhere;
+}
+
+.profile-evidence-card > header > span {
+  flex: 0 0 auto;
+  padding: 0.3rem 0.5rem;
+  border-radius: 0.4rem;
+  color: var(--blue-dark);
+  background: var(--blue-soft);
+  font-size: 0.66rem;
+  font-weight: 780;
+  overflow-wrap: anywhere;
+}
+
+.profile-fact-group {
+  padding: 0.95rem 1.1rem 1rem;
+}
+
+.profile-fact-group + .profile-fact-group {
+  border-top: 1px solid var(--line);
+}
+
+.profile-fact-group h4 {
+  margin: 0 0 0.75rem;
+}
+
+.profile-fact-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(100%, 9rem), 1fr));
+  gap: 0.9rem 1.25rem;
+  margin: 0;
+}
+
+.profile-fact-grid > div {
+  display: grid;
+  min-width: 0;
+  gap: 0.25rem;
+}
+
+.profile-fact-grid dt {
+  color: var(--muted);
+  font-size: 0.58rem;
+  font-weight: 760;
+  letter-spacing: 0.055em;
+  text-transform: uppercase;
+}
+
+.profile-fact-grid dd {
+  margin: 0;
+  font-size: 0.7rem;
+  font-weight: 720;
+  overflow-wrap: anywhere;
+}
+
+.profile-fact-grid code {
+  font-size: 0.62rem;
+  font-weight: 600;
+  overflow-wrap: anywhere;
+  word-break: break-all;
+}
+
 .drawer-footnote,
 .drawer-warning {
   margin: 0.85rem 0 0;
@@ -439,6 +548,7 @@
 .run-configuration-dialog {
   width: min(46rem, 100%);
   max-height: min(48rem, calc(100vh - 3rem));
+  max-height: min(48rem, calc(100dvh - 3rem));
   padding: 1.25rem;
   overflow: auto;
   border: 1px solid rgb(255 255 255 / 52%);
@@ -666,6 +776,11 @@
     width: 100vw;
   }
 
+  .profile-evidence-card > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
   .dialog-scrim {
     padding: 0;
   }
@@ -673,7 +788,9 @@
   .run-configuration-dialog {
     width: 100vw;
     max-height: 100vh;
+    max-height: 100dvh;
     min-height: 100vh;
+    min-height: 100dvh;
     border-radius: 0;
   }
 

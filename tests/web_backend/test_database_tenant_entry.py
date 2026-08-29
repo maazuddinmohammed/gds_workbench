@@ -6,8 +6,8 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from tests.mcp.conftest import DisposablePostgres
 
 from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.tenants import DatabaseTenantService
 from gds_workbench_api.features.session import DatabaseSessionService
+from gds_workbench_api.features.tenants import DatabaseTenantService
 
 
 @pytest.mark.asyncio
@@ -125,4 +125,5 @@ async def test_tenant_entry_round_trip_uses_only_the_web_runtime_role(
 
     assert [item.tenant_id for item in tenants.items] == [tenant["tenant_id"]]
     assert selected.tenant_id == tenant["tenant_id"]
+    assert session.email == f"web_{suffix}@example.test"
     assert session.last_tenant_id == tenant["tenant_id"]

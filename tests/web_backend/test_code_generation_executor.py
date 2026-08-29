@@ -19,8 +19,6 @@ from gds_etl_workbench.domain.errors import (
     WorkbenchError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.code_generation.context import (
     CodeGenerationExecutionContext,
@@ -51,6 +49,7 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 
@@ -368,6 +367,69 @@ def _service(
         selected_storage,
         selected_lifecycle,
     )
+
+
+@pytest.mark.asyncio
+async def test_executor_renders_selected_guide_into_each_agent_instruction() -> None:
+    plan = _plan()
+    stage = plan.stages[0]
+    seeded_stage = stage.model_copy(
+        update={
+            "templates": stage.templates.model_copy(
+                update={
+                    "instruction": (
+                        "Follow the selected SQL generation guide.\n"
+                        "{{ sql_generation_guide }}"
+                    )
+                }
+            )
+        }
+    )
+    agent = _AgentExecutor(
+        responses=[
+            cast(
+                JsonValue,
+                {
+                    "artifacts": [
+                        {
+                            "target_ref": f"target_{position}",
+                            "generated_sql": f"SELECT {position};",
+                        }
+                    ]
+                },
+            )
+            for position in (1, 2)
+        ]
+    )
+    service, *_ = _service(
+        executor=agent,
+        plan_repository=_PlanRepository(
+            plan=plan.model_copy(update={"stages": (seeded_stage,)})
+        ),
+    )
+
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    agent_context = cast(dict[str, Any], _execution_context().agent_context)
+    targets = cast(list[dict[str, Any]], agent_context["targets"])
+    target_context = cast(dict[str, Any], targets[0]["context"])
+    guide = cast(dict[str, Any], target_context["guide"])["content"]
+    rendering_checks = tuple(
+        (
+            request.instruction_prompt.count(guide),
+            "{{ sql_generation_guide }}" in request.instruction_prompt,
+        )
+        for request in agent.requests
+    )
+
+    assert rendering_checks == ((1, False), (1, False))
 
 
 @pytest.mark.asyncio

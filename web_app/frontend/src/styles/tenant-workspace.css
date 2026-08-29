@@ -753,7 +753,7 @@ tbody tr:hover {
   }
 
   .entry-topbar .brand > span:last-child,
-  .signed-in > span:first-child {
+  .signed-in-identity > span:first-child {
     display: none;
   }
 

@@ -19,6 +19,8 @@ describe("tenant entry", () => {
 
     expect(await screen.findByRole("heading", { name: "Choose a Tenant" })).toBeVisible();
     expect(screen.getByText("Signed in as")).toBeVisible();
+    expect(screen.getByText("Maaz")).toBeVisible();
+    expect(screen.getByText("maaz@example.test")).toBeVisible();
     const selected = screen.getByRole("button", { name: /Northwind Analytics/ });
     expect(selected).toHaveAttribute("aria-pressed", "true");
 
@@ -496,6 +498,7 @@ function jsonResponse(value: unknown, status = 200): Response {
 
 const sessionPayload = {
   display_name: "Maaz",
+  email: "maaz@example.test",
   actor_kind: "human",
   is_super_admin: false,
   last_tenant_id: 7,

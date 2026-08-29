@@ -13,8 +13,8 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.session import DatabaseSessionService, SessionRecord
+from gds_workbench_api.main import create_app
 
 
 class StaticSessionService:
@@ -26,6 +26,7 @@ class StaticSessionService:
         )
         return SessionRecord(
             display_name="Maaz",
+            email="maaz@example.test",
             actor_kind=ActorKind.HUMAN,
             is_super_admin=False,
             last_tenant_id=7,
@@ -40,6 +41,7 @@ def _easy_auth_header() -> str:
             {"typ": "oid", "val": "22222222-2222-2222-2222-222222222222"},
             {"typ": "idtyp", "val": "user"},
             {"typ": "scp", "val": "workbench.access"},
+            {"typ": "email", "val": "untrusted@example.invalid"},
         ],
     }
     return base64.b64encode(json.dumps(value).encode()).decode()
@@ -60,6 +62,7 @@ def test_session_uses_the_server_derived_easy_auth_identity() -> None:
     assert response.status_code == 200
     assert response.json() == {
         "display_name": "Maaz",
+        "email": "maaz@example.test",
         "actor_kind": "human",
         "is_super_admin": False,
         "last_tenant_id": 7,
@@ -102,9 +105,10 @@ class SessionTransaction:
                 "principal_display_name": "Maaz",
                 "is_super_admin": False,
             }
+        assert "security.principal AS principal" in query
         assert "application.principal_preference" in query
         assert parameters == (41, False)
-        return {"last_tenant_id": 7}
+        return {"principal_email": "maaz@example.test", "last_tenant_id": 7}
 
     async def fetch_all(
         self,
@@ -146,6 +150,7 @@ async def test_database_session_returns_only_a_currently_visible_last_tenant() -
 
     assert session == SessionRecord(
         display_name="Maaz",
+        email="maaz@example.test",
         actor_kind=ActorKind.HUMAN,
         is_super_admin=False,
         last_tenant_id=7,

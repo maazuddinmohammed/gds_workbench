@@ -14,6 +14,10 @@ export interface ProfilingFilters {
   objectName?: string;
 }
 
+export interface ProfilingRouteSearch extends ProfilingFilters {
+  returnObjectId?: number;
+}
+
 export interface ProfilingObject {
   object_id: number;
   source_tenant_id: number;
@@ -181,6 +185,33 @@ export const profilingQueryKeys = {
     ["profiling-run-scope", tenantId, modelId] as const
   ),
 };
+
+export function validateProfilingRouteSearch(
+  search: Record<string, unknown>,
+): ProfilingRouteSearch {
+  const positiveInteger = (value: unknown): number | undefined => {
+    if (typeof value !== "number" && typeof value !== "string") return undefined;
+    const parsed = Number(value);
+    return Number.isSafeInteger(parsed) && parsed > 0 ? parsed : undefined;
+  };
+  const boundedString = (value: unknown): string | undefined => (
+    typeof value === "string" && value.trim() && value.length <= 400 ? value : undefined
+  );
+  const result: ProfilingRouteSearch = {};
+  const objectId = positiveInteger(search.objectId);
+  const sourceTenantCode = boundedString(search.sourceTenantCode);
+  const systemCode = boundedString(search.systemCode);
+  const objectSchema = boundedString(search.objectSchema);
+  const objectName = boundedString(search.objectName);
+  const returnObjectId = positiveInteger(search.returnObjectId);
+  if (objectId !== undefined) result.objectId = objectId;
+  if (sourceTenantCode !== undefined) result.sourceTenantCode = sourceTenantCode;
+  if (systemCode !== undefined) result.systemCode = systemCode;
+  if (objectSchema !== undefined) result.objectSchema = objectSchema;
+  if (objectName !== undefined) result.objectName = objectName;
+  if (returnObjectId !== undefined) result.returnObjectId = returnObjectId;
+  return result;
+}
 
 function normalizeNaturalKeyFilter(value: string | undefined): string {
   return value?.replace(/^ +| +$/g, "").toLowerCase() ?? "";

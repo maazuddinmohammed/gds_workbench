@@ -11,6 +11,7 @@ describe("Metadata HTTP adapter", () => {
       .mockResolvedValueOnce(jsonResponse({
         schema_version: "1.0",
         dataset: "source_object",
+        fixed_values: { zone_code: "source" },
         row_schema: { properties: {} },
       }))
       .mockResolvedValueOnce(jsonResponse({ schema_version: "1.0", items: [] }))

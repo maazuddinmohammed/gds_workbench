@@ -30,6 +30,21 @@
   color: var(--ink);
 }
 
+.signed-in-identity {
+  display: flex;
+  min-width: 0;
+  max-width: min(24rem, 52vw);
+  align-items: flex-end;
+  flex-direction: column;
+  line-height: 1.25;
+  text-align: right;
+}
+
+.signed-in-email {
+  overflow-wrap: anywhere;
+  font-size: 0.76rem;
+}
+
 .tenant-entry {
   width: min(68rem, calc(100% - 3rem));
   margin: 0 auto;
