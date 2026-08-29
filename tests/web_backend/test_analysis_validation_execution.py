@@ -178,6 +178,44 @@ def test_query_is_fixed_aggregate_only_and_binds_each_batch() -> None:
     assert query.sql.rstrip().endswith("CROSS JOIN unused_target")
 
 
+def test_query_accepts_maximum_registered_identifier_sizes() -> None:
+    relationship = AnalysisValidationRelationship(
+        analysis_result_id=401,
+        relationship_kind="reference",
+        relationship_confidence="high",
+        relationship_basis="Registered metadata and aggregate value evidence.",
+        analysis_result_status="needs_review",
+        analysis_result_is_locked=True,
+        gds_connection_id=91,
+        from_endpoint=_endpoint(
+            object_id=101,
+            attribute_id=1001,
+            catalog="`" * 255,
+            schema="`" * 400,
+            table="`" * 400,
+            attribute="`" * 400,
+            batch_attribute_name="`" * 400,
+        ),
+        to_endpoint=_endpoint(
+            object_id=102,
+            attribute_id=1002,
+            catalog="c" * 255,
+            schema="s" * 400,
+            table="t" * 400,
+            attribute="a" * 400,
+            batch_attribute_name="b" * 400,
+        ),
+    )
+
+    query = build_analysis_validation_query(
+        relationship,
+        requested_batch_id="x" * 500,
+    )
+
+    assert len(query.sql) <= 100_000
+    assert query.parameters == ("x" * 500, "x" * 500)
+
+
 @pytest.mark.parametrize(
     ("requested_batch_id", "from_batch_name", "from_batch_type", "expected_parameters"),
     [

@@ -113,11 +113,13 @@ def _claim() -> WorkflowClaimResult:
     connection = FakeConnection(_create_row(), _claim_row())
     client = NotebookWorkflowControlClient(connection)
     created = client.create_workflow_run(request)
-    return client.start_and_claim_workflow_run(
+    claim = client.start_and_claim_workflow_run(
         request,
         created,
         lease_duration_seconds=30,
     )
+    assert claim is not None
+    return claim
 
 
 def test_resolves_only_the_database_owned_notebook_principal() -> None:
@@ -232,6 +234,7 @@ def test_start_claim_renew_and_release_use_exact_wrapper_parameters() -> None:
         created,
         lease_duration_seconds=30,
     )
+    assert claim is not None
     renewed = client.renew_workflow_run_claim(claim, lease_duration_seconds=30)
     released = client.release_workflow_run_claim(claim)
 
@@ -249,6 +252,21 @@ def test_start_claim_renew_and_release_use_exact_wrapper_parameters() -> None:
     assert released.succeeded is True
     assert released.heartbeat_time is None
     assert released.expires_time is None
+
+
+def test_start_claim_returns_no_claim_without_masking_the_database_outcome() -> None:
+    request = build_notebook_request("profiling", _values("profiling"))
+    connection = FakeConnection(_create_row(), None)
+    client = NotebookWorkflowControlClient(connection)
+    created = client.create_workflow_run(request)
+
+    claim = client.start_and_claim_workflow_run(
+        request,
+        created,
+        lease_duration_seconds=30,
+    )
+
+    assert claim is None
 
 
 def test_claim_token_is_available_to_execution_but_never_rendered() -> None:

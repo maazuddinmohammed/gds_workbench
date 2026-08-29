@@ -209,6 +209,27 @@ async def _execute_notebook_workflow(
             )
             return _execution_result(request, created, detail)
 
+        claim = await asyncio.to_thread(
+            _claim_created_run,
+            settings.database,
+            request,
+            created,
+            settings.workflow_lease_seconds,
+        )
+        if claim is None:
+            refreshed_principal, refreshed = await asyncio.to_thread(
+                _resolve_principal_and_create,
+                settings.database,
+                request,
+            )
+            detail = await run_reader.read_run(
+                _request_principal(refreshed_principal),
+                tenant_id=request.tenant_id,
+                model_id=request.model_id,
+                workflow_run_id=refreshed.workflow_run_id,
+            )
+            return _execution_result(request, refreshed, detail)
+
         agent_runtime, capabilities, authentications = _agent_runtime(
             request,
             settings,
@@ -226,13 +247,6 @@ async def _execute_notebook_workflow(
             databricks_environment_code=principal.databricks_environment_code,
             databricks_execution=create_databricks_execution_adapters("remote"),
             provider_authentications=authentications,
-        )
-        claim = await asyncio.to_thread(
-            _claim_created_run,
-            settings.database,
-            request,
-            created,
-            settings.workflow_lease_seconds,
         )
         execution_claim = WorkflowExecutionClaim.model_validate(
             {
@@ -302,7 +316,7 @@ def _claim_created_run(
     request: NotebookWorkflowRequest,
     created: WorkflowCreateResult,
     lease_duration_seconds: int,
-) -> WorkflowClaimResult:
+) -> WorkflowClaimResult | None:
     with notebook_database_connection(database_settings) as connection:
         return NotebookWorkflowControlClient(connection).start_and_claim_workflow_run(
             request,

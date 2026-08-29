@@ -139,6 +139,69 @@ def test_profile_query_chunks_only_oversized_objects_without_omitting_attributes
     ) == tuple(range(1_001, 1_053))
 
 
+def test_profile_query_adapts_chunks_to_the_generated_sql_size() -> None:
+    target = ProfileObject(
+        object_id=71,
+        connection_id=12,
+        catalog="tenant_catalog",
+        schema="bronze_crm",
+        table="wide_customer_table",
+        batch_attribute_name=None,
+        attributes=tuple(
+            ProfileAttribute(
+                attribute_id=1_000 + index,
+                name=f"customer_attribute_with_long_name_{index:03d}",
+                data_type="STRING",
+            )
+            for index in range(1, 51)
+        ),
+    )
+
+    queries = build_profile_queries(
+        target,
+        requested_batch_id=None,
+        attributes_per_query=50,
+    )
+
+    assert len(queries) > 1
+    assert all(len(query.sql) <= 100_000 for query in queries)
+    assert tuple(
+        attribute_id for query in queries for attribute_id in query.attribute_ids
+    ) == tuple(range(1_001, 1_051))
+
+
+def test_profile_query_adaptation_covers_maximum_registered_identifier_sizes() -> None:
+    attributes = tuple(
+        ProfileAttribute(
+            attribute_id=2_000 + index,
+            name=("`" * 396) + f"{index:04d}",
+            data_type="STRING",
+        )
+        for index in range(1, 51)
+    )
+    target = ProfileObject(
+        object_id=71,
+        connection_id=12,
+        catalog="`" * 255,
+        schema="`" * 400,
+        table="`" * 400,
+        batch_attribute_name=attributes[0].name,
+        attributes=attributes,
+    )
+
+    queries = build_profile_queries(
+        target,
+        requested_batch_id="1001",
+        attributes_per_query=50,
+    )
+
+    assert all(len(query.sql) <= 100_000 for query in queries)
+    assert all(query.parameters == ("1001",) for query in queries)
+    assert tuple(
+        attribute_id for query in queries for attribute_id in query.attribute_ids
+    ) == tuple(range(2_001, 2_051))
+
+
 @pytest.mark.parametrize(
     "data_type",
     ["MAP<STRING, STRING>", "ARRAY<INT>", "STRUCT<id: BIGINT>"],

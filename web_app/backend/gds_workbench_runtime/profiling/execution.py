@@ -332,11 +332,23 @@ def build_profile_queries(
         _quote_identifier(value) for value in (target.catalog, target.schema_name, target.table)
     )
     planned: list[ProfileQuery] = []
-    for offset in range(0, len(target.attributes), attributes_per_query):
-        attributes = target.attributes[offset : offset + attributes_per_query]
-        sql = _build_query(relation, attributes, batch)
-        if len(sql) > _MAX_SQL_CHARACTERS:
+    offset = 0
+    while offset < len(target.attributes):
+        low = 1
+        high = min(attributes_per_query, len(target.attributes) - offset)
+        selected: tuple[tuple[ProfileAttribute, ...], str] | None = None
+        while low <= high:
+            count = (low + high) // 2
+            attributes = target.attributes[offset : offset + count]
+            sql = _build_query(relation, attributes, batch)
+            if len(sql) <= _MAX_SQL_CHARACTERS:
+                selected = attributes, sql
+                low = count + 1
+            else:
+                high = count - 1
+        if selected is None:
             raise InvalidRequestError("Generated Profiling SQL exceeds the supported size.")
+        attributes, sql = selected
         planned.append(
             ProfileQuery(
                 object_id=target.object_id,
@@ -345,6 +357,7 @@ def build_profile_queries(
                 parameters=() if batch is None else (batch[1],),
             )
         )
+        offset += len(attributes)
     return tuple(planned)
 
 

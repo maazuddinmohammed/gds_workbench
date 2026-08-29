@@ -229,6 +229,115 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
     assert values == {"tenant_id": 2, "model_id": 3, "workflow_run_id": 71}
 
 
+@pytest.mark.parametrize(
+    ("durable_state", "failure_code"),
+    (
+        ("running", None),
+        ("failed", "workflow_run_context_unavailable"),
+    ),
+)
+def test_unavailable_claim_returns_the_refreshed_durable_run(
+    monkeypatch: pytest.MonkeyPatch,
+    durable_state: str,
+    failure_code: str | None,
+) -> None:
+    import gds_workbench_api.features.workflows.execution.assembly as assembly
+    import gds_workbench_api.features.workflows.runs as runs
+
+    request = _request("profiling")
+    principal = NotebookPrincipal(
+        display_name="Databricks Notebook Runtime",
+        principal_type="service_principal",
+        databricks_environment_code="PROD",
+        entra_tenant_id=_TENANT_ID,
+        entra_object_id=_OBJECT_ID,
+    )
+    initial = WorkflowCreateResult(
+        workflow_run_id=71,
+        workflow="profiling",
+        state="queued",
+        created=True,
+        correlation_id=_CORRELATION_ID,
+        model_revision=4,
+        selected_scope_count=2,
+        prompt_snapshot_count=0,
+        created_time=_NOW,
+    )
+    refreshed = WorkflowCreateResult(
+        workflow_run_id=71,
+        workflow="profiling",
+        state=durable_state,
+        created=False,
+        correlation_id=_CORRELATION_ID,
+        model_revision=4,
+        selected_scope_count=2,
+        prompt_snapshot_count=0,
+        created_time=_NOW,
+    )
+    detail = SimpleNamespace(
+        workflow_run_state=durable_state,
+        model_change_set_id=None,
+        model_change_set_status=None,
+        draft_revision=None,
+        candidate_digest=None,
+        failure_code=failure_code,
+    )
+
+    class Database:
+        async def open(self) -> None:
+            pass
+
+        async def readiness(self) -> object:
+            return SimpleNamespace(ready=True)
+
+        async def close(self) -> None:
+            pass
+
+    class RunReader:
+        def __init__(self, *, database, authorizer, cursor_signing_key) -> None:
+            assert database is runtime_database
+            assert authorizer is not None
+            assert cursor_signing_key
+
+        async def read_run(self, received_principal, **values):
+            assert received_principal.entra_tenant_id == _TENANT_ID
+            assert values == {"tenant_id": 2, "model_id": 3, "workflow_run_id": 71}
+            return detail
+
+    runtime_database = Database()
+    resolutions = iter(((principal, initial), (principal, refreshed)))
+    monkeypatch.setattr(
+        workflow_execution,
+        "create_notebook_workflow_database",
+        lambda _settings: runtime_database,
+    )
+    monkeypatch.setattr(
+        workflow_execution,
+        "_resolve_principal_and_create",
+        lambda _settings, received: (
+            next(resolutions) if received is request else pytest.fail("unexpected Workflow request")
+        ),
+    )
+    monkeypatch.setattr(workflow_execution, "_claim_created_run", lambda *_args: None)
+    monkeypatch.setattr(
+        assembly,
+        "create_workflow_runtime_services",
+        lambda **_kwargs: pytest.fail("an unclaimed Run must not assemble executors"),
+    )
+    monkeypatch.setattr(runs, "DatabaseWorkflowRunService", RunReader)
+
+    result = workflow_execution.execute_notebook_workflow(request, settings=_settings())
+
+    assert result == NotebookWorkflowExecutionResult(
+        workflow_run_id=71,
+        workflow="profiling",
+        state=durable_state,
+        created=False,
+        model_revision=4,
+        failure_code=failure_code,
+    )
+
+
 def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

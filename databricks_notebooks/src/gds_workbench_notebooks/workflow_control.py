@@ -248,7 +248,7 @@ class NotebookWorkflowControlClient:
         created_run: WorkflowCreateResult,
         *,
         lease_duration_seconds: int,
-    ) -> WorkflowClaimResult:
+    ) -> WorkflowClaimResult | None:
         _validate_lease_duration(lease_duration_seconds)
         if (
             created_run.workflow != request.workflow
@@ -293,7 +293,9 @@ class NotebookWorkflowControlClient:
             ),
             operation="start and claim the notebook Workflow Run",
         )
-        result = _required_row(row, operation="claim")
+        if row is None:
+            return None
+        result = row
         claim = WorkflowClaimResult(
             workflow_run_id=_positive_integer(result.get("workflow_run_id")),
             tenant_id=_positive_integer(result.get("tenant_id")),
