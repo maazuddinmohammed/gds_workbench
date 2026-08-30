@@ -494,15 +494,19 @@ const generatedSqlDetail = {
 };
 
 const agentCapabilities = {
-  schema_version: "1.0",
+  schema_version: "3.0",
   sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
   providers: [{ code: "databricks", name: "Databricks Model Serving" }],
   models: [{
     code: "databricks-primary",
     name: "GPT-5.6",
     provider_code: "databricks",
-    sdk_codes: ["openai_agents"],
-    reasoning_effort_codes: ["medium"],
+    deployment_name: "databricks-primary",
+    execution_profiles: ["detailed_coverage"].map((execution_mode) => ({
+      sdk_code: "openai_agents",
+      execution_mode,
+      reasoning_effort_codes: ["medium"],
+    })),
   }],
   reasoning_efforts: [{ code: "medium", name: "Medium" }],
   max_turns: { minimum: 1, default: 8, maximum: 50 },

@@ -6,6 +6,8 @@ import { ApiError } from "../../core/http";
 import type { MappingEntityType } from "../mapping/api";
 import type { ModelDetail } from "../models/api";
 import {
+  findAgentExecutionProfile,
+  reasoningEffortDisplayName,
   resolveDefaultAgent,
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
@@ -20,6 +22,7 @@ export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets"
 type CodeGenerationRunSubmission =
   | { kind: "create"; command: CreateWorkflowRunCommand }
   | { kind: "retry"; workflowRunId: number };
+const CODE_GENERATION_AGENT_EXECUTION_MODE = "detailed_coverage" as const;
 
 export function CodeGenerationRunDialog({
   api,
@@ -90,22 +93,51 @@ export function CodeGenerationRunDialog({
   });
   const values = useStore(form.store, (state) => state.values);
   const capabilities = capabilitiesQuery.data;
+  const compatibleSdks = capabilities?.sdks.filter((sdk) => (
+    capabilities.models.some((candidate) => (
+      sdk.provider_codes.includes(candidate.provider_code)
+      && findAgentExecutionProfile(
+        candidate,
+        sdk.code,
+        CODE_GENERATION_AGENT_EXECUTION_MODE,
+      ) !== undefined
+    ))
+  )) ?? [];
   const compatibleProviders = capabilities?.providers.filter((provider) => (
     capabilities.sdks.find((sdk) => sdk.code === values.sdkCode)
-      ?.provider_codes.includes(provider.code)
+      ?.provider_codes.includes(provider.code) === true
+    && capabilities.models.some((candidate) => (
+      candidate.provider_code === provider.code
+      && findAgentExecutionProfile(
+        candidate,
+        values.sdkCode,
+        CODE_GENERATION_AGENT_EXECUTION_MODE,
+      ) !== undefined
+    ))
   )) ?? [];
   const compatibleModels = capabilities?.models.filter((candidate) => (
     candidate.provider_code === values.providerCode
-    && candidate.sdk_codes.includes(values.sdkCode)
+    && findAgentExecutionProfile(
+      candidate,
+      values.sdkCode,
+      CODE_GENERATION_AGENT_EXECUTION_MODE,
+    ) !== undefined
   )) ?? [];
   const selectedModel = compatibleModels.find((candidate) => candidate.code === values.modelCode);
+  const selectedProfile = selectedModel
+    ? findAgentExecutionProfile(
+      selectedModel,
+      values.sdkCode,
+      CODE_GENERATION_AGENT_EXECUTION_MODE,
+    )
+    : undefined;
   const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
-    selectedModel?.reasoning_effort_codes.includes(effort.code)
+    selectedProfile?.reasoning_effort_codes.includes(effort.code)
   )) ?? [];
   const parsedMaxTurns = Number(values.maxTurns);
   const parsedRetries = Number(values.validationRetryCount);
   const agentSelectionValid = capabilities !== undefined
-    && capabilities.sdks.some((sdk) => sdk.code === values.sdkCode)
+    && compatibleSdks.some((sdk) => sdk.code === values.sdkCode)
     && compatibleProviders.some((provider) => provider.code === values.providerCode)
     && selectedModel !== undefined
     && compatibleReasoning.some((effort) => effort.code === values.reasoningEffortCode)
@@ -152,26 +184,45 @@ export function CodeGenerationRunDialog({
   useEffect(() => closeButton.current?.focus(), []);
   useEffect(() => {
     if (!capabilities) return;
-    const resolved = resolveDefaultAgent(capabilities, {
-      sdkCode: model.default_agent_sdk_code,
-      providerCode: model.default_agent_provider_code,
-      modelCode: model.default_agent_model_code,
-      reasoningEffortCode: model.default_reasoning_effort_code,
-      maxTurns: model.default_max_turns,
-      validationRetryCount: model.default_validation_retry_count,
-    });
+    const resolved = resolveDefaultAgent(
+      capabilities,
+      CODE_GENERATION_AGENT_EXECUTION_MODE,
+      {
+        sdkCode: values.sdkCode,
+        providerCode: values.providerCode,
+        modelCode: values.modelCode,
+        reasoningEffortCode: values.reasoningEffortCode,
+        maxTurns: model.default_max_turns,
+        validationRetryCount: model.default_validation_retry_count,
+      },
+    );
     if (!resolved) return;
-    if (!form.state.values.sdkCode) form.setFieldValue("sdkCode", resolved.sdk_code);
-    if (!form.state.values.providerCode) form.setFieldValue("providerCode", resolved.provider_code);
-    if (!form.state.values.modelCode) form.setFieldValue("modelCode", resolved.model_code);
-    if (!form.state.values.reasoningEffortCode) {
+    if (values.sdkCode !== resolved.sdk_code) form.setFieldValue("sdkCode", resolved.sdk_code);
+    if (values.providerCode !== resolved.provider_code) {
+      form.setFieldValue("providerCode", resolved.provider_code);
+    }
+    if (values.modelCode !== resolved.model_code) {
+      form.setFieldValue("modelCode", resolved.model_code);
+    }
+    if (values.reasoningEffortCode !== resolved.reasoning_effort_code) {
       form.setFieldValue("reasoningEffortCode", resolved.reasoning_effort_code);
     }
-    if (!form.state.values.maxTurns) form.setFieldValue("maxTurns", String(resolved.max_turns));
-    if (!form.state.values.validationRetryCount) {
+    if (!values.maxTurns) form.setFieldValue("maxTurns", String(resolved.max_turns));
+    if (!values.validationRetryCount) {
       form.setFieldValue("validationRetryCount", String(resolved.validation_retry_count));
     }
-  }, [capabilities, form, model]);
+  }, [
+    capabilities,
+    form,
+    model.default_max_turns,
+    model.default_validation_retry_count,
+    values.maxTurns,
+    values.modelCode,
+    values.providerCode,
+    values.reasoningEffortCode,
+    values.sdkCode,
+    values.validationRetryCount,
+  ]);
 
   const allTargets = coverage === "all_eligible_targets";
   const title = allTargets ? "Generate all eligible SQL" : selectedRunTitle(selectedTargets);
@@ -219,6 +270,7 @@ export function CodeGenerationRunDialog({
             <dl className="detail-fact-grid">
               <Fact label="Model" value={`${model.model_name} · r${model.model_revision}`} />
               <Fact label="Modeled layer" value={layerLabel(entityType)} />
+              <Fact label="Execution mode" value="Detailed coverage" />
               <Fact
                 label="Coverage"
                 value={allTargets ? "All eligible target Objects" : `${selectedTargets.length} selected target Object${selectedTargets.length === 1 ? "" : "s"}`}
@@ -250,7 +302,7 @@ export function CodeGenerationRunDialog({
                 {(field) => <SelectField
                   label="Agent SDK"
                   value={field.state.value}
-                  options={capabilities?.sdks.map((item) => [item.code, item.name]) ?? []}
+                  options={compatibleSdks.map((item) => [item.code, item.name])}
                   onChange={field.handleChange}
                 />}
               </form.Field>
@@ -274,7 +326,10 @@ export function CodeGenerationRunDialog({
                 {(field) => <SelectField
                   label="Reasoning effort"
                   value={field.state.value}
-                  options={compatibleReasoning.map((item) => [item.code, item.name])}
+                  options={compatibleReasoning.map((item) => [
+                    item.code,
+                    reasoningEffortDisplayName(item),
+                  ])}
                   onChange={field.handleChange}
                 />}
               </form.Field>

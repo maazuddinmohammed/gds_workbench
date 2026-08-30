@@ -281,7 +281,9 @@ class RecordingTransaction:
     ) -> list[dict[str, Any]]:
         assert "security.tenant_principal_access" in query
         assert parameters[:2] == (41, False)
-        limit, offset = parameters[2:]
+        include_global_data_store_owner_tenants, limit, offset = parameters[2:]
+        assert include_global_data_store_owner_tenants is False
+        assert "owned_connection.is_global_data_store" in query
         assert limit == 2
         self.offsets.append(offset)
         rows = [
@@ -295,8 +297,8 @@ class RecordingTransaction:
             },
             {
                 "tenant_id": 8,
-                "tenant_code": "GRDM",
-                "tenant_name": "Global Reference Data",
+                "tenant_code": "DDS",
+                "tenant_name": "Document Data Services",
                 "tenant_description": None,
                 "tenant_visibility": "global",
                 "effective_role": "viewer",
@@ -346,7 +348,7 @@ async def test_database_tenant_service_reuses_authorization_and_signed_paging() 
     )
 
     assert [item.tenant_code for item in first.items] == ["NWA"]
-    assert [item.tenant_code for item in second.items] == ["GRDM"]
+    assert [item.tenant_code for item in second.items] == ["DDS"]
     assert second.next_cursor is None
     assert database.transaction.offsets == [0, 1]
     assert database.isolations == [

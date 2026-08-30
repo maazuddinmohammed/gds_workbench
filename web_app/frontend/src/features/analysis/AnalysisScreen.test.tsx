@@ -52,8 +52,16 @@ describe("Model Analysis", () => {
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const inferenceDialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
     const executionMode = within(inferenceDialog).getByLabelText("Execution mode");
-    expect(within(executionMode).getAllByRole("option")).toHaveLength(1);
-    expect(executionMode).toHaveValue("one_shot");
+    expect(within(executionMode).getAllByRole("option").map((option) => (
+      (option as HTMLOptionElement).value
+    ))).toEqual(["", "one_shot", "tool_assisted", "detailed_coverage"]);
+    expect(executionMode).toHaveValue("tool_assisted");
+    expect(within(inferenceDialog).queryByRole("option", {
+      name: "One-shot-only deployment",
+    })).not.toBeInTheDocument();
+    expect(within(within(inferenceDialog).getByLabelText("Reasoning effort"))
+      .getAllByRole("option").map((option) => (option as HTMLOptionElement).value))
+      .toEqual(["", "medium"]);
     await user.click(within(inferenceDialog).getByRole("button", { name: "Create and run inference" }));
 
     await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
@@ -61,12 +69,13 @@ describe("Model Analysis", () => {
       expect.objectContaining({ method: "POST" }),
     ));
     const inferenceCall = fetcher.mock.calls.find(([, init]) => (
-      init?.method === "POST" && String(init.body).includes('"workflow_execution_mode":"one_shot"')
+      init?.method === "POST"
+      && String(init.body).includes('"workflow_execution_mode":"tool_assisted"')
     ));
     expect(JSON.parse(String(inferenceCall?.[1]?.body))).toEqual(expect.objectContaining({
       expected_model_revision: 18,
       model_workflow: "analysis",
-      workflow_execution_mode: "one_shot",
+      workflow_execution_mode: "tool_assisted",
       selected_object_ids: [501, 502],
       requested_batch_id: null,
       agent: expect.objectContaining({ model_code: "databricks-primary" }),
@@ -75,7 +84,10 @@ describe("Model Analysis", () => {
       "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ expected_model_revision: 18 }),
+        body: JSON.stringify({
+          execution_mode: "tool_assisted",
+          expected_model_revision: 18,
+        }),
       }),
     );
 
@@ -97,6 +109,38 @@ describe("Model Analysis", () => {
         body: JSON.stringify({ expected_model_revision: 18 }),
       }),
     );
+  });
+
+  it("keeps modes, models, and reasoning aligned with capability profiles", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(analysisFetchStub())} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+
+    await user.click(screen.getByRole("button", { name: "Run inference" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
+    const executionMode = within(dialog).getByLabelText("Execution mode");
+    const model = within(dialog).getByLabelText("Model");
+    const reasoning = within(dialog).getByLabelText("Reasoning effort");
+
+    expect(executionMode).toHaveValue("tool_assisted");
+    expect(model).toHaveValue("databricks-primary");
+    expect(reasoning).toHaveValue("medium");
+
+    await user.selectOptions(executionMode, "one_shot");
+    await waitFor(() => expect(within(model).getByRole("option", {
+      name: "One-shot-only deployment",
+    })).toBeInTheDocument());
+    await user.selectOptions(model, "databricks-one-shot");
+    await waitFor(() => expect(reasoning).toHaveValue("low"));
+
+    await user.selectOptions(executionMode, "detailed_coverage");
+    await waitFor(() => {
+      expect(model).toHaveValue("databricks-primary");
+      expect(reasoning).toHaveValue("medium");
+      expect(within(model).queryByRole("option", {
+        name: "One-shot-only deployment",
+      })).not.toBeInTheDocument();
+    });
   });
 
   it("retries a queued Analysis run without creating a duplicate", async () => {
@@ -195,7 +239,7 @@ function analysisFetchStub(options: {
         ?? {
           ...analysisRunsPayload[0],
           workflow_run_id: 1051,
-          workflow_execution_mode: "one_shot",
+          workflow_execution_mode: "tool_assisted",
           workflow_run_state: "running",
           completed_at: null,
         };
@@ -294,8 +338,8 @@ const modelPayload = {
   gold_model_audit_columns_template: null,
   default_agent_sdk_code: "openai_agents",
   default_agent_provider_code: "databricks",
-  default_agent_model_code: "databricks-primary",
-  default_reasoning_effort_code: "medium",
+  default_agent_model_code: "databricks-one-shot",
+  default_reasoning_effort_code: "low",
   default_max_turns: 8,
   default_validation_retry_count: 1,
   is_active: true,
@@ -435,17 +479,37 @@ const analysisRunsPayload = [
 ];
 
 const capabilitiesPayload = {
-  schema_version: "1.0",
+  schema_version: "3.0",
   sdks: [{ code: "openai_agents", name: "OpenAI Agents SDK", provider_codes: ["databricks"] }],
   providers: [{ code: "databricks", name: "Databricks Model Serving" }],
-  models: [{
-    code: "databricks-primary",
-    name: "GPT-5.6",
-    provider_code: "databricks",
-    sdk_codes: ["openai_agents"],
-    reasoning_effort_codes: ["medium"],
-  }],
-  reasoning_efforts: [{ code: "medium", name: "Medium" }],
+  models: [
+    {
+      code: "databricks-primary",
+      name: "GPT-5.6",
+      provider_code: "databricks",
+      deployment_name: "databricks-primary",
+      execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
+        sdk_code: "openai_agents",
+        execution_mode,
+        reasoning_effort_codes: ["medium"],
+      })),
+    },
+    {
+      code: "databricks-one-shot",
+      name: "One-shot-only deployment",
+      provider_code: "databricks",
+      deployment_name: "databricks-detailed",
+      execution_profiles: [{
+        sdk_code: "openai_agents",
+        execution_mode: "one_shot",
+        reasoning_effort_codes: ["low"],
+      }],
+    },
+  ],
+  reasoning_efforts: [
+    { code: "low", name: "Low" },
+    { code: "medium", name: "Medium" },
+  ],
   max_turns: { minimum: 1, default: 8, maximum: 50 },
   validation_retries: { minimum: 0, default: 1, maximum: 5 },
 };

@@ -18,6 +18,7 @@ from test_mapping_attribute_candidate import (
 )
 
 from gds_workbench_api.capabilities import (
+    AgentModelExecutionProfile,
     AgentRunSelection,
     load_default_agent_capabilities,
 )
@@ -27,6 +28,7 @@ from gds_workbench_api.features.dimensional.candidate import (
 from gds_workbench_api.features.dimensional.detailed import (
     DetailedDimensionalEntityDetail,
     DetailedDimensionalEntityDetailValidator,
+    DetailedDimensionalReconciliationReceiptValidator,
     DetailedDimensionalReconciliationValidator,
     DetailedDimensionalTopologyContribution,
     DetailedDimensionalTopologyContributionValidator,
@@ -34,8 +36,10 @@ from gds_workbench_api.features.dimensional.detailed import (
     DetailedDimensionalValidationLeadValidator,
     DetailedDimensionalValidationWorkerResult,
     DetailedDimensionalValidationWorkerValidator,
+    build_dimensional_draft_manifest,
     build_dimensional_relationship_signal_ledger,
     build_dimensional_validation_packages,
+    materialize_dimensional_reviewed_candidate,
 )
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 from gds_workbench_api.features.logical.detailed import (
@@ -61,11 +65,23 @@ from gds_workbench_api.features.mapping.candidate import (
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
+from gds_workbench_api.features.mapping.detailed import (
+    MappingDetailedTargetReviewValidator,
+    build_mapping_attribute_stage_context,
+    build_mapping_detailed_review_manifest,
+    build_mapping_header_stage_context,
+    build_mapping_target_review_context,
+    merge_mapping_detailed_candidate,
+)
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
 )
+from gds_workbench_api.features.mapping.preparation_contracts import (
+    ExistingMappingAttribute,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
+    LocalAgentToolCatalog,
     LocalAgentToolDefinition,
 )
 from gds_workbench_api.integrations.agents.configuration import (
@@ -112,6 +128,46 @@ def _request(*, sdk_code: str) -> AgentExecutionRequest:
     )
 
 
+@pytest.mark.asyncio
+async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode() -> (
+    None
+):
+    registry = load_default_agent_capabilities()
+    databricks_model = next(
+        model for model in registry.models if model.code == "databricks-primary"
+    )
+    restricted = databricks_model.model_copy(
+        update={
+            "execution_profiles": (
+                AgentModelExecutionProfile(
+                    sdk_code="langchain_create_agent",
+                    execution_mode="detailed_coverage",
+                    reasoning_effort_codes=("medium",),
+                ),
+            )
+        }
+    )
+    registry = registry.model_copy(
+        update={
+            "models": tuple(
+                restricted if model.code == restricted.code else model
+                for model in registry.models
+            )
+        }
+    )
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(
+            mode="fake",
+            timeout_seconds=120,
+            connections=(),
+        ),
+        capabilities=registry,
+    )
+
+    with pytest.raises(WorkbenchError, match="incompatible"):
+        await router.execute(_request(sdk_code="langchain_create_agent"))
+
+
 def _mapping_request(
     *, sdk_code: str
 ) -> tuple[AgentExecutionRequest, CompleteMappingCandidateValidator]:
@@ -138,17 +194,56 @@ def _mapping_request(
     )
 
 
+class _RecordingMappingCatalog:
+    def __init__(self, delegate: LocalAgentToolCatalog) -> None:
+        self.delegate = delegate
+        self.calls: list[tuple[str, dict[str, JsonValue]]] = []
+
+    @property
+    def definitions(self) -> tuple[LocalAgentToolDefinition, ...]:
+        return self.delegate.definitions
+
+    @property
+    def max_cumulative_result_bytes(self) -> int:
+        return self.delegate.max_cumulative_result_bytes
+
+    def invoke(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, JsonValue],
+    ) -> JsonValue:
+        self.calls.append((tool_name, dict(arguments)))
+        return self.delegate.invoke(tool_name, arguments)
+
+
 def _tool_assisted_mapping_request(
     *,
     sdk_code: str,
-) -> tuple[AgentExecutionRequest, CompleteMappingCandidateValidator]:
-    preparation = _mapping_preparation()
+) -> tuple[
+    AgentExecutionRequest,
+    CompleteMappingCandidateValidator,
+    _RecordingMappingCatalog,
+]:
+    preparation = _mapping_preparation(
+        existing=ExistingMappingAttribute(
+            mapping_attribute_id=990,
+            modeled_attribute_id=701,
+            target_attribute_id=901,
+            transformation_document=None,
+            status="active",
+            is_locked=False,
+            agent_run_id=None,
+            workflow_run_id=None,
+            output_template_id=None,
+        )
+    )
     context = build_mapping_execution_context(
         preparation=preparation,
         execution_mode="tool_assisted",
     )
     catalog = context.tool_catalog
     assert catalog is not None
+    recording_catalog = _RecordingMappingCatalog(catalog)
     validator = CompleteMappingCandidateValidator(preparation=preparation)
     return (
         AgentExecutionRequest(
@@ -162,10 +257,13 @@ def _tool_assisted_mapping_request(
             tool_instruction="Use only the immutable local Mapping tools.",
             context={"original_context": context.embedded_context, "repair": None},
             output_schema=validator.output_schema(),
-            allowed_tool_names=catalog.allowed_tool_names,
-            local_tool_catalog=catalog,
+            allowed_tool_names=tuple(
+                definition.name for definition in recording_catalog.definitions
+            ),
+            local_tool_catalog=recording_catalog,
         ),
         validator,
+        recording_catalog,
     )
 
 
@@ -223,6 +321,7 @@ def _conceptual_request(*, sdk_code: str) -> AgentExecutionRequest:
 
 
 class _ConceptualCatalog:
+    max_cumulative_result_bytes = 64 * 1024
     definitions = (
         LocalAgentToolDefinition(
             name="get_agent_context_manifest",
@@ -279,6 +378,7 @@ class _ConceptualCatalog:
 
 
 class _LogicalCatalog:
+    max_cumulative_result_bytes = 64 * 1024
     definitions = _ConceptualCatalog.definitions
 
     def invoke(
@@ -330,6 +430,7 @@ class _LogicalCatalog:
 
 
 class _PaginatedDimensionalCatalog:
+    max_cumulative_result_bytes = 64 * 1024
     definitions = (
         _ConceptualCatalog.definitions[0],
         LocalAgentToolDefinition(
@@ -514,6 +615,36 @@ def _analysis_request(*, sdk_code: str) -> AgentExecutionRequest:
         ),
         output_schema={"type": "object"},
         allowed_tool_names=(),
+    )
+
+
+def _tool_assisted_analysis_request(
+    *,
+    sdk_code: str,
+    catalog: _PaginatedDimensionalCatalog,
+) -> AgentExecutionRequest:
+    manifest = cast(
+        JsonValue,
+        {
+            "dataset_counts": {
+                "selected_object": 2,
+                "selected_attribute": 2,
+            }
+        },
+    )
+    return AgentExecutionRequest(
+        workflow_run_id=1048,
+        workflow="analysis_inference",
+        stage="relationship_inference",
+        execution_mode="tool_assisted",
+        selection=_selection(sdk_code=sdk_code),
+        system_prompt="private system prompt",
+        instruction_prompt="private instruction prompt",
+        tool_instruction="Use the local tools.",
+        context=cast(JsonValue, {"original_context": manifest, "repair": None}),
+        output_schema={"type": "object"},
+        allowed_tool_names=tuple(item.name for item in catalog.definitions),
+        local_tool_catalog=catalog,
     )
 
 
@@ -752,13 +883,46 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    request, validator = _tool_assisted_mapping_request(sdk_code=sdk_code)
+    request, validator, catalog = _tool_assisted_mapping_request(sdk_code=sdk_code)
 
     result = await router.execute(request)
 
     assert (await validator.validate(result.candidate)).issues == ()
     assert result.tool_call_count > 0
     assert "private system prompt" not in repr(result.candidate)
+    retrieved_datasets = {
+        cast(str, arguments["dataset"])
+        for tool_name, arguments in catalog.calls
+        if tool_name == "get_mapping_context_dataset"
+    }
+    assert retrieved_datasets >= {
+        "target_attribute",
+        "source_attribute",
+        "modeled_attribute",
+        "existing_mapping_attribute",
+    }
+    for dataset, nested_field in (
+        ("target", "attributes"),
+        ("header", "attribute_mappings"),
+    ):
+        page = cast(
+            dict[str, JsonValue],
+            catalog.delegate.invoke(
+                "get_mapping_context_dataset",
+                {"dataset": dataset, "offset": 0, "limit": 1},
+            ),
+        )
+        parent = cast(list[dict[str, JsonValue]], page["items"])[0]
+        assert parent[nested_field] == []
+    source_page = cast(
+        dict[str, JsonValue],
+        catalog.delegate.invoke(
+            "get_mapping_context_dataset",
+            {"dataset": "source", "offset": 0, "limit": 1},
+        ),
+    )
+    source_parent = cast(list[dict[str, JsonValue]], source_page["items"])[0]
+    assert cast(dict[str, JsonValue], source_parent["object"])["attributes"] == []
 
 
 @pytest.mark.parametrize(
@@ -777,17 +941,17 @@ async def test_local_fake_supports_complete_detailed_mapping_sequence(
         capabilities=load_default_agent_capabilities(),
     )
     preparation = _mapping_preparation()
-    mapping_context = build_mapping_execution_context(
+    header_context = build_mapping_header_stage_context(
         preparation=preparation,
-        execution_mode="detailed_coverage",
-    ).embedded_context
+        maximum_bytes=512 * 1024,
+    )
     header_validator = MappingHeaderCandidateValidator(preparation=preparation)
 
     header_result = await router.execute(
         _detailed_mapping_request(
             sdk_code=sdk_code,
             stage="header_mapper",
-            context=mapping_context,
+            context=header_context,
             output_schema=header_validator.output_schema(),
         )
     )
@@ -805,19 +969,17 @@ async def test_local_fake_supports_complete_detailed_mapping_sequence(
             package=header.package,
             batch_plan=batch_plan,
         )
+        batch_context = build_mapping_attribute_stage_context(
+            preparation=preparation,
+            header=header,
+            batch_plan=batch_plan,
+            maximum_bytes=512 * 1024,
+        )
         batch_result = await router.execute(
             _detailed_mapping_request(
                 sdk_code=sdk_code,
                 stage="attribute_mapper",
-                context=cast(
-                    JsonValue,
-                    {
-                        "schema_version": "1.0",
-                        "mapping_context": mapping_context,
-                        "validated_header": header.model_dump(mode="json"),
-                        "batch_plan": batch_plan.model_dump(mode="json"),
-                    },
-                ),
+                context=batch_context,
                 output_schema=batch_validator.output_schema(),
             )
         )
@@ -825,33 +987,38 @@ async def test_local_fake_supports_complete_detailed_mapping_sequence(
         raw_batches.append(batch_result.candidate)
         stage_results.append(batch_result)
 
-    draft = cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "header": header_result.candidate,
-            "attribute_batches": raw_batches,
-        },
+    batch_plans = build_mapping_attribute_batch_plans(
+        preparation=preparation,
+        package=header.package,
     )
-    target_validator = CompleteMappingCandidateValidator(preparation=preparation)
+    manifest = build_mapping_detailed_review_manifest(
+        header_candidate=header_result.candidate,
+        header=header,
+        batch_plans=batch_plans,
+        raw_batches=raw_batches,
+    )
+    target_validator = MappingDetailedTargetReviewValidator(manifest=manifest)
     target_result = await router.execute(
         _detailed_mapping_request(
             sdk_code=sdk_code,
             stage="target_validator",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "mapping_context": mapping_context,
-                    "draft_candidate": draft,
-                },
+            context=build_mapping_target_review_context(
+                manifest=manifest,
+                maximum_bytes=512 * 1024,
             ),
             output_schema=target_validator.output_schema(),
         )
     )
 
     assert (await target_validator.validate(target_result.candidate)).issues == ()
-    assert target_result.candidate == draft
+    assert target_result.candidate == manifest.model_dump(mode="json")
+    merged = merge_mapping_detailed_candidate(
+        header_candidate=header_result.candidate,
+        batch_plans=batch_plans,
+        raw_batches=raw_batches,
+    )
+    complete_validator = CompleteMappingCandidateValidator(preparation=preparation)
+    assert (await complete_validator.validate(merged)).issues == ()
     stage_results.append(target_result)
     assert all(result.tool_call_count == 0 for result in stage_results)
     assert "private system prompt" not in repr(target_result.candidate)
@@ -1654,6 +1821,55 @@ async def test_local_fake_supports_all_dimensional_detailed_stage_contracts(
         source_objects=source_objects,
         source_attributes=source_attributes,
     )
+    manifest = build_dimensional_draft_manifest(
+        topology=topology,
+        entity_details=tuple(details),
+        relationship_ledger=relationship_ledger,
+        applied_record_refs=(),
+    )
+    receipt_validator = DetailedDimensionalReconciliationReceiptValidator(
+        partition_ref="reconciliation_00001",
+        manifest=manifest,
+        relationship_signals=relationship_ledger.signals,
+    )
+    receipt_outcome = await router.execute(
+        _detailed_dimensional_request(
+            sdk_code=sdk_code,
+            stage="whole_model_reconciliation",
+            context=cast(
+                JsonValue,
+                {
+                    "schema_version": "1.0",
+                    "model": {"model_name": "private model context"},
+                    "partition_ref": "reconciliation_00001",
+                    "review_manifest": manifest.model_dump(mode="json"),
+                    "relationship_signals": [
+                        item.model_dump(mode="json")
+                        for item in relationship_ledger.signals
+                    ],
+                    "validation_failure_summary": {
+                        "finding_count": 0,
+                        "findings_digest": "0" * 64,
+                        "included_finding_count": 0,
+                        "included_findings": [],
+                        "is_complete": True,
+                    },
+                },
+            ),
+        )
+    )
+    assert (await receipt_validator.validate(receipt_outcome.candidate)).issues == ()
+    receipt = receipt_validator.parse_validated(receipt_outcome.candidate)
+    receipt_materialized = materialize_dimensional_reviewed_candidate(
+        topology=topology,
+        entity_details=tuple(details),
+        relationship_ledger=relationship_ledger,
+        manifest=manifest,
+        receipts=(receipt,),
+        applied_record_refs=(),
+    )
+    assert (await final_validator.validate(receipt_materialized)).issues == ()
+
     reconciliation_validator = DetailedDimensionalReconciliationValidator(
         topology=topology,
         entity_details=tuple(details),
@@ -2015,6 +2231,60 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
     assert "private" not in repr(result)
 
 
+@pytest.mark.parametrize(
+    "sdk_code",
+    ("langchain_create_agent", "openai_agents_sdk"),
+)
+async def test_local_fake_pages_tool_assisted_analysis_context(
+    sdk_code: str,
+) -> None:
+    catalog = _PaginatedDimensionalCatalog()
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(
+            mode="fake",
+            timeout_seconds=120,
+            connections=(),
+        ),
+        capabilities=load_default_agent_capabilities(),
+    )
+
+    result = await router.execute(
+        _tool_assisted_analysis_request(sdk_code=sdk_code, catalog=catalog)
+    )
+
+    assert result.candidate == {
+        "relationships": [
+            {
+                "from_tenant_code": "NWA",
+                "from_system_code": "CRM",
+                "from_connection_code": "CURATED",
+                "from_object_schema": "silver",
+                "from_object_name": "customer_curated",
+                "from_attribute_name": "customer_id",
+                "to_tenant_code": "NWA",
+                "to_system_code": "CRM",
+                "to_connection_code": "CURATED",
+                "to_object_schema": "silver",
+                "to_object_name": "order_curated",
+                "to_attribute_name": "customer_id",
+                "relationship_kind": "reference",
+                "relationship_confidence": "medium",
+                "relationship_basis": (
+                    "Selected Attribute metadata supports this candidate."
+                ),
+            }
+        ]
+    }
+    assert catalog.calls == [
+        ("selected_object", 0),
+        ("selected_object", 1),
+        ("selected_attribute", 0),
+        ("selected_attribute", 1),
+    ]
+    assert result.tool_call_count == 5
+    assert "private" not in repr(result)
+
+
 async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> None:
     router = create_agent_execution_router(
         configuration=AgentRuntimeConfiguration(
@@ -2068,7 +2338,7 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
     connection = AgentProviderConnection(
         provider_code="databricks",
         model_code="databricks-primary",
-        model_endpoint="production-agent-endpoint",
+        model_endpoint="databricks-gpt-oss-120b",
         timeout_seconds=90,
     )
 
@@ -2103,10 +2373,10 @@ async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
     connection = AgentProviderConnection(
         provider_code="microsoft_foundry",
         model_code="foundry-primary",
-        model_endpoint="production-foundry-model",
+        model_endpoint="gpt-5.6-sol",
         timeout_seconds=90,
         openai_base_url="https://fixture.openai.azure.com/openai/v1/",
-        token_scope="https://ai.azure.com/.default",
+        token_scope="https://cognitiveservices.azure.com/.default",
         foundry_client_credentials=FoundryClientCredentials(
             tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
             client_id=UUID("22222222-2222-2222-2222-222222222222"),
@@ -2128,3 +2398,29 @@ async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
 
     assert captured.value.code == "invalid_request"
     assert "never-log-this-foundry-client-secret" not in repr(router)
+
+
+async def test_remote_foundry_api_key_runtime_constructs_without_provider_io() -> None:
+    connection = AgentProviderConnection(
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
+        model_endpoint="gpt-5.6-sol",
+        timeout_seconds=90,
+        openai_base_url="https://fixture.services.ai.azure.com/openai/v1/",
+        foundry_api_key=SecretStr("never-log-this-foundry-api-key"),
+    )
+
+    router = create_agent_execution_router(
+        configuration=AgentRuntimeConfiguration(
+            mode="remote",
+            timeout_seconds=90,
+            connections=(connection,),
+        ),
+        capabilities=load_default_agent_capabilities(),
+    )
+
+    with pytest.raises(WorkbenchError) as captured:
+        await router.execute(_request(sdk_code="langchain_create_agent"))
+
+    assert captured.value.code == "invalid_request"
+    assert "never-log-this-foundry-api-key" not in repr(router)

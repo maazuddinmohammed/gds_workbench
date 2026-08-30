@@ -1,6 +1,6 @@
-"""Explicit Analysis one-shot inference Workflow Run route."""
+"""Explicit Analysis inference Workflow Run route."""
 
-from typing import Annotated, Protocol
+from typing import Annotated, Literal, Protocol
 
 from fastapi import APIRouter, Path, Request, Response, status
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
@@ -15,6 +15,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 class ExecuteAnalysisInferenceRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
+    execution_mode: Literal["one_shot", "tool_assisted", "detailed_coverage"]
     expected_model_revision: int = Field(gt=0)
 
 
@@ -26,6 +27,11 @@ class AnalysisInferenceWorkflowService(Protocol):
         tenant_id: int,
         model_id: int,
         workflow_run_id: int,
+        expected_execution_mode: Literal[
+            "one_shot",
+            "tool_assisted",
+            "detailed_coverage",
+        ],
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart: ...
 
@@ -54,6 +60,7 @@ def create_analysis_inference_workflow_router(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
+            expected_execution_mode=command.execution_mode,
             expected_model_revision=command.expected_model_revision,
         )
         if result.changed and result.workflow_run_state == "running":

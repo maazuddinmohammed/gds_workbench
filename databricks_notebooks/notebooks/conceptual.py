@@ -20,7 +20,7 @@ if _SOURCE_ROOT not in sys.path:
 from gds_workbench_notebooks.notebook import create_workflow_widgets, run_notebook
 
 # Run this cell first, then fill the Conceptual widgets above.
-create_workflow_widgets("conceptual", dbutils=dbutils)
+create_workflow_widgets("conceptual", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)
 
 # COMMAND ----------
 

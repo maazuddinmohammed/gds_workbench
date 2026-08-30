@@ -7,12 +7,13 @@ from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
-import gds_workbench_notebooks.drafts as drafts
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
 )
+
+import gds_workbench_notebooks.drafts as drafts
 from gds_workbench_notebooks.drafts import (
     WorkflowDraftApplyRequest,
     WorkflowDraftApplyResult,

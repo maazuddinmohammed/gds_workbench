@@ -1,11 +1,11 @@
 """Shared agent-backed authoring behavior."""
 
+from .agent_execution import AgentContextToolResultTooLargeError
 from .context import (
     AgentAuthoringContext,
     AgentContextBundle,
     AgentContextLimits,
     AgentContextToolRequestError,
-    AgentContextToolResultTooLargeError,
     AgentContextUnavailableError,
     ApplicableAppliedRecords,
     InMemoryAgentContextToolCatalog,

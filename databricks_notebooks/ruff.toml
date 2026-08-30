@@ -3,3 +3,6 @@ target-version = "py312"
 
 [lint]
 select = ["E", "F", "I", "N", "UP", "B", "SIM"]
+
+[lint.isort]
+known-first-party = ["gds_workbench_notebooks"]

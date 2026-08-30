@@ -82,7 +82,6 @@ VALIDATION_FAILURE_STAGES: frozenset[StageIdentity] = frozenset(
     {
         ("analysis", "detailed_coverage", "whole_slice_reconciler"),
         ("logical", "detailed_coverage", "whole_model_reconciliation"),
-        ("dimensional", "detailed_coverage", "whole_model_reconciliation"),
     }
 )
 CODE_GENERATION_STAGE: StageIdentity = (
@@ -296,6 +295,27 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
              GROUP BY stage.workflow_stage_id
             """
         ).fetchall()
+        variable_contract_rows = connection.execute(
+            """
+            SELECT stage.model_workflow,
+                   stage.workflow_execution_mode,
+                   stage.workflow_stage_code,
+                   variable.workflow_stage_variable_name AS name,
+                   variable.workflow_stage_variable_resolver_key AS resolver_key,
+                   variable.workflow_stage_variable_data_type AS data_type,
+                   variable.workflow_stage_variable_is_required AS is_required
+              FROM application.workflow_stage AS stage
+              JOIN application.workflow_stage_variable AS variable
+                ON variable.workflow_stage_id = stage.workflow_stage_id
+               AND variable.is_active
+             WHERE stage.workflow_stage_is_agentic
+               AND stage.is_active
+             ORDER BY stage.model_workflow,
+                      stage.workflow_execution_mode NULLS FIRST,
+                      stage.workflow_stage_order,
+                      variable.workflow_stage_variable_order
+            """
+        ).fetchall()
         counts = require_row(
             connection.execute(
                 """
@@ -323,6 +343,43 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         for row in variables
     }
     assert set(allowed) == EXPECTED_AGENTIC_STAGES
+    for variable in variable_contract_rows:
+        identity = (
+            variable["model_workflow"],
+            variable["workflow_execution_mode"],
+            variable["workflow_stage_code"],
+        )
+        name = variable["name"]
+        expected = {
+            "stage_context": (
+                "workflow."
+                f"{identity[0]}.{identity[1] or 'common'}.{identity[2]}.context",
+                "json",
+                True,
+            ),
+            "naming_instructions": ("model.naming_instructions", "text", False),
+            "validation_failures": ("workflow.validation_failures", "json", False),
+            "mapping_object_output_template": (
+                "workflow.mapping.object_output_template",
+                "json",
+                False,
+            ),
+            "mapping_attribute_output_template": (
+                "workflow.mapping.attribute_output_template",
+                "json",
+                False,
+            ),
+            "sql_generation_guide": (
+                "workflow.code_generation.sql_generation_guide",
+                "text",
+                True,
+            ),
+        }[name]
+        assert (
+            variable["resolver_key"],
+            variable["data_type"],
+            variable["is_required"],
+        ) == expected
     used_validation_failures: set[StageIdentity] = set()
     used_sql_generation_guide: set[StageIdentity] = set()
     for row in first:
@@ -388,6 +445,82 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
             assert "cardinality basis" in normalized
             assert "optionality" not in normalized
 
+        if identity == ("analysis", "detailed_coverage", "candidate_finder"):
+            for finder_term in (
+                "coverage.slice_ref exactly as assigned",
+                "candidates_found if and only if candidates is nonempty",
+                "slice-prefixed candidate_ref",
+                "two distinct exact physical endpoints",
+            ):
+                assert finder_term in normalized
+
+        if identity == ("analysis", "detailed_coverage", "relationship_resolver"):
+            for resolver_term in (
+                "each supplied candidate_ref exactly once",
+                "relationship requires exactly one supported relationship",
+                "no_relationship and needs_review require relationship to be null",
+            ):
+                assert resolver_term in normalized
+
+        if identity[1] == "detailed_coverage":
+            assert "exact current partition" in normalized
+            assert "never invent omitted content" in normalized
+
+        if identity == ("logical", "detailed_coverage", "topology_builder"):
+            for topology_term in (
+                "batch_manifest and selected_object.attributes",
+                "every supplied source attribute exactly once",
+                "another batch or object",
+            ):
+                assert topology_term in normalized
+
+        if identity == ("logical", "detailed_coverage", "topology_reconciler"):
+            for topology_term in (
+                "batch_manifest and contributions",
+                "every supplied proposal reference exactly once",
+                "another partition",
+            ):
+                assert topology_term in normalized
+
+        if identity == ("logical", "detailed_coverage", "entity_detail_builder"):
+            for detail_term in (
+                "exact bounded logical entity-detail partition",
+                "exactly its required submodel memberships",
+                "every supplied source attribute exactly once",
+                "do not recreate omitted batches",
+            ):
+                assert detail_term in normalized
+
+        if identity == (
+            "logical",
+            "detailed_coverage",
+            "whole_model_reconciliation",
+        ):
+            for reconciliation_term in (
+                "batch_manifest as the exact review boundary",
+                "reviewed_* field",
+                "exact physical object and attribute mappings",
+                "do not recreate omitted partitions",
+            ):
+                assert reconciliation_term in normalized
+
+        if identity == ("dimensional", "detailed_coverage", "topology_builder"):
+            for topology_term in (
+                "batch and selected_object.attributes",
+                "authoritative_selection_manifest",
+                "every supplied source attribute exactly once",
+            ):
+                assert topology_term in normalized
+
+        if identity == ("dimensional", "detailed_coverage", "entity_detail_builder"):
+            for detail_term in (
+                "exact bounded dimensional entity-detail partition",
+                "contribution_manifest, topology, entity, and contributions",
+                "every supplied source attribute exactly once",
+                "do not recreate omitted partitions",
+            ):
+                assert detail_term in normalized
+
         if identity == ("mapping", "detailed_coverage", "header_mapper"):
             for mapping_term in (
                 "author",
@@ -398,6 +531,33 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
                 "returned_mapping_object_ids",
             ):
                 assert mapping_term in normalized
+
+        if identity == ("mapping", "detailed_coverage", "target_validator"):
+            for review_term in (
+                "review_manifest",
+                "unchanged",
+                "coverage-manifest",
+                "batch candidate digests",
+                "do not return or recreate the draft",
+            ):
+                assert review_term in normalized
+            assert "draft_candidate" not in normalized
+
+        if identity == (
+            "dimensional",
+            "detailed_coverage",
+            "whole_model_reconciliation",
+        ):
+            for receipt_term in (
+                "partition_ref unchanged",
+                "review_manifest unchanged into manifest",
+                "reviewed_relationship_signal_refs",
+                "once, in order",
+                "do not return or recreate topology",
+                "never alter the manifest or coverage",
+            ):
+                assert receipt_term in normalized
+            assert "validation_failures" not in placeholders
 
         if identity[2] == "validator_worker":
             for worker_term in (

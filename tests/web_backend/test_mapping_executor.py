@@ -27,6 +27,9 @@ from gds_workbench_api.features.mapping.attribute_candidate import (
 from gds_workbench_api.features.mapping.candidate import (
     MappingHeaderCandidateValidator,
 )
+from gds_workbench_api.features.mapping.detailed import (
+    build_mapping_detailed_review_manifest,
+)
 from gds_workbench_api.features.mapping.execution_context import (
     InMemoryMappingContextToolCatalog,
 )
@@ -56,6 +59,9 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
     ModelWorkflow,
     WorkflowExecutionMode,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    agent_request_envelope_bytes,
 )
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
@@ -402,7 +408,26 @@ async def test_detailed_mapping_runs_fixed_workers_then_same_atomic_contract() -
     complete = cast(dict[str, JsonValue], _complete_candidate(preparation))
     raw_header = complete["header"]
     raw_batches = cast(list[JsonValue], complete["attribute_batches"])
-    agent = _Agent([raw_header, *raw_batches, complete])
+    header = MappingHeaderCandidateValidator(preparation=preparation).parse_validated(
+        raw_header
+    )
+    batch_plans = build_mapping_attribute_batch_plans(
+        preparation=preparation,
+        package=header.package,
+    )
+    review_manifest = build_mapping_detailed_review_manifest(
+        header_candidate=raw_header,
+        header=header,
+        batch_plans=batch_plans,
+        raw_batches=raw_batches,
+    )
+    agent = _Agent(
+        [
+            raw_header,
+            *raw_batches,
+            cast(JsonValue, review_manifest.model_dump(mode="json")),
+        ]
+    )
     service, handoff, _no_op, lifecycle = _service(
         preparation=preparation,
         agent=agent,
@@ -423,6 +448,16 @@ async def test_detailed_mapping_runs_fixed_workers_then_same_atomic_contract() -
         "target_validator",
     ]
     assert all(request.allowed_tool_names == () for request in agent.requests)
+    assert all(
+        agent_request_envelope_bytes(request) <= 512 * 1024
+        for request in agent.requests
+    )
+    target_envelope = cast(dict[str, JsonValue], agent.requests[-1].context)
+    target_context = cast(dict[str, JsonValue], target_envelope["original_context"])
+    assert target_context == {
+        "schema_version": "1.0",
+        "review_manifest": review_manifest.model_dump(mode="json"),
+    }
     assert [change.dataset for change in handoff.calls[0]] == [
         "mapping_object",
         "mapping_attribute",

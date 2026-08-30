@@ -5,7 +5,11 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import {
-  resolveDefaultAgent,
+  findAgentExecutionProfile,
+  listCompatibleExecutionModes,
+  reasoningEffortDisplayName,
+  resolveAgentProfileSelection,
+  WORKFLOW_EXECUTION_MODE_NAMES,
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
 } from "../workflows/api";
@@ -65,7 +69,7 @@ export function MappingRunDialog({
       sourceSystemId: "",
       operation: "build" as "build" | "extend",
       artifactType: "sql_file" as "sql_file" | "python_file" | "python_notebook",
-      executionMode: "one_shot" as ExecutionMode,
+      executionMode: "tool_assisted" as ExecutionMode,
       objectOutputTemplateId: "",
       attributeOutputTemplateId: "",
       sdkCode: model.default_agent_sdk_code ?? "",
@@ -141,15 +145,33 @@ export function MappingRunDialog({
     return [...byId.values()].sort((left, right) => left.system_code.localeCompare(right.system_code));
   }, [scopeQuery.data?.items]);
   const capabilities = capabilitiesQuery.data;
-  const compatibleProviders = capabilities?.providers.filter((provider) => (
-    capabilities.sdks.find((sdk) => sdk.code === values.sdkCode)?.provider_codes.includes(provider.code)
+  const compatibleSdks = capabilities?.sdks.filter((sdk) => (
+    capabilities.models.some((candidate) => (
+      sdk.provider_codes.includes(candidate.provider_code)
+      && candidate.execution_profiles.some((profile) => profile.sdk_code === sdk.code)
+    ))
   )) ?? [];
+  const compatibleProviders = capabilities?.providers.filter((provider) => (
+    capabilities.sdks.find((sdk) => sdk.code === values.sdkCode)
+      ?.provider_codes.includes(provider.code) === true
+    && capabilities.models.some((candidate) => (
+      candidate.provider_code === provider.code
+      && candidate.execution_profiles.some((profile) => profile.sdk_code === values.sdkCode)
+    ))
+  )) ?? [];
+  const compatibleExecutionModes = capabilities
+    ? listCompatibleExecutionModes(capabilities, values.sdkCode, values.providerCode)
+    : [];
   const compatibleModels = capabilities?.models.filter((candidate) => (
-    candidate.provider_code === values.providerCode && candidate.sdk_codes.includes(values.sdkCode)
+    candidate.provider_code === values.providerCode
+    && findAgentExecutionProfile(candidate, values.sdkCode, values.executionMode) !== undefined
   )) ?? [];
   const selectedModel = compatibleModels.find((candidate) => candidate.code === values.modelCode);
+  const selectedProfile = selectedModel
+    ? findAgentExecutionProfile(selectedModel, values.sdkCode, values.executionMode)
+    : undefined;
   const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
-    selectedModel?.reasoning_effort_codes.includes(effort.code)
+    selectedProfile?.reasoning_effort_codes.includes(effort.code)
   )) ?? [];
   const targetId = Number(values.targetObjectId);
   const sourceSystemId = Number(values.sourceSystemId);
@@ -168,8 +190,9 @@ export function MappingRunDialog({
       && template.output_template_schema_digest_is_valid
     )));
   const agentSelectionValid = capabilities !== undefined
-    && capabilities.sdks.some((sdk) => sdk.code === values.sdkCode)
+    && compatibleSdks.some((sdk) => sdk.code === values.sdkCode)
     && compatibleProviders.some((provider) => provider.code === values.providerCode)
+    && compatibleExecutionModes.includes(values.executionMode)
     && selectedModel !== undefined
     && compatibleReasoning.some((effort) => effort.code === values.reasoningEffortCode)
     && Number.isInteger(parsedMaxTurns)
@@ -222,26 +245,48 @@ export function MappingRunDialog({
   useEffect(() => closeButton.current?.focus(), []);
   useEffect(() => {
     if (!capabilities) return;
-    const resolved = resolveDefaultAgent(capabilities, {
-      sdkCode: model.default_agent_sdk_code,
-      providerCode: model.default_agent_provider_code,
-      modelCode: model.default_agent_model_code,
-      reasoningEffortCode: model.default_reasoning_effort_code,
-      maxTurns: model.default_max_turns,
-      validationRetryCount: model.default_validation_retry_count,
+    const resolved = resolveAgentProfileSelection(capabilities, values.executionMode, {
+      sdkCode: values.sdkCode,
+      providerCode: values.providerCode,
+      modelCode: values.modelCode,
+      reasoningEffortCode: values.reasoningEffortCode,
     });
     if (!resolved) return;
-    if (!form.state.values.sdkCode) form.setFieldValue("sdkCode", resolved.sdk_code);
-    if (!form.state.values.providerCode) form.setFieldValue("providerCode", resolved.provider_code);
-    if (!form.state.values.modelCode) form.setFieldValue("modelCode", resolved.model_code);
-    if (!form.state.values.reasoningEffortCode) {
-      form.setFieldValue("reasoningEffortCode", resolved.reasoning_effort_code);
+    if (values.executionMode !== resolved.executionMode) {
+      form.setFieldValue("executionMode", resolved.executionMode);
     }
-    if (!form.state.values.maxTurns) form.setFieldValue("maxTurns", String(resolved.max_turns));
-    if (!form.state.values.validationRetryCount) {
-      form.setFieldValue("validationRetryCount", String(resolved.validation_retry_count));
+    if (values.sdkCode !== resolved.sdkCode) form.setFieldValue("sdkCode", resolved.sdkCode);
+    if (values.providerCode !== resolved.providerCode) {
+      form.setFieldValue("providerCode", resolved.providerCode);
     }
-  }, [capabilities, form, model]);
+    if (values.modelCode !== resolved.modelCode) {
+      form.setFieldValue("modelCode", resolved.modelCode);
+    }
+    if (values.reasoningEffortCode !== resolved.reasoningEffortCode) {
+      form.setFieldValue("reasoningEffortCode", resolved.reasoningEffortCode);
+    }
+    if (!values.maxTurns) {
+      form.setFieldValue("maxTurns", String(model.default_max_turns ?? capabilities.max_turns.default));
+    }
+    if (!values.validationRetryCount) {
+      form.setFieldValue(
+        "validationRetryCount",
+        String(model.default_validation_retry_count ?? capabilities.validation_retries.default),
+      );
+    }
+  }, [
+    capabilities,
+    form,
+    model.default_max_turns,
+    model.default_validation_retry_count,
+    values.executionMode,
+    values.maxTurns,
+    values.modelCode,
+    values.providerCode,
+    values.reasoningEffortCode,
+    values.sdkCode,
+    values.validationRetryCount,
+  ]);
   useEffect(() => {
     if (values.targetObjectId && !targets.some((target) => target.object_id === targetId)) {
       form.setFieldValue("targetObjectId", "");
@@ -342,11 +387,10 @@ export function MappingRunDialog({
                 {(field) => <SelectField
                   label="Execution mode"
                   value={field.state.value}
-                  options={[
-                    ["one_shot", "One shot"],
-                    ["tool_assisted", "Tool assisted"],
-                    ["detailed_coverage", "Detailed coverage"],
-                  ]}
+                  options={compatibleExecutionModes.map((mode) => [
+                    mode,
+                    WORKFLOW_EXECUTION_MODE_NAMES[mode],
+                  ])}
                   onChange={(value) => field.handleChange(value as ExecutionMode)}
                 />}
               </form.Field>
@@ -379,7 +423,7 @@ export function MappingRunDialog({
                 {(field) => <SelectField
                   label="Agent SDK"
                   value={field.state.value}
-                  options={capabilities?.sdks.map((item) => [item.code, item.name]) ?? []}
+                  options={compatibleSdks.map((item) => [item.code, item.name])}
                   onChange={field.handleChange}
                 />}
               </form.Field>
@@ -403,7 +447,10 @@ export function MappingRunDialog({
                 {(field) => <SelectField
                   label="Reasoning effort"
                   value={field.state.value}
-                  options={compatibleReasoning.map((item) => [item.code, item.name])}
+                  options={compatibleReasoning.map((item) => [
+                    item.code,
+                    reasoningEffortDisplayName(item),
+                  ])}
                   onChange={field.handleChange}
                 />}
               </form.Field>

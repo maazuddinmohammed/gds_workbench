@@ -132,7 +132,7 @@ class TenantDatabase(Protocol):
 
 
 class DatabaseTenantService:
-    """List only Tenants authorized by the shared server-side policy."""
+    """List authorized Workbench Tenants without GDS Connection owners."""
 
     def __init__(
         self,
@@ -162,6 +162,7 @@ class DatabaseTenantService:
                 actor,
                 limit=page_size + 1,
                 offset=offset,
+                include_global_data_store_owner_tenants=False,
             )
 
         items = tuple(TenantRecord.model_validate(row) for row in rows[:page_size])

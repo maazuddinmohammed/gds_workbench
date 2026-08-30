@@ -24,6 +24,10 @@ from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.features.logical.detailed import (
+    logical_json_bytes,
+    logical_json_digest,
+)
 from gds_workbench_api.features.logical.service import (
     DatabaseLogicalExecutor,
     LogicalExecutionFailedError,
@@ -55,7 +59,13 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
 )
-from gds_workbench_api.features.workflows.authoring.repair import AgentContextPolicy
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentContextPolicy,
+    agent_request_envelope_bytes,
+)
+from gds_workbench_api.integrations.agents.fake_logical import (
+    detailed_logical_candidate,
+)
 from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
@@ -206,7 +216,11 @@ def _selected_object() -> dict[str, object]:
     }
 
 
-def _context_bundle(*, mode: str = "one_shot") -> AgentContextBundle:
+def _context_bundle(
+    *,
+    mode: str = "one_shot",
+    assertion: dict[str, object] | None = None,
+) -> AgentContextBundle:
     context = AgentAuthoringContext.model_validate(
         {
             "workflow_run_id": 1048,
@@ -239,7 +253,7 @@ def _context_bundle(*, mode: str = "one_shot") -> AgentContextBundle:
             "selected_objects": (_selected_object(),),
             "profiles": (),
             "analysis_relationships": (),
-            "assertion": {"documents": (), "records": ()},
+            "assertion": assertion or {"documents": (), "records": ()},
             "applied": {
                 "conceptual": None,
                 "logical": None,
@@ -583,6 +597,21 @@ class _AgentExecutor:
 
 
 @dataclass
+class _LocalFakeAgent:
+    requests: list[AgentExecutionRequest] = field(
+        default_factory=lambda: list[AgentExecutionRequest]()
+    )
+
+    async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+        self.requests.append(request)
+        return AgentExecutionResult(
+            candidate=detailed_logical_candidate(request),
+            turn_count=1,
+            tool_call_count=0,
+        )
+
+
+@dataclass
 class _Handoff:
     calls: list[tuple[StageModelChange, ...]] = field(
         default_factory=lambda: list[tuple[StageModelChange, ...]]()
@@ -712,9 +741,10 @@ class _Lifecycle:
 
 def _service(
     *,
-    agent: _AgentExecutor,
+    agent: _AgentExecutor | _LocalFakeAgent,
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
+    context_bundle: AgentContextBundle | None = None,
 ) -> tuple[DatabaseLogicalExecutor, _Database, _Authorizer, _Handoff, _Lifecycle]:
     selected_plan = plan or _plan()
     database = _Database()
@@ -731,7 +761,8 @@ def _service(
             lifecycle=lifecycle,
             plan_repository=_PlanRepository(selected_plan),
             context_repository=_ContextRepository(
-                _context_bundle(
+                context_bundle
+                or _context_bundle(
                     mode=selected_plan.workflow_execution_mode or "one_shot"
                 )
             ),
@@ -1061,6 +1092,267 @@ async def test_detailed_coverage_runs_fixed_loops_then_one_atomic_handoff() -> N
     assert len(handoff.calls) == 1
     assert result.staged_record_count == 4
     assert lifecycle.failed is None
+
+
+@pytest.mark.asyncio
+async def test_detailed_coverage_projects_maximal_supporting_assertion_without_losing_sources() -> (
+    None
+):
+    assertion_text = "é" * 200_000
+    assertion_record = {
+        "modeling_assertion_record_key": "Customer.Rule.1",
+        "modeling_assertion_document_name": "Customer Rules",
+        "modeling_assertion_record_type": "business_rule",
+        "modeling_assertion_text": assertion_text,
+        "modeling_assertion_details": {"rule_kind": "identity"},
+        "modeling_assertion_source_location": {"page": 1},
+        "modeling_assertion_applicable_layers": ("logical",),
+        "modeling_assertion_confidence": "high",
+        "modeling_assertion_record_status": "active",
+        "modeling_assertion_record_is_locked": False,
+    }
+    bundle = _context_bundle(
+        mode="detailed_coverage",
+        assertion={
+            "documents": (
+                {
+                    "modeling_assertion_document_name": "Customer Rules",
+                    "tenant_code": "NWA",
+                    "system_code": "CRM",
+                    "modeling_assertion_file_pattern": None,
+                    "modeling_assertion_document_type": "policy",
+                    "modeling_assertion_document_description": "Customer policy.",
+                    "modeling_assertion_document_metadata": {},
+                    "is_active": True,
+                },
+            ),
+            "records": (assertion_record,),
+        },
+    )
+    agent = _AgentExecutor(
+        responses=cast(list[JsonValue | Exception], _detailed_candidates())
+    )
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent,
+        plan=_plan(mode="detailed_coverage"),
+        context_bundle=bundle,
+    )
+
+    result = await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert isinstance(result, WorkflowChangeSetHandoffResult)
+    assert lifecycle.failed is None
+    assert len(handoff.calls) == 1
+    assert all(
+        agent_request_envelope_bytes(request) <= 128 * 1024
+        for request in agent.requests
+    )
+    original_context = cast(dict[str, JsonValue], agent.requests[0].context)[
+        "original_context"
+    ]
+    projected = cast(dict[str, JsonValue], original_context)
+    manifest = cast(dict[str, JsonValue], projected["batch_manifest"])
+    selected = cast(dict[str, JsonValue], projected["selected_object"])
+    assertions = cast(dict[str, JsonValue], projected["assertions"])
+    record_section = cast(dict[str, JsonValue], assertions["records"])
+    record_projection = cast(
+        dict[str, JsonValue],
+        cast(list[JsonValue], record_section["records"])[0],
+    )
+    assert manifest["records_are_lossless"] is True
+    assert (
+        cast(dict[str, JsonValue], selected["object"])["object_name"] == "customer_raw"
+    )
+    assert len(cast(list[JsonValue], selected["attributes"])) == 1
+    assert record_projection["projection_kind"] == "bounded_semantic_projection"
+    assert record_projection["canonical_utf8_bytes"] == logical_json_bytes(
+        cast(JsonValue, assertion_record)
+    )
+    assert record_projection["canonical_sha256"] == logical_json_digest(
+        cast(JsonValue, assertion_record)
+    )
+
+
+@pytest.mark.asyncio
+async def test_detailed_coverage_fails_closed_when_one_authoritative_object_cannot_fit() -> (
+    None
+):
+    base = _context_bundle(mode="detailed_coverage")
+    selected = base.context.selected_objects[0]
+    oversized_object = selected.object.model_copy(
+        update={"object_description": "x" * 200_000}
+    )
+    oversized_context = base.context.model_copy(
+        update={
+            "selected_objects": (
+                selected.model_copy(update={"object": oversized_object}),
+            )
+        }
+    )
+    bundle = AgentContextBundle(
+        context=oversized_context,
+        embedded_context=cast(JsonValue, oversized_context.model_dump(mode="json")),
+    )
+    agent = _AgentExecutor(responses=[])
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent,
+        plan=_plan(mode="detailed_coverage"),
+        context_bundle=bundle,
+    )
+
+    with pytest.raises(InvalidRequestError, match="authoritative|selected Logical"):
+        await service.execute_started(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=7,
+            workflow_run_claim_token=_CLAIM_TOKEN,
+        )
+
+    assert agent.requests == []
+    assert handoff.calls == []
+    assert lifecycle.failed is not None
+
+
+def test_detailed_topology_pages_maximum_legal_selected_attribute_count_exactly() -> (
+    None
+):
+    bundle = _context_bundle(mode="detailed_coverage")
+    selected = bundle.context.selected_objects[0]
+    source_attribute = selected.attributes[0]
+    attributes = tuple(
+        source_attribute.model_copy(
+            update={
+                "attribute_name": f"source_attribute_{position:05d}",
+                "attribute_ordinal_position": position,
+                "attribute_description": "Bounded source Attribute.",
+            }
+        )
+        for position in range(1, 20_001)
+    )
+    selected = selected.model_copy(update={"attributes": attributes})
+    service, *_ = _service(
+        agent=_LocalFakeAgent(),
+        plan=_plan(mode="detailed_coverage"),
+        context_bundle=bundle,
+    )
+
+    batches = service._topology_builder_batches(  # pyright: ignore[reportPrivateUsage]
+        plan=_plan(mode="detailed_coverage"),
+        context=bundle,
+        selected=selected,
+    )
+
+    assert len(batches) > 1
+    assert len({batch.contribution_ref for batch in batches}) == len(batches)
+    assert tuple(
+        attribute.attribute_name
+        for batch in batches
+        for attribute in batch.source_attributes
+    ) == tuple(attribute.attribute_name for attribute in attributes)
+    for batch in batches:
+        stage_context = cast(dict[str, JsonValue], batch.context)
+        selected_slice = cast(dict[str, JsonValue], stage_context["selected_object"])
+        attribute_values = cast(list[JsonValue], selected_slice["attributes"])
+        manifest = cast(dict[str, JsonValue], stage_context["batch_manifest"])
+        assert manifest["record_count"] == len(attribute_values)
+        assert manifest["ordered_record_digest"] == logical_json_digest(
+            cast(JsonValue, attribute_values)
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("attribute_count", [24, 50, 100, 200])
+async def test_detailed_coverage_byte_pages_many_attributes_without_source_loss(
+    attribute_count: int,
+) -> None:
+    base = _context_bundle(mode="detailed_coverage")
+    selected = base.context.selected_objects[0]
+    source_attribute = selected.attributes[0]
+    attributes = tuple(
+        source_attribute.model_copy(
+            update={
+                "attribute_name": f"source_attribute_{position:03d}",
+                "attribute_ordinal_position": position,
+                "attribute_description": f"Source Attribute {position}.",
+            }
+        )
+        for position in range(1, attribute_count + 1)
+    )
+    paged_context = base.context.model_copy(
+        update={
+            "selected_objects": (
+                selected.model_copy(update={"attributes": attributes}),
+            )
+        }
+    )
+    bundle = AgentContextBundle(
+        context=paged_context,
+        embedded_context=cast(JsonValue, paged_context.model_dump(mode="json")),
+    )
+    agent = _LocalFakeAgent()
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=agent,
+        plan=_plan(mode="detailed_coverage"),
+        context_bundle=bundle,
+    )
+
+    result = await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert isinstance(result, WorkflowChangeSetHandoffResult)
+    assert lifecycle.failed is None
+    assert len(handoff.calls) == 1
+    if attribute_count >= 100:
+        assert (
+            sum(request.stage == "topology_builder" for request in agent.requests) > 1
+        )
+    assert (
+        sum(request.stage == "entity_detail_builder" for request in agent.requests) > 1
+    )
+    if attribute_count >= 50:
+        assert (
+            sum(
+                request.stage == "whole_model_reconciliation"
+                for request in agent.requests
+            )
+            > 1
+        )
+    assert all(
+        agent_request_envelope_bytes(request) <= 128 * 1024
+        for request in agent.requests
+    )
+    assert all(
+        cast(dict[str, JsonValue], request.context)["repair"] is None
+        for request in agent.requests
+    )
+    attribute_change = next(
+        change for change in handoff.calls[0] if change.dataset == "logical_attribute"
+    )
+    represented_sources = {
+        cast(str, source_attribute["attribute_name"])
+        for record in attribute_change.records
+        for source in cast(list[dict[str, JsonValue]], record["sources"])
+        if source.get("support_source_type") == "attribute"
+        for source_attribute in [cast(dict[str, JsonValue], source["source_attribute"])]
+    }
+    assert represented_sources == {
+        f"source_attribute_{position:03d}" for position in range(1, attribute_count + 1)
+    }
 
 
 @pytest.mark.asyncio

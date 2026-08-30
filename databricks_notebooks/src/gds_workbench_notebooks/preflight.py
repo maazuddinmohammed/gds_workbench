@@ -60,10 +60,6 @@ def execute_notebook_preflight(
         raise NotebookConfigurationError(
             "These notebooks require the Python 3.12 image in Databricks Runtime 16.4 LTS."
         )
-    if settings.databricks_model_endpoint is None:
-        raise NotebookConfigurationError(
-            "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT is required for full Workflow readiness."
-        )
     with notebook_database_connection(settings.database) as connection:
         principal = NotebookWorkflowControlClient(connection).current_principal()
 
@@ -86,7 +82,9 @@ async def _check_async_runtime(
     from gds_workbench_api.integrations.agents import DatabricksModelAuthentication
     from gds_workbench_runtime.profiling import load_default_profiling_policy
 
-    load_default_agent_capabilities()
+    capabilities = load_default_agent_capabilities()
+    if not any(model.provider_code == "databricks" for model in capabilities.models):
+        raise NotebookConfigurationError("The Agent registry has no Databricks model deployment.")
     load_default_profiling_policy()
     database = create_notebook_workflow_database(settings.database)
     authentication = DatabricksModelAuthentication(mode="notebook")

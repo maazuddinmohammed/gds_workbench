@@ -20,7 +20,7 @@ from .errors import (
 )
 
 _ENV_FILE_MAX_BYTES = 64 * 1024
-_ALLOWED_ENV_KEYS = frozenset(
+_BASE_ALLOWED_ENV_KEYS = frozenset(
     {
         "GDS_NOTEBOOK_POSTGRES_HOST",
         "GDS_NOTEBOOK_POSTGRES_PORT",
@@ -33,7 +33,6 @@ _ALLOWED_ENV_KEYS = frozenset(
         "GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS",
         "GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS",
         "GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS",
-        "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT",
     }
 )
 _REQUIRED_ENV_KEYS = frozenset(
@@ -65,7 +64,6 @@ class NotebookRuntimeSettings:
     workflow_lease_seconds: int = 30
     workflow_heartbeat_seconds: int = 10
     agent_timeout_seconds: int = 120
-    databricks_model_endpoint: str | None = None
 
 
 def locate_uploaded_root(start: Path) -> Path:
@@ -122,19 +120,11 @@ def load_notebook_runtime_settings(uploaded_root: Path) -> NotebookRuntimeSettin
         minimum=1,
         maximum=600,
     )
-    endpoint = values.get("GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT", "").strip()
-    if endpoint == "<serving-endpoint-name>":
-        endpoint = ""
-    if endpoint and re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,199}", endpoint) is None:
-        raise NotebookConfigurationError(
-            "Databricks model endpoint must be a valid serving endpoint name."
-        )
     return NotebookRuntimeSettings(
         database=_database_settings(values),
         workflow_lease_seconds=lease_seconds,
         workflow_heartbeat_seconds=heartbeat_seconds,
         agent_timeout_seconds=agent_timeout_seconds,
-        databricks_model_endpoint=endpoint or None,
     )
 
 
@@ -154,7 +144,7 @@ def _load_notebook_env(uploaded_root: Path) -> dict[str, str]:
         ) from None
 
     values = _parse_env_document(document)
-    unexpected = sorted(set(values) - _ALLOWED_ENV_KEYS)
+    unexpected = sorted(set(values) - _BASE_ALLOWED_ENV_KEYS)
     if unexpected:
         raise NotebookConfigurationError(
             f"The notebook .env contains an unsupported field: {unexpected[0]}."

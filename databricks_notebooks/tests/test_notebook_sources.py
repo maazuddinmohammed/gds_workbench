@@ -29,7 +29,9 @@ def test_all_workflow_notebooks_are_source_importable_and_thin() -> None:
         assert text.startswith("# Databricks notebook source\n")
         ast.parse(text)
         assert text.count("# COMMAND ----------") == 1
-        setup = f'create_workflow_widgets("{workflow}", dbutils=dbutils)'
+        setup = (
+            f'create_workflow_widgets("{workflow}", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)'
+        )
         execute = f'run_notebook("{workflow}", dbutils=dbutils, uploaded_root=_UPLOAD_ROOT)'
         assert text.index(setup) < text.index("# COMMAND ----------") < text.index(execute)
         assert text.count("run_notebook(") == 1

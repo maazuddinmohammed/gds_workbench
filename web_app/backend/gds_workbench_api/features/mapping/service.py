@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Mapping
-from typing import Protocol, cast
+from typing import Protocol
 from uuid import UUID
 
 from gds_etl_workbench.domain.authorization import RequestPrincipal
@@ -46,8 +46,15 @@ from .attribute_candidate import (
 )
 from .candidate import MappingHeaderCandidateValidator
 from .complete_candidate import CompleteMappingCandidateValidator
+from .detailed import (
+    MappingDetailedTargetReviewValidator,
+    build_mapping_attribute_stage_context,
+    build_mapping_detailed_review_manifest,
+    build_mapping_header_stage_context,
+    build_mapping_target_review_context,
+    merge_mapping_detailed_candidate,
+)
 from .execution_context import (
-    MappingExecutionContext,
     MappingExecutionContextLimits,
     build_mapping_execution_context,
 )
@@ -236,9 +243,10 @@ class DatabaseMappingExecutor:
         context_limits: MappingExecutionContextLimits | None = None,
     ) -> None:
         self._preparation_service = preparation_service
+        self._context_policy = context_policy or load_default_agent_context_policy()
         self._stage_runner = AgentStageRunner(
             executor=agent_executor,
-            policy=context_policy or load_default_agent_context_policy(),
+            policy=self._context_policy,
         )
         self._handoff = handoff
         self._no_op = no_op
@@ -328,7 +336,6 @@ class DatabaseMappingExecutor:
                 candidate, outcomes, final_sequence = await self._execute_detailed(
                     principal,
                     preparation=preparation,
-                    execution_context=execution_context,
                     workflow_run_claim_token=workflow_run_claim_token,
                     expected_model_revision=expected_model_revision,
                 )
@@ -440,11 +447,18 @@ class DatabaseMappingExecutor:
         principal: RequestPrincipal,
         *,
         preparation: MappingPreparation,
-        execution_context: MappingExecutionContext,
         workflow_run_claim_token: UUID,
         expected_model_revision: int,
     ) -> tuple[JsonValue, tuple[AgentStageOutcome, ...], int]:
         plan = preparation.plan.agent_plan
+        maximum_stage_bytes = max(
+            1,
+            self._context_policy.stage_max_context_bytes // 2,
+        )
+        header_context = build_mapping_header_stage_context(
+            preparation=preparation,
+            maximum_bytes=maximum_stage_bytes,
+        )
         header_validator = MappingHeaderCandidateValidator(preparation=preparation)
         header_outcome = await self._stage_runner.run(
             plan=plan,
@@ -452,9 +466,9 @@ class DatabaseMappingExecutor:
             resolver_values=_mapping_resolver_values(
                 preparation,
                 stage_code="header_mapper",
-                context=execution_context.embedded_context,
+                context=header_context,
             ),
-            context=execution_context.embedded_context,
+            context=header_context,
             output_schema=header_validator.output_schema(),
             allowed_tool_names=(),
             validator=header_validator,
@@ -480,14 +494,11 @@ class DatabaseMappingExecutor:
             package=header.package,
         )
         for index, batch_plan in enumerate(batch_plans, 1):
-            batch_context = cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "mapping_context": execution_context.embedded_context,
-                    "validated_header": header.model_dump(mode="json"),
-                    "batch_plan": batch_plan.model_dump(mode="json"),
-                },
+            batch_context = build_mapping_attribute_stage_context(
+                preparation=preparation,
+                header=header,
+                batch_plan=batch_plan,
+                maximum_bytes=maximum_stage_bytes,
             )
             batch_validator = MappingAttributeCandidateValidator(
                 preparation=preparation,
@@ -523,23 +534,19 @@ class DatabaseMappingExecutor:
                 total=len(batch_plans),
             )
 
-        draft = cast(
-            JsonValue,
-            {
-                "schema_version": "1.0",
-                "header": header_outcome.candidate,
-                "attribute_batches": raw_batches,
-            },
+        review_manifest = build_mapping_detailed_review_manifest(
+            header_candidate=header_outcome.candidate,
+            header=header,
+            batch_plans=batch_plans,
+            raw_batches=raw_batches,
         )
-        target_context = cast(
-            JsonValue,
-            {
-                "schema_version": "1.0",
-                "mapping_context": execution_context.embedded_context,
-                "draft_candidate": draft,
-            },
+        target_context = build_mapping_target_review_context(
+            manifest=review_manifest,
+            maximum_bytes=maximum_stage_bytes,
         )
-        target_validator = CompleteMappingCandidateValidator(preparation=preparation)
+        target_validator = MappingDetailedTargetReviewValidator(
+            manifest=review_manifest,
+        )
         target_outcome = await self._stage_runner.run(
             plan=plan,
             stage_code="target_validator",
@@ -554,6 +561,16 @@ class DatabaseMappingExecutor:
             validator=target_validator,
         )
         target_validator.parse_validated(target_outcome.candidate)
+        candidate = merge_mapping_detailed_candidate(
+            header_candidate=header_outcome.candidate,
+            batch_plans=batch_plans,
+            raw_batches=raw_batches,
+        )
+        complete_validator = CompleteMappingCandidateValidator(preparation=preparation)
+        final_validation = await complete_validator.validate(candidate)
+        if final_validation.issues:
+            raise InvalidRequestError("The merged Mapping candidate is invalid.")
+        complete_validator.parse_validated(candidate)
         outcomes.append(target_outcome)
         target_sequence = 4 + len(batch_plans)
         await self._append_detailed_event(
@@ -568,7 +585,7 @@ class DatabaseMappingExecutor:
             current=1,
             total=1,
         )
-        return target_outcome.candidate, tuple(outcomes), target_sequence + 1
+        return candidate, tuple(outcomes), target_sequence + 1
 
     async def _append_detailed_event(
         self,

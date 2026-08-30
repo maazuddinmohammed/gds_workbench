@@ -5,9 +5,13 @@ import { useMutation, useQuery } from "@tanstack/react-query";
 import type { ModelDetail } from "../models/api";
 import type { CreateWorkflowRunCommand } from "./api";
 import {
+  findAgentExecutionProfile,
+  listCompatibleExecutionModes,
   loadAllBronzeScope,
   loadAllDimensionalScope,
-  resolveDefaultAgent,
+  reasoningEffortDisplayName,
+  resolveAgentProfileSelection,
+  WORKFLOW_EXECUTION_MODE_NAMES,
   workflowCreationQueryKeys,
   type WorkflowCreationApi,
 } from "./api";
@@ -84,7 +88,7 @@ export function WorkflowRunDialog({
     defaultValues: {
       scopeMode: "all" as "all" | "selected",
       selectedObjectIds: [] as number[],
-      executionMode: "one_shot" as "one_shot" | "tool_assisted" | "detailed_coverage",
+      executionMode: "tool_assisted" as "one_shot" | "tool_assisted" | "detailed_coverage",
       requestedBatchId: "",
       sdkCode: model.default_agent_sdk_code ?? "",
       providerCode: model.default_agent_provider_code ?? "",
@@ -126,6 +130,7 @@ export function WorkflowRunDialog({
   });
   const scopeMode = useStore(form.store, (state) => state.values.scopeMode);
   const selectedObjectIds = useStore(form.store, (state) => state.values.selectedObjectIds);
+  const executionMode = useStore(form.store, (state) => state.values.executionMode);
   const requestedBatchId = useStore(form.store, (state) => state.values.requestedBatchId);
   const sdkCode = useStore(form.store, (state) => state.values.sdkCode);
   const providerCode = useStore(form.store, (state) => state.values.providerCode);
@@ -183,54 +188,94 @@ export function WorkflowRunDialog({
       onClose();
     },
   });
-  const compatibleProviders = capabilitiesQuery.data?.providers.filter((provider) => (
-    capabilitiesQuery.data.sdks.find((sdk) => sdk.code === sdkCode)
-      ?.provider_codes.includes(provider.code)
+  const capabilities = capabilitiesQuery.data;
+  const compatibleSdks = capabilities?.sdks.filter((sdk) => (
+    capabilities.models.some((candidate) => (
+      sdk.provider_codes.includes(candidate.provider_code)
+      && candidate.execution_profiles.some((profile) => profile.sdk_code === sdk.code)
+    ))
   )) ?? [];
-  const compatibleModels = capabilitiesQuery.data?.models.filter((candidate) => (
-    candidate.provider_code === providerCode && candidate.sdk_codes.includes(sdkCode)
+  const compatibleProviders = capabilities?.providers.filter((provider) => (
+    capabilities.sdks.find((sdk) => sdk.code === sdkCode)
+      ?.provider_codes.includes(provider.code) === true
+    && capabilities.models.some((candidate) => (
+      candidate.provider_code === provider.code
+      && candidate.execution_profiles.some((profile) => profile.sdk_code === sdkCode)
+    ))
+  )) ?? [];
+  const compatibleExecutionModes = capabilities
+    ? listCompatibleExecutionModes(capabilities, sdkCode, providerCode)
+    : [];
+  const compatibleModels = capabilities?.models.filter((candidate) => (
+    candidate.provider_code === providerCode
+    && findAgentExecutionProfile(candidate, sdkCode, executionMode) !== undefined
   )) ?? [];
   const selectedModel = compatibleModels.find((candidate) => candidate.code === modelCode);
-  const compatibleReasoning = capabilitiesQuery.data?.reasoning_efforts.filter((effort) => (
-    selectedModel?.reasoning_effort_codes.includes(effort.code)
+  const selectedProfile = selectedModel
+    ? findAgentExecutionProfile(selectedModel, sdkCode, executionMode)
+    : undefined;
+  const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
+    selectedProfile?.reasoning_effort_codes.includes(effort.code)
   )) ?? [];
   const parsedMaxTurns = Number(maxTurns);
   const parsedRetries = Number(validationRetryCount);
-  const agentSelectionValid = capabilitiesQuery.data !== undefined
-    && capabilitiesQuery.data.sdks.some((sdk) => sdk.code === sdkCode)
+  const agentSelectionValid = capabilities !== undefined
+    && compatibleSdks.some((sdk) => sdk.code === sdkCode)
     && compatibleProviders.some((provider) => provider.code === providerCode)
+    && compatibleExecutionModes.includes(executionMode)
     && selectedModel !== undefined
     && compatibleReasoning.some((effort) => effort.code === reasoningEffortCode)
     && Number.isInteger(parsedMaxTurns)
-    && parsedMaxTurns >= capabilitiesQuery.data.max_turns.minimum
-    && parsedMaxTurns <= capabilitiesQuery.data.max_turns.maximum
+    && parsedMaxTurns >= capabilities.max_turns.minimum
+    && parsedMaxTurns <= capabilities.max_turns.maximum
     && Number.isInteger(parsedRetries)
-    && parsedRetries >= capabilitiesQuery.data.validation_retries.minimum
-    && parsedRetries <= capabilitiesQuery.data.validation_retries.maximum;
+    && parsedRetries >= capabilities.validation_retries.minimum
+    && parsedRetries <= capabilities.validation_retries.maximum;
 
   useEffect(() => closeButton.current?.focus(), []);
   useEffect(() => {
-    if (!capabilitiesQuery.data || kind !== "inference") return;
-    const resolved = resolveDefaultAgent(capabilitiesQuery.data, {
-      sdkCode: model.default_agent_sdk_code,
-      providerCode: model.default_agent_provider_code,
-      modelCode: model.default_agent_model_code,
-      reasoningEffortCode: model.default_reasoning_effort_code,
-      maxTurns: model.default_max_turns,
-      validationRetryCount: model.default_validation_retry_count,
+    if (!capabilities || kind !== "inference") return;
+    const resolved = resolveAgentProfileSelection(capabilities, executionMode, {
+      sdkCode,
+      providerCode,
+      modelCode,
+      reasoningEffortCode,
     });
     if (!resolved) return;
-    if (!form.state.values.sdkCode) form.setFieldValue("sdkCode", resolved.sdk_code);
-    if (!form.state.values.providerCode) form.setFieldValue("providerCode", resolved.provider_code);
-    if (!form.state.values.modelCode) form.setFieldValue("modelCode", resolved.model_code);
-    if (!form.state.values.reasoningEffortCode) {
-      form.setFieldValue("reasoningEffortCode", resolved.reasoning_effort_code);
+    if (executionMode !== resolved.executionMode) {
+      form.setFieldValue("executionMode", resolved.executionMode);
     }
-    if (!form.state.values.maxTurns) form.setFieldValue("maxTurns", String(resolved.max_turns));
-    if (!form.state.values.validationRetryCount) {
-      form.setFieldValue("validationRetryCount", String(resolved.validation_retry_count));
+    if (sdkCode !== resolved.sdkCode) form.setFieldValue("sdkCode", resolved.sdkCode);
+    if (providerCode !== resolved.providerCode) {
+      form.setFieldValue("providerCode", resolved.providerCode);
     }
-  }, [capabilitiesQuery.data, form, kind, model]);
+    if (modelCode !== resolved.modelCode) form.setFieldValue("modelCode", resolved.modelCode);
+    if (reasoningEffortCode !== resolved.reasoningEffortCode) {
+      form.setFieldValue("reasoningEffortCode", resolved.reasoningEffortCode);
+    }
+    if (!maxTurns) {
+      form.setFieldValue("maxTurns", String(model.default_max_turns ?? capabilities.max_turns.default));
+    }
+    if (!validationRetryCount) {
+      form.setFieldValue(
+        "validationRetryCount",
+        String(model.default_validation_retry_count ?? capabilities.validation_retries.default),
+      );
+    }
+  }, [
+    capabilities,
+    executionMode,
+    form,
+    kind,
+    maxTurns,
+    model.default_max_turns,
+    model.default_validation_retry_count,
+    modelCode,
+    providerCode,
+    reasoningEffortCode,
+    sdkCode,
+    validationRetryCount,
+  ]);
   const title = workflow === "analysis"
     ? `Configure Analysis ${kind}`
     : `Configure ${authoringWorkflowName} run`;
@@ -282,22 +327,14 @@ export function WorkflowRunDialog({
               </header>
               <div className="agent-run-grid">
                 <form.Field name="executionMode">
-                  {(field) => workflow === "analysis" ? (
-                    <label>
-                      <span>Execution mode</span>
-                      <select aria-label="Execution mode" value="one_shot" disabled>
-                        <option value="one_shot">One shot</option>
-                      </select>
-                    </label>
-                  ) : (
+                  {(field) => (
                     <SelectField
                       label="Execution mode"
                       value={field.state.value}
-                      options={[
-                        ["one_shot", "One shot"],
-                        ["tool_assisted", "Tool assisted"],
-                        ["detailed_coverage", "Detailed coverage"],
-                      ]}
+                      options={compatibleExecutionModes.map((mode) => [
+                        mode,
+                        WORKFLOW_EXECUTION_MODE_NAMES[mode],
+                      ])}
                       onBlur={field.handleBlur}
                       onChange={(value) => field.handleChange(value as typeof field.state.value)}
                     />
@@ -308,7 +345,7 @@ export function WorkflowRunDialog({
                     <SelectField
                       label="Agent SDK"
                       value={field.state.value}
-                      options={capabilitiesQuery.data?.sdks.map((item) => [item.code, item.name]) ?? []}
+                      options={compatibleSdks.map((item) => [item.code, item.name])}
                       onBlur={field.handleBlur}
                       onChange={field.handleChange}
                     />
@@ -341,7 +378,10 @@ export function WorkflowRunDialog({
                     <SelectField
                       label="Reasoning effort"
                       value={field.state.value}
-                      options={compatibleReasoning.map((item) => [item.code, item.name])}
+                      options={compatibleReasoning.map((item) => [
+                        item.code,
+                        reasoningEffortDisplayName(item),
+                      ])}
                       onBlur={field.handleBlur}
                       onChange={field.handleChange}
                     />

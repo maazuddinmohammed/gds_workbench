@@ -31,19 +31,47 @@ export interface AgentRunSelection {
 }
 
 export interface AgentCapabilities {
-  schema_version: "1.0";
+  schema_version: "3.0";
   sdks: { code: string; name: string; provider_codes: string[] }[];
   providers: { code: string; name: string }[];
-  models: {
-    code: string;
-    name: string;
-    provider_code: string;
-    sdk_codes: string[];
-    reasoning_effort_codes: string[];
-  }[];
+  models: AgentModelCapability[];
   reasoning_efforts: { code: string; name: string }[];
   max_turns: { minimum: number; default: number; maximum: number };
   validation_retries: { minimum: number; default: number; maximum: number };
+}
+
+export interface AgentModelExecutionProfile {
+  sdk_code: string;
+  execution_mode: WorkflowExecutionMode;
+  reasoning_effort_codes: string[];
+}
+
+export interface AgentModelCapability {
+  code: string;
+  name: string;
+  provider_code: string;
+  deployment_name: string;
+  execution_profiles: AgentModelExecutionProfile[];
+}
+
+export const WORKFLOW_EXECUTION_MODES: readonly WorkflowExecutionMode[] = [
+  "one_shot",
+  "tool_assisted",
+  "detailed_coverage",
+];
+
+export const WORKFLOW_EXECUTION_MODE_NAMES: Record<WorkflowExecutionMode, string> = {
+  one_shot: "One shot",
+  tool_assisted: "Tool assisted",
+  detailed_coverage: "Detailed coverage",
+};
+
+export function reasoningEffortDisplayName(
+  effort: AgentCapabilities["reasoning_efforts"][number],
+): string {
+  if (effort.code === "default") return "Provider default (omit setting)";
+  if (effort.code === "none") return "None (explicitly disable reasoning)";
+  return effort.name;
 }
 
 export interface CreateWorkflowRunCommand {
@@ -243,6 +271,7 @@ export interface WorkflowsApi {
     tenantId: number,
     modelId: number,
     workflowRunId: number,
+    executionMode: WorkflowExecutionMode,
     expectedModelRevision: number,
   ) => Promise<WorkflowRunStart>;
   executeAnalysisValidationRun: (
@@ -371,13 +400,17 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
       tenantId,
       modelId,
       workflowRunId,
+      executionMode,
       expectedModelRevision,
     ) => request<WorkflowRunStart>(
       `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/inference-runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+        body: JSON.stringify({
+          execution_mode: executionMode,
+          expected_model_revision: expectedModelRevision,
+        }),
       },
     ),
     executeAnalysisValidationRun: (
@@ -609,6 +642,7 @@ export async function loadAllDimensionalScope<TScope extends WorkflowScopeObject
 
 export function resolveDefaultAgent(
   capabilities: AgentCapabilities,
+  effectiveExecutionMode: WorkflowExecutionMode,
   defaults: {
     sdkCode: string | null;
     providerCode: string | null;
@@ -618,23 +652,144 @@ export function resolveDefaultAgent(
     validationRetryCount: number | null;
   },
 ): CreateWorkflowRunCommand["agent"] {
-  const sdkCode = defaults.sdkCode ?? capabilities.sdks[0]?.code;
-  const providerCode = defaults.providerCode ?? capabilities.providers[0]?.code;
-  const compatibleModel = capabilities.models.find((item) => (
-    item.code === defaults.modelCode
-    || (item.provider_code === providerCode && item.sdk_codes.includes(sdkCode ?? ""))
+  for (const sdk of preferCode(capabilities.sdks, defaults.sdkCode)) {
+    const providers = preferCode(capabilities.providers, defaults.providerCode)
+      .filter((provider) => sdk.provider_codes.includes(provider.code));
+    for (const provider of providers) {
+      const models = preferCode(capabilities.models, defaults.modelCode)
+        .filter((model) => model.provider_code === provider.code);
+      for (const model of models) {
+        const profile = findAgentExecutionProfile(
+          model,
+          sdk.code,
+          effectiveExecutionMode,
+        );
+        if (!profile) continue;
+        const reasoningEffortCode = profile.reasoning_effort_codes.includes(
+          defaults.reasoningEffortCode ?? "",
+        )
+          ? defaults.reasoningEffortCode
+          : profile.reasoning_effort_codes[0];
+        if (!reasoningEffortCode) continue;
+        return {
+          sdk_code: sdk.code,
+          provider_code: provider.code,
+          model_code: model.code,
+          reasoning_effort_code: reasoningEffortCode,
+          max_turns: defaults.maxTurns ?? capabilities.max_turns.default,
+          validation_retry_count: defaults.validationRetryCount
+            ?? capabilities.validation_retries.default,
+        };
+      }
+    }
+  }
+  return null;
+}
+
+export function listCompatibleExecutionModes(
+  capabilities: AgentCapabilities,
+  sdkCode: string,
+  providerCode: string,
+): WorkflowExecutionMode[] {
+  const sdk = capabilities.sdks.find((item) => item.code === sdkCode);
+  if (!sdk?.provider_codes.includes(providerCode)) return [];
+  const available = new Set(capabilities.models
+    .filter((model) => model.provider_code === providerCode)
+    .flatMap((model) => model.execution_profiles
+      .filter((profile) => profile.sdk_code === sdkCode)
+      .map((profile) => profile.execution_mode)));
+  return WORKFLOW_EXECUTION_MODES.filter((mode) => available.has(mode));
+}
+
+export function resolveAgentProfileSelection(
+  capabilities: AgentCapabilities,
+  preferredExecutionMode: WorkflowExecutionMode,
+  selection: {
+    sdkCode: string | null;
+    providerCode: string | null;
+    modelCode: string | null;
+    reasoningEffortCode: string | null;
+  },
+): {
+  executionMode: WorkflowExecutionMode;
+  sdkCode: string;
+  providerCode: string;
+  modelCode: string;
+  reasoningEffortCode: string;
+} | null {
+  for (const sdk of preferCode(capabilities.sdks, selection.sdkCode)) {
+    const providers = preferCode(capabilities.providers, selection.providerCode)
+      .filter((provider) => (
+        sdk.provider_codes.includes(provider.code)
+        && capabilities.models.some((model) => (
+          model.provider_code === provider.code
+          && model.execution_profiles.some((profile) => profile.sdk_code === sdk.code)
+        ))
+      ));
+    for (const provider of providers) {
+      const compatibleModes = listCompatibleExecutionModes(
+        capabilities,
+        sdk.code,
+        provider.code,
+      );
+      const modes = preferExecutionMode(compatibleModes, preferredExecutionMode);
+      for (const executionMode of modes) {
+        const models = preferCode(capabilities.models, selection.modelCode)
+          .filter((model) => (
+            model.provider_code === provider.code
+            && findAgentExecutionProfile(model, sdk.code, executionMode) !== undefined
+          ));
+        for (const model of models) {
+          const profile = findAgentExecutionProfile(model, sdk.code, executionMode);
+          const reasoningEfforts = profile?.reasoning_effort_codes.filter((code) => (
+            capabilities.reasoning_efforts.some((effort) => effort.code === code)
+          )) ?? [];
+          const reasoningEffortCode = reasoningEfforts.includes(
+            selection.reasoningEffortCode ?? "",
+          )
+            ? selection.reasoningEffortCode
+            : reasoningEfforts[0];
+          if (!reasoningEffortCode) continue;
+          return {
+            executionMode,
+            sdkCode: sdk.code,
+            providerCode: provider.code,
+            modelCode: model.code,
+            reasoningEffortCode,
+          };
+        }
+      }
+    }
+  }
+  return null;
+}
+
+export function findAgentExecutionProfile(
+  model: AgentModelCapability,
+  sdkCode: string,
+  executionMode: WorkflowExecutionMode,
+): AgentModelExecutionProfile | undefined {
+  return model.execution_profiles.find((profile) => (
+    profile.sdk_code === sdkCode && profile.execution_mode === executionMode
   ));
-  const modelCode = defaults.modelCode ?? compatibleModel?.code;
-  const reasoningEffortCode = defaults.reasoningEffortCode
-    ?? compatibleModel?.reasoning_effort_codes[0];
-  if (!sdkCode || !providerCode || !modelCode || !reasoningEffortCode) return null;
-  return {
-    sdk_code: sdkCode,
-    provider_code: providerCode,
-    model_code: modelCode,
-    reasoning_effort_code: reasoningEffortCode,
-    max_turns: defaults.maxTurns ?? capabilities.max_turns.default,
-    validation_retry_count: defaults.validationRetryCount
-      ?? capabilities.validation_retries.default,
-  };
+}
+
+function preferCode<T extends { code: string }>(items: T[], code: string | null): T[] {
+  const preferred = items.find((item) => item.code === code);
+  return preferred
+    ? [preferred, ...items.filter((item) => item.code !== preferred.code)]
+    : items;
+}
+
+function preferExecutionMode(
+  modes: WorkflowExecutionMode[],
+  preferred: WorkflowExecutionMode,
+): WorkflowExecutionMode[] {
+  if (modes.includes(preferred)) {
+    return [preferred, ...modes.filter((mode) => mode !== preferred)];
+  }
+  if (modes.includes("tool_assisted")) {
+    return ["tool_assisted", ...modes.filter((mode) => mode !== "tool_assisted")];
+  }
+  return modes;
 }

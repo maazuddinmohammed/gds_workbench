@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from collections.abc import Sequence
+from hashlib import sha256
 from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -21,7 +22,7 @@ from gds_workbench_api.integrations.agents.fake_shared import (
     selected_source_attributes,
 )
 
-_DIMENSIONAL_CONTRIBUTION_REFERENCE = re.compile(r"^object_[0-9]{5}$")
+_DIMENSIONAL_CONTRIBUTION_REFERENCE = re.compile(r"^object_([0-9]{5})(?:_batch_([0-9]{5}))?$")
 _DIMENSIONAL_RELATIONSHIP_SIGNAL_REFERENCE = re.compile(r"^relationship_signal_[0-9]{5}$")
 _DIMENSIONAL_VALIDATION_PACKAGE_REFERENCE = re.compile(r"^validation_[0-9]{5}$")
 _DIMENSIONAL_VALIDATION_FINDING_REFERENCE = re.compile(r"^validation_[0-9]{5}\.finding_[0-9]{5}$")
@@ -104,6 +105,8 @@ def detailed_dimensional_candidate(request: AgentExecutionRequest) -> JsonValue:
     if request.stage == "entity_detail_builder":
         return _fake_dimensional_entity_detail(original)
     if request.stage == "whole_model_reconciliation":
+        if "review_manifest" in original:
+            return _fake_dimensional_reconciliation_receipt(original)
         return _fake_dimensional_whole_model_reconciliation(original)
     if request.stage == "validator_worker":
         return _fake_dimensional_validation_worker(original)
@@ -129,7 +132,10 @@ def _fake_dimensional_topology_contribution(context: dict[str, JsonValue]) -> Js
         selected,
         source_object=source_object,
     )
-    position = int(contribution_ref.removeprefix("object_"))
+    match = _DIMENSIONAL_CONTRIBUTION_REFERENCE.fullmatch(contribution_ref)
+    if match is None:
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    position = int(match.group(1))
     return cast(
         JsonValue,
         {
@@ -487,7 +493,7 @@ def _fake_dimensional_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
             "attributes": [
                 _fake_dimensional_attribute_record(
                     entity_name=entity_name,
-                    attribute_name=f"Dimensional Attribute {position}",
+                    attribute_name=_fake_dimensional_attribute_name(source_attribute),
                     ordinal=position,
                     sources=[
                         _fake_dimensional_attribute_source(
@@ -498,6 +504,85 @@ def _fake_dimensional_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
                 )
                 for position, source_attribute in enumerate(source_attributes, start=1)
             ],
+        },
+    )
+
+
+def _fake_dimensional_reconciliation_receipt(
+    context: dict[str, JsonValue],
+) -> JsonValue:
+    partition_ref = context.get("partition_ref")
+    manifest = context.get("review_manifest")
+    signals = context.get("relationship_signals")
+    if (
+        not isinstance(partition_ref, str)
+        or re.fullmatch(r"reconciliation_[0-9]{5}", partition_ref) is None
+        or not isinstance(manifest, dict)
+        or not isinstance(signals, list)
+        or len(signals) > 1_000
+    ):
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    reviewed_refs: list[JsonValue] = []
+    relationships: list[JsonValue] = []
+    relationship_keys: set[tuple[str, str, str, str]] = set()
+    for signal in signals:
+        if not isinstance(signal, dict):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        reference = signal.get("signal_ref")
+        endpoints = (
+            signal.get("from_dimensional_entity_name"),
+            signal.get("from_dimensional_attribute_name"),
+            signal.get("to_dimensional_entity_name"),
+            signal.get("to_dimensional_attribute_name"),
+        )
+        if (
+            not isinstance(reference, str)
+            or _DIMENSIONAL_RELATIONSHIP_SIGNAL_REFERENCE.fullmatch(reference) is None
+            or reference in reviewed_refs
+            or any(not isinstance(item, str) or not item.strip() for item in endpoints)
+        ):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        reviewed_refs.append(reference)
+        typed_endpoints = cast(tuple[str, str, str, str], endpoints)
+        key = tuple(item.strip().casefold() for item in typed_endpoints)
+        if key in relationship_keys:
+            continue
+        relationship_keys.add(cast(tuple[str, str, str, str], key))
+        from_entity, from_attribute, to_entity, to_attribute = typed_endpoints
+        relationships.append(
+            {
+                "dimensional_relationship_name": (
+                    f"Dimensional Relationship {len(relationships) + 1}"
+                ),
+                "dimensional_relationship_definition": (
+                    "A locally generated Dimensional business relationship."
+                ),
+                "from_dimensional_entity_name": from_entity,
+                "from_dimensional_attribute_name": from_attribute,
+                "to_dimensional_entity_name": to_entity,
+                "to_dimensional_attribute_name": to_attribute,
+                "dimensional_relationship_kind": "reference",
+                "dimensional_relationship_cardinality": "many_to_one",
+                "dimensional_relationship_is_optional": True,
+                "dimensional_relationship_role_name": None,
+                "dimensional_relationship_confidence": "medium",
+                "dimensional_relationship_basis": (
+                    "Canonical Attribute evidence supports this relationship."
+                ),
+                "dimensional_relationship_cardinality_basis": (
+                    "The local fake requires review of relationship cardinality."
+                ),
+                "dimensional_relationship_status": "needs_review",
+                "dimensional_relationship_is_locked": False,
+            }
+        )
+    return cast(
+        JsonValue,
+        {
+            "partition_ref": partition_ref,
+            "manifest": manifest,
+            "reviewed_relationship_signal_refs": reviewed_refs,
+            "relationships": relationships,
         },
     )
 
@@ -970,6 +1055,20 @@ def _fake_dimensional_attribute_record(
         "dimensional_attribute_is_locked": False,
         "sources": list(sources),
     }
+
+
+def _fake_dimensional_attribute_name(
+    source_attribute: dict[str, JsonValue],
+) -> str:
+    object_name = source_attribute.get("object_name")
+    attribute_name = source_attribute.get("attribute_name")
+    if not isinstance(object_name, str) or not isinstance(attribute_name, str):
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    value = f"{object_name} {attribute_name}"
+    if len(value) <= 255:
+        return value
+    digest = sha256(value.encode("utf-8")).hexdigest()[:12]
+    return f"{value[:241]} {digest}"
 
 
 def _fake_dimensional_entity_sources(

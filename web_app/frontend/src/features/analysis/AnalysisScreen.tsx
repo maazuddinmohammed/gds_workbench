@@ -197,10 +197,11 @@ export function AnalysisScreen({
           tenantId={tenantId}
           model={model}
           kind={runDialog}
-          executeCreated={(workflowRunId) => api.executeAnalysisInferenceRun(
+          executeCreated={(workflowRunId, executionMode) => api.executeAnalysisInferenceRun(
             tenantId,
             model.model_id,
             workflowRunId,
+            executionMode,
             model.model_revision,
           ).then(() => undefined)}
           executeValidationCreated={(workflowRunId) => api.executeAnalysisValidationRun(

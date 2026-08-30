@@ -97,12 +97,12 @@ BEGIN
             (
                 'analysis', 'detailed_coverage', 'candidate_finder',
                 $objective$Find evidence-backed endpoint pairs for the assigned Analysis coverage slice.$objective$,
-                $method$Account for every assigned item through the schema-defined coverage fields. Preserve exact physical keys and keep every endpoint inside the frozen slice. A candidate requires at least one named signal from names, types, profiles, Assertions, or existing Analysis context. Do not decide final direction, kind, or confidence here, and emit no candidate for an item with no concrete signal.$method$
+                $method$Return coverage.slice_ref exactly as assigned. Use candidates_found if and only if candidates is nonempty; otherwise use no_candidate or needs_review with an empty list. Give every candidate a unique slice-prefixed candidate_ref, two distinct exact physical endpoints from the assigned sides, and at least one named signal from names, types, profiles, Assertions, or applied Analysis. Do not decide final direction, kind, or confidence here.$method$
             ),
             (
                 'analysis', 'detailed_coverage', 'relationship_resolver',
                 $objective$Resolve every supplied endpoint candidate into a normalized Analysis decision.$objective$,
-                $method$Cover each candidate reference exactly once. Preserve endpoint identities and evaluate direction, kind, evidence basis, confidence, duplicates, and conflicts against supplied evidence and applied Analysis Results. Propose only supported relationships; otherwise use the schema-defined review or no-relationship disposition. Never infer composite support that the candidate evidence does not contain.$method$
+                $method$Return each supplied candidate_ref exactly once. Preserve its two endpoint identities while evaluating direction, kind, evidence basis, confidence, duplicates, and conflicts against supplied evidence and applied Analysis Results. relationship requires exactly one supported relationship over those endpoints; no_relationship and needs_review require relationship to be null. Never infer composite support absent from the candidate evidence.$method$
             ),
             (
                 'analysis', 'detailed_coverage', 'whole_slice_reconciler',
@@ -162,22 +162,22 @@ BEGIN
             (
                 'logical', 'detailed_coverage', 'topology_builder',
                 $objective$Classify one physical Object and, when represented, partition its Attributes into Logical topology proposals.$objective$,
-                $method$Preserve the contribution and Object identities. Choose represented, not_logical, or needs_review. Represented requires proposals that cover every assigned source Attribute exactly once; other dispositions require no proposals. Use unique stable local references and evidence-based entity names, types, grains, and submodel candidates. Never import an Attribute outside the fixed Object.$method$
+                $method$Treat batch_manifest and selected_object.attributes as this call's exact coverage boundary. Preserve contribution_ref and source_object. represented requires unique proposals that cover every supplied source Attribute exactly once; not_logical and needs_review require no proposals. Use evidence-based entity names, types, grains, and submodel candidates. Never import an Attribute from another batch or Object.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'topology_reconciler',
                 $objective$Partition Logical topology proposals into canonical entities, submodels, or explicit discards.$objective$,
-                $method$Assign every proposal reference exactly once to one canonical entity or the discarded list. Merge only compatible meanings and grains. Use unique canonical entity and submodel references and names; each entity must reference exactly its evidence-backed candidate submodels, and every returned submodel must be referenced. Preserve legitimate many-to-many topology and never invent a bridge for style alone.$method$
+                $method$Treat batch_manifest and contributions as this call's exact partition. Assign every supplied proposal reference exactly once to one canonical entity or the discarded list. Merge only compatible meanings and grains. Use unique canonical entity and submodel references and names; each entity must reference exactly its evidence-backed candidate submodels, and every returned submodel must be referenced. Do not recreate proposals from another partition.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'entity_detail_builder',
-                $objective$Build one complete Logical entity and its Attributes from canonical topology.$objective$,
-                $method$Preserve the canonical reference and entity name. Return exactly the required submodel memberships and source Objects, and map every covered source Attribute exactly once with no outside source. Attribute names and ordinal positions must be unique; definitions, data types, keys, nullability, grains, and mappings must agree. Apply naming guidance and author no locked or policy-projected fields.$method$
+                $objective$Build one exact bounded Logical entity-detail partition from canonical topology.$objective$,
+                $method$Treat batch_manifest, entity, contributions, and selected_objects as this call's exact partition. Preserve canonical_entity_ref and the entity name and shape. Return exactly its required submodel memberships and source Objects, and map every supplied source Attribute exactly once with no outside source. Keep Attribute names and ordinals unique and definitions, types, keys, nullability, grain, and mappings coherent. Do not recreate omitted batches or author locked or policy-projected fields.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'whole_model_reconciliation',
-                $objective$Reconcile Logical topology, entity details, relationship signals, and applied records into one coherent candidate.$objective$,
-                $method$Review every required submodel, entity, relationship-signal, and applied-record reference exactly once. Include all required topology and detail records with exact source mappings. Add a relationship only when a supplied signal and entity grains support it, and connect only returned endpoints. Resolve duplicate identities and contradictory grains, retain unaffected applied records, and correct every applicable outer-validation finding.$method$
+                $objective$Reconcile one bounded Logical model partition without losing authoritative source coverage.$objective$,
+                $method$Treat batch_manifest as the exact review boundary. Return every required submodel, entity, relationship-signal, and applied-record reference exactly once in its reviewed_* field. Include only the required topology and detail records, preserving exact physical Object and Attribute mappings and required submodel memberships. Add relationships only from supplied signals over returned endpoints. Correct applicable outer findings, retain required applied records, and do not recreate omitted partitions.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'validator_worker',
@@ -202,7 +202,7 @@ BEGIN
             (
                 'dimensional', 'detailed_coverage', 'topology_builder',
                 $objective$Classify one eligible Silver Object and, when represented, partition its Attributes into Dimensional topology proposals.$objective$,
-                $method$Preserve the contribution and Object identities. Choose represented, not_dimensional, or needs_review. Represented requires proposals covering every assigned source Attribute exactly once; other dispositions require no proposals. Use unique stable local references, evidence-based fact, dimension, or bridge roles, fact type only for facts, grain for facts and bridges, justified submodel candidates, and no outside source.$method$
+                $method$Treat batch and selected_object.attributes as this call's exact coverage boundary while using authoritative_selection_manifest only to verify the wider frozen selection. Preserve contribution_ref and source_object. represented requires unique proposals covering every supplied source Attribute exactly once; not_dimensional and needs_review require no proposals. Use evidence-backed fact, dimension, or bridge roles, fact type only for facts, grain for facts and bridges, justified submodels, and no outside source.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'topology_reconciler',
@@ -211,13 +211,13 @@ BEGIN
             ),
             (
                 'dimensional', 'detailed_coverage', 'entity_detail_builder',
-                $objective$Build one complete Dimensional entity and its Attributes from canonical topology.$objective$,
-                $method$Preserve the canonical reference, entity name, role, fact type, grain, submodels, and exact Silver sources. Map every covered source Attribute exactly once with no outside source. Use unique names and ordinals; keep measure additivity, aggregation and basis coherent, set change behavior only where supported, and align keys and nullability with the grain. Apply naming guidance and author no projected surrogate, foreign-key, audit, or type-2 implementation columns.$method$
+                $objective$Build one exact bounded Dimensional entity-detail partition from canonical topology.$objective$,
+                $method$Treat contribution_manifest, topology, entity, and contributions as this call's exact partition. Preserve canonical_entity_ref, entity name, role, fact type, grain, submodels, and exact Silver sources. Map every supplied source Attribute exactly once with no outside source. Keep names and ordinals unique; align measures, aggregation, change behavior, keys, and nullability with grain. Do not recreate omitted partitions or author projected technical, audit, or type-2 fields.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'whole_model_reconciliation',
-                $objective$Reconcile Dimensional topology, entity details, relationship signals, and applied records into one coherent candidate.$objective$,
-                $method$Review every required submodel, entity, relationship-signal, and applied-record reference exactly once. Include all required topology and detail records without changing their entity shape or exact Silver sources. Add relationships only when supplied signals and grains support them, with returned endpoints. Resolve duplicate dimensions and incompatible grains, retain unaffected applied records, and correct every applicable outer-validation finding.$method$
+                $objective$Review one bounded Dimensional relationship-signal partition against the frozen draft manifest and return its exact receipt.$objective$,
+                $method$Return partition_ref unchanged; copy context.original_context.review_manifest unchanged into manifest; and return every supplied relationship signal reference once, in order, in reviewed_relationship_signal_refs. Add only evidence-supported, unlocked relationships whose exact endpoints occur in the supplied signals; return an empty relationships list when no relationship is justified. Do not return or recreate topology, submodels, entities, Attributes, applied records, or the full draft. Correct applicable outer-validation findings only within this receipt and never alter the manifest or coverage.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'validator_worker',
@@ -251,8 +251,8 @@ BEGIN
             ),
             (
                 'mapping', 'detailed_coverage', 'target_validator',
-                $objective$Return the validated draft Mapping candidate, correcting only concrete defects.$objective$,
-                $method$Start from context.original_context.draft_candidate and return one complete candidate, not findings. Verify immutable identities, package and manifest digests, batch count and order, exact target and existing-mapping coverage, transformation references, profile and template conformance, and Object-to-Attribute consistency. Preserve every semantically valid draft field; change only what a supplied defect requires. Never invent a mapping to hide missing coverage.$method$
+                $objective$Review the frozen Mapping draft manifest and return its exact receipt.$objective$,
+                $method$Read context.original_context.review_manifest. Check its schema version, header, package, draft, coverage-manifest, and batch candidate digests; chunk count and order; and exact target and existing-Mapping ID coverage and counts. Return that review_manifest unchanged as the complete response. Do not return or recreate the draft, mappings, transformations, findings, prose, or additional fields. If a required manifest field is missing or internally inconsistent, fail rather than invent or alter a value.$method$
             ),
             (
                 'code_generation', NULL, 'sql_generation',
@@ -315,7 +315,7 @@ BEGIN
             WHEN 'tool_assisted' THEN
                 'Use tools only for required evidence absent from the manifest. Tool access does not expand scope or authority.'
             WHEN 'detailed_coverage' THEN
-                'Perform only this detailed stage. Preserve upstream identities, satisfy its exact coverage contract, and leave downstream decisions to later stages.'
+                'Perform only this detailed stage. Preserve identities and satisfy the exact current partition and coverage contract. Leave omitted partitions and downstream decisions to their stages. Digest and projection markers bound evidence; use included semantics only and never invent omitted content.'
             ELSE
                 'Perform only this common agentic stage and preserve the frozen target coverage.'
         END;
@@ -341,7 +341,7 @@ BEGIN
         END IF;
 
         IF (
-            v_seed.model_workflow IN ('logical', 'dimensional')
+            v_seed.model_workflow = 'logical'
             AND v_seed.workflow_execution_mode = 'detailed_coverage'
             AND v_seed.workflow_stage_code = 'whole_model_reconciliation'
         ) OR (

@@ -4,11 +4,21 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Mapping
+from collections.abc import Collection, Mapping
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
+
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_workbench_api.capabilities import (
+    CODE_GENERATION_AGENT_EXECUTION_MODE,
+    AgentCapabilityRegistry,
+    AgentExecutionModeCode,
+    AgentRunSelection,
+    load_default_agent_capabilities,
+    select_agent_runtime_capabilities,
+)
 
 from .errors import NotebookConfigurationError
 
@@ -30,7 +40,13 @@ _AGENT_WORKFLOWS = {
     "mapping",
     "code_generation",
 }
-_CONFIGURABLE_MODE_WORKFLOWS = {"conceptual", "logical", "dimensional", "mapping"}
+_CONFIGURABLE_MODE_WORKFLOWS = {
+    "analysis_inference",
+    "conceptual",
+    "logical",
+    "dimensional",
+    "mapping",
+}
 
 
 @dataclass(frozen=True)
@@ -52,6 +68,19 @@ class NotebookWorkflowRequest:
     create_payload: dict[str, object]
 
 
+@dataclass(frozen=True)
+class _NotebookAgentCapabilities:
+    registry: AgentCapabilityRegistry
+    default_sdk: str
+    default_model: str
+    default_mode: str
+    default_reasoning_effort: str
+    sdk_codes: tuple[str, ...]
+    model_codes: tuple[str, ...]
+    mode_codes: tuple[str, ...]
+    reasoning_effort_codes: tuple[str, ...]
+
+
 _COMMON_WIDGETS = (
     WidgetSpec("TenantID", "", "Tenant ID"),
     WidgetSpec("ModelID", "", "Model ID"),
@@ -59,55 +88,36 @@ _COMMON_WIDGETS = (
     WidgetSpec("SelectedObjectIDsJSON", "[]", "Selected Object IDs (JSON array)"),
     WidgetSpec("IdempotencyKey", "", "Idempotency key (UUID; reuse on retry)"),
 )
-_AGENT_WIDGETS = (
-    WidgetSpec(
-        "AgentSDK",
-        "langchain_create_agent",
-        "Agent SDK",
-        ("langchain_create_agent", "openai_agents_sdk"),
-    ),
-    WidgetSpec(
-        "AgentProvider",
-        "databricks",
-        "Agent provider",
-        ("databricks",),
-    ),
-    WidgetSpec(
-        "AgentModel",
-        "databricks-primary",
-        "Agent model code",
-        ("databricks-primary",),
-    ),
-    WidgetSpec("ReasoningEffort", "medium", "Reasoning effort", ("low", "medium", "high")),
-    WidgetSpec("MaxTurns", "10", "Maximum agent turns"),
-    WidgetSpec("ValidationRetryCount", "2", "Validation retry count"),
-    WidgetSpec("PromptOverridesJSON", "{}", "Prompt overrides (Stage ID to Version ID JSON)"),
-)
-_MODE_WIDGET = WidgetSpec(
-    "ExecutionMode",
-    "one_shot",
-    "Execution mode",
-    ("one_shot", "tool_assisted", "detailed_coverage"),
-)
 
 
-def widget_specs(workflow: str) -> tuple[WidgetSpec, ...]:
+def widget_specs(
+    workflow: str,
+    *,
+    configured_model_codes: Collection[str] | None = None,
+) -> tuple[WidgetSpec, ...]:
     """Return the complete, stable widget contract for one notebook."""
     _validate_workflow(workflow)
+    agent_capabilities = (
+        _load_notebook_agent_capabilities(
+            workflow,
+            configured_model_codes=configured_model_codes,
+        )
+        if workflow in _AGENT_WORKFLOWS
+        else None
+    )
     specs = list(_COMMON_WIDGETS)
     if workflow in {"profiling", "analysis_inference", "analysis_validation"}:
         specs.append(WidgetSpec("RequestedBatchID", "", "Requested batch ID (optional)"))
-    if workflow == "analysis_inference":
+    if workflow in _CONFIGURABLE_MODE_WORKFLOWS:
+        assert agent_capabilities is not None
         specs.append(
             WidgetSpec(
                 "ExecutionMode",
-                "one_shot",
+                agent_capabilities.default_mode,
                 "Execution mode",
-                ("one_shot",),
+                agent_capabilities.mode_codes,
             )
         )
-    elif workflow in _CONFIGURABLE_MODE_WORKFLOWS:
-        specs.append(_MODE_WIDGET)
     if workflow == "mapping":
         specs.extend(
             (
@@ -159,13 +169,139 @@ def widget_specs(workflow: str) -> tuple[WidgetSpec, ...]:
             )
         )
     if workflow in _AGENT_WORKFLOWS:
-        specs.extend(_AGENT_WIDGETS)
+        assert agent_capabilities is not None
+        specs.extend(
+            (
+                WidgetSpec(
+                    "AgentSDK",
+                    agent_capabilities.default_sdk,
+                    "Agent SDK",
+                    agent_capabilities.sdk_codes,
+                ),
+                WidgetSpec(
+                    "AgentProvider",
+                    "databricks",
+                    "Agent provider",
+                    ("databricks",),
+                ),
+                WidgetSpec(
+                    "AgentModel",
+                    agent_capabilities.default_model,
+                    "Agent model code",
+                    agent_capabilities.model_codes,
+                ),
+                WidgetSpec(
+                    "ReasoningEffort",
+                    agent_capabilities.default_reasoning_effort,
+                    "Reasoning effort (`default` omits the setting)",
+                    agent_capabilities.reasoning_effort_codes,
+                ),
+                WidgetSpec(
+                    "MaxTurns",
+                    str(agent_capabilities.registry.max_turns.default),
+                    "Maximum agent turns",
+                ),
+                WidgetSpec(
+                    "ValidationRetryCount",
+                    str(agent_capabilities.registry.validation_retries.default),
+                    "Validation retry count",
+                ),
+                WidgetSpec(
+                    "PromptOverridesJSON",
+                    "{}",
+                    "Prompt overrides (Stage ID to Version ID JSON)",
+                ),
+            )
+        )
     return tuple(specs)
+
+
+def _load_notebook_agent_capabilities(
+    workflow: str,
+    *,
+    configured_model_codes: Collection[str] | None = None,
+) -> _NotebookAgentCapabilities:
+    complete_registry = load_default_agent_capabilities()
+    available_model_codes = (
+        None if configured_model_codes is None else frozenset(configured_model_codes)
+    )
+    configured_models = tuple(
+        (model.provider_code, model.code)
+        for model in complete_registry.models
+        if model.provider_code == "databricks"
+        and (available_model_codes is None or model.code in available_model_codes)
+    )
+    if not configured_models:
+        raise NotebookConfigurationError(
+            "The Agent registry has no Databricks model deployment for this notebook."
+        )
+    try:
+        registry = select_agent_runtime_capabilities(
+            complete_registry,
+            configured_models=configured_models,
+        )
+    except ValueError:
+        raise NotebookConfigurationError(
+            "The selected Databricks model deployment does not match the Agent registry."
+        ) from None
+    profiles = [
+        (model, profile)
+        for model in registry.models
+        for profile in model.execution_profiles
+        if workflow != "code_generation"
+        or profile.execution_mode == CODE_GENERATION_AGENT_EXECUTION_MODE
+    ]
+    if not profiles:
+        raise NotebookConfigurationError(
+            "The Databricks Agent registry has no compatible profile for this notebook."
+        )
+
+    default_model, default_profile = next(
+        (
+            item
+            for item in profiles
+            if workflow != "code_generation" and item[1].execution_mode == "tool_assisted"
+        ),
+        profiles[0],
+    )
+    sdk_codes = tuple(
+        sdk.code
+        for sdk in registry.sdks
+        if any(profile.sdk_code == sdk.code for _, profile in profiles)
+    )
+    model_codes = tuple(
+        model.code
+        for model in registry.models
+        if any(candidate.code == model.code for candidate, _ in profiles)
+    )
+    mode_codes = tuple(
+        mode
+        for mode in ("one_shot", "tool_assisted", "detailed_coverage")
+        if any(profile.execution_mode == mode for _, profile in profiles)
+    )
+    reasoning_effort_codes = tuple(
+        effort.code
+        for effort in registry.reasoning_efforts
+        if any(effort.code in profile.reasoning_effort_codes for _, profile in profiles)
+    )
+    return _NotebookAgentCapabilities(
+        registry=registry,
+        default_sdk=default_profile.sdk_code,
+        default_model=default_model.code,
+        default_mode=default_profile.execution_mode,
+        default_reasoning_effort=default_profile.reasoning_effort_codes[0],
+        sdk_codes=sdk_codes,
+        model_codes=model_codes,
+        mode_codes=mode_codes,
+        reasoning_effort_codes=reasoning_effort_codes,
+    )
 
 
 def build_notebook_request(
     workflow: str,
     values: Mapping[str, str],
+    *,
+    configured_model_codes: Collection[str] | None = None,
 ) -> NotebookWorkflowRequest:
     """Validate widgets locally and construct the backend-owned command shape."""
     _validate_workflow(workflow)
@@ -179,14 +315,21 @@ def build_notebook_request(
     analysis_operation = (
         workflow.removeprefix("analysis_") if workflow.startswith("analysis_") else None
     )
+    agent_capabilities = (
+        _load_notebook_agent_capabilities(
+            workflow,
+            configured_model_codes=configured_model_codes,
+        )
+        if workflow in _AGENT_WORKFLOWS
+        else None
+    )
     execution_mode: str | None = None
-    if workflow == "analysis_inference":
-        execution_mode = _choice(values, "ExecutionMode", {"one_shot"})
-    elif workflow in _CONFIGURABLE_MODE_WORKFLOWS:
+    if workflow in _CONFIGURABLE_MODE_WORKFLOWS:
+        assert agent_capabilities is not None
         execution_mode = _choice(
             values,
             "ExecutionMode",
-            {"one_shot", "tool_assisted", "detailed_coverage"},
+            set(agent_capabilities.mode_codes),
         )
 
     payload: dict[str, object] = {
@@ -264,24 +407,56 @@ def build_notebook_request(
         raise NotebookConfigurationError("SelectedObjectIDsJSON must contain at least one ID.")
 
     if workflow in _AGENT_WORKFLOWS:
-        payload["agent"] = {
-            "sdk_code": _choice(
+        assert agent_capabilities is not None
+        selection = AgentRunSelection(
+            sdk_code=_choice(
                 values,
                 "AgentSDK",
-                {"langchain_create_agent", "openai_agents_sdk"},
+                set(agent_capabilities.sdk_codes),
             ),
-            "provider_code": _choice(values, "AgentProvider", {"databricks"}),
-            "model_code": _choice(values, "AgentModel", {"databricks-primary"}),
-            "reasoning_effort_code": _choice(
+            provider_code=_choice(values, "AgentProvider", {"databricks"}),
+            model_code=_choice(
+                values,
+                "AgentModel",
+                set(agent_capabilities.model_codes),
+            ),
+            reasoning_effort_code=_choice(
                 values,
                 "ReasoningEffort",
-                {"low", "medium", "high"},
+                set(agent_capabilities.reasoning_effort_codes),
             ),
-            "max_turns": _bounded_int(values, "MaxTurns", minimum=1, maximum=50),
-            "validation_retry_count": _bounded_int(
-                values, "ValidationRetryCount", minimum=0, maximum=5
+            max_turns=_bounded_int(
+                values,
+                "MaxTurns",
+                minimum=agent_capabilities.registry.max_turns.minimum,
+                maximum=agent_capabilities.registry.max_turns.maximum,
             ),
-        }
+            validation_retry_count=_bounded_int(
+                values,
+                "ValidationRetryCount",
+                minimum=agent_capabilities.registry.validation_retries.minimum,
+                maximum=agent_capabilities.registry.validation_retries.maximum,
+            ),
+        )
+        effective_execution_mode = (
+            CODE_GENERATION_AGENT_EXECUTION_MODE
+            if workflow == "code_generation"
+            else execution_mode or "one_shot"
+        )
+        try:
+            agent_capabilities.registry.validate_selection(
+                selection,
+                execution_mode=cast(
+                    AgentExecutionModeCode,
+                    effective_execution_mode,
+                ),
+            )
+        except InvalidRequestError:
+            raise NotebookConfigurationError(
+                "The selected Agent SDK, model, execution mode, and reasoning effort "
+                "combination is unavailable."
+            ) from None
+        payload["agent"] = selection.model_dump(mode="python")
         payload["prompt_overrides"] = _prompt_overrides(values, "PromptOverridesJSON")
 
     return NotebookWorkflowRequest(
@@ -295,8 +470,15 @@ def build_notebook_request(
     )
 
 
-def create_workflow_widgets(workflow: str, *, dbutils: Any) -> None:
+def create_workflow_widgets(
+    workflow: str,
+    *,
+    dbutils: Any,
+    uploaded_root: Path | None = None,
+) -> None:
     """Create the visible widget bar for one workflow notebook."""
+    _validate_workflow(workflow)
+    del uploaded_root
     for spec in widget_specs(workflow):
         if spec.choices:
             dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)
@@ -311,17 +493,20 @@ def run_notebook(
     uploaded_root: Path | None = None,
 ) -> Any:
     """Read existing widgets and execute one independent imported Workflow."""
-    specs = widget_specs(workflow)
-    values = {spec.name: dbutils.widgets.get(spec.name) for spec in specs}
-    request = build_notebook_request(workflow, values)
-
     from .runtime import load_notebook_runtime_settings, locate_uploaded_root
     from .workflow_execution import execute_notebook_workflow
 
     root = uploaded_root or locate_uploaded_root(Path.cwd())
+    settings = load_notebook_runtime_settings(root)
+    specs = widget_specs(workflow)
+    values = {spec.name: dbutils.widgets.get(spec.name) for spec in specs}
+    request = build_notebook_request(
+        workflow,
+        values,
+    )
     result = execute_notebook_workflow(
         request,
-        settings=load_notebook_runtime_settings(root),
+        settings=settings,
     )
     print(json.dumps(result.as_dict(), ensure_ascii=False, separators=(",", ":"), sort_keys=True))
     return result

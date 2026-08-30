@@ -11,7 +11,7 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 
 from gds_workbench_api.capabilities import (
     load_default_agent_capabilities,
-    select_agent_provider_capabilities,
+    select_agent_runtime_capabilities,
 )
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.database import WebPostgresDatabase
@@ -140,10 +140,10 @@ def create_worker_runtime(
     agent_capabilities = (
         all_agent_capabilities
         if runtime_settings.agent_runtime.mode == "fake"
-        else select_agent_provider_capabilities(
+        else select_agent_runtime_capabilities(
             all_agent_capabilities,
-            provider_codes={
-                connection.provider_code
+            configured_models={
+                (connection.provider_code, connection.model_code)
                 for connection in runtime_settings.agent_runtime.connections
             },
         )

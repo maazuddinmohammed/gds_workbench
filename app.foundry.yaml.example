@@ -1,3 +1,6 @@
+# Foundry-enabled template selected by build_uploads.py --agent-provider microsoft_foundry.
+# Databricks models remain available from the shared JSON registry.
+# Keep credentials behind Databricks App secret resources; never paste them here.
 command:
   - uv
   - run
@@ -25,3 +28,7 @@ env:
     valueFrom: entra-tenant-id
   - name: GDS_WEB_DATABRICKS_ENVIRONMENT_CODE
     valueFrom: databricks-environment-code
+  - name: GDS_WEB_FOUNDRY_OPENAI_BASE_URL
+    valueFrom: foundry-openai-base-url
+  - name: GDS_WEB_FOUNDRY_API_KEY
+    valueFrom: foundry-api-key

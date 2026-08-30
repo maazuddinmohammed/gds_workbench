@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import hashlib
+import json
 from collections.abc import Mapping, Sequence
 from typing import cast
 
@@ -44,22 +45,13 @@ def fake_detailed_mapping_candidate(request: AgentExecutionRequest) -> JsonValue
             output_schema=request.output_schema,
         )
     if request.stage == "target_validator":
-        draft = mapping_dict(original.get("draft_candidate"))
-        if draft.get("schema_version") != "1.0":
+        review_manifest = original.get("review_manifest")
+        if not isinstance(review_manifest, dict):
             raise InvalidRequestError("The local fake agent context is invalid.")
-        header = mapping_dict(draft.get("header"))
-        batches = [
-            cast(JsonValue, mapping_dict(value))
-            for value in _mapping_list(draft.get("attribute_batches"))
-        ]
-        return cast(
-            JsonValue,
-            {
-                "schema_version": "1.0",
-                "header": header,
-                "attribute_batches": batches,
-            },
-        )
+        review = mapping_dict(review_manifest)
+        if review.get("schema_version") != "1.0":
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        return cast(JsonValue, review)
     raise InvalidRequestError("The local fake does not support this agent execution path.")
 
 
@@ -72,14 +64,23 @@ def fake_mapping_context_from_tools(
     manifest = mapping_dict(catalog.invoke("get_mapping_context_manifest", {}))
     if manifest.get("workflow") != "mapping":
         raise InvalidRequestError("The local fake agent context is invalid.")
-    counts: dict[str, int] = {}
+    counts: dict[str, tuple[int, int]] = {}
     for value in _mapping_list(manifest.get("datasets")):
         item = mapping_dict(value)
         name = _mapping_nonblank_string(item.get("name"))
-        count = item.get("record_count")
-        if isinstance(count, bool) or not isinstance(count, int) or count < 0 or name in counts:
+        record_count = item.get("record_count")
+        retrieval_item_count = item.get("retrieval_item_count")
+        if (
+            isinstance(record_count, bool)
+            or not isinstance(record_count, int)
+            or record_count < 0
+            or isinstance(retrieval_item_count, bool)
+            or not isinstance(retrieval_item_count, int)
+            or retrieval_item_count < record_count
+            or name in counts
+        ):
             raise InvalidRequestError("The local fake agent context is invalid.")
-        counts[name] = count
+        counts[name] = (record_count, retrieval_item_count)
 
     datasets: dict[str, list[JsonValue]] = {}
     tool_call_count = 1
@@ -88,16 +89,21 @@ def fake_mapping_context_from_tools(
         "source_dependency_edge",
         "target_dependency_edge",
         "target",
+        "target_attribute",
         "source",
+        "source_attribute",
         "header",
+        "modeled_attribute",
+        "existing_mapping_attribute",
         "readiness_header",
     ):
-        expected_count = counts.get(name)
-        if expected_count is None:
+        expected_counts = counts.get(name)
+        if expected_counts is None:
             raise InvalidRequestError("The local fake agent context is invalid.")
-        rows: list[JsonValue] = []
+        expected_record_count, expected_item_count = expected_counts
+        items: list[JsonValue] = []
         offset = 0
-        while offset < expected_count:
+        while offset < expected_item_count:
             if tool_call_count >= 1_000:
                 raise InvalidRequestError("The local fake agent context is invalid.")
             page = mapping_dict(
@@ -107,19 +113,21 @@ def fake_mapping_context_from_tools(
                 )
             )
             tool_call_count += 1
-            items = _mapping_list(page.get("items"))
+            page_items = _mapping_list(page.get("items"))
             if (
                 page.get("dataset") != name
-                or page.get("total_count") != expected_count
+                or page.get("total_count") != expected_item_count
                 or page.get("offset") != offset
-                or not items
+                or not page_items
             ):
                 raise InvalidRequestError("The local fake agent context is invalid.")
-            rows.extend(items)
+            items.extend(page_items)
             next_offset = page.get("next_offset")
-            expected_next = offset + len(items)
+            expected_next = offset + len(page_items)
             if next_offset is None:
-                offset = expected_count
+                if expected_next != expected_item_count:
+                    raise InvalidRequestError("The local fake agent context is invalid.")
+                offset = expected_item_count
             elif (
                 isinstance(next_offset, bool)
                 or not isinstance(next_offset, int)
@@ -128,9 +136,12 @@ def fake_mapping_context_from_tools(
                 raise InvalidRequestError("The local fake agent context is invalid.")
             else:
                 offset = next_offset
-        if len(rows) != expected_count:
+        if len(items) != expected_item_count:
             raise InvalidRequestError("The local fake agent context is invalid.")
-        datasets[name] = rows
+        datasets[name] = _reassemble_mapping_dataset(
+            items,
+            expected_record_count=expected_record_count,
+        )
 
     run_rows = datasets["run"]
     target_rows = datasets["target"]
@@ -142,14 +153,84 @@ def fake_mapping_context_from_tools(
             "source_system_dependency_graph": {"edges": datasets["source_dependency_edge"]},
             "target_dependency_graph": {"edges": datasets["target_dependency_edge"]},
             "target": target_rows[0],
+            "target_attributes": datasets["target_attribute"],
             "sources": datasets["source"],
+            "source_attributes": datasets["source_attribute"],
             "headers": datasets["header"],
+            "modeled_attributes": datasets["modeled_attribute"],
+            "existing_mapping_attributes": datasets["existing_mapping_attribute"],
             "readiness": {
                 "headers": datasets["readiness_header"],
             },
         },
         tool_call_count,
     )
+
+
+def _reassemble_mapping_dataset(
+    items: Sequence[JsonValue],
+    *,
+    expected_record_count: int,
+) -> list[JsonValue]:
+    records: list[JsonValue] = []
+    item_index = 0
+    while item_index < len(items):
+        item = items[item_index]
+        if not isinstance(item, dict) or "__gds_context_fragment__" not in item:
+            records.append(item)
+            item_index += 1
+            continue
+
+        marker = mapping_dict(cast(dict[str, JsonValue], item).get("__gds_context_fragment__"))
+        record_index = marker.get("record_index")
+        fragment_count = marker.get("fragment_count")
+        digest = marker.get("record_sha256")
+        if (
+            isinstance(record_index, bool)
+            or not isinstance(record_index, int)
+            or record_index != len(records)
+            or isinstance(fragment_count, bool)
+            or not isinstance(fragment_count, int)
+            or fragment_count < 1
+            or not isinstance(digest, str)
+            or len(digest) != 64
+            or marker.get("encoding") != "canonical_json"
+        ):
+            raise InvalidRequestError("The local fake agent context is invalid.")
+
+        parts: list[str] = []
+        for fragment_index in range(fragment_count):
+            if item_index >= len(items):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            fragment = mapping_dict(items[item_index])
+            fragment_marker = mapping_dict(fragment.get("__gds_context_fragment__"))
+            text = fragment.get("json_text")
+            if (
+                fragment_marker.get("record_index") != record_index
+                or fragment_marker.get("fragment_index") != fragment_index
+                or fragment_marker.get("fragment_count") != fragment_count
+                or fragment_marker.get("record_sha256") != digest
+                or fragment_marker.get("encoding") != "canonical_json"
+                or not isinstance(text, str)
+            ):
+                raise InvalidRequestError("The local fake agent context is invalid.")
+            parts.append(text)
+            item_index += 1
+
+        canonical_text = "".join(parts)
+        if hashlib.sha256(canonical_text.encode("utf-8")).hexdigest() != digest:
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        try:
+            record = json.loads(canonical_text)
+            if canonical_mapping_json_bytes(record) != canonical_text.encode("utf-8"):
+                raise ValueError
+        except (TypeError, ValueError, json.JSONDecodeError):
+            raise InvalidRequestError("The local fake agent context is invalid.") from None
+        records.append(cast(JsonValue, record))
+
+    if len(records) != expected_record_count:
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    return records
 
 
 def fake_mapping_header_candidate(
@@ -243,6 +324,19 @@ def _fake_mapping_package(
     headers: list[JsonValue],
     sources: list[JsonValue],
 ) -> dict[str, JsonValue]:
+    raw_preserved_packages = context.get("preserved_mapping_packages")
+    preserved_packages = (
+        [] if raw_preserved_packages is None else _mapping_list(raw_preserved_packages)
+    )
+    for stored in preserved_packages:
+        if isinstance(stored, dict):
+            try:
+                return cast(
+                    dict[str, JsonValue],
+                    validate_mapping_package_document(stored).model_dump(mode="json"),
+                )
+            except ValueError:
+                raise InvalidRequestError("The local fake agent context is invalid.") from None
     for value in headers:
         stored = mapping_dict(value).get("mapping_package_document")
         if isinstance(stored, dict):
@@ -361,14 +455,13 @@ def fake_mapping_batch_plans(
     context: dict[str, JsonValue],
     package: dict[str, JsonValue],
 ) -> tuple[dict[str, JsonValue], ...]:
-    target = mapping_dict(context.get("target"))
     target_ids = [
         _mapping_positive_int(attribute.get("attribute_id"))
         for attribute in sorted(
             (
-                mapping_dict(value)
-                for value in _mapping_list(target.get("attributes"))
-                if mapping_dict(value).get("is_active") is True
+                attribute
+                for attribute in _mapping_target_attributes(context)
+                if attribute.get("is_active") is True
             ),
             key=lambda item: (
                 _mapping_positive_int(item.get("attribute_ordinal_position")),
@@ -389,16 +482,13 @@ def fake_mapping_batch_plans(
         )
     }
     existing_by_target: dict[int, list[int]] = {}
-    for header_value in _mapping_list(context.get("headers")):
-        header = mapping_dict(header_value)
-        for child_value in _mapping_list(header.get("attribute_mappings")):
-            child = mapping_dict(child_value)
-            mapping_attribute_id = _mapping_positive_int(child.get("mapping_attribute_id"))
-            if mapping_attribute_id in actionable_existing_ids:
-                existing_by_target.setdefault(
-                    _mapping_positive_int(child.get("target_attribute_id")),
-                    [],
-                ).append(mapping_attribute_id)
+    for _header_id, child in _mapping_existing_attribute_records(context):
+        mapping_attribute_id = _mapping_positive_int(child.get("mapping_attribute_id"))
+        if mapping_attribute_id in actionable_existing_ids:
+            existing_by_target.setdefault(
+                _mapping_positive_int(child.get("target_attribute_id")),
+                [],
+            ).append(mapping_attribute_id)
 
     groups: list[tuple[list[int], list[int]]] = []
     group_targets: list[int] = []
@@ -484,21 +574,29 @@ def fake_mapping_attribute_batch(
     existing_records: dict[int, tuple[dict[str, JsonValue], dict[str, JsonValue]]] = {}
     preserved_targets: set[int] = set()
     existing_binding_keys: set[tuple[int, int, int]] = set()
-    for header in raw_headers:
-        header_id = _mapping_positive_int(header.get("mapping_object_id"))
-        for child_value in _mapping_list(header.get("attribute_mappings")):
-            child = mapping_dict(child_value)
-            child_id = _mapping_positive_int(child.get("mapping_attribute_id"))
-            target_id = _mapping_positive_int(child.get("target_attribute_id"))
-            modeled_id = _mapping_positive_int(child.get("modeled_attribute_id"))
-            existing_records[child_id] = (header, child)
-            existing_binding_keys.add((header_id, modeled_id, target_id))
-            if (
-                attribute_actions.get(child_id) == "preserve"
-                and child.get("status") == "active"
-                and isinstance(child.get("transformation_document"), dict)
-            ):
-                preserved_targets.add(target_id)
+    headers_by_id = {
+        _mapping_positive_int(header.get("mapping_object_id")): header for header in raw_headers
+    }
+    for header_id, child in _mapping_existing_attribute_records(context):
+        header = headers_by_id.get(header_id)
+        if header is None:
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        child_id = _mapping_positive_int(child.get("mapping_attribute_id"))
+        target_id = _mapping_positive_int(child.get("target_attribute_id"))
+        modeled_id = _mapping_positive_int(child.get("modeled_attribute_id"))
+        if child_id in existing_records:
+            raise InvalidRequestError("The local fake agent context is invalid.")
+        existing_records[child_id] = (header, child)
+        existing_binding_keys.add((header_id, modeled_id, target_id))
+        if (
+            attribute_actions.get(child_id) == "preserve"
+            and child.get("status") == "active"
+            and (
+                isinstance(child.get("transformation_document"), dict)
+                or child.get("has_transformation_document") is True
+            )
+        ):
+            preserved_targets.add(target_id)
 
     mappings: list[JsonValue] = []
     dispositions: list[JsonValue] = []
@@ -592,11 +690,10 @@ def _fake_mapping_new_binding(
 ) -> JsonValue | None:
     run = mapping_dict(context.get("run"))
     operation = run.get("operation")
-    target = mapping_dict(context.get("target"))
     target_attribute = next(
         (
             item
-            for item in (mapping_dict(value) for value in _mapping_list(target.get("attributes")))
+            for item in _mapping_target_attributes(context)
             if _mapping_positive_int(item.get("attribute_id")) == target_attribute_id
         ),
         None,
@@ -614,9 +711,7 @@ def _fake_mapping_new_binding(
         )
         if header.get("is_locked") is True or not eligible_action:
             continue
-        entity = mapping_dict(header.get("modeled_entity"))
-        for value in _mapping_list(entity.get("attributes")):
-            attribute = mapping_dict(value)
+        for attribute in _mapping_modeled_attributes(context, header):
             modeled_id = _mapping_positive_int(attribute.get("attribute_id"))
             if (
                 attribute.get("status") != "active"
@@ -675,9 +770,9 @@ def _fake_mapping_binding(
             (),
         )
         active_attributes = [
-            mapping_dict(value)
-            for value in _mapping_list(physical.get("attributes"))
-            if mapping_dict(value).get("is_active") is True
+            attribute
+            for attribute in _mapping_source_attributes(context, source)
+            if attribute.get("is_active") is True
         ]
         if aliases and active_attributes:
             source_attribute = min(
@@ -715,6 +810,75 @@ def _fake_mapping_binding(
             "transformation": transformation,
         },
     )
+
+
+def _mapping_target_attributes(
+    context: Mapping[str, JsonValue],
+) -> list[dict[str, JsonValue]]:
+    flat = context.get("target_attributes")
+    if flat is not None:
+        return [mapping_dict(value) for value in _mapping_list(flat)]
+    target = mapping_dict(context.get("target"))
+    return [mapping_dict(value) for value in _mapping_list(target.get("attributes"))]
+
+
+def _mapping_source_attributes(
+    context: Mapping[str, JsonValue],
+    source: Mapping[str, JsonValue],
+) -> list[dict[str, JsonValue]]:
+    flat = context.get("source_attributes")
+    physical = mapping_dict(source.get("object"))
+    if flat is None:
+        return [mapping_dict(value) for value in _mapping_list(physical.get("attributes"))]
+    source_mapping_id = _mapping_positive_int(source.get("source_mapping_id"))
+    modeled_entity_id = _mapping_positive_int(source.get("modeled_entity_id"))
+    object_id = _mapping_positive_int(physical.get("object_id"))
+    return [
+        item
+        for item in (mapping_dict(value) for value in _mapping_list(flat))
+        if _mapping_positive_int(item.get("source_mapping_id")) == source_mapping_id
+        and _mapping_positive_int(item.get("modeled_entity_id")) == modeled_entity_id
+        and _mapping_positive_int(item.get("object_id")) == object_id
+    ]
+
+
+def _mapping_modeled_attributes(
+    context: Mapping[str, JsonValue],
+    header: Mapping[str, JsonValue],
+) -> list[dict[str, JsonValue]]:
+    flat = context.get("modeled_attributes")
+    entity = mapping_dict(header.get("modeled_entity"))
+    if flat is None:
+        return [mapping_dict(value) for value in _mapping_list(entity.get("attributes"))]
+    header_id = _mapping_positive_int(header.get("mapping_object_id"))
+    entity_id = _mapping_positive_int(entity.get("entity_id"))
+    return [
+        item
+        for item in (mapping_dict(value) for value in _mapping_list(flat))
+        if _mapping_positive_int(item.get("mapping_object_id")) == header_id
+        and _mapping_positive_int(item.get("modeled_entity_id")) == entity_id
+    ]
+
+
+def _mapping_existing_attribute_records(
+    context: Mapping[str, JsonValue],
+) -> list[tuple[int, dict[str, JsonValue]]]:
+    flat = context.get("existing_mapping_attributes")
+    if flat is not None:
+        return [
+            (_mapping_positive_int(item.get("mapping_object_id")), item)
+            for item in (mapping_dict(value) for value in _mapping_list(flat))
+        ]
+    return [
+        (_mapping_positive_int(header.get("mapping_object_id")), child)
+        for header in (
+            mapping_dict(header_value) for header_value in _mapping_list(context.get("headers"))
+        )
+        for child in (
+            mapping_dict(child_value)
+            for child_value in _mapping_list(header.get("attribute_mappings"))
+        )
+    ]
 
 
 def _fake_mapping_transformation(

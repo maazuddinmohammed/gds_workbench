@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+from hashlib import sha256
 from typing import cast
 
 import pytest
@@ -12,7 +13,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 from gds_workbench_api.features.logical.detailed import (
@@ -23,6 +24,7 @@ from gds_workbench_api.features.logical.detailed import (
     DetailedLogicalTopologyReconciliation,
     DetailedLogicalTopologyReconciliationValidator,
     DetailedLogicalValidationLeadValidator,
+    DetailedLogicalValidationPackage,
     DetailedLogicalValidationWorkerResult,
     DetailedLogicalValidationWorkerValidator,
     build_logical_relationship_signal_ledger,
@@ -30,6 +32,10 @@ from gds_workbench_api.features.logical.detailed import (
     decide_logical_detailed_handoff,
     load_default_detailed_logical_policy,
     logical_applied_record_refs,
+    logical_json_bytes,
+    logical_json_digest,
+    merge_logical_entity_detail_partitions,
+    merge_logical_topology_partitions,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
@@ -168,6 +174,20 @@ def test_default_detailed_logical_policy_loads_from_validated_json() -> None:
     assert policy.validation_package_size == 100
 
 
+def test_logical_canonical_json_counts_utf8_and_hashes_exact_bytes() -> None:
+    value = cast(JsonValue, {"z": "é", "a": ["雪", 1]})
+    encoded = json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
+
+    assert logical_json_bytes(value) == len(encoded)
+    assert logical_json_digest(value) == sha256(encoded).hexdigest()
+
+
 async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage() -> (
     None
 ):
@@ -207,6 +227,16 @@ async def test_topology_builder_has_exact_frozen_object_and_attribute_coverage()
     proposal["source_attributes"] = source_attributes[:1]
     assert (await validator.validate(cast(JsonValue, missing))).issues[0].code == (
         "detailed.topology_contribution_coverage_invalid"
+    )
+
+    byte_bounded = DetailedLogicalTopologyContributionValidator(
+        contribution_ref="object_00001",
+        source_object=source,
+        source_attributes=attributes,
+        max_result_bytes=1,
+    )
+    assert (await byte_bounded.validate(candidate)).issues[0].code == (
+        "detailed.topology_contribution_invalid"
     )
 
 
@@ -273,6 +303,194 @@ async def test_topology_reconciler_covers_every_proposal_and_allows_many_to_many
     assert (await validator.validate(cast(JsonValue, incomplete))).issues[0].code == (
         "detailed.topology_reconciliation_coverage_invalid"
     )
+
+
+def test_topology_partition_merge_preserves_order_and_rejects_duplicate_coverage() -> (
+    None
+):
+    source = _object("customer_raw")
+    first_attribute = _attribute("customer_raw", "customer_id")
+    second_attribute = _attribute("customer_raw", "account_id")
+    contributions = tuple(
+        DetailedLogicalTopologyContributionValidator(
+            contribution_ref=reference,
+            source_object=source,
+            source_attributes=(attribute,),
+        ).parse_validated(
+            cast(
+                JsonValue,
+                _contribution(
+                    contribution_ref=reference,
+                    source_object=source,
+                    source_attributes=(attribute,),
+                    local_entity_ref=local_ref,
+                    entity_name="Customer",
+                    submodel_names=("Customer Domain",),
+                ),
+            )
+        )
+        for reference, attribute, local_ref in (
+            ("object_00001_batch_00001", first_attribute, "customer_id"),
+            ("object_00001_batch_00002", second_attribute, "account_id"),
+        )
+    )
+    partitions = tuple(
+        DetailedLogicalTopologyReconciliationValidator(
+            contributions=(contribution,)
+        ).parse_validated(
+            cast(
+                JsonValue,
+                {
+                    "submodels": [
+                        {
+                            "canonical_submodel_ref": f"domain_{position}",
+                            "submodel": _submodel("Customer Domain"),
+                        }
+                    ],
+                    "entities": [
+                        {
+                            "canonical_entity_ref": f"customer_{position}",
+                            "logical_entity_name": "Customer",
+                            "contribution_refs": list(contribution.proposal_refs),
+                            "submodel_refs": [f"domain_{position}"],
+                        }
+                    ],
+                    "discarded_contribution_refs": [],
+                },
+            )
+        )
+        for position, contribution in enumerate(contributions, start=1)
+    )
+
+    merged = merge_logical_topology_partitions(
+        contributions=contributions,
+        partitions=partitions,
+    )
+
+    assert len(merged.submodels) == 1
+    assert len(merged.entities) == 1
+    assert merged.entities[0].contribution_refs == (
+        "object_00001_batch_00001.customer_id",
+        "object_00001_batch_00002.account_id",
+    )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_logical_topology_partitions(
+            contributions=contributions,
+            partitions=(partitions[0], partitions[0], partitions[1]),
+        )
+
+
+def test_entity_detail_partition_merge_preserves_all_source_attributes_once() -> None:
+    source = _object("customer_raw")
+    source_attributes = (
+        _attribute("customer_raw", "customer_id"),
+        _attribute("customer_raw", "account_id"),
+    )
+    contributions = tuple(
+        DetailedLogicalTopologyContributionValidator(
+            contribution_ref=f"object_00001_batch_{position:05d}",
+            source_object=source,
+            source_attributes=(attribute,),
+        ).parse_validated(
+            cast(
+                JsonValue,
+                _contribution(
+                    contribution_ref=f"object_00001_batch_{position:05d}",
+                    source_object=source,
+                    source_attributes=(attribute,),
+                    local_entity_ref=f"customer_{position}",
+                    entity_name="Customer",
+                    submodel_names=("Customer Domain",),
+                ),
+            )
+        )
+        for position, attribute in enumerate(source_attributes, start=1)
+    )
+    topology = DetailedLogicalTopologyReconciliationValidator(
+        contributions=contributions
+    ).parse_validated(
+        cast(
+            JsonValue,
+            {
+                "submodels": [
+                    {
+                        "canonical_submodel_ref": "customer_domain",
+                        "submodel": _submodel("Customer Domain"),
+                    }
+                ],
+                "entities": [
+                    {
+                        "canonical_entity_ref": "customer",
+                        "logical_entity_name": "Customer",
+                        "contribution_refs": [
+                            reference
+                            for contribution in contributions
+                            for reference in contribution.proposal_refs
+                        ],
+                        "submodel_refs": ["customer_domain"],
+                    }
+                ],
+                "discarded_contribution_refs": [],
+            },
+        )
+    )
+    partitions: list[DetailedLogicalEntityDetail] = []
+    for contribution, source_attribute in zip(
+        contributions,
+        source_attributes,
+        strict=True,
+    ):
+        scoped_entity = topology.entities[0].model_copy(
+            update={"contribution_refs": contribution.proposal_refs}
+        )
+        scoped_topology = topology.model_copy(update={"entities": (scoped_entity,)})
+        partitions.append(
+            DetailedLogicalEntityDetailValidator(
+                entity=scoped_entity,
+                topology=scoped_topology,
+                contributions=(contribution,),
+            ).parse_validated(
+                cast(
+                    JsonValue,
+                    {
+                        "canonical_entity_ref": "customer",
+                        "entity": _entity(
+                            "Customer",
+                            source,
+                            "Customer Domain",
+                        ),
+                        "attributes": [
+                            _logical_attribute(
+                                "Customer",
+                                "Customer Key",
+                                source_attribute,
+                                ordinal=1,
+                            )
+                        ],
+                    },
+                )
+            )
+        )
+
+    merged = merge_logical_entity_detail_partitions(
+        entity=topology.entities[0],
+        topology=topology,
+        contributions=contributions,
+        partitions=tuple(partitions),
+    )
+
+    assert len(merged.attributes) == 1
+    assert tuple(source.source_order for source in merged.attributes[0].sources) == (
+        1,
+        2,
+    )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_logical_entity_detail_partitions(
+            entity=topology.entities[0],
+            topology=topology,
+            contributions=contributions,
+            partitions=(partitions[0],),
+        )
 
 
 def _build_topology_and_detail() -> tuple[
@@ -521,6 +739,26 @@ async def test_whole_model_reconciliation_requires_exact_coverage_before_materia
     with pytest.raises(AgentCandidateValidationError):
         validator.materialize_validated(cast(JsonValue, incomplete))
 
+    missing_attribute_source = cast(
+        dict[str, JsonValue], json.loads(json.dumps(candidate))
+    )
+    cast(list[dict[str, JsonValue]], missing_attribute_source["attributes"])[0][
+        "sources"
+    ] = []
+    assert (await validator.validate(cast(JsonValue, missing_attribute_source))).issues[
+        0
+    ].code == "detailed.reconciliation_coverage_invalid"
+
+    missing_object_source = cast(
+        dict[str, JsonValue], json.loads(json.dumps(candidate))
+    )
+    cast(list[dict[str, JsonValue]], missing_object_source["entities"])[0][
+        "sources"
+    ] = []
+    assert (await validator.validate(cast(JsonValue, missing_object_source))).issues[
+        0
+    ].code == "detailed.reconciliation_coverage_invalid"
+
 
 async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -> None:
     topology, detail = _build_topology_and_detail()
@@ -556,6 +794,18 @@ async def test_bounded_validator_workers_and_single_lead_gate_atomic_handoff() -
 
     assert len(packages) == 2
     assert all(len(package.records) <= 2 for package in packages)
+    assert all(
+        package.record_digests
+        == tuple(
+            logical_json_digest(item.record.model_dump(mode="json"))
+            for item in package.records
+        )
+        for package in packages
+    )
+    tampered = packages[0].model_dump(mode="json")
+    tampered["record_digests"] = ["0" * 64 for _item in packages[0].records]
+    with pytest.raises(ValidationError):
+        DetailedLogicalValidationPackage.model_validate(tampered, strict=True)
 
     worker_results: list[DetailedLogicalValidationWorkerResult] = []
     for package in packages:

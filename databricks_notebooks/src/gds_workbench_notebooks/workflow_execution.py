@@ -158,7 +158,7 @@ async def _execute_notebook_workflow(
     from gds_etl_workbench.application.authorization import AuthorizationService
     from gds_workbench_api.capabilities import (
         load_default_agent_capabilities,
-        select_agent_provider_capabilities,
+        select_agent_runtime_capabilities,
     )
     from gds_workbench_api.features.workflows.execution import (
         WorkerRunResult,
@@ -234,7 +234,7 @@ async def _execute_notebook_workflow(
             request,
             settings,
             load_default_agent_capabilities(),
-            select_agent_provider_capabilities,
+            select_agent_runtime_capabilities,
             AgentProviderConnection,
             AgentRuntimeConfiguration,
             DatabricksModelAuthentication,
@@ -355,10 +355,6 @@ def _agent_runtime(
             capabilities,
             None,
         )
-    if settings.databricks_model_endpoint is None:
-        raise NotebookConfigurationError(
-            "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT is required for an agent Workflow."
-        )
     if not isinstance(selected_agent, Mapping):
         raise NotebookConfigurationError(
             "Independent notebooks support the Databricks agent provider only."
@@ -368,19 +364,38 @@ def _agent_runtime(
         raise NotebookConfigurationError(
             "Independent notebooks support the Databricks agent provider only."
         )
+    model_code = selected_agent_mapping.get("model_code")
+    if not isinstance(model_code, str):
+        raise NotebookConfigurationError("The selected Databricks Agent model is unavailable.")
+    model_capability = next(
+        (
+            model
+            for model in getattr(capabilities, "models", ())
+            if model.provider_code == "databricks" and model.code == model_code
+        ),
+        None,
+    )
+    if model_capability is None:
+        raise NotebookConfigurationError("The selected Databricks Agent model is not registered.")
     connection = connection_type(
         provider_code="databricks",
-        model_code="databricks-primary",
-        model_endpoint=settings.databricks_model_endpoint,
+        model_code=model_code,
+        model_endpoint=model_capability.deployment_name,
         timeout_seconds=settings.agent_timeout_seconds,
     )
+    configuration = configuration_type(
+        mode="remote",
+        timeout_seconds=settings.agent_timeout_seconds,
+        connections=(connection,),
+    )
     return (
-        configuration_type(
-            mode="remote",
-            timeout_seconds=settings.agent_timeout_seconds,
-            connections=(connection,),
+        configuration,
+        select_capabilities(
+            capabilities,
+            configured_models={
+                (item.provider_code, item.model_code) for item in configuration.connections
+            },
         ),
-        select_capabilities(capabilities, provider_codes={"databricks"}),
         {"databricks": authentication_type(mode="notebook")},
     )
 

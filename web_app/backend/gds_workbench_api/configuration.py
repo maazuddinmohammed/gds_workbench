@@ -32,16 +32,14 @@ _EXPECTED_KEYS = frozenset(
     {
         "GDS_WEB_DATABASE_DSN",
         "GDS_WEB_AGENT_EXECUTION_MODE",
-        "GDS_WEB_AGENT_PROVIDER",
         "GDS_WEB_AGENT_TIMEOUT_SECONDS",
         "GDS_WEB_CURSOR_SIGNING_KEY",
         "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE",
         "GDS_WEB_DATABRICKS_EXECUTION_MODE",
-        "GDS_WEB_DATABRICKS_MODEL_ENDPOINT",
+        "GDS_WEB_FOUNDRY_API_KEY",
         "GDS_WEB_FOUNDRY_CLIENT_ID",
         "GDS_WEB_FOUNDRY_CLIENT_SECRET",
         "GDS_WEB_FOUNDRY_ENTRA_TENANT_ID",
-        "GDS_WEB_FOUNDRY_MODEL_DEPLOYMENT",
         "GDS_WEB_FOUNDRY_OPENAI_BASE_URL",
         "GDS_WEB_ENVIRONMENT",
         "GDS_WEB_ENTRA_TENANT_ID",
@@ -136,11 +134,7 @@ class RuntimeSettings:
                 database_dsn = make_conninfo(database_dsn, sslrootcert=certifi.where())
             elif sslmode == "require" and dsn_parts.get("sslrootcert") == "system":
                 database_dsn = make_conninfo(
-                    **{
-                        key: str(value)
-                        for key, value in dsn_parts.items()
-                        if key != "sslrootcert"
-                    }
+                    **{key: str(value) for key, value in dsn_parts.items() if key != "sslrootcert"}
                 )
 
         cursor_signing_key = _required(source, "GDS_WEB_CURSOR_SIGNING_KEY").encode()

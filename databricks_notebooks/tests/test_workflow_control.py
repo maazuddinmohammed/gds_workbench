@@ -7,6 +7,7 @@ from pathlib import Path
 from uuid import UUID
 
 import pytest
+
 from gds_workbench_notebooks.errors import (
     NotebookAuthorizationError,
     NotebookConfigurationError,
@@ -176,7 +177,7 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
         "langchain_create_agent",
         "databricks",
         "databricks-primary",
-        "medium",
+        "default",
         10,
         2,
         [11],

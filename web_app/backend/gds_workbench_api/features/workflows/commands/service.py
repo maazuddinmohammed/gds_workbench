@@ -18,7 +18,11 @@ from gds_etl_workbench.domain.errors import (
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 
-from gds_workbench_api.capabilities import AgentCapabilityRegistry
+from gds_workbench_api.capabilities import (
+    CODE_GENERATION_AGENT_EXECUTION_MODE,
+    AgentCapabilityRegistry,
+    AgentRunSelection,
+)
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,
@@ -26,7 +30,13 @@ from gds_workbench_api.features.workflows.commands.contracts import (
 )
 
 _MODEL_OWNER_SQL = """
-SELECT target_model.model_revision
+SELECT target_model.model_revision,
+       target_model.default_agent_sdk_code,
+       target_model.default_agent_provider_code,
+       target_model.default_agent_model_code,
+       target_model.default_reasoning_effort_code,
+       target_model.default_max_turns,
+       target_model.default_validation_retry_count
   FROM model.model AS target_model
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
@@ -92,8 +102,16 @@ class DatabaseWorkflowCommandService:
         correlation_id: UUID,
         command: CreateWorkflowRunRequest,
     ) -> WorkflowRunCommandResult:
+        agent_execution_mode = (
+            CODE_GENERATION_AGENT_EXECUTION_MODE
+            if command.model_workflow == "code_generation"
+            else command.workflow_execution_mode
+        )
         if command.agent is not None:
-            self._agent_capability_registry.validate_selection(command.agent)
+            self._agent_capability_registry.validate_selection(
+                command.agent,
+                execution_mode=agent_execution_mode,
+            )
         try:
             async with self._database.write_transaction() as transaction:
                 await self._authorizer.authorize_tenant(
@@ -108,6 +126,29 @@ class DatabaseWorkflowCommandService:
                 )
                 if owner is None:
                     raise ModelNotFoundError()
+                if command.agent is None and agent_execution_mode is not None:
+                    try:
+                        model_default_agent = AgentRunSelection.model_validate(
+                            {
+                                "sdk_code": owner.get("default_agent_sdk_code"),
+                                "provider_code": owner.get("default_agent_provider_code"),
+                                "model_code": owner.get("default_agent_model_code"),
+                                "reasoning_effort_code": owner.get("default_reasoning_effort_code"),
+                                "max_turns": owner.get("default_max_turns"),
+                                "validation_retry_count": owner.get(
+                                    "default_validation_retry_count"
+                                ),
+                            },
+                            strict=True,
+                        )
+                    except ValueError:
+                        raise InvalidRequestError(
+                            "The Model default agent configuration is unavailable."
+                        ) from None
+                    self._agent_capability_registry.validate_selection(
+                        model_default_agent,
+                        execution_mode=agent_execution_mode,
+                    )
                 identity = _identity_triple(principal)
                 agent = command.agent
                 row = await transaction.fetch_one(

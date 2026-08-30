@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "max_object_pairs": 20000,
+  "max_candidate_slices": 20000,
+  "max_candidates_per_slice": 2000,
+  "max_total_candidates": 20000,
+  "max_review_findings": 1000
+}

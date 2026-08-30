@@ -19,6 +19,8 @@ INSTRUCTIONS_PATH = ROOT / "deployment" / "databricks_ui" / "README.md"
 ROOT_GITIGNORE = ROOT / ".gitignore"
 
 APP_ROOT_FILES = {
+    "DEPLOYMENT_GUIDE.md",
+    "app.foundry.yaml.example",
     "app.yaml",
     "package-lock.json",
     "package.json",
@@ -226,6 +228,9 @@ def test_builder_creates_exact_ui_upload_roots(tmp_path: Path) -> None:
                 source_root / relative
             ).read_bytes()
     assert "/artifacts/databricks-ui/" in ROOT_GITIGNORE.read_text(encoding="utf-8")
+    assert "/artifacts/databricks-ui-foundry/" in ROOT_GITIGNORE.read_text(
+        encoding="utf-8"
+    )
 
 
 def test_notebook_pruning_does_not_remove_sources_from_the_app_artifact(
@@ -276,6 +281,9 @@ def test_generated_app_contains_runtime_source_only(tmp_path: Path) -> None:
     assert "web_app/frontend/index.html" in app_files
     assert "web_app/frontend/src/main.tsx" in app_files
     assert "web_app/frontend/src/styles.css" in app_files
+    assert (result.app_source_directory / "DEPLOYMENT_GUIDE.md").read_bytes() == (
+        ROOT / "web_app/DEPLOYMENT_GUIDE.md"
+    ).read_bytes()
     assert (
         result.app_source_directory / "web_app/frontend/index.html"
     ).read_bytes() == (ROOT / "web_app/frontend/index.html").read_bytes()
@@ -313,16 +321,12 @@ def test_generated_notebook_is_source_only_and_has_unambiguous_markers(
     assert not any(Path(relative).suffix == ".whl" for relative in notebook_files)
 
     for path in package_root.rglob("*.py"):
-        assert (
-            not path.read_text(encoding="utf-8").startswith(
-                "# Databricks notebook source\n"
-            )
+        assert not path.read_text(encoding="utf-8").startswith(
+            "# Databricks notebook source\n"
         )
     for path in notebook_root.glob("*.py"):
-        assert (
-            path.read_text(encoding="utf-8").startswith(
-                "# Databricks notebook source\n"
-            )
+        assert path.read_text(encoding="utf-8").startswith(
+            "# Databricks notebook source\n"
         )
 
     for relative in notebook_files:
@@ -391,6 +395,8 @@ def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> Non
     assert "drag the expanded `gds-workbench-app-source` folder" in normalized
     assert "flatten its nested source folders" in normalized
     assert "CLI upload alternative" in instructions
+    assert "--agent-provider microsoft_foundry" in instructions
+    assert "Do not edit or replace its generated `app.yaml`" in normalized
 
 
 def test_archives_have_explicit_hierarchy_and_match_expanded_trees(
@@ -472,6 +478,7 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    assert manifest["agent_provider"] == "databricks"
 
     for key, directory in (
         ("app_source", result.app_source_directory),
@@ -643,12 +650,41 @@ def test_archives_are_reproducible_and_source_files_are_unchanged(
         / "gds_workbench_notebooks"
         / "runtime.py"
     ).read_bytes() == (
-        ROOT
-        / "databricks_notebooks"
-        / "src"
-        / "gds_workbench_notebooks"
-        / "runtime.py"
+        ROOT / "databricks_notebooks" / "src" / "gds_workbench_notebooks" / "runtime.py"
     ).read_bytes()
+
+
+def test_foundry_build_selects_manifest_before_hashing_and_is_self_contained(
+    tmp_path: Path,
+) -> None:
+    builder = _load_builder()
+    result = builder.build_uploads(
+        tmp_path / "foundry-release",
+        agent_provider="microsoft_foundry",
+    )
+
+    app_yaml = result.app_source_directory / "app.yaml"
+    guide = result.app_source_directory / "DEPLOYMENT_GUIDE.md"
+    manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
+    app_records = {record["path"]: record for record in manifest["app_source"]}
+
+    assert app_yaml.read_bytes() == (ROOT / "app.foundry.yaml.example").read_bytes()
+    assert guide.read_bytes() == (ROOT / "web_app/DEPLOYMENT_GUIDE.md").read_bytes()
+    assert manifest["agent_provider"] == "microsoft_foundry"
+    assert app_records["app.yaml"]["sha256"] == _sha256(app_yaml)
+    with ZipFile(result.app_archive) as package:
+        assert package.read("app.yaml") == app_yaml.read_bytes()
+        assert package.read("DEPLOYMENT_GUIDE.md") == guide.read_bytes()
+
+
+def test_builder_rejects_unknown_agent_provider_before_writing(tmp_path: Path) -> None:
+    builder = _load_builder()
+    output = tmp_path / "invalid-release"
+
+    with pytest.raises(builder.ArtifactBuildError, match="unsupported agent provider"):
+        builder.build_uploads(output, agent_provider="unknown")
+
+    assert not output.exists()
 
 
 def test_existing_output_is_never_replaced_without_its_generated_marker(
@@ -673,7 +709,8 @@ def test_failed_rebuild_preserves_previous_generated_output(
     builder.build_uploads(output)
     original_checksum = _sha256(output / "gds-workbench-app-source.zip")
 
-    def fail_build(_destination: Path) -> None:
+    def fail_build(_destination: Path, *, agent_provider: str) -> None:
+        assert agent_provider == "databricks"
         raise builder.ArtifactBuildError("simulated build failure")
 
     monkeypatch.setattr(builder, "_build_app_source", fail_build)

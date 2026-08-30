@@ -1,4 +1,4 @@
-import { useEffect, useRef, type ReactNode } from "react";
+import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -105,10 +105,53 @@ export function ProfilingObjectDetailPage({
           </p>
         ) : null}
         {returnedProfileCount ? (
-          <div className="profile-evidence-list">
-            {detail.attribute_profiles.map((profile) => (
-              <AttributeProfileEvidence key={profile.attribute_id} profile={profile} />
-            ))}
+          <div
+            className="profile-evidence-table-scroll table-scroll"
+            role="region"
+            aria-label="Scrollable Attribute profile metrics"
+            tabIndex={0}
+          >
+            <table className="profile-evidence-table">
+              <caption className="sr-only">Attribute profiles</caption>
+              <thead>
+                <tr className="profile-evidence-groups">
+                  <th scope="col" rowSpan={2}>Attribute name</th>
+                  <th scope="colgroup" colSpan={3}>Identity</th>
+                  <th scope="colgroup" colSpan={5}>Counts</th>
+                  <th scope="colgroup" colSpan={3}>Data lengths</th>
+                  <th scope="colgroup" colSpan={5}>Percentages</th>
+                  <th scope="colgroup" colSpan={5}>Provenance</th>
+                </tr>
+                <tr>
+                  <th scope="col">Attribute ID</th>
+                  <th scope="col">Ordinal position</th>
+                  <th scope="col">Data type</th>
+                  <th scope="col">Rows</th>
+                  <th scope="col">Non-null rows</th>
+                  <th scope="col">Null rows</th>
+                  <th scope="col">Blank rows</th>
+                  <th scope="col">Distinct values</th>
+                  <th scope="col">Minimum length</th>
+                  <th scope="col">Maximum length</th>
+                  <th scope="col">Average length</th>
+                  <th scope="col">Populated</th>
+                  <th scope="col">Duplicate rate</th>
+                  <th scope="col">Null rate</th>
+                  <th scope="col">Blank rate</th>
+                  <th scope="col">Distinct rate</th>
+                  <th scope="col">Workflow run</th>
+                  <th scope="col">Agent run</th>
+                  <th scope="col">Created</th>
+                  <th scope="col">Updated</th>
+                  <th scope="col">Source context digest</th>
+                </tr>
+              </thead>
+              <tbody>
+                {detail.attribute_profiles.map((profile) => (
+                  <AttributeProfileRow key={profile.attribute_id} profile={profile} />
+                ))}
+              </tbody>
+            </table>
           </div>
         ) : (
           <p className="detail-empty">No Attribute profiles were returned.</p>
@@ -118,73 +161,38 @@ export function ProfilingObjectDetailPage({
   );
 }
 
-function AttributeProfileEvidence({ profile }: { profile: AttributeProfile }) {
+function AttributeProfileRow({ profile }: { profile: AttributeProfile }) {
   return (
-    <article className="profile-evidence-card" aria-labelledby={`profile-${profile.attribute_id}`}>
-      <header>
-        <div>
-          <small>Attribute {profile.attribute_id}</small>
-          <h3 id={`profile-${profile.attribute_id}`}>{profile.attribute_name}</h3>
-        </div>
-        <span>{profile.attribute_data_type}</span>
-      </header>
-
-      <ProfileFactGroup heading="Identity">
-        <Fact label="Attribute ID" value={String(profile.attribute_id)} />
-        <Fact label="Ordinal position" value={String(profile.attribute_ordinal_position)} />
-        <Fact label="Data type" value={profile.attribute_data_type} />
-      </ProfileFactGroup>
-
-      <ProfileFactGroup heading="Counts">
-        <Fact label="Rows" value={formatMetric(profile.row_count)} />
-        <Fact label="Non-null rows" value={formatMetric(profile.non_null_count)} />
-        <Fact label="Null rows" value={formatMetric(profile.null_count)} />
-        <Fact label="Blank rows" value={formatMetric(profile.blank_count)} />
-        <Fact label="Distinct values" value={formatMetric(profile.distinct_count)} />
-      </ProfileFactGroup>
-
-      <ProfileFactGroup heading="Data lengths">
-        <Fact label="Minimum length" value={formatMetric(profile.min_data_length)} />
-        <Fact label="Maximum length" value={formatMetric(profile.max_data_length)} />
-        <Fact label="Average length" value={formatMetric(profile.avg_data_length)} />
-      </ProfileFactGroup>
-
-      <ProfileFactGroup heading="Percentages">
-        <Fact label="Populated" value={formatPercent(profile.percent_populated)} />
-        <Fact label="Duplicate rate" value={formatPercent(profile.percent_duplicates)} />
-        <Fact label="Null rate" value={formatPercent(profile.percent_null)} />
-        <Fact label="Blank rate" value={formatPercent(profile.percent_blank)} />
-        <Fact label="Distinct rate" value={formatPercent(profile.percent_distinct)} />
-      </ProfileFactGroup>
-
-      <ProfileFactGroup heading="Provenance">
-        <Fact
-          label="Workflow run"
-          value={profile.provenance.workflow_run_id === null
-            ? "Not recorded"
-            : `Run ${profile.provenance.workflow_run_id}`}
-        />
-        <Fact label="Agent run" value={profile.provenance.agent_run_id ?? "Not recorded"} />
-        <Fact label="Created" value={formatDateTime(profile.created_at)} />
-        <Fact label="Updated" value={formatDateTime(profile.updated_at)} />
-        <Fact label="Source context digest" value={profile.source_context_digest} code />
-      </ProfileFactGroup>
-    </article>
-  );
-}
-
-function ProfileFactGroup({
-  heading,
-  children,
-}: {
-  heading: string;
-  children: ReactNode;
-}) {
-  return (
-    <section className="profile-fact-group">
-      <h4>{heading}</h4>
-      <dl className="profile-fact-grid">{children}</dl>
-    </section>
+    <tr>
+      <th scope="row" className="profile-evidence-name">{profile.attribute_name}</th>
+      <td>{profile.attribute_id}</td>
+      <td>{profile.attribute_ordinal_position}</td>
+      <td className="profile-evidence-wrap">{profile.attribute_data_type}</td>
+      <td>{formatMetric(profile.row_count)}</td>
+      <td>{formatMetric(profile.non_null_count)}</td>
+      <td>{formatMetric(profile.null_count)}</td>
+      <td>{formatMetric(profile.blank_count)}</td>
+      <td>{formatMetric(profile.distinct_count)}</td>
+      <td>{formatMetric(profile.min_data_length)}</td>
+      <td>{formatMetric(profile.max_data_length)}</td>
+      <td>{formatMetric(profile.avg_data_length)}</td>
+      <td>{formatPercent(profile.percent_populated)}</td>
+      <td>{formatPercent(profile.percent_duplicates)}</td>
+      <td>{formatPercent(profile.percent_null)}</td>
+      <td>{formatPercent(profile.percent_blank)}</td>
+      <td>{formatPercent(profile.percent_distinct)}</td>
+      <td>
+        {profile.provenance.workflow_run_id === null
+          ? "Not recorded"
+          : `Run ${profile.provenance.workflow_run_id}`}
+      </td>
+      <td className="profile-evidence-wrap">
+        {profile.provenance.agent_run_id ?? "Not recorded"}
+      </td>
+      <td>{formatDateTime(profile.created_at)}</td>
+      <td>{formatDateTime(profile.updated_at)}</td>
+      <td className="profile-evidence-digest"><code>{profile.source_context_digest}</code></td>
+    </tr>
   );
 }
 

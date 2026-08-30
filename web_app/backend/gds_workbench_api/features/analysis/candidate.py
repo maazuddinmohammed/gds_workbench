@@ -37,7 +37,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 )
 
 
-class _AnalysisInferenceRelationship(BaseModel):
+class AnalysisInferenceRelationship(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     from_tenant_code: Code100
@@ -63,7 +63,7 @@ class _AnalysisInferenceRelationship(BaseModel):
 class _AnalysisInferenceCandidate(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    relationships: list[_AnalysisInferenceRelationship] = Field(max_length=20_000)
+    relationships: list[AnalysisInferenceRelationship] = Field(max_length=20_000)
 
 
 class _NormalizedCandidate(BaseModel):
@@ -198,7 +198,7 @@ def _parse_candidate(candidate: JsonValue) -> _AnalysisInferenceCandidate | None
 
 
 def _merge_record(
-    candidate: _AnalysisInferenceRelationship,
+    candidate: AnalysisInferenceRelationship,
     existing: AnalysisResultRecord | None,
 ) -> dict[str, object]:
     merged = cast(dict[str, object], candidate.model_dump(mode="json"))
@@ -219,7 +219,7 @@ def _merge_record(
 
 
 def _relationship_key(
-    record: _AnalysisInferenceRelationship | AnalysisResultRecord,
+    record: AnalysisInferenceRelationship | AnalysisResultRecord,
 ) -> tuple[str, ...]:
     return (
         *_endpoint_key(record, "from"),
@@ -229,7 +229,7 @@ def _relationship_key(
 
 
 def _endpoint_key(
-    record: _AnalysisInferenceRelationship | AnalysisResultRecord,
+    record: AnalysisInferenceRelationship | AnalysisResultRecord,
     endpoint: str,
 ) -> tuple[str, ...]:
     return tuple(
@@ -276,4 +276,7 @@ def _model_issues(
     )
 
 
-__all__ = ["AnalysisInferenceCandidateValidator"]
+__all__ = [
+    "AnalysisInferenceCandidateValidator",
+    "AnalysisInferenceRelationship",
+]

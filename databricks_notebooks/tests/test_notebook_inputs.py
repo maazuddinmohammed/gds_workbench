@@ -1,7 +1,9 @@
 from uuid import UUID
 
 import pytest
+from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.features.workflows.commands.contracts import CreateWorkflowRunRequest
+
 from gds_workbench_notebooks.errors import NotebookConfigurationError
 from gds_workbench_notebooks.notebook import (
     build_notebook_request,
@@ -55,6 +57,84 @@ def _values(workflow: str) -> dict[str, str]:
     return values
 
 
+def _databricks_registry_with_default_reasoning():
+    registry = load_default_agent_capabilities()
+    model = next(model for model in registry.models if model.provider_code == "databricks")
+    profile = next(
+        profile
+        for profile in model.execution_profiles
+        if profile.sdk_code == "openai_agents_sdk" and profile.execution_mode == "tool_assisted"
+    )
+    return registry.model_copy(
+        update={
+            "models": (
+                model.model_copy(
+                    update={
+                        "code": "registered-databricks-model",
+                        "deployment_name": "registered-serving-endpoint",
+                        "execution_profiles": (
+                            profile.model_copy(update={"reasoning_effort_codes": ("default",)}),
+                        ),
+                    }
+                ),
+            ),
+            "reasoning_efforts": (
+                next(effort for effort in registry.reasoning_efforts if effort.code == "default"),
+            ),
+        }
+    )
+
+
+def _databricks_registry_with_disjoint_profiles():
+    registry = _databricks_registry_with_default_reasoning()
+    model = registry.models[0]
+    tool_profile = model.execution_profiles[0]
+    one_shot_profile = tool_profile.model_copy(
+        update={
+            "sdk_code": "langchain_create_agent",
+            "execution_mode": "one_shot",
+            "reasoning_effort_codes": ("low",),
+        }
+    )
+    detailed_profile = tool_profile.model_copy(update={"execution_mode": "detailed_coverage"})
+    return registry.model_copy(
+        update={
+            "models": (
+                model.model_copy(
+                    update={
+                        "execution_profiles": (
+                            one_shot_profile,
+                            tool_profile,
+                            detailed_profile,
+                        )
+                    }
+                ),
+            ),
+            "reasoning_efforts": (
+                next(
+                    effort
+                    for effort in load_default_agent_capabilities().reasoning_efforts
+                    if effort.code == "low"
+                ),
+                registry.reasoning_efforts[0],
+            ),
+        }
+    )
+
+
+def _databricks_registry_with_secondary_model():
+    registry = load_default_agent_capabilities()
+    primary = next(model for model in registry.models if model.code == "databricks-primary")
+    secondary = primary.model_copy(
+        update={
+            "code": "databricks-secondary",
+            "name": "Operator-verified secondary Databricks deployment",
+            "deployment_name": "databricks-secondary",
+        }
+    )
+    return registry.model_copy(update={"models": (*registry.models, secondary)})
+
+
 @pytest.mark.parametrize("workflow", _WORKFLOWS)
 def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> None:
     command = build_notebook_request(workflow, _values(workflow))
@@ -89,9 +169,9 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         assert command.create_payload["workflow_execution_mode"] is None
         assert command.create_payload["agent"] is None
     if workflow == "analysis_inference":
-        assert command.create_payload["workflow_execution_mode"] == "one_shot"
+        assert command.create_payload["workflow_execution_mode"] == "tool_assisted"
     if workflow in {"conceptual", "logical", "dimensional", "mapping"}:
-        assert command.create_payload["workflow_execution_mode"] == "one_shot"
+        assert command.create_payload["workflow_execution_mode"] == "tool_assisted"
     if workflow in {
         "analysis_inference",
         "conceptual",
@@ -104,7 +184,7 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
             "sdk_code": "langchain_create_agent",
             "provider_code": "databricks",
             "model_code": "databricks-primary",
-            "reasoning_effort_code": "medium",
+            "reasoning_effort_code": "default",
             "max_turns": 10,
             "validation_retry_count": 2,
         }
@@ -152,8 +232,178 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
     inference_mode = next(
         spec for spec in widget_specs("analysis_inference") if spec.name == "ExecutionMode"
     )
-    assert inference_mode.default == "one_shot"
-    assert inference_mode.choices == ("one_shot",)
+    assert inference_mode.default == "tool_assisted"
+    assert inference_mode.choices == (
+        "one_shot",
+        "tool_assisted",
+        "detailed_coverage",
+    )
+    inference_reasoning = next(
+        spec for spec in widget_specs("analysis_inference") if spec.name == "ReasoningEffort"
+    )
+    assert inference_reasoning.default == "default"
+    assert inference_reasoning.choices == ("default", "low", "medium", "high")
+
+
+def test_agent_widget_choices_and_defaults_follow_the_databricks_registry(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        _databricks_registry_with_default_reasoning,
+    )
+
+    specs = {spec.name: spec for spec in widget_specs("analysis_inference")}
+
+    assert specs["AgentProvider"].choices == ("databricks",)
+    assert specs["AgentSDK"].choices == ("openai_agents_sdk",)
+    assert specs["AgentSDK"].default == "openai_agents_sdk"
+    assert specs["AgentModel"].choices == ("registered-databricks-model",)
+    assert specs["AgentModel"].default == "registered-databricks-model"
+    assert specs["ExecutionMode"].choices == ("tool_assisted",)
+    assert specs["ExecutionMode"].default == "tool_assisted"
+    assert specs["ReasoningEffort"].choices == ("default",)
+    assert specs["ReasoningEffort"].default == "default"
+
+
+def test_agent_widgets_offer_all_databricks_models_registered_in_json(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    registry = _databricks_registry_with_secondary_model()
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        lambda: registry,
+    )
+
+    class FakeWidgets:
+        def __init__(self) -> None:
+            self.created: dict[str, tuple[str, tuple[str, ...]]] = {}
+
+        def text(self, name: str, default: str, label: str) -> None:
+            self.created[name] = (default, ())
+
+        def dropdown(
+            self,
+            name: str,
+            default: str,
+            choices: list[str],
+            label: str,
+        ) -> None:
+            self.created[name] = (default, tuple(choices))
+
+    widgets = FakeWidgets()
+    dbutils = type("Dbutils", (), {"widgets": widgets})()
+
+    create_workflow_widgets(
+        "analysis_inference",
+        dbutils=dbutils,
+        uploaded_root=tmp_path,
+    )
+
+    assert widgets.created["AgentModel"] == (
+        "databricks-primary",
+        (
+            "databricks-primary",
+            "databricks-claude-opus-5",
+            "databricks-secondary",
+        ),
+    )
+
+
+def test_request_only_accepts_models_configured_in_the_uploaded_env(monkeypatch) -> None:
+    registry = _databricks_registry_with_secondary_model()
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        lambda: registry,
+    )
+    values = _values("analysis_inference")
+
+    with pytest.raises(NotebookConfigurationError, match="AgentModel"):
+        build_notebook_request(
+            "analysis_inference",
+            values,
+            configured_model_codes={"databricks-secondary"},
+        )
+
+    values["AgentModel"] = "databricks-secondary"
+    command = build_notebook_request(
+        "analysis_inference",
+        values,
+        configured_model_codes={"databricks-secondary"},
+    )
+
+    assert command.create_payload["agent"]["model_code"] == "databricks-secondary"
+
+
+def test_build_notebook_request_accepts_an_exact_registered_agent_profile(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        _databricks_registry_with_default_reasoning,
+    )
+    values = _values("analysis_inference")
+
+    command = build_notebook_request("analysis_inference", values)
+
+    assert command.create_payload["agent"] == {
+        "sdk_code": "openai_agents_sdk",
+        "provider_code": "databricks",
+        "model_code": "registered-databricks-model",
+        "reasoning_effort_code": "default",
+        "max_turns": 10,
+        "validation_retry_count": 2,
+    }
+
+
+def test_build_notebook_request_rejects_a_union_choice_outside_an_exact_profile(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        _databricks_registry_with_disjoint_profiles,
+    )
+    values = _values("analysis_inference")
+    values["ExecutionMode"] = "one_shot"
+
+    with pytest.raises(NotebookConfigurationError, match="combination"):
+        build_notebook_request("analysis_inference", values)
+
+
+def test_code_generation_widgets_and_validation_use_the_internal_detailed_profile(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
+        _databricks_registry_with_disjoint_profiles,
+    )
+
+    specs = {spec.name: spec for spec in widget_specs("code_generation")}
+    values = _values("code_generation")
+    command = build_notebook_request("code_generation", values)
+
+    assert "ExecutionMode" not in specs
+    assert specs["AgentSDK"].choices == ("openai_agents_sdk",)
+    assert specs["ReasoningEffort"].choices == ("default",)
+    assert command.create_payload["workflow_execution_mode"] is None
+    assert command.create_payload["agent"]["sdk_code"] == "openai_agents_sdk"
+    assert command.create_payload["agent"]["reasoning_effort_code"] == "default"
+
+
+@pytest.mark.parametrize(
+    "execution_mode",
+    ("one_shot", "tool_assisted", "detailed_coverage"),
+)
+def test_analysis_inference_accepts_each_supported_execution_mode(
+    execution_mode: str,
+) -> None:
+    values = _values("analysis_inference")
+    values["ExecutionMode"] = execution_mode
+
+    command = build_notebook_request("analysis_inference", values)
+
+    assert command.create_payload["workflow_execution_mode"] == execution_mode
 
 
 def test_mapping_requires_exactly_one_target() -> None:
@@ -241,7 +491,7 @@ GDS_NOTEBOOK_POSTGRES_PASSWORD=fixture-password
         execute,
     )
 
-    create_workflow_widgets(workflow, dbutils=dbutils)
+    create_workflow_widgets(workflow, dbutils=dbutils, uploaded_root=tmp_path)
     result = run_notebook(workflow, dbutils=dbutils, uploaded_root=tmp_path)
 
     specs = widget_specs(workflow)

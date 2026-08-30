@@ -15,6 +15,7 @@ from zipfile import ZIP_DEFLATED, ZIP_STORED, ZipFile, ZipInfo
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_OUTPUT = REPOSITORY_ROOT / "artifacts" / "databricks-ui"
+DEFAULT_FOUNDRY_OUTPUT = REPOSITORY_ROOT / "artifacts" / "databricks-ui-foundry"
 APP_DIRECTORY_NAME = "gds-workbench-app-source"
 NOTEBOOK_DIRECTORY_NAME = "gds-workbench-notebooks"
 GENERATED_MARKER = ".gds-databricks-ui-artifact"
@@ -24,12 +25,16 @@ _ZIP_FILE_MODE = (stat.S_IFREG | 0o644) << 16
 _ZIP_DIRECTORY_MODE = ((stat.S_IFDIR | 0o755) << 16) | 0x10
 
 _APP_ROOT_FILES = (
-    "app.yaml",
+    "app.foundry.yaml.example",
     "package-lock.json",
     "package.json",
     "pyproject.toml",
     "uv.lock",
 )
+_AGENT_PROVIDER_MANIFESTS = {
+    "databricks": "app.yaml",
+    "microsoft_foundry": "app.foundry.yaml.example",
+}
 _FRONTEND_ROOT_FILES = (
     "index.html",
     "package.json",
@@ -179,7 +184,9 @@ def _copy_tree(
     for relative in excluded_relative_files:
         excluded_source = source_root / relative
         if excluded_source.is_symlink() or not excluded_source.is_file():
-            raise ArtifactBuildError(f"excluded source file is unavailable: {excluded_source}")
+            raise ArtifactBuildError(
+                f"excluded source file is unavailable: {excluded_source}"
+            )
     for relative in excluded_relative_prefixes:
         excluded_source = source_root / relative
         if excluded_source.is_symlink() or not excluded_source.is_dir():
@@ -205,9 +212,20 @@ def _copy_tree(
         _copy_file(source, destination_root / relative)
 
 
-def _build_app_source(destination: Path) -> None:
+def _build_app_source(destination: Path, *, agent_provider: str) -> None:
     for relative in _APP_ROOT_FILES:
         _copy_file(REPOSITORY_ROOT / relative, destination / relative)
+    try:
+        manifest_source = _AGENT_PROVIDER_MANIFESTS[agent_provider]
+    except KeyError as error:
+        raise ArtifactBuildError(
+            f"unsupported agent provider: {agent_provider}"
+        ) from error
+    _copy_file(REPOSITORY_ROOT / manifest_source, destination / "app.yaml")
+    _copy_file(
+        REPOSITORY_ROOT / "web_app" / "DEPLOYMENT_GUIDE.md",
+        destination / "DEPLOYMENT_GUIDE.md",
+    )
 
     _copy_file(
         REPOSITORY_ROOT / "mcp_server" / "pyproject.toml",
@@ -370,12 +388,13 @@ def _write_zip(source_directory: Path, archive: Path) -> None:
 
 
 def _write_operator_files(
-    staging: Path, app: Path, notebooks: Path
+    staging: Path, app: Path, notebooks: Path, *, agent_provider: str
 ) -> tuple[Path, Path]:
     manifest = staging / "artifact-manifest.json"
     manifest.write_text(
         json.dumps(
             {
+                "agent_provider": agent_provider,
                 "app_source": _tree_manifest(app),
                 "notebook_source": _tree_manifest(notebooks),
             },
@@ -416,8 +435,15 @@ def _result(output: Path) -> UploadArtifacts:
     )
 
 
-def build_uploads(output_directory: Path, *, replace: bool = False) -> UploadArtifacts:
+def build_uploads(
+    output_directory: Path,
+    *,
+    replace: bool = False,
+    agent_provider: str = "databricks",
+) -> UploadArtifacts:
     """Create expanded sources and content-root ZIPs for two UI target folders."""
+    if agent_provider not in _AGENT_PROVIDER_MANIFESTS:
+        raise ArtifactBuildError(f"unsupported agent provider: {agent_provider}")
     output = output_directory.resolve()
     output.parent.mkdir(parents=True, exist_ok=True)
     existing_output = output.exists()
@@ -443,11 +469,16 @@ def build_uploads(output_directory: Path, *, replace: bool = False) -> UploadArt
     try:
         app = staging / APP_DIRECTORY_NAME
         notebooks = staging / NOTEBOOK_DIRECTORY_NAME
-        _build_app_source(app)
+        _build_app_source(app, agent_provider=agent_provider)
         _build_notebook_source(notebooks)
         _write_zip(app, staging / f"{APP_DIRECTORY_NAME}.zip")
         _write_zip(notebooks, staging / f"{NOTEBOOK_DIRECTORY_NAME}.zip")
-        _write_operator_files(staging, app, notebooks)
+        _write_operator_files(
+            staging,
+            app,
+            notebooks,
+            agent_provider=agent_provider,
+        )
         (staging / GENERATED_MARKER).write_text(
             GENERATED_MARKER_VALUE,
             encoding="utf-8",
@@ -466,15 +497,32 @@ def build_uploads(output_directory: Path, *, replace: bool = False) -> UploadArt
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--output", type=Path, default=DEFAULT_OUTPUT)
+    parser.add_argument("--output", type=Path)
+    parser.add_argument(
+        "--agent-provider",
+        choices=tuple(_AGENT_PROVIDER_MANIFESTS),
+        default="databricks",
+        help="Select the Databricks-only or Foundry-enabled app.yaml before hashing.",
+    )
     parser.add_argument(
         "--replace",
         action="store_true",
         help="Replace only a prior output carrying this builder's safety marker.",
     )
     arguments = parser.parse_args()
+    output = arguments.output
+    if output is None:
+        output = (
+            DEFAULT_FOUNDRY_OUTPUT
+            if arguments.agent_provider == "microsoft_foundry"
+            else DEFAULT_OUTPUT
+        )
     try:
-        result = build_uploads(arguments.output, replace=arguments.replace)
+        result = build_uploads(
+            output,
+            replace=arguments.replace,
+            agent_provider=arguments.agent_provider,
+        )
     except ArtifactBuildError as error:
         parser.exit(2, f"artifact build refused: {error}\n")
     print(result.app_archive)

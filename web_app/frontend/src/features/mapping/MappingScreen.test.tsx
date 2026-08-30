@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from "@testing-library/react";
+import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -172,6 +172,11 @@ describe("Mapping journey", () => {
     await screen.findByRole("table", { name: "Mapping Dependencies" });
     await user.click(screen.getByRole("button", { name: "Run Mapping" }));
     expect(await screen.findByRole("heading", { name: "Configure Mapping run" })).toBeVisible();
+    const executionMode = screen.getByLabelText("Execution mode");
+    expect(within(executionMode).getAllByRole("option").map((option) => (
+      (option as HTMLOptionElement).value
+    ))).toEqual(["", "tool_assisted"]);
+    expect(executionMode).toHaveValue("tool_assisted");
     expect(screen.getByLabelText("Object Mapping Output Template")).toHaveValue("");
     expect(screen.getByLabelText("Attribute Mapping Output Template")).toHaveValue("");
     expect(screen.getByRole("option", {
@@ -193,7 +198,7 @@ describe("Mapping journey", () => {
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual({
       expected_model_revision: 18,
       model_workflow: "mapping",
-      workflow_execution_mode: "one_shot",
+      workflow_execution_mode: "tool_assisted",
       selected_object_ids: [701],
       requested_batch_id: null,
       agent: {
@@ -216,7 +221,7 @@ describe("Mapping journey", () => {
       "/api/v1/tenants/7/models/18/mapping/runs/1150/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ execution_mode: "one_shot", expected_model_revision: 18 }),
+        body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
       }),
     );
   });
@@ -634,15 +639,19 @@ const mappingScope = [
 ];
 
 const agentCapabilities = {
-  schema_version: "1.0",
+  schema_version: "3.0",
   sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
   providers: [{ code: "databricks", name: "Databricks Model Serving" }],
   models: [{
     code: "databricks-primary",
     name: "GPT-5.6",
     provider_code: "databricks",
-    sdk_codes: ["openai_agents"],
-    reasoning_effort_codes: ["medium"],
+    deployment_name: "databricks-primary",
+    execution_profiles: ["tool_assisted"].map((execution_mode) => ({
+      sdk_code: "openai_agents",
+      execution_mode,
+      reasoning_effort_codes: ["medium"],
+    })),
   }],
   reasoning_efforts: [{ code: "medium", name: "Medium" }],
   max_turns: { minimum: 1, default: 8, maximum: 50 },

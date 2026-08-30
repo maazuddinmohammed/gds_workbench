@@ -61,44 +61,33 @@ describe("Model Profiling", () => {
     expectFact(context, "Profiles returned", "2");
     expectFact(context, "Last profiled", "Aug 24");
 
-    const identity = factGroup("Identity", "customer_id");
-    expect(within(screen.getByRole("article", { name: "customer_id" }))
-      .queryAllByRole("region")).toHaveLength(0);
-    expectFact(identity, "Attribute ID", "601");
-    expectFact(identity, "Ordinal position", "1");
-    expectFact(identity, "Data type", "bigint");
-    const counts = factGroup("Counts", "customer_id");
-    expectFact(counts, "Rows", "10");
-    expectFact(counts, "Non-null rows", "8");
-    expectFact(counts, "Null rows", "2");
-    expectFact(counts, "Blank rows", "0");
-    expectFact(counts, "Distinct values", "8");
-    const lengths = factGroup("Data lengths", "customer_id");
-    expectFact(lengths, "Minimum length", "1");
-    expectFact(lengths, "Maximum length", "8");
-    expectFact(lengths, "Average length", "4.2");
-    const percentages = factGroup("Percentages", "customer_id");
-    expectFact(percentages, "Populated", "80%");
-    expectFact(percentages, "Duplicate rate", "0%");
-    expectFact(percentages, "Null rate", "20%");
-    expectFact(percentages, "Blank rate", "0%");
-    expectFact(percentages, "Distinct rate", "100%");
-    const provenance = factGroup("Provenance", "customer_id");
-    expectFact(provenance, "Workflow run", "Run 1048");
-    expectFact(provenance, "Agent run", "Not recorded");
-    expectFact(provenance, "Created", "Aug 24");
-    expectFact(provenance, "Updated", "Aug 24");
-    expectFact(provenance, "Source context digest", "a".repeat(64));
+    const profileTable = screen.getByRole("table", { name: "Attribute profiles" });
+    expect(screen.getByRole("region", { name: "Scrollable Attribute profile metrics" }))
+      .toHaveAttribute("tabindex", "0");
+    expect(within(profileTable).getByRole("columnheader", { name: "Counts" }))
+      .toHaveAttribute("colspan", "5");
+    expect(within(profileTable).getByRole("columnheader", { name: "Percentages" }))
+      .toHaveAttribute("colspan", "5");
+    expect(within(profileTable).getByRole("columnheader", { name: "Provenance" }))
+      .toHaveAttribute("colspan", "5");
+    expect(within(profileTable).getByRole("columnheader", { name: "Source context digest" }))
+      .toBeVisible();
 
-    const nullableCounts = factGroup("Counts", "status");
-    expectFact(nullableCounts, "Blank rows", "Not recorded");
-    expectFact(nullableCounts, "Distinct values", "Not recorded");
-    const nullableLengths = factGroup("Data lengths", "status");
-    expectFact(nullableLengths, "Minimum length", "Not recorded");
-    expectFact(nullableLengths, "Average length", "Not recorded");
-    const nullablePercentages = factGroup("Percentages", "status");
-    expectFact(nullablePercentages, "Duplicate rate", "—");
-    expectFact(nullablePercentages, "Blank rate", "—");
+    const customerProfile = profileRow(profileTable, "customer_id");
+    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(21);
+    expect(customerProfile).toHaveTextContent("601");
+    expect(customerProfile).toHaveTextContent("bigint");
+    expect(customerProfile).toHaveTextContent("10");
+    expect(customerProfile).toHaveTextContent("80%");
+    expect(customerProfile).toHaveTextContent("Run 1048");
+    expect(customerProfile).toHaveTextContent("Not recorded");
+    expect(customerProfile).toHaveTextContent("a".repeat(64));
+
+    const statusProfile = profileRow(profileTable, "status");
+    expect(statusProfile).toHaveTextContent("string");
+    expect(statusProfile).toHaveTextContent("100%");
+    expect(statusProfile).toHaveTextContent("Not recorded");
+    expect(statusProfile).toHaveTextContent("—");
 
     await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
@@ -350,11 +339,10 @@ function expectFact(scope: HTMLElement, label: string, value: string): void {
   expect(within(scope).getByText(label).parentElement).toHaveTextContent(value);
 }
 
-function factGroup(heading: string, attributeName: string): HTMLElement {
-  const card = screen.getByRole("article", { name: attributeName });
-  const section = within(card).getByRole("heading", { name: heading }).closest("section");
-  if (!section) throw new Error(`${heading} fact group was not rendered.`);
-  return section;
+function profileRow(table: HTMLElement, attributeName: string): HTMLElement {
+  const row = within(table).getByRole("rowheader", { name: attributeName }).closest("tr");
+  if (!row) throw new Error(`${attributeName} profile row was not rendered.`);
+  return row;
 }
 
 const tenantHomePayload = {

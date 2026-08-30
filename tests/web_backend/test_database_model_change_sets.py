@@ -3031,6 +3031,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             tenant_id=tenant_id,
             model_id=model_id,
             workflow_run_id=workflow_run_id,
+            expected_execution_mode="one_shot",
             expected_model_revision=1,
         )
         claim = await DatabaseWorkflowClaimRepository(database=database).claim_next(

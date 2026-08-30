@@ -57,11 +57,21 @@ seed-owned global assignment without duplicating the template or overwriting
 history. It refuses to replace an active global default owned by another
 template.
 
+After upgrading an existing deployment, replay
+`04_application_reference.sql` first so newly introduced stable stages, such as
+the four Analysis `detailed_coverage` stages, are inserted. Then rerun this
+Prompt seed so their global defaults and any changed existing defaults are
+published and assigned. Both files are replay-safe; neither is a schema install
+or a destructive data reset. Rerun this seed after the bounded Dimensional
+`whole_model_reconciliation` upgrade so deployed agents receive its receipt
+contract instead of the former full-draft contract.
+
 The agent runtime already supplies bounded context, naming rules, Mapping
 output templates, SQL guides, and the required output schema separately. The
-defaults therefore do not duplicate those potentially large values. Only the
-outer reconciliation stages interpolate their allowlisted
-`validation_failures` value.
+defaults therefore do not duplicate those potentially large values. Analysis
+and Logical reconciliation interpolate their bounded allowlisted
+`validation_failures` value. Dimensional reconciliation reads the equivalent
+bounded summary from its receipt context, so the Prompt does not duplicate it.
 
 ## Demo metadata
 

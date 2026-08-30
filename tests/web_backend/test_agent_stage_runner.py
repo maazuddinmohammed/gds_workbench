@@ -100,6 +100,7 @@ class Validator:
 
 
 class Catalog:
+    max_cumulative_result_bytes = 4096
     definitions = (
         LocalAgentToolDefinition(
             name="get_agent_context_manifest",

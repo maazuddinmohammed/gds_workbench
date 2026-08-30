@@ -4,6 +4,7 @@ import re
 from pathlib import Path
 
 import pytest
+
 from gds_workbench_notebooks.errors import (
     NotebookConfigurationError,
     NotebookDatabaseError,
@@ -42,7 +43,6 @@ GDS_NOTEBOOK_POSTGRES_STATEMENT_TIMEOUT_SECONDS=45
 GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS=45
 GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS=15
 GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS=240
-GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=gds-primary
 """
 
 
@@ -77,7 +77,6 @@ def test_loads_bounded_workflow_runtime_controls(tmp_path: Path) -> None:
     assert settings.workflow_lease_seconds == 45
     assert settings.workflow_heartbeat_seconds == 15
     assert settings.agent_timeout_seconds == 240
-    assert settings.databricks_model_endpoint == "gds-primary"
     assert _PASSWORD not in repr(settings)
 
 
@@ -89,7 +88,6 @@ def test_runtime_controls_use_validated_safe_defaults(tmp_path: Path) -> None:
             (
                 "GDS_NOTEBOOK_WORKFLOW_",
                 "GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS=",
-                "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=",
             )
         )
     )
@@ -99,7 +97,6 @@ def test_runtime_controls_use_validated_safe_defaults(tmp_path: Path) -> None:
     assert settings.workflow_lease_seconds == 30
     assert settings.workflow_heartbeat_seconds == 10
     assert settings.agent_timeout_seconds == 120
-    assert settings.databricks_model_endpoint is None
 
 
 @pytest.mark.parametrize(
@@ -107,6 +104,10 @@ def test_runtime_controls_use_validated_safe_defaults(tmp_path: Path) -> None:
     (
         (_valid_env() + "GDS_NOTEBOOK_POSTGRES_DSN=postgresql://unsafe\n", "unsupported"),
         (_valid_env() + "GDS_NOTEBOOK_PRINCIPAL_ID=12\n", "unsupported"),
+        (
+            _valid_env() + "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=legacy-endpoint\n",
+            "unsupported",
+        ),
         (
             _valid_env().replace("gds_notebook_runtime", "gds_web_runtime"),
             "gds_notebook_runtime",
@@ -173,11 +174,6 @@ def test_connection_uses_only_explicit_validated_keywords(tmp_path: Path) -> Non
         ("GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS", "301", "lease duration"),
         ("GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS", "45", "shorter"),
         ("GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS", "601", "Agent timeout"),
-        (
-            "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT",
-            "https://unsafe.example/path",
-            "serving endpoint name",
-        ),
     ),
 )
 def test_rejects_invalid_runtime_controls(
@@ -227,7 +223,6 @@ def test_checked_in_env_example_is_placeholder_only_and_real_env_is_ignored() ->
         "GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS",
         "GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS",
         "GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS",
-        "GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT",
     }
     assert "GDS_NOTEBOOK_POSTGRES_USER=gds_notebook_runtime" in example
     assert "<notebook-runtime-password>" in example

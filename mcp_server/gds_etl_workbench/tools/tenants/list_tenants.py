@@ -53,6 +53,15 @@ SELECT tenant.tenant_id,
    )
  WHERE tenant.is_active
    AND (
+       %s::BOOLEAN
+       OR NOT EXISTS (
+           SELECT 1
+             FROM core.connection AS owned_connection
+            WHERE owned_connection.tenant_id = tenant.tenant_id
+              AND owned_connection.is_global_data_store
+       )
+   )
+   AND (
        actor.is_super_admin
        OR tenant.tenant_visibility = 'global'
        OR membership.tenant_id IS NOT NULL
@@ -70,6 +79,15 @@ SELECT tenant.tenant_id,
        'development' AS effective_role
   FROM core.tenant AS tenant
  WHERE tenant.is_active
+   AND (
+       %s::BOOLEAN
+       OR NOT EXISTS (
+           SELECT 1
+             FROM core.connection AS owned_connection
+            WHERE owned_connection.tenant_id = tenant.tenant_id
+              AND owned_connection.is_global_data_store
+       )
+   )
  ORDER BY lower(tenant.tenant_name), tenant.tenant_id
  LIMIT %s OFFSET %s
 """
@@ -211,9 +229,19 @@ async def query_visible_tenants(
     *,
     limit: int,
     offset: int,
+    include_global_data_store_owner_tenants: bool = True,
 ) -> list[dict[str, Any]]:
+    """Query authorized Tenants, optionally omitting GDS Connection owners.
+
+    The owner classification uses every retained Connection marked as a Global
+    Data Store, including inactive Connections. Connection activity controls
+    operational availability; it does not turn the owner into a Workbench Tenant.
+    """
     if principal.actor_kind is ActorKind.DEVELOPMENT:
-        return await transaction.fetch_all(_DEV_TENANTS_SQL, (limit, offset))
+        return await transaction.fetch_all(
+            _DEV_TENANTS_SQL,
+            (include_global_data_store_owner_tenants, limit, offset),
+        )
     if principal.principal_id is None:
         raise AuthorizationDeniedError()
     return await transaction.fetch_all(
@@ -221,6 +249,7 @@ async def query_visible_tenants(
         (
             principal.principal_id,
             principal.is_super_admin,
+            include_global_data_store_owner_tenants,
             limit,
             offset,
         ),

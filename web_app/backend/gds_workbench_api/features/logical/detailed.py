@@ -5,12 +5,14 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from copy import deepcopy
+from hashlib import sha256
 from importlib.resources import files
 from typing import Literal, cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AttributePhysicalSourceRecord,
+    LogicalAssertionSourceRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalObjectSourceRecord,
@@ -106,7 +108,7 @@ class DetailedLogicalTopologyProposal(BaseModel):
 class DetailedLogicalTopologyContribution(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    contribution_ref: str = Field(pattern=r"^object_[0-9]{5}$")
+    contribution_ref: str = Field(pattern=r"^object_[0-9]{5}(?:_batch_[0-9]{5})?$")
     source_object: PhysicalObjectKey
     disposition: Literal["represented", "not_logical", "needs_review"]
     rationale: str = Field(min_length=1, max_length=2_000)
@@ -261,6 +263,18 @@ class DetailedLogicalValidationPackage(BaseModel):
         max_length=1_000,
         repr=False,
     )
+    record_digests: tuple[str, ...] = Field(default=(), max_length=1_000)
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> DetailedLogicalValidationPackage:
+        expected = tuple(
+            logical_json_digest(item.record.model_dump(mode="json")) for item in self.records
+        )
+        if len(self.record_refs) != len(set(self.record_refs)) or (
+            self.record_digests and self.record_digests != expected
+        ):
+            raise ValueError("Logical validation package manifest is invalid")
+        return self
 
     @property
     def record_refs(self) -> tuple[str, ...]:
@@ -324,6 +338,7 @@ class DetailedLogicalTopologyContributionValidator:
         contribution_ref: str,
         source_object: PhysicalObjectKey,
         source_attributes: tuple[PhysicalAttributeKey, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not source_attributes or len(source_attributes) > 10_000:
             raise ValueError("Logical topology Attribute context must be bounded and nonempty")
@@ -333,15 +348,17 @@ class DetailedLogicalTopologyContributionValidator:
             key[:5] != expected_object for key in attribute_keys
         ):
             raise ValueError("Logical topology Attribute context must match one source Object")
+        _validate_result_byte_limit(max_result_bytes)
         self._contribution_ref = contribution_ref
         self._source_object = source_object
         self._source_attributes = frozenset(attribute_keys)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedLogicalTopologyContribution)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalTopologyContribution, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_fixed_identity(parsed):
             return _validation_issue(
                 "detailed.topology_contribution_invalid",
@@ -355,7 +372,7 @@ class DetailedLogicalTopologyContributionValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalTopologyContribution:
-        parsed = _parse(DetailedLogicalTopologyContribution, candidate)
+        parsed = self._parse(candidate)
         if (
             parsed is None
             or not self._has_fixed_identity(parsed)
@@ -379,12 +396,21 @@ class DetailedLogicalTopologyContributionValidator:
         ]
         return len(actual) == len(set(actual)) and set(actual) == set(self._source_attributes)
 
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalTopologyContribution | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalTopologyContribution, candidate)
+
 
 class DetailedLogicalTopologyReconciliationValidator:
     def __init__(
         self,
         *,
         contributions: tuple[DetailedLogicalTopologyContribution, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not contributions or len(contributions) > 50_000:
             raise ValueError("Logical topology contributions must be bounded and nonempty")
@@ -402,12 +428,14 @@ class DetailedLogicalTopologyReconciliationValidator:
         }
         if len(self._proposals) != sum(len(item.proposals) for item in contributions):
             raise ValueError("Logical topology proposal references must be unique")
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedLogicalTopologyReconciliation)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalTopologyReconciliation, candidate)
+        parsed = self._parse(candidate)
         if parsed is None:
             return _validation_issue(
                 "detailed.topology_reconciliation_invalid",
@@ -421,7 +449,7 @@ class DetailedLogicalTopologyReconciliationValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalTopologyReconciliation:
-        parsed = _parse(DetailedLogicalTopologyReconciliation, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -469,6 +497,14 @@ class DetailedLogicalTopologyReconciliationValidator:
             referenced_submodels.update(entity.submodel_refs)
         return referenced_submodels == set(submodel_refs)
 
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalTopologyReconciliation | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalTopologyReconciliation, candidate)
+
 
 class DetailedLogicalEntityDetailValidator:
     def __init__(
@@ -477,6 +513,7 @@ class DetailedLogicalEntityDetailValidator:
         entity: DetailedLogicalEntityTopology,
         topology: DetailedLogicalTopologyReconciliation,
         contributions: tuple[DetailedLogicalTopologyContribution, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         proposals = {
             proposal_ref: proposal
@@ -509,6 +546,8 @@ class DetailedLogicalEntityDetailValidator:
             for proposal_ref in proposal_refs
             for attribute in proposals[proposal_ref].source_attributes
         }
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = _output_schema(DetailedLogicalEntityDetail)
@@ -516,7 +555,7 @@ class DetailedLogicalEntityDetailValidator:
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalEntityDetail, candidate)
+        parsed = self._parse(candidate)
         if parsed is None:
             return _validation_issue(
                 "detailed.entity_detail_invalid",
@@ -530,7 +569,7 @@ class DetailedLogicalEntityDetailValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalEntityDetail:
-        parsed = _parse(DetailedLogicalEntityDetail, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -576,6 +615,14 @@ class DetailedLogicalEntityDetailValidator:
             )
         )
 
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalEntityDetail | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalEntityDetail, candidate)
+
 
 class DetailedLogicalReconciliationValidator:
     def __init__(
@@ -586,6 +633,8 @@ class DetailedLogicalReconciliationValidator:
         relationship_signal_refs: tuple[str, ...],
         applied_record_refs: tuple[str, ...],
         final_validator: AgentCandidateValidator | None = None,
+        max_result_bytes: int | None = 2 * 1024 * 1024,
+        require_exact_base_records: bool = False,
     ) -> None:
         self._topology = topology
         self._details = entity_details
@@ -594,6 +643,9 @@ class DetailedLogicalReconciliationValidator:
         self._relationship_signal_refs = relationship_signal_refs
         self._applied_record_refs = applied_record_refs
         self._final_validator = final_validator
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
+        self._require_exact_base_records = require_exact_base_records
         if any(
             len(values) != len(set(values))
             for values in (
@@ -611,7 +663,7 @@ class DetailedLogicalReconciliationValidator:
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalReconciliationCandidate, candidate)
+        parsed = self._parse(candidate)
         if parsed is None:
             return _validation_issue(
                 "detailed.reconciliation_invalid",
@@ -627,7 +679,7 @@ class DetailedLogicalReconciliationValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalReconciliationCandidate:
-        parsed = _parse(DetailedLogicalReconciliationCandidate, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -679,26 +731,83 @@ class DetailedLogicalReconciliationValidator:
             for detail in self._details
             for attribute in detail.attributes
         }
-        return (
-            required_submodels <= submodel_names
+        candidate_entity_by_name = {
+            normalize_model_key_value(item.logical_entity_name): item for item in candidate.entities
+        }
+        candidate_attribute_by_key = {
+            (
+                normalize_model_key_value(item.logical_entity_name),
+                normalize_model_key_value(item.logical_attribute_name),
+            ): item
+            for item in candidate.attributes
+        }
+        required_records_match = (
+            required_submodels == submodel_names
+            and required_entities == entity_names
+            and required_attributes == attribute_keys
+            if self._require_exact_base_records
+            else required_submodels <= submodel_names
             and required_entities <= entity_names
             and required_attributes <= attribute_keys
+        )
+        return (
+            required_records_match
+            and all(
+                _reconciliation_entity_sources_match(
+                    required=detail.entity,
+                    candidate=candidate_entity_by_name[
+                        normalize_model_key_value(detail.entity.logical_entity_name)
+                    ],
+                )
+                for detail in self._details
+            )
+            and all(
+                _physical_attribute_sources(attribute)
+                == _physical_attribute_sources(
+                    candidate_attribute_by_key[
+                        (
+                            normalize_model_key_value(attribute.logical_entity_name),
+                            normalize_model_key_value(attribute.logical_attribute_name),
+                        )
+                    ]
+                )
+                for detail in self._details
+                for attribute in detail.attributes
+            )
+            and len(submodel_names) == len(candidate.submodels)
+            and len(entity_names) == len(candidate.entities)
+            and len(attribute_keys) == len(candidate.attributes)
             and all(not item.logical_submodel_is_locked for item in candidate.submodels)
             and all(_safe_entity(item) for item in candidate.entities)
             and all(_safe_attribute(item) for item in candidate.attributes)
             and all(not item.logical_relationship_is_locked for item in candidate.relationships)
         )
 
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalReconciliationCandidate | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalReconciliationCandidate, candidate)
+
 
 class DetailedLogicalValidationWorkerValidator:
-    def __init__(self, *, package: DetailedLogicalValidationPackage) -> None:
+    def __init__(
+        self,
+        *,
+        package: DetailedLogicalValidationPackage,
+        max_result_bytes: int | None = 2 * 1024 * 1024,
+    ) -> None:
+        _validate_result_byte_limit(max_result_bytes)
         self._package = package
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedLogicalValidationWorkerResult)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalValidationWorkerResult, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_worker_coverage_invalid",
@@ -707,7 +816,7 @@ class DetailedLogicalValidationWorkerValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalValidationWorkerResult:
-        parsed = _parse(DetailedLogicalValidationWorkerResult, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -726,12 +835,21 @@ class DetailedLogicalValidationWorkerValidator:
             )
         )
 
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalValidationWorkerResult | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalValidationWorkerResult, candidate)
+
 
 class DetailedLogicalValidationLeadValidator:
     def __init__(
         self,
         *,
         worker_results: tuple[DetailedLogicalValidationWorkerResult, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not worker_results or len(worker_results) > 10_000:
             raise ValueError("Logical validator worker results must be bounded and nonempty")
@@ -745,12 +863,14 @@ class DetailedLogicalValidationLeadValidator:
             self._finding_refs
         ) != len(set(self._finding_refs)):
             raise ValueError("Logical validator worker references must be unique")
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedLogicalValidationLead)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedLogicalValidationLead, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_lead_coverage_invalid",
@@ -759,7 +879,7 @@ class DetailedLogicalValidationLeadValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedLogicalValidationLead:
-        parsed = _parse(DetailedLogicalValidationLead, candidate)
+        parsed = self._parse(candidate)
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -771,6 +891,14 @@ class DetailedLogicalValidationLeadValidator:
             and _exact_unique(candidate.blocking_finding_refs, self._blocking_refs)
             and ((candidate.repair_brief is not None) == bool(self._blocking_refs))
         )
+
+    def _parse(self, candidate: JsonValue) -> DetailedLogicalValidationLead | None:
+        if (
+            self._max_result_bytes is not None
+            and logical_json_bytes(candidate) > self._max_result_bytes
+        ):
+            return None
+        return _parse(DetailedLogicalValidationLead, candidate)
 
 
 def build_logical_relationship_signal_ledger(
@@ -866,6 +994,208 @@ def build_logical_relationship_signal_ledger(
     return DetailedLogicalRelationshipSignalLedger(signals=signals)
 
 
+def merge_logical_topology_partitions(
+    *,
+    contributions: tuple[DetailedLogicalTopologyContribution, ...],
+    partitions: tuple[DetailedLogicalTopologyReconciliation, ...],
+) -> DetailedLogicalTopologyReconciliation:
+    """Merge disjoint topology partitions in original proposal order."""
+
+    if not contributions or not partitions:
+        raise AgentCandidateValidationError()
+    ordered_proposal_refs = tuple(
+        reference for contribution in contributions for reference in contribution.proposal_refs
+    )
+    proposal_order = {
+        reference: position for position, reference in enumerate(ordered_proposal_refs)
+    }
+    if len(proposal_order) != sum(len(item.proposals) for item in contributions):
+        raise AgentCandidateValidationError()
+
+    covered: list[str] = []
+    discarded: list[str] = []
+    submodel_records: dict[str, LogicalSubmodelRecord] = {}
+    entity_groups: dict[str, dict[str, object]] = {}
+    for partition in partitions:
+        submodel_by_ref = {
+            item.canonical_submodel_ref: item.submodel for item in partition.submodels
+        }
+        for topology_entity in partition.entities:
+            normalized_name = normalize_model_key_value(topology_entity.logical_entity_name)
+            group = entity_groups.setdefault(
+                normalized_name,
+                {
+                    "name": topology_entity.logical_entity_name,
+                    "contribution_refs": [],
+                    "submodel_names": [],
+                },
+            )
+            group_refs = cast(list[str], group["contribution_refs"])
+            group_names = cast(list[str], group["submodel_names"])
+            group_refs.extend(topology_entity.contribution_refs)
+            for reference in topology_entity.submodel_refs:
+                submodel = submodel_by_ref.get(reference)
+                if submodel is None:
+                    raise AgentCandidateValidationError()
+                normalized_submodel = normalize_model_key_value(submodel.logical_submodel_name)
+                existing = submodel_records.get(normalized_submodel)
+                if existing is not None and existing != submodel:
+                    raise AgentCandidateValidationError()
+                submodel_records.setdefault(normalized_submodel, submodel)
+                if normalized_submodel not in group_names:
+                    group_names.append(normalized_submodel)
+            covered.extend(topology_entity.contribution_refs)
+        covered.extend(partition.discarded_contribution_refs)
+        discarded.extend(partition.discarded_contribution_refs)
+
+    if len(covered) != len(set(covered)) or set(covered) != set(proposal_order):
+        raise AgentCandidateValidationError()
+    ordered_groups = sorted(
+        entity_groups.values(),
+        key=lambda item: min(
+            proposal_order[reference] for reference in cast(list[str], item["contribution_refs"])
+        ),
+    )
+    ordered_submodel_names: list[str] = []
+    for group in ordered_groups:
+        for name in cast(list[str], group["submodel_names"]):
+            if name not in ordered_submodel_names:
+                ordered_submodel_names.append(name)
+    submodel_ref_by_name = {
+        name: f"submodel_{position:05d}"
+        for position, name in enumerate(ordered_submodel_names, start=1)
+    }
+    candidate = cast(
+        JsonValue,
+        {
+            "submodels": [
+                {
+                    "canonical_submodel_ref": submodel_ref_by_name[name],
+                    "submodel": submodel_records[name].model_dump(mode="json"),
+                }
+                for name in ordered_submodel_names
+            ],
+            "entities": [
+                {
+                    "canonical_entity_ref": f"entity_{position:05d}",
+                    "logical_entity_name": cast(str, group["name"]),
+                    "contribution_refs": sorted(
+                        cast(list[str], group["contribution_refs"]),
+                        key=proposal_order.__getitem__,
+                    ),
+                    "submodel_refs": [
+                        submodel_ref_by_name[name]
+                        for name in cast(list[str], group["submodel_names"])
+                    ],
+                }
+                for position, group in enumerate(ordered_groups, start=1)
+            ],
+            "discarded_contribution_refs": sorted(
+                discarded,
+                key=proposal_order.__getitem__,
+            ),
+        },
+    )
+    return DetailedLogicalTopologyReconciliationValidator(
+        contributions=contributions,
+        max_result_bytes=None,
+    ).parse_validated(candidate)
+
+
+def merge_logical_entity_detail_partitions(
+    *,
+    entity: DetailedLogicalEntityTopology,
+    topology: DetailedLogicalTopologyReconciliation,
+    contributions: tuple[DetailedLogicalTopologyContribution, ...],
+    partitions: tuple[DetailedLogicalEntityDetail, ...],
+) -> DetailedLogicalEntityDetail:
+    """Merge one Entity's disjoint detail partitions without losing source order."""
+
+    if not partitions or any(
+        item.canonical_entity_ref != entity.canonical_entity_ref for item in partitions
+    ):
+        raise AgentCandidateValidationError()
+    merged_entity = _merge_entity_records(tuple(item.entity for item in partitions))
+    attributes: dict[str, list[LogicalAttributeRecord]] = {}
+    for partition in partitions:
+        for attribute in partition.attributes:
+            name = normalize_model_key_value(attribute.logical_attribute_name)
+            attributes.setdefault(name, []).append(attribute)
+    merged_attributes: list[LogicalAttributeRecord] = []
+    for records in attributes.values():
+        merged_attribute = _merge_attribute_records(tuple(records))
+        raw = merged_attribute.model_dump(mode="json")
+        raw["logical_attribute_ordinal_position"] = len(merged_attributes) + 1
+        merged_attributes.append(
+            LogicalAttributeRecord.model_validate_json(
+                json.dumps(raw, ensure_ascii=False, separators=(",", ":")),
+                strict=True,
+            )
+        )
+    merged = DetailedLogicalEntityDetail(
+        canonical_entity_ref=entity.canonical_entity_ref,
+        entity=merged_entity,
+        attributes=tuple(merged_attributes),
+    )
+    return DetailedLogicalEntityDetailValidator(
+        entity=entity,
+        topology=topology,
+        contributions=contributions,
+        max_result_bytes=None,
+    ).parse_validated(cast(JsonValue, merged.model_dump(mode="json")))
+
+
+def merge_logical_reconciliation_partitions(
+    *,
+    partitions: tuple[DetailedLogicalReconciliationCandidate, ...],
+    reviewed_submodel_refs: tuple[str, ...],
+    reviewed_entity_refs: tuple[str, ...],
+    reviewed_relationship_signal_refs: tuple[str, ...],
+    reviewed_applied_record_refs: tuple[str, ...],
+) -> DetailedLogicalReconciliationCandidate:
+    """Merge byte-bounded reconciliation results with strict identity checks."""
+
+    if not partitions:
+        raise AgentCandidateValidationError()
+    submodels: dict[str, LogicalSubmodelRecord] = {}
+    entities: dict[str, list[LogicalEntityRecord]] = {}
+    attributes: dict[tuple[str, str], LogicalAttributeRecord] = {}
+    relationships: dict[tuple[str, str, str, str, str], LogicalRelationshipRecord] = {}
+    for partition in partitions:
+        for record in partition.submodels:
+            key = normalize_model_key_value(record.logical_submodel_name)
+            if key in submodels and submodels[key] != record:
+                raise AgentCandidateValidationError()
+            submodels.setdefault(key, record)
+        for record in partition.entities:
+            entities.setdefault(normalize_model_key_value(record.logical_entity_name), []).append(
+                record
+            )
+        for record in partition.attributes:
+            key = (
+                normalize_model_key_value(record.logical_entity_name),
+                normalize_model_key_value(record.logical_attribute_name),
+            )
+            if key in attributes and attributes[key] != record:
+                raise AgentCandidateValidationError()
+            attributes.setdefault(key, record)
+        for record in partition.relationships:
+            key = _relationship_key(record)
+            if key in relationships and relationships[key] != record:
+                raise AgentCandidateValidationError()
+            relationships.setdefault(key, record)
+    return DetailedLogicalReconciliationCandidate(
+        submodels=tuple(submodels.values()),
+        entities=tuple(_merge_entity_records(tuple(records)) for records in entities.values()),
+        attributes=tuple(attributes.values()),
+        relationships=tuple(relationships.values()),
+        reviewed_submodel_refs=reviewed_submodel_refs,
+        reviewed_entity_refs=reviewed_entity_refs,
+        reviewed_relationship_signal_refs=reviewed_relationship_signal_refs,
+        reviewed_applied_record_refs=reviewed_applied_record_refs,
+    )
+
+
 def build_logical_validation_packages(
     *,
     candidate: DetailedLogicalReconciliationCandidate,
@@ -881,12 +1211,24 @@ def build_logical_validation_packages(
         DetailedLogicalValidationPackage(
             package_ref=f"validation_{position:05d}",
             records=tuple(records[offset : offset + package_size]),
+            record_digests=tuple(
+                logical_json_digest(item.record.model_dump(mode="json"))
+                for item in records[offset : offset + package_size]
+            ),
         )
         for position, offset in enumerate(range(0, len(records), package_size), start=1)
     )
     if not packages or len(packages) > max_packages:
         raise InvalidRequestError("Logical validation exceeds its configured package limit.")
     return packages
+
+
+def logical_validation_records(
+    candidate: DetailedLogicalReconciliationCandidate,
+) -> tuple[DetailedLogicalValidationRecord, ...]:
+    """Return the deterministic validation record order for byte-safe packaging."""
+
+    return tuple(_validation_records(candidate))
 
 
 def decide_logical_detailed_handoff(
@@ -1030,6 +1372,100 @@ def _materialize(candidate: DetailedLogicalReconciliationCandidate) -> JsonValue
     )
 
 
+def _merge_entity_records(
+    records: tuple[LogicalEntityRecord, ...],
+) -> LogicalEntityRecord:
+    if not records:
+        raise AgentCandidateValidationError()
+    baseline = records[0].model_dump(mode="json")
+    baseline.pop("sources")
+    sources: dict[tuple[str, ...], dict[str, JsonValue]] = {}
+    for record in records:
+        comparable = record.model_dump(mode="json")
+        raw_sources = comparable.pop("sources")
+        if comparable != baseline or not isinstance(raw_sources, list):
+            raise AgentCandidateValidationError()
+        for source in record.sources:
+            key = _entity_source_key(source)
+            raw = cast(dict[str, JsonValue], source.model_dump(mode="json"))
+            existing = sources.get(key)
+            if existing is not None:
+                existing_without_order = {k: v for k, v in existing.items() if k != "source_order"}
+                raw_without_order = {k: v for k, v in raw.items() if k != "source_order"}
+                if existing_without_order != raw_without_order:
+                    raise AgentCandidateValidationError()
+                continue
+            sources[key] = raw
+    baseline["sources"] = [
+        {**source, "source_order": position}
+        for position, source in enumerate(sources.values(), start=1)
+    ]
+    return LogicalEntityRecord.model_validate_json(
+        json.dumps(baseline, ensure_ascii=False, separators=(",", ":")),
+        strict=True,
+    )
+
+
+def _merge_attribute_records(
+    records: tuple[LogicalAttributeRecord, ...],
+) -> LogicalAttributeRecord:
+    if not records:
+        raise AgentCandidateValidationError()
+    baseline = records[0].model_dump(mode="json")
+    baseline.pop("sources")
+    baseline.pop("logical_attribute_ordinal_position")
+    sources: dict[tuple[str, ...], dict[str, JsonValue]] = {}
+    for record in records:
+        comparable = record.model_dump(mode="json")
+        comparable.pop("logical_attribute_ordinal_position")
+        raw_sources = comparable.pop("sources")
+        if comparable != baseline or not isinstance(raw_sources, list):
+            raise AgentCandidateValidationError()
+        for source in record.sources:
+            if isinstance(source, AttributePhysicalSourceRecord):
+                key = ("attribute", *_physical_attribute_key(source.source_attribute))
+            else:
+                key = (
+                    "assertion",
+                    normalize_model_key_value(
+                        source.assertion_record.modeling_assertion_record_key
+                    ),
+                )
+            raw = cast(dict[str, JsonValue], source.model_dump(mode="json"))
+            existing = sources.get(key)
+            if existing is not None:
+                existing_without_order = {
+                    key: value for key, value in existing.items() if key != "source_order"
+                }
+                raw_without_order = {
+                    key: value for key, value in raw.items() if key != "source_order"
+                }
+                if existing_without_order != raw_without_order:
+                    raise AgentCandidateValidationError()
+                continue
+            sources[key] = raw
+    baseline["logical_attribute_ordinal_position"] = 1
+    baseline["sources"] = [
+        {**source, "source_order": position}
+        for position, source in enumerate(sources.values(), start=1)
+    ]
+    return LogicalAttributeRecord.model_validate_json(
+        json.dumps(baseline, ensure_ascii=False, separators=(",", ":")),
+        strict=True,
+    )
+
+
+def _entity_source_key(
+    source: LogicalObjectSourceRecord | LogicalAssertionSourceRecord,
+) -> tuple[str, ...]:
+    if isinstance(source, LogicalObjectSourceRecord):
+        return ("object", *_physical_object_key(source.source_object))
+    return (
+        "assertion",
+        normalize_model_key_value(source.assertion_record.modeling_assertion_record_key),
+    )
+
+
 def _safe_entity(entity: LogicalEntityRecord) -> bool:
     return (
         not entity.logical_entity_is_locked
@@ -1044,6 +1480,34 @@ def _safe_attribute(attribute: LogicalAttributeRecord) -> bool:
         and not attribute.logical_attribute_is_audit_column
         and all(not item.is_locked for item in attribute.sources)
     )
+
+
+def _reconciliation_entity_sources_match(
+    *,
+    required: LogicalEntityRecord,
+    candidate: LogicalEntityRecord,
+) -> bool:
+    required_submodels = {
+        normalize_model_key_value(item.submodel_name) for item in required.submodels
+    }
+    candidate_submodels = {
+        normalize_model_key_value(item.submodel_name) for item in candidate.submodels
+    }
+    required_objects = tuple(
+        sorted(
+            _physical_object_key(item.source_object)
+            for item in required.sources
+            if isinstance(item, LogicalObjectSourceRecord)
+        )
+    )
+    candidate_objects = tuple(
+        sorted(
+            _physical_object_key(item.source_object)
+            for item in candidate.sources
+            if isinstance(item, LogicalObjectSourceRecord)
+        )
+    )
+    return required_submodels == candidate_submodels and required_objects == candidate_objects
 
 
 def _matching_attribute_signal(
@@ -1104,6 +1568,36 @@ def _physical_attribute_key(item: PhysicalAttributeKey) -> _AttributeIdentity:
 
 def _exact_unique(actual: Sequence[str], expected: Sequence[str]) -> bool:
     return len(actual) == len(set(actual)) and set(actual) == set(expected)
+
+
+def _validate_result_byte_limit(maximum_bytes: int | None) -> None:
+    if maximum_bytes is not None and not 1 <= maximum_bytes <= 10 * 1024 * 1024:
+        raise ValueError("Logical detailed result byte limit is invalid")
+
+
+def logical_json_bytes(value: JsonValue) -> int:
+    """Return deterministic canonical UTF-8 JSON bytes for a Logical value."""
+
+    return len(_logical_json_data(value))
+
+
+def logical_json_digest(value: JsonValue) -> str:
+    """Return the SHA-256 of deterministic canonical UTF-8 Logical JSON."""
+
+    return sha256(_logical_json_data(value)).hexdigest()
+
+
+def _logical_json_data(value: JsonValue) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise AgentCandidateValidationError() from None
 
 
 def _parse[CandidateT: BaseModel](
@@ -1173,5 +1667,11 @@ __all__ = [
     "build_logical_validation_packages",
     "decide_logical_detailed_handoff",
     "load_default_detailed_logical_policy",
+    "logical_json_bytes",
+    "logical_json_digest",
     "logical_applied_record_refs",
+    "logical_validation_records",
+    "merge_logical_entity_detail_partitions",
+    "merge_logical_reconciliation_partitions",
+    "merge_logical_topology_partitions",
 ]

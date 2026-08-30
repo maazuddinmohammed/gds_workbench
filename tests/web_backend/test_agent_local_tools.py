@@ -51,7 +51,8 @@ class _Catalog:
         ),
     )
 
-    def __init__(self) -> None:
+    def __init__(self, *, max_cumulative_result_bytes: int = 4096) -> None:
+        self.max_cumulative_result_bytes = max_cumulative_result_bytes
         self.calls: list[tuple[str, Mapping[str, JsonValue]]] = []
 
     def invoke(
@@ -132,7 +133,6 @@ def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
             },
             strict=True,
         )
-
     with pytest.raises(ValidationError):
         AgentExecutionRequest.model_validate(
             {
@@ -143,7 +143,6 @@ def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
             },
             strict=True,
         )
-
     with pytest.raises(ValidationError):
         AgentExecutionRequest.model_validate(
             {
@@ -154,6 +153,31 @@ def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
             },
             strict=True,
         )
+
+
+def test_each_provider_conversation_has_a_fresh_cumulative_tool_budget() -> None:
+    probe = _Catalog()
+    manifest = probe.invoke("get_agent_context_manifest", {})
+    manifest_bytes = len(
+        json.dumps(
+            manifest,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    catalog = _Catalog(max_cumulative_result_bytes=manifest_bytes)
+    wrapper = getattr(agent_adapters, "_PerExecutionToolCatalog")
+
+    first_conversation = wrapper(catalog)
+    assert first_conversation.invoke("get_agent_context_manifest", {}) == manifest
+    with pytest.raises(WorkbenchError) as captured:
+        first_conversation.invoke("get_agent_context_manifest", {})
+
+    second_conversation = wrapper(catalog)
+    assert second_conversation.invoke("get_agent_context_manifest", {}) == manifest
+    assert captured.value.code == "agent_context_tool_result_too_large"
 
 
 @pytest.mark.asyncio

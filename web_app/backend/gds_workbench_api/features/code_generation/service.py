@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import logging
 from contextlib import AbstractAsyncContextManager
+from hashlib import sha256
 from typing import Protocol, cast
 from uuid import UUID
 
@@ -17,6 +19,7 @@ from gds_etl_workbench.infrastructure.postgres import (
 )
 from pydantic import JsonValue
 
+from gds_workbench_api.capabilities import CODE_GENERATION_AGENT_EXECUTION_MODE
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
@@ -288,6 +291,11 @@ class DatabaseCodeGenerationExecutor:
             )
 
             guide_content = _guide_content(context)
+            stage_plan = plan.model_copy(
+                update={
+                    "workflow_execution_mode": CODE_GENERATION_AGENT_EXECUTION_MODE,
+                }
+            )
             artifacts: list[GeneratedSqlArtifact] = []
             for position, target in enumerate(context.targets, start=1):
                 target_context = _target_agent_context(
@@ -303,10 +311,12 @@ class DatabaseCodeGenerationExecutor:
                     )
                 )
                 outcome = await self._stage_runner.run(
-                    plan=plan,
+                    plan=stage_plan,
                     stage_code="sql_generation",
                     resolver_values={
-                        "workflow.code_generation.common.sql_generation.context": (target_context),
+                        "workflow.code_generation.common.sql_generation.context": (
+                            _target_context_manifest(target_context)
+                        ),
                         "workflow.code_generation.sql_generation_guide": guide_content,
                         "workflow.validation_failures": [],
                     },
@@ -441,7 +451,66 @@ def _target_agent_context(
     ]
     if len(matches) != 1:
         raise InvalidRequestError("The Code Generation target context is unavailable.")
-    return cast(JsonValue, {"targets": matches})
+    match = matches[0]
+    source_context = match.get("context")
+    if not isinstance(source_context, dict):
+        raise InvalidRequestError("The Code Generation target context is unavailable.")
+    guide = source_context.get("guide")
+    if not isinstance(guide, dict):
+        raise InvalidRequestError("The Code Generation target context is unavailable.")
+    content = guide.get("content")
+    if not isinstance(content, str) or not content.strip() or "\x00" in content:
+        raise InvalidRequestError("The Code Generation target context is unavailable.")
+    content_bytes = content.encode("utf-8")
+    delivered_guide = {name: item for name, item in guide.items() if name != "content"}
+    delivered_guide.update(
+        {
+            "content_delivery": "sql_generation_guide_variable",
+            "content_sha256": sha256(content_bytes).hexdigest(),
+            "content_byte_count": len(content_bytes),
+        }
+    )
+    return cast(
+        JsonValue,
+        {
+            "targets": [
+                {
+                    **match,
+                    "context": {**source_context, "guide": delivered_guide},
+                }
+            ]
+        },
+    )
+
+
+def _target_context_manifest(target_context: JsonValue) -> JsonValue:
+    encoded = _canonical_json(target_context)
+    target_ref: JsonValue = None
+    if isinstance(target_context, dict):
+        targets = target_context.get("targets")
+        if isinstance(targets, list) and len(targets) == 1 and isinstance(targets[0], dict):
+            target_ref = targets[0].get("target_ref")
+    if not isinstance(target_ref, str):
+        raise InvalidRequestError("The Code Generation target context is unavailable.")
+    return cast(
+        JsonValue,
+        {
+            "target_ref": target_ref,
+            "target_context_delivery": "request_context_original_context",
+            "target_context_sha256": sha256(encoded).hexdigest(),
+            "target_context_byte_count": len(encoded),
+        },
+    )
+
+
+def _canonical_json(value: JsonValue) -> bytes:
+    return json.dumps(
+        value,
+        ensure_ascii=False,
+        allow_nan=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode("utf-8")
 
 
 def _safe_execution_error(error: Exception) -> WorkbenchError:

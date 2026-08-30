@@ -1,13 +1,16 @@
 from __future__ import annotations
 
 from contextlib import contextmanager
+from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from types import SimpleNamespace
 from uuid import UUID
 
-import gds_workbench_notebooks.workflow_execution as workflow_execution
 import pytest
+from gds_workbench_api.capabilities import load_default_agent_capabilities
+
+import gds_workbench_notebooks.workflow_execution as workflow_execution
 from gds_workbench_notebooks.errors import (
     NotebookConfigurationError,
     NotebookDatabaseError,
@@ -51,13 +54,12 @@ def _database() -> NotebookDatabaseSettings:
     )
 
 
-def _settings(*, endpoint: str | None = "gds-primary") -> NotebookRuntimeSettings:
+def _settings() -> NotebookRuntimeSettings:
     return NotebookRuntimeSettings(
         database=_database(),
         workflow_lease_seconds=30,
         workflow_heartbeat_seconds=10,
         agent_timeout_seconds=120,
-        databricks_model_endpoint=endpoint,
     )
 
 
@@ -573,25 +575,33 @@ async def test_claim_lease_calls_only_the_fixed_claim(
         )
 
 
-def test_agent_runtime_requires_endpoint_and_databricks_provider_only() -> None:
+def test_agent_runtime_uses_registry_deployment_and_databricks_provider_only() -> None:
     class Connection:
         def __init__(self, **values) -> None:
             self.values = values
+            self.provider_code = values["provider_code"]
+            self.model_code = values["model_code"]
 
     class Configuration:
         def __init__(self, **values) -> None:
             self.values = values
+            self.connections = values["connections"]
 
     class Authentication:
         def __init__(self, **values) -> None:
             self.values = values
 
     request = _request("conceptual")
-    with pytest.raises(NotebookConfigurationError, match="MODEL_ENDPOINT"):
+    foundry_agent = dict(request.create_payload["agent"])
+    foundry_agent["provider_code"] = "microsoft_foundry"
+    with pytest.raises(NotebookConfigurationError, match="Databricks agent provider only"):
         workflow_execution._agent_runtime(
-            request,
-            _settings(endpoint=None),
-            "capabilities",
+            replace(
+                request,
+                create_payload={**request.create_payload, "agent": foundry_agent},
+            ),
+            _settings(),
+            load_default_agent_capabilities(),
             lambda capabilities, **_kwargs: capabilities,
             Connection,
             Configuration,
@@ -601,8 +611,8 @@ def test_agent_runtime_requires_endpoint_and_databricks_provider_only() -> None:
     configuration, capabilities, authentications = workflow_execution._agent_runtime(
         request,
         _settings(),
-        "capabilities",
-        lambda capabilities, **_kwargs: f"selected-{capabilities}",
+        load_default_agent_capabilities(),
+        lambda capabilities, **kwargs: (f"selected-{capabilities}", kwargs),
         Connection,
         Configuration,
         Authentication,
@@ -611,21 +621,100 @@ def test_agent_runtime_requires_endpoint_and_databricks_provider_only() -> None:
     assert configuration.values["connections"][0].values == {
         "provider_code": "databricks",
         "model_code": "databricks-primary",
-        "model_endpoint": "gds-primary",
+        "model_endpoint": "databricks-gpt-oss-120b",
         "timeout_seconds": 120,
     }
-    assert capabilities == "selected-capabilities"
+    assert capabilities == (
+        f"selected-{load_default_agent_capabilities()}",
+        {"configured_models": {("databricks", "databricks-primary")}},
+    )
     assert authentications["databricks"].values == {"mode": "notebook"}
 
 
-def test_deterministic_runtime_needs_no_model_endpoint() -> None:
+def test_agent_runtime_uses_the_selected_registered_model_endpoint() -> None:
+    class Connection:
+        def __init__(self, **values) -> None:
+            self.values = values
+            self.provider_code = values["provider_code"]
+            self.model_code = values["model_code"]
+
+    class Configuration:
+        def __init__(self, **values) -> None:
+            self.values = values
+            self.connections = values["connections"]
+
+    class Authentication:
+        def __init__(self, **values) -> None:
+            self.values = values
+
+    request = _request("conceptual")
+    agent = dict(request.create_payload["agent"])
+    agent["model_code"] = "databricks-secondary"
+    request = replace(
+        request,
+        create_payload={**request.create_payload, "agent": agent},
+    )
+    registry = load_default_agent_capabilities()
+    primary = next(model for model in registry.models if model.code == "databricks-primary")
+    secondary = primary.model_copy(
+        update={
+            "code": "databricks-secondary",
+            "deployment_name": "gds-secondary",
+        }
+    )
+    capabilities_registry = registry.model_copy(update={"models": (*registry.models, secondary)})
+
+    configuration, capabilities, _authentications = workflow_execution._agent_runtime(
+        request,
+        _settings(),
+        capabilities_registry,
+        lambda capabilities, **kwargs: (capabilities, kwargs),
+        Connection,
+        Configuration,
+        Authentication,
+    )
+
+    assert configuration.connections[0].values["model_code"] == "databricks-secondary"
+    assert configuration.connections[0].values["model_endpoint"] == "gds-secondary"
+    assert capabilities == (
+        capabilities_registry,
+        {"configured_models": {("databricks", "databricks-secondary")}},
+    )
+
+
+def test_agent_runtime_rejects_a_selected_model_missing_from_the_registry() -> None:
+    request = _request("conceptual")
+    agent = dict(request.create_payload["agent"])
+    agent["model_code"] = "databricks-secondary"
+    request = replace(
+        request,
+        create_payload={**request.create_payload, "agent": agent},
+    )
+    capabilities = load_default_agent_capabilities()
+
+    with pytest.raises(
+        NotebookConfigurationError,
+        match="not registered",
+    ):
+        workflow_execution._agent_runtime(
+            request,
+            _settings(),
+            capabilities,
+            lambda value, **_kwargs: value,
+            object,
+            object,
+            object,
+        )
+
+
+def test_deterministic_runtime_needs_no_model_registry_connection() -> None:
     class Configuration:
         def __init__(self, **values) -> None:
             self.values = values
 
     configuration, capabilities, authentications = workflow_execution._agent_runtime(
         _request("profiling"),
-        _settings(endpoint=None),
+        _settings(),
         "capabilities",
         lambda capabilities, **_kwargs: capabilities,
         object,

@@ -4,8 +4,9 @@ from contextlib import contextmanager
 from pathlib import Path
 from uuid import UUID
 
-import gds_workbench_notebooks.preflight as preflight
 import pytest
+
+import gds_workbench_notebooks.preflight as preflight
 from gds_workbench_notebooks.errors import NotebookConfigurationError
 from gds_workbench_notebooks.preflight import (
     NotebookPreflightResult,
@@ -21,7 +22,7 @@ _TENANT_ID = UUID("22345678-1234-4234-8234-123456789abc")
 _OBJECT_ID = UUID("32345678-1234-4234-8234-123456789abc")
 
 
-def _settings(*, endpoint: str | None = "gds-primary") -> NotebookRuntimeSettings:
+def _settings() -> NotebookRuntimeSettings:
     return NotebookRuntimeSettings(
         database=NotebookDatabaseSettings(
             host="workbench.postgres.database.azure.com",
@@ -30,7 +31,6 @@ def _settings(*, endpoint: str | None = "gds-primary") -> NotebookRuntimeSetting
             user="gds_notebook_runtime",
             password="fixture-preflight-password",
         ),
-        databricks_model_endpoint=endpoint,
     )
 
 
@@ -59,7 +59,7 @@ def test_preflight_checks_fixed_identity_then_async_runtime(
 
     async def check(settings, principal):
         calls.append("runtime")
-        assert settings.databricks_model_endpoint == "gds-primary"
+        assert settings.agent_timeout_seconds == 120
         return NotebookPreflightResult(
             python_version="3.12",
             database_ready=True,
@@ -95,22 +95,6 @@ def test_preflight_checks_fixed_identity_then_async_runtime(
 def test_preflight_requires_dbr_16_4_python_image(python_version: tuple[int, int]) -> None:
     with pytest.raises(NotebookConfigurationError, match="Python 3.12"):
         execute_notebook_preflight(_settings(), python_version=python_version)
-
-
-def test_preflight_requires_endpoint_before_database_access(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    monkeypatch.setattr(
-        preflight,
-        "notebook_database_connection",
-        lambda _settings: pytest.fail("database must not be opened"),
-    )
-
-    with pytest.raises(NotebookConfigurationError, match="MODEL_ENDPOINT"):
-        execute_notebook_preflight(
-            _settings(endpoint=None),
-            python_version=(3, 12),
-        )
 
 
 def test_preflight_notebook_is_source_only_and_starts_no_server() -> None:

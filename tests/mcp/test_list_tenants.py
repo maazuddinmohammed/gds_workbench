@@ -68,6 +68,7 @@ class RecordingReadTransaction:
     async def fetch_all(
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> list[dict[str, Any]]:
+        assert parameters[0] is True
         limit, offset = parameters[-2:]
         self.database.calls.append((limit, offset))
         return self.database.records[offset : offset + limit]

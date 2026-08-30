@@ -8,6 +8,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 WEB_APP_CI = ROOT / ".github" / "workflows" / "web-app.yml"
+DEPLOYMENT_GUIDE = ROOT / "web_app" / "DEPLOYMENT_GUIDE.md"
+FOUNDRY_APP_EXAMPLE = ROOT / "app.foundry.yaml.example"
 
 
 def test_databricks_app_runs_one_supervised_python_process() -> None:
@@ -18,10 +20,8 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
     assert "GDS_WEB_STATIC_DIR" in app_config
     assert "value: web_app/frontend/dist" in app_config
     assert "GDS_WEB_AGENT_EXECUTION_MODE" in app_config
-    assert "GDS_WEB_AGENT_PROVIDER" in app_config
-    assert "value: databricks" in app_config
-    assert "GDS_WEB_DATABRICKS_MODEL_ENDPOINT" in app_config
-    assert "valueFrom: agent-model-endpoint" in app_config
+    assert "GDS_WEB_AGENT_PROVIDER" not in app_config
+    assert "GDS_WEB_DATABRICKS_MODEL_ENDPOINT" not in app_config
     assert "GDS_WEB_FOUNDRY" not in app_config
     assert "AZURE_CONTAINER" not in app_config
     assert set(re.findall(r"^  - name: (\S+)$", app_config, re.MULTILINE)) == {
@@ -29,21 +29,46 @@ def test_databricks_app_runs_one_supervised_python_process() -> None:
         "GDS_WEB_ENVIRONMENT",
         "GDS_WEB_STATIC_DIR",
         "GDS_WEB_AGENT_EXECUTION_MODE",
-        "GDS_WEB_AGENT_PROVIDER",
         "GDS_WEB_DATABRICKS_EXECUTION_MODE",
         "GDS_WEB_DATABASE_DSN",
         "GDS_WEB_CURSOR_SIGNING_KEY",
         "GDS_WEB_ENTRA_TENANT_ID",
         "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE",
-        "GDS_WEB_DATABRICKS_MODEL_ENDPOINT",
     }
     assert set(re.findall(r"^    valueFrom: (\S+)$", app_config, re.MULTILINE)) == {
         "postgres-dsn",
         "cursor-signing-key",
         "entra-tenant-id",
         "databricks-environment-code",
-        "agent-model-endpoint",
     }
+
+
+def test_foundry_api_key_deployment_example_uses_a_secret_resource() -> None:
+    guide = DEPLOYMENT_GUIDE.read_text(encoding="utf-8")
+
+    assert ("- name: GDS_WEB_FOUNDRY_API_KEY\n     valueFrom: foundry-api-key") in guide
+    assert "API key or the three Entra client credential variables, never both" in guide
+    assert "GDS_WEB_FOUNDRY_API_KEY\n     value:" not in guide
+    assert "https://cognitiveservices.azure.com/.default" in guide
+    assert "https://ai.azure.com/.default" not in guide
+    assert "/api/projects/" in guide
+    assert "are rejected" in guide
+    assert "api/projects/<project>/openai/v1" not in guide
+
+
+def test_foundry_app_manifest_adds_foundry_to_the_registry_driven_databricks_models() -> (
+    None
+):
+    app_config = FOUNDRY_APP_EXAMPLE.read_text(encoding="utf-8")
+
+    assert "GDS_WEB_AGENT_PROVIDER" not in app_config
+    assert (
+        "name: GDS_WEB_FOUNDRY_OPENAI_BASE_URL\n    valueFrom: foundry-openai-base-url"
+    ) in app_config
+    assert "GDS_WEB_FOUNDRY_MODEL_DEPLOYMENT" not in app_config
+    assert "name: GDS_WEB_FOUNDRY_API_KEY\n    valueFrom: foundry-api-key" in app_config
+    assert "GDS_WEB_DATABRICKS_MODEL_ENDPOINT" not in app_config
+    assert "GDS_WEB_FOUNDRY_CLIENT_SECRET" not in app_config
 
 
 def test_bundle_grants_only_required_app_resources() -> None:
@@ -58,7 +83,8 @@ def test_bundle_grants_only_required_app_resources() -> None:
     assert "iam.current-user:read" in bundle
     assert "level: CAN_USE" in bundle
     assert bundle.count("permission: READ") == 4
-    assert "permission: CAN_QUERY" in bundle
+    assert "model_endpoint_name" not in bundle
+    assert "agent-model-endpoint" not in bundle
     assert "scope: ${var.secret_scope}" in bundle
     assert "key: ${var.database_dsn_secret_key}" in bundle
     assert "DATABRICKS_CLIENT_SECRET" not in bundle

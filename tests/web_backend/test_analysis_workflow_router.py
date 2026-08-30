@@ -32,8 +32,8 @@ _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 @dataclass
 class _StaticService:
     changed: bool = True
-    starts: list[tuple[int, int, int, int]] = field(
-        default_factory=lambda: list[tuple[int, int, int, int]]()
+    starts: list[tuple[int, int, int, WorkflowExecutionMode, int]] = field(
+        default_factory=lambda: list[tuple[int, int, int, WorkflowExecutionMode, int]]()
     )
     executions: list[tuple[int, int, int, int]] = field(
         default_factory=lambda: list[tuple[int, int, int, int]]()
@@ -46,11 +46,18 @@ class _StaticService:
         tenant_id: int,
         model_id: int,
         workflow_run_id: int,
+        expected_execution_mode: WorkflowExecutionMode,
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
         self.starts.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
+            (
+                tenant_id,
+                model_id,
+                workflow_run_id,
+                expected_execution_mode,
+                expected_model_revision,
+            )
         )
         return AgentWorkflowRunStart(
             changed=self.changed,
@@ -145,23 +152,36 @@ def _client(service: _StaticService) -> TestClient:
     )
 
 
-def test_inference_route_starts_without_process_local_execution() -> None:
+@pytest.mark.parametrize(
+    "execution_mode",
+    ("one_shot", "tool_assisted", "detailed_coverage"),
+)
+def test_inference_route_starts_without_process_local_execution(
+    execution_mode: WorkflowExecutionMode,
+) -> None:
     service = _StaticService()
 
     with _client(service) as client:
         response = client.post(
             "/api/v1/tenants/7/models/18/analysis/inference-runs/1048/execute",
-            json={"expected_model_revision": 4},
+            json={
+                "execution_mode": execution_mode,
+                "expected_model_revision": 4,
+            },
         )
 
     assert response.status_code == 202
     assert (
         ExecuteAnalysisInferenceRunRequest.model_validate(
-            {"expected_model_revision": 4}, strict=True
+            {
+                "execution_mode": execution_mode,
+                "expected_model_revision": 4,
+            },
+            strict=True,
         ).expected_model_revision
         == 4
     )
-    assert service.starts == [(7, 18, 1048, 4)]
+    assert service.starts == [(7, 18, 1048, execution_mode, 4)]
     assert service.executions == []
 
 
@@ -171,7 +191,7 @@ def test_inference_route_does_not_duplicate_an_already_started_run() -> None:
     with _client(service) as client:
         response = client.post(
             "/api/v1/tenants/7/models/18/analysis/inference-runs/1048/execute",
-            json={"expected_model_revision": 4},
+            json={"execution_mode": "tool_assisted", "expected_model_revision": 4},
         )
 
     assert response.status_code == 200
@@ -179,7 +199,10 @@ def test_inference_route_does_not_duplicate_an_already_started_run() -> None:
 
 
 @pytest.mark.asyncio
-async def test_workflow_binds_route_to_analysis_one_shot_only() -> None:
+@pytest.mark.parametrize("execution_mode", ("one_shot", "tool_assisted"))
+async def test_workflow_binds_route_to_requested_analysis_mode(
+    execution_mode: WorkflowExecutionMode,
+) -> None:
     lifecycle = _Lifecycle()
     executor = _Executor()
     workflow = AnalysisInferenceWorkflow(lifecycle=lifecycle, executor=executor)
@@ -189,6 +212,7 @@ async def test_workflow_binds_route_to_analysis_one_shot_only() -> None:
         tenant_id=7,
         model_id=18,
         workflow_run_id=1048,
+        expected_execution_mode=execution_mode,
         expected_model_revision=4,
     )
     await workflow.execute_started(
@@ -200,5 +224,5 @@ async def test_workflow_binds_route_to_analysis_one_shot_only() -> None:
         workflow_run_claim_token=_CLAIM_TOKEN,
     )
 
-    assert lifecycle.bindings == [("analysis", "one_shot")]
+    assert lifecycle.bindings == [("analysis", execution_mode)]
     assert executor.calls == 1

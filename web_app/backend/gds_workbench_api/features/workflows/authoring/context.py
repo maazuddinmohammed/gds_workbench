@@ -6,6 +6,7 @@ import json
 from collections.abc import Awaitable, Callable, Mapping
 from copy import deepcopy
 from dataclasses import dataclass, field
+from hashlib import sha256
 from typing import Any, Literal, LiteralString, cast
 
 from gds_etl_workbench.domain.errors import WorkbenchError
@@ -31,6 +32,7 @@ from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_workbench_api.features.assertions.contracts import validate_safe_json
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentContextToolResultTooLargeError,
     LocalAgentToolDefinition,
 )
 
@@ -42,6 +44,11 @@ type SnapshotLoader = Callable[
     Awaitable[ModelSnapshot],
 ]
 type PhysicalObjectKey = tuple[str, str, str, str, str]
+
+_TOOL_TRANSCRIPT_CONTEXT_DIVISOR = 2
+_CONTEXT_FRAGMENT_KEY = "__gds_context_fragment__"
+_CONTEXT_FRAGMENT_ENCODING = "canonical_json"
+_PAGE_SIZE_SENTINEL = 9_999_999_999
 
 _FORBIDDEN_PROVIDER_JSON_KEYS = frozenset(
     {
@@ -233,14 +240,6 @@ class AgentContextToolRequestError(WorkbenchError):
         )
 
 
-class AgentContextToolResultTooLargeError(WorkbenchError):
-    def __init__(self) -> None:
-        super().__init__(
-            code="agent_context_tool_result_too_large",
-            message="The local agent context tool result exceeds its safe bound.",
-        )
-
-
 class AgentContextLimits(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -321,10 +320,25 @@ class InMemoryAgentContextToolCatalog:
         max_result_bytes: int,
         max_catalog_bytes: int,
         max_page_records: int,
+        max_cumulative_result_bytes: int | None = None,
     ) -> None:
-        self._datasets = _context_datasets(context)
+        cumulative_result_bytes = (
+            max_result_bytes if max_cumulative_result_bytes is None else max_cumulative_result_bytes
+        )
+        if max_result_bytes < 1 or cumulative_result_bytes < max_result_bytes:
+            raise AgentContextTooLargeError()
         self._max_result_bytes = max_result_bytes
+        self._max_cumulative_result_bytes = cumulative_result_bytes
         self._max_page_records = max_page_records
+        raw_datasets = _context_datasets(context)
+        (
+            self._datasets,
+            dataset_record_counts,
+            fragmented_record_counts,
+        ) = _bounded_context_datasets(
+            raw_datasets,
+            max_result_bytes=max_result_bytes,
+        )
         self._definitions = (
             LocalAgentToolDefinition(
                 name="get_agent_context_manifest",
@@ -338,17 +352,26 @@ class InMemoryAgentContextToolCatalog:
             LocalAgentToolDefinition(
                 name="get_agent_context_dataset",
                 description=(
-                    "Return one bounded page from an immutable Workflow Run context dataset."
+                    "Return one byte-bounded page from an immutable Workflow Run context "
+                    "dataset. A page may contain fewer items than limit; continue only from its "
+                    "returned next_offset. A large record is returned as ordered canonical-JSON "
+                    "fragments; concatenate json_text by fragment_index and parse the complete "
+                    "JSON."
                 ),
                 input_schema={
                     "type": "object",
                     "properties": {
                         "dataset": {"type": "string"},
-                        "offset": {"type": "integer", "minimum": 0},
+                        "offset": {
+                            "type": "integer",
+                            "minimum": 0,
+                            "description": "Zero-based retrieval-item offset.",
+                        },
                         "limit": {
                             "type": "integer",
                             "minimum": 1,
                             "maximum": max_page_records,
+                            "description": "Maximum retrieval items; a byte cap may return fewer.",
                         },
                     },
                     "required": ["dataset", "offset", "limit"],
@@ -356,7 +379,16 @@ class InMemoryAgentContextToolCatalog:
                 },
             ),
         )
-        self._manifest = _context_manifest(context, self._datasets)
+        self._manifest = _context_manifest(
+            context,
+            self._datasets,
+            dataset_record_counts=dataset_record_counts,
+            fragmented_record_counts=fragmented_record_counts,
+        )
+        if _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes:
+            self._manifest = _compact_context_manifest(self._manifest)
+        if _json_bytes(cast(JsonValue, self._manifest)) > max_result_bytes:
+            raise AgentContextTooLargeError()
         self._serialized_size_bytes = _json_bytes(
             cast(
                 JsonValue,
@@ -385,6 +417,14 @@ class InMemoryAgentContextToolCatalog:
     def serialized_size_bytes(self) -> int:
         return self._serialized_size_bytes
 
+    @property
+    def max_result_bytes(self) -> int:
+        return self._max_result_bytes
+
+    @property
+    def max_cumulative_result_bytes(self) -> int:
+        return self._max_cumulative_result_bytes
+
     def invoke(
         self,
         tool_name: str,
@@ -398,7 +438,8 @@ class InMemoryAgentContextToolCatalog:
             result = self._read_dataset(arguments)
         else:
             raise AgentContextToolRequestError()
-        if _json_bytes(result) > self._max_result_bytes:
+        result_bytes = _json_bytes(result)
+        if result_bytes > self._max_result_bytes:
             raise AgentContextToolResultTooLargeError()
         return result
 
@@ -423,17 +464,36 @@ class InMemoryAgentContextToolCatalog:
         rows = self._datasets[dataset]
         if offset > len(rows):
             raise AgentContextToolRequestError()
-        end = min(offset + limit, len(rows))
-        return cast(
-            JsonValue,
-            {
-                "dataset": dataset,
-                "total_count": len(rows),
-                "offset": offset,
-                "items": deepcopy(list(rows[offset:end])),
-                "next_offset": end if end < len(rows) else None,
-            },
+        total_count = len(rows)
+        end_limit = min(offset + limit, total_count)
+        items: list[JsonValue] = []
+        end = offset
+        while end < end_limit:
+            candidate_items = [*items, deepcopy(rows[end])]
+            candidate_end = end + 1
+            candidate = _dataset_page(
+                dataset=dataset,
+                total_count=total_count,
+                offset=offset,
+                items=candidate_items,
+                next_offset=candidate_end if candidate_end < total_count else None,
+            )
+            if _json_bytes(candidate) > self._max_result_bytes:
+                if not items:
+                    raise AgentContextToolResultTooLargeError()
+                break
+            items = candidate_items
+            end = candidate_end
+        result = _dataset_page(
+            dataset=dataset,
+            total_count=total_count,
+            offset=offset,
+            items=items,
+            next_offset=end if end < total_count else None,
         )
+        if _json_bytes(result) > self._max_result_bytes:
+            raise AgentContextToolResultTooLargeError()
+        return result
 
     def __repr__(self) -> str:
         return f"InMemoryAgentContextToolCatalog(datasets={len(self._datasets)})"
@@ -531,19 +591,27 @@ class PostgresAgentContextRepository:
             if plan.workflow_execution_mode == "tool_assisted":
                 tool_catalog = InMemoryAgentContextToolCatalog(
                     context=context,
-                    max_result_bytes=self._limits.max_tool_result_bytes,
+                    max_result_bytes=_tool_result_budget(
+                        limits=self._limits,
+                        max_turns=plan.selection.max_turns,
+                    ),
+                    max_cumulative_result_bytes=_tool_transcript_allowance(self._limits),
                     max_catalog_bytes=self._limits.max_tool_catalog_bytes,
                     max_page_records=self._limits.max_tool_page_records,
                 )
                 embedded = tool_catalog.manifest
+            elif plan.workflow_execution_mode == "detailed_coverage":
+                # Detailed executors derive and bound each provider stage separately.
+                embedded = None
             else:
                 embedded = full_context
-            byte_limit = (
-                self._limits.one_shot_max_context_bytes
-                if plan.workflow_execution_mode in (None, "one_shot")
-                else self._limits.stage_max_context_bytes
-            )
-            if _json_bytes(embedded) > byte_limit:
+            if (
+                plan.workflow_execution_mode in (None, "one_shot")
+                and _json_bytes(embedded) > self._limits.one_shot_max_context_bytes
+            ) or (
+                plan.workflow_execution_mode == "tool_assisted"
+                and _json_bytes(embedded) > self._limits.stage_max_context_bytes
+            ):
                 raise AgentContextTooLargeError()
 
             final_model_row = await transaction.fetch_one(
@@ -824,6 +892,21 @@ def _context_record_count(context: AgentAuthoringContext) -> int:
     return count
 
 
+def _tool_result_budget(*, limits: AgentContextLimits, max_turns: int) -> int:
+    transcript_allowance = _tool_transcript_allowance(limits)
+    return min(
+        limits.max_tool_result_bytes,
+        max(1, transcript_allowance // max_turns),
+    )
+
+
+def _tool_transcript_allowance(limits: AgentContextLimits) -> int:
+    return max(
+        1,
+        limits.stage_max_context_bytes // _TOOL_TRANSCRIPT_CONTEXT_DIVISOR,
+    )
+
+
 def _validate_nested_provider_json(
     context: AgentAuthoringContext,
     *,
@@ -968,9 +1051,177 @@ def _dump_records(records: tuple[BaseModel, ...]) -> tuple[JsonValue, ...]:
     return tuple(cast(JsonValue, record.model_dump(mode="json")) for record in records)
 
 
+def _bounded_context_datasets(
+    datasets: Mapping[str, tuple[JsonValue, ...]],
+    *,
+    max_result_bytes: int,
+) -> tuple[
+    dict[str, tuple[JsonValue, ...]],
+    dict[str, int],
+    dict[str, int],
+]:
+    bounded: dict[str, tuple[JsonValue, ...]] = {}
+    record_counts: dict[str, int] = {}
+    fragmented_record_counts: dict[str, int] = {}
+    for dataset, rows in datasets.items():
+        record_counts[dataset] = len(rows)
+        items: list[JsonValue] = []
+        fragmented_count = 0
+        for record_index, row in enumerate(rows):
+            if isinstance(row, dict) and _CONTEXT_FRAGMENT_KEY in row:
+                raise AgentContextUnavailableError()
+            if _single_dataset_item_fits(
+                dataset=dataset,
+                item=row,
+                max_result_bytes=max_result_bytes,
+            ):
+                items.append(row)
+                continue
+            items.extend(
+                _fragment_dataset_record(
+                    dataset=dataset,
+                    record_index=record_index,
+                    row=row,
+                    max_result_bytes=max_result_bytes,
+                )
+            )
+            fragmented_count += 1
+        bounded[dataset] = tuple(items)
+        if fragmented_count:
+            fragmented_record_counts[dataset] = fragmented_count
+    return bounded, record_counts, fragmented_record_counts
+
+
+def _single_dataset_item_fits(
+    *,
+    dataset: str,
+    item: JsonValue,
+    max_result_bytes: int,
+) -> bool:
+    return (
+        _json_bytes(
+            _dataset_page(
+                dataset=dataset,
+                total_count=_PAGE_SIZE_SENTINEL,
+                offset=_PAGE_SIZE_SENTINEL,
+                items=[item],
+                next_offset=_PAGE_SIZE_SENTINEL,
+            )
+        )
+        <= max_result_bytes
+    )
+
+
+def _fragment_dataset_record(
+    *,
+    dataset: str,
+    record_index: int,
+    row: JsonValue,
+    max_result_bytes: int,
+) -> tuple[JsonValue, ...]:
+    canonical_text = _json_text(row)
+    digest = sha256(canonical_text.encode("utf-8")).hexdigest()
+    parts: list[str] = []
+    position = 0
+    while position < len(canonical_text):
+        low = 1
+        high = min(len(canonical_text) - position, max_result_bytes)
+        accepted = 0
+        while low <= high:
+            midpoint = (low + high) // 2
+            probe = _context_fragment(
+                record_index=_PAGE_SIZE_SENTINEL,
+                fragment_index=_PAGE_SIZE_SENTINEL,
+                fragment_count=_PAGE_SIZE_SENTINEL,
+                record_sha256=digest,
+                json_text=canonical_text[position : position + midpoint],
+            )
+            if _single_dataset_item_fits(
+                dataset=dataset,
+                item=probe,
+                max_result_bytes=max_result_bytes,
+            ):
+                accepted = midpoint
+                low = midpoint + 1
+            else:
+                high = midpoint - 1
+        if accepted == 0:
+            raise AgentContextTooLargeError()
+        parts.append(canonical_text[position : position + accepted])
+        position += accepted
+
+    fragment_count = len(parts)
+    fragments = tuple(
+        _context_fragment(
+            record_index=record_index,
+            fragment_index=fragment_index,
+            fragment_count=fragment_count,
+            record_sha256=digest,
+            json_text=part,
+        )
+        for fragment_index, part in enumerate(parts)
+    )
+    if not all(
+        _single_dataset_item_fits(
+            dataset=dataset,
+            item=fragment,
+            max_result_bytes=max_result_bytes,
+        )
+        for fragment in fragments
+    ):
+        raise AgentContextTooLargeError()
+    return fragments
+
+
+def _context_fragment(
+    *,
+    record_index: int,
+    fragment_index: int,
+    fragment_count: int,
+    record_sha256: str,
+    json_text: str,
+) -> JsonValue:
+    return cast(
+        JsonValue,
+        {
+            _CONTEXT_FRAGMENT_KEY: {
+                "record_index": record_index,
+                "fragment_index": fragment_index,
+                "fragment_count": fragment_count,
+                "record_sha256": record_sha256,
+                "encoding": _CONTEXT_FRAGMENT_ENCODING,
+            },
+            "json_text": json_text,
+        },
+    )
+
+
+def _dataset_page(
+    *,
+    dataset: str,
+    total_count: int,
+    offset: int,
+    items: list[JsonValue],
+    next_offset: int | None,
+) -> JsonValue:
+    return cast(
+        JsonValue,
+        {
+            "dataset": dataset,
+            "total_count": total_count,
+            "offset": offset,
+            "items": items,
+            "next_offset": next_offset,
+        },
+    )
+
+
 def _context_manifest(
     context: AgentAuthoringContext,
     datasets: Mapping[str, tuple[JsonValue, ...]],
+    *,
+    dataset_record_counts: Mapping[str, int],
+    fragmented_record_counts: Mapping[str, int],
 ) -> dict[str, JsonValue]:
     selected_objects: list[JsonValue] = []
     for selected in context.selected_objects:
@@ -989,7 +1240,7 @@ def _context_manifest(
                 },
             )
         )
-    return {
+    manifest: dict[str, JsonValue] = {
         "schema_version": "1.0",
         "model_name": context.model_name,
         "model_revision": context.model_revision,
@@ -999,7 +1250,39 @@ def _context_manifest(
         "selected_scope_digest": context.selected_scope_digest,
         "selected_objects": selected_objects,
         "dataset_counts": {name: len(rows) for name, rows in datasets.items()},
+        "dataset_record_counts": dict(dataset_record_counts),
+        "dataset_count_semantics": {
+            "dataset_counts": "retrieval_items_and_page_total_count",
+            "dataset_record_counts": "source_records",
+        },
     }
+    if fragmented_record_counts:
+        manifest["fragmented_record_counts"] = dict(fragmented_record_counts)
+        manifest["fragment_contract"] = {
+            "normal_item": f"JSON record without {_CONTEXT_FRAGMENT_KEY}",
+            "fragment_marker_field": _CONTEXT_FRAGMENT_KEY,
+            "encoding": _CONTEXT_FRAGMENT_ENCODING,
+            "payload_field": "json_text",
+            "reassembly_fields": [
+                "record_index",
+                "fragment_index",
+                "fragment_count",
+                "record_sha256",
+            ],
+            "reassembly": (
+                "Group by record_index and record_sha256; require fragment_index 0 through "
+                "fragment_count minus 1 exactly once; concatenate json_text in that order; "
+                "verify the SHA-256 of its UTF-8 bytes; then parse the canonical JSON."
+            ),
+        }
+    return manifest
+
+
+def _compact_context_manifest(manifest: dict[str, JsonValue]) -> dict[str, JsonValue]:
+    compact = deepcopy(manifest)
+    compact.pop("selected_objects", None)
+    compact["selected_objects_dataset"] = "selected_object"
+    return compact
 
 
 def _provider_context(context: AgentAuthoringContext) -> JsonValue:
@@ -1015,15 +1298,17 @@ def _provider_context(context: AgentAuthoringContext) -> JsonValue:
 
 
 def _json_bytes(value: JsonValue) -> int:
+    return len(_json_text(value).encode("utf-8"))
+
+
+def _json_text(value: JsonValue) -> str:
     try:
-        return len(
-            json.dumps(
-                value,
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode("utf-8")
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
         )
     except (TypeError, ValueError):
         raise AgentContextUnavailableError() from None

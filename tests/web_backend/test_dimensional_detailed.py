@@ -23,7 +23,10 @@ from gds_workbench_api.features.dimensional.candidate import (
 from gds_workbench_api.features.dimensional.detailed import (
     DetailedDimensionalEntityDetail,
     DetailedDimensionalEntityDetailValidator,
+    DetailedDimensionalReconciliationReceiptValidator,
     DetailedDimensionalReconciliationValidator,
+    DetailedDimensionalRelationshipSignal,
+    DetailedDimensionalRelationshipSignalLedger,
     DetailedDimensionalTopologyContribution,
     DetailedDimensionalTopologyContributionValidator,
     DetailedDimensionalTopologyReconciliation,
@@ -32,10 +35,14 @@ from gds_workbench_api.features.dimensional.detailed import (
     DetailedDimensionalValidationWorkerResult,
     DetailedDimensionalValidationWorkerValidator,
     build_dimensional_relationship_signal_ledger,
+    build_dimensional_draft_manifest,
     build_dimensional_validation_packages,
     build_projected_dimensional_validation_packages,
     decide_dimensional_detailed_handoff,
     dimensional_applied_record_refs,
+    materialize_dimensional_reviewed_candidate,
+    merge_dimensional_entity_detail_partitions,
+    merge_dimensional_topology_partitions,
     load_default_detailed_dimensional_policy,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
@@ -490,6 +497,277 @@ def _build_topology_and_detail() -> tuple[
     )
     detail = detail_validator.parse_validated(detail_candidate)
     return topology, detail, contribution
+
+
+def _build_partitioned_topology_and_detail() -> tuple[
+    DetailedDimensionalTopologyReconciliation,
+    DetailedDimensionalEntityDetail,
+    tuple[DetailedDimensionalTopologyContribution, ...],
+]:
+    source = _object("customer_raw")
+    source_attributes = (
+        _attribute("customer_raw", "customer_id"),
+        _attribute("customer_raw", "customer_code"),
+    )
+    contributions: list[DetailedDimensionalTopologyContribution] = []
+    topology_partitions: list[DetailedDimensionalTopologyReconciliation] = []
+    for position, source_attribute in enumerate(source_attributes, start=1):
+        contribution_ref = f"object_00001_batch_{position:05d}"
+        contribution_validator = DetailedDimensionalTopologyContributionValidator(
+            contribution_ref=contribution_ref,
+            source_object=source,
+            source_attributes=(source_attribute,),
+        )
+        contribution = contribution_validator.parse_validated(
+            cast(
+                JsonValue,
+                _contribution(
+                    contribution_ref=contribution_ref,
+                    source_object=source,
+                    source_attributes=(source_attribute,),
+                    local_entity_ref="customer",
+                    entity_name="Customer",
+                    submodel_names=("Customer Domain",),
+                ),
+            )
+        )
+        contributions.append(contribution)
+        topology_partitions.append(
+            DetailedDimensionalTopologyReconciliationValidator(
+                contributions=(contribution,)
+            ).parse_validated(
+                cast(
+                    JsonValue,
+                    {
+                        "submodels": [
+                            {
+                                "canonical_submodel_ref": "customer_domain",
+                                "submodel": _submodel("Customer Domain"),
+                            }
+                        ],
+                        "entities": [
+                            {
+                                "canonical_entity_ref": "customer",
+                                "dimensional_entity_name": "Customer",
+                                "contribution_refs": [f"{contribution_ref}.customer"],
+                                "submodel_refs": ["customer_domain"],
+                            }
+                        ],
+                        "discarded_contribution_refs": [],
+                    },
+                )
+            )
+        )
+    frozen_contributions = tuple(contributions)
+    topology = merge_dimensional_topology_partitions(
+        contributions=frozen_contributions,
+        partitions=tuple(topology_partitions),
+    )
+    detail_partitions: list[DetailedDimensionalEntityDetail] = []
+    for position, (contribution, source_attribute) in enumerate(
+        zip(frozen_contributions, source_attributes, strict=True),
+        start=1,
+    ):
+        entity = topology.entities[0].model_copy(
+            update={"contribution_refs": contribution.proposal_refs}
+        )
+        partition_topology = topology.model_copy(update={"entities": (entity,)})
+        detail_validator = DetailedDimensionalEntityDetailValidator(
+            entity=entity,
+            topology=partition_topology,
+            contributions=(contribution,),
+        )
+        detail_partitions.append(
+            detail_validator.parse_validated(
+                cast(
+                    JsonValue,
+                    {
+                        "canonical_entity_ref": entity.canonical_entity_ref,
+                        "entity": _entity("Customer", source, "Customer Domain"),
+                        "attributes": [
+                            _dimensional_attribute(
+                                "Customer",
+                                "Customer Id" if position == 1 else "Customer Code",
+                                source_attribute,
+                                ordinal=1,
+                            )
+                        ],
+                    },
+                )
+            )
+        )
+    detail = merge_dimensional_entity_detail_partitions(
+        entity=topology.entities[0],
+        topology=topology,
+        contributions=frozen_contributions,
+        partitions=tuple(detail_partitions),
+    )
+    return topology, detail, frozen_contributions
+
+
+def test_partition_merges_preserve_order_and_reject_missing_or_duplicate_coverage() -> (
+    None
+):
+    topology, detail, contributions = _build_partitioned_topology_and_detail()
+
+    assert topology.entities[0].contribution_refs == (
+        "object_00001_batch_00001.customer",
+        "object_00001_batch_00002.customer",
+    )
+    assert tuple(
+        source.source_attribute.attribute_name
+        for attribute in detail.attributes
+        for source in attribute.sources
+        if isinstance(source, AttributePhysicalSourceRecord)
+    ) == ("customer_id", "customer_code")
+    assert tuple(
+        item.dimensional_attribute_ordinal_position for item in detail.attributes
+    ) == (1, 2)
+
+    first_partition = DetailedDimensionalTopologyReconciliationValidator(
+        contributions=(contributions[0],)
+    ).parse_validated(
+        cast(
+            JsonValue,
+            {
+                "submodels": [
+                    {
+                        "canonical_submodel_ref": "customer_domain",
+                        "submodel": _submodel("Customer Domain"),
+                    }
+                ],
+                "entities": [
+                    {
+                        "canonical_entity_ref": "customer",
+                        "dimensional_entity_name": "Customer",
+                        "contribution_refs": [contributions[0].proposal_refs[0]],
+                        "submodel_refs": ["customer_domain"],
+                    }
+                ],
+                "discarded_contribution_refs": [],
+            },
+        )
+    )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_dimensional_topology_partitions(
+            contributions=contributions,
+            partitions=(first_partition,),
+        )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_dimensional_topology_partitions(
+            contributions=contributions,
+            partitions=(first_partition, first_partition),
+        )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_dimensional_entity_detail_partitions(
+            entity=topology.entities[0],
+            topology=topology,
+            contributions=contributions,
+            partitions=(
+                detail.model_copy(update={"attributes": detail.attributes[:1]}),
+            ),
+        )
+    with pytest.raises(AgentCandidateValidationError):
+        merge_dimensional_entity_detail_partitions(
+            entity=topology.entities[0],
+            topology=topology,
+            contributions=contributions,
+            partitions=(detail, detail),
+        )
+
+
+async def test_reconciliation_receipts_are_ordered_digest_bound_and_required() -> None:
+    topology, detail, _contributions = _build_partitioned_topology_and_detail()
+    customer_id = _attribute("customer_raw", "customer_id")
+    customer_code = _attribute("customer_raw", "customer_code")
+    ledger = DetailedDimensionalRelationshipSignalLedger(
+        signals=(
+            DetailedDimensionalRelationshipSignal(
+                signal_ref="relationship_signal_00001",
+                signal_type="matching_attribute_name",
+                from_entity_ref="entity_00001",
+                from_dimensional_entity_name="Customer",
+                from_dimensional_attribute_name="Customer Id",
+                from_source_attributes=(customer_id,),
+                to_entity_ref="entity_00001",
+                to_dimensional_entity_name="Customer",
+                to_dimensional_attribute_name="Customer Code",
+                to_source_attributes=(customer_code,),
+            ),
+            DetailedDimensionalRelationshipSignal(
+                signal_ref="relationship_signal_00002",
+                signal_type="matching_attribute_name",
+                from_entity_ref="entity_00001",
+                from_dimensional_entity_name="Customer",
+                from_dimensional_attribute_name="Customer Code",
+                from_source_attributes=(customer_code,),
+                to_entity_ref="entity_00001",
+                to_dimensional_entity_name="Customer",
+                to_dimensional_attribute_name="Customer Id",
+                to_source_attributes=(customer_id,),
+            ),
+        )
+    )
+    manifest = build_dimensional_draft_manifest(
+        topology=topology,
+        entity_details=(detail,),
+        relationship_ledger=ledger,
+        applied_record_refs=(),
+    )
+    validator = DetailedDimensionalReconciliationReceiptValidator(
+        partition_ref="reconciliation_00001",
+        manifest=manifest,
+        relationship_signals=ledger.signals,
+    )
+    candidate = cast(
+        JsonValue,
+        {
+            "partition_ref": "reconciliation_00001",
+            "manifest": manifest.model_dump(mode="json"),
+            "reviewed_relationship_signal_refs": list(ledger.signal_refs),
+            "relationships": [],
+        },
+    )
+    assert (await validator.validate(candidate)).issues == ()
+    reordered = cast(dict[str, JsonValue], json.loads(json.dumps(candidate)))
+    reordered["reviewed_relationship_signal_refs"] = list(reversed(ledger.signal_refs))
+    assert (await validator.validate(cast(JsonValue, reordered))).issues
+    receipt = validator.parse_validated(candidate)
+    materialized = materialize_dimensional_reviewed_candidate(
+        topology=topology,
+        entity_details=(detail,),
+        relationship_ledger=ledger,
+        manifest=manifest,
+        receipts=(receipt,),
+        applied_record_refs=(),
+    )
+    assert (
+        len(
+            cast(
+                list[JsonValue], cast(dict[str, JsonValue], materialized)["attributes"]
+            )
+        )
+        == 2
+    )
+
+    with pytest.raises(AgentCandidateValidationError):
+        materialize_dimensional_reviewed_candidate(
+            topology=topology,
+            entity_details=(detail,),
+            relationship_ledger=ledger,
+            manifest=manifest,
+            receipts=(),
+            applied_record_refs=(),
+        )
+    with pytest.raises(AgentCandidateValidationError):
+        materialize_dimensional_reviewed_candidate(
+            topology=topology,
+            entity_details=(detail,),
+            relationship_ledger=ledger,
+            manifest=manifest,
+            receipts=(receipt,),
+            applied_record_refs=("entity:unexpected",),
+        )
 
 
 def test_reconciliation_context_requires_each_topology_entity_detail_exactly_once() -> (

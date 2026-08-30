@@ -123,7 +123,7 @@ describe("Model Logical", () => {
       "/api/v1/tenants/7/models/18/logical/runs/1050/execute",
       expect.objectContaining({
         method: "POST",
-        body: JSON.stringify({ execution_mode: "one_shot", expected_model_revision: 18 }),
+        body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
       }),
     );
   });
@@ -493,15 +493,19 @@ const scopeObjectPayload = {
 };
 
 const agentCapabilitiesPayload = {
-  schema_version: "1.0",
+  schema_version: "3.0",
   sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
   providers: [{ code: "databricks", name: "Databricks Model Serving" }],
   models: [{
     code: "databricks-primary",
     name: "GPT-5.6",
     provider_code: "databricks",
-    sdk_codes: ["openai_agents"],
-    reasoning_effort_codes: ["medium"],
+    deployment_name: "databricks-primary",
+    execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
+      sdk_code: "openai_agents",
+      execution_mode,
+      reasoning_effort_codes: ["medium"],
+    })),
   }],
   reasoning_efforts: [{ code: "medium", name: "Medium" }],
   max_turns: { minimum: 1, default: 8, maximum: 50 },

@@ -47,8 +47,9 @@ These steps are DBA work and happen before the notebooks are uploaded:
 5. Before running an agentic notebook, configure an effective published Prompt
    for every agentic stage used by its execution mode. The reference seed adds
    stage and variable definitions only; it intentionally contains no Prompt
-   bodies or assignments. For `analysis_inference` with `one_shot`, configure
-   **Analysis / Relationship Inference**:
+   bodies or assignments. For `analysis_inference`, configure **Analysis /
+   Relationship Inference** for the selected execution mode (the widget defaults
+   to `tool_assisted`):
 
    - in the web application, acquire the Tenant Lock;
    - under **Prompts**, create a Tenant Prompt Template for that stage, add its
@@ -206,8 +207,14 @@ GDS_NOTEBOOK_POSTGRES_STATEMENT_TIMEOUT_SECONDS=30
 GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS=30
 GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS=10
 GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS=120
-GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=<serving-endpoint-name>
 ```
+
+Databricks model endpoint names do not belong in `.env`. Add each selectable
+Databricks model and its exact `deployment_name` to
+`src/gds_workbench_api/config/agent_capabilities.json`, then upload that registry
+with the notebooks. The same JSON defines SDK, mode, and reasoning compatibility.
+The checked-in choices are `databricks-primary` (served by
+`databricks-gpt-oss-120b`) and `databricks-claude-opus-5`.
 
 | Field | Meaning |
 |---|---|
@@ -222,7 +229,6 @@ GDS_NOTEBOOK_DATABRICKS_MODEL_ENDPOINT=<serving-endpoint-name>
 | `WORKFLOW_LEASE_SECONDS` | Exact Run claim duration, `1` through `300`. |
 | `WORKFLOW_HEARTBEAT_SECONDS` | Claim heartbeat, `1` through `299` and shorter than the lease. |
 | `AGENT_TIMEOUT_SECONDS` | Agent call timeout, `1` through `600`. |
-| `DATABRICKS_MODEL_ENDPOINT` | Model Serving endpoint name; do not use its URL. |
 
 The code reads this file directly and does not copy its contents to widgets or
 process environment. `.env` is intentionally excluded from the repository and
@@ -245,9 +251,11 @@ security boundary.
    acquire avoids holding a lock while setup is broken. A simple lock check may
    also be run before preflight when diagnosing database access.
 3. Open one workflow notebook. Run its first cell to create that notebook's
-   widget bar. Fill the widgets, then run the second cell to execute. Use a new
-   nonzero UUID for `IdempotencyKey`; reuse it only when retrying identical
-   inputs. `Run all` with blank required widgets is expected to stop validation.
+   widget bar. For an Agent workflow, this cell reads the root `.env` for runtime
+   settings and offers only Databricks models registered in the packaged JSON.
+   Fill the widgets, then run the second cell to execute. Use a new nonzero UUID
+   for `IdempotencyKey`; reuse it only when retrying identical inputs. `Run all`
+   with blank required widgets is expected to stop validation.
 4. For an authoring workflow that returns a draft, run
    `90_review_workflow_draft.py` with `TenantID`, `ModelID`, `WorkflowRunID`,
    and optionally `Dataset`. Blank `Dataset` returns the bounded summary; a
@@ -296,17 +304,41 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 | Notebook | Additional widgets |
 |---|---|
 | `profiling` | Optional `RequestedBatchID`. |
-| `analysis_inference` | Optional `RequestedBatchID`, fixed `ExecutionMode=one_shot`, and agent widgets. |
+| `analysis_inference` | Optional `RequestedBatchID`, `ExecutionMode`, and agent widgets. |
 | `analysis_validation` | Optional `RequestedBatchID`. |
 | `conceptual`, `logical`, `dimensional` | `ExecutionMode` plus agent widgets. |
 | `mapping` | `ExecutionMode`, operation, artifact type, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
 | `code_generation` | Modeled entity type, selected/all-eligible coverage, optional SQL Guide Version ID, and agent widgets. |
 
-Agent widgets select one of the retained SDKs, the fixed Databricks provider
-and registered model code, reasoning effort, maximum turns, validation retry
-count, and optional Stage-to-Prompt-Version overrides. PostgreSQL and the shared
-runtime revalidate every widget; a widget never selects the acting identity or
-Databricks environment.
+Agent widget choices come from the packaged shared registry at
+`src/gds_workbench_api/config/agent_capabilities.json`, filtered to Databricks
+models and their exact execution profiles. Databricks widget dropdowns cannot
+cascade, so each dropdown can show the union of registered choices. The
+notebook rejects any SDK, model, execution-mode, and reasoning-effort
+combination that is not present in one exact profile. The `default` reasoning
+value omits the provider setting. The separate `none` value explicitly disables
+reasoning on models that support that value. `default` is first in the shipped
+profiles, so it is the current notebook default. Narrow the Databricks profile
+to the values verified for the exact endpoint model; for example, GPT OSS uses
+`low`, `medium`, or `high`. Claude Opus 5 currently exposes `default` only
+because these adapters do not translate its separate thinking-token controls.
+
+The provider remains fixed to Databricks. The packaged JSON registry supplies
+the physical Databricks Model Serving endpoint for each selectable model code.
+If only a secondary Databricks model is registered, it is the model widget's
+only choice and default. A registry without any Databricks model stops the first
+cell before creating Agent widgets. Foundry App settings are not used by these
+independent notebooks. Maximum turns and validation-retry
+defaults and bounds also come from the shared registry. PostgreSQL and the
+shared runtime revalidate every widget; a widget never selects the acting
+identity or Databricks environment.
+
+Agentic authoring `ExecutionMode` widgets offer `one_shot`, `tool_assisted`, and
+`detailed_coverage`; they default to `tool_assisted` so larger scopes use the
+bounded local context tools instead of embedding the complete context. If the
+registry has no compatible `tool_assisted` profile, the notebook selects the
+first compatible registered mode. Code Generation has no mode widget and uses
+only registered `detailed_coverage` profiles.
 
 The Tenant Lock and draft review/apply notebooks use the same two-cell pattern:
 run the first cell to create their own widgets, fill them, then run the second

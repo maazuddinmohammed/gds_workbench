@@ -1,13 +1,12 @@
 from __future__ import annotations
 
+import json
 from copy import deepcopy
 from dataclasses import dataclass, field
 from typing import cast
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -16,10 +15,12 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentContextPolicy,
+    AgentContextTooLargeError,
     AgentValidationIssue,
     ValidationRepairRunner,
     load_default_agent_context_policy,
 )
+from pydantic import JsonValue
 
 
 def _request(
@@ -168,6 +169,95 @@ async def test_repair_keeps_original_context_and_exact_run_configuration() -> No
         },
     }
     assert request.context == {"scope": [1, 2]}
+
+
+@pytest.mark.asyncio
+async def test_context_limit_applies_to_the_complete_outbound_envelope() -> None:
+    context: JsonValue = {"scope": ["x" * 100]}
+    context_bytes = len(
+        json.dumps(
+            context,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    issue = AgentValidationIssue(
+        code="missing_entity_name",
+        path=("entities", 0, "name"),
+        message="Every entity requires a name.",
+    )
+    executor = FakeExecutor(
+        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
+    )
+
+    with pytest.raises(AgentContextTooLargeError):
+        await ValidationRepairRunner(
+            executor=executor,
+            policy=_policy(one_shot_bytes=context_bytes),
+        ).run(
+            request=_request(retries=1, context=context),
+            validator=FakeValidator(outcomes=[(issue,), ()]),
+        )
+
+    assert executor.requests == []
+
+
+@pytest.mark.asyncio
+async def test_prompt_and_output_schema_count_toward_the_provider_limit() -> None:
+    executor = FakeExecutor(candidates=[{"entities": []}])
+    request = _request().model_copy(
+        update={
+            "instruction_prompt": "Use only this bounded evidence. " + "x" * 400,
+            "output_schema": {
+                "type": "object",
+                "description": "y" * 400,
+            },
+        }
+    )
+
+    with pytest.raises(AgentContextTooLargeError):
+        await ValidationRepairRunner(
+            executor=executor,
+            policy=_policy(one_shot_bytes=700),
+        ).run(
+            request=request,
+            validator=FakeValidator(outcomes=[()]),
+        )
+
+    assert executor.requests == []
+
+
+@pytest.mark.asyncio
+async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
+    issue = AgentValidationIssue(
+        code="missing_entity_name",
+        path=("entities", 0, "name"),
+        message="Every entity requires a name.",
+    )
+    executor = FakeExecutor(
+        candidates=[
+            {"entities": [{"description": "x" * 1000}]},
+            {"entities": [{"name": "customer"}]},
+        ]
+    )
+
+    result = await ValidationRepairRunner(
+        executor=executor,
+        policy=_policy(one_shot_bytes=700),
+    ).run(
+        request=_request(retries=1),
+        validator=FakeValidator(outcomes=[(issue,), ()]),
+    )
+
+    assert result.attempt_count == 2
+    repair = cast(dict[str, JsonValue], executor.requests[1].context)["repair"]
+    assert isinstance(repair, dict)
+    assert repair["previous_candidate"] is None
+    assert repair["previous_candidate_omitted"] is True
+    assert len(cast(str, repair["previous_candidate_digest"])) == 64
+    assert repair["validation_issues"] == [issue.model_dump(mode="json")]
 
 
 @pytest.mark.asyncio

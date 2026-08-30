@@ -68,6 +68,9 @@ class LocalAgentToolCatalog(Protocol):
     @property
     def definitions(self) -> tuple[LocalAgentToolDefinition, ...]: ...
 
+    @property
+    def max_cumulative_result_bytes(self) -> int: ...
+
     def invoke(
         self,
         tool_name: str,
@@ -174,6 +177,16 @@ class AgentExecutionFailedError(WorkbenchError):
         )
 
 
+class AgentContextToolResultTooLargeError(WorkbenchError):
+    """A local Agent port result exceeded its configured byte allowance."""
+
+    def __init__(self) -> None:
+        super().__init__(
+            code="agent_context_tool_result_too_large",
+            message="The local agent context tool result exceeds its safe bound.",
+        )
+
+
 class AgentExecutionRouter:
     """Validate one explicit selection and dispatch to exactly one registered adapter."""
 
@@ -196,7 +209,10 @@ class AgentExecutionRouter:
         self._closed = False
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
-        self._capabilities.validate_selection(request.selection)
+        self._capabilities.validate_selection(
+            request.selection,
+            execution_mode=request.execution_mode,
+        )
         adapter = self._adapters.get(request.selection.sdk_code)
         if adapter is None:
             raise InvalidRequestError("The selected agent SDK is unavailable.")

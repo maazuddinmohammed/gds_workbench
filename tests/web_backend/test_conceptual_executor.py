@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
@@ -9,6 +10,9 @@ from typing import Any, Literal, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.domain.assertion_safety import (
+    ASSERTION_RECORD_TEXT_MAX_CHARACTERS,
+)
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -463,6 +467,8 @@ def _service(
     agent: _AgentExecutor,
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
+    bundle: AgentContextBundle | None = None,
+    context_policy: AgentContextPolicy | None = None,
 ) -> tuple[
     DatabaseConceptualExecutor,
     _Database,
@@ -485,11 +491,13 @@ def _service(
             lifecycle=lifecycle,
             plan_repository=_PlanRepository(plan=selected_plan),
             context_repository=_ContextRepository(
-                bundle=_context_bundle(
+                bundle=bundle
+                or _context_bundle(
                     mode=selected_plan.workflow_execution_mode or "one_shot"
-                )
+                ),
             ),
-            context_policy=AgentContextPolicy(
+            context_policy=context_policy
+            or AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
                 stage_max_context_bytes=128 * 1024,
                 max_candidate_bytes=128 * 1024,
@@ -953,3 +961,465 @@ async def test_executor_detailed_late_failure_never_hands_off_or_falls_back() ->
     ]
     assert handoff.calls == []
     assert lifecycle.failed is not None
+
+
+@dataclass
+class _PagingAgent:
+    requests: list[AgentExecutionRequest] = field(
+        default_factory=lambda: list[AgentExecutionRequest]()
+    )
+
+    async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+        self.requests.append(request)
+        wrapped = cast(dict[str, JsonValue], request.context)
+        context = cast(dict[str, JsonValue], wrapped["original_context"])
+        if request.stage == "object_contribution":
+            source = cast(dict[str, JsonValue], context["source_object"])
+            source_name = cast(str, source["object_name"])
+            name = "Customer" if source_name == "customer_raw" else "Order"
+            candidate: JsonValue = {
+                "contribution_ref": context["contribution_ref"],
+                "source_object": source,
+                "disposition": "represented",
+                "rationale": "This byte-bounded page supports one entity.",
+                "proposals": [
+                    {
+                        "local_entity_ref": name.casefold(),
+                        "object": _object_with_sources(name, source_name),
+                    }
+                ],
+            }
+        elif request.stage == "entity_consolidation":
+            proposals = context.get("contribution_proposals")
+            if isinstance(proposals, list):
+                proposal_rows = proposals
+            else:
+                proposal_rows = [
+                    {
+                        "proposal_ref": (
+                            f"{contribution['contribution_ref']}.{proposal['local_entity_ref']}"
+                        ),
+                        "candidate_name": proposal["object"]["conceptual_object_name"],
+                    }
+                    for contribution in cast(
+                        list[dict[str, Any]], context["contributions"]
+                    )
+                    for proposal in contribution["proposals"]
+                ]
+            grouped: dict[str, list[str]] = {}
+            names: dict[str, str] = {}
+            for proposal in cast(list[dict[str, JsonValue]], proposal_rows):
+                name = cast(str, proposal["candidate_name"])
+                key = name.casefold()
+                grouped.setdefault(key, []).append(cast(str, proposal["proposal_ref"]))
+                names[key] = name
+            candidate = cast(
+                JsonValue,
+                {
+                    "entities": [
+                        {
+                            "canonical_entity_ref": key,
+                            "contribution_refs": refs,
+                            "candidate_names": [names[key]],
+                        }
+                        for key, refs in grouped.items()
+                    ],
+                    "discarded_contribution_refs": [],
+                },
+            )
+        elif request.stage == "entity_attribute_detail":
+            entity = cast(dict[str, JsonValue], context["entity"])
+            entity_ref = cast(str, entity["canonical_entity_ref"])
+            candidate_names = cast(list[str] | None, entity.get("candidate_names"))
+            candidate_name = (
+                candidate_names[0]
+                if candidate_names is not None
+                else cast(str, entity["preferred_candidate_name"])
+            )
+            compact = context.get("contribution_proposals")
+            if isinstance(compact, list):
+                source_names = sorted(
+                    {
+                        cast(
+                            str,
+                            cast(dict[str, JsonValue], support["source_object"])[
+                                "object_name"
+                            ],
+                        )
+                        for proposal in cast(list[dict[str, JsonValue]], compact)
+                        for support in cast(
+                            list[dict[str, JsonValue]],
+                            proposal["physical_support_sources"],
+                        )
+                        if support["support_source_type"] == "object"
+                    }
+                )
+            else:
+                source_names = sorted(
+                    {
+                        cast(
+                            str,
+                            cast(dict[str, JsonValue], support["source_object"])[
+                                "object_name"
+                            ],
+                        )
+                        for contribution in cast(
+                            list[dict[str, JsonValue]],
+                            context["contributions"],
+                        )
+                        for proposal in cast(
+                            list[dict[str, JsonValue]],
+                            contribution["proposals"],
+                        )
+                        for support in cast(
+                            list[dict[str, JsonValue]],
+                            cast(dict[str, JsonValue], proposal["object"])["supports"],
+                        )
+                    }
+                )
+            candidate = {
+                "canonical_entity_ref": entity_ref,
+                "object": _object_with_sources(candidate_name, *source_names),
+            }
+        elif request.stage == "relationship_cardinality_refinement":
+            package = cast(dict[str, JsonValue], context["relationship_package"])
+            candidate = {
+                "package_ref": package["package_ref"],
+                "disposition": "no_relationship",
+                "rationale": "Matching names alone do not establish a relationship.",
+                "relationship": None,
+            }
+        elif request.stage == "whole_model_reconciliation":
+            work_items = context.get("reconciliation_work_items")
+            if isinstance(work_items, list):
+                entity_rows = [
+                    cast(dict[str, JsonValue], item["entity_detail"])
+                    for item in cast(list[dict[str, JsonValue]], work_items)
+                    if item["work_item_type"] == "entity_detail"
+                ]
+                objects = [
+                    _object_with_sources(
+                        cast(str, row["conceptual_object_name"]),
+                        *[
+                            cast(
+                                str,
+                                cast(dict[str, JsonValue], support["source_object"])[
+                                    "object_name"
+                                ],
+                            )
+                            for support in cast(
+                                list[dict[str, JsonValue]],
+                                row["support_sources"],
+                            )
+                            if support["support_source_type"] == "object"
+                        ],
+                    )
+                    for row in entity_rows
+                ]
+                coverage = [
+                    {
+                        "canonical_entity_ref": item["entity_ref"],
+                        "conceptual_object_name": cast(
+                            dict[str, JsonValue], item["entity_detail"]
+                        )["conceptual_object_name"],
+                    }
+                    for item in cast(list[dict[str, JsonValue]], work_items)
+                    if item["work_item_type"] == "entity_detail"
+                ]
+                package_refs = cast(
+                    list[str],
+                    context["required_relationship_package_refs"],
+                )
+                applied_refs = cast(list[str], context["required_applied_review_refs"])
+            else:
+                details = cast(list[dict[str, JsonValue]], context["entity_details"])
+                objects = [
+                    cast(dict[str, JsonValue], item["object"]) for item in details
+                ]
+                coverage = [
+                    {
+                        "canonical_entity_ref": item["canonical_entity_ref"],
+                        "conceptual_object_name": cast(
+                            dict[str, JsonValue], item["object"]
+                        )["conceptual_object_name"],
+                    }
+                    for item in details
+                ]
+                package_refs = [
+                    cast(str, item["package_ref"])
+                    for item in cast(
+                        list[dict[str, JsonValue]],
+                        context["relationship_packages"],
+                    )
+                ]
+                applied_refs = cast(list[str], context["required_applied_record_refs"])
+            candidate = cast(
+                JsonValue,
+                {
+                    "objects": objects,
+                    "relationships": [],
+                    "entity_coverage": coverage,
+                    "reviewed_relationship_package_refs": package_refs,
+                    "reviewed_applied_record_refs": applied_refs,
+                },
+            )
+        else:
+            raise AssertionError(request.stage)
+        return AgentExecutionResult(
+            candidate=candidate, turn_count=1, tool_call_count=0
+        )
+
+
+def _object_with_sources(name: str, *source_names: str) -> dict[str, JsonValue]:
+    value = _candidate_object(source_name=source_names[0])
+    value["conceptual_object_name"] = name
+    value["conceptual_object_definition"] = f"A governed {name}."
+    value["conceptual_object_grain"] = f"One {name}."
+    value["supports"] = [
+        cast(list[JsonValue], _candidate_object(source_name=source_name)["supports"])[0]
+        for source_name in source_names
+    ]
+    return value
+
+
+def _maximal_assertion_bundle() -> AgentContextBundle:
+    raw = _context_bundle(mode="detailed_coverage").context.model_dump(mode="json")
+    selected = cast(list[dict[str, JsonValue]], raw["selected_objects"])
+    second = json.loads(json.dumps(selected[0]))
+    second["selection_order"] = 2
+    cast(dict[str, JsonValue], second["object"])["object_name"] = "order_raw"
+    selected.append(second)
+    for item in selected:
+        object_name = cast(
+            str, cast(dict[str, JsonValue], item["object"])["object_name"]
+        )
+        item["attributes"] = [
+            {
+                "tenant_code": "NWA",
+                "system_code": "CRM",
+                "connection_code": "SOURCE",
+                "object_schema": "bronze",
+                "object_name": object_name,
+                "attribute_name": "customer_id",
+                "fc_attribute_name": None,
+                "attribute_ordinal_position": 1,
+                "attribute_description": None,
+                "attribute_data_type": "bigint",
+                "attribute_nullability": False,
+                "attribute_custom_code": None,
+                "is_surrogate_key": False,
+                "is_natural_key": True,
+                "is_meta_data": False,
+                "is_masking_required": False,
+                "is_mapped": False,
+                "is_purge": False,
+                "is_active": True,
+            }
+        ]
+    raw["assertion"] = {
+        "documents": [],
+        "records": [
+            {
+                "modeling_assertion_record_key": "maximal.conceptual.assertion",
+                "modeling_assertion_document_name": "Conceptual policy",
+                "modeling_assertion_record_type": "business_rule",
+                "modeling_assertion_text": "🧠" * ASSERTION_RECORD_TEXT_MAX_CHARACTERS,
+                "modeling_assertion_details": {},
+                "modeling_assertion_source_location": None,
+                "modeling_assertion_applicable_layers": ["conceptual"],
+                "modeling_assertion_confidence": "high",
+                "modeling_assertion_record_status": "active",
+                "modeling_assertion_record_is_locked": False,
+            }
+        ],
+    }
+    applied = _object_with_sources("Legacy Customer", "customer_raw")
+    applied["conceptual_object_definition"] = "a" * (96 * 1024)
+    cast(dict[str, JsonValue], raw["applied"])["conceptual"] = {
+        "objects": [applied],
+        "relationships": [],
+    }
+    parsed = AgentAuthoringContext.model_validate_json(
+        json.dumps(raw, ensure_ascii=False),
+        strict=True,
+    )
+    return AgentContextBundle(
+        context=parsed,
+        embedded_context=cast(JsonValue, parsed.model_dump(mode="json")),
+    )
+
+
+@pytest.mark.asyncio
+async def test_detailed_maximal_assertion_and_multiple_objects_are_byte_bounded() -> (
+    None
+):
+    policy = AgentContextPolicy(
+        one_shot_max_context_bytes=128 * 1024,
+        stage_max_context_bytes=128 * 1024,
+        max_candidate_bytes=128 * 1024,
+        max_validation_issues=20,
+    )
+    bundle = _maximal_assertion_bundle()
+    agent = _PagingAgent()
+    service, _database, _authorizer, handoff, lifecycle = _service(
+        agent=cast(Any, agent),
+        plan=_plan(mode="detailed_coverage"),
+        bundle=bundle,
+        context_policy=policy,
+    )
+
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert lifecycle.failed is None
+    assert len(handoff.calls) == 1
+    assert {
+        cast(str, cast(dict[str, JsonValue], record)["conceptual_object_name"])
+        for record in handoff.calls[0][0].records
+    } == {"Customer", "Order"}
+    assert all(
+        len(
+            json.dumps(
+                request.context,
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        < policy.stage_max_context_bytes
+        for request in agent.requests
+    )
+    assert all(
+        len(
+            json.dumps(
+                cast(dict[str, JsonValue], request.context)["original_context"],
+                ensure_ascii=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        <= policy.stage_max_context_bytes // 8
+        for request in agent.requests
+    )
+    evidence_fragments = [
+        fragment
+        for request in agent.requests
+        if request.stage == "object_contribution"
+        for fragment in cast(
+            list[dict[str, JsonValue]],
+            cast(
+                dict[str, JsonValue],
+                cast(dict[str, JsonValue], request.context)["original_context"],
+            ).get("evidence_fragments", []),
+        )
+    ]
+    fragment_keys = [
+        (
+            fragment["dataset"],
+            fragment["record_ref"],
+            fragment["fragment_index"],
+        )
+        for fragment in evidence_fragments
+    ]
+    assert len(fragment_keys) == len(set(fragment_keys))
+    assertion_text = "".join(
+        cast(str, fragment["json_text"])
+        for fragment in sorted(
+            (
+                item
+                for item in evidence_fragments
+                if item["dataset"] == "assertion_record"
+            ),
+            key=lambda item: cast(int, item["fragment_index"]),
+        )
+    )
+    expected_assertion = bundle.context.assertion.records[0].model_dump(mode="json")
+    assert json.loads(assertion_text) == expected_assertion
+    selected_records = {
+        cast(str, fragment["record_ref"])
+        for fragment in evidence_fragments
+        if fragment["dataset"] == "selected_object"
+    }
+    assert selected_records == {"object_1", "object_2"}
+    for selected in bundle.context.selected_objects:
+        selected_text = "".join(
+            cast(str, fragment["json_text"])
+            for fragment in sorted(
+                (
+                    item
+                    for item in evidence_fragments
+                    if item["dataset"] == "selected_object"
+                    and item["record_ref"] == f"object_{selected.selection_order}"
+                ),
+                key=lambda item: cast(int, item["fragment_index"]),
+            )
+        )
+        assert json.loads(selected_text) == selected.model_dump(mode="json")
+    relationship_requests = [
+        request
+        for request in agent.requests
+        if request.stage == "relationship_cardinality_refinement"
+    ]
+    assert relationship_requests
+    assert all(
+        len(
+            cast(
+                list[JsonValue],
+                cast(
+                    dict[str, JsonValue],
+                    cast(dict[str, JsonValue], request.context)["original_context"],
+                )["endpoint_entity_details"],
+            )
+        )
+        == 2
+        for request in relationship_requests
+    )
+    assert all(
+        "entity_details"
+        not in cast(
+            dict[str, JsonValue],
+            cast(dict[str, JsonValue], request.context)["original_context"],
+        )
+        for request in relationship_requests
+    )
+    applied_fragments = [
+        fragment
+        for request in agent.requests
+        if request.stage == "whole_model_reconciliation"
+        for fragment in cast(
+            list[dict[str, JsonValue]],
+            cast(
+                dict[str, JsonValue],
+                cast(dict[str, JsonValue], request.context)["original_context"],
+            ).get("reconciliation_work_items", []),
+        )
+        if fragment.get("work_item_type") == "applied_evidence_fragment"
+    ]
+    assert applied_fragments
+    assert len(
+        {
+            (
+                fragment["record_ref"],
+                fragment["fragment_index"],
+            )
+            for fragment in applied_fragments
+        }
+    ) == len(applied_fragments)
+    applied_text = "".join(
+        cast(str, fragment["json_text"])
+        for fragment in sorted(
+            applied_fragments,
+            key=lambda item: cast(int, item["fragment_index"]),
+        )
+    )
+    applied_section = bundle.context.applied.conceptual
+    assert applied_section is not None
+    assert json.loads(applied_text) == applied_section.objects[0].model_dump(
+        mode="json"
+    )

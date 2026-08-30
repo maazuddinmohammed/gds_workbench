@@ -71,6 +71,13 @@ human has active, unexpired Viewer-or-higher access. Registered workload
 Principals must be active Super Admins and therefore see all active Tenants.
 Local dev mode lists all active Tenants.
 
+The web Tenant chooser applies that authorization policy, then omits any Tenant
+that owns a retained `core.connection` with `is_global_data_store = TRUE` before
+paging. This includes an inactive marked Connection: activity controls Connection
+availability, while the retained marker identifies its owner as infrastructure
+rather than a selectable Workbench Tenant. The MCP `list_tenants` contract keeps
+its broader authorized-Tenant behavior.
+
 `get_metadata_snapshot` authorizes one Tenant, selects a fixed 29-dataset
 closure in a repeatable-read read-only transaction, creates a deterministic ZIP
 in temporary storage, uploads it create-only to private Blob Storage, and

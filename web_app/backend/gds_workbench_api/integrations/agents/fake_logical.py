@@ -20,7 +20,9 @@ from gds_workbench_api.integrations.agents.fake_shared import (
     selected_source_attributes,
 )
 
-_LOGICAL_CONTRIBUTION_REFERENCE = re.compile(r"^object_[0-9]{5}$")
+_LOGICAL_CONTRIBUTION_REFERENCE = re.compile(
+    r"^object_(?P<object>[0-9]{5})(?:_batch_(?P<batch>[0-9]{5}))?$"
+)
 _LOGICAL_RELATIONSHIP_SIGNAL_REFERENCE = re.compile(r"^relationship_signal_[0-9]{5}$")
 _LOGICAL_VALIDATION_PACKAGE_REFERENCE = re.compile(r"^validation_[0-9]{5}$")
 _LOGICAL_VALIDATION_FINDING_REFERENCE = re.compile(r"^validation_[0-9]{5}\.finding_[0-9]{5}$")
@@ -138,9 +140,14 @@ def detailed_logical_candidate(request: AgentExecutionRequest) -> JsonValue:
 def _fake_logical_topology_contribution(context: dict[str, JsonValue]) -> JsonValue:
     contribution_ref = context.get("contribution_ref")
     selected = context.get("selected_object")
+    reference_match = (
+        _LOGICAL_CONTRIBUTION_REFERENCE.fullmatch(contribution_ref)
+        if isinstance(contribution_ref, str)
+        else None
+    )
     if (
         not isinstance(contribution_ref, str)
-        or _LOGICAL_CONTRIBUTION_REFERENCE.fullmatch(contribution_ref) is None
+        or reference_match is None
         or not isinstance(selected, dict)
     ):
         raise InvalidRequestError("The local fake agent context is invalid.")
@@ -152,7 +159,7 @@ def _fake_logical_topology_contribution(context: dict[str, JsonValue]) -> JsonVa
         selected,
         source_object=source_object,
     )
-    position = int(contribution_ref.removeprefix("object_"))
+    position = int(reference_match.group("object"))
     return cast(
         JsonValue,
         {
@@ -489,7 +496,6 @@ def _fake_logical_whole_model_reconciliation(
     if (
         not isinstance(topology, dict)
         or not isinstance(details, list)
-        or not details
         or not isinstance(ledger, dict)
         or not isinstance(applied_refs, list)
     ):
@@ -631,16 +637,20 @@ def _fake_logical_whole_model_reconciliation(
             }
         )
 
-        for attribute_position, raw_attribute in enumerate(raw_attributes, start=1):
+        for raw_attribute in raw_attributes:
             if not isinstance(raw_attribute, dict):
                 raise InvalidRequestError("The local fake agent context is invalid.")
             attribute_entity_name = raw_attribute.get("logical_entity_name")
             attribute_name = raw_attribute.get("logical_attribute_name")
+            attribute_ordinal = raw_attribute.get("logical_attribute_ordinal_position")
             if (
                 not isinstance(attribute_entity_name, str)
                 or attribute_entity_name.strip().casefold() != normalized_entity
                 or not isinstance(attribute_name, str)
                 or not attribute_name.strip()
+                or isinstance(attribute_ordinal, bool)
+                or not isinstance(attribute_ordinal, int)
+                or attribute_ordinal < 1
             ):
                 raise InvalidRequestError("The local fake agent context is invalid.")
             attribute_key = (normalized_entity, attribute_name.strip().casefold())
@@ -693,7 +703,7 @@ def _fake_logical_whole_model_reconciliation(
                     "logical_attribute_is_primary_key": False,
                     "logical_attribute_is_natural_key": False,
                     "logical_attribute_is_surrogate_key": False,
-                    "logical_attribute_ordinal_position": attribute_position,
+                    "logical_attribute_ordinal_position": attribute_ordinal,
                     "logical_attribute_is_audit_column": False,
                     "logical_attribute_status": "needs_review",
                     "logical_attribute_is_locked": False,

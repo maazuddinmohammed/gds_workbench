@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 from collections.abc import Sequence
 from copy import deepcopy
+from hashlib import sha256
 from importlib.resources import files
 from typing import Literal, cast
 
@@ -122,7 +123,7 @@ class DetailedDimensionalTopologyProposal(BaseModel):
 class DetailedDimensionalTopologyContribution(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    contribution_ref: str = Field(pattern=r"^object_[0-9]{5}$")
+    contribution_ref: str = Field(pattern=r"^object_[0-9]{5}(?:_batch_[0-9]{5})?$")
     source_object: PhysicalObjectKey
     disposition: Literal["represented", "not_dimensional", "needs_review"]
     rationale: str = Field(min_length=1, max_length=2_000)
@@ -245,6 +246,27 @@ class DetailedDimensionalReconciliationCandidate(BaseModel):
         return self
 
 
+class DetailedDimensionalDraftManifest(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    schema_version: Literal["1.0"] = "1.0"
+    draft_record_count: int = Field(ge=1, le=20_000)
+    draft_manifest_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    relationship_signal_count: int = Field(ge=0, le=50_000)
+    relationship_signal_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    applied_record_count: int = Field(ge=0, le=80_000)
+    applied_record_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class DetailedDimensionalReconciliationReceipt(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    partition_ref: str = Field(pattern=r"^reconciliation_[0-9]{5}$")
+    manifest: DetailedDimensionalDraftManifest
+    reviewed_relationship_signal_refs: tuple[str, ...] = Field(max_length=1_000)
+    relationships: tuple[DimensionalRelationshipRecord, ...] = Field(max_length=1_000)
+
+
 class DetailedDimensionalValidationRecord(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -277,6 +299,16 @@ class DetailedDimensionalValidationPackage(BaseModel):
         max_length=1_000,
         repr=False,
     )
+    record_digests: tuple[str, ...] = Field(min_length=1, max_length=1_000)
+
+    @model_validator(mode="after")
+    def validate_manifest(self) -> DetailedDimensionalValidationPackage:
+        expected = tuple(
+            dimensional_json_digest(item.record.model_dump(mode="json")) for item in self.records
+        )
+        if len(self.record_refs) != len(set(self.record_refs)) or self.record_digests != expected:
+            raise ValueError("Dimensional validation package manifest is invalid")
+        return self
 
     @property
     def record_refs(self) -> tuple[str, ...]:
@@ -342,6 +374,7 @@ class DetailedDimensionalTopologyContributionValidator:
         contribution_ref: str,
         source_object: PhysicalObjectKey,
         source_attributes: tuple[PhysicalAttributeKey, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not source_attributes or len(source_attributes) > 10_000:
             raise ValueError("Dimensional topology Attribute context must be bounded and nonempty")
@@ -354,12 +387,18 @@ class DetailedDimensionalTopologyContributionValidator:
         self._contribution_ref = contribution_ref
         self._source_object = source_object
         self._source_attributes = frozenset(attribute_keys)
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedDimensionalTopologyContribution)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalTopologyContribution, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalTopologyContribution,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_fixed_identity(parsed):
             return _validation_issue(
                 "detailed.topology_contribution_invalid",
@@ -373,7 +412,11 @@ class DetailedDimensionalTopologyContributionValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalTopologyContribution:
-        parsed = _parse(DetailedDimensionalTopologyContribution, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalTopologyContribution,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if (
             parsed is None
             or not self._has_fixed_identity(parsed)
@@ -403,6 +446,7 @@ class DetailedDimensionalTopologyReconciliationValidator:
         self,
         *,
         contributions: tuple[DetailedDimensionalTopologyContribution, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not contributions or len(contributions) > 50_000:
             raise ValueError("Dimensional topology contributions must be bounded and nonempty")
@@ -420,6 +464,8 @@ class DetailedDimensionalTopologyReconciliationValidator:
         }
         if len(self._proposals) != sum(len(item.proposals) for item in contributions):
             raise ValueError("Dimensional topology proposal references must be unique")
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = _output_schema(DetailedDimensionalTopologyReconciliation)
@@ -427,7 +473,11 @@ class DetailedDimensionalTopologyReconciliationValidator:
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalTopologyReconciliation, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalTopologyReconciliation,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None:
             return _validation_issue(
                 "detailed.topology_reconciliation_invalid",
@@ -441,7 +491,11 @@ class DetailedDimensionalTopologyReconciliationValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalTopologyReconciliation:
-        parsed = _parse(DetailedDimensionalTopologyReconciliation, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalTopologyReconciliation,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -498,6 +552,7 @@ class DetailedDimensionalEntityDetailValidator:
         topology: DetailedDimensionalTopologyReconciliation,
         contributions: tuple[DetailedDimensionalTopologyContribution, ...],
         assertion_record_keys: tuple[str, ...] = (),
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if len(assertion_record_keys) > 50_000:
             raise ValueError("Dimensional Assertion context must be bounded")
@@ -551,6 +606,8 @@ class DetailedDimensionalEntityDetailValidator:
                 "One Dimensional topology Entity requires one consistent type and grain"
             )
         self._expected_entity_shape = next(iter(proposed_entity_shapes))
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         schema = _output_schema(DetailedDimensionalEntityDetail)
@@ -558,7 +615,11 @@ class DetailedDimensionalEntityDetailValidator:
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalEntityDetail, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalEntityDetail,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None:
             return _validation_issue(
                 "detailed.entity_detail_invalid",
@@ -572,7 +633,11 @@ class DetailedDimensionalEntityDetailValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalEntityDetail:
-        parsed = _parse(DetailedDimensionalEntityDetail, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalEntityDetail,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -650,6 +715,8 @@ class DetailedDimensionalReconciliationValidator:
         relationship_signal_refs: tuple[str, ...],
         applied_record_refs: tuple[str, ...],
         final_validator: AgentCandidateValidator | None = None,
+        max_result_bytes: int | None = 2 * 1024 * 1024,
+        require_exact_base_records: bool = False,
     ) -> None:
         self._topology = topology
         self._details = entity_details
@@ -664,6 +731,9 @@ class DetailedDimensionalReconciliationValidator:
             if ref.partition(":")[0] in ("submodel", "entity", "attribute")
         )
         self._final_validator = final_validator
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
+        self._require_exact_base_records = require_exact_base_records
         topology_entities = {
             item.canonical_entity_ref: normalize_model_key_value(item.dimensional_entity_name)
             for item in topology.entities
@@ -722,7 +792,11 @@ class DetailedDimensionalReconciliationValidator:
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalReconciliationCandidate, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalReconciliationCandidate,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None:
             return _validation_issue(
                 "detailed.reconciliation_invalid",
@@ -738,7 +812,11 @@ class DetailedDimensionalReconciliationValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalReconciliationCandidate:
-        parsed = _parse(DetailedDimensionalReconciliationCandidate, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalReconciliationCandidate,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -800,13 +878,18 @@ class DetailedDimensionalReconciliationValidator:
         required_authored_refs = required_submodels | required_entities | required_attributes
         allowed_authored_refs = required_authored_refs | self._applied_authored_record_refs
         candidate_authored_refs = submodel_record_refs | entity_record_refs | attribute_record_refs
+        required_records_match = (
+            candidate_authored_refs == required_authored_refs
+            if self._require_exact_base_records
+            else required_authored_refs <= candidate_authored_refs
+            and candidate_authored_refs <= allowed_authored_refs
+        )
         return (
             len(submodel_record_refs) == len(candidate.submodels)
             and len(entity_record_refs) == len(candidate.entities)
             and len(attribute_record_refs) == len(candidate.attributes)
             and len(relationship_record_refs) == len(set(relationship_record_refs))
-            and required_authored_refs <= candidate_authored_refs
-            and candidate_authored_refs <= allowed_authored_refs
+            and required_records_match
             and all(
                 candidate_entity_sources.get(ref) == sources
                 for ref, sources in self._required_entity_sources.items()
@@ -826,15 +909,125 @@ class DetailedDimensionalReconciliationValidator:
         )
 
 
+class DetailedDimensionalReconciliationReceiptValidator:
+    """Validate one bounded relationship-review receipt against the frozen draft."""
+
+    def __init__(
+        self,
+        *,
+        partition_ref: str,
+        manifest: DetailedDimensionalDraftManifest,
+        relationship_signals: tuple[DetailedDimensionalRelationshipSignal, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
+    ) -> None:
+        signal_refs = tuple(item.signal_ref for item in relationship_signals)
+        if len(signal_refs) != len(set(signal_refs)):
+            raise ValueError("Dimensional relationship signal references must be unique")
+        _validate_result_byte_limit(max_result_bytes)
+        self._partition_ref = partition_ref
+        self._manifest = manifest
+        self._relationship_signals = relationship_signals
+        self._signal_refs = signal_refs
+        self._max_result_bytes = max_result_bytes
+
+    def output_schema(self) -> dict[str, JsonValue]:
+        schema = _output_schema(DetailedDimensionalReconciliationReceipt)
+        _set_agent_output_constraints(schema)
+        return schema
+
+    async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
+        parsed = _parse_bounded(
+            DetailedDimensionalReconciliationReceipt,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
+        if parsed is None or not self._has_exact_coverage(parsed):
+            return _validation_issue(
+                "detailed.reconciliation_receipt_invalid",
+                "The Dimensional reconciliation receipt must preserve its exact manifest.",
+            )
+        return AgentCandidateValidation(issues=())
+
+    def parse_validated(
+        self,
+        candidate: JsonValue,
+    ) -> DetailedDimensionalReconciliationReceipt:
+        parsed = _parse_bounded(
+            DetailedDimensionalReconciliationReceipt,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
+        if parsed is None or not self._has_exact_coverage(parsed):
+            raise AgentCandidateValidationError()
+        return parsed
+
+    def _has_exact_coverage(
+        self,
+        candidate: DetailedDimensionalReconciliationReceipt,
+    ) -> bool:
+        relationship_keys = tuple(_relationship_key(item) for item in candidate.relationships)
+        allowed_endpoints = {
+            frozenset(
+                (
+                    (
+                        normalize_model_key_value(signal.from_dimensional_entity_name),
+                        normalize_model_key_value(signal.from_dimensional_attribute_name),
+                    ),
+                    (
+                        normalize_model_key_value(signal.to_dimensional_entity_name),
+                        normalize_model_key_value(signal.to_dimensional_attribute_name),
+                    ),
+                )
+            )
+            for signal in self._relationship_signals
+        }
+        return (
+            candidate.partition_ref == self._partition_ref
+            and candidate.manifest == self._manifest
+            and _exact_ordered_unique(
+                candidate.reviewed_relationship_signal_refs, self._signal_refs
+            )
+            and len(relationship_keys) == len(set(relationship_keys))
+            and all(not item.dimensional_relationship_is_locked for item in candidate.relationships)
+            and all(
+                frozenset(
+                    (
+                        (
+                            normalize_model_key_value(item.from_dimensional_entity_name),
+                            normalize_model_key_value(item.from_dimensional_attribute_name),
+                        ),
+                        (
+                            normalize_model_key_value(item.to_dimensional_entity_name),
+                            normalize_model_key_value(item.to_dimensional_attribute_name),
+                        ),
+                    )
+                )
+                in allowed_endpoints
+                for item in candidate.relationships
+            )
+        )
+
+
 class DetailedDimensionalValidationWorkerValidator:
-    def __init__(self, *, package: DetailedDimensionalValidationPackage) -> None:
+    def __init__(
+        self,
+        *,
+        package: DetailedDimensionalValidationPackage,
+        max_result_bytes: int | None = 2 * 1024 * 1024,
+    ) -> None:
+        _validate_result_byte_limit(max_result_bytes)
         self._package = package
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedDimensionalValidationWorkerResult)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalValidationWorkerResult, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalValidationWorkerResult,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_worker_coverage_invalid",
@@ -843,7 +1036,11 @@ class DetailedDimensionalValidationWorkerValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalValidationWorkerResult:
-        parsed = _parse(DetailedDimensionalValidationWorkerResult, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalValidationWorkerResult,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -868,6 +1065,7 @@ class DetailedDimensionalValidationLeadValidator:
         self,
         *,
         worker_results: tuple[DetailedDimensionalValidationWorkerResult, ...],
+        max_result_bytes: int | None = 2 * 1024 * 1024,
     ) -> None:
         if not worker_results or len(worker_results) > 10_000:
             raise ValueError("Dimensional validator worker results must be bounded and nonempty")
@@ -881,12 +1079,18 @@ class DetailedDimensionalValidationLeadValidator:
             self._finding_refs
         ) != len(set(self._finding_refs)):
             raise ValueError("Dimensional validator worker references must be unique")
+        _validate_result_byte_limit(max_result_bytes)
+        self._max_result_bytes = max_result_bytes
 
     def output_schema(self) -> dict[str, JsonValue]:
         return _output_schema(DetailedDimensionalValidationLead)
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        parsed = _parse(DetailedDimensionalValidationLead, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalValidationLead,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_lead_coverage_invalid",
@@ -895,7 +1099,11 @@ class DetailedDimensionalValidationLeadValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> DetailedDimensionalValidationLead:
-        parsed = _parse(DetailedDimensionalValidationLead, candidate)
+        parsed = _parse_bounded(
+            DetailedDimensionalValidationLead,
+            candidate,
+            maximum_bytes=self._max_result_bytes,
+        )
         if parsed is None or not self._has_exact_coverage(parsed):
             raise AgentCandidateValidationError()
         return parsed
@@ -1010,6 +1218,383 @@ def build_dimensional_relationship_signal_ledger(
     return DetailedDimensionalRelationshipSignalLedger(signals=signals)
 
 
+def merge_dimensional_topology_partitions(
+    *,
+    contributions: tuple[DetailedDimensionalTopologyContribution, ...],
+    partitions: tuple[DetailedDimensionalTopologyReconciliation, ...],
+) -> DetailedDimensionalTopologyReconciliation:
+    """Merge disjoint topology partitions in original proposal order."""
+
+    if not contributions or not partitions:
+        raise AgentCandidateValidationError()
+    proposals = {
+        reference: proposal
+        for contribution in contributions
+        for reference, proposal in zip(
+            contribution.proposal_refs,
+            contribution.proposals,
+            strict=True,
+        )
+    }
+    proposal_order = {reference: position for position, reference in enumerate(proposals)}
+    if len(proposal_order) != sum(len(item.proposals) for item in contributions):
+        raise AgentCandidateValidationError()
+
+    covered: list[str] = []
+    discarded: list[str] = []
+    submodels: dict[str, DimensionalSubmodelRecord] = {}
+    entity_groups: dict[str, dict[str, object]] = {}
+    for partition in partitions:
+        submodel_by_ref = {
+            item.canonical_submodel_ref: item.submodel for item in partition.submodels
+        }
+        for topology_entity in partition.entities:
+            normalized_name = normalize_model_key_value(topology_entity.dimensional_entity_name)
+            shapes = {
+                (
+                    proposals[reference].candidate_entity_type,
+                    proposals[reference].candidate_fact_type,
+                    proposals[reference].candidate_entity_grain_definition,
+                )
+                for reference in topology_entity.contribution_refs
+            }
+            if len(shapes) != 1:
+                raise AgentCandidateValidationError()
+            group = entity_groups.setdefault(
+                normalized_name,
+                {
+                    "name": topology_entity.dimensional_entity_name,
+                    "shape": next(iter(shapes)),
+                    "contribution_refs": [],
+                    "submodel_names": [],
+                },
+            )
+            if group["shape"] != next(iter(shapes)):
+                raise AgentCandidateValidationError()
+            group_refs = cast(list[str], group["contribution_refs"])
+            group_names = cast(list[str], group["submodel_names"])
+            group_refs.extend(topology_entity.contribution_refs)
+            for reference in topology_entity.submodel_refs:
+                submodel = submodel_by_ref.get(reference)
+                if submodel is None:
+                    raise AgentCandidateValidationError()
+                normalized_submodel = normalize_model_key_value(submodel.dimensional_submodel_name)
+                existing = submodels.setdefault(normalized_submodel, submodel)
+                if existing != submodel:
+                    raise AgentCandidateValidationError()
+                if normalized_submodel not in group_names:
+                    group_names.append(normalized_submodel)
+            covered.extend(topology_entity.contribution_refs)
+        covered.extend(partition.discarded_contribution_refs)
+        discarded.extend(partition.discarded_contribution_refs)
+
+    if len(covered) != len(set(covered)) or set(covered) != set(proposal_order):
+        raise AgentCandidateValidationError()
+    ordered_groups = sorted(
+        entity_groups.values(),
+        key=lambda item: min(
+            proposal_order[reference] for reference in cast(list[str], item["contribution_refs"])
+        ),
+    )
+    ordered_submodel_names: list[str] = []
+    for group in ordered_groups:
+        for name in cast(list[str], group["submodel_names"]):
+            if name not in ordered_submodel_names:
+                ordered_submodel_names.append(name)
+    submodel_ref_by_name = {
+        name: f"submodel_{position:05d}"
+        for position, name in enumerate(ordered_submodel_names, start=1)
+    }
+    candidate = cast(
+        JsonValue,
+        {
+            "submodels": [
+                {
+                    "canonical_submodel_ref": submodel_ref_by_name[name],
+                    "submodel": submodels[name].model_dump(mode="json"),
+                }
+                for name in ordered_submodel_names
+            ],
+            "entities": [
+                {
+                    "canonical_entity_ref": f"entity_{position:05d}",
+                    "dimensional_entity_name": cast(str, group["name"]),
+                    "contribution_refs": sorted(
+                        cast(list[str], group["contribution_refs"]),
+                        key=proposal_order.__getitem__,
+                    ),
+                    "submodel_refs": [
+                        submodel_ref_by_name[name]
+                        for name in cast(list[str], group["submodel_names"])
+                    ],
+                }
+                for position, group in enumerate(ordered_groups, start=1)
+            ],
+            "discarded_contribution_refs": sorted(
+                discarded,
+                key=proposal_order.__getitem__,
+            ),
+        },
+    )
+    return DetailedDimensionalTopologyReconciliationValidator(
+        contributions=contributions,
+        max_result_bytes=None,
+    ).parse_validated(candidate)
+
+
+def merge_dimensional_entity_detail_partitions(
+    *,
+    entity: DetailedDimensionalEntityTopology,
+    topology: DetailedDimensionalTopologyReconciliation,
+    contributions: tuple[DetailedDimensionalTopologyContribution, ...],
+    partitions: tuple[DetailedDimensionalEntityDetail, ...],
+    assertion_record_keys: tuple[str, ...] = (),
+) -> DetailedDimensionalEntityDetail:
+    """Merge one Entity's disjoint detail partitions without losing coverage."""
+
+    if not partitions or any(
+        item.canonical_entity_ref != entity.canonical_entity_ref for item in partitions
+    ):
+        raise AgentCandidateValidationError()
+    merged_entity = _merge_entity_records(tuple(item.entity for item in partitions))
+    attributes: list[DimensionalAttributeRecord] = []
+    names: set[str] = set()
+    for partition in partitions:
+        for attribute in partition.attributes:
+            name = normalize_model_key_value(attribute.dimensional_attribute_name)
+            if name in names:
+                raise AgentCandidateValidationError()
+            names.add(name)
+            raw = attribute.model_dump(mode="json")
+            raw["dimensional_attribute_ordinal_position"] = len(attributes) + 1
+            parsed_attribute = _parse(DimensionalAttributeRecord, cast(JsonValue, raw))
+            if parsed_attribute is None:
+                raise AgentCandidateValidationError()
+            attributes.append(parsed_attribute)
+    merged = DetailedDimensionalEntityDetail(
+        canonical_entity_ref=entity.canonical_entity_ref,
+        entity=merged_entity,
+        attributes=tuple(attributes),
+    )
+    return DetailedDimensionalEntityDetailValidator(
+        entity=entity,
+        topology=topology,
+        contributions=contributions,
+        assertion_record_keys=assertion_record_keys,
+        max_result_bytes=None,
+    ).parse_validated(cast(JsonValue, merged.model_dump(mode="json")))
+
+
+def merge_dimensional_reconciliation_partitions(
+    *,
+    partitions: tuple[DetailedDimensionalReconciliationCandidate, ...],
+    reviewed_submodel_refs: tuple[str, ...],
+    reviewed_entity_refs: tuple[str, ...],
+    reviewed_relationship_signal_refs: tuple[str, ...],
+    reviewed_applied_record_refs: tuple[str, ...],
+) -> DetailedDimensionalReconciliationCandidate:
+    """Merge validated reconciliation partitions and reject coverage drift."""
+
+    if not partitions:
+        raise AgentCandidateValidationError()
+    actual_submodels = tuple(
+        reference for item in partitions for reference in item.reviewed_submodel_refs
+    )
+    actual_entities = tuple(
+        reference for item in partitions for reference in item.reviewed_entity_refs
+    )
+    actual_signals = tuple(
+        reference for item in partitions for reference in item.reviewed_relationship_signal_refs
+    )
+    actual_applied = tuple(
+        reference for item in partitions for reference in item.reviewed_applied_record_refs
+    )
+    if not all(
+        (
+            _exact_unique(actual_submodels, reviewed_submodel_refs),
+            _exact_unique(actual_entities, reviewed_entity_refs),
+            _exact_unique(actual_signals, reviewed_relationship_signal_refs),
+            _exact_unique(actual_applied, reviewed_applied_record_refs),
+        )
+    ):
+        raise AgentCandidateValidationError()
+
+    submodels: dict[str, DimensionalSubmodelRecord] = {}
+    entities: dict[str, list[DimensionalEntityRecord]] = {}
+    attributes: dict[tuple[str, str], DimensionalAttributeRecord] = {}
+    relationships: dict[
+        tuple[str, str, str, str, str, str],
+        DimensionalRelationshipRecord,
+    ] = {}
+    for partition in partitions:
+        for record in partition.submodels:
+            key = normalize_model_key_value(record.dimensional_submodel_name)
+            existing = submodels.setdefault(key, record)
+            if existing != record:
+                raise AgentCandidateValidationError()
+        for record in partition.entities:
+            entities.setdefault(
+                normalize_model_key_value(record.dimensional_entity_name),
+                [],
+            ).append(record)
+        for record in partition.attributes:
+            key = (
+                normalize_model_key_value(record.dimensional_entity_name),
+                normalize_model_key_value(record.dimensional_attribute_name),
+            )
+            existing = attributes.setdefault(key, record)
+            if existing != record:
+                raise AgentCandidateValidationError()
+        for record in partition.relationships:
+            key = _relationship_key(record)
+            existing = relationships.setdefault(key, record)
+            if existing != record:
+                raise AgentCandidateValidationError()
+    return DetailedDimensionalReconciliationCandidate(
+        submodels=tuple(submodels.values()),
+        entities=tuple(_merge_entity_records(tuple(records)) for records in entities.values()),
+        attributes=tuple(attributes.values()),
+        relationships=tuple(relationships.values()),
+        reviewed_submodel_refs=reviewed_submodel_refs,
+        reviewed_entity_refs=reviewed_entity_refs,
+        reviewed_relationship_signal_refs=reviewed_relationship_signal_refs,
+        reviewed_applied_record_refs=reviewed_applied_record_refs,
+    )
+
+
+def build_dimensional_draft_manifest(
+    *,
+    topology: DetailedDimensionalTopologyReconciliation,
+    entity_details: tuple[DetailedDimensionalEntityDetail, ...],
+    relationship_ledger: DetailedDimensionalRelationshipSignalLedger,
+    applied_record_refs: tuple[str, ...],
+) -> DetailedDimensionalDraftManifest:
+    """Digest exact ordered draft identities without embedding the full draft."""
+
+    records = _dimensional_draft_identity_documents(
+        topology=topology,
+        entity_details=entity_details,
+    )
+    if len(applied_record_refs) != len(set(applied_record_refs)):
+        raise AgentCandidateValidationError()
+    signal_documents = [item.model_dump(mode="json") for item in relationship_ledger.signals]
+    return DetailedDimensionalDraftManifest(
+        draft_record_count=len(records),
+        draft_manifest_digest=dimensional_json_digest(cast(JsonValue, records)),
+        relationship_signal_count=len(relationship_ledger.signals),
+        relationship_signal_digest=dimensional_json_digest(cast(JsonValue, signal_documents)),
+        applied_record_count=len(applied_record_refs),
+        applied_record_digest=dimensional_json_digest(cast(JsonValue, list(applied_record_refs))),
+    )
+
+
+def _dimensional_draft_identity_documents(
+    *,
+    topology: DetailedDimensionalTopologyReconciliation,
+    entity_details: tuple[DetailedDimensionalEntityDetail, ...],
+) -> list[JsonValue]:
+    detail_by_ref = {item.canonical_entity_ref: item for item in entity_details}
+    if len(detail_by_ref) != len(entity_details) or tuple(detail_by_ref) != tuple(
+        item.canonical_entity_ref for item in topology.entities
+    ):
+        raise AgentCandidateValidationError()
+    records: list[JsonValue] = []
+    for item in topology.submodels:
+        records.append(
+            cast(
+                JsonValue,
+                {
+                    "record_ref": _submodel_record_ref(item.submodel),
+                    "record_digest": dimensional_json_digest(item.submodel.model_dump(mode="json")),
+                },
+            )
+        )
+    for entity in topology.entities:
+        detail = detail_by_ref[entity.canonical_entity_ref]
+        records.append(
+            cast(
+                JsonValue,
+                {
+                    "record_ref": _entity_record_ref(detail.entity),
+                    "record_digest": dimensional_json_digest(detail.entity.model_dump(mode="json")),
+                },
+            )
+        )
+        records.extend(
+            cast(
+                JsonValue,
+                {
+                    "record_ref": _attribute_record_ref(attribute),
+                    "record_digest": dimensional_json_digest(attribute.model_dump(mode="json")),
+                },
+            )
+            for attribute in detail.attributes
+        )
+    refs = tuple(cast(str, cast(dict[str, JsonValue], item)["record_ref"]) for item in records)
+    if len(refs) != len(set(refs)):
+        raise AgentCandidateValidationError()
+    return records
+
+
+def materialize_dimensional_reviewed_candidate(
+    *,
+    topology: DetailedDimensionalTopologyReconciliation,
+    entity_details: tuple[DetailedDimensionalEntityDetail, ...],
+    relationship_ledger: DetailedDimensionalRelationshipSignalLedger,
+    manifest: DetailedDimensionalDraftManifest,
+    receipts: tuple[DetailedDimensionalReconciliationReceipt, ...],
+    applied_record_refs: tuple[str, ...],
+) -> JsonValue:
+    """Merge reviewed relationships with already validated immutable base records."""
+
+    expected_partition_refs = tuple(
+        f"reconciliation_{position:05d}" for position in range(1, len(receipts) + 1)
+    )
+    actual_partition_refs = tuple(item.partition_ref for item in receipts)
+    reviewed_signal_refs = tuple(
+        reference for item in receipts for reference in item.reviewed_relationship_signal_refs
+    )
+    expected_manifest = build_dimensional_draft_manifest(
+        topology=topology,
+        entity_details=entity_details,
+        relationship_ledger=relationship_ledger,
+        applied_record_refs=applied_record_refs,
+    )
+    if (
+        not receipts
+        or actual_partition_refs != expected_partition_refs
+        or manifest != expected_manifest
+        or any(item.manifest != manifest for item in receipts)
+        or not _exact_ordered_unique(reviewed_signal_refs, relationship_ledger.signal_refs)
+    ):
+        raise AgentCandidateValidationError()
+    relationships: dict[
+        tuple[str, str, str, str, str, str],
+        DimensionalRelationshipRecord,
+    ] = {}
+    for receipt in receipts:
+        for relationship in receipt.relationships:
+            key = _relationship_key(relationship)
+            if key in relationships:
+                raise AgentCandidateValidationError()
+            relationships[key] = relationship
+    return cast(
+        JsonValue,
+        {
+            "submodels": [item.submodel.model_dump(mode="json") for item in topology.submodels],
+            "entities": [item.entity.model_dump(mode="json") for item in entity_details],
+            "attributes": [
+                attribute.model_dump(mode="json")
+                for item in entity_details
+                for attribute in item.attributes
+            ],
+            "relationships": [
+                relationships[key].model_dump(mode="json") for key in sorted(relationships)
+            ],
+        },
+    )
+
+
 def build_projected_dimensional_validation_packages(
     *,
     projected_changes: tuple[StageModelChange, ...],
@@ -1106,6 +1691,10 @@ def _package_validation_records(
         DetailedDimensionalValidationPackage(
             package_ref=f"validation_{position:05d}",
             records=tuple(records[offset : offset + package_size]),
+            record_digests=tuple(
+                dimensional_json_digest(item.record.model_dump(mode="json"))
+                for item in records[offset : offset + package_size]
+            ),
         )
         for position, offset in enumerate(range(0, len(records), package_size), start=1)
     )
@@ -1247,6 +1836,44 @@ def _materialize(candidate: DetailedDimensionalReconciliationCandidate) -> JsonV
     )
 
 
+def _merge_entity_records(
+    records: tuple[DimensionalEntityRecord, ...],
+) -> DimensionalEntityRecord:
+    if not records:
+        raise AgentCandidateValidationError()
+    baseline = records[0].model_dump(mode="json")
+    baseline.pop("sources")
+    sources: dict[tuple[str, ...], dict[str, JsonValue]] = {}
+    for record in records:
+        comparable = record.model_dump(mode="json")
+        raw_sources = comparable.pop("sources")
+        if comparable != baseline or not isinstance(raw_sources, list):
+            raise AgentCandidateValidationError()
+        for source in record.sources:
+            key = _entity_source_identity(source)
+            raw = cast(dict[str, JsonValue], source.model_dump(mode="json"))
+            existing = sources.get(key)
+            if existing is not None:
+                existing_without_order = {
+                    name: value for name, value in existing.items() if name != "source_order"
+                }
+                raw_without_order = {
+                    name: value for name, value in raw.items() if name != "source_order"
+                }
+                if existing_without_order != raw_without_order:
+                    raise AgentCandidateValidationError()
+                continue
+            sources[key] = raw
+    baseline["sources"] = [
+        {**source, "source_order": position}
+        for position, source in enumerate(sources.values(), start=1)
+    ]
+    merged = _parse(DimensionalEntityRecord, cast(JsonValue, baseline))
+    if merged is None:
+        raise AgentCandidateValidationError()
+    return merged
+
+
 def _safe_entity(entity: DimensionalEntityRecord) -> bool:
     return (
         not entity.dimensional_entity_is_locked
@@ -1356,6 +1983,51 @@ def _exact_unique(actual: Sequence[str], expected: Sequence[str]) -> bool:
     return len(actual) == len(set(actual)) and set(actual) == set(expected)
 
 
+def _exact_ordered_unique(actual: Sequence[str], expected: Sequence[str]) -> bool:
+    return len(actual) == len(set(actual)) and tuple(actual) == tuple(expected)
+
+
+def _validate_result_byte_limit(maximum_bytes: int | None) -> None:
+    if maximum_bytes is not None and not 1 <= maximum_bytes <= 10 * 1024 * 1024:
+        raise ValueError("Dimensional detailed result byte limit is invalid")
+
+
+def dimensional_json_bytes(value: JsonValue) -> int:
+    """Return deterministic canonical UTF-8 JSON bytes for a Dimensional value."""
+
+    return len(_dimensional_json_data(value))
+
+
+def dimensional_json_digest(value: JsonValue) -> str:
+    """Return the SHA-256 of deterministic canonical Dimensional JSON."""
+
+    return sha256(_dimensional_json_data(value)).hexdigest()
+
+
+def _dimensional_json_data(value: JsonValue) -> bytes:
+    try:
+        return json.dumps(
+            value,
+            ensure_ascii=False,
+            allow_nan=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode("utf-8")
+    except (TypeError, ValueError):
+        raise AgentCandidateValidationError() from None
+
+
+def _parse_bounded[CandidateT: BaseModel](
+    model: type[CandidateT],
+    candidate: JsonValue,
+    *,
+    maximum_bytes: int | None,
+) -> CandidateT | None:
+    if maximum_bytes is not None and dimensional_json_bytes(candidate) > maximum_bytes:
+        return None
+    return _parse(model, candidate)
+
+
 def _parse[CandidateT: BaseModel](
     model: type[CandidateT],
     candidate: JsonValue,
@@ -1420,10 +2092,14 @@ def _set_agent_output_constraints(value: JsonValue) -> None:
 __all__ = [
     "DetailedDimensionalEntityDetail",
     "DetailedDimensionalEntityDetailValidator",
+    "DetailedDimensionalDraftManifest",
     "DetailedDimensionalHandoffDecision",
     "DetailedDimensionalPolicy",
     "DetailedDimensionalReconciliationCandidate",
+    "DetailedDimensionalReconciliationReceipt",
+    "DetailedDimensionalReconciliationReceiptValidator",
     "DetailedDimensionalReconciliationValidator",
+    "DetailedDimensionalRelationshipSignal",
     "DetailedDimensionalRelationshipSignalLedger",
     "DetailedDimensionalTopologyContribution",
     "DetailedDimensionalTopologyContributionValidator",
@@ -1432,12 +2108,20 @@ __all__ = [
     "DetailedDimensionalValidationLead",
     "DetailedDimensionalValidationLeadValidator",
     "DetailedDimensionalValidationPackage",
+    "DetailedDimensionalValidationRecord",
     "DetailedDimensionalValidationWorkerResult",
     "DetailedDimensionalValidationWorkerValidator",
     "build_projected_dimensional_validation_packages",
+    "build_dimensional_draft_manifest",
     "build_dimensional_relationship_signal_ledger",
     "build_dimensional_validation_packages",
     "decide_dimensional_detailed_handoff",
+    "dimensional_json_bytes",
+    "dimensional_json_digest",
     "load_default_detailed_dimensional_policy",
     "dimensional_applied_record_refs",
+    "merge_dimensional_entity_detail_partitions",
+    "merge_dimensional_reconciliation_partitions",
+    "merge_dimensional_topology_partitions",
+    "materialize_dimensional_reviewed_candidate",
 ]

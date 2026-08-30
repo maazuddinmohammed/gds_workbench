@@ -11,12 +11,11 @@ from gds_etl_workbench.domain.modeling_records import (
     ObjectSupportRecord,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextLimits,
     AgentContextToolRequestError,
-    AgentContextToolResultTooLargeError,
+    InMemoryAgentContextToolCatalog,
     PostgresAgentContextRepository,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
@@ -33,6 +32,7 @@ def _plan(
     ] = "one_shot",
     model_workflow: Literal["conceptual", "dimensional"] = "conceptual",
     selected_object_ids: tuple[int, ...] = (501,),
+    max_turns: int = 8,
 ) -> AgentRunPlan:
     return AgentRunPlan.model_validate(
         {
@@ -50,7 +50,7 @@ def _plan(
                 provider_code="databricks",
                 model_code="databricks-primary",
                 reasoning_effort_code="medium",
-                max_turns=8,
+                max_turns=max_turns,
                 validation_retry_count=2,
             ),
             "stages": (
@@ -258,6 +258,20 @@ def _snapshot() -> ModelSnapshot:
         },
         strict=False,
     )
+
+
+def _snapshot_with_large_assertion(text: str) -> ModelSnapshot:
+    snapshot = _snapshot()
+    assertion = snapshot.assertion.model_copy(
+        update={
+            "records": (
+                snapshot.assertion.records[0].model_copy(
+                    update={"modeling_assertion_text": text}
+                ),
+            )
+        }
+    )
+    return snapshot.model_copy(update={"assertion": assertion})
 
 
 def _dimensional_snapshot(*, is_source_eligible: bool = True) -> ModelSnapshot:
@@ -638,6 +652,7 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
         "type": "integer",
         "minimum": 1,
         "maximum": 1,
+        "description": "Maximum retrieval items; a byte cap may return fewer.",
     }
 
     page = result.tool_catalog.invoke(
@@ -652,6 +667,202 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
     with pytest.raises(AgentContextToolRequestError):
         result.tool_catalog.invoke("read_database", {})
     assert "sensitive physical description" not in repr(result.tool_catalog)
+
+
+@pytest.mark.asyncio
+async def test_tool_result_budget_reserves_half_the_stage_for_all_turns() -> None:
+    result = await PostgresAgentContextRepository(
+        snapshot_loader=_load_snapshot,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=1_000,
+            one_shot_max_context_bytes=1,
+            stage_max_context_bytes=80_000,
+            max_tool_result_bytes=80_000,
+            max_tool_catalog_bytes=1_000_000,
+        ),
+    ).load(
+        ContextTransaction(),
+        tenant_id=7,
+        plan=_plan(execution_mode="tool_assisted", max_turns=8),
+    )
+
+    assert result.tool_catalog is not None
+    assert result.tool_catalog.max_result_bytes == 5_000
+    assert result.tool_catalog.max_cumulative_result_bytes == 40_000
+    manifest = result.tool_catalog.invoke("get_agent_context_manifest", {})
+    assert (
+        len(
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        <= result.tool_catalog.max_result_bytes
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bound() -> (
+    None
+):
+    result = await PostgresAgentContextRepository(
+        snapshot_loader=_load_snapshot,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=1_000,
+            one_shot_max_context_bytes=1_000_000,
+            stage_max_context_bytes=1_000_000,
+            max_tool_result_bytes=1_000_000,
+            max_tool_catalog_bytes=1_000_000,
+        ),
+    ).load(ContextTransaction(), tenant_id=7, plan=_plan())
+    generous = InMemoryAgentContextToolCatalog(
+        context=result.context,
+        max_result_bytes=1_000_000,
+        max_catalog_bytes=1_000_000,
+        max_page_records=200,
+    )
+    full_manifest_bytes = len(
+        json.dumps(
+            generous.manifest,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+
+    compact = InMemoryAgentContextToolCatalog(
+        context=result.context,
+        max_result_bytes=full_manifest_bytes - 1,
+        max_catalog_bytes=1_000_000,
+        max_page_records=200,
+    )
+    manifest = cast(dict[str, object], compact.manifest)
+    assert "selected_objects" not in manifest
+    assert manifest["selected_objects_dataset"] == "selected_object"
+    assert (
+        len(
+            json.dumps(
+                manifest,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        <= compact.max_result_bytes
+    )
+
+
+@pytest.mark.asyncio
+async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> None:
+    assertion_text = 'Policy says "retain" λ\\n' * 2_000
+
+    async def load_large_snapshot(*_: object) -> ModelSnapshot:
+        return _snapshot_with_large_assertion(assertion_text)
+
+    result = await PostgresAgentContextRepository(
+        snapshot_loader=load_large_snapshot,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=1_000,
+            one_shot_max_context_bytes=1,
+            stage_max_context_bytes=256_000,
+            max_tool_result_bytes=8_000,
+            max_tool_catalog_bytes=1_000_000,
+            max_tool_page_records=100,
+        ),
+    ).load(
+        ContextTransaction(),
+        tenant_id=7,
+        plan=_plan(execution_mode="tool_assisted", max_turns=8),
+    )
+
+    catalog = result.tool_catalog
+    assert catalog is not None
+    manifest = cast(dict[str, object], catalog.manifest)
+    page_counts = cast(dict[str, int], manifest["dataset_counts"])
+    record_counts = cast(dict[str, int], manifest["dataset_record_counts"])
+    dataset = "modeling_assertion_record"
+    assert record_counts[dataset] == 1
+    assert page_counts[dataset] > record_counts[dataset]
+    count_semantics = cast(dict[str, str], manifest["dataset_count_semantics"])
+    assert count_semantics == {
+        "dataset_counts": "retrieval_items_and_page_total_count",
+        "dataset_record_counts": "source_records",
+    }
+    fragment_contract = cast(dict[str, object], manifest["fragment_contract"])
+    assert fragment_contract["fragment_marker_field"] == "__gds_context_fragment__"
+    assert fragment_contract["encoding"] == "canonical_json"
+    manifest_result = catalog.invoke("get_agent_context_manifest", {})
+    assert (
+        len(
+            json.dumps(
+                manifest_result,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        <= catalog.max_result_bytes
+    )
+
+    offset = 0
+    fragments: list[dict[str, object]] = []
+    first_page = True
+    while offset < page_counts[dataset]:
+        requested_limit = min(10, page_counts[dataset] - offset)
+        page = cast(
+            dict[str, object],
+            catalog.invoke(
+                "get_agent_context_dataset",
+                {"dataset": dataset, "offset": offset, "limit": requested_limit},
+            ),
+        )
+        page_bytes = len(
+            json.dumps(
+                page,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        assert page_bytes <= catalog.max_result_bytes
+        items = cast(list[dict[str, object]], page["items"])
+        assert items
+        next_offset = page["next_offset"]
+        expected_next = offset + len(items)
+        assert next_offset == (
+            expected_next if expected_next < page_counts[dataset] else None
+        )
+        if first_page:
+            assert len(items) < requested_limit
+            first_page = False
+        fragments.extend(items)
+        offset = expected_next
+
+    metadata = [
+        cast(dict[str, object], item["__gds_context_fragment__"]) for item in fragments
+    ]
+    assert [item["fragment_index"] for item in metadata] == list(range(len(fragments)))
+    assert {item["fragment_count"] for item in metadata} == {len(fragments)}
+    assert {item["encoding"] for item in metadata} == {"canonical_json"}
+    reconstructed = json.loads(
+        "".join(cast(str, item["json_text"]) for item in fragments)
+    )
+    assert reconstructed == _snapshot_with_large_assertion(
+        assertion_text
+    ).assertion.records[0].model_dump(mode="json")
 
 
 class UnavailableFenceTransaction(ContextTransaction):
@@ -712,30 +923,61 @@ async def test_embedded_mode_fails_on_json_bound_without_tool_fallback() -> None
 
 
 @pytest.mark.asyncio
-async def test_tool_mode_has_separate_catalog_and_result_bounds() -> None:
+async def test_detailed_mode_keeps_full_context_internal_until_each_stage() -> None:
     result = await PostgresAgentContextRepository(
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
             max_selected_attributes=100,
             max_total_records=1_000,
-            one_shot_max_context_bytes=1,
-            stage_max_context_bytes=1_000_000,
-            max_tool_result_bytes=100,
-            max_tool_catalog_bytes=1_000_000,
+            one_shot_max_context_bytes=100,
+            stage_max_context_bytes=100,
+            max_tool_result_bytes=1_000_000,
         ),
     ).load(
         ContextTransaction(),
         tenant_id=7,
-        plan=_plan(execution_mode="tool_assisted"),
+        plan=_plan(execution_mode="detailed_coverage"),
     )
 
-    assert result.tool_catalog is not None
-    with pytest.raises(AgentContextToolResultTooLargeError):
-        result.tool_catalog.invoke(
-            "get_agent_context_dataset",
-            {"dataset": "profiling_profile", "offset": 0, "limit": 1},
+    full_context_bytes = len(
+        json.dumps(
+            result.context.model_dump(
+                mode="json",
+                exclude={"workflow_run_id", "model_id"},
+            ),
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+    assert full_context_bytes > 100
+    assert result.embedded_context is None
+    assert result.tool_catalog is None
+
+
+@pytest.mark.asyncio
+async def test_tool_mode_rejects_a_bound_too_small_for_its_manifest() -> None:
+    with pytest.raises(WorkbenchError) as captured:
+        await PostgresAgentContextRepository(
+            snapshot_loader=_load_snapshot,
+            limits=AgentContextLimits(
+                max_selected_objects=10,
+                max_selected_attributes=100,
+                max_total_records=1_000,
+                one_shot_max_context_bytes=1,
+                stage_max_context_bytes=1_000_000,
+                max_tool_result_bytes=100,
+                max_tool_catalog_bytes=1_000_000,
+            ),
+        ).load(
+            ContextTransaction(),
+            tenant_id=7,
+            plan=_plan(execution_mode="tool_assisted"),
         )
+
+    assert captured.value.code == "agent_context_too_large"
 
 
 @pytest.mark.asyncio

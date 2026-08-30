@@ -10,10 +10,16 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from pydantic import ValidationError
 
-from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.capabilities import (
+    AgentCapabilityRegistry,
+    AgentModelExecutionProfile,
+    AgentRunSelection,
+    load_default_agent_capabilities,
+)
 from gds_workbench_api.main import create_app
 from gds_workbench_api.features.workflows.commands import (
     CreateWorkflowRunRequest,
@@ -341,7 +347,15 @@ class WorkflowCommandTransaction:
             }
         if "FROM model.model AS target_model" in query:
             assert parameters == (7, 18)
-            return {"model_revision": 4}
+            return {
+                "model_revision": 4,
+                "default_agent_sdk_code": "langchain_create_agent",
+                "default_agent_provider_code": "databricks",
+                "default_agent_model_code": "databricks-primary",
+                "default_reasoning_effort_code": "medium",
+                "default_max_turns": 10,
+                "default_validation_retry_count": 2,
+            }
         assert "application.create_workflow_run" in query
         assert len(parameters) == 26
         assert parameters[3:7] == (18, 4, "profiling", None)
@@ -409,6 +423,343 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
     assert result.workflow_run_id == 1048
     assert result.workflow_run_state == "queued"
+
+
+@pytest.mark.asyncio
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
+    None
+):
+    registry = load_default_agent_capabilities()
+    databricks_model = next(
+        model for model in registry.models if model.code == "databricks-primary"
+    )
+    restricted = databricks_model.model_copy(
+        update={
+            "execution_profiles": (
+                AgentModelExecutionProfile(
+                    sdk_code="langchain_create_agent",
+                    execution_mode="detailed_coverage",
+                    reasoning_effort_codes=("medium",),
+                ),
+            )
+        }
+    )
+    registry = registry.model_copy(
+        update={
+            "models": tuple(
+                restricted if model.code == restricted.code else model
+                for model in registry.models
+            )
+        }
+    )
+    service = DatabaseWorkflowCommandService(
+        database=WorkflowCommandDatabase(),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=registry,
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "analysis",
+            "workflow_execution_mode": "one_shot",
+            "selected_object_ids": [101],
+            "agent": {
+                "sdk_code": "langchain_create_agent",
+                "provider_code": "databricks",
+                "model_code": "databricks-primary",
+                "reasoning_effort_code": "medium",
+                "max_turns": 10,
+                "validation_retry_count": 2,
+            },
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    with pytest.raises(InvalidRequestError, match="incompatible"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            command=command,
+        )
+
+
+class _RecordingCapabilityRegistry:
+    def __init__(self) -> None:
+        self.execution_modes: list[str | None] = []
+        self.selections: list[AgentRunSelection] = []
+
+    def validate_selection(
+        self,
+        selection: AgentRunSelection,
+        *,
+        execution_mode: str | None = None,
+    ) -> None:
+        self.selections.append(selection)
+        self.execution_modes.append(execution_mode)
+        raise InvalidRequestError("stop after capability validation")
+
+
+@pytest.mark.asyncio
+async def test_database_command_validates_code_generation_against_internal_detailed_mode() -> (
+    None
+):
+    registry = _RecordingCapabilityRegistry()
+    service = DatabaseWorkflowCommandService(
+        database=WorkflowCommandDatabase(),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=cast(AgentCapabilityRegistry, registry),
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "code_generation",
+            "selected_object_ids": [101],
+            "modeled_entity_type": "logical_entity",
+            "code_generation_coverage_mode": "selected_targets",
+            "agent": {
+                "sdk_code": "langchain_create_agent",
+                "provider_code": "databricks",
+                "model_code": "databricks-primary",
+                "reasoning_effort_code": "medium",
+                "max_turns": 10,
+                "validation_retry_count": 2,
+            },
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    with pytest.raises(InvalidRequestError, match="stop after capability validation"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            command=command,
+        )
+
+    assert registry.execution_modes == ["detailed_coverage"]
+
+
+class _ImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransaction):
+    def __init__(self, *, model_code: str = "databricks-primary") -> None:
+        self.model_code = model_code
+        self.create_called = False
+
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        if "FROM model.model AS target_model" in query:
+            row = await super().fetch_one(query, parameters)
+            assert row is not None
+            return {**row, "default_agent_model_code": self.model_code}
+        if "application.create_workflow_run" in query:
+            self.create_called = True
+            raise AssertionError("governed create must follow capability validation")
+        return await super().fetch_one(query, parameters)
+
+
+class _ImplicitDefaultWorkflowCommandDatabase:
+    def __init__(self, transaction: _ImplicitDefaultWorkflowCommandTransaction) -> None:
+        self.transaction = transaction
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
+        yield cast(WriteTransaction, self.transaction)
+
+
+class _SuccessfulImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransaction):
+    def __init__(self) -> None:
+        self.create_parameters: tuple[Any, ...] | None = None
+
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        if "application.create_workflow_run" not in query:
+            return await super().fetch_one(query, parameters)
+        self.create_parameters = parameters
+        return {
+            "created": True,
+            "workflow_run_id": 1050,
+            "workflow_run_state": "queued",
+            "correlation_id": UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+            "prompt_snapshot_count": 1,
+            "model_revision": 4,
+            "selected_scope_digest": "c" * 64,
+            "selected_scope_count": 1,
+            "code_generation_coverage_mode": None,
+            "sql_generation_guide_id": None,
+            "sql_generation_guide_version_id": None,
+            "sql_generation_guide_digest": None,
+            "created_at": datetime(2026, 8, 24, 14, 2, tzinfo=UTC),
+        }
+
+
+class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
+    def __init__(
+        self,
+        transaction: _SuccessfulImplicitDefaultWorkflowCommandTransaction,
+    ) -> None:
+        self.transaction = transaction
+
+    @asynccontextmanager
+    async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
+        yield cast(WriteTransaction, self.transaction)
+
+
+@pytest.mark.asyncio
+async def test_database_command_keeps_implicit_model_agent_resolution_in_database() -> (
+    None
+):
+    transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
+    service = DatabaseWorkflowCommandService(
+        database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "conceptual",
+            "workflow_execution_mode": "one_shot",
+            "selected_object_ids": [101],
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    result = await service.create_run(
+        RequestPrincipal(
+            actor_kind=ActorKind.HUMAN,
+            entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+        ),
+        tenant_id=7,
+        model_id=18,
+        correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+        command=command,
+    )
+
+    assert result.workflow_run_id == 1050
+    assert transaction.create_parameters is not None
+    assert transaction.create_parameters[3:7] == (18, 4, "conceptual", "one_shot")
+    assert transaction.create_parameters[7:13] == (None, None, None, None, None, None)
+
+
+@pytest.mark.parametrize(
+    ("payload", "expected_mode"),
+    (
+        (
+            {
+                "expected_model_revision": 4,
+                "model_workflow": "conceptual",
+                "workflow_execution_mode": "one_shot",
+                "selected_object_ids": [101],
+                "prompt_overrides": {},
+            },
+            "one_shot",
+        ),
+        (
+            {
+                "expected_model_revision": 4,
+                "model_workflow": "code_generation",
+                "selected_object_ids": [101],
+                "modeled_entity_type": "logical_entity",
+                "code_generation_coverage_mode": "selected_targets",
+                "prompt_overrides": {},
+            },
+            "detailed_coverage",
+        ),
+    ),
+)
+@pytest.mark.asyncio
+async def test_database_command_validates_implicit_model_agent_default(
+    payload: dict[str, object],
+    expected_mode: str,
+) -> None:
+    registry = _RecordingCapabilityRegistry()
+    transaction = _ImplicitDefaultWorkflowCommandTransaction()
+    service = DatabaseWorkflowCommandService(
+        database=_ImplicitDefaultWorkflowCommandDatabase(transaction),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=cast(AgentCapabilityRegistry, registry),
+    )
+
+    with pytest.raises(InvalidRequestError, match="stop after capability validation"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            command=CreateWorkflowRunRequest.model_validate(payload, strict=True),
+        )
+
+    assert registry.selections == [
+        AgentRunSelection(
+            sdk_code="langchain_create_agent",
+            provider_code="databricks",
+            model_code="databricks-primary",
+            reasoning_effort_code="medium",
+            max_turns=10,
+            validation_retry_count=2,
+        )
+    ]
+    assert registry.execution_modes == [expected_mode]
+    assert transaction.create_called is False
+
+
+@pytest.mark.asyncio
+async def test_database_command_rejects_removed_implicit_model_agent_default() -> None:
+    transaction = _ImplicitDefaultWorkflowCommandTransaction(model_code="removed-model")
+    service = DatabaseWorkflowCommandService(
+        database=_ImplicitDefaultWorkflowCommandDatabase(transaction),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "conceptual",
+            "workflow_execution_mode": "one_shot",
+            "selected_object_ids": [101],
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    with pytest.raises(InvalidRequestError, match="unavailable"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            command=command,
+        )
+
+    assert transaction.create_called is False
 
 
 class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from collections.abc import AsyncGenerator
+import json
+from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from copy import deepcopy
 from dataclasses import dataclass, field
@@ -15,6 +16,7 @@ from gds_etl_workbench.domain.authorization import (
     ToolPolicy,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
@@ -28,6 +30,9 @@ from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.dimensional.policy import (
     project_dimensional_foreign_key_policy,
     project_dimensional_gold_policy,
+)
+from gds_workbench_api.features.dimensional.detailed import (
+    DetailedDimensionalTopologyContributionValidator,
 )
 from gds_workbench_api.features.dimensional.service import (
     DatabaseDimensionalExecutor,
@@ -623,7 +628,29 @@ def _detailed_model_candidate() -> dict[str, JsonValue]:
     }
 
 
-def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
+type _AgentResponse = (
+    JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
+)
+
+
+def _detailed_reconciliation_receipt(request: AgentExecutionRequest) -> JsonValue:
+    wrapped = cast(dict[str, JsonValue], request.context)
+    context = cast(dict[str, JsonValue], wrapped["original_context"])
+    signals = cast(list[dict[str, JsonValue]], context["relationship_signals"])
+    return cast(
+        JsonValue,
+        {
+            "partition_ref": context["partition_ref"],
+            "manifest": context["review_manifest"],
+            "reviewed_relationship_signal_refs": [
+                item["signal_ref"] for item in signals
+            ],
+            "relationships": [],
+        },
+    )
+
+
+def _detailed_candidates(*, blocking_first: bool = False) -> list[_AgentResponse]:
     full = _detailed_model_candidate()
     submodel = cast(list[JsonValue], full["submodels"])[0]
     entity = cast(list[JsonValue], full["entities"])[0]
@@ -674,19 +701,9 @@ def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
     detail = cast(
         JsonValue,
         {
-            "canonical_entity_ref": "customer_dimension",
+            "canonical_entity_ref": "entity_00001",
             "entity": entity,
             "attributes": attributes,
-        },
-    )
-    reconciliation = cast(
-        JsonValue,
-        {
-            **full,
-            "reviewed_submodel_refs": ["sales_analytics"],
-            "reviewed_entity_refs": ["customer_dimension"],
-            "reviewed_relationship_signal_refs": [],
-            "reviewed_applied_record_refs": [],
         },
     )
     record_refs = [
@@ -715,7 +732,12 @@ def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
             "repair_brief": None,
         },
     )
-    base = [contribution, topology, detail, reconciliation]
+    base: list[_AgentResponse] = [
+        contribution,
+        topology,
+        detail,
+        _detailed_reconciliation_receipt,
+    ]
     if not blocking_first:
         return [*base, clean_worker, clean_lead]
     finding = {
@@ -746,7 +768,7 @@ def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
         *base,
         blocking_worker,
         blocking_lead,
-        reconciliation,
+        _detailed_reconciliation_receipt,
         clean_worker,
         clean_lead,
     ]
@@ -846,7 +868,7 @@ class _ContextRepository:
 
 @dataclass
 class _AgentExecutor:
-    responses: list[JsonValue | Exception]
+    responses: list[_AgentResponse]
     requests: list[AgentExecutionRequest] = field(
         default_factory=lambda: list[AgentExecutionRequest]()
     )
@@ -856,6 +878,8 @@ class _AgentExecutor:
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if callable(response):
+            response = response(request)
         return AgentExecutionResult(candidate=response, turn_count=2, tool_call_count=0)
 
 
@@ -1376,9 +1400,7 @@ async def test_fixed_plan_identity_mismatch_is_rejected_before_agent_execution(
 
 @pytest.mark.asyncio
 async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> None:
-    agent = _AgentExecutor(
-        responses=cast(list[JsonValue | Exception], _detailed_candidates())
-    )
+    agent = _AgentExecutor(responses=_detailed_candidates())
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
         plan=_plan(mode="detailed_coverage"),
@@ -1430,12 +1452,7 @@ async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> 
 
 @pytest.mark.asyncio
 async def test_detailed_blocker_retries_only_reconciliation_worker_and_lead() -> None:
-    agent = _AgentExecutor(
-        responses=cast(
-            list[JsonValue | Exception],
-            _detailed_candidates(blocking_first=True),
-        )
-    )
+    agent = _AgentExecutor(responses=_detailed_candidates(blocking_first=True))
     service, _database, _authorizer, handoff, _lifecycle = _service(
         agent=agent,
         plan=_plan(mode="detailed_coverage", retry_count=1),
@@ -1463,7 +1480,15 @@ async def test_detailed_blocker_retries_only_reconciliation_worker_and_lead() ->
     ]
     first = cast(dict[str, JsonValue], agent.requests[3].context)
     repaired = cast(dict[str, JsonValue], agent.requests[6].context)
-    assert repaired["original_context"] == first["original_context"]
+    first_original = cast(dict[str, JsonValue], first["original_context"])
+    repaired_original = cast(dict[str, JsonValue], repaired["original_context"])
+    assert repaired_original["review_manifest"] == first_original["review_manifest"]
+    assert (
+        cast(dict[str, JsonValue], repaired_original["validation_failure_summary"])[
+            "finding_count"
+        ]
+        == 1
+    )
     assert "dimensional.review_required" in agent.requests[6].instruction_prompt
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].status == "warning"
@@ -1471,7 +1496,7 @@ async def test_detailed_blocker_retries_only_reconciliation_worker_and_lead() ->
 
 @pytest.mark.asyncio
 async def test_detailed_internal_repair_marks_terminal_attempt() -> None:
-    responses = cast(list[JsonValue | Exception], _detailed_candidates())
+    responses = _detailed_candidates()
     agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), *responses])
     service, _database, _authorizer, handoff, _lifecycle = _service(
         agent=agent,
@@ -1492,6 +1517,70 @@ async def test_detailed_internal_repair_marks_terminal_attempt() -> None:
     assert handoff.final_events[-1].status == "warning"
 
 
+def test_maximum_legal_dimensional_attributes_are_exactly_byte_batched() -> None:
+    base = _context_bundle(mode="detailed_coverage")
+    selected = base.context.selected_objects[0]
+    template = selected.attributes[0]
+    excluded_description = "界" * 2_000
+    attributes = tuple(
+        template.model_copy(
+            update={
+                "attribute_name": f"attribute_{position:05d}",
+                "attribute_ordinal_position": position,
+                "attribute_description": excluded_description,
+            }
+        )
+        for position in range(1, 20_001)
+    )
+    wide_selected = selected.model_copy(update={"attributes": attributes})
+    authoring_context = base.context.model_copy(
+        update={"selected_objects": (wide_selected,)}
+    )
+    context = AgentContextBundle(
+        context=authoring_context,
+        embedded_context=base.embedded_context,
+    )
+    plan = _plan(mode="detailed_coverage")
+    service, *_unused = _service(
+        agent=_AgentExecutor(responses=[]),
+        plan=plan,
+        context=context,
+    )
+
+    batches = service._topology_builder_batches(  # pyright: ignore[reportPrivateUsage]
+        plan=plan,
+        context=context,
+        selected=wide_selected,
+    )
+
+    covered = tuple(
+        key.attribute_name for batch in batches for key in batch.source_attributes
+    )
+    assert covered == tuple(item.attribute_name for item in attributes)
+    assert len(batches) > 1
+    assert all(1 <= len(batch.source_attributes) <= 32 for batch in batches)
+    assert all(
+        excluded_description not in json.dumps(batch.context, ensure_ascii=False)
+        for batch in batches
+    )
+    source_object = PhysicalObjectKey.model_validate(_object_key())
+    assert all(
+        service._detailed_stage_fits(  # pyright: ignore[reportPrivateUsage]
+            plan=plan,
+            context=context,
+            stage_code="topology_builder",
+            stage_context=batch.context,
+            output_schema=DetailedDimensionalTopologyContributionValidator(
+                contribution_ref=batch.contribution_ref,
+                source_object=source_object,
+                source_attributes=batch.source_attributes,
+                max_result_bytes=service._detailed_result_limit,  # pyright: ignore[reportPrivateUsage]
+            ).output_schema(),
+        )
+        for batch in batches
+    )
+
+
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("disposition", "expected_status"),
@@ -1503,7 +1592,7 @@ async def test_detailed_empty_topology_completes_as_no_op(
 ) -> None:
     agent = _AgentExecutor(
         responses=cast(
-            list[JsonValue | Exception],
+            list[_AgentResponse],
             _non_dimensional_candidates(disposition=disposition),
         )
     )

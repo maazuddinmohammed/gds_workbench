@@ -17,10 +17,30 @@ From the repository root on the VM:
 python3 deployment/databricks_ui/build_uploads.py
 ```
 
+That command builds the Databricks-only variant. Build a Foundry-enabled
+variant, which still exposes all registered Databricks models, with:
+
+```bash
+python3 deployment/databricks_ui/build_uploads.py \
+  --agent-provider microsoft_foundry
+```
+
+The Foundry command defaults to `artifacts/databricks-ui-foundry/`. Its
+`app.yaml` is selected before the tree manifest, ZIP, and SHA-256 files are
+created. Do not copy or replace a manifest after building.
+
 To replace only an output previously created by this builder:
 
 ```bash
 python3 deployment/databricks_ui/build_uploads.py --replace
+```
+
+For the Foundry output, keep the provider selection on rebuild:
+
+```bash
+python3 deployment/databricks_ui/build_uploads.py \
+  --agent-provider microsoft_foundry \
+  --replace
 ```
 
 Output:
@@ -43,7 +63,8 @@ cd artifacts/databricks-ui
 shasum -a 256 -c SHA256SUMS.txt
 ```
 
-Both lines must end in `OK`.
+For the Foundry build, change the first line to
+`cd artifacts/databricks-ui-foundry`. Both checksum lines must end in `OK`.
 
 ## 2. Do not import the ZIP in the Workspace UI
 
@@ -65,7 +86,9 @@ from an expanded folder if any level was flattened.
 ```text
 <access-controlled Workspace parent>/
 ├── gds-workbench-app-source/
+│   ├── app.foundry.yaml.example
 │   ├── app.yaml
+│   ├── DEPLOYMENT_GUIDE.md
 │   ├── package.json
 │   ├── package-lock.json
 │   ├── pyproject.toml
@@ -178,6 +201,14 @@ native Databricks App access control. Deploying it does not enable or alter the
 notebooks. Databricks App users still need App `CAN USE`; this deployment is not
 a public unauthenticated web site.
 
+The default artifact exposes the registered Databricks Model Serving models.
+To expose registered Microsoft Foundry models in the same app, build with
+`--agent-provider microsoft_foundry` and upload from
+`artifacts/databricks-ui-foundry/`. Do not edit or replace its generated
+`app.yaml`: it is already the combined-provider manifest and is covered by both
+the tree manifest and ZIP checksum. The complete provider instructions are
+copied into the app root as `DEPLOYMENT_GUIDE.md`.
+
 The upload intentionally contains frontend source, not a checked-in `dist/`
 folder. During App deployment, Azure Databricks detects the root `package.json`,
 installs Node dependencies with `npm install`, installs the locked Python
@@ -196,7 +227,8 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    select that scope/key, grant **Can read**, and assign the exact custom
    resource key below. Do not paste a secret value into `app.yaml`.
 
-   Configure these exact App resource keys:
+   For the default Databricks artifact, configure these exact App resource
+   keys:
 
    | Resource key | Type | Permission |
    |---|---|---|
@@ -204,7 +236,22 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    | `cursor-signing-key` | Existing secret scope/key | Can read |
    | `entra-tenant-id` | Existing secret scope/key | Can read |
    | `databricks-environment-code` | Existing secret scope/key | Can read |
-   | `agent-model-endpoint` | Model Serving endpoint | Can query |
+   Grant the App service principal `CAN_QUERY` on every Databricks Model Serving
+   endpoint named by a Databricks `deployment_name` in
+   `agent_capabilities.json`.
+
+   For the Foundry artifact, add these read-only
+   secret resources:
+
+   | Resource key | Stored value |
+   |---|---|
+   | `foundry-openai-base-url` | `https://<resource>.openai.azure.com/openai/v1/` or `https://<resource>.services.ai.azure.com/openai/v1/` |
+   | `foundry-api-key` | API key stored as a secret; never literal YAML. |
+
+   The Foundry artifact uses API-key authentication for initial development.
+   See its `DEPLOYMENT_GUIDE.md` for the Entra client-credential configuration
+   contract. Project routes under `/api/projects/` are not accepted by this
+   Chat Completions integration.
 
    `app.yaml` maps those resource keys into `GDS_WEB_*` environment variables.
    `valueFrom` is the resource key, not the secret value. The PostgreSQL DSN
@@ -233,7 +280,8 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    | `cursor-signing-key` | Approved random UTF-8 value, 32 through 4096 bytes. |
    | `entra-tenant-id` | Nonzero Entra Tenant UUID accepted by the application. |
    | `databricks-environment-code` | Existing registered database Environment code; not a Tenant ID or URL. |
-   | `agent-model-endpoint` | Existing Model Serving endpoint name; not its URL. |
+   | `foundry-openai-base-url` | One accepted Foundry resource OpenAI v1 URL shown above. |
+   | `foundry-api-key` | API key stored behind the App secret resource. |
 
    Development-only TLS fallback for `postgres-dsn`:
 
@@ -249,14 +297,13 @@ environment with `uv sync`, runs the root `npm run build`, and then runs the
    | `NODE_ENV` | `production` | Frontend/server production behavior. |
    | `GDS_WEB_ENVIRONMENT` | `production` | Rejects local identity mode. |
    | `GDS_WEB_STATIC_DIR` | `web_app/frontend/dist` | Built frontend path inside App source. |
-   | `GDS_WEB_AGENT_EXECUTION_MODE` | `remote` | Uses the configured external model endpoint. |
-   | `GDS_WEB_AGENT_PROVIDER` | `databricks` | Selects the Databricks agent provider. |
+   | `GDS_WEB_AGENT_EXECUTION_MODE` | `remote` | Uses registry-defined model deployments. |
    | `GDS_WEB_DATABRICKS_EXECUTION_MODE` | `remote` | Runs Databricks SQL remotely. |
 5. Configure the existing user-authorization scopes
    `iam.access-control:read` and `iam.current-user:read`.
 6. Grant the approved user/group `CAN USE` on the App and grant the App service
-   principal read access to the source folder and query access to the selected
-   endpoint.
+   principal read access to the source folder and `CAN_QUERY` on every Databricks
+   `deployment_name` registered in `agent_capabilities.json`.
 7. Select **Deploy**, choose `gds-workbench-app-source`, and wait for `Running`.
 8. Verify `/healthz`, `/readyz`, the UI, authorization, and one approved smoke
    workflow.
@@ -304,6 +351,9 @@ databricks sync \
 databricks apps deploy <app-name> \
   --source-code-path "/Workspace/Users/<workspace-user>/gds-workbench-app-source"
 ```
+
+For the Foundry variant, use the same commands with
+`artifacts/databricks-ui-foundry/gds-workbench-app-source` as the local source.
 
 Inspect both remote trees afterward. If notebook dotfiles were skipped,
 explicitly import `.env.example` and the securely prepared `.env`; never place

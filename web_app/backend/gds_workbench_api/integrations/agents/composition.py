@@ -8,7 +8,10 @@ from typing import cast
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
 
-from gds_workbench_api.capabilities import AgentCapabilityRegistry
+from gds_workbench_api.capabilities import (
+    AgentCapabilityRegistry,
+    select_agent_runtime_capabilities,
+)
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionAdapter,
     AgentExecutionRequest,
@@ -17,12 +20,16 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 )
 from gds_workbench_api.integrations.agents.adapters import (
     DatabricksModelAuthentication,
+    FoundryApiKeyAuthentication,
     FoundryModelAuthentication,
     LangChainCreateAgentAdapter,
     ManagedModelAuthentication,
     OpenAIAgentsSdkAdapter,
 )
 from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
+from gds_workbench_api.integrations.agents.fake_analysis import (
+    fake_detailed_analysis_candidate,
+)
 from gds_workbench_api.integrations.agents.fake_conceptual import (
     detailed_conceptual_candidate,
 )
@@ -123,8 +130,22 @@ class LocalFakeAgentAdapter:
                     ]
                 },
             )
+        elif (
+            request.workflow == "analysis_inference"
+            and request.execution_mode == "detailed_coverage"
+        ):
+            candidate = fake_detailed_analysis_candidate(request)
         elif request.workflow == "analysis_inference" and request.stage == "relationship_inference":
-            attributes = analysis_selected_attributes(request.context)
+            if request.execution_mode == "tool_assisted":
+                _source_objects, attributes, tool_call_count = tool_assisted_logical_sources(
+                    request
+                )
+            elif request.execution_mode == "one_shot":
+                attributes = analysis_selected_attributes(request.context)
+            else:
+                raise InvalidRequestError(
+                    "The local fake does not support this agent execution path."
+                )
             relationships: list[dict[str, JsonValue]] = []
             if len(attributes) >= 2:
                 source, target = attributes[:2]
@@ -238,6 +259,28 @@ def create_agent_execution_router(
     provider_authentications: Mapping[str, ManagedModelAuthentication] | None = None,
 ) -> AgentExecutionRouter:
     adapters: tuple[AgentExecutionAdapter, ...]
+    registered_deployments = {
+        (model.provider_code, model.code): model.deployment_name for model in capabilities.models
+    }
+    for connection in configuration.connections:
+        connection_key = (connection.provider_code, connection.model_code)
+        if connection_key not in registered_deployments:
+            raise ValueError("A configured Agent model deployment is not registered")
+        if registered_deployments[connection_key] != connection.model_endpoint:
+            raise ValueError(
+                "The configured Agent model deployment does not match the Agent registry"
+            )
+    runtime_capabilities = (
+        capabilities
+        if configuration.mode == "fake"
+        else select_agent_runtime_capabilities(
+            capabilities,
+            configured_models={
+                (connection.provider_code, connection.model_code)
+                for connection in configuration.connections
+            },
+        )
+    )
     configured_provider_codes = {
         connection.provider_code for connection in configuration.connections
     }
@@ -247,39 +290,87 @@ def create_agent_execution_router(
             "Every configured Agent provider requires exactly one authentication adapter"
         )
     if configuration.mode == "fake":
-        adapters = tuple(LocalFakeAgentAdapter(sdk_code=sdk.code) for sdk in capabilities.sdks)
+        adapters = tuple(
+            LocalFakeAgentAdapter(sdk_code=sdk.code) for sdk in runtime_capabilities.sdks
+        )
     else:
         if provider_authentications is None:
-            for connection in configuration.connections:
-                if connection.provider_code == "databricks":
-                    authentications[connection.provider_code] = DatabricksModelAuthentication()
+            for provider_code in configured_provider_codes:
+                provider_connections = tuple(
+                    connection
+                    for connection in configuration.connections
+                    if connection.provider_code == provider_code
+                )
+                connection = provider_connections[0]
+                if provider_code == "databricks":
+                    authentications[provider_code] = DatabricksModelAuthentication()
                 else:
-                    if (
-                        connection.openai_base_url is None
-                        or connection.token_scope is None
-                        or connection.foundry_client_credentials is None
-                    ):
-                        raise ValueError("Foundry authentication configuration is incomplete")
-                    credentials = connection.foundry_client_credentials
-                    authentications[connection.provider_code] = FoundryModelAuthentication(
-                        base_url=connection.openai_base_url,
-                        token_scope=connection.token_scope,
-                        tenant_id=str(credentials.tenant_id),
-                        client_id=str(credentials.client_id),
-                        client_secret=credentials.client_secret,
+                    resource_configuration = (
+                        connection.openai_base_url,
+                        connection.token_scope,
+                        connection.foundry_client_credentials,
+                        connection.foundry_api_key,
                     )
-        adapters = (
-            LangChainCreateAgentAdapter(
-                connections=configuration.connections,
-                model_authentications=authentications,
-            ),
-            OpenAIAgentsSdkAdapter(
-                connections=configuration.connections,
-                model_authentications=authentications,
-            ),
-        )
+                    if any(
+                        (
+                            candidate.openai_base_url,
+                            candidate.token_scope,
+                            candidate.foundry_client_credentials,
+                            candidate.foundry_api_key,
+                        )
+                        != resource_configuration
+                        for candidate in provider_connections[1:]
+                    ):
+                        raise ValueError(
+                            "Foundry model deployments must share one resource and authentication"
+                        )
+                    if connection.openai_base_url is None:
+                        raise ValueError("Foundry authentication configuration is incomplete")
+                    if connection.foundry_api_key is not None:
+                        if (
+                            connection.token_scope is not None
+                            or connection.foundry_client_credentials is not None
+                        ):
+                            raise ValueError("Foundry authentication configuration is incomplete")
+                        authentications[provider_code] = FoundryApiKeyAuthentication(
+                            base_url=connection.openai_base_url,
+                            api_key=connection.foundry_api_key,
+                        )
+                    else:
+                        if (
+                            connection.token_scope is None
+                            or connection.foundry_client_credentials is None
+                        ):
+                            raise ValueError("Foundry authentication configuration is incomplete")
+                        credentials = connection.foundry_client_credentials
+                        authentications[provider_code] = FoundryModelAuthentication(
+                            base_url=connection.openai_base_url,
+                            token_scope=connection.token_scope,
+                            tenant_id=str(credentials.tenant_id),
+                            client_id=str(credentials.client_id),
+                            client_secret=credentials.client_secret,
+                        )
+        configured_adapters: list[AgentExecutionAdapter] = []
+        for sdk in runtime_capabilities.sdks:
+            if sdk.code == "langchain_create_agent":
+                configured_adapters.append(
+                    LangChainCreateAgentAdapter(
+                        connections=configuration.connections,
+                        model_authentications=authentications,
+                    )
+                )
+            elif sdk.code == "openai_agents_sdk":
+                configured_adapters.append(
+                    OpenAIAgentsSdkAdapter(
+                        connections=configuration.connections,
+                        model_authentications=authentications,
+                    )
+                )
+            else:
+                raise ValueError("The configured Agent SDK is unsupported")
+        adapters = tuple(configured_adapters)
     return AgentExecutionRouter(
-        capabilities=capabilities,
+        capabilities=runtime_capabilities,
         adapters=adapters,
         resources=tuple(authentications.values()),
     )

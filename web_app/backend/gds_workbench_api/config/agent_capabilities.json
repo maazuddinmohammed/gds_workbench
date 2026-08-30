@@ -1,9 +1,9 @@
 {
-  "schema_version": "1.0",
+  "schema_version": "3.0",
   "sdks": [
     {
       "code": "langchain_create_agent",
-      "name": "Create Agent",
+      "name": "LangChain create_agent",
       "provider_codes": ["databricks", "microsoft_foundry"]
     },
     {
@@ -25,20 +25,170 @@
   "models": [
     {
       "code": "databricks-primary",
-      "name": "Databricks Primary Model",
+      "name": "OpenAI GPT OSS 120B",
       "provider_code": "databricks",
-      "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
-      "reasoning_effort_codes": ["low", "medium", "high"]
+      "deployment_name": "databricks-gpt-oss-120b",
+      "execution_profiles": [
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "low", "medium", "high"]
+        }
+      ]
+    },
+    {
+      "code": "databricks-claude-opus-5",
+      "name": "Anthropic Claude Opus 5",
+      "provider_code": "databricks",
+      "deployment_name": "databricks-claude-opus-5",
+      "execution_profiles": [
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["default"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["default"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default"]
+        }
+      ]
     },
     {
       "code": "foundry-primary",
-      "name": "Foundry Primary Model",
+      "name": "OpenAI GPT-5.6 Sol",
       "provider_code": "microsoft_foundry",
-      "sdk_codes": ["langchain_create_agent", "openai_agents_sdk"],
-      "reasoning_effort_codes": ["low", "medium", "high"]
+      "deployment_name": "gpt-5.6-sol",
+      "execution_profiles": [
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["none"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["none"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        }
+      ]
+    },
+    {
+      "code": "foundry-gpt-5.6-luna",
+      "name": "OpenAI GPT-5.6 Luna",
+      "provider_code": "microsoft_foundry",
+      "deployment_name": "gpt-5.6-luna",
+      "execution_profiles": [
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["none"]
+        },
+        {
+          "sdk_code": "langchain_create_agent",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "one_shot",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "tool_assisted",
+          "reasoning_effort_codes": ["none"]
+        },
+        {
+          "sdk_code": "openai_agents_sdk",
+          "execution_mode": "detailed_coverage",
+          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+        }
+      ]
     }
   ],
   "reasoning_efforts": [
+    {
+      "code": "default",
+      "name": "Provider default (omit setting)"
+    },
+    {
+      "code": "none",
+      "name": "None (explicitly disable reasoning)"
+    },
+    {
+      "code": "minimal",
+      "name": "Minimal"
+    },
     {
       "code": "low",
       "name": "Low"
@@ -50,6 +200,14 @@
     {
       "code": "high",
       "name": "High"
+    },
+    {
+      "code": "xhigh",
+      "name": "Extra high"
+    },
+    {
+      "code": "max",
+      "name": "Maximum"
     }
   ],
   "max_turns": {

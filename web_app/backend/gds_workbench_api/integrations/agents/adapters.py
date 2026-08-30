@@ -7,6 +7,7 @@ import json
 from collections.abc import Mapping, Sequence
 from contextlib import AbstractContextManager
 from dataclasses import dataclass, field
+from threading import Lock
 from typing import Any, Literal, Protocol, cast, runtime_checkable
 from urllib.parse import urlsplit
 
@@ -28,10 +29,11 @@ from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from langchain_core.tools import BaseTool, StructuredTool
 from langchain_openai import ChatOpenAI
 from openai import AsyncOpenAI
-from openai.types.shared import Reasoning
+from openai.types.shared import Reasoning, ReasoningEffort
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentContextToolResultTooLargeError,
     AgentExecutionFailedError,
     AgentExecutionRequest,
     AgentExecutionResult,
@@ -153,6 +155,29 @@ class DatabricksModelAuthentication:
         return None
 
 
+class FoundryApiKeyAuthentication:
+    """Use one deployment-provided API key for a direct Foundry endpoint."""
+
+    def __init__(self, *, base_url: str, api_key: SecretStr) -> None:
+        self._base_url = base_url.rstrip("/") + "/"
+        self._api_key = api_key
+        self._closed = False
+
+    async def authenticate(self) -> OpenAIProviderCredentials:
+        if self._closed:
+            raise RuntimeError("Foundry API key authentication is closed")
+        return OpenAIProviderCredentials(
+            api_key=self._api_key,
+            base_url=self._base_url,
+        )
+
+    async def close(self) -> None:
+        self._closed = True
+
+    def __repr__(self) -> str:
+        return "FoundryApiKeyAuthentication()"
+
+
 class FoundryModelAuthentication:
     """Resolve a short-lived Entra token for one direct Foundry OpenAI endpoint."""
 
@@ -206,29 +231,37 @@ class _ConfiguredAdapter:
         connections: tuple[AgentProviderConnection, ...],
         model_authentications: Mapping[str, ModelAuthentication] | None = None,
     ) -> None:
-        provider_codes = [connection.provider_code for connection in connections]
-        if len(provider_codes) != len(set(provider_codes)):
-            raise ValueError("Agent provider connections must be unique")
-        self._connections = {connection.provider_code: connection for connection in connections}
+        connection_keys = [
+            (connection.provider_code, connection.model_code) for connection in connections
+        ]
+        if len(connection_keys) != len(set(connection_keys)):
+            raise ValueError("Agent provider/model connections must be unique")
+        self._connections = {
+            (connection.provider_code, connection.model_code): connection
+            for connection in connections
+        }
+        provider_codes = {connection.provider_code for connection in connections}
         if model_authentications is None:
             self._model_authentications = (
                 {"databricks": DatabricksModelAuthentication()}
-                if "databricks" in self._connections
+                if "databricks" in provider_codes
                 else {}
             )
         else:
             self._model_authentications = dict(model_authentications)
-        if set(self._connections) != set(self._model_authentications):
+        if provider_codes != set(self._model_authentications):
             raise ValueError("Every Agent provider connection requires one authentication adapter")
 
     def __repr__(self) -> str:
-        return f"{type(self).__name__}(configured_providers={len(self._connections)})"
+        return f"{type(self).__name__}(configured_models={len(self._connections)})"
 
     def _connection(self, request: AgentExecutionRequest) -> AgentProviderConnection:
         if request.selection.sdk_code != self.sdk_code:
             raise InvalidRequestError("The selected agent SDK is incompatible.")
-        connection = self._connections.get(request.selection.provider_code)
-        if connection is None or connection.model_code != request.selection.model_code:
+        connection = self._connections.get(
+            (request.selection.provider_code, request.selection.model_code)
+        )
+        if connection is None:
             raise InvalidRequestError("The selected agent provider is unavailable.")
         return connection
 
@@ -250,7 +283,48 @@ class _ConfiguredAdapter:
         names = tuple(definition.name for definition in catalog.definitions)
         if not names or names != request.allowed_tool_names or len(names) != len(set(names)):
             raise InvalidRequestError("A selected local agent tool is unavailable.")
-        return catalog
+        if catalog.max_cumulative_result_bytes < 1:
+            raise InvalidRequestError("A selected local agent tool is unavailable.")
+        return _PerExecutionToolCatalog(catalog)
+
+
+class _PerExecutionToolCatalog:
+    """Apply one fresh cumulative result budget to one provider conversation."""
+
+    def __init__(self, catalog: LocalAgentToolCatalog) -> None:
+        self._catalog = catalog
+        self._maximum_bytes = catalog.max_cumulative_result_bytes
+        self._used_bytes = 0
+        self._budget_lock = Lock()
+
+    @property
+    def definitions(self) -> tuple[LocalAgentToolDefinition, ...]:
+        return self._catalog.definitions
+
+    @property
+    def max_cumulative_result_bytes(self) -> int:
+        return self._maximum_bytes
+
+    def invoke(
+        self,
+        tool_name: str,
+        arguments: Mapping[str, JsonValue],
+    ) -> JsonValue:
+        result = self._catalog.invoke(tool_name, arguments)
+        result_bytes = len(
+            json.dumps(
+                result,
+                ensure_ascii=False,
+                allow_nan=False,
+                separators=(",", ":"),
+                sort_keys=True,
+            ).encode("utf-8")
+        )
+        with self._budget_lock:
+            if self._used_bytes + result_bytes > self._maximum_bytes:
+                raise AgentContextToolResultTooLargeError()
+            self._used_bytes += result_bytes
+        return result
 
 
 class LangChainCreateAgentAdapter(_ConfiguredAdapter):
@@ -262,14 +336,23 @@ class LangChainCreateAgentAdapter(_ConfiguredAdapter):
             credentials = await self._authentication(connection).authenticate()
             with tracing_context(enabled=False):
                 tools: Sequence[BaseTool] = _langchain_tools(self._tool_catalog(request))
-                model = ChatOpenAI(
-                    model=connection.model_endpoint,
-                    api_key=credentials.api_key,
-                    base_url=credentials.base_url,
-                    timeout=connection.timeout_seconds,
-                    max_retries=2,
-                    reasoning_effort=request.selection.reasoning_effort_code,
-                )
+                if request.selection.reasoning_effort_code == "default":
+                    model = ChatOpenAI(
+                        model=connection.model_endpoint,
+                        api_key=credentials.api_key,
+                        base_url=credentials.base_url,
+                        timeout=connection.timeout_seconds,
+                        max_retries=2,
+                    )
+                else:
+                    model = ChatOpenAI(
+                        model=connection.model_endpoint,
+                        api_key=credentials.api_key,
+                        base_url=credentials.base_url,
+                        timeout=connection.timeout_seconds,
+                        max_retries=2,
+                        reasoning_effort=request.selection.reasoning_effort_code,
+                    )
                 graph = create_agent(
                     model=model,
                     tools=tools,
@@ -333,19 +416,26 @@ class OpenAIAgentsSdkAdapter(_ConfiguredAdapter):
                 model=connection.model_endpoint,
                 openai_client=client,
             )
-            reasoning_effort = cast(
-                Literal["low", "medium", "high"],
-                request.selection.reasoning_effort_code,
-            )
+            if request.selection.reasoning_effort_code == "default":
+                model_settings = ModelSettings(
+                    parallel_tool_calls=False,
+                    timeout=float(connection.timeout_seconds),
+                )
+            else:
+                reasoning_effort = cast(
+                    ReasoningEffort,
+                    request.selection.reasoning_effort_code,
+                )
+                model_settings = ModelSettings(
+                    reasoning=Reasoning(effort=reasoning_effort),
+                    parallel_tool_calls=False,
+                    timeout=float(connection.timeout_seconds),
+                )
             agent = Agent(
                 name=f"{request.workflow}_{request.stage}",
                 instructions=_system_prompt(request),
                 model=model,
-                model_settings=ModelSettings(
-                    reasoning=Reasoning(effort=reasoning_effort),
-                    parallel_tool_calls=False,
-                    timeout=float(connection.timeout_seconds),
-                ),
+                model_settings=model_settings,
                 tools=list(tools),
                 output_type=str,
             )
