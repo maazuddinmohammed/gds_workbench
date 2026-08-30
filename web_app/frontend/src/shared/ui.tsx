@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import { Link } from "@tanstack/react-router";
 
 import { initials } from "./presentation";
@@ -57,33 +58,75 @@ export function SearchIcon() {
 }
 
 export function HomeIcon() {
-  return <NavIcon path="M4 10.5 12 4l8 6.5V20h-5v-6H9v6H4z" />;
+  return (
+    <NavIcon>
+      <path d="m3.5 10.5 8.5-7 8.5 7" />
+      <path d="M5.5 9.25V20h13V9.25M9.5 20v-6h5v6" />
+    </NavIcon>
+  );
 }
 
 export function DatabaseIcon() {
-  return <NavIcon path="M5 6c0-2 14-2 14 0v12c0 2-14 2-14 0zm0 0c0 2 14 2 14 0M5 12c0 2 14 2 14 0" />;
+  return (
+    <NavIcon>
+      <ellipse cx="12" cy="5.5" rx="7.5" ry="3" />
+      <path d="M4.5 5.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" />
+      <path d="M4.5 11.5v6c0 1.66 3.36 3 7.5 3s7.5-1.34 7.5-3v-6" />
+    </NavIcon>
+  );
 }
 
 export function ModelIcon() {
-  return <NavIcon path="M5 5h5v5H5zm9 0h5v5h-5zM9 14h6v5H9zm3-4v4M10 8h4" />;
+  return (
+    <NavIcon>
+      <path d="m12 3 8 4.25-8 4.25-8-4.25L12 3Z" />
+      <path d="m4 12 8 4.25L20 12M4 16.75 12 21l8-4.25" />
+    </NavIcon>
+  );
 }
 
 export function MappingIcon() {
-  return <NavIcon path="M4 7h13m-3-3 3 3-3 3m6 7H7m3-3-3 3 3 3" />;
+  return (
+    <NavIcon>
+      <circle cx="5" cy="12" r="2.25" />
+      <circle cx="19" cy="6" r="2.25" />
+      <circle cx="19" cy="18" r="2.25" />
+      <path d="M7.25 12H10a4 4 0 0 0 4-4V6h2.75M10 12a4 4 0 0 1 4 4v2h2.75" />
+    </NavIcon>
+  );
 }
 
 export function CodeIcon() {
-  return <NavIcon path="m9 5-6 7 6 7m6-14 6 7-6 7" />;
+  return (
+    <NavIcon>
+      <path d="m8 8-4 4 4 4M16 8l4 4-4 4M14 4l-4 16" />
+    </NavIcon>
+  );
 }
 
 export function PromptsIcon() {
-  return <NavIcon path="M5 5h14v10H9l-4 4zm4 4h6m-6 3h4" />;
+  return (
+    <NavIcon>
+      <path d="M21 15a4 4 0 0 1-4 4H8l-5 3V7a4 4 0 0 1 4-4h10a4 4 0 0 1 4 4v8Z" />
+      <path d="m8 9 2 2-2 2M13 13h3" />
+    </NavIcon>
+  );
 }
 
-function NavIcon({ path }: { path: string }) {
+export function PanelToggleIcon({ collapsed }: { collapsed: boolean }) {
   return (
-    <svg aria-hidden="true" viewBox="0 0 24 24">
-      <path d={path} />
+    <NavIcon>
+      <rect x="3" y="3" width="18" height="18" rx="2.5" />
+      <path d="M9 3v18" />
+      <path d={collapsed ? "m14 9 3 3-3 3" : "m16 9-3 3 3 3"} />
+    </NavIcon>
+  );
+}
+
+function NavIcon({ children }: { children: ReactNode }) {
+  return (
+    <svg aria-hidden="true" focusable="false" viewBox="0 0 24 24">
+      {children}
     </svg>
   );
 }

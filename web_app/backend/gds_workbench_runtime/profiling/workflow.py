@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 from dataclasses import dataclass, field
+from math import ceil
 from typing import Literal, Protocol
 from uuid import UUID
 
@@ -213,6 +214,7 @@ class ProfilingWorkflowOrchestrator:
                     attributes_per_query=self._policy.attributes_per_query,
                 )
             )
+            object_total = len(context.targets)
             await self._repository.append_event(
                 principal,
                 workflow_run_id=workflow_run_id,
@@ -221,13 +223,22 @@ class ProfilingWorkflowOrchestrator:
                 sequence=2,
                 stage="profiling.prepare",
                 status="running",
-                message="Profiling queries prepared.",
+                message=(
+                    f"Profiling prepared {len(plans)} bounded queries for {object_total} Objects."
+                ),
                 current=0,
-                total=len(plans),
+                total=object_total,
                 finding_count=0,
             )
 
-            completed = 0
+            query_counts_by_object: dict[int, int] = {
+                target.object.object_id: 0 for target in context.targets
+            }
+            for target, _query in plans:
+                query_counts_by_object[target.object.object_id] += 1
+            completed_objects = 0
+            event_sequence = 3
+            progress_points = _intermediate_progress_points(object_total) | {object_total}
             metrics_by_attribute: dict[int, tuple[int, ProfileMetric]] = {}
             for offset in range(0, len(plans), self._policy.max_parallel_queries):
                 batch = plans[offset : offset + self._policy.max_parallel_queries]
@@ -251,20 +262,28 @@ class ProfilingWorkflowOrchestrator:
                             target.object.object_id,
                             metric,
                         )
-                    completed += 1
-                    await self._repository.append_event(
-                        principal,
-                        workflow_run_id=workflow_run_id,
-                        expected_model_revision=expected_model_revision,
-                        workflow_run_claim_token=workflow_run_claim_token,
-                        sequence=2 + completed,
-                        stage="profiling.execute",
-                        status="running",
-                        message="A bounded Profiling query completed.",
-                        current=completed,
-                        total=len(plans),
-                        finding_count=len(metrics_by_attribute),
-                    )
+                    object_id = target.object.object_id
+                    query_counts_by_object[object_id] -= 1
+                    if query_counts_by_object[object_id] == 0:
+                        completed_objects += 1
+                        if completed_objects in progress_points:
+                            await self._repository.append_event(
+                                principal,
+                                workflow_run_id=workflow_run_id,
+                                expected_model_revision=expected_model_revision,
+                                workflow_run_claim_token=workflow_run_claim_token,
+                                sequence=event_sequence,
+                                stage="profiling.execute",
+                                status="running",
+                                message=(
+                                    f"Profiling completed {completed_objects} of "
+                                    f"{object_total} Objects."
+                                ),
+                                current=completed_objects,
+                                total=object_total,
+                                finding_count=len(metrics_by_attribute),
+                            )
+                            event_sequence += 1
 
             attributes = {
                 attribute.attribute_id: (target.object, attribute)
@@ -318,6 +337,18 @@ class ProfilingWorkflowOrchestrator:
                     },
                 )
                 raise DependencyUnavailableError() from None
+
+
+def _intermediate_progress_points(
+    total: int,
+    *,
+    minimum_interval: int = 10,
+    maximum_events: int = 8,
+) -> frozenset[int]:
+    if total <= minimum_interval:
+        return frozenset()
+    interval = max(minimum_interval, ceil(total / maximum_events))
+    return frozenset(range(interval, total, interval))
 
 
 def _source_context_digest(

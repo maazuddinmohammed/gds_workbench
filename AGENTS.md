@@ -55,3 +55,8 @@ Default five-label vocabulary. See `docs/agents/triage-labels.md`.
 
 Single-context: root `CONTEXT.md`, with ADRs under `docs/adr/`. See
 `docs/agents/domain.md`.
+
+### Frontend design system
+
+Before frontend work, read `docs/design-system.md` and preserve its interaction,
+accessibility, and visual rules.

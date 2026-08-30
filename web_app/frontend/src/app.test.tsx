@@ -52,6 +52,37 @@ describe("tenant entry", () => {
 });
 
 describe("Tenant Home", () => {
+  it("lets the user collapse and expand workspace navigation", async () => {
+    const router = createWorkbenchRouter({
+      api: createApiClient(tenantFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7"] }),
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+
+    await screen.findByRole("heading", { name: "Tenant Lock" });
+    const navigation = screen.getByLabelText("Workspace navigation");
+    const collapse = within(navigation).getByRole("button", {
+      name: "Collapse workspace navigation",
+    });
+    expect(within(navigation).queryByText("Workspace")).not.toBeInTheDocument();
+    expect(collapse).toHaveAttribute("aria-expanded", "true");
+    expect(collapse).toHaveAttribute("aria-controls", "workspace-navigation-links");
+    expect(collapse).toHaveAttribute("title", "Collapse workspace navigation");
+
+    await user.click(collapse);
+
+    expect(navigation).toHaveAttribute("data-collapsed", "true");
+    const expand = within(navigation).getByRole("button", {
+      name: "Expand workspace navigation",
+    });
+    expect(expand).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(expand);
+
+    expect(navigation).toHaveAttribute("data-collapsed", "false");
+  });
+
   it("makes the governed lock the focus and presents registered Systems", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),
@@ -360,6 +391,51 @@ describe("Models ledger", () => {
 });
 
 describe("Model overview", () => {
+  it("keeps the workspace and Model journey collapse choices independent across navigation", async () => {
+    const router = createWorkbenchRouter({
+      api: createApiClient(tenantFetchStub()),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18"] }),
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+
+    await screen.findByRole("heading", { name: "Customer 360" });
+    const workspaceNavigation = screen.getByLabelText("Workspace navigation");
+    const modelJourney = screen.getByLabelText("Model journey");
+    expect(within(modelJourney).queryByText("Customer 360")).not.toBeInTheDocument();
+    expect(within(modelJourney).queryByText("Revision 18")).not.toBeInTheDocument();
+    expect(within(modelJourney).getByRole("button", {
+      name: "Collapse model journey",
+    })).toHaveAttribute("title", "Collapse model journey");
+    await user.click(within(workspaceNavigation).getByRole("button", {
+      name: "Collapse workspace navigation",
+    }));
+    await user.click(within(modelJourney).getByRole("button", {
+      name: "Collapse model journey",
+    }));
+
+    expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");
+    expect(modelJourney).toHaveAttribute("data-collapsed", "true");
+    await user.click(within(modelJourney).getByRole("link", { name: "Scope" }));
+
+    expect(await screen.findByRole("table", { name: "Active Scope" })).toBeVisible();
+    const persistedWorkspaceNavigation = screen.getByLabelText("Workspace navigation");
+    const persistedModelJourney = screen.getByLabelText("Model journey");
+    expect(within(persistedWorkspaceNavigation).getByRole("button", {
+      name: "Expand workspace navigation",
+    })).toHaveAttribute("aria-expanded", "false");
+    expect(within(persistedModelJourney).getByRole("button", {
+      name: "Expand model journey",
+    })).toHaveAttribute("aria-expanded", "false");
+
+    await user.click(within(persistedWorkspaceNavigation).getByRole("button", {
+      name: "Expand workspace navigation",
+    }));
+
+    expect(persistedWorkspaceNavigation).toHaveAttribute("data-collapsed", "false");
+    expect(persistedModelJourney).toHaveAttribute("data-collapsed", "true");
+  });
+
   it("orients the selected Model and links Scope within the active Tenant", async () => {
     const router = createWorkbenchRouter({
       api: createApiClient(tenantFetchStub()),

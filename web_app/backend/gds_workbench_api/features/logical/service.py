@@ -57,6 +57,10 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
 )
+from gds_workbench_api.features.workflows.authoring.progress import (
+    AgentWorkflowProgress,
+    intermediate_progress_points,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentContextPolicy,
@@ -384,27 +388,35 @@ class DatabaseLogicalExecutor:
 
             execution_mode = plan.workflow_execution_mode
             is_detailed = execution_mode == "detailed_coverage"
-            await self._lifecycle.append_event(
-                principal,
+            selected_object_count = len(context.context.selected_objects)
+            selected_object_label = "Object" if selected_object_count == 1 else "Objects"
+            candidate_mode_label = "one-shot" if execution_mode == "one_shot" else "tool-assisted"
+            progress = AgentWorkflowProgress(
+                lifecycle=self._lifecycle,
+                principal=principal,
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=2,
-                    attempt=1,
-                    stage=(
-                        "logical.topology_builder" if is_detailed else "logical.candidate_authoring"
-                    ),
-                    status="running",
-                    message=(
-                        "Logical detailed coverage started."
-                        if is_detailed
-                        else "Logical candidate authoring started."
-                    ),
-                    current=0,
-                    total=(len(context.context.selected_objects) if is_detailed else 1),
-                    finding_count=0,
+            )
+            await progress.append(
+                attempt=1,
+                stage=(
+                    "logical.topology_builder" if is_detailed else "logical.candidate_authoring"
                 ),
+                status="running",
+                message=(
+                    f"Logical detailed coverage started for {selected_object_count} selected "
+                    f"{selected_object_label}."
+                    if is_detailed
+                    else (
+                        f"Logical {candidate_mode_label} candidate authoring started "
+                        f"for {selected_object_count} selected {selected_object_label}; the next "
+                        "persisted milestone follows bounded agent-response validation."
+                    )
+                ),
+                current=0 if is_detailed else None,
+                total=selected_object_count if is_detailed else None,
+                finding_count=0,
             )
             validator = _candidate_validator(context)
             if is_detailed:
@@ -412,15 +424,12 @@ class DatabaseLogicalExecutor:
                     candidate,
                     outcome,
                     intermediate_warning,
-                    final_event_sequence,
                     final_attempt,
                 ) = await self._execute_detailed(
-                    principal,
                     plan=plan,
                     context=context,
                     validator=validator,
-                    expected_model_revision=expected_model_revision,
-                    workflow_run_claim_token=workflow_run_claim_token,
+                    progress=progress,
                 )
             elif execution_mode in ("one_shot", "tool_assisted"):
                 resolver_values: dict[str, object] = {
@@ -448,7 +457,6 @@ class DatabaseLogicalExecutor:
                 )
                 candidate = outcome.candidate
                 intermediate_warning = False
-                final_event_sequence = 3
                 final_attempt = outcome.attempt_count
             else:
                 raise InvalidRequestError("The Logical run does not use the fixed execution path.")
@@ -473,8 +481,7 @@ class DatabaseLogicalExecutor:
                         expected_correlation_id=plan.correlation_id,
                         expected_model_revision=expected_model_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
-                        final_event=AgentWorkflowEvent(
-                            sequence=final_event_sequence,
+                        final_event=progress.event(
                             attempt=final_attempt,
                             stage="logical.backend_validation",
                             status="warning" if warning else "running",
@@ -497,8 +504,7 @@ class DatabaseLogicalExecutor:
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
-                final_event=AgentWorkflowEvent(
-                    sequence=final_event_sequence,
+                final_event=progress.event(
                     attempt=final_attempt,
                     stage="logical.backend_validation",
                     status="warning" if warning else "running",
@@ -546,17 +552,30 @@ class DatabaseLogicalExecutor:
 
     async def _execute_detailed(
         self,
-        principal: RequestPrincipal,
         *,
         plan: AgentRunPlan,
         context: AgentContextBundle,
         validator: LogicalCandidateValidator,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
-    ) -> tuple[JsonValue, AgentStageOutcome, bool, int, int]:
+        progress: AgentWorkflowProgress,
+    ) -> tuple[JsonValue, AgentStageOutcome, bool, int]:
         contributions: list[DetailedLogicalTopologyContribution] = []
         intermediate_warning = False
         max_attempt = 1
+        topology_builder_total = sum(
+            len(
+                self._topology_builder_batches(
+                    plan=plan,
+                    context=context,
+                    selected=selected,
+                )
+            )
+            for selected in context.context.selected_objects
+        )
+        topology_builder_points = intermediate_progress_points(
+            topology_builder_total,
+            maximum_events=5,
+        )
+        topology_builder_current = 0
         for selected in context.context.selected_objects:
             for batch in self._topology_builder_batches(
                 plan=plan,
@@ -591,30 +610,57 @@ class DatabaseLogicalExecutor:
                     or outcome.was_repaired
                     or bool(outcome.warning_codes)
                 )
+                topology_builder_current += 1
+                if topology_builder_current in topology_builder_points:
+                    await progress.append(
+                        attempt=max_attempt,
+                        stage="logical.topology_builder",
+                        status="warning" if intermediate_warning else "running",
+                        message=(
+                            "Logical topology authoring validated "
+                            f"{topology_builder_current} of {topology_builder_total} batches."
+                        ),
+                        current=topology_builder_current,
+                        total=topology_builder_total,
+                        finding_count=0,
+                    )
+        if topology_builder_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="logical.topology_builder",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    "Logical topology authoring completed "
+                    f"{topology_builder_total} of {topology_builder_total} batches."
+                ),
+                current=topology_builder_total,
+                total=topology_builder_total,
+                finding_count=0,
+            )
 
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=3,
-                attempt=1,
-                stage="logical.topology_reconciler",
-                status="running",
-                message="Logical Object contributions are ready for topology reconciliation.",
-                current=len(contributions),
-                total=len(contributions),
-                finding_count=len(contributions),
-            ),
+        await progress.append(
+            attempt=1,
+            stage="logical.topology_reconciler",
+            status="running",
+            message="Logical Object contributions are ready for topology reconciliation.",
+            current=len(contributions),
+            total=len(contributions),
+            finding_count=len(contributions),
         )
         topology_partitions: list[DetailedLogicalTopologyReconciliation] = []
         topology_outcome: AgentStageOutcome | None = None
-        for topology_batch in self._topology_reconciliation_batches(
+        topology_batches = self._topology_reconciliation_batches(
             plan=plan,
             context=context,
             contributions=tuple(contributions),
-        ):
+        )
+        topology_points = intermediate_progress_points(
+            len(topology_batches),
+            maximum_events=3,
+        )
+        topology_warning = False
+        topology_attempt = 1
+        for topology_current, topology_batch in enumerate(topology_batches, start=1):
             topology_validator = DetailedLogicalTopologyReconciliationValidator(
                 contributions=topology_batch.contributions,
                 max_result_bytes=self._detailed_result_limit,
@@ -635,11 +681,36 @@ class DatabaseLogicalExecutor:
             topology_partitions.append(
                 topology_validator.parse_validated(topology_outcome.candidate)
             )
-            max_attempt = max(max_attempt, topology_outcome.attempt_count)
-            intermediate_warning = (
-                intermediate_warning
-                or topology_outcome.was_repaired
-                or bool(topology_outcome.warning_codes)
+            topology_attempt = max(topology_attempt, topology_outcome.attempt_count)
+            max_attempt = max(max_attempt, topology_attempt)
+            outcome_warning = topology_outcome.was_repaired or bool(topology_outcome.warning_codes)
+            topology_warning = topology_warning or outcome_warning
+            intermediate_warning = intermediate_warning or outcome_warning
+            if topology_current in topology_points:
+                await progress.append(
+                    attempt=topology_attempt,
+                    stage="logical.topology_reconciler",
+                    status="warning" if topology_warning else "running",
+                    message=(
+                        "Logical topology reconciliation validated "
+                        f"{topology_current} of {len(topology_batches)} batches."
+                    ),
+                    current=topology_current,
+                    total=len(topology_batches),
+                    finding_count=0,
+                )
+        if topology_points:
+            await progress.append(
+                attempt=topology_attempt,
+                stage="logical.topology_reconciler",
+                status="warning" if topology_warning else "running",
+                message=(
+                    "Logical topology reconciliation completed "
+                    f"{len(topology_batches)} of {len(topology_batches)} batches."
+                ),
+                current=len(topology_batches),
+                total=len(topology_batches),
+                finding_count=0,
             )
         if topology_outcome is None:
             raise AgentCandidateValidationError()
@@ -652,24 +723,21 @@ class DatabaseLogicalExecutor:
             )
         )
 
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=4,
-                attempt=1,
-                stage="logical.entity_detail_builder",
-                status="running",
-                message="Logical topology is ready for Entity detail authoring.",
-                current=0 if topology.entities else None,
-                total=len(topology.entities) if topology.entities else None,
-                finding_count=len(topology.entities),
-            ),
+        await progress.append(
+            attempt=1,
+            stage="logical.entity_detail_builder",
+            status="running",
+            message="Logical topology is ready for Entity detail authoring.",
+            current=0 if topology.entities else None,
+            total=len(topology.entities) if topology.entities else None,
+            finding_count=len(topology.entities),
         )
         details: list[DetailedLogicalEntityDetail] = []
-        for entity in topology.entities:
+        entity_total = len(topology.entities)
+        entity_points = intermediate_progress_points(entity_total, maximum_events=3)
+        entity_warning = False
+        entity_attempt = 1
+        for entity_current, entity in enumerate(topology.entities, start=1):
             detail_partitions: list[DetailedLogicalEntityDetail] = []
             for detail_batch in self._entity_detail_batches(
                 plan=plan,
@@ -698,12 +766,11 @@ class DatabaseLogicalExecutor:
                     validator=detail_validator,
                 )
                 detail_partitions.append(detail_validator.parse_validated(detail_outcome.candidate))
-                max_attempt = max(max_attempt, detail_outcome.attempt_count)
-                intermediate_warning = (
-                    intermediate_warning
-                    or detail_outcome.was_repaired
-                    or bool(detail_outcome.warning_codes)
-                )
+                entity_attempt = max(entity_attempt, detail_outcome.attempt_count)
+                max_attempt = max(max_attempt, entity_attempt)
+                outcome_warning = detail_outcome.was_repaired or bool(detail_outcome.warning_codes)
+                entity_warning = entity_warning or outcome_warning
+                intermediate_warning = intermediate_warning or outcome_warning
             details.append(
                 detail_partitions[0]
                 if len(detail_partitions) == 1
@@ -714,49 +781,51 @@ class DatabaseLogicalExecutor:
                     partitions=tuple(detail_partitions),
                 )
             )
+            if entity_current in entity_points:
+                await progress.append(
+                    attempt=entity_attempt,
+                    stage="logical.entity_detail_builder",
+                    status="warning" if entity_warning else "running",
+                    message=(
+                        "Logical Entity detail authoring completed "
+                        f"{entity_current} of {entity_total} Entities."
+                    ),
+                    current=entity_current,
+                    total=entity_total,
+                    finding_count=0,
+                )
+        if entity_points:
+            await progress.append(
+                attempt=entity_attempt,
+                stage="logical.entity_detail_builder",
+                status="warning" if entity_warning else "running",
+                message=(
+                    "Logical Entity detail authoring completed "
+                    f"{entity_total} of {entity_total} Entities."
+                ),
+                current=entity_total,
+                total=entity_total,
+                finding_count=0,
+            )
 
         relationship_ledger = build_logical_relationship_signal_ledger(
             entity_details=tuple(details),
             max_signals=self._detailed_policy.max_relationship_signals,
         )
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=5,
-                attempt=1,
-                stage="logical.relationship_signal_derivation",
-                status="running",
-                message="Deterministic Logical relationship signals are ready.",
-                current=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
-                total=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
-                finding_count=len(relationship_ledger.signals),
-            ),
+        await progress.append(
+            attempt=1,
+            stage="logical.relationship_signal_derivation",
+            status="running",
+            message="Deterministic Logical relationship signals are ready.",
+            current=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
+            total=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
+            finding_count=len(relationship_ledger.signals),
         )
         applied_refs = logical_applied_record_refs(context.context.applied.logical)
-        sequence = 6
         repair_count = 0
         validation_failures: list[dict[str, object]] = []
         while True:
             max_attempt = max(max_attempt, repair_count + 1)
-            await self._lifecycle.append_event(
-                principal,
-                workflow_run_id=plan.workflow_run_id,
-                expected_model_revision=expected_model_revision,
-                workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=sequence,
-                    attempt=repair_count + 1,
-                    stage="logical.whole_model_reconciliation",
-                    status="running",
-                    message="Logical whole-model reconciliation started.",
-                    current=0,
-                    total=1,
-                    finding_count=len(validation_failures),
-                ),
-            )
             bounded_failures = _bounded_validation_failures(validation_failures)
             reconciliation_batches = self._reconciliation_batches(
                 plan=plan,
@@ -766,6 +835,15 @@ class DatabaseLogicalExecutor:
                 relationship_ledger=relationship_ledger,
                 applied_record_refs=applied_refs,
                 validation_failures=bounded_failures,
+            )
+            await progress.append(
+                attempt=repair_count + 1,
+                stage="logical.whole_model_reconciliation",
+                status="running",
+                message="Logical whole-model reconciliation started.",
+                current=0,
+                total=len(reconciliation_batches),
+                finding_count=len(validation_failures),
             )
             reconciliation_validator = DetailedLogicalReconciliationValidator(
                 topology=topology,
@@ -777,7 +855,20 @@ class DatabaseLogicalExecutor:
             )
             reconciliation_partitions: list[DetailedLogicalReconciliationCandidate] = []
             reconciliation_outcome: AgentStageOutcome | None = None
-            for reconciliation_batch in reconciliation_batches:
+            reconciliation_points = (
+                intermediate_progress_points(
+                    len(reconciliation_batches),
+                    maximum_events=3,
+                )
+                if repair_count == 0
+                else frozenset[int]()
+            )
+            reconciliation_warning = False
+            reconciliation_attempt = repair_count + 1
+            for reconciliation_current, reconciliation_batch in enumerate(
+                reconciliation_batches,
+                start=1,
+            ):
                 scoped_validator = (
                     DetailedLogicalReconciliationValidator(
                         topology=topology,
@@ -814,11 +905,41 @@ class DatabaseLogicalExecutor:
                 reconciliation_partitions.append(
                     scoped_validator.parse_validated(reconciliation_outcome.candidate)
                 )
-                max_attempt = max(max_attempt, reconciliation_outcome.attempt_count)
-                intermediate_warning = (
-                    intermediate_warning
-                    or reconciliation_outcome.was_repaired
-                    or bool(reconciliation_outcome.warning_codes)
+                reconciliation_attempt = max(
+                    reconciliation_attempt,
+                    reconciliation_outcome.attempt_count,
+                )
+                max_attempt = max(max_attempt, reconciliation_attempt)
+                outcome_warning = reconciliation_outcome.was_repaired or bool(
+                    reconciliation_outcome.warning_codes
+                )
+                reconciliation_warning = reconciliation_warning or outcome_warning
+                intermediate_warning = intermediate_warning or outcome_warning
+                if reconciliation_current in reconciliation_points:
+                    await progress.append(
+                        attempt=reconciliation_attempt,
+                        stage="logical.whole_model_reconciliation",
+                        status="warning" if reconciliation_warning else "running",
+                        message=(
+                            "Logical whole-model reconciliation completed "
+                            f"{reconciliation_current} of {len(reconciliation_batches)} batches."
+                        ),
+                        current=reconciliation_current,
+                        total=len(reconciliation_batches),
+                        finding_count=0,
+                    )
+            if reconciliation_points:
+                await progress.append(
+                    attempt=reconciliation_attempt,
+                    stage="logical.whole_model_reconciliation",
+                    status="warning" if reconciliation_warning else "running",
+                    message=(
+                        "Logical whole-model reconciliation completed "
+                        f"{len(reconciliation_batches)} of {len(reconciliation_batches)} batches."
+                    ),
+                    current=len(reconciliation_batches),
+                    total=len(reconciliation_batches),
+                    finding_count=0,
                 )
             if reconciliation_outcome is None:
                 raise AgentCandidateValidationError()
@@ -853,7 +974,6 @@ class DatabaseLogicalExecutor:
                     reconciliation_validator.materialize_validated(reconciliation_candidate),
                     reconciliation_outcome,
                     intermediate_warning,
-                    sequence + 1,
                     max_attempt,
                 )
             packages = self._validation_packages(
@@ -862,25 +982,24 @@ class DatabaseLogicalExecutor:
                 candidate=reconciliation,
             )
 
-            sequence += 1
-            await self._lifecycle.append_event(
-                principal,
-                workflow_run_id=plan.workflow_run_id,
-                expected_model_revision=expected_model_revision,
-                workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=sequence,
-                    attempt=repair_count + 1,
-                    stage="logical.validator_worker",
-                    status="running",
-                    message="Logical validation packages are ready for review.",
-                    current=0,
-                    total=len(packages),
-                    finding_count=len(packages),
-                ),
+            await progress.append(
+                attempt=repair_count + 1,
+                stage="logical.validator_worker",
+                status="running",
+                message="Logical validation packages are ready for review.",
+                current=0,
+                total=len(packages),
+                finding_count=len(packages),
             )
             worker_results: list[DetailedLogicalValidationWorkerResult] = []
-            for package in packages:
+            package_points = (
+                intermediate_progress_points(len(packages), maximum_events=3)
+                if repair_count == 0
+                else frozenset[int]()
+            )
+            worker_warning = False
+            worker_attempt = repair_count + 1
+            for package_current, package in enumerate(packages, start=1):
                 worker_context = _validation_worker_context(context, package=package)
                 worker_validator = DetailedLogicalValidationWorkerValidator(
                     package=package,
@@ -900,36 +1019,60 @@ class DatabaseLogicalExecutor:
                     validator=worker_validator,
                 )
                 worker_results.append(worker_validator.parse_validated(worker_outcome.candidate))
-                max_attempt = max(max_attempt, worker_outcome.attempt_count)
-                intermediate_warning = (
-                    intermediate_warning
-                    or worker_outcome.was_repaired
-                    or bool(worker_outcome.warning_codes)
+                worker_attempt = max(worker_attempt, worker_outcome.attempt_count)
+                max_attempt = max(max_attempt, worker_attempt)
+                outcome_warning = worker_outcome.was_repaired or bool(worker_outcome.warning_codes)
+                worker_warning = worker_warning or outcome_warning
+                intermediate_warning = intermediate_warning or outcome_warning
+                if package_current in package_points:
+                    await progress.append(
+                        attempt=worker_attempt,
+                        stage="logical.validator_worker",
+                        status="warning" if worker_warning else "running",
+                        message=(
+                            "Logical validation completed "
+                            f"{package_current} of {len(packages)} packages."
+                        ),
+                        current=package_current,
+                        total=len(packages),
+                        finding_count=0,
+                    )
+            if package_points:
+                await progress.append(
+                    attempt=worker_attempt,
+                    stage="logical.validator_worker",
+                    status="warning" if worker_warning else "running",
+                    message=(
+                        f"Logical validation completed {len(packages)} of {len(packages)} packages."
+                    ),
+                    current=len(packages),
+                    total=len(packages),
+                    finding_count=0,
                 )
 
-            sequence += 1
-            await self._lifecycle.append_event(
-                principal,
-                workflow_run_id=plan.workflow_run_id,
-                expected_model_revision=expected_model_revision,
-                workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=sequence,
-                    attempt=repair_count + 1,
-                    stage="logical.validator_lead",
-                    status="running",
-                    message="Logical validation findings are ready for reconciliation.",
-                    current=len(worker_results),
-                    total=len(worker_results),
-                    finding_count=sum(len(item.findings) for item in worker_results),
-                ),
+            await progress.append(
+                attempt=repair_count + 1,
+                stage="logical.validator_lead",
+                status="running",
+                message="Logical validation findings are ready for reconciliation.",
+                current=len(worker_results),
+                total=len(worker_results),
+                finding_count=sum(len(item.findings) for item in worker_results),
             )
             lead_partitions: list[DetailedLogicalValidationLead] = []
-            for lead_batch in self._validation_lead_batches(
+            lead_batches = self._validation_lead_batches(
                 plan=plan,
                 context=context,
                 worker_results=tuple(worker_results),
-            ):
+            )
+            lead_points = (
+                intermediate_progress_points(len(lead_batches), maximum_events=3)
+                if repair_count == 0
+                else frozenset[int]()
+            )
+            lead_warning = False
+            lead_attempt = repair_count + 1
+            for lead_current, lead_batch in enumerate(lead_batches, start=1):
                 lead_context = _validation_lead_context(
                     context,
                     worker_results=lead_batch,
@@ -952,11 +1095,36 @@ class DatabaseLogicalExecutor:
                     validator=lead_validator,
                 )
                 lead_partitions.append(lead_validator.parse_validated(lead_outcome.candidate))
-                max_attempt = max(max_attempt, lead_outcome.attempt_count)
-                intermediate_warning = (
-                    intermediate_warning
-                    or lead_outcome.was_repaired
-                    or bool(lead_outcome.warning_codes)
+                lead_attempt = max(lead_attempt, lead_outcome.attempt_count)
+                max_attempt = max(max_attempt, lead_attempt)
+                outcome_warning = lead_outcome.was_repaired or bool(lead_outcome.warning_codes)
+                lead_warning = lead_warning or outcome_warning
+                intermediate_warning = intermediate_warning or outcome_warning
+                if lead_current in lead_points:
+                    await progress.append(
+                        attempt=lead_attempt,
+                        stage="logical.validator_lead",
+                        status="warning" if lead_warning else "running",
+                        message=(
+                            "Logical validation-lead review completed "
+                            f"{lead_current} of {len(lead_batches)} batches."
+                        ),
+                        current=lead_current,
+                        total=len(lead_batches),
+                        finding_count=0,
+                    )
+            if lead_points:
+                await progress.append(
+                    attempt=lead_attempt,
+                    stage="logical.validator_lead",
+                    status="warning" if lead_warning else "running",
+                    message=(
+                        "Logical validation-lead review completed "
+                        f"{len(lead_batches)} of {len(lead_batches)} batches."
+                    ),
+                    current=len(lead_batches),
+                    total=len(lead_batches),
+                    finding_count=0,
                 )
             lead = (
                 lead_partitions[0]
@@ -979,7 +1147,6 @@ class DatabaseLogicalExecutor:
                     decision.handoff_candidate,
                     reconciliation_outcome,
                     intermediate_warning,
-                    sequence + 1,
                     max_attempt,
                 )
             if repair_count >= plan.selection.validation_retry_count:
@@ -989,7 +1156,6 @@ class DatabaseLogicalExecutor:
             validation_failures = [
                 item.model_dump(mode="json") for item in decision.validation_failures
             ]
-            sequence += 1
 
     @property
     def _detailed_request_limit(self) -> int:

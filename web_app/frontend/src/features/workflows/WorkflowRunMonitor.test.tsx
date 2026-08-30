@@ -7,6 +7,7 @@ import { ApiError } from "../../core/http";
 import type {
   WorkflowDraftReview,
   WorkflowRunDetail,
+  WorkflowRunEvent,
   WorkflowRunMonitorApi,
 } from "./api";
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
@@ -109,6 +110,157 @@ describe("Workflow Run monitor", () => {
       expect(api.listWorkflowRunEvents.mock.calls.length).toBeGreaterThan(eventCalls);
       expect(api.readWorkflowDraftReview.mock.calls.length).toBeGreaterThan(reviewCalls);
     });
+  });
+
+  it("does not poll an active run and refreshes only after the user asks", async () => {
+    const api = monitorApi();
+    const activeRun: WorkflowRunDetail = {
+      ...workflowRun(false),
+      workflow_run_state: "running",
+      completed_at: null,
+      model_change_set_id: null,
+      model_change_set_status: null,
+      draft_revision: null,
+      candidate_digest: null,
+      validated_at: null,
+    };
+    api.listWorkflowRuns.mockResolvedValue({ items: [activeRun], next_cursor: null });
+    api.readWorkflowRun.mockResolvedValue(activeRun);
+    const started = progressEvent({
+      sequence: 2,
+      message: "Context preparation started for 80 selected Objects.",
+      current: 0,
+      total: 80,
+    });
+    const progressing = progressEvent({
+      sequence: 3,
+      message: "Object contribution coverage processed 10 of 80 selected Objects.",
+      current: 10,
+      total: 80,
+    });
+    let eventReads = 0;
+    api.listWorkflowRunEvents.mockImplementation(async () => {
+      eventReads += 1;
+      return {
+        items: eventReads === 1 ? [started] : [started, progressing],
+        next_after_sequence: eventReads === 1 ? 2 : 3,
+      };
+    });
+    const user = userEvent.setup();
+    renderMonitor(api, vi.fn(async () => undefined));
+
+    expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+    expect(screen.getByText(started.message)).toBeVisible();
+    expect(screen.queryByText(progressing.message)).not.toBeInTheDocument();
+    const listCalls = api.listWorkflowRuns.mock.calls.length;
+    const detailCalls = api.readWorkflowRun.mock.calls.length;
+    const eventCalls = api.listWorkflowRunEvents.mock.calls.length;
+
+    await new Promise((resolve) => globalThis.setTimeout(resolve, 2_100));
+
+    expect(api.listWorkflowRuns).toHaveBeenCalledTimes(listCalls);
+    expect(api.readWorkflowRun).toHaveBeenCalledTimes(detailCalls);
+    expect(api.listWorkflowRunEvents).toHaveBeenCalledTimes(eventCalls);
+    expect(screen.queryByText(progressing.message)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole("button", { name: "Refresh runs" }));
+    await waitFor(() => {
+      expect(api.listWorkflowRuns.mock.calls.length).toBeGreaterThan(listCalls);
+      expect(api.readWorkflowRun.mock.calls.length).toBeGreaterThan(detailCalls);
+      expect(api.listWorkflowRunEvents.mock.calls.length).toBeGreaterThan(eventCalls);
+    });
+    expect(await screen.findByText(progressing.message)).toBeVisible();
+    expect(screen.getByRole("progressbar", {
+      name: "Conceptual · object contribution progress: 10 of 80",
+    })).toHaveAttribute("value", "10");
+  });
+
+  it("renders ordered stage milestones with counts and findings", async () => {
+    const api = monitorApi();
+    api.listWorkflowRunEvents.mockResolvedValue({
+      items: [
+        progressEvent({
+          sequence: 2,
+          message: "Detailed coverage started for 30 selected Objects.",
+          current: 0,
+          total: 30,
+        }),
+        progressEvent({
+          sequence: 3,
+          message: "Object contribution coverage processed 10 of 30 selected Objects.",
+          current: 10,
+          total: 30,
+        }),
+        progressEvent({
+          sequence: 4,
+          stage: "conceptual.backend_validation",
+          status: "completed",
+          message: "Conceptual candidate is ready in a validated draft.",
+          current: 1,
+          total: 1,
+          finding_count: 2,
+        }),
+      ],
+      next_after_sequence: 4,
+    });
+    renderMonitor(api, vi.fn(async () => undefined));
+
+    const eventsSection = (await screen.findByRole("heading", { name: "Events" })).parentElement;
+    expect(eventsSection).not.toBeNull();
+    const eventList = within(eventsSection as HTMLElement).getByRole("list");
+    const items = within(eventList).getAllByRole("listitem");
+    expect(items).toHaveLength(3);
+    expect(items[0]).toHaveTextContent("Detailed coverage started");
+    expect(items[1]).toHaveTextContent("10 of 30");
+    expect(items[2]).toHaveTextContent("2 findings");
+    const finalItem = items.at(2);
+    expect(finalItem).toBeDefined();
+    expect(within(finalItem as HTMLElement).getByText("Event 4 · Attempt 1")).toBeVisible();
+  });
+
+  it("shows bounded failure reason, execution context, and event attempt details", async () => {
+    const api = monitorApi();
+    const failedRun: WorkflowRunDetail = {
+      ...workflowRun(false),
+      workflow_run_state: "failed",
+      failure_code: "agent_context_too_large",
+      failure_message: (
+        "The selected execution mode cannot accept this context. Choose another mode explicitly."
+      ),
+      model_change_set_id: null,
+      model_change_set_status: null,
+      draft_revision: null,
+      candidate_digest: null,
+      validated_at: null,
+    };
+    api.listWorkflowRuns.mockResolvedValue({ items: [failedRun], next_cursor: null });
+    api.readWorkflowRun.mockResolvedValue(failedRun);
+    api.listWorkflowRunEvents.mockResolvedValue({
+      items: [{
+        ...workflowEvent(3),
+        attempt: 2,
+        stage: "conceptual.candidate_authoring",
+        status: "failed",
+        message: "Candidate authoring stopped safely.",
+        current: 1,
+        total: 2,
+        finding_count: 1,
+      }],
+      next_after_sequence: 3,
+    });
+    renderMonitor(api, vi.fn(async () => undefined));
+
+    const failure = await screen.findByRole("alert", { name: "Run failure details" });
+    expect(failure).toHaveTextContent("agent context too large");
+    expect(failure).toHaveTextContent(
+      "The selected execution mode cannot accept this context. Choose another mode explicitly.",
+    );
+    expect(failure).toHaveTextContent("Conceptual · candidate authoring");
+    expect(failure).toHaveTextContent("Attempt 2");
+    expect(failure).toHaveTextContent("databricks · databricks-primary");
+    const eventMeta = screen.getByText("Event 3 · Attempt 2").closest("small");
+    expect(eventMeta).toHaveTextContent("1 of 2");
+    expect(eventMeta).toHaveTextContent("1 finding");
   });
 
   it("keeps one Apply idempotency key across an ambiguous error and confirmation reopen", async () => {
@@ -344,5 +496,21 @@ function workflowEvent(sequence: number) {
     percent: String((sequence / 201) * 100),
     finding_count: 0,
     created_at: "2026-08-25T12:01:00Z",
+  };
+}
+
+function progressEvent(overrides: Partial<WorkflowRunEvent>): WorkflowRunEvent {
+  return {
+    sequence: 2,
+    attempt: 1,
+    stage: "conceptual.object_contribution",
+    status: "running",
+    message: "Detailed coverage is running.",
+    current: 0,
+    total: 1,
+    percent: "0",
+    finding_count: 0,
+    created_at: "2026-08-25T12:01:00Z",
+    ...overrides,
   };
 }

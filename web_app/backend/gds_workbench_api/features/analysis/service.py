@@ -55,6 +55,10 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
 )
+from gds_workbench_api.features.workflows.authoring.progress import (
+    AgentWorkflowProgress,
+    intermediate_progress_points,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentContextPolicy,
@@ -350,35 +354,33 @@ class DatabaseAnalysisInferenceExecutor:
 
             execution_mode = cast(WorkflowExecutionMode, plan.workflow_execution_mode)
             is_detailed = execution_mode == "detailed_coverage"
+            selected_object_count = len(context.context.selected_objects)
             detailed_slice_count = _analysis_slice_count(context) if is_detailed else 1
             if is_detailed and detailed_slice_count > self._detailed_policy.max_object_pairs:
                 raise InvalidRequestError(
                     "The detailed Analysis selection contains too many bounded slices."
                 )
-            await self._lifecycle.append_event(
-                principal,
+            progress = AgentWorkflowProgress(
+                lifecycle=self._lifecycle,
+                principal=principal,
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=2,
+            )
+            if not is_detailed:
+                await progress.append(
                     attempt=1,
-                    stage=(
-                        "analysis.candidate_finder"
-                        if is_detailed
-                        else "analysis.relationship_inference"
-                    ),
+                    stage="analysis.relationship_inference",
                     status="running",
                     message=(
-                        "Analysis detailed candidate discovery started."
-                        if is_detailed
-                        else "Analysis relationship inference started."
+                        f"Analysis relationship inference started for {selected_object_count} "
+                        "selected Objects. The next persisted milestone follows bounded "
+                        "agent response validation."
                     ),
-                    current=None if is_detailed else 0,
-                    total=None if is_detailed else detailed_slice_count,
+                    current=0 if selected_object_count else None,
+                    total=selected_object_count or None,
                     finding_count=0,
-                ),
-            )
+                )
             if not any(selected.attributes for selected in context.context.selected_objects):
                 raise InvalidRequestError(
                     "The selected Analysis scope contains no Attributes to analyze."
@@ -391,14 +393,11 @@ class DatabaseAnalysisInferenceExecutor:
                     intermediate_warning,
                     final_attempt,
                 ) = await self._execute_detailed(
-                    principal,
                     plan=plan,
                     context=context,
                     validator=validator,
-                    expected_model_revision=expected_model_revision,
-                    workflow_run_claim_token=workflow_run_claim_token,
+                    progress=progress,
                 )
-                final_event_sequence = 6
             else:
                 resolver_key = f"workflow.analysis.{execution_mode}.relationship_inference.context"
                 outcome = await self._stage_runner.run(
@@ -421,12 +420,10 @@ class DatabaseAnalysisInferenceExecutor:
                 candidate = outcome.candidate
                 intermediate_warning = False
                 final_attempt = outcome.attempt_count
-                final_event_sequence = 3
             changes = validator.parse_validated(candidate)
             finding_count = sum(len(change.records) for change in changes)
             warning = intermediate_warning or outcome.was_repaired or bool(outcome.warning_codes)
-            final_event = AgentWorkflowEvent(
-                sequence=final_event_sequence,
+            final_event = progress.event(
                 attempt=final_attempt,
                 stage="analysis.backend_validation",
                 status="warning" if warning else "running",
@@ -508,13 +505,11 @@ class DatabaseAnalysisInferenceExecutor:
 
     async def _execute_detailed(
         self,
-        principal: RequestPrincipal,
         *,
         plan: AgentRunPlan,
         context: AgentContextBundle,
         validator: AnalysisInferenceCandidateValidator,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
+        progress: AgentWorkflowProgress,
     ) -> tuple[JsonValue, AgentStageOutcome, bool, int]:
         if _analysis_slice_count(context) > self._detailed_policy.max_object_pairs:
             raise InvalidRequestError(
@@ -527,18 +522,31 @@ class DatabaseAnalysisInferenceExecutor:
             maximum_stage_context_bytes,
         )
         maximum_finder_context_bytes = max(4_096, maximum_stage_context_bytes // 2)
-        evidence_slice_count = 0
-        for evidence_slice_count, _ in enumerate(
-            _candidate_finder_slices(
+        evidence_slice_count = sum(
+            1
+            for _ in _candidate_finder_slices(
                 context,
                 maximum_context_bytes=maximum_finder_context_bytes,
+            )
+        )
+        if evidence_slice_count > self._detailed_policy.max_candidate_slices:
+            raise InvalidRequestError(
+                "The detailed Analysis selection contains too many bounded evidence slices."
+            )
+        selected_object_count = len(context.context.selected_objects)
+        await progress.append(
+            attempt=1,
+            stage="analysis.candidate_finder",
+            status="running",
+            message=(
+                f"Detailed Analysis started for {selected_object_count} selected Objects "
+                f"across {evidence_slice_count} bounded evidence slices."
             ),
-            start=1,
-        ):
-            if evidence_slice_count > self._detailed_policy.max_candidate_slices:
-                raise InvalidRequestError(
-                    "The detailed Analysis selection contains too many bounded evidence slices."
-                )
+            current=0 if evidence_slice_count else None,
+            total=evidence_slice_count or None,
+            finding_count=0,
+        )
+        finder_progress_points = intermediate_progress_points(evidence_slice_count)
         finder_runs: dict[str, DetailedAnalysisCandidateFinderResult] = {}
         intermediate_warning = False
         max_attempt = 1
@@ -550,10 +558,6 @@ class DatabaseAnalysisInferenceExecutor:
             ),
             start=1,
         ):
-            if slice_count > self._detailed_policy.max_candidate_slices:
-                raise InvalidRequestError(
-                    "The detailed Analysis selection contains too many bounded evidence slices."
-                )
             finder_validator = DetailedAnalysisCandidateFinderValidator(
                 slice_ref=finder_slice.slice_ref,
                 left_attributes=finder_slice.left_attributes,
@@ -588,27 +592,66 @@ class DatabaseAnalysisInferenceExecutor:
                 or outcome.was_repaired
                 or bool(outcome.warning_codes)
             )
-
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=3,
-                attempt=1,
-                stage="analysis.relationship_resolver",
-                status="running",
-                message="Bounded candidates are ready for relationship resolution.",
-                current=None,
-                total=None,
+            if slice_count in finder_progress_points:
+                await progress.append(
+                    attempt=outcome.attempt_count,
+                    stage="analysis.candidate_finder",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Candidate discovery processed {slice_count} of "
+                        f"{evidence_slice_count} bounded evidence slices."
+                    ),
+                    current=slice_count,
+                    total=evidence_slice_count,
+                    finding_count=0,
+                )
+        if finder_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="analysis.candidate_finder",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Candidate discovery completed {evidence_slice_count} of "
+                    f"{evidence_slice_count} bounded evidence slices."
+                ),
+                current=evidence_slice_count,
+                total=evidence_slice_count,
                 finding_count=candidate_count,
-            ),
+            )
+
+        await progress.append(
+            attempt=1,
+            stage="analysis.relationship_resolver",
+            status="warning" if intermediate_warning else "running",
+            message="Bounded candidates are ready for relationship resolution.",
+            current=None,
+            total=None,
+            finding_count=candidate_count,
         )
 
         resolutions: list[DetailedAnalysisResolutionResult] = []
         applied_by_ref = analysis_applied_records_by_ref(context.context.analysis_relationships)
         resolved_finder_refs: set[str] = set()
+        resolver_batch_count = sum(
+            1
+            for finder_slice in _candidate_finder_slices(
+                context,
+                maximum_context_bytes=maximum_finder_context_bytes,
+            )
+            if (finder := finder_runs.get(finder_slice.slice_ref)) is not None
+            for _ in _resolver_batches(
+                finder_slice=finder_slice,
+                finder=finder,
+                applied_by_ref=applied_by_ref,
+                maximum_context_bytes=maximum_stage_context_bytes,
+                maximum_result_bytes=maximum_stage_result_bytes,
+            )
+        )
+        resolver_progress_points = intermediate_progress_points(
+            resolver_batch_count,
+            maximum_events=2,
+        )
+        resolver_batch_index = 0
         for finder_slice in _candidate_finder_slices(
             context,
             maximum_context_bytes=maximum_finder_context_bytes,
@@ -649,35 +692,75 @@ class DatabaseAnalysisInferenceExecutor:
                     or outcome.was_repaired
                     or bool(outcome.warning_codes)
                 )
+                resolver_batch_index += 1
+                if resolver_batch_index in resolver_progress_points:
+                    await progress.append(
+                        attempt=outcome.attempt_count,
+                        stage="analysis.relationship_resolver",
+                        status="warning" if intermediate_warning else "running",
+                        message=(
+                            f"Relationship resolution processed {resolver_batch_index} of "
+                            f"{resolver_batch_count} bounded batches."
+                        ),
+                        current=resolver_batch_index,
+                        total=resolver_batch_count,
+                        finding_count=0,
+                    )
         if resolved_finder_refs != set(finder_runs):
             raise AgentCandidateValidationError()
 
         decisions = tuple(
             decision for resolution in resolutions for decision in resolution.decisions
         )
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=4,
-                attempt=1,
-                stage="analysis.whole_slice_reconciler",
-                status="running",
-                message="Resolved slices are ready for complete reconciliation.",
-                current=None,
-                total=None,
+        if resolver_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="analysis.relationship_resolver",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Relationship resolution completed {resolver_batch_count} of "
+                    f"{resolver_batch_count} bounded batches."
+                ),
+                current=resolver_batch_count,
+                total=resolver_batch_count,
                 finding_count=len(decisions),
-            ),
+            )
+        await progress.append(
+            attempt=1,
+            stage="analysis.whole_slice_reconciler",
+            status="warning" if intermediate_warning else "running",
+            message="Resolved slices are ready for complete reconciliation.",
+            current=None,
+            total=None,
+            finding_count=len(decisions),
         )
         reconciled_relationships: dict[tuple[str, ...], AnalysisInferenceRelationship] = {}
         reconciliation_outcome: AgentStageOutcome | None = None
-        for reconciliation_context, batch_decisions, batch_applied in _reconciliation_batches(
-            context,
-            decisions=decisions,
-            applied_by_ref=applied_by_ref,
-            maximum_context_bytes=maximum_stage_context_bytes,
+        reconciliation_batch_count = sum(
+            1
+            for _ in _reconciliation_batches(
+                context,
+                decisions=decisions,
+                applied_by_ref=applied_by_ref,
+                maximum_context_bytes=maximum_stage_context_bytes,
+            )
+        )
+        reconciliation_progress_points = intermediate_progress_points(
+            reconciliation_batch_count,
+            maximum_events=2,
+        )
+        for reconciliation_index, (
+            reconciliation_context,
+            batch_decisions,
+            batch_applied,
+        ) in enumerate(
+            _reconciliation_batches(
+                context,
+                decisions=decisions,
+                applied_by_ref=applied_by_ref,
+                maximum_context_bytes=maximum_stage_context_bytes,
+            ),
+            start=1,
         ):
             reconciliation_validator = DetailedAnalysisReconciliationValidator(
                 decisions=batch_decisions,
@@ -722,6 +805,19 @@ class DatabaseAnalysisInferenceExecutor:
                 or reconciliation_outcome.was_repaired
                 or bool(reconciliation_outcome.warning_codes)
             )
+            if reconciliation_index in reconciliation_progress_points:
+                await progress.append(
+                    attempt=reconciliation_outcome.attempt_count,
+                    stage="analysis.whole_slice_reconciler",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Whole-slice reconciliation processed {reconciliation_index} of "
+                        f"{reconciliation_batch_count} bounded batches."
+                    ),
+                    current=reconciliation_index,
+                    total=reconciliation_batch_count,
+                    finding_count=0,
+                )
         if reconciliation_outcome is None:
             raise AgentCandidateValidationError()
         candidate = cast(
@@ -735,35 +831,57 @@ class DatabaseAnalysisInferenceExecutor:
         )
         if (await validator.validate(candidate)).issues:
             raise AgentCandidateValidationError()
-
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=5,
-                attempt=1,
-                stage="analysis.analysis_reviewer",
-                status="running",
-                message="Reconciled relationships are ready for complete review.",
-                current=None,
-                total=None,
+        if reconciliation_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="analysis.whole_slice_reconciler",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Whole-slice reconciliation completed {reconciliation_batch_count} of "
+                    f"{reconciliation_batch_count} bounded batches."
+                ),
+                current=reconciliation_batch_count,
+                total=reconciliation_batch_count,
                 finding_count=len(reconciled_relationships),
-            ),
+            )
+
+        await progress.append(
+            attempt=1,
+            stage="analysis.analysis_reviewer",
+            status="warning" if intermediate_warning else "running",
+            message="Reconciled relationships are ready for complete review.",
+            current=None,
+            total=None,
+            finding_count=len(reconciled_relationships),
         )
         review_outcome: AgentStageOutcome | None = None
         review_finding_count = 0
-        for (
+        review_batch_count = sum(
+            1
+            for _ in _review_batches(
+                context,
+                relationships=tuple(reconciled_relationships.values()),
+                applied_by_ref=applied_by_ref,
+                maximum_context_bytes=maximum_stage_context_bytes,
+            )
+        )
+        review_progress_points = intermediate_progress_points(
+            review_batch_count,
+            maximum_events=2,
+        )
+        for review_index, (
             reviewer_context,
             batch_relationships,
             batch_relationship_refs,
             batch_applied_refs,
-        ) in _review_batches(
-            context,
-            relationships=tuple(reconciled_relationships.values()),
-            applied_by_ref=applied_by_ref,
-            maximum_context_bytes=maximum_stage_context_bytes,
+        ) in enumerate(
+            _review_batches(
+                context,
+                relationships=tuple(reconciled_relationships.values()),
+                applied_by_ref=applied_by_ref,
+                maximum_context_bytes=maximum_stage_context_bytes,
+            ),
+            start=1,
         ):
             reviewer_validator = DetailedAnalysisReviewerValidator(
                 relationships=batch_relationships,
@@ -797,8 +915,34 @@ class DatabaseAnalysisInferenceExecutor:
                 or review_outcome.was_repaired
                 or bool(review_outcome.warning_codes)
             )
+            if review_index in review_progress_points:
+                await progress.append(
+                    attempt=review_outcome.attempt_count,
+                    stage="analysis.analysis_reviewer",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Analysis review processed {review_index} of "
+                        f"{review_batch_count} bounded batches."
+                    ),
+                    current=review_index,
+                    total=review_batch_count,
+                    finding_count=0,
+                )
         if review_outcome is None:
             raise AgentCandidateValidationError()
+        if review_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="analysis.analysis_reviewer",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Analysis review completed {review_batch_count} of "
+                    f"{review_batch_count} bounded batches."
+                ),
+                current=review_batch_count,
+                total=review_batch_count,
+                finding_count=review_finding_count,
+            )
         return candidate, review_outcome, intermediate_warning, max_attempt
 
     @staticmethod

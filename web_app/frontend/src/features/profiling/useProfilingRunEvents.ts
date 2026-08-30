@@ -9,13 +9,11 @@ export function useProfilingRunEvents({
   tenantId,
   modelId,
   runId,
-  poll,
 }: {
   api: ProfilingApi;
   tenantId: number;
   modelId: number;
   runId: number;
-  poll: boolean;
 }) {
   const [cursor, setCursor] = useState({ runId, sequence: 0 });
   const [events, setEvents] = useState<WorkflowRunEvent[]>([]);
@@ -28,7 +26,6 @@ export function useProfilingRunEvents({
       runId,
       afterSequence,
     ),
-    refetchInterval: poll ? 2_000 : false,
   });
 
   useEffect(() => {

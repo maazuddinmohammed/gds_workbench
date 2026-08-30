@@ -175,6 +175,39 @@ def _execution_context() -> CodeGenerationExecutionContext:
     )
 
 
+def _execution_context_for_target_count(
+    target_count: int,
+) -> CodeGenerationExecutionContext:
+    targets = tuple(
+        CodeGenerationArtifactContext(
+            target_ref=f"target_{position}",
+            object_id=500 + position,
+            mapping_context_digest="c" * 64,
+            source_context_digest="d" * 64,
+            sql_generation_guide_version_id=91,
+        )
+        for position in range(1, target_count + 1)
+    )
+    return CodeGenerationExecutionContext(
+        targets=targets,
+        agent_context=cast(
+            JsonValue,
+            {
+                "targets": [
+                    {
+                        "target_ref": target.target_ref,
+                        "context": {
+                            "guide": {"content": "Use deterministic MERGE SQL."},
+                            "object_mappings": [{"kind": "direct"}],
+                        },
+                    }
+                    for target in targets
+                ]
+            },
+        ),
+    )
+
+
 def _multibyte_execution_context(
     *,
     guide_content: str,
@@ -658,9 +691,66 @@ async def test_executor_uses_frozen_plan_exact_context_and_atomic_storage() -> N
     ] == [
         (2, 1, "code_generation.sql_generation"),
         (3, 1, "code_generation.sql_generation"),
-        (4, 1, "code_generation.sql_generation"),
     ]
-    assert lifecycle.claim_tokens == [_CLAIM_TOKEN, _CLAIM_TOKEN, _CLAIM_TOKEN]
+    assert lifecycle.events[-1].current == 2
+    assert lifecycle.events[-1].total == 2
+    assert lifecycle.events[-1].finding_count == 0
+    assert lifecycle.claim_tokens == [_CLAIM_TOKEN, _CLAIM_TOKEN]
+
+
+@pytest.mark.asyncio
+async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
+    target_count = 80
+    context = _execution_context_for_target_count(target_count)
+    plan = _plan().model_copy(
+        update={"selected_object_ids": tuple(range(501, 501 + target_count))}
+    )
+    agent = _AgentExecutor(
+        responses=[
+            cast(
+                JsonValue,
+                {
+                    "artifacts": [
+                        {
+                            "target_ref": f"target_{position}",
+                            "generated_sql": f"SELECT {position};",
+                        }
+                    ]
+                },
+            )
+            for position in range(1, target_count + 1)
+        ]
+    )
+    service, _database, _authorizer, _storage, lifecycle = _service(
+        executor=agent,
+        plan_repository=_PlanRepository(plan=plan),
+        context=context,
+    )
+
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert len(lifecycle.events) == 9
+    assert [event.sequence for event in lifecycle.events] == list(range(2, 11))
+    assert [event.current for event in lifecycle.events] == [
+        0,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+    ]
+    assert all(event.total == target_count for event in lifecycle.events)
+    assert all(event.finding_count == 0 for event in lifecycle.events)
 
 
 @pytest.mark.asyncio

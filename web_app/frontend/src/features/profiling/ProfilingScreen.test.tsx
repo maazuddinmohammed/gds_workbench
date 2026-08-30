@@ -144,6 +144,9 @@ describe("Model Profiling", () => {
     expect(within(drawer).getByRole("heading", { name: "PR-1048" })).toBeVisible();
     expect(within(drawer).getByText("Prepare selected Objects")).toBeVisible();
     expect(within(drawer).getByText("8 of 8")).toBeVisible();
+    expect(within(drawer).getByRole("progressbar", {
+      name: "Prepare progress: 8 of 8",
+    })).toHaveValue(8);
 
     await user.click(within(drawer).getByRole("button", { name: "Close profiling run details" }));
     expect(screen.queryByRole("complementary", { name: "Profiling run details" })).not.toBeInTheDocument();

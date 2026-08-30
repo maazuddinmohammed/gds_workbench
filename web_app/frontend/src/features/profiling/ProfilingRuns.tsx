@@ -11,10 +11,10 @@ import type {
   WorkflowRunRecord,
 } from "../workflows/api";
 import {
-  isActiveRun,
   isTenantWorkflowConflict,
   RunStateBadge,
   TENANT_WORKFLOW_CONFLICT_MESSAGE,
+  WorkflowEventProgress,
 } from "../workflows/presentation";
 import { profilingQueryKeys, type ProfilingApi } from "./api";
 import {
@@ -149,16 +149,12 @@ export function ProfilingRunDrawer({
   const runQuery = useQuery({
     queryKey: profilingQueryKeys.run(tenantId, model.model_id, runId),
     queryFn: () => api.readWorkflowRun(tenantId, model.model_id, runId),
-    refetchInterval: (query) => (
-      query.state.data && isActiveRun(query.state.data) ? 2_000 : false
-    ),
   });
   const { events, query: eventsQuery } = useProfilingRunEvents({
     api,
     tenantId,
     modelId: model.model_id,
     runId,
-    poll: Boolean(runQuery.data && isActiveRun(runQuery.data)),
   });
   const executeMutation = useMutation({
     mutationFn: () => api.executeProfilingRun(
@@ -236,6 +232,7 @@ export function ProfilingRunDrawer({
             <div className="run-failure" role="alert">
               <strong>{run.failure_code ?? "Run failed"}</strong>
               <p>{run.failure_message}</p>
+              <small>Reference {run.correlation_id}</small>
             </div>
           ) : null}
           <RunEventTimeline
@@ -271,7 +268,7 @@ function RunEventTimeline({
   if (!events.length) {
     return (
       <div className="empty-state compact">
-        No run events yet. Refresh or keep this drawer open.
+        No run events yet. Use Refresh to check again.
       </div>
     );
   }
@@ -286,9 +283,18 @@ function RunEventTimeline({
               <time>{formatDateTime(event.created_at)}</time>
             </header>
             <p>{event.message}</p>
-            {event.current !== null && event.total !== null ? (
-              <span>{event.current} of {event.total}</span>
-            ) : null}
+            <WorkflowEventProgress event={event} />
+            <small className="workflow-event-meta">
+              <span>Event {event.sequence} · Attempt {event.attempt}</span>
+              {event.current !== null && event.total !== null ? (
+                <span>{event.current} of {event.total}</span>
+              ) : null}
+              {event.finding_count > 0 ? (
+                <span>
+                  {event.finding_count} {event.finding_count === 1 ? "finding" : "findings"}
+                </span>
+              ) : null}
+            </small>
           </div>
         </li>
       ))}

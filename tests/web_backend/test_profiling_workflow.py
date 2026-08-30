@@ -39,9 +39,18 @@ from gds_workbench_runtime.profiling.workflow import (
     ProfilingExecutionTarget,
     ProfilingRunStart,
     ProfilingWorkflowOrchestrator,
+    _intermediate_progress_points,
 )
 
 _CLAIM_TOKEN = UUID("33333333-3333-3333-3333-333333333333")
+
+
+def test_profiling_progress_points_are_bounded() -> None:
+    assert _intermediate_progress_points(8) == frozenset()
+    assert _intermediate_progress_points(80) == frozenset(range(10, 80, 10))
+    points = _intermediate_progress_points(50_000)
+    assert len(points) <= 8
+    assert 50_000 not in points
 
 
 def _principal() -> RequestPrincipal:
@@ -276,9 +285,53 @@ async def test_profiling_run_executes_all_queries_then_commits_one_complete_payl
     )
     assert repository.events == [
         (2, "profiling.prepare", "running", 0, 2),
-        (3, "profiling.execute", "running", 1, 2),
-        (4, "profiling.execute", "running", 2, 2),
+        (3, "profiling.execute", "running", 2, 2),
     ]
+
+
+@pytest.mark.asyncio
+async def test_profiling_run_bounds_large_object_progress() -> None:
+    object_count = 80
+    repository = _Repository(
+        context=ProfilingExecutionContext(
+            workflow_run_id=1048,
+            model_id=18,
+            model_revision=4,
+            requested_batch_id=None,
+            targets=tuple(
+                _target(object_id=100 + position, attribute_id=1_000 + position)
+                for position in range(1, object_count + 1)
+            ),
+        )
+    )
+    orchestrator = ProfilingWorkflowOrchestrator(
+        repository=repository,
+        executor=_Executor(),
+    )
+
+    await orchestrator.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=4,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert len(repository.events) == 9
+    assert [event[0] for event in repository.events] == list(range(2, 11))
+    assert [event[3] for event in repository.events] == [
+        0,
+        10,
+        20,
+        30,
+        40,
+        50,
+        60,
+        70,
+        80,
+    ]
+    assert all(event[4] == object_count for event in repository.events)
 
 
 @pytest.mark.asyncio

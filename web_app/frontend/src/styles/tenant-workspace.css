@@ -1,10 +1,32 @@
 /* Tenant workspace */
 .app-shell {
+  --global-nav-width: 15rem;
+  --workspace-accent-soft: #fff1e8;
+  --workspace-accent: var(--orange);
+  --workspace-accent-strong: var(--orange-dark);
+  --blue-soft: var(--workspace-accent-soft);
+  --blue: var(--workspace-accent);
+  --blue-dark: var(--workspace-accent-strong);
+
   display: grid;
   min-height: 100vh;
-  grid-template-columns: 15rem minmax(0, 1fr);
+  grid-template-columns: var(--global-nav-width) minmax(0, 1fr);
   grid-template-rows: 4.5rem minmax(0, 1fr);
   background: var(--surface);
+  transition: grid-template-columns 180ms var(--ease-fluid);
+}
+
+.app-shell button:focus-visible,
+.app-shell a:focus-visible,
+.app-shell input:focus-visible,
+.app-shell select:focus-visible,
+.app-shell textarea:focus-visible,
+.app-shell summary:focus-visible {
+  outline-color: var(--workspace-accent);
+}
+
+.app-shell.is-global-nav-collapsed {
+  --global-nav-width: 4.75rem;
 }
 
 .app-shell.page-enter {
@@ -22,13 +44,14 @@
   display: grid;
   min-width: 0;
   grid-column: 1 / -1;
-  grid-template-columns: 15rem minmax(0, 1fr) auto;
+  grid-template-columns: var(--global-nav-width) minmax(0, 1fr) auto;
   align-items: center;
   padding: 0 1rem;
   border-bottom: 1px solid rgb(17 24 39 / 8%);
   background: rgb(255 255 255 / 82%);
   box-shadow: 0 8px 28px rgb(17 24 39 / 3%);
   backdrop-filter: blur(24px) saturate(155%);
+  transition: grid-template-columns 180ms var(--ease-fluid);
 }
 
 .tenant-context,
@@ -69,8 +92,8 @@
 }
 
 .switch-tenant {
-  color: var(--blue-dark);
-  border-color: #b8c5d8;
+  color: var(--workspace-accent-strong);
+  border-color: #d8b9a6;
 }
 
 .sidebar {
@@ -82,16 +105,76 @@
   padding: 1.45rem 0.7rem;
   overflow-y: auto;
   border-right: 1px solid var(--line);
-  background: #fafbfc;
+  background: #fbfaf8;
 }
 
-.sidebar-label {
-  margin: 0 0.75rem 0.75rem;
+.sidebar-header {
+  display: flex;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin: 0 0.35rem 0.65rem;
+}
+
+.sidebar-toggle,
+.mobile-sidebar-toggle,
+.model-journey-toggle {
+  display: inline-flex;
+  min-width: 2.25rem;
+  min-height: 2.25rem;
+  align-items: center;
+  justify-content: center;
+  gap: 0.35rem;
+  padding: 0 0.5rem;
+  border: 1px solid var(--line);
+  border-radius: var(--radius-small);
   color: var(--muted);
-  font-size: 0.65rem;
-  font-weight: 800;
-  letter-spacing: 0.14em;
-  text-transform: uppercase;
+  background: white;
+  font: inherit;
+  font-size: 0.68rem;
+  font-weight: 750;
+  cursor: pointer;
+  transition: color 150ms ease, border-color 150ms ease, background-color 150ms ease, transform 150ms var(--ease-fluid);
+}
+
+.sidebar-toggle svg,
+.mobile-sidebar-toggle svg,
+.model-journey-toggle svg {
+  width: 1.2rem;
+  height: 1.2rem;
+  flex: 0 0 auto;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.8;
+}
+
+.mobile-sidebar-toggle {
+  display: none;
+}
+
+.sidebar-toggle:active,
+.mobile-sidebar-toggle:active,
+.model-journey-toggle:active {
+  transform: scale(0.96);
+}
+
+.sidebar-toggle:focus-visible,
+.mobile-sidebar-toggle:focus-visible,
+.model-journey-toggle:focus-visible {
+  outline-color: var(--workspace-accent);
+}
+
+@media (hover: hover) {
+  .sidebar-toggle:hover,
+  .mobile-sidebar-toggle:hover,
+  .model-journey-toggle:hover {
+    color: var(--ink);
+    border-color: var(--line-strong);
+    background: var(--soft);
+  }
 }
 
 .sidebar nav {
@@ -117,7 +200,7 @@
 .nav-item.is-active {
   color: var(--ink);
   border-color: transparent;
-  background: #e7ebef;
+  background: var(--blue-soft);
   box-shadow: inset 3px 0 var(--blue);
   font-weight: 750;
 }
@@ -131,14 +214,15 @@
   height: 1.2rem;
   flex: 0 0 auto;
   fill: none;
-  stroke: #71808d;
+  color: #6f777d;
+  stroke: currentColor;
   stroke-linecap: round;
   stroke-linejoin: round;
-  stroke-width: 1.5;
+  stroke-width: 1.8;
 }
 
 .nav-item.is-active svg {
-  stroke: var(--blue);
+  color: var(--blue);
 }
 
 .sidebar .open-model {
@@ -167,6 +251,37 @@
     color: var(--ink);
     background: var(--soft);
     transform: translateX(2px);
+  }
+}
+
+@media (min-width: 42.001rem) {
+  .is-global-nav-collapsed .topbar .brand {
+    min-width: 0;
+  }
+
+  .is-global-nav-collapsed .topbar .brand > :not(.brand-mark),
+  .is-global-nav-collapsed .nav-item-label,
+  .is-global-nav-collapsed .sidebar .open-model,
+  .is-global-nav-collapsed .sidebar-toggle > span {
+    display: none;
+  }
+
+  .is-global-nav-collapsed .sidebar {
+    padding-right: 0.45rem;
+    padding-left: 0.45rem;
+  }
+
+  .is-global-nav-collapsed .sidebar-header {
+    justify-content: flex-start;
+    margin-right: 0;
+    margin-left: 0;
+  }
+
+  .is-global-nav-collapsed .nav-item {
+    justify-content: center;
+    gap: 0;
+    padding-right: 0;
+    padding-left: 0;
   }
 }
 
@@ -661,32 +776,6 @@ tbody tr:hover {
     grid-template-columns: 1fr;
   }
 
-  .app-shell {
-    grid-template-columns: 4.75rem minmax(0, 1fr);
-  }
-
-  .topbar {
-    grid-template-columns: 4.75rem minmax(0, 1fr) auto;
-  }
-
-  .topbar .brand {
-    min-width: 0;
-  }
-
-  .topbar .brand > :not(.brand-mark) {
-    display: none;
-  }
-
-  .sidebar-label,
-  .nav-item {
-    font-size: 0;
-  }
-
-  .nav-item {
-    justify-content: center;
-    padding: 0;
-  }
-
   .workspace {
     grid-column: 2;
     padding: 1.7rem 1.4rem 3rem;
@@ -812,6 +901,11 @@ tbody tr:hover {
     padding: 0 0.75rem;
   }
 
+  .mobile-sidebar-toggle {
+    display: inline-flex;
+    padding: 0;
+  }
+
   .tenant-context {
     order: -1;
     padding: 0;
@@ -839,9 +933,10 @@ tbody tr:hover {
     background: rgb(255 255 255 / 94%);
     box-shadow: 0 -10px 32px rgb(17 24 39 / 18%);
     backdrop-filter: blur(22px) saturate(145%);
+    transition: visibility 180ms ease, transform 180ms var(--ease-fluid);
   }
 
-  .sidebar-label,
+  .sidebar-header,
   .sidebar .open-model {
     display: none;
   }
@@ -853,7 +948,6 @@ tbody tr:hover {
   }
 
   .nav-item,
-  .sidebar-label,
   .nav-item.is-active {
     font-size: 0;
   }
@@ -890,6 +984,16 @@ tbody tr:hover {
 
   .workspace {
     padding: 1.25rem 0.9rem 2.5rem;
+  }
+
+  .app-shell.is-global-nav-collapsed {
+    padding-bottom: 0;
+  }
+
+  .app-shell.is-global-nav-collapsed .sidebar {
+    visibility: hidden;
+    pointer-events: none;
+    transform: translateY(100%);
   }
 
   .lock-heading,

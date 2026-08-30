@@ -30,6 +30,10 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     ModelWorkflow,
     PostgresAgentRunPlanRepository,
 )
+from gds_workbench_api.features.workflows.authoring.progress import (
+    AgentWorkflowProgress,
+    intermediate_progress_points,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextPolicy,
     AgentExecutor,
@@ -273,21 +277,21 @@ class DatabaseCodeGenerationExecutor:
                 )
 
             target_count = len(context.targets)
-            await self._lifecycle.append_event(
-                principal,
+            progress = AgentWorkflowProgress(
+                lifecycle=self._lifecycle,
+                principal=principal,
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=2,
-                    attempt=1,
-                    stage="code_generation.sql_generation",
-                    status="running",
-                    message="SQL generation started.",
-                    current=0,
-                    total=target_count,
-                    finding_count=0,
-                ),
+            )
+            await progress.append(
+                attempt=1,
+                stage="code_generation.sql_generation",
+                status="running",
+                message=f"SQL generation started for {target_count} target Objects.",
+                current=0,
+                total=target_count,
+                finding_count=0,
             )
 
             guide_content = _guide_content(context)
@@ -297,6 +301,9 @@ class DatabaseCodeGenerationExecutor:
                 }
             )
             artifacts: list[GeneratedSqlArtifact] = []
+            progress_points = intermediate_progress_points(target_count) | {target_count}
+            highest_attempt = 1
+            warning_seen = False
             for position, target in enumerate(context.targets, start=1):
                 target_context = _target_agent_context(
                     context,
@@ -326,26 +333,23 @@ class DatabaseCodeGenerationExecutor:
                     validator=validator,
                 )
                 artifacts.extend(validator.parse_validated(outcome.candidate))
-                await self._lifecycle.append_event(
-                    principal,
-                    workflow_run_id=workflow_run_id,
-                    expected_model_revision=expected_model_revision,
-                    workflow_run_claim_token=workflow_run_claim_token,
-                    event=AgentWorkflowEvent(
-                        sequence=position + 2,
-                        attempt=outcome.attempt_count,
+                highest_attempt = max(highest_attempt, outcome.attempt_count)
+                warning_seen = warning_seen or bool(outcome.was_repaired or outcome.warning_codes)
+                if position in progress_points:
+                    message = (
+                        f"SQL generation validated {position} of {target_count} target Objects."
+                    )
+                    if warning_seen:
+                        message += " One or more candidates required repair."
+                    await progress.append(
+                        attempt=highest_attempt,
                         stage="code_generation.sql_generation",
-                        status=(
-                            "warning"
-                            if outcome.was_repaired or outcome.warning_codes
-                            else "running"
-                        ),
-                        message="SQL candidate passed complete backend validation.",
+                        status="warning" if warning_seen else "running",
+                        message=message,
                         current=position,
                         total=target_count,
-                        finding_count=position,
-                    ),
-                )
+                        finding_count=0,
+                    )
             return await self._storage.store(
                 principal,
                 model_id=model_id,

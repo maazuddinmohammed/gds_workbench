@@ -10,7 +10,6 @@ import {
 } from "../workflows/api";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
-import { isActiveRun } from "../workflows/presentation";
 import {
   analysisQueryKeys,
   type AnalysisApi,
@@ -66,9 +65,6 @@ export function AnalysisScreen({
       runState,
     ),
     enabled: view === "runs",
-    refetchInterval: (query) => (
-      query.state.data?.items.some(isActiveRun) ? 2_000 : false
-    ),
   });
   const refresh = async () => {
     await Promise.all([

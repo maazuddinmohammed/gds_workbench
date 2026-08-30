@@ -16,7 +16,12 @@ import {
   type WorkflowRunDetail,
   type WorkflowRunMonitorApi,
 } from "./api";
-import { isActiveRun, RunStateBadge } from "./presentation";
+import {
+  isActiveRun,
+  RunStateBadge,
+  WorkflowEventProgress,
+  workflowStageLabel,
+} from "./presentation";
 
 type DraftWorkflow = Extract<
   ModelWorkflow,
@@ -64,9 +69,6 @@ export function WorkflowRunMonitor({
     ),
     initialPageParam: undefined as string | undefined,
     getNextPageParam: (lastPage) => lastPage.next_cursor ?? undefined,
-    refetchInterval: (query) => (
-      query.state.data?.pages.some((page) => page.items.some(isActiveRun)) ? 2_000 : false
-    ),
   });
   const recentRuns = recentQuery.data?.pages.flatMap((page) => page.items) ?? [];
 
@@ -91,9 +93,6 @@ export function WorkflowRunMonitor({
     queryKey: workflowRunQueryKeys.detail(tenantId, modelId, selectedRunId ?? 0),
     queryFn: () => api.readWorkflowRun(tenantId, modelId, selectedRunId ?? 0),
     enabled: selectedRunId !== null,
-    refetchInterval: (query) => (
-      query.state.data && isActiveRun(query.state.data) ? 2_000 : false
-    ),
   });
   const eventsQuery = useInfiniteQuery({
     queryKey: workflowRunQueryKeys.events(tenantId, modelId, selectedRunId ?? 0),
@@ -110,7 +109,6 @@ export function WorkflowRunMonitor({
         ? lastPage.next_after_sequence
         : undefined
     ),
-    refetchInterval: runQuery.data && isActiveRun(runQuery.data) ? 2_000 : false,
   });
   const events = eventsQuery.data?.pages.flatMap((page) => page.items) ?? [];
   useEffect(() => {
@@ -389,6 +387,12 @@ function WorkflowRunDetailView({
   applyTriggerRef: RefObject<HTMLButtonElement | null>;
   onApply: () => void;
 }) {
+  const failureEvent = [...events]
+    .reverse()
+    .find((event) => event.status === "failed" || event.status === "blocked");
+  const agentIdentity = run.agent_provider_code && run.agent_model_code
+    ? `${run.agent_provider_code} · ${run.agent_model_code}`
+    : run.agent_provider_code ?? run.agent_model_code ?? "Not recorded";
   return (
     <article aria-label={`Run ${run.workflow_run_id} details`}>
       <header className="workflow-run-detail-header">
@@ -406,10 +410,32 @@ function WorkflowRunDetailView({
       </dl>
 
       {run.workflow_run_state === "failed" ? (
-        <p className="inline-error" role="alert">
-          Run failed{run.failure_code ? ` (${run.failure_code})` : ""}. Diagnostic details are
-          intentionally limited. Reference {run.correlation_id}.
-        </p>
+        <section
+          className="workflow-run-failure"
+          role="alert"
+          aria-label="Run failure details"
+        >
+          <header>
+            <strong>Failure reason</strong>
+            <code>{run.failure_code?.replaceAll("_", " ") ?? "run failed"}</code>
+          </header>
+          <p>{run.failure_message ?? "No additional safe failure detail was recorded."}</p>
+          <dl>
+            <div>
+              <dt>Last stage</dt>
+              <dd>{failureEvent ? workflowStageLabel(failureEvent.stage) : "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Attempt</dt>
+              <dd>{failureEvent ? `Attempt ${failureEvent.attempt}` : "Not recorded"}</dd>
+            </div>
+            <div>
+              <dt>Agent</dt>
+              <dd>{agentIdentity}</dd>
+            </div>
+          </dl>
+          <small>Reference {run.correlation_id}</small>
+        </section>
       ) : null}
 
       {run.model_change_set_status === "validated" ? (
@@ -465,7 +491,9 @@ function WorkflowRunDetailView({
             Run events could not be loaded.
           </div>
         ) : events.length === 0 ? (
-          <div className="empty-state compact">No run events yet.</div>
+          <div className="empty-state compact">
+            No run events yet. Use Refresh runs to check again.
+          </div>
         ) : (
           <>
             <ol>
@@ -473,8 +501,20 @@ function WorkflowRunDetailView({
                 <li key={event.sequence}>
                   <span className={`status-badge is-${event.status}`}>{event.status}</span>
                   <div>
-                    <strong>{event.stage.replaceAll("_", " ")}</strong>
+                    <strong>{workflowStageLabel(event.stage)}</strong>
                     <p>{event.message}</p>
+                    <WorkflowEventProgress event={event} />
+                    <small className="workflow-event-meta">
+                      <span>Event {event.sequence} · Attempt {event.attempt}</span>
+                      {event.current !== null && event.total !== null ? (
+                        <span>{event.current} of {event.total}</span>
+                      ) : null}
+                      {event.finding_count > 0 ? (
+                        <span>
+                          {event.finding_count} {event.finding_count === 1 ? "finding" : "findings"}
+                        </span>
+                      ) : null}
+                    </small>
                   </div>
                   <time>{formatDateTime(event.created_at)}</time>
                 </li>

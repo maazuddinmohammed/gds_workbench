@@ -3,7 +3,6 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 
 import type { ModelDetail } from "../models/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
-import { isActiveRun } from "../workflows/presentation";
 import {
   profilingQueryKeys,
   type ProfilingApi,
@@ -60,9 +59,6 @@ export function ProfilingScreen({
       runState,
     ),
     enabled: view === "runs" || selectedRunId !== null,
-    refetchInterval: (query) => (
-      query.state.data?.items.some(isActiveRun) ? 2_000 : false
-    ),
   });
 
   useEffect(() => {

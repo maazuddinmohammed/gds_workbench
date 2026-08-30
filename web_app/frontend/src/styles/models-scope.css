@@ -286,8 +286,7 @@
   border-bottom: 1px solid var(--line);
 }
 
-.open-model small,
-.model-rail-title small {
+.open-model small {
   color: var(--muted);
   font-size: 0.62rem;
   font-weight: 850;
@@ -317,9 +316,16 @@
 }
 
 .model-layout {
+  --model-rail-width: 13.5rem;
+
   display: grid;
   min-height: calc(100vh - 4.5rem);
-  grid-template-columns: 13.5rem minmax(0, 1fr);
+  grid-template-columns: var(--model-rail-width) minmax(0, 1fr);
+  transition: grid-template-columns 180ms var(--ease-fluid);
+}
+
+.model-layout.is-model-journey-collapsed {
+  --model-rail-width: 4.25rem;
 }
 
 .model-rail {
@@ -328,22 +334,16 @@
   flex-direction: column;
   padding: 1.7rem 0.85rem 2.2rem 1.15rem;
   border-right: 1px solid var(--line);
-  background: #f8fafb;
+  background: #fbfaf8;
 }
 
-.model-rail-title {
-  display: grid;
-  gap: 0.3rem;
-  margin: 0 0.55rem 1.3rem;
-}
-
-.model-rail-title strong {
-  font-size: 0.86rem;
-}
-
-.model-rail-title span {
-  color: var(--muted);
-  font-size: 0.7rem;
+.model-rail-header {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 0.5rem;
+  margin: 0 0.1rem 1.3rem;
 }
 
 .model-rail nav {
@@ -441,6 +441,36 @@ a.model-step:hover {
   color: var(--muted);
   font-size: 0.65rem;
   line-height: 1.5;
+}
+
+.is-model-journey-collapsed .model-rail {
+  padding-right: 0.55rem;
+  padding-left: 0.55rem;
+}
+
+.is-model-journey-collapsed .model-rail-note,
+.is-model-journey-collapsed .model-step > span,
+.is-model-journey-collapsed .model-journey-toggle > span {
+  display: none;
+}
+
+.is-model-journey-collapsed .model-rail-header {
+  justify-content: flex-start;
+  margin-right: 0;
+  margin-left: 0;
+}
+
+.is-model-journey-collapsed .model-step {
+  min-width: 0;
+  grid-template-columns: 1fr;
+  justify-items: center;
+  gap: 0;
+  padding-right: 0.35rem;
+  padding-left: 0.35rem;
+}
+
+.is-model-journey-collapsed .model-step.is-active::after {
+  right: -0.55rem;
 }
 
 .model-workspace {
@@ -938,9 +968,13 @@ a.model-step:hover {
     border-bottom: 1px solid var(--line);
   }
 
-  .model-rail-title,
   .model-rail-note {
     display: none;
+  }
+
+  .model-rail-header {
+    align-items: center;
+    margin: 0 0 0.55rem;
   }
 
   .model-rail nav {
@@ -959,6 +993,20 @@ a.model-step:hover {
     left: 0.55rem;
     width: auto;
     height: 3px;
+  }
+
+  .is-model-journey-collapsed .model-rail {
+    padding-top: 0.55rem;
+    padding-bottom: 0.55rem;
+  }
+
+  .is-model-journey-collapsed .model-rail-header {
+    justify-content: flex-start;
+    margin-bottom: 0;
+  }
+
+  .is-model-journey-collapsed .model-rail nav {
+    display: none;
   }
 
   .model-workspace {

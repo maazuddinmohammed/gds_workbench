@@ -56,6 +56,10 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     PostgresAgentRunPlanRepository,
     WorkflowExecutionMode,
 )
+from gds_workbench_api.features.workflows.authoring.progress import (
+    AgentWorkflowProgress,
+    intermediate_progress_points,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentContextPolicy,
@@ -341,29 +345,35 @@ class DatabaseConceptualExecutor:
 
             execution_mode = plan.workflow_execution_mode
             is_detailed = execution_mode == "detailed_coverage"
-            await self._lifecycle.append_event(
-                principal,
+            selected_object_count = len(context.context.selected_objects)
+            progress = AgentWorkflowProgress(
+                lifecycle=self._lifecycle,
+                principal=principal,
                 workflow_run_id=workflow_run_id,
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
-                event=AgentWorkflowEvent(
-                    sequence=2,
-                    attempt=1,
-                    stage=(
-                        "conceptual.object_contribution"
-                        if is_detailed
-                        else "conceptual.candidate_authoring"
-                    ),
-                    status="running",
-                    message=(
-                        "Conceptual detailed coverage started."
-                        if is_detailed
-                        else "Conceptual candidate authoring started."
-                    ),
-                    current=0,
-                    total=(len(context.context.selected_objects) if is_detailed else 1),
-                    finding_count=0,
+            )
+            await progress.append(
+                attempt=1,
+                stage=(
+                    "conceptual.object_contribution"
+                    if is_detailed
+                    else "conceptual.candidate_authoring"
                 ),
+                status="running",
+                message=(
+                    f"Detailed Conceptual coverage started for {selected_object_count} "
+                    "selected Objects."
+                    if is_detailed
+                    else (
+                        f"Conceptual candidate authoring started for {selected_object_count} "
+                        "selected Objects. The next persisted milestone follows bounded "
+                        "agent response validation."
+                    )
+                ),
+                current=0 if selected_object_count else None,
+                total=selected_object_count or None,
+                finding_count=0,
             )
 
             validator = _candidate_validator(context)
@@ -374,14 +384,11 @@ class DatabaseConceptualExecutor:
                     intermediate_warning,
                     final_attempt,
                 ) = await self._execute_detailed(
-                    principal,
                     plan=plan,
                     context=context,
                     validator=validator,
-                    expected_model_revision=expected_model_revision,
-                    workflow_run_claim_token=workflow_run_claim_token,
+                    progress=progress,
                 )
-                final_event_sequence = 8
             elif execution_mode in ("one_shot", "tool_assisted"):
                 resolver_key = f"workflow.conceptual.{execution_mode}.candidate_authoring.context"
                 resolver_values: dict[str, object] = {
@@ -408,7 +415,6 @@ class DatabaseConceptualExecutor:
                 candidate = outcome.candidate
                 intermediate_warning = False
                 final_attempt = outcome.attempt_count
-                final_event_sequence = 3
             else:
                 raise InvalidRequestError(
                     "The Conceptual run does not use the fixed execution path."
@@ -429,8 +435,7 @@ class DatabaseConceptualExecutor:
                         expected_correlation_id=plan.correlation_id,
                         expected_model_revision=expected_model_revision,
                         candidate_digest=authoring_no_op_candidate_digest(plan),
-                        final_event=AgentWorkflowEvent(
-                            sequence=final_event_sequence,
+                        final_event=progress.event(
                             attempt=final_attempt,
                             stage="conceptual.backend_validation",
                             status="warning" if warning else "running",
@@ -453,8 +458,7 @@ class DatabaseConceptualExecutor:
                 expected_model_revision=expected_model_revision,
                 workflow_run_claim_token=workflow_run_claim_token,
                 changes=changes,
-                final_event=AgentWorkflowEvent(
-                    sequence=final_event_sequence,
+                final_event=progress.event(
                     attempt=final_attempt,
                     stage="conceptual.backend_validation",
                     status="warning" if warning else "running",
@@ -502,13 +506,11 @@ class DatabaseConceptualExecutor:
 
     async def _execute_detailed(
         self,
-        principal: RequestPrincipal,
         *,
         plan: AgentRunPlan,
         context: AgentContextBundle,
         validator: ConceptualCandidateValidator,
-        expected_model_revision: int,
-        workflow_run_claim_token: UUID,
+        progress: AgentWorkflowProgress,
     ) -> tuple[JsonValue, AgentStageOutcome, bool, int]:
         stage_context_limit = _detailed_stage_context_limit(self._context_policy)
         contributions: list[DetailedObjectContribution] = []
@@ -516,6 +518,10 @@ class DatabaseConceptualExecutor:
         intermediate_warning = False
         max_attempt = 1
         selected_objects = context.context.selected_objects
+        object_progress_points = intermediate_progress_points(
+            len(selected_objects),
+            maximum_events=5,
+        )
         for selected_index, selected in enumerate(selected_objects):
             contribution_contexts = _object_contribution_contexts(
                 context,
@@ -555,28 +561,66 @@ class DatabaseConceptualExecutor:
                     or outcome.was_repaired
                     or bool(outcome.warning_codes)
                 )
-
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=3,
-                attempt=1,
-                stage="conceptual.entity_consolidation",
-                status="running",
-                message="Object contributions are ready for entity consolidation.",
-                current=len(contributions),
-                total=len(contributions),
+            completed_object_count = selected_index + 1
+            if completed_object_count in object_progress_points:
+                await progress.append(
+                    attempt=max_attempt,
+                    stage="conceptual.object_contribution",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Object contribution coverage processed {completed_object_count} of "
+                        f"{len(selected_objects)} selected Objects."
+                    ),
+                    current=completed_object_count,
+                    total=len(selected_objects),
+                    finding_count=0,
+                )
+        if object_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="conceptual.object_contribution",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Object contribution coverage completed {len(selected_objects)} of "
+                    f"{len(selected_objects)} selected Objects."
+                ),
+                current=len(selected_objects),
+                total=len(selected_objects),
                 finding_count=len(contributions),
-            ),
+            )
+
+        await progress.append(
+            attempt=1,
+            stage="conceptual.entity_consolidation",
+            status="warning" if intermediate_warning else "running",
+            message="Object contributions are ready for entity consolidation.",
+            current=len(contributions),
+            total=len(contributions),
+            finding_count=len(contributions),
         )
         consolidation_parts: list[DetailedEntityConsolidation] = []
-        for consolidation_context, scoped_contributions in _consolidation_contexts(
-            context,
-            contributions=tuple(contributions),
-            maximum_bytes=stage_context_limit,
+        consolidation_context_count = sum(
+            1
+            for _ in _consolidation_contexts(
+                context,
+                contributions=tuple(contributions),
+                maximum_bytes=stage_context_limit,
+            )
+        )
+        consolidation_progress_points = intermediate_progress_points(
+            consolidation_context_count,
+            maximum_events=2,
+        )
+        for consolidation_index, (
+            consolidation_context,
+            scoped_contributions,
+        ) in enumerate(
+            _consolidation_contexts(
+                context,
+                contributions=tuple(contributions),
+                maximum_bytes=stage_context_limit,
+            ),
+            start=1,
         ):
             consolidation_validator = DetailedEntityConsolidationValidator(
                 contributions=scoped_contributions
@@ -603,29 +647,52 @@ class DatabaseConceptualExecutor:
                 or consolidation_outcome.was_repaired
                 or bool(consolidation_outcome.warning_codes)
             )
+            if consolidation_index in consolidation_progress_points:
+                await progress.append(
+                    attempt=consolidation_outcome.attempt_count,
+                    stage="conceptual.entity_consolidation",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Entity consolidation processed {consolidation_index} of "
+                        f"{consolidation_context_count} bounded batches."
+                    ),
+                    current=consolidation_index,
+                    total=consolidation_context_count,
+                    finding_count=0,
+                )
         consolidation = _merge_consolidations(
             parts=tuple(consolidation_parts),
             contributions=tuple(contributions),
         )
-
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=4,
-                attempt=1,
-                stage="conceptual.entity_attribute_detail",
-                status="running",
-                message="Consolidated entities are ready for detailed authoring.",
-                current=0 if consolidation.entities else None,
-                total=(len(consolidation.entities) if consolidation.entities else None),
+        if consolidation_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="conceptual.entity_consolidation",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Entity consolidation completed {consolidation_context_count} of "
+                    f"{consolidation_context_count} bounded batches."
+                ),
+                current=consolidation_context_count,
+                total=consolidation_context_count,
                 finding_count=len(consolidation.entities),
-            ),
+            )
+
+        await progress.append(
+            attempt=1,
+            stage="conceptual.entity_attribute_detail",
+            status="warning" if intermediate_warning else "running",
+            message="Consolidated entities are ready for detailed authoring.",
+            current=0 if consolidation.entities else None,
+            total=(len(consolidation.entities) if consolidation.entities else None),
+            finding_count=len(consolidation.entities),
         )
         details: list[DetailedEntityDetail] = []
-        for entity in consolidation.entities:
+        entity_progress_points = intermediate_progress_points(
+            len(consolidation.entities),
+            maximum_events=2,
+        )
+        for entity_index, entity in enumerate(consolidation.entities, start=1):
             detail_parts: list[DetailedEntityDetail] = []
             for detail_context, scoped_entity, scoped_contributions in _detail_contexts(
                 context,
@@ -665,6 +732,32 @@ class DatabaseConceptualExecutor:
                     contributions=tuple(contributions),
                 )
             )
+            if entity_index in entity_progress_points:
+                await progress.append(
+                    attempt=max_attempt,
+                    stage="conceptual.entity_attribute_detail",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Entity detail authoring processed {entity_index} of "
+                        f"{len(consolidation.entities)} consolidated entities."
+                    ),
+                    current=entity_index,
+                    total=len(consolidation.entities),
+                    finding_count=0,
+                )
+        if entity_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="conceptual.entity_attribute_detail",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Entity detail authoring completed {len(consolidation.entities)} of "
+                    f"{len(consolidation.entities)} consolidated entities."
+                ),
+                current=len(consolidation.entities),
+                total=len(consolidation.entities),
+                finding_count=len(details),
+            )
 
         attributes = tuple(
             PhysicalAttributeKey(
@@ -684,25 +777,22 @@ class DatabaseConceptualExecutor:
             analysis_relationships=context.context.analysis_relationships,
             max_packages=self._detailed_policy.max_relationship_packages,
         )
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=5,
-                attempt=1,
-                stage="conceptual.relationship_candidate_derivation",
-                status="running",
-                message="Deterministic relationship evidence packages are ready.",
-                current=(len(relationship_packages) if relationship_packages else None),
-                total=(len(relationship_packages) if relationship_packages else None),
-                finding_count=len(relationship_packages),
-            ),
+        await progress.append(
+            attempt=1,
+            stage="conceptual.relationship_candidate_derivation",
+            status="warning" if intermediate_warning else "running",
+            message="Deterministic relationship evidence packages are ready.",
+            current=(len(relationship_packages) if relationship_packages else None),
+            total=(len(relationship_packages) if relationship_packages else None),
+            finding_count=len(relationship_packages),
         )
 
         refinements: list[DetailedRelationshipRefinement] = []
-        for package in relationship_packages:
+        package_progress_points = intermediate_progress_points(
+            len(relationship_packages),
+            maximum_events=2,
+        )
+        for package_index, package in enumerate(relationship_packages, start=1):
             refinement_parts: list[DetailedRelationshipRefinement] = []
             for refinement_context, scoped_package, endpoint_details in _refinement_contexts(
                 context,
@@ -743,54 +833,84 @@ class DatabaseConceptualExecutor:
                     entity_details=tuple(details),
                 )
             )
-
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=6,
-                attempt=1,
+            if package_index in package_progress_points:
+                await progress.append(
+                    attempt=max_attempt,
+                    stage="conceptual.relationship_cardinality_refinement",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Relationship refinement processed {package_index} of "
+                        f"{len(relationship_packages)} evidence packages."
+                    ),
+                    current=package_index,
+                    total=len(relationship_packages),
+                    finding_count=0,
+                )
+        if package_progress_points:
+            await progress.append(
+                attempt=max_attempt,
                 stage="conceptual.relationship_cardinality_refinement",
-                status="running",
-                message="Relationship packages are ready for whole-model reconciliation.",
-                current=(len(refinements) if refinements else None),
-                total=(len(relationship_packages) if relationship_packages else None),
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Relationship refinement completed {len(relationship_packages)} of "
+                    f"{len(relationship_packages)} evidence packages."
+                ),
+                current=len(relationship_packages),
+                total=len(relationship_packages),
                 finding_count=len(refinements),
-            ),
+            )
+
+        await progress.append(
+            attempt=1,
+            stage="conceptual.relationship_cardinality_refinement",
+            status="warning" if intermediate_warning else "running",
+            message="Relationship packages are ready for whole-model reconciliation.",
+            current=(len(refinements) if refinements else None),
+            total=(len(relationship_packages) if relationship_packages else None),
+            finding_count=len(refinements),
         )
 
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=plan.workflow_run_id,
-            expected_model_revision=expected_model_revision,
-            workflow_run_claim_token=workflow_run_claim_token,
-            event=AgentWorkflowEvent(
-                sequence=7,
-                attempt=1,
-                stage="conceptual.whole_model_reconciliation",
-                status="running",
-                message="Whole-model reconciliation and backend validation started.",
-                current=0,
-                total=1,
-                finding_count=len(details) + len(refinements),
-            ),
+        reconciliation_context_count = sum(
+            1
+            for _ in _reconciliation_contexts(
+                context,
+                consolidation=consolidation,
+                entity_details=tuple(details),
+                relationship_packages=relationship_packages,
+                relationship_refinements=tuple(refinements),
+                maximum_bytes=stage_context_limit,
+            )
+        )
+        await progress.append(
+            attempt=1,
+            stage="conceptual.whole_model_reconciliation",
+            status="warning" if intermediate_warning else "running",
+            message="Whole-model reconciliation and backend validation started.",
+            current=0 if reconciliation_context_count else None,
+            total=reconciliation_context_count or None,
+            finding_count=len(details) + len(refinements),
         )
         reconciled_candidates: list[JsonValue] = []
         final_outcome: AgentStageOutcome | None = None
-        for (
+        reconciliation_progress_points = intermediate_progress_points(
+            reconciliation_context_count,
+            maximum_events=2,
+        )
+        for reconciliation_index, (
             reconciliation_context,
             scoped_details,
             scoped_package_refs,
             scoped_applied_refs,
-        ) in _reconciliation_contexts(
-            context,
-            consolidation=consolidation,
-            entity_details=tuple(details),
-            relationship_packages=relationship_packages,
-            relationship_refinements=tuple(refinements),
-            maximum_bytes=stage_context_limit,
+        ) in enumerate(
+            _reconciliation_contexts(
+                context,
+                consolidation=consolidation,
+                entity_details=tuple(details),
+                relationship_packages=relationship_packages,
+                relationship_refinements=tuple(refinements),
+                maximum_bytes=stage_context_limit,
+            ),
+            start=1,
         ):
             reconciliation_validator = DetailedReconciliationValidator(
                 entity_details=scoped_details,
@@ -820,6 +940,19 @@ class DatabaseConceptualExecutor:
                 or final_outcome.was_repaired
                 or bool(final_outcome.warning_codes)
             )
+            if reconciliation_index in reconciliation_progress_points:
+                await progress.append(
+                    attempt=final_outcome.attempt_count,
+                    stage="conceptual.whole_model_reconciliation",
+                    status="warning" if intermediate_warning else "running",
+                    message=(
+                        f"Whole-model reconciliation processed {reconciliation_index} of "
+                        f"{reconciliation_context_count} bounded batches."
+                    ),
+                    current=reconciliation_index,
+                    total=reconciliation_context_count,
+                    finding_count=0,
+                )
         if final_outcome is None:
             raise AgentCandidateValidationError()
         candidate = _merge_reconciled_candidates(
@@ -828,6 +961,19 @@ class DatabaseConceptualExecutor:
         )
         if (await validator.validate(candidate)).issues:
             raise AgentCandidateValidationError()
+        if reconciliation_progress_points:
+            await progress.append(
+                attempt=max_attempt,
+                stage="conceptual.whole_model_reconciliation",
+                status="warning" if intermediate_warning else "running",
+                message=(
+                    f"Whole-model reconciliation completed {reconciliation_context_count} of "
+                    f"{reconciliation_context_count} bounded batches."
+                ),
+                current=reconciliation_context_count,
+                total=reconciliation_context_count,
+                finding_count=len(reconciled_candidates),
+            )
         return (
             candidate,
             final_outcome,

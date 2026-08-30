@@ -12,8 +12,10 @@ import {
   HomeIcon,
   MappingIcon,
   ModelIcon,
+  PanelToggleIcon,
   PromptsIcon,
 } from "../shared/ui";
+import { useStoredBoolean } from "../shared/useStoredBoolean";
 
 export type WorkspaceNavigation =
   | "home"
@@ -35,8 +37,15 @@ export function TenantWorkspace({
   children: ReactNode;
 }) {
   const tenantId = String(home.tenant.tenant_id);
+  const [globalNavigationCollapsed, setGlobalNavigationCollapsed] = useStoredBoolean(
+    "gds-workbench:workspace-navigation-collapsed",
+  );
+  const globalNavigationAction = globalNavigationCollapsed
+    ? "Expand workspace navigation"
+    : "Collapse workspace navigation";
+
   return (
-    <div className="app-shell page-enter">
+    <div className={`app-shell page-enter${globalNavigationCollapsed ? " is-global-nav-collapsed" : ""}`}>
       <header className="topbar">
         <Brand compact />
         <div className="tenant-context">
@@ -52,6 +61,17 @@ export function TenantWorkspace({
           ) : null}
         </div>
         <div className="topbar-actions">
+          <button
+            aria-controls="workspace-navigation-links"
+            aria-expanded={!globalNavigationCollapsed}
+            aria-label={globalNavigationAction}
+            className="mobile-sidebar-toggle"
+            onClick={() => setGlobalNavigationCollapsed((collapsed) => !collapsed)}
+            title={globalNavigationAction}
+            type="button"
+          >
+            <PanelToggleIcon collapsed={globalNavigationCollapsed} />
+          </button>
           <Link className="button button-secondary switch-tenant" to="/">
             Switch Tenant
           </Link>
@@ -60,9 +80,26 @@ export function TenantWorkspace({
         </div>
       </header>
 
-      <aside className="sidebar" aria-label="Workspace navigation">
-        <p className="sidebar-label">Workspace</p>
-        <nav>
+      <aside
+        className="sidebar"
+        aria-label="Workspace navigation"
+        data-collapsed={globalNavigationCollapsed}
+      >
+        <div className="sidebar-header">
+          <button
+            aria-controls="workspace-navigation-links"
+            aria-expanded={!globalNavigationCollapsed}
+            aria-label={globalNavigationAction}
+            className="sidebar-toggle"
+            onClick={() => setGlobalNavigationCollapsed((collapsed) => !collapsed)}
+            title={globalNavigationAction}
+            type="button"
+          >
+            <PanelToggleIcon collapsed={globalNavigationCollapsed} />
+            <span>{globalNavigationCollapsed ? "Show" : "Hide"}</span>
+          </button>
+        </div>
+        <nav id="workspace-navigation-links">
           <Link
             aria-label="Home"
             className={`nav-item${activeNav === "home" ? " is-active" : ""}`}
@@ -70,8 +107,9 @@ export function TenantWorkspace({
             to="/tenants/$tenantId"
             params={{ tenantId }}
             activeOptions={{ exact: true }}
+            title="Home"
           >
-            <HomeIcon />Home
+            <HomeIcon /><span className="nav-item-label">Home</span>
           </Link>
           <Link
             aria-label="Metadata"
@@ -79,8 +117,9 @@ export function TenantWorkspace({
             data-short-label="Metadata"
             to="/tenants/$tenantId/metadata"
             params={{ tenantId }}
+            title="Metadata"
           >
-            <DatabaseIcon />Metadata
+            <DatabaseIcon /><span className="nav-item-label">Metadata</span>
           </Link>
           <Link
             aria-label="Models"
@@ -88,8 +127,9 @@ export function TenantWorkspace({
             data-short-label="Models"
             to="/tenants/$tenantId/models"
             params={{ tenantId }}
+            title="Models"
           >
-            <ModelIcon />Models
+            <ModelIcon /><span className="nav-item-label">Models</span>
           </Link>
           <Link
             aria-label="Mapping"
@@ -97,8 +137,9 @@ export function TenantWorkspace({
             data-short-label="Mapping"
             to="/tenants/$tenantId/mapping"
             params={{ tenantId }}
+            title="Mapping"
           >
-            <MappingIcon />Mapping
+            <MappingIcon /><span className="nav-item-label">Mapping</span>
           </Link>
           <Link
             aria-label="Code generation"
@@ -106,8 +147,9 @@ export function TenantWorkspace({
             data-short-label="Code"
             to="/tenants/$tenantId/code-generation"
             params={{ tenantId }}
+            title="Code generation"
           >
-            <CodeIcon />Code generation
+            <CodeIcon /><span className="nav-item-label">Code generation</span>
           </Link>
           <Link
             aria-label="Prompts"
@@ -115,8 +157,9 @@ export function TenantWorkspace({
             data-short-label="Prompts"
             to="/tenants/$tenantId/prompts"
             params={{ tenantId }}
+            title="Prompts"
           >
-            <PromptsIcon />Prompts
+            <PromptsIcon /><span className="nav-item-label">Prompts</span>
           </Link>
         </nav>
         {model ? (
