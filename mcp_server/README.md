@@ -18,6 +18,8 @@ SQL, Tenant Lock, Metadata Change Set, and Model Change Set tools:
   Logical, Dimensional, and Mapping reads;
 - `describe_model_dataset`, `get_model_snapshot`, `get_model_dbml`; and
 - `create_model_change_set`, `stage_model_change_set`,
+  `begin_model_stage_batch`, `put_model_stage_chunk`,
+  `commit_model_stage_batch`,
   `get_model_change_set`, `validate_model_change_set`,
   `apply_model_change_set`, `archive_model_change_set`.
 
@@ -48,7 +50,7 @@ The same guidance is embedded in Metadata Snapshot schema files.
   build/upload/cleanup orchestration for every Snapshot kind.
 - `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
   content, and MCP binding.
-- `tools/snapshots/model/`: the 19-dataset ID-free Model contract registry,
+- `tools/snapshots/model/`: the 23-dataset ID-free Model contract registry,
   schema description, and complete Model Snapshot.
 - `tools/snapshots/dbml/`: deterministic conceptual, logical, and dimensional
   DBML projection, ZIP generation, and MCP binding.
@@ -68,10 +70,12 @@ Every completed tool call by an active resolved Principal appends one row to
 `mcp.tool_call_log`. Each tool explicitly declares which normal input arguments
 may be retained, and those values are copied into `input_metadata`. PostgreSQL
 does not impose an application-specific byte ceiling on that JSONB object. The
-normal MCP request-body limit remains 1 MiB. Cursors, lock purpose/reason text,
-staged physical records, prompts, output, credentials, tokens, connection values,
-submitted SQL, and exceptions are not logged. `execute_databricks_sql` retains
-only the SQL character count and SHA-256 digest.
+MCP request-body limit is 2 MiB, leaving JSON-RPC and base64 envelope headroom
+for one decoded 1 MiB Model Stage fragment. Cursors, lock purpose/reason text,
+staged physical records, Model payload-fragment bodies, prompts, output,
+credentials, tokens, connection values, submitted SQL, and exceptions are not
+logged. `execute_databricks_sql` retains only the SQL character count and
+SHA-256 digest.
 
 Humans require delegated scope `workbench.access`. Workloads require application
 permission `workbench.workflow` and an active registered service Principal with
@@ -163,13 +167,23 @@ physical Object names plus the four derived workflow-eligibility flags. Database
 IDs remain in this focused navigation result. Model Scope is read-only through
 MCP; explicit Scope changes belong to the governed web workflow.
 `get_model_snapshot` returns only a temporary read-only URL plus ZIP metadata;
-its 19 archive datasets are ID-free and use the exact Pydantic records accepted
-by Model Change Sets. `get_model_dbml` accepts `full`, `conceptual`, `logical`,
+its 23 archive datasets are ID-free and use exact Pydantic records. The
+`model_scope` and `qa_authoring_context` datasets are Snapshot-only; all others
+use the records accepted by Model Change Sets. `get_model_dbml` accepts `full`, `conceptual`, `logical`,
 or `dimensional`; each selected layer always has a complete DBML file. When
 `include_submodels` is true, logical and dimensional layers also have one file
 per active Submodel and a default file only when active Entities are unassigned.
 The MCP result contains only the temporary URL and bounded ZIP metadata. Call
 `describe_model_dataset` before authoring a dataset.
+The Snapshot includes `generated_code`, snapshot-only `qa_authoring_context`,
+`validation_group`, and `validation_check`. Their schemas publish machine-readable
+digest, Apply-order, SQL, and assertion-shape rules. QA copies the server-derived
+context digests and uses only its allowlisted current Code references; the context
+itself cannot be staged. `get_model_code_generation_document` returns
+`target_mapping_context_digest` and `target_source_context_digest`; copy those
+exact fields into a `generated_code` record. Apply Mapping, Code when present,
+then QA in successive Change Sets. No Model Change Set tool executes Code or QA
+SQL.
 Each `stage_model_change_set` item replaces that dataset's pending records;
 omitted pending datasets remain unchanged. Validate reports the first failed
 phase and a bounded action review, including physical Model Scope checks. Apply
@@ -177,6 +191,15 @@ revalidates and writes atomically. Stage `model_details` to update the Model nam
 description, or naming/audit templates. Model Scope cannot be staged or applied
 through this public Change Set contract. `archive_model_change_set` retains an
 abandoned draft as terminal history; it does not delete it.
+
+The same Model Stage Batch supports two transport modes. `records` stores
+ordinary complete records. For `generated_code` only, `json_fragments` stores
+ordered base64-wrapped fragments of one canonical JSON record array in
+`mcp.model_stage_payload_chunk`. Each decoded fragment is at most 1 MiB. Commit
+verifies the manifest, hashes, order, and byte count, concatenates the decoded
+bytes, validates the reconstructed array, and stages one complete Code record.
+Fragment boundaries never become Model state. Code Artifact content has no
+separate domain-size limit; Stage Batch limits are transport safety bounds.
 
 ## Tests
 

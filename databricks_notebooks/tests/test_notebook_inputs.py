@@ -1,3 +1,4 @@
+import json
 from uuid import UUID
 
 import pytest
@@ -22,6 +23,7 @@ _WORKFLOWS = (
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 )
 _COMMON_NAMES = (
     "TenantID",
@@ -54,6 +56,13 @@ def _values(workflow: str) -> dict[str, str]:
     )
     if workflow == "mapping":
         values.update({"SelectedObjectIDsJSON": "[11]", "MappingSourceSystemID": "20"})
+    elif workflow == "qa":
+        values.update(
+            {
+                "SelectedObjectIDsJSON": "[]",
+                "SelectedSystemCodesJSON": '["ERP","CRM"]',
+            }
+        )
     return values
 
 
@@ -152,6 +161,7 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "model_workflow",
         "workflow_execution_mode",
         "selected_object_ids",
+        "selected_system_codes",
         "modeled_entity_type",
         "requested_batch_id",
         "mapping_operation",
@@ -165,8 +175,9 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "agent",
         "prompt_overrides",
     }
-    if workflow in {"profiling", "analysis_validation"}:
+    if workflow in {"profiling", "analysis_validation", "qa"}:
         assert command.create_payload["workflow_execution_mode"] is None
+    if workflow in {"profiling", "analysis_validation"}:
         assert command.create_payload["agent"] is None
     if workflow == "analysis_inference":
         assert command.create_payload["workflow_execution_mode"] == "tool_assisted"
@@ -179,6 +190,7 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "dimensional",
         "mapping",
         "code_generation",
+        "qa",
     }:
         assert command.create_payload["agent"] == {
             "sdk_code": "langchain_create_agent",
@@ -223,6 +235,7 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
             "SqlGenerationGuideVersionID",
             *_AGENT_NAMES,
         ),
+        "qa": ("SelectedSystemCodesJSON", *_AGENT_NAMES),
     }
     for workflow in _WORKFLOWS:
         names = tuple(spec.name for spec in widget_specs(workflow))
@@ -371,7 +384,9 @@ def test_build_notebook_request_rejects_a_union_choice_outside_an_exact_profile(
         build_notebook_request("analysis_inference", values)
 
 
-def test_code_generation_widgets_and_validation_use_the_internal_detailed_profile(
+@pytest.mark.parametrize("workflow", ("code_generation", "qa"))
+def test_fixed_mode_widgets_and_validation_use_the_internal_detailed_profile(
+    workflow: str,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
@@ -379,9 +394,9 @@ def test_code_generation_widgets_and_validation_use_the_internal_detailed_profil
         _databricks_registry_with_disjoint_profiles,
     )
 
-    specs = {spec.name: spec for spec in widget_specs("code_generation")}
-    values = _values("code_generation")
-    command = build_notebook_request("code_generation", values)
+    specs = {spec.name: spec for spec in widget_specs(workflow)}
+    values = _values(workflow)
+    command = build_notebook_request(workflow, values)
 
     assert "ExecutionMode" not in specs
     assert specs["AgentSDK"].choices == ("openai_agents_sdk",)
@@ -389,6 +404,42 @@ def test_code_generation_widgets_and_validation_use_the_internal_detailed_profil
     assert command.create_payload["workflow_execution_mode"] is None
     assert command.create_payload["agent"]["sdk_code"] == "openai_agents_sdk"
     assert command.create_payload["agent"]["reasoning_effort_code"] == "default"
+
+
+def test_qa_requires_exact_system_selection_and_empty_object_selection() -> None:
+    command = build_notebook_request("qa", _values("qa"))
+
+    assert command.workflow == "qa"
+    assert command.create_payload["selected_object_ids"] == []
+    assert command.create_payload["selected_system_codes"] == ["ERP", "CRM"]
+    assert command.create_payload["workflow_execution_mode"] is None
+
+    values = _values("qa")
+    values["SelectedObjectIDsJSON"] = "[11]"
+    with pytest.raises(NotebookConfigurationError, match=r"must be \[\]"):
+        build_notebook_request("qa", values)
+
+
+@pytest.mark.parametrize(
+    "selected_system_codes",
+    ("[]", '["ERP","erp"]', '["ERP",""]', "[11]"),
+)
+def test_qa_rejects_missing_or_invalid_system_selection(
+    selected_system_codes: str,
+) -> None:
+    values = _values("qa")
+    values["SelectedSystemCodesJSON"] = selected_system_codes
+
+    with pytest.raises(NotebookConfigurationError, match="SelectedSystemCodesJSON"):
+        build_notebook_request("qa", values)
+
+
+def test_qa_rejects_more_than_1000_systems() -> None:
+    values = _values("qa")
+    values["SelectedSystemCodesJSON"] = json.dumps([f"SYSTEM_{index}" for index in range(1_001)])
+
+    with pytest.raises(NotebookConfigurationError, match="at most 1000"):
+        build_notebook_request("qa", values)
 
 
 @pytest.mark.parametrize(

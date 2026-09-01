@@ -27,6 +27,7 @@ from gds_workbench_api.features.mapping.contracts import (
 )
 from gds_workbench_api.features.mapping.output_schema import (
     compile_attribute_mapper_output_schema,
+    enrich_mapping_agent_output_schema,
 )
 from gds_workbench_api.features.mapping.preparation_contracts import (
     MappingOutputTemplate,
@@ -38,6 +39,7 @@ from gds_workbench_api.features.mapping.reconciliation import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    pydantic_validation_issues,
 )
 
 _MAX_ATTRIBUTE_BATCHES = 100
@@ -109,20 +111,13 @@ class CompleteMappingCandidateValidator:
             source=attribute_schema,
             name="AttributeMappingTransformationDocumentV1",
         )
+        enrich_mapping_agent_output_schema(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        envelope = _parse_envelope(candidate)
+        envelope, envelope_issues = _parse_envelope(candidate)
         if envelope is None:
-            return AgentCandidateValidation(
-                issues=(
-                    _issue(
-                        "candidate.schema_invalid",
-                        (),
-                        "The candidate does not match the complete Mapping envelope.",
-                    ),
-                )
-            )
+            return AgentCandidateValidation(issues=envelope_issues)
 
         header_validation = await self._header_validator.validate(envelope.header)
         if header_validation.issues:
@@ -203,8 +198,9 @@ class CompleteMappingCandidateValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> CompleteMappingCandidateResult:
-        envelope = _parse_envelope(candidate)
+        envelope, envelope_issues = _parse_envelope(candidate)
         if envelope is None:
+            del envelope_issues
             raise InvalidRequestError("The complete Mapping candidate is invalid.")
         header = self._header_validator.parse_validated(envelope.header)
         plans = build_mapping_attribute_batch_plans(
@@ -238,11 +234,13 @@ class CompleteMappingCandidateValidator:
         )
 
 
-def _parse_envelope(candidate: JsonValue) -> _AgentCompleteEnvelope | None:
+def _parse_envelope(
+    candidate: JsonValue,
+) -> tuple[_AgentCompleteEnvelope | None, tuple[AgentValidationIssue, ...]]:
     try:
-        return _AgentCompleteEnvelope.model_validate(candidate, strict=True)
-    except ValidationError:
-        return None
+        return _AgentCompleteEnvelope.model_validate(candidate, strict=True), ()
+    except ValidationError as error:
+        return None, pydantic_validation_issues(error)
 
 
 def _index_batches(

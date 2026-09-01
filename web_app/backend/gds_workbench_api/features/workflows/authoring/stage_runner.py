@@ -56,6 +56,7 @@ class AgentStageRunner:
         allowed_tool_names: tuple[str, ...],
         validator: AgentCandidateValidator,
         local_tool_catalog: LocalAgentToolCatalog | None = None,
+        max_candidate_bytes: int | None = None,
     ) -> AgentStageOutcome:
         stage = next(
             (candidate for candidate in plan.stages if candidate.stage_code == stage_code),
@@ -88,6 +89,7 @@ class AgentStageRunner:
                 local_tool_catalog=local_tool_catalog,
             ),
             validator=validator,
+            max_candidate_bytes=max_candidate_bytes,
         )
         return AgentStageOutcome(
             candidate=result.candidate,

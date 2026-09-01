@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+import math
 from collections.abc import Iterable
+from datetime import date, datetime
 from decimal import Decimal
 from typing import Annotated, Any, Literal, cast
 
@@ -47,6 +50,10 @@ StableKey = Annotated[
         max_length=100,
         pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
     ),
+]
+Sha256Digest = Annotated[
+    str,
+    StringConstraints(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"),
 ]
 NonblankText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
 NamingInstructions = Annotated[
@@ -921,6 +928,262 @@ class MappingAttributeRecord(PhysicalAttributeKey):
         ):
             raise ValueError("Attribute Mapping transformation contract is invalid.")
         return self
+
+
+VALIDATION_QUERY_MAX_BYTES = 100_000
+
+
+class GeneratedCodeRecord(PhysicalObjectKey):
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    artifact_type: Literal["sql_file", "python_file", "python_notebook"]
+    generated_code_content: NonblankText
+    mapping_context_digest: Sha256Digest
+    source_context_digest: Sha256Digest
+    generated_code_digest: Sha256Digest
+    generated_code_status: Status
+    generated_code_is_locked: bool
+
+    @model_validator(mode="after")
+    def validate_content(self) -> GeneratedCodeRecord:
+        encoded = self.generated_code_content.encode("utf-8")
+        if any(
+            ord(character) < 32 and character not in {"\t", "\n", "\r"}
+            for character in self.generated_code_content
+        ):
+            raise ValueError("Generated Code contains an unsupported control character.")
+        if hashlib.sha256(encoded).hexdigest() != self.generated_code_digest:
+            raise ValueError("Generated Code digest does not match its content.")
+        return self
+
+
+class QACurrentCodeReference(PhysicalObjectKey):
+    """One current Code Artifact trusted by a QA authoring context."""
+
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    artifact_type: Literal["sql_file", "python_file", "python_notebook"]
+    generated_code_digest: Sha256Digest
+
+
+class QAAuthoringContextRecord(ModelingRecord):
+    """Server-derived, read-only QA context for one pipeline/source System."""
+
+    tenant_code: Code100
+    system_code: Code100
+    mapping_context_digest: Sha256Digest
+    code_context_digest: Sha256Digest | None
+    mapping_target_count: int = Field(gt=0, le=20_000)
+    current_code_target_count: int = Field(ge=0, le=20_000)
+    current_code_references: tuple[QACurrentCodeReference, ...] = Field(max_length=20_000)
+
+    @model_validator(mode="after")
+    def validate_context(self) -> QAAuthoringContextRecord:
+        if self.current_code_target_count != len(self.current_code_references):
+            raise ValueError("QA current Code count must match its references.")
+        if self.current_code_target_count > self.mapping_target_count:
+            raise ValueError("QA current Code count cannot exceed Mapping target count.")
+        if (self.code_context_digest is None) != (self.current_code_target_count == 0):
+            raise ValueError("QA Code digest and current Code references must agree.")
+        tenant = normalize_model_key_value(self.tenant_code)
+        seen: set[tuple[str, ...]] = set()
+        for reference in self.current_code_references:
+            if normalize_model_key_value(reference.tenant_code) != tenant:
+                raise ValueError("QA current Code reference must use the Model Tenant.")
+            key = (
+                normalize_model_key_value(reference.tenant_code),
+                normalize_model_key_value(reference.system_code),
+                normalize_model_key_value(reference.connection_code),
+                normalize_model_key_value(reference.object_schema),
+                normalize_model_key_value(reference.object_name),
+                reference.modeled_entity_type,
+            )
+            if key in seen:
+                raise ValueError("QA current Code references must be unique by target.")
+            seen.add(key)
+        return self
+
+
+class ValidationGroupRecord(ModelingRecord):
+    tenant_code: Code100
+    system_code: Code100
+    validation_group_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=200, pattern=r"\S"),
+    ]
+    validation_group_description: NonblankText | None
+    mapping_context_digest: Sha256Digest
+    code_context_digest: Sha256Digest | None
+    is_active: bool
+
+    @field_validator("validation_group_description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is not None and len(value.encode("utf-8")) > 16_384:
+            raise ValueError("Validation Group description is too large.")
+        return value
+
+
+type ValidationLiteral = bool | int | float | str
+
+
+class ValidationCheckRecord(ModelingRecord):
+    """QA assertion definition with a scalar runtime result except for execution-only checks."""
+
+    tenant_code: Code100
+    system_code: Code100
+    validation_group_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=200, pattern=r"\S"),
+    ]
+    validation_check_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=200, pattern=r"\S"),
+    ]
+    validation_check_description: NonblankText | None
+    validation_category_code: Annotated[
+        str,
+        StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{0,99}$"),
+    ]
+    validation_severity: Literal["blocking", "warning", "informational"]
+    validation_query_sql: NonblankText
+    validation_comparison_query_sql: NonblankText | None
+    validation_result_data_type: (
+        Literal["boolean", "integer", "decimal", "text", "date", "timestamp"] | None
+    )
+    validation_comparison_operator: Literal[
+        "executes_successfully",
+        "is_null",
+        "is_not_null",
+        "is_true",
+        "is_false",
+        "equal",
+        "not_equal",
+        "greater_than",
+        "greater_than_or_equal",
+        "less_than",
+        "less_than_or_equal",
+        "in",
+        "not_in",
+    ]
+    validation_comparison_value_type: Literal[
+        "none",
+        "literal",
+        "literal_list",
+        "query",
+    ]
+    validation_comparison_value: ValidationLiteral | tuple[ValidationLiteral, ...] | None
+    is_active: bool
+
+    @field_validator("validation_check_description")
+    @classmethod
+    def validate_description(cls, value: str | None) -> str | None:
+        if value is not None and len(value.encode("utf-8")) > 16_384:
+            raise ValueError("Validation Check description is too large.")
+        return value
+
+    @field_validator("validation_query_sql", "validation_comparison_query_sql")
+    @classmethod
+    def validate_query_size(cls, value: str | None) -> str | None:
+        if value is not None and len(value.encode("utf-8")) > VALIDATION_QUERY_MAX_BYTES:
+            raise ValueError("Validation query exceeds 100,000 bytes.")
+        return value
+
+    @field_validator("validation_comparison_value")
+    @classmethod
+    def validate_comparison_value_size(
+        cls,
+        value: ValidationLiteral | tuple[ValidationLiteral, ...] | None,
+    ) -> ValidationLiteral | tuple[ValidationLiteral, ...] | None:
+        if value is not None and _json_size(value) > 65_536:
+            raise ValueError("Validation comparison value is too large.")
+        return value
+
+    @model_validator(mode="after")
+    def validate_assertion(self) -> ValidationCheckRecord:
+        operator = self.validation_comparison_operator
+        result_type = self.validation_result_data_type
+        value_type = self.validation_comparison_value_type
+        value = self.validation_comparison_value
+        query_b = self.validation_comparison_query_sql
+
+        if operator == "executes_successfully":
+            valid_shape = (
+                result_type is None and value_type == "none" and value is None and query_b is None
+            )
+        elif operator in {"is_null", "is_not_null"}:
+            valid_shape = (
+                result_type is not None
+                and value_type == "none"
+                and value is None
+                and query_b is None
+            )
+        elif operator in {"is_true", "is_false"}:
+            valid_shape = (
+                result_type == "boolean"
+                and value_type == "none"
+                and value is None
+                and query_b is None
+            )
+        elif operator in {"equal", "not_equal"}:
+            valid_shape = result_type is not None and (
+                (value_type == "literal" and value is not None and query_b is None)
+                or (value_type == "query" and value is None and query_b is not None)
+            )
+        elif operator in {
+            "greater_than",
+            "greater_than_or_equal",
+            "less_than",
+            "less_than_or_equal",
+        }:
+            valid_shape = result_type in {
+                "integer",
+                "decimal",
+                "date",
+                "timestamp",
+            } and (
+                (value_type == "literal" and value is not None and query_b is None)
+                or (value_type == "query" and value is None and query_b is not None)
+            )
+        else:
+            valid_shape = (
+                result_type is not None
+                and value_type == "literal_list"
+                and isinstance(value, tuple)
+                and 1 <= len(value) <= 10_000
+                and query_b is None
+            )
+        if not valid_shape:
+            raise ValueError("Validation assertion shape is invalid.")
+
+        values = value if isinstance(value, tuple) else (value,)
+        if value_type in {"literal", "literal_list"} and not all(
+            _validation_literal_matches(result_type, item) for item in values
+        ):
+            raise ValueError("Validation comparison value does not match its result type.")
+        return self
+
+
+def _validation_literal_matches(result_type: str | None, value: object) -> bool:
+    if result_type == "boolean":
+        return type(value) is bool
+    if result_type == "integer":
+        return type(value) is int
+    if result_type == "decimal":
+        return type(value) is int or (type(value) is float and math.isfinite(value))
+    if result_type == "text":
+        return isinstance(value, str)
+    if result_type == "date" and isinstance(value, str):
+        try:
+            date.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    if result_type == "timestamp" and isinstance(value, str):
+        try:
+            datetime.fromisoformat(value)
+        except ValueError:
+            return False
+        return True
+    return False
 
 
 def _require_unique(values: Iterable[str], label: str) -> None:

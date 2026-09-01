@@ -1,6 +1,11 @@
 # Dimensional Build
 
-Require applied active Logical Mapping and fresh Metadata/Model Snapshots. Only active scoped Silver physical sources with `is_dimensional_source_eligible=true` are eligible; the derived flag requires an active applied Logical Mapping contribution, so never treat every Silver Object as a Dimensional source. Dimensional is optional. Ask for Guided, Automatic, or Custom Build and Full or Selected business-process scope.
+Require applied active Logical Mapping and fresh Snapshots. Eligible sources are active scoped Silver
+with `is_dimensional_source_eligible=true`; that flag requires an active applied Logical Mapping contribution.
+Never treat every Silver Object as eligible. Dimensional is optional. Ask for Build
+mode and Full/Selected process scope.
+
+Before writing, load each selected Model output dataset contract.
 
 For each selected process:
 

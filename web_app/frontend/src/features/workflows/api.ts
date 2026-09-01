@@ -7,7 +7,8 @@ export type ModelWorkflow =
   | "logical"
   | "dimensional"
   | "mapping"
-  | "code_generation";
+  | "code_generation"
+  | "qa";
 
 export type WorkflowExecutionMode =
   | "one_shot"
@@ -79,6 +80,7 @@ export interface CreateWorkflowRunCommand {
   model_workflow: ModelWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   selected_object_ids: number[];
+  selected_system_codes?: string[];
   requested_batch_id: string | null;
   agent: AgentRunSelection | null;
   prompt_overrides: Record<string, number>;
@@ -314,6 +316,12 @@ export interface WorkflowsApi {
     workflowRunId: number,
     expectedModelRevision: number,
   ) => Promise<WorkflowRunStart>;
+  executeQARun: (
+    tenantId: number,
+    modelId: number,
+    workflowRunId: number,
+    expectedModelRevision: number,
+  ) => Promise<WorkflowRunStart>;
 }
 
 export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
@@ -501,6 +509,19 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
       expectedModelRevision,
     ) => request<WorkflowRunStart>(
       `/api/v1/tenants/${tenantId}/models/${modelId}/code-generation/runs/${workflowRunId}/execute`,
+      {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
+      },
+    ),
+    executeQARun: (
+      tenantId,
+      modelId,
+      workflowRunId,
+      expectedModelRevision,
+    ) => request<WorkflowRunStart>(
+      `/api/v1/tenants/${tenantId}/models/${modelId}/qa/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },

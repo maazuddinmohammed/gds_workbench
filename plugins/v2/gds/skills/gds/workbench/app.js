@@ -866,7 +866,13 @@
       root.GDSUIState.requireClean(state.dirty, "validation");
       setStatus(`Validating the effective ${state.area} graph locally…`);
       const loaded = await state.workspace.loadArea(state.area);
-      const issues = areaModule().validate(loaded);
+      const metadata =
+        state.area === "model" &&
+        state.workspace.area("metadata").manifest &&
+        !state.workspace.state?.stale?.includes("metadata")
+          ? await state.workspace.loadArea("metadata")
+          : null;
+      const issues = areaModule().validate(loaded, metadata);
       const digest = await state.workspace.changeSetDigest(state.area);
       const snapshot = state.workspace.area(state.area);
       state.validation = {

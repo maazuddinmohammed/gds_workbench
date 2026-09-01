@@ -1,10 +1,12 @@
 from __future__ import annotations
 
+import hashlib
 from dataclasses import dataclass, field
 from decimal import Decimal
 from typing import Any, LiteralString, cast
 
 import pytest
+from psycopg.types.json import Jsonb
 
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
@@ -13,6 +15,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
+    GeneratedCodeRecord,
     LogicalAssertionSourceRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
@@ -25,6 +28,8 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
     ProfilingProfileRecord,
     SubmodelMembershipRecord,
+    ValidationCheckRecord,
+    ValidationGroupRecord,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
@@ -153,6 +158,45 @@ class MappingFakeWriteTransaction:
         if normalized.startswith("UPDATE workflow.mapping_attribute"):
             return {"mapping_attribute_id": 32}
         raise AssertionError(f"unexpected Mapping materializer query: {normalized}")
+
+
+@dataclass
+class CodeQaFakeWriteTransaction:
+    calls: list[tuple[LiteralString, tuple[Any, ...]]] = field(
+        default_factory=lambda: list[tuple[LiteralString, tuple[Any, ...]]](),
+    )
+    existing: bool = False
+
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        self.calls.append((query, parameters))
+        normalized = " ".join(query.split())
+        if "SELECT object.object_id" in normalized:
+            return {"object_id": 11, "system_id": 5}
+        if normalized.startswith("SELECT tenant_id"):
+            return {"tenant_id": 7}
+        if normalized.startswith("SELECT system_id"):
+            return {"system_id": 6}
+        identities = {
+            "SELECT generated_code_id": ("generated_code_id", 31),
+            "SELECT validation_group_id": ("validation_group_id", 32),
+            "SELECT validation_check_id": ("validation_check_id", 33),
+        }
+        for prefix, (field_name, value) in identities.items():
+            if normalized.startswith(prefix):
+                return {field_name: value} if self.existing else None
+        returned = {
+            "RETURNING generated_code_id": ("generated_code_id", 31),
+            "RETURNING validation_group_id": ("validation_group_id", 32),
+            "RETURNING validation_check_id": ("validation_check_id", 33),
+        }
+        for marker, (field_name, value) in returned.items():
+            if marker in normalized:
+                return {field_name: value}
+        raise AssertionError(f"unexpected Code/QA materializer query: {normalized}")
 
 
 def _logical_records() -> dict[str, tuple[Any, ...]]:
@@ -1132,3 +1176,163 @@ def test_mapping_materialization_policy_is_rejected_outside_mapping() -> None:
             mapping_object_output_template_id=501,
             mapping_attribute_output_template_id=None,
         )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("existing", [False, True])
+async def test_code_and_qa_materialize_in_parent_order_and_clear_generic_provenance(
+    existing: bool,
+) -> None:
+    transaction = CodeQaFakeWriteTransaction(existing=existing)
+    materializer = ModelMaterializer(
+        transaction=cast(WriteTransaction, transaction),
+        model_id=7,
+        source_context_digest="d" * 64,
+        workflow_run_id=44,
+    )
+    content = "SELECT * FROM main.sales.orders"
+    generated_code = GeneratedCodeRecord(
+        tenant_code="DEMO",
+        system_code="ERP",
+        connection_code="SOURCE",
+        object_schema="silver",
+        object_name="customer",
+        modeled_entity_type="logical_entity",
+        artifact_type="sql_file",
+        generated_code_content=content,
+        mapping_context_digest="a" * 64,
+        source_context_digest="b" * 64,
+        generated_code_digest=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        generated_code_status="active",
+        generated_code_is_locked=False,
+    )
+    validation_group = ValidationGroupRecord(
+        tenant_code="DEMO",
+        system_code="ERP",
+        validation_group_name="Customer QA",
+        validation_group_description="Customer pipeline validations.",
+        mapping_context_digest="c" * 64,
+        code_context_digest="d" * 64,
+        is_active=True,
+    )
+    validation_check = ValidationCheckRecord(
+        tenant_code="DEMO",
+        system_code="ERP",
+        validation_group_name="Customer QA",
+        validation_check_name="Allowed states",
+        validation_check_description="Result must be an allowed state.",
+        validation_category_code="business.state",
+        validation_severity="blocking",
+        validation_query_sql="SELECT state FROM main.sales.customer",
+        validation_comparison_query_sql=None,
+        validation_result_data_type="integer",
+        validation_comparison_operator="in",
+        validation_comparison_value_type="literal_list",
+        validation_comparison_value=(1, 2),
+        is_active=True,
+    )
+
+    action_count = await materializer.apply(
+        {
+            "generated_code": (generated_code,),
+            "validation_group": (validation_group,),
+            "validation_check": (validation_check,),
+        }
+    )
+
+    mutations = [
+        (" ".join(query.split()), parameters)
+        for query, parameters in transaction.calls
+        if query.lstrip().startswith(("INSERT", "UPDATE"))
+    ]
+    assert action_count == 3
+    assert [
+        next(
+            table
+            for table in (
+                "workflow.generated_code",
+                "workflow.validation_group",
+                "workflow.validation_check",
+            )
+            if table in query
+        )
+        for query, _ in mutations
+    ] == [
+        "workflow.generated_code",
+        "workflow.validation_group",
+        "workflow.validation_check",
+    ]
+    code_query, code_parameters = mutations[0]
+    group_query, group_parameters = mutations[1]
+    _, check_parameters = mutations[2]
+    assert "agent_run_id = NULL" in code_query or "agent_run_id" in code_query
+    assert "agent_run_id = NULL" in group_query or "agent_run_id" in group_query
+    assert code_parameters[0 if existing else 1] is None
+    assert group_parameters[0 if existing else 3] is None
+    comparison_value = check_parameters[9 if existing else 10]
+    assert isinstance(comparison_value, Jsonb)
+    assert comparison_value.obj == (1, 2)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model_workflow", "dataset", "expected_table", "workflow_parameter"),
+    [
+        ("code_generation", "generated_code", "workflow.generated_code", 1),
+        ("qa", "validation_group", "workflow.validation_group", 3),
+    ],
+)
+async def test_code_and_qa_workflows_stamp_only_their_own_provenance(
+    model_workflow: str,
+    dataset: str,
+    expected_table: str,
+    workflow_parameter: int,
+) -> None:
+    transaction = CodeQaFakeWriteTransaction()
+    materializer = ModelMaterializer.for_workflow_apply(
+        transaction=cast(WriteTransaction, transaction),
+        model_id=7,
+        source_context_digest="d" * 64,
+        workflow_run_id=44,
+        model_workflow=model_workflow,
+        mapping_object_output_template_id=None,
+        mapping_attribute_output_template_id=None,
+    )
+    content = "SELECT 1"
+    record = (
+        GeneratedCodeRecord(
+            tenant_code="DEMO",
+            system_code="ERP",
+            connection_code="SOURCE",
+            object_schema="silver",
+            object_name="customer",
+            modeled_entity_type="logical_entity",
+            artifact_type="sql_file",
+            generated_code_content=content,
+            mapping_context_digest="a" * 64,
+            source_context_digest="b" * 64,
+            generated_code_digest=hashlib.sha256(content.encode("utf-8")).hexdigest(),
+            generated_code_status="active",
+            generated_code_is_locked=False,
+        )
+        if dataset == "generated_code"
+        else ValidationGroupRecord(
+            tenant_code="DEMO",
+            system_code="ERP",
+            validation_group_name="Customer QA",
+            validation_group_description=None,
+            mapping_context_digest="c" * 64,
+            code_context_digest=None,
+            is_active=True,
+        )
+    )
+
+    await materializer.apply({dataset: (record,)})
+
+    query, parameters = next(
+        (query, parameters)
+        for query, parameters in transaction.calls
+        if query.lstrip().startswith("INSERT") and expected_table in query
+    )
+    assert "agent_run_id" in query
+    assert parameters[workflow_parameter] == 44

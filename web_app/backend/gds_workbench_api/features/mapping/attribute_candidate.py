@@ -34,6 +34,7 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    pydantic_validation_issues,
 )
 
 _MAX_TARGET_ATTRIBUTES_PER_CHUNK = 100
@@ -347,14 +348,8 @@ class MappingAttributeCandidateValidator:
     ]:
         try:
             parsed = _AgentAttributeEnvelope.model_validate(candidate, strict=True)
-        except ValidationError:
-            return None, (
-                _issue(
-                    "candidate.schema_invalid",
-                    (),
-                    "The candidate does not match the Attribute Mapper envelope.",
-                ),
-            )
+        except ValidationError as error:
+            return None, pydantic_validation_issues(error)
 
         issues: list[AgentValidationIssue] = []
         expected = self._batch_plan

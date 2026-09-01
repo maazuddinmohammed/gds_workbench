@@ -56,7 +56,17 @@ type ChangeSetValidator = Callable[
     Awaitable[ValidatedModelChangeSet],
 ]
 
-_AUTHORING_WORKFLOWS = frozenset({"analysis", "conceptual", "logical", "dimensional", "mapping"})
+_AUTHORING_WORKFLOWS = frozenset(
+    {
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "qa",
+    }
+)
 
 
 class WorkflowChangeSetDatabase(Protocol):
@@ -250,7 +260,10 @@ class WorkflowChangeSetHandoff:
             raise InvalidRequestError(
                 "Workflow Run does not match the requested authoring workflow."
             )
-        if run["workflow_execution_mode"] is None:
+        if run["workflow_execution_mode"] is None and expected_workflow not in {
+            "code_generation",
+            "qa",
+        }:
             raise InvalidRequestError(
                 "A deterministic Workflow Run cannot author a Model Change Set."
             )

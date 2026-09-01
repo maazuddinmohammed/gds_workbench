@@ -26,12 +26,21 @@ type AgenticWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 ]
 type AgentExecutionMode = Literal[
     "one_shot",
     "tool_assisted",
     "detailed_coverage",
 ]
+
+AGENT_OUTPUT_CONTRACT_INSTRUCTION = (
+    "Return exactly one JSON object with no Markdown or surrounding text. Treat "
+    "required_output_schema as authoritative. Before returning, verify every required "
+    "field, omit fields forbidden by additionalProperties, and satisfy every declared "
+    "JSON Schema constraint, including types, enum, const, format, patterns, and string, "
+    "numeric, object, and array bounds."
+)
 
 
 class LocalAgentToolDefinition(BaseModel):

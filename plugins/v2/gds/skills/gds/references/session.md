@@ -1,6 +1,8 @@
 # Compact session contract
 
-Use a session for related work against one Tenant Code and one Model. A session can grow across metadata, model, code, and validation tasks.
+Use a session for related work against one Tenant Code and one Model. Code Generation and QA
+are `model` tasks because records live in the Model Snapshot/Change Set. `code/` holds local Target
+Registration DDL only.
 
 ## Layout
 
@@ -24,45 +26,44 @@ GDS/<TENANT_CODE>/
 {"current":"03","highest":3}
 ```
 
-Allocate two digits through `99`, then `100`, `101`, and so on. Never reuse a deleted session number. Tenant directories use Tenant Code, never Tenant ID.
+Allocate `01`..`99`, then `100` onward. Never reuse a deleted number. Use Tenant Code directories.
 
 ## Session state
 
 Keep `session.json` compact:
 
 ```json
-{"current":"02","model":[41,"Customer Model"],"tasks":[["01","metadata","Add metadata","applied"],["02","model","Build models","doing"]],"stale":["metadata"],"cs":{"model":["uuid",2,"active","02","digest"]}}
+{"current":"02","model":[41,"Customer Model"],"sql":"never","tasks":[["01","metadata","Add metadata","applied"],["02","model","Build models","doing"]],"stale":["metadata"],"cs":{"model":["uuid",2,"active","02","digest"]}}
 ```
 
-- `current`: current task ID, or `null` when none.
-- `model`: optional bound `[Model ID, Model name]`. The first trusted Model Snapshot adds it automatically; another Model ID is rejected.
-- `tasks`: queue tuples `[task ID, area, short title, state]` in creation order.
-- `stale`: only areas made stale by a successful Apply.
+- `current`: current task ID or `null`.
+- `model`: bound `[Model ID, Model name]`.
+- `sql`: `never`, `essential`, or `as_needed`; ask before live-data use and change only as directed.
+- `tasks`: `[task ID, area, title, state]` tuples.
+- `stale`: areas made stale by Apply.
 - `cs`: draft cache as `[ID, revision, status, task ID, accepted local digest]`. It never proves server state.
 
-Omit empty optional keys. Do not store goal, tenant, session ID, path, timestamps, raw prompts, history, targets, or sub-focus lists here.
+Omit empty optional keys. Do not store goal, tenant, session ID, path, timestamps, raw prompts,
+history, targets, or sub-focus here.
 
-Each `tasks/<ID>.json` holds short ordered actions. Normally read only the current plan. Acceptance and Apply input markers use lazy `<ID>.accept.json` and `<ID>.applied.json` sidecars, read only at Stage or refresh.
+`tasks/<ID>.json` holds ordered actions. Acceptance/Apply markers are lazy sidecars read at Stage or refresh.
 
-Stash pending Metadata/Model work before switching tasks. The helper moves the whole area directory under `tasks/<ID>/`, deletes its acceptance, and reports it through `status.stashes`; no session field is added. Restore only a waiting task into an empty live directory with a fresh area Snapshot, then review, validate, and accept again. This prevents same-area task unions.
+Stash pending Metadata/Model work before switching. The helper moves the area under `tasks/<ID>/`,
+deletes acceptance, and reports `status.stashes`. Restore only into an empty live directory with a
+fresh Snapshot, then re-accept. This prevents same-area task unions.
 
-First plan line is readiness proof: `Inputs: metadata=<snapshot-id>; model=<snapshot-id>@<revision>` (omit unused). Resume `status` returns it, Snapshot tuples, and first waiting task without mutation. Matching inputs and no staleness reuse readiness. Otherwise rerun one gate and update the plan.
+First plan line is readiness proof: `Inputs: metadata=<snapshot-id>; model=<snapshot-id>@<revision>`.
+Resume `status` returns it and the first waiting task. Reuse matching inputs; otherwise rerun one gate.
 
 ## States
 
-- `queued`: captured but not selected.
-- `todo`: eligible and selected as the next task.
-- `doing`: local work is active.
-- `waiting`: blocked by missing input, stale Snapshot, or upstream Apply.
-- `review`: local changes await human review or failed local validation.
-- `ready`: review accepted and local validation passed.
-- `overridden`: validation failures explicitly accepted for the exact local digest.
-- `staged`: current local digest reconciled with a server draft.
-- `applied`: governed changes successfully applied.
-- `done`: read-only or local-only output completed.
-- `cancelled`: terminal without Apply.
+- `queued`, `todo`, `doing`: captured, selected, active.
+- `waiting`, `review`: blocked or awaiting review.
+- `ready`, `overridden`: valid or explicitly accepted for the exact digest.
+- `staged`, `applied`: reconciled or successfully applied.
+- `done`, `cancelled`: terminal without further work.
 
-Infer next from queue order; never store it. Preserve completed tuples: one compact read costs fewer hops than rediscovery.
+Infer next from queue order; preserve completed tuples.
 
 ## Freshness
 
@@ -72,13 +73,10 @@ When a required area has no Snapshot, stop and issue one exact handoff:
 
 The user downloads and unzips; the plugin never does. For a marked-stale replacement, run `snapshot-refresh` first. If readiness proof then mismatches, run `readiness` for a known target or `inspect` otherwise—never both.
 
-- The first mutating use of an area in a new session requires a newly downloaded and unzipped Snapshot.
-- Reuse it in the same session until a successful Apply writes that area.
-- Apply marks only the written area stale; Stage and Validate do not.
-- A stale required area moves the task to `waiting` until the user replaces its one Snapshot version.
-- Quick reads may use stale data only with an `unverified` label.
-- Never use file time as freshness evidence.
-- Model revision is authoritative when present. Metadata has no cross-session freshness proof unless its Snapshot contract supplies one.
-- Generated code is stale when its embedded Model revision or Mapping digest differs from current inputs.
+- First mutation needs a newly downloaded/unzipped Snapshot; reuse until Apply.
+- Apply marks only its area stale; Stage/Validate do not. Stale tasks wait for replacement.
+- Label stale Quick reads `unverified`. Never use file time as freshness evidence.
+- Model revision is authoritative; Metadata needs contract-supplied freshness proof.
+- Current Code and QA are Model Snapshot datasets; their published context digests bind them to upstream Mapping and any current relevant Code when present.
 
-There is one Model per session. Starting work against another Model requires another session. Use `status.model[0]` for governed server calls; never infer or ask again for the bound Model ID.
+Use one Model per session. Use `status.model[0]` for governed calls; another Model needs another session.

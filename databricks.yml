@@ -15,7 +15,6 @@ sync:
     - .scratch/**
     - AGENTS.md
     - CONTEXT.md
-    - IMPLEMENTATION_PLAN.md
     - artifacts/**
     - database/**
     - deployment/**
@@ -35,7 +34,6 @@ sync:
     - mcp_server/uv.lock
     - web_app/compose.local.yaml
     - web_app/local/**
-    - web_app/prototypes/**
     - web_app/*.md
     - web_app/**/Dockerfile
     - web_app/frontend/nginx.conf.template

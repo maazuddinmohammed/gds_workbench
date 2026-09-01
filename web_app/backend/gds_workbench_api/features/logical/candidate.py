@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import json
 from collections.abc import Callable, Sequence
 from copy import deepcopy
 from typing import cast
@@ -28,11 +27,13 @@ from gds_etl_workbench.tools.change_sets.model_validation import (
     validate_staged_records,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
-from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError, model_validator
+from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    enrich_agent_output_model_definitions,
+    parse_pydantic_candidate,
 )
 
 type _EntitySource = LogicalObjectSourceRecord | LogicalAssertionSourceRecord
@@ -126,6 +127,7 @@ class LogicalCandidateValidator:
     def output_schema(self) -> dict[str, JsonValue]:
         schema = cast(dict[str, JsonValue], deepcopy(_LogicalCandidate.model_json_schema()))
         _set_lock_fields_false(schema)
+        enrich_agent_output_model_definitions(schema)
         return schema
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
@@ -175,20 +177,14 @@ class LogicalCandidateValidator:
         return tuple(changes)
 
     def _normalize(self, candidate: JsonValue) -> _NormalizedCandidate:
-        parsed = _parse_candidate(candidate)
+        parsed, parse_issues = parse_pydantic_candidate(_LogicalCandidate, candidate)
         if parsed is None:
             return _NormalizedCandidate(
                 submodels=(),
                 entities=(),
                 attributes=(),
                 relationships=(),
-                issues=(
-                    AgentValidationIssue(
-                        code="candidate.schema_invalid",
-                        path=(),
-                        message="The candidate does not match the Logical schema.",
-                    ),
-                ),
+                issues=parse_issues,
             )
 
         issues: list[AgentValidationIssue] = []
@@ -404,21 +400,6 @@ class LogicalCandidateValidator:
                         message="Both Logical Relationship endpoints must exist.",
                     )
                 )
-
-
-def _parse_candidate(candidate: JsonValue) -> _LogicalCandidate | None:
-    try:
-        return _LogicalCandidate.model_validate_json(
-            json.dumps(
-                candidate,
-                ensure_ascii=False,
-                allow_nan=False,
-                separators=(",", ":"),
-            ),
-            strict=True,
-        )
-    except (TypeError, ValueError, ValidationError):
-        return None
 
 
 def _merge_submodel(

@@ -23,7 +23,9 @@ def _principal() -> RequestPrincipal:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=list)
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
 
     async def append_event(
         self,

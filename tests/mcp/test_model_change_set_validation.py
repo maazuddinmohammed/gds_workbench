@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 from copy import deepcopy
 from dataclasses import replace
 from typing import cast
@@ -13,7 +14,10 @@ from gds_etl_workbench.tools.change_sets.model import (
     validate_model_stage_changes,
 )
 from gds_etl_workbench.tools.change_sets.model_validation import (
+    CodeGenerationTargetContext,
     PhysicalModelScope,
+    qa_code_context_digest,
+    qa_mapping_context_digest,
     validate_future_graph,
     validate_staged_records,
 )
@@ -45,9 +49,10 @@ def test_model_change_set_stage_rejects_raw_prompt_assertion_details() -> None:
             [StageModelChange(dataset="modeling_assertion_record", records=[record])]
         )
 
-    assert captured.value.message == (
-        "Record does not match the exact modeling_assertion_record schema."
+    assert captured.value.message.startswith(
+        "Record 1 at modeling_assertion_details: Value error, "
     )
+    assert "prohibited raw content" in captured.value.message
     assert "sensitive prompt value" not in captured.value.message
 
 
@@ -81,9 +86,8 @@ def test_model_change_set_stage_rejects_prohibited_assertion_json_keys(
             [StageModelChange(dataset=dataset, records=[record])]
         )
 
-    assert (
-        captured.value.message == f"Record does not match the exact {dataset} schema."
-    )
+    assert captured.value.message.startswith(f"Record 1 at {field}: Value error, ")
+    assert "prohibited raw content" in captured.value.message
     assert "sensitive raw value" not in captured.value.message
 
 
@@ -125,9 +129,8 @@ def test_model_change_set_stage_rejects_oversized_assertion_fields(
             [StageModelChange(dataset=dataset, records=[record])]
         )
 
-    assert (
-        captured.value.message == f"Record does not match the exact {dataset} schema."
-    )
+    assert captured.value.message.startswith(f"Record 1 at {field}:")
+    assert "too large" in captured.value.message
     assert "x" * 100 not in captured.value.message
 
 
@@ -143,9 +146,10 @@ def test_model_change_set_stage_rejects_overly_complex_assertion_json() -> None:
             [StageModelChange(dataset="modeling_assertion_record", records=[record])]
         )
 
-    assert captured.value.message == (
-        "Record does not match the exact modeling_assertion_record schema."
+    assert captured.value.message.startswith(
+        "Record 1 at modeling_assertion_details: Value error, "
     )
+    assert "too complex" in captured.value.message
     assert "bounded value" not in captured.value.message
 
 
@@ -169,6 +173,22 @@ def test_model_change_set_stage_accepts_bounded_structured_assertions() -> None:
         "modeling_assertion_document": graph["modeling_assertion_document"],
         "modeling_assertion_record": graph["modeling_assertion_record"],
     }
+
+
+def test_model_server_validation_returns_targeted_schema_repair_paths() -> None:
+    record = deepcopy(complete_graph()["logical_attribute"][0])
+    del record["logical_attribute_definition"]
+
+    staged, issues = validate_staged_records("logical_attribute", [record])
+
+    assert staged == ()
+    issue = issues[0]
+    assert issue.code == "record_schema_invalid"
+    assert issue.dataset == "logical_attribute"
+    assert issue.record_number == 1
+    assert issue.fields == ("logical_attribute_definition",)
+    assert "Field required" in issue.message
+    assert "logical_attribute_name" not in issue.message
 
 
 def test_model_change_set_bounds_the_complete_assertion_section_at_four_mib() -> None:
@@ -221,6 +241,229 @@ def test_complete_model_graph_validates() -> None:
         > 0
         for summary in result.action_review
     )
+
+
+def test_generated_code_requires_exact_applied_mapping_context() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    code = _generated_code(context)
+
+    accepted = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={"generated_code": [code]},
+        physical_scope=_scope_with_code_context(context),
+    )
+    stale = deepcopy(code)
+    stale["mapping_context_digest"] = "c" * 64
+    rejected = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={"generated_code": [stale]},
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert accepted.valid is True
+    assert rejected.valid is False
+    assert any(issue.code == "context_digest_invalid" for issue in rejected.issues)
+
+
+def test_stale_applied_code_does_not_block_unrelated_model_change() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    graph["generated_code"] = [_generated_code(context, mapping_digest="c" * 64)]
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={"model_details": [_model_details("Updated Sales Model")]},
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is True
+
+
+def test_mapping_and_generated_code_require_successive_change_sets() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={
+            "mapping_object": graph["mapping_object"],
+            "generated_code": [_generated_code(context)],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is False
+    assert any(issue.code == "context_digest_invalid" for issue in result.issues)
+
+
+def test_qa_accepts_mapping_with_current_optional_code_context() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    graph["generated_code"] = [_generated_code(context)]
+    snapshot = _snapshot_from_graph(graph)
+    contexts = (context,)
+    mapping_digest = qa_mapping_context_digest(contexts, "ERP")
+    code_digest = qa_code_context_digest(
+        contexts,
+        snapshot.code_generation.artifacts,
+        "ERP",
+    )
+    assert mapping_digest is not None
+    assert code_digest is not None
+
+    result = validate_future_graph(
+        snapshot=snapshot,
+        staged_documents={
+            "validation_group": [_validation_group(mapping_digest, code_digest)],
+            "validation_check": [_execution_validation_check()],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is True
+
+
+def test_qa_context_digests_normalize_mixed_case_target_natural_keys() -> None:
+    normalized = _logical_code_context()
+    mixed_case = replace(
+        normalized,
+        object_key=(" DEMO ", "ErP", "SOURCE", "Sales", "Silver_Orders"),
+    )
+    graph = complete_graph()
+    graph["generated_code"] = [_generated_code(normalized)]
+    artifacts = _snapshot_from_graph(graph).code_generation.artifacts
+
+    assert qa_mapping_context_digest((mixed_case,), "erp") == (
+        qa_mapping_context_digest((normalized,), "ERP")
+    )
+    assert qa_code_context_digest((mixed_case,), artifacts, "erp") == (
+        qa_code_context_digest((normalized,), artifacts, "ERP")
+    )
+    assert qa_code_context_digest((mixed_case,), artifacts, "erp") is not None
+
+
+def test_qa_accepts_mapping_only_when_no_current_code_exists() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    mapping_digest = qa_mapping_context_digest((context,), "ERP")
+    assert mapping_digest is not None
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={
+            "validation_group": [_validation_group(mapping_digest, None)],
+            "validation_check": [_execution_validation_check()],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is True
+
+
+def test_qa_requires_code_digest_when_current_code_exists() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    graph["generated_code"] = [_generated_code(context)]
+    mapping_digest = qa_mapping_context_digest((context,), "ERP")
+    assert mapping_digest is not None
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={
+            "validation_group": [_validation_group(mapping_digest, None)],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is False
+    assert any(issue.fields == ("code_context_digest",) for issue in result.issues)
+
+
+def test_active_validation_check_rejects_unsafe_sql() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    mapping_digest = qa_mapping_context_digest((context,), "ERP")
+    assert mapping_digest is not None
+    check = _execution_validation_check()
+    check["validation_query_sql"] = "DELETE FROM main.sales.orders"
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={
+            "validation_group": [_validation_group(mapping_digest, None)],
+            "validation_check": [check],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is False
+    assert any(issue.code == "validation_query_invalid" for issue in result.issues)
+
+
+def test_validation_comparison_query_must_return_rows() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    mapping_digest = qa_mapping_context_digest((context,), "ERP")
+    assert mapping_digest is not None
+    check = _execution_validation_check()
+    check.update(
+        {
+            "validation_query_sql": "SELECT 1",
+            "validation_comparison_query_sql": "CREATE TEMP VIEW expected AS SELECT 1",
+            "validation_result_data_type": "integer",
+            "validation_comparison_operator": "equal",
+            "validation_comparison_value_type": "query",
+        }
+    )
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={
+            "validation_group": [_validation_group(mapping_digest, None)],
+            "validation_check": [check],
+        },
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is False
+    assert any(
+        issue.code == "validation_query_result_invalid" for issue in result.issues
+    )
+
+
+def test_inactive_validation_check_can_retire_legacy_sql() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    mapping_digest = qa_mapping_context_digest((context,), "ERP")
+    assert mapping_digest is not None
+    graph["validation_group"] = [_validation_group(mapping_digest, None)]
+    check = _execution_validation_check()
+    check["validation_query_sql"] = "DELETE FROM unqualified_table"
+    check["is_active"] = False
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={"validation_check": [check]},
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is True
+
+
+def test_active_check_requires_current_applied_group_context() -> None:
+    graph = complete_graph()
+    context = _logical_code_context()
+    graph["validation_group"] = [_validation_group("c" * 64, None)]
+
+    result = validate_future_graph(
+        snapshot=_snapshot_from_graph(graph),
+        staged_documents={"validation_check": [_execution_validation_check()]},
+        physical_scope=_scope_with_code_context(context),
+    )
+
+    assert result.valid is False
+    assert any(issue.fields == ("mapping_context_digest",) for issue in result.issues)
 
 
 def test_every_dataset_schema_excludes_database_and_audit_fields() -> None:
@@ -706,6 +949,11 @@ def _snapshot_from_graph(
                 "objects": graph["mapping_object"],
                 "attributes": graph["mapping_attribute"],
             },
+            "code_generation": {"artifacts": graph["generated_code"]},
+            "qa": {
+                "groups": graph["validation_group"],
+                "checks": graph["validation_check"],
+            },
         },
         strict=False,
     )
@@ -831,6 +1079,79 @@ def _complete_physical_scope() -> PhysicalModelScope:
             {(*key, "customer_id") for key in gold_objects}
         ),
     )
+
+
+def _logical_code_context() -> CodeGenerationTargetContext:
+    return CodeGenerationTargetContext(
+        object_key=("demo", "erp", "source", "sales", "silver_orders"),
+        modeled_entity_type="logical_entity",
+        source_system_codes=frozenset({"ERP"}),
+        mapping_context_digest="a" * 64,
+        source_context_digest="b" * 64,
+    )
+
+
+def _scope_with_code_context(
+    context: CodeGenerationTargetContext,
+) -> PhysicalModelScope:
+    return replace(_complete_physical_scope(), code_generation_contexts=(context,))
+
+
+def _generated_code(
+    context: CodeGenerationTargetContext,
+    *,
+    mapping_digest: str | None = None,
+) -> dict[str, object]:
+    content = "SELECT * FROM main.sales.orders"
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "ERP",
+        "connection_code": "SOURCE",
+        "object_schema": "sales",
+        "object_name": "silver_orders",
+        "modeled_entity_type": "logical_entity",
+        "artifact_type": "sql_file",
+        "generated_code_content": content,
+        "mapping_context_digest": mapping_digest or context.mapping_context_digest,
+        "source_context_digest": context.source_context_digest,
+        "generated_code_digest": hashlib.sha256(content.encode("utf-8")).hexdigest(),
+        "generated_code_status": "active",
+        "generated_code_is_locked": False,
+    }
+
+
+def _validation_group(
+    mapping_digest: str,
+    code_digest: str | None,
+) -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "ERP",
+        "validation_group_name": "Order QA",
+        "validation_group_description": "Order pipeline checks.",
+        "mapping_context_digest": mapping_digest,
+        "code_context_digest": code_digest,
+        "is_active": True,
+    }
+
+
+def _execution_validation_check() -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "ERP",
+        "validation_group_name": "Order QA",
+        "validation_check_name": "Query executes",
+        "validation_check_description": "The governed QA query completes.",
+        "validation_category_code": "technical.execution",
+        "validation_severity": "blocking",
+        "validation_query_sql": "CREATE TEMP VIEW qa_probe AS SELECT 1",
+        "validation_comparison_query_sql": None,
+        "validation_result_data_type": None,
+        "validation_comparison_operator": "executes_successfully",
+        "validation_comparison_value_type": "none",
+        "validation_comparison_value": None,
+        "is_active": True,
+    }
 
 
 def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
@@ -1168,6 +1489,9 @@ def complete_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]]]:
                 "attribute_mapping_is_locked": False,
             }
         ],
+        "generated_code": [],
+        "validation_group": [],
+        "validation_check": [],
     }
 
 

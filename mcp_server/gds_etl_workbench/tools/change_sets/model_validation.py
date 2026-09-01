@@ -10,10 +10,12 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     ModelingRecord,
     normalize_model_key_value,
 )
+from gds_etl_workbench.tools.databricks.validation import validate_databricks_sql
 from gds_etl_workbench.tools.snapshots.model.contracts import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
@@ -48,6 +50,15 @@ type PhysicalAttributeNaturalKey = tuple[str, str, str, str, str, str]
 
 
 @dataclass(frozen=True, slots=True)
+class CodeGenerationTargetContext:
+    object_key: PhysicalObjectNaturalKey
+    modeled_entity_type: str
+    source_system_codes: frozenset[str]
+    mapping_context_digest: str
+    source_context_digest: str
+
+
+@dataclass(frozen=True, slots=True)
 class PhysicalModelScope:
     model_tenant_code: str
     active_system_codes: frozenset[str]
@@ -62,6 +73,7 @@ class PhysicalModelScope:
     dimensional_mapping_target_objects: frozenset[PhysicalObjectNaturalKey]
     dimensional_mapping_target_attributes: frozenset[PhysicalAttributeNaturalKey]
     other_model_names: frozenset[str] = frozenset()
+    code_generation_contexts: tuple[CodeGenerationTargetContext, ...] = ()
 
 
 @dataclass(frozen=True, slots=True)
@@ -89,7 +101,23 @@ def validate_staged_records(
         try:
             encoded = json.dumps(raw, ensure_ascii=False, separators=(",", ":"))
             record = definition.row_model.model_validate_json(encoded, strict=True)
-        except (TypeError, ValueError, ValidationError):
+        except ValidationError as error:
+            for detail in error.errors(include_url=False, include_input=False)[:20]:
+                fields = tuple(str(part) for part in detail["loc"][:20])
+                message = str(detail["msg"])
+                issues.append(
+                    ModelValidationIssue(
+                        code="record_schema_invalid",
+                        dataset=dataset,
+                        record_number=record_number,
+                        fields=fields,
+                        message=message[:300],
+                    )
+                )
+                if len(issues) >= MAX_VALIDATION_ISSUES:
+                    return tuple(records), tuple(issues)
+            continue
+        except (TypeError, ValueError):
             issues.append(
                 ModelValidationIssue(
                     code="record_schema_invalid",
@@ -174,7 +202,7 @@ def validate_future_graph(
 
     scope_issues: list[ModelValidationIssue] = []
     _validate_model_details(future, physical_scope, scope_issues)
-    _validate_physical_scope(staged, future["model_scope"], physical_scope, scope_issues)
+    _validate_physical_scope(staged, future, physical_scope, scope_issues)
     if scope_issues:
         return _failed(staged, "model_scope", candidate_digest, scope_issues)
     if uniqueness_issues:
@@ -324,10 +352,11 @@ def _validate_model_details(
 
 def _validate_physical_scope(
     staged: Mapping[str, tuple[Any, ...]],
-    future_scope_records: tuple[Any, ...],
+    future: Mapping[str, tuple[Any, ...]],
     catalog: PhysicalModelScope,
     issues: list[ModelValidationIssue],
 ) -> None:
+    future_scope_records = future["model_scope"]
     active_scope_objects: set[PhysicalObjectNaturalKey] = set()
     for record in future_scope_records:
         natural_key = _physical_object_key(record)
@@ -378,6 +407,11 @@ def _validate_physical_scope(
             if attribute[:5] in active_scope_objects
         ),
         other_model_names=catalog.other_model_names,
+        code_generation_contexts=tuple(
+            context
+            for context in catalog.code_generation_contexts
+            if context.object_key in active_scope_objects
+        ),
     )
 
     for record in staged.get("profiling_profile", ()):
@@ -536,6 +570,160 @@ def _validate_physical_scope(
             issues,
         )
 
+    mapping_is_staged = any(
+        staged.get(dataset)
+        for dataset in ("mapping_dependency", "mapping_object", "mapping_attribute")
+    )
+    code_is_staged = bool(staged.get("generated_code"))
+    qa_is_staged = bool(staged.get("validation_group") or staged.get("validation_check"))
+    if code_is_staged and mapping_is_staged:
+        _context_invalid(
+            issues,
+            "generated_code",
+            "mapping_context_digest",
+            "Generated Code must be authored after its Mapping Change Set is applied.",
+        )
+    if qa_is_staged and (mapping_is_staged or code_is_staged):
+        _context_invalid(
+            issues,
+            "validation_group",
+            "mapping_context_digest",
+            "QA must be authored after its Mapping and Code Change Sets are applied.",
+        )
+
+    contexts_by_target = {
+        (context.object_key, context.modeled_entity_type): context
+        for context in scope.code_generation_contexts
+    }
+    for record in staged.get("generated_code", ()):
+        object_targets = (
+            scope.logical_mapping_target_objects
+            if record.modeled_entity_type == "logical_entity"
+            else scope.dimensional_mapping_target_objects
+        )
+        _require_object_eligibility(
+            record,
+            "generated_code",
+            "object_name",
+            object_targets,
+            "Referenced Code target Object is not eligible for its modeled layer.",
+            issues,
+        )
+        if record.generated_code_status not in {"active", "needs_review"}:
+            continue
+        context = contexts_by_target.get((_physical_object_key(record), record.modeled_entity_type))
+        if context is None:
+            _context_invalid(
+                issues,
+                "generated_code",
+                "mapping_context_digest",
+                "Generated Code requires complete active applied Mapping for its target.",
+            )
+        elif (
+            record.mapping_context_digest != context.mapping_context_digest
+            or record.source_context_digest != context.source_context_digest
+        ):
+            _context_invalid(
+                issues,
+                "generated_code",
+                "mapping_context_digest",
+                "Generated Code context digests do not match applied Mapping.",
+            )
+
+    groups_requiring_current_context: set[tuple[object, ...]] = set()
+    for record in staged.get("validation_group", ()):
+        if normalize_model_key_value(record.tenant_code) != normalize_model_key_value(
+            scope.model_tenant_code
+        ):
+            _scope_missing(
+                issues,
+                "validation_group",
+                "tenant_code",
+                "Validation Group Tenant does not own this Model.",
+            )
+        _require_active_system(
+            record.system_code,
+            "validation_group",
+            scope,
+            issues,
+            field="system_code",
+        )
+        if record.is_active:
+            groups_requiring_current_context.add(_validation_group_reference(record))
+
+    for record in staged.get("validation_check", ()):
+        if normalize_model_key_value(record.tenant_code) != normalize_model_key_value(
+            scope.model_tenant_code
+        ):
+            _scope_missing(
+                issues,
+                "validation_check",
+                "tenant_code",
+                "Validation Check Tenant does not own this Model.",
+            )
+        _require_active_system(
+            record.system_code,
+            "validation_check",
+            scope,
+            issues,
+            field="system_code",
+        )
+        if not record.is_active:
+            continue
+        groups_requiring_current_context.add(_validation_group_reference(record))
+        _validate_qa_query(
+            record.validation_query_sql,
+            dataset="validation_check",
+            field="validation_query_sql",
+            must_return_rows=(record.validation_comparison_operator != "executes_successfully"),
+            issues=issues,
+        )
+        if record.validation_comparison_query_sql is not None:
+            _validate_qa_query(
+                record.validation_comparison_query_sql,
+                dataset="validation_check",
+                field="validation_comparison_query_sql",
+                must_return_rows=True,
+                issues=issues,
+            )
+
+    for record in future["validation_group"]:
+        if (
+            not record.is_active
+            or _validation_group_reference(record) not in groups_requiring_current_context
+        ):
+            continue
+        expected_mapping_digest = qa_mapping_context_digest(
+            scope.code_generation_contexts,
+            record.system_code,
+        )
+        expected_code_digest = qa_code_context_digest(
+            scope.code_generation_contexts,
+            future["generated_code"],
+            record.system_code,
+        )
+        if expected_mapping_digest is None:
+            _context_invalid(
+                issues,
+                "validation_group",
+                "mapping_context_digest",
+                "Validation Group requires complete active applied Mapping for its System.",
+            )
+        elif record.mapping_context_digest != expected_mapping_digest:
+            _context_invalid(
+                issues,
+                "validation_group",
+                "mapping_context_digest",
+                "Validation Group Mapping context digest is stale or invalid.",
+            )
+        if record.code_context_digest != expected_code_digest:
+            _context_invalid(
+                issues,
+                "validation_group",
+                "code_context_digest",
+                "Validation Group Code context digest is stale or invalid.",
+            )
+
 
 def _physical_object_key(key: Any) -> PhysicalObjectNaturalKey:
     return cast(
@@ -599,12 +787,14 @@ def _require_active_system(
     dataset: str,
     scope: PhysicalModelScope,
     issues: list[ModelValidationIssue],
+    *,
+    field: str = "source_system_code",
 ) -> None:
     if normalize_model_key_value(system_code) not in scope.active_system_codes:
         _scope_missing(
             issues,
             dataset,
-            "source_system_code",
+            field,
             "Referenced source System is not active.",
         )
 
@@ -624,6 +814,176 @@ def _scope_missing(
             message=message,
         )
     )
+
+
+def qa_mapping_context_digest(
+    contexts: tuple[CodeGenerationTargetContext, ...],
+    source_system_code: str,
+) -> str | None:
+    """Hash the complete applied Mapping contexts used by one pipeline System."""
+    normalized_system = normalize_model_key_value(source_system_code)
+    entries: list[dict[str, object]] = [
+        {
+            "modeled_entity_type": context.modeled_entity_type,
+            "target": _object_key_document(context.object_key),
+            "mapping_context_digest": context.mapping_context_digest,
+        }
+        for context in contexts
+        if normalized_system
+        in {normalize_model_key_value(code) for code in context.source_system_codes}
+    ]
+    return _context_entries_digest(entries)
+
+
+def qa_code_context_digest(
+    contexts: tuple[CodeGenerationTargetContext, ...],
+    generated_code_records: tuple[Any, ...],
+    source_system_code: str,
+) -> str | None:
+    """Hash current Code Artifacts relevant to one pipeline System."""
+    entries: list[dict[str, object]] = [
+        {
+            "modeled_entity_type": record.modeled_entity_type,
+            "target": _object_key_document(_physical_object_key(record)),
+            "artifact_type": record.artifact_type,
+            "generated_code_digest": record.generated_code_digest,
+        }
+        for record in qa_current_code_records(
+            contexts,
+            generated_code_records,
+            source_system_code,
+        )
+    ]
+    return _context_entries_digest(entries)
+
+
+def qa_current_code_records(
+    contexts: tuple[CodeGenerationTargetContext, ...],
+    generated_code_records: tuple[Any, ...],
+    source_system_code: str,
+) -> tuple[Any, ...]:
+    """Return the exact active, digest-current Code rows for one pipeline System."""
+    normalized_system = normalize_model_key_value(source_system_code)
+    relevant = {
+        (
+            cast(
+                PhysicalObjectNaturalKey,
+                tuple(normalize_model_key_value(value) for value in context.object_key),
+            ),
+            context.modeled_entity_type,
+        ): context
+        for context in contexts
+        if normalized_system
+        in {normalize_model_key_value(code) for code in context.source_system_codes}
+    }
+    current: list[Any] = []
+    for record in generated_code_records:
+        if record.generated_code_status != "active":
+            continue
+        key = (_physical_object_key(record), record.modeled_entity_type)
+        context = relevant.get(key)
+        if context is None or (
+            record.mapping_context_digest != context.mapping_context_digest
+            or record.source_context_digest != context.source_context_digest
+        ):
+            continue
+        current.append(record)
+    current.sort(
+        key=lambda record: (
+            _physical_object_key(record),
+            record.modeled_entity_type,
+            record.artifact_type,
+            record.generated_code_digest,
+        )
+    )
+    return tuple(current)
+
+
+def _context_entries_digest(entries: list[dict[str, object]]) -> str | None:
+    if not entries:
+        return None
+    entries.sort(
+        key=lambda entry: json.dumps(
+            entry,
+            ensure_ascii=False,
+            sort_keys=True,
+            separators=(",", ":"),
+        )
+    )
+    encoded = json.dumps(
+        entries,
+        ensure_ascii=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _object_key_document(key: PhysicalObjectNaturalKey) -> dict[str, str]:
+    return dict(
+        zip(
+            (
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+            ),
+            (normalize_model_key_value(value) for value in key),
+            strict=True,
+        )
+    )
+
+
+def _context_invalid(
+    issues: list[ModelValidationIssue],
+    dataset: str,
+    field: str,
+    message: str,
+) -> None:
+    issues.append(
+        ModelValidationIssue(
+            code="context_digest_invalid",
+            dataset=dataset,
+            record_number=None,
+            fields=(field,),
+            message=message,
+        )
+    )
+
+
+def _validate_qa_query(
+    query: str,
+    *,
+    dataset: str,
+    field: str,
+    must_return_rows: bool,
+    issues: list[ModelValidationIssue],
+) -> None:
+    """Validate static SQL safety; deterministic orchestration enforces runtime cardinality."""
+    try:
+        validated = validate_databricks_sql(query)
+    except InvalidRequestError:
+        issues.append(
+            ModelValidationIssue(
+                code="validation_query_invalid",
+                dataset=dataset,
+                record_number=None,
+                fields=(field,),
+                message="Validation query is not governed read-only Databricks SQL.",
+            )
+        )
+        return
+    if must_return_rows and not validated.final_returns_rows:
+        issues.append(
+            ModelValidationIssue(
+                code="validation_query_result_invalid",
+                dataset=dataset,
+                record_number=None,
+                fields=(field,),
+                message="Validation query must end with a row-returning statement.",
+            )
+        )
 
 
 def _validate_references(
@@ -727,6 +1087,13 @@ def _validate_references(
             normalize_model_key_value(record.modeled_attribute_name),
         ) not in modeled_attributes:
             _missing(issues, "mapping_attribute", "modeled_attribute_name")
+
+    validation_groups = {
+        _validation_group_reference(record) for record in future["validation_group"]
+    }
+    for record in future["validation_check"]:
+        if _validation_group_reference(record) not in validation_groups:
+            _missing(issues, "validation_check", "validation_group_name")
 
 
 def _validate_active_downstream_dependencies(
@@ -862,6 +1229,22 @@ def _validate_active_downstream_dependencies(
                     "sources",
                     "Active Dimensional Attribute source requires active Logical Mapping.",
                 )
+
+    active_validation_groups = {
+        _validation_group_reference(record)
+        for record in future["validation_group"]
+        if record.is_active
+    }
+    for record in future["validation_check"]:
+        if record.is_active and (
+            _validation_group_reference(record) not in active_validation_groups
+        ):
+            _active_dependency_invalid(
+                issues,
+                "validation_check",
+                "validation_group_name",
+                "Active Validation Check requires an active Validation Group.",
+            )
 
 
 def _active_dependency_invalid(
@@ -1011,6 +1394,14 @@ def _mapping_object_reference(record: Any) -> tuple[object, ...]:
         normalize_model_key_value(record.source_system_code),
         record.modeled_entity_type,
         normalize_model_key_value(record.modeled_entity_name),
+    )
+
+
+def _validation_group_reference(record: Any) -> tuple[object, ...]:
+    return (
+        normalize_model_key_value(record.tenant_code),
+        normalize_model_key_value(record.system_code),
+        normalize_model_key_value(record.validation_group_name),
     )
 
 

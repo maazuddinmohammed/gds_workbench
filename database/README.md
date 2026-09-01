@@ -31,7 +31,7 @@ in section 7.
 Run every file below in the fixture's lexical order. Each command is atomic:
 
 ```bash
-for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_application,10_mcp,10_workflow_eligibility,11_mcp_metadata_apply,11_runtime_account,12_runtime_integrity}.sql
+for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_workflow_code_qa,11_workflow_eligibility,12_application_configuration,13_application_workflow_runs,14_application_workflow_execution,15_mcp_change_sets,16_mcp_metadata_apply,17_mcp_tool_call_log,18_runtime_account,19_runtime_integrity}.sql
 do
   psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
     --single-transaction -f "$file" || exit 1
@@ -41,7 +41,7 @@ done
 If any file fails, preserve the error and stop. Do not drop, truncate, reset, or
 rerun fresh-install files.
 
-`11_runtime_account.sql` creates three separate passwordless logins. MCP uses
+`18_runtime_account.sql` creates three separate passwordless logins. MCP uses
 `gds_mcp_runtime`, whose only direct membership is `gds_app_write`. The web app
 uses `gds_web_runtime`, whose only direct membership is `gds_web_write`.
 Databricks notebooks use `gds_notebook_runtime`, whose only direct membership
@@ -96,13 +96,21 @@ claimable only when the Principal has exactly one active Entra identity.
 
 `workflow.list_code_generation_target_context` returns one canonical row per
 target Object. It aggregates every active, complete SQL Mapping and its ordered
-source Systems into one context plus mapping and source digests.
-`application.store_generated_sql_artifact` is the only SQL artifact write
-boundary. It keeps one current artifact per Model, modeled layer, and target
-Object; rechecks actor identity, owned Tenant Lock, current Model revision, Run
-layer and selection, frozen Guide, and both aggregate context digests. A
-Run-independent governed store remains allowed only with the current active,
-published Guide version.
+source Systems into one context plus mapping and source digests by default. QA
+passes a null artifact filter to include any complete Mapping artifact while
+Code Generation keeps the SQL-only default.
+Current Code Generation writes `workflow.generated_code` only through validated
+Model Change Set Apply. The retained
+`application.store_generated_sql_artifact` compatibility boundary writes only
+the legacy `application.generated_sql_artifact` store; the current workflow
+runtime does not call it. Neither path executes generated SQL.
+
+Large Code stays one `generated_code` record. The normal Model Stage Batch may
+switch from complete-record chunks to ordered JSON byte fragments for that
+dataset only. `mcp.model_stage_payload_chunk` stores the transport fragments;
+Commit verifies and concatenates them, parses one canonical record array, and
+stages the reconstructed record atomically. Code content has no separate
+domain-size limit, and fragment bodies never enter MCP audit metadata.
 
 An active Metadata Discovery Scope row is the sole source-Tenant assignment for
 one GDS Connection, Zone, and normalized schema. A partial unique index prevents
@@ -175,7 +183,7 @@ history.
 
 ```bash
 psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
-  -f database/13_verify_install.sql
+  -f database/20_verify_install.sql
 ```
 
 The last row must show `schema_version = 1.0.0` and
@@ -191,7 +199,7 @@ database. Test databases are cleaned up only by disposing their containers.
 
 ## 6. Install required web application reference data
 
-After `13_verify_install.sql` passes, install the canonical application
+After `20_verify_install.sql` passes, install the canonical application
 reference seed:
 
 ```bash
@@ -200,7 +208,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ```
 
 This seed is required for the Databricks web App deployment. Web readiness
-requires exactly 47 active workflow stages and 78 active backend-resolved
+requires exactly 49 active workflow stages and 80 active backend-resolved
 variables. The seed contains no prompt bodies, credentials, connection values,
 or business data and is safe to replay unchanged.
 
@@ -208,7 +216,7 @@ or business data and is safe to replay unchanged.
 
 After an active Super Admin Principal and Entra identity exist, install
 `database/seed/05_global_prompt_defaults.template.sql` as documented in
-`database/seed/README.md`. It supplies all 35 agentic stage defaults required
+`database/seed/README.md`. It supplies all 36 agentic stage defaults required
 when a Workflow Run has no run or Model override. Profiling and the other
 deterministic stages do not use Prompts.
 

@@ -32,7 +32,7 @@ if TYPE_CHECKING:
     from tests.mcp.conftest import DisposablePostgres
 
 
-VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "13_verify_install.sql"
+VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "20_verify_install.sql"
 
 
 def _create_run(

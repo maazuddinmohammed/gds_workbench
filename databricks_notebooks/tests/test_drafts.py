@@ -130,6 +130,9 @@ def test_widget_contracts_are_complete_and_stable() -> None:
     ]
     assert draft_review_widget_specs()[-1].default == ""
     assert "logical_entity" in draft_review_widget_specs()[-1].choices
+    assert "generated_code" in draft_review_widget_specs()[-1].choices
+    assert "validation_group" in draft_review_widget_specs()[-1].choices
+    assert "validation_check" in draft_review_widget_specs()[-1].choices
     assert [spec.name for spec in draft_apply_widget_specs()] == [
         "TenantID",
         "ModelID",

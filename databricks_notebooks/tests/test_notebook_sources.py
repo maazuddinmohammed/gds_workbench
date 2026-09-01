@@ -11,6 +11,7 @@ _EXPECTED = {
     "dimensional.py": "dimensional",
     "mapping.py": "mapping",
     "code_generation.py": "code_generation",
+    "qa.py": "qa",
 }
 
 
@@ -135,8 +136,9 @@ def test_readme_documents_ordered_workflow_and_manual_apply_gates() -> None:
         "profiling -> analysis_inference -> review/apply -> analysis_validation "
         "-> conceptual -> review/apply -> logical -> review/apply "
         "-> logical mapping -> review/apply -> optional logical code_generation "
-        "-> optional dimensional -> review/apply -> dimensional mapping "
-        "-> review/apply -> dimensional code_generation"
+        "-> review/apply -> optional dimensional -> review/apply -> dimensional mapping "
+        "-> review/apply -> dimensional code_generation -> review/apply "
+        "-> qa -> review/apply"
     ) in normalized_readme
     for required_text in (
         "Run `01_runtime_preflight.py`",

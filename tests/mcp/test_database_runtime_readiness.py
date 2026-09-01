@@ -12,9 +12,9 @@ if TYPE_CHECKING:
 
 
 RUNTIME_INTEGRITY_SQL = (
-    Path(__file__).parents[2] / "database" / "12_runtime_integrity.sql"
+    Path(__file__).parents[2] / "database" / "19_runtime_integrity.sql"
 )
-VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "13_verify_install.sql"
+VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "20_verify_install.sql"
 
 
 def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
@@ -509,22 +509,22 @@ async def test_runtime_readiness_rejects_an_unlisted_mcp_group_function(
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    "function_name",
+    "function_signature",
     [
-        "workflow.list_tenant_visible_objects",
-        "workflow.list_model_object_eligibility",
-        "workflow.list_model_attribute_eligibility",
+        "workflow.list_tenant_visible_objects(BIGINT)",
+        "workflow.list_model_object_eligibility(BIGINT)",
+        "workflow.list_model_attribute_eligibility(BIGINT)",
+        "workflow.list_code_generation_target_context(BIGINT, VARCHAR, VARCHAR)",
     ],
 )
 async def test_runtime_readiness_rejects_a_missing_model_read_grant(
     postgres_database: DisposablePostgres,
-    function_name: str,
+    function_signature: str,
 ) -> None:
-    function_identifier = sql.Identifier(*function_name.split("."))
     with postgres_database.connect_owner() as connection:
         connection.execute(
-            sql.SQL("REVOKE EXECUTE ON FUNCTION {}(BIGINT) FROM gds_app_write").format(
-                function_identifier
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_app_write").format(
+                sql.SQL(function_signature)
             )
         )
 
@@ -538,8 +538,8 @@ async def test_runtime_readiness_rejects_a_missing_model_read_grant(
     finally:
         with postgres_database.connect_owner() as connection:
             connection.execute(
-                sql.SQL("GRANT EXECUTE ON FUNCTION {}(BIGINT) TO gds_app_write").format(
-                    function_identifier
+                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_app_write").format(
+                    sql.SQL(function_signature)
                 )
             )
 
@@ -764,7 +764,7 @@ def test_verify_install_rejects_an_unlisted_mcp_group_function(
         "workflow.list_tenant_visible_objects(bigint)",
         "workflow.list_model_object_eligibility(bigint)",
         "workflow.list_model_attribute_eligibility(bigint)",
-        "workflow.list_code_generation_target_context(bigint,character varying)",
+        "workflow.list_code_generation_target_context(bigint,character varying,character varying)",
     ],
 )
 def test_verify_install_rejects_missing_web_workflow_read_grant(

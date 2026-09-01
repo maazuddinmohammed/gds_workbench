@@ -138,8 +138,12 @@ class SqlGenerationGuideProvenance(ContractModel):
 
 
 class SqlGeneratorProvenance(ContractModel):
-    generator_code: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
-    generator_version: str = Field(pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$")
+    generator_code: str | None = Field(
+        pattern=r"^[a-z][a-z0-9_.-]{0,99}$",
+    )
+    generator_version: str | None = Field(
+        pattern=r"^[0-9]+\.[0-9]+\.[0-9]+$",
+    )
     generated_by_display_name: str = Field(min_length=1, max_length=200)
 
 
@@ -156,13 +160,13 @@ class GeneratedSqlArtifactDetail(ContractModel):
     artifact_is_current: bool
     mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    guide: SqlGenerationGuideProvenance
+    guide: SqlGenerationGuideProvenance | None
     workflow_run_id: int | None = Field(default=None, gt=0)
-    generator: SqlGeneratorProvenance
+    generator: SqlGeneratorProvenance | None
     generated_at: datetime
-    generated_sql: str = Field(min_length=1, max_length=4_194_304, repr=False)
+    generated_sql: str = Field(min_length=1, repr=False)
     generated_sql_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    generated_sql_byte_count: int = Field(gt=0, le=4_194_304)
+    generated_sql_byte_count: int = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_bounded_sql_and_supports(self) -> Self:
@@ -183,9 +187,9 @@ class SqlArtifactDownload(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
     target: PhysicalObjectReference
     entity_type: MappingEntityType
-    generated_sql: str = Field(min_length=1, max_length=4_194_304, repr=False)
+    generated_sql: str = Field(min_length=1, repr=False)
     generated_sql_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    generated_sql_byte_count: int = Field(gt=0, le=4_194_304)
+    generated_sql_byte_count: int = Field(gt=0)
 
     @model_validator(mode="after")
     def validate_bounded_sql(self) -> Self:

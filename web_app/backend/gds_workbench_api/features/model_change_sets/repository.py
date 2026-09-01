@@ -181,6 +181,8 @@ UPDATE mcp.model_change_set
        logical_document = %s,
        dimensional_document = %s,
        mapping_document = %s,
+       code_generation_document = %s,
+       qa_document = %s,
        model_change_set_status = 'active',
        draft_revision = draft_revision + 1,
        candidate_digest = NULL,
@@ -205,9 +207,18 @@ RETURNING stage_batch_id
 
 _FIND_STAGE_BATCH_SQL: LiteralString = """
 SELECT batch.*,
-       (SELECT count(*)
-          FROM mcp.model_stage_chunk AS chunk
-         WHERE chunk.stage_batch_id = batch.stage_batch_id) AS received_chunk_count
+       CASE batch.payload_mode
+           WHEN 'json_fragments' THEN (
+               SELECT count(*)
+                 FROM mcp.model_stage_payload_chunk AS chunk
+                WHERE chunk.stage_batch_id = batch.stage_batch_id
+           )
+           ELSE (
+               SELECT count(*)
+                 FROM mcp.model_stage_chunk AS chunk
+                WHERE chunk.stage_batch_id = batch.stage_batch_id
+           )
+       END AS received_chunk_count
   FROM mcp.model_stage_batch AS batch
  WHERE batch.model_change_set_id = %s
    AND batch.dataset_name = %s
@@ -219,9 +230,10 @@ _CREATE_STAGE_BATCH_SQL: LiteralString = """
 INSERT INTO mcp.model_stage_batch (
     stage_batch_id, model_change_set_id, model_id, dataset_name,
     expected_draft_revision, total_record_count, total_chunk_count,
-    batch_sha256, created_by_principal_id, correlation_id, expires_time
+    payload_mode, total_payload_bytes, batch_sha256,
+    created_by_principal_id, correlation_id, expires_time
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
         least(%s, CURRENT_TIMESTAMP + INTERVAL '4 hours'))
 RETURNING *, 0::BIGINT AS received_chunk_count
 """
@@ -267,6 +279,35 @@ RETURNING expires_time
 _GET_STAGE_CHUNKS_SQL: LiteralString = """
 SELECT chunk_index, record_count, chunk_sha256, records_document
   FROM mcp.model_stage_chunk
+ WHERE stage_batch_id = %s
+ ORDER BY chunk_index
+"""
+
+_GET_STAGE_PAYLOAD_CHUNK_SQL: LiteralString = """
+SELECT chunk_sha256, chunk_byte_count, payload_fragment
+  FROM mcp.model_stage_payload_chunk
+ WHERE stage_batch_id = %s
+   AND chunk_index = %s
+"""
+
+_STAGE_PAYLOAD_CHUNK_TOTALS_SQL: LiteralString = """
+SELECT count(*) AS chunk_count,
+       coalesce(sum(chunk_byte_count), 0) AS payload_byte_count
+  FROM mcp.model_stage_payload_chunk
+ WHERE stage_batch_id = %s
+"""
+
+_INSERT_STAGE_PAYLOAD_CHUNK_SQL: LiteralString = """
+INSERT INTO mcp.model_stage_payload_chunk (
+    stage_batch_id, chunk_index, chunk_byte_count, chunk_sha256, payload_fragment
+)
+VALUES (%s, %s, %s, %s, %s)
+RETURNING chunk_byte_count
+"""
+
+_GET_STAGE_PAYLOAD_CHUNKS_SQL: LiteralString = """
+SELECT chunk_index, chunk_byte_count, chunk_sha256, payload_fragment
+  FROM mcp.model_stage_payload_chunk
  WHERE stage_batch_id = %s
  ORDER BY chunk_index
 """
@@ -495,6 +536,8 @@ class PostgresModelChangeSetRepository:
                         "logical",
                         "dimensional",
                         "mapping",
+                        "code_generation",
+                        "qa",
                     )
                 ),
                 change_set_id,
@@ -563,6 +606,56 @@ class PostgresModelChangeSetRepository:
 
     async def get_stage_chunks(self, *, stage_batch_id: UUID) -> list[dict[str, Any]]:
         return await self._transaction.fetch_all(_GET_STAGE_CHUNKS_SQL, (stage_batch_id,))
+
+    async def get_stage_payload_chunk(
+        self,
+        *,
+        stage_batch_id: UUID,
+        chunk_index: int,
+    ) -> dict[str, Any] | None:
+        return await self._transaction.fetch_one(
+            _GET_STAGE_PAYLOAD_CHUNK_SQL,
+            (stage_batch_id, chunk_index),
+        )
+
+    async def stage_payload_chunk_totals(self, *, stage_batch_id: UUID) -> dict[str, Any]:
+        row = await self._transaction.fetch_one(
+            _STAGE_PAYLOAD_CHUNK_TOTALS_SQL,
+            (stage_batch_id,),
+        )
+        if row is None:
+            raise RuntimeError("Database did not return Stage payload totals")
+        return row
+
+    async def insert_stage_payload_chunk(
+        self,
+        *,
+        stage_batch_id: UUID,
+        chunk_index: int,
+        payload_fragment: bytes,
+        chunk_sha256: str,
+    ) -> None:
+        await self._transaction.fetch_one(
+            _INSERT_STAGE_PAYLOAD_CHUNK_SQL,
+            (
+                stage_batch_id,
+                chunk_index,
+                len(payload_fragment),
+                chunk_sha256,
+                payload_fragment,
+            ),
+        )
+        await self._transaction.fetch_one(_TOUCH_STAGE_BATCH_SQL, (stage_batch_id,))
+
+    async def get_stage_payload_chunks(
+        self,
+        *,
+        stage_batch_id: UUID,
+    ) -> list[dict[str, Any]]:
+        return await self._transaction.fetch_all(
+            _GET_STAGE_PAYLOAD_CHUNKS_SQL,
+            (stage_batch_id,),
+        )
 
     async def mark_stage_batch_committed(
         self,

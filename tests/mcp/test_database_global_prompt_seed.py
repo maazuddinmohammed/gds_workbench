@@ -67,6 +67,7 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
         ("mapping", "detailed_coverage", "attribute_mapper"),
         ("mapping", "detailed_coverage", "target_validator"),
         ("code_generation", None, "sql_generation"),
+        ("qa", None, "validation_generation"),
     }
 )
 TOOL_ASSISTED_STAGES: frozenset[StageIdentity] = frozenset(
@@ -89,6 +90,7 @@ CODE_GENERATION_STAGE: StageIdentity = (
     None,
     "sql_generation",
 )
+QA_STAGE: StageIdentity = ("qa", None, "validation_generation")
 
 
 def _prompt_parts(row: TestRow) -> tuple[str, ...]:
@@ -258,7 +260,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert len(stage_identities) == len(set(stage_identities))
     assert set(stage_identities) == EXPECTED_AGENTIC_STAGES
     expected_count = len(EXPECTED_AGENTIC_STAGES)
-    assert expected_count == 35
+    assert expected_count == 36
     assert len({row["prompt_template_id"] for row in first}) == expected_count
     assert len({row["prompt_template_version_id"] for row in first}) == expected_count
     assert len({row["prompt_assignment_id"] for row in first}) == expected_count
@@ -374,6 +376,11 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
                 "text",
                 True,
             ),
+            "validation_context": (
+                "workflow.qa.common.validation_context",
+                "json",
+                True,
+            ),
         }[name]
         assert (
             variable["resolver_key"],
@@ -435,6 +442,15 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
             for output_term in ("artifacts", "target_ref", "generated_sql"):
                 assert output_term in normalized
             assert "raw sql response" not in normalized
+
+        if identity == QA_STAGE:
+            for scalar_contract_term in (
+                "exactly one row and one column",
+                "query-contract execution error, not an assertion failure",
+                "executes_successfully ignores query a result shape",
+                "catalog.schema.table",
+            ):
+                assert scalar_contract_term in normalized
 
         if identity == (
             "conceptual",

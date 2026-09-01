@@ -13,6 +13,68 @@ import type {
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
 
 describe("Workflow Run monitor", () => {
+  it("keeps recent-run status and Refresh available in a compact monitor by default", async () => {
+    const api = monitorApi();
+    renderMonitor(api, vi.fn(async () => undefined), "conceptual", null);
+
+    const monitor = screen.getByRole("region", { name: "Conceptual recent runs" });
+    const toggle = within(monitor).getByRole("button", {
+      name: "Show Conceptual run activity",
+    });
+    expect(toggle).toHaveAttribute("aria-expanded", "false");
+    expect(toggle).toHaveAttribute("aria-controls");
+    const summary = await within(monitor).findByLabelText("Latest Conceptual run");
+    expect(within(summary).getByText("Run 1048")).toBeVisible();
+    expect(within(summary).getByText(/completed/i)).toBeVisible();
+    expect(within(monitor).getByRole("button", { name: /Refresh/ })).toBeVisible();
+    expect(screen.queryByRole("article", { name: "Run 1048 details" })).not.toBeInTheDocument();
+  });
+
+  it("expands a focused run and exposes an accessible details toggle", async () => {
+    const api = monitorApi();
+    const user = userEvent.setup();
+    renderMonitor(api, vi.fn(async () => undefined));
+
+    const hide = screen.getByRole("button", { name: "Hide Conceptual run activity" });
+    const bodyId = hide.getAttribute("aria-controls");
+    expect(hide).toHaveAttribute("aria-expanded", "true");
+    expect(bodyId).not.toBeNull();
+    expect(document.getElementById(bodyId as string)).not.toHaveAttribute("hidden");
+    expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+
+    await user.click(hide);
+    const show = screen.getByRole("button", { name: "Show Conceptual run activity" });
+    expect(show).toHaveAttribute("aria-expanded", "false");
+    expect(document.getElementById(bodyId as string)).toHaveAttribute("hidden");
+    expect(screen.queryByRole("article", { name: "Run 1048 details" })).not.toBeInTheDocument();
+
+    await user.click(show);
+    expect(screen.getByRole("button", {
+      name: "Hide Conceptual run activity",
+    })).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+  });
+
+  it("expands when a newly started run becomes the focused run", async () => {
+    const api = monitorApi();
+    const { rerenderMonitor } = renderMonitor(
+      api,
+      vi.fn(async () => undefined),
+      "conceptual",
+      null,
+    );
+
+    expect(screen.getByRole("button", {
+      name: "Show Conceptual run activity",
+    })).toHaveAttribute("aria-expanded", "false");
+    rerenderMonitor(1048);
+
+    expect(await screen.findByRole("button", {
+      name: "Hide Conceptual run activity",
+    })).toHaveAttribute("aria-expanded", "true");
+    expect(await screen.findByRole("article", { name: "Run 1048 details" })).toBeVisible();
+  });
+
   it("shows the authoritative bounded review and applies the exact validated draft manually", async () => {
     const api = monitorApi();
     const onApplied = vi.fn(async () => undefined);
@@ -30,6 +92,80 @@ describe("Workflow Run monitor", () => {
       name: "Apply validated Conceptual draft?",
     });
     expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
+
+    await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledWith(
+      7,
+      18,
+      1048,
+      5,
+      2,
+      "d".repeat(64),
+      expect.any(String),
+    ));
+    await waitFor(() => expect(onApplied).toHaveBeenCalledOnce());
+    expect(screen.getByRole("button", {
+      name: "Show Conceptual run activity",
+    })).toHaveAttribute("aria-expanded", "false");
+    const compactSummary = await screen.findByLabelText("Latest Conceptual run");
+    expect(compactSummary).toHaveTextContent("Run 1048");
+    expect(compactSummary).toHaveTextContent(/completed/i);
+    expect(compactSummary).toHaveTextContent("Draft applied");
+  });
+
+  it("reviews and applies an exact validated QA draft", async () => {
+    const api = monitorApi();
+    const qaRun: WorkflowRunDetail = {
+      ...workflowRun(false),
+      model_workflow: "qa",
+      workflow_execution_mode: "detailed_coverage",
+    };
+    const qaReview: WorkflowDraftReview = {
+      ...workflowDraftReview(false),
+      validation_outcome: {
+        schema_version: "1.0",
+        valid: true,
+        phase: "complete",
+        staged_record_count: 3,
+        error_count: 0,
+        action_review: [
+          {
+            dataset: "validation_group",
+            insert_count: 1,
+            update_count: 0,
+            deactivate_count: 0,
+            reactivate_count: 0,
+            no_change_count: 0,
+          },
+          {
+            dataset: "validation_check",
+            insert_count: 2,
+            update_count: 0,
+            deactivate_count: 0,
+            reactivate_count: 0,
+            no_change_count: 0,
+          },
+        ],
+      },
+      dataset_counts: [
+        { dataset: "validation_group", record_count: 1 },
+        { dataset: "validation_check", record_count: 2 },
+      ],
+    };
+    api.listWorkflowRuns.mockResolvedValue({ items: [qaRun], next_cursor: null });
+    api.readWorkflowRun.mockResolvedValue(qaRun);
+    api.readWorkflowDraftReview.mockResolvedValue(qaReview);
+    const onApplied = vi.fn(async () => undefined);
+    const user = userEvent.setup();
+    renderMonitor(api, onApplied, "qa");
+
+    const review = await screen.findByRole("table", { name: "Validated draft action counts" });
+    expect(within(review).getByText("validation group")).toBeVisible();
+    expect(within(review).getByText("validation check")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
+    const confirmation = await screen.findByRole("dialog", {
+      name: "Apply validated QA draft?",
+    });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
 
     await waitFor(() => expect(api.applyWorkflowDraft).toHaveBeenCalledWith(
@@ -346,7 +482,8 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: "analysis" | "conceptual" = "conceptual",
+  workflow: "analysis" | "conceptual" | "qa" = "conceptual",
+  focusRunId: number | null = 1048,
 ) {
   const queryClient = new QueryClient({
     defaultOptions: { queries: { retry: false }, mutations: { retry: false } },
@@ -354,7 +491,7 @@ function renderMonitor(
   const appRoot = document.createElement("div");
   appRoot.id = "root";
   document.body.append(appRoot);
-  return render(
+  const monitor = (nextFocusRunId: number | null) => (
     <QueryClientProvider client={queryClient}>
       <WorkflowRunMonitor
         api={api}
@@ -363,12 +500,21 @@ function renderMonitor(
         modelRevision={5}
         workflow={workflow}
         hasTenantLock
-        focusRunId={1048}
+        focusRunId={nextFocusRunId}
         onApplied={onApplied}
       />
-    </QueryClientProvider>,
+    </QueryClientProvider>
+  );
+  const rendered = render(
+    monitor(focusRunId),
     { container: appRoot },
   );
+  return {
+    ...rendered,
+    rerenderMonitor: (nextFocusRunId: number | null) => rendered.rerender(
+      monitor(nextFocusRunId),
+    ),
+  };
 }
 
 function monitorApi(options: {

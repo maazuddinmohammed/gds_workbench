@@ -20,12 +20,12 @@ from gds_workbench_api.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.workflows.commands import (
     CreateWorkflowRunRequest,
     DatabaseWorkflowCommandService,
     WorkflowRunCommandResult,
 )
+from gds_workbench_api.main import create_app
 
 
 class StaticWorkflowCommandService:
@@ -181,6 +181,50 @@ def test_code_generation_rejects_mismatched_coverage_intent(
                 "modeled_entity_type": "logical_entity",
                 "code_generation_coverage_mode": coverage_mode,
                 "prompt_overrides": {},
+            },
+            strict=True,
+        )
+
+
+def test_qa_requires_an_exact_case_insensitive_system_selection() -> None:
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "qa",
+            "workflow_execution_mode": None,
+            "selected_object_ids": [],
+            "selected_system_codes": [" CRM ", "ERP"],
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    assert command.selected_object_ids == []
+    assert command.selected_system_codes == ["CRM", "ERP"]
+
+
+@pytest.mark.parametrize(
+    "updates",
+    (
+        {"selected_system_codes": []},
+        {"selected_system_codes": ["CRM", "crm"]},
+        {"selected_object_ids": [101]},
+        {"workflow_execution_mode": "one_shot"},
+    ),
+)
+def test_qa_rejects_ambiguous_scope_or_execution_mode(
+    updates: dict[str, object],
+) -> None:
+    with pytest.raises(ValidationError):
+        CreateWorkflowRunRequest.model_validate(
+            {
+                "expected_model_revision": 4,
+                "model_workflow": "qa",
+                "workflow_execution_mode": None,
+                "selected_object_ids": [],
+                "selected_system_codes": ["CRM"],
+                "prompt_overrides": {},
+                **updates,
             },
             strict=True,
         )
@@ -357,11 +401,12 @@ class WorkflowCommandTransaction:
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 26
+        assert len(parameters) == 27
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
-        assert parameters[15] == "10428"
-        assert parameters[18:] == (None, None, None, None, None, None, None, None)
+        assert parameters[14] == []
+        assert parameters[16] == "10428"
+        assert parameters[19:] == (None, None, None, None, None, None, None, None)
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -388,9 +433,7 @@ class WorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_derives_actor_and_calls_only_governed_function() -> (
-    None
-):
+async def test_database_command_derives_actor_and_calls_only_governed_function() -> None:
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
         authorizer=AuthorizationService(),
@@ -426,9 +469,7 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
-    None
-):
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> None:
     registry = load_default_agent_capabilities()
     databricks_model = next(
         model for model in registry.models if model.code == "databricks-primary"
@@ -447,8 +488,7 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model
-                for model in registry.models
+                restricted if model.code == restricted.code else model for model in registry.models
             )
         }
     )
@@ -507,9 +547,7 @@ class _RecordingCapabilityRegistry:
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_code_generation_against_internal_detailed_mode() -> (
-    None
-):
+async def test_database_command_validates_code_generation_against_internal_detailed_mode() -> None:
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -523,6 +561,49 @@ async def test_database_command_validates_code_generation_against_internal_detai
             "selected_object_ids": [101],
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": "selected_targets",
+            "agent": {
+                "sdk_code": "langchain_create_agent",
+                "provider_code": "databricks",
+                "model_code": "databricks-primary",
+                "reasoning_effort_code": "medium",
+                "max_turns": 10,
+                "validation_retry_count": 2,
+            },
+            "prompt_overrides": {},
+        },
+        strict=True,
+    )
+
+    with pytest.raises(InvalidRequestError, match="stop after capability validation"):
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            command=command,
+        )
+
+    assert registry.execution_modes == ["detailed_coverage"]
+
+
+@pytest.mark.asyncio
+async def test_database_command_validates_qa_against_internal_detailed_mode() -> None:
+    registry = _RecordingCapabilityRegistry()
+    service = DatabaseWorkflowCommandService(
+        database=WorkflowCommandDatabase(),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=cast(AgentCapabilityRegistry, registry),
+    )
+    command = CreateWorkflowRunRequest.model_validate(
+        {
+            "expected_model_revision": 4,
+            "model_workflow": "qa",
+            "selected_object_ids": [],
+            "selected_system_codes": ["CRM", "ERP"],
             "agent": {
                 "sdk_code": "langchain_create_agent",
                 "provider_code": "databricks",
@@ -623,9 +704,7 @@ class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_keeps_implicit_model_agent_resolution_in_database() -> (
-    None
-):
+async def test_database_command_keeps_implicit_model_agent_resolution_in_database() -> None:
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -770,10 +849,11 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 26
+        assert len(parameters) == 27
         assert parameters[3:7] == (18, 4, "mapping", "one_shot")
         assert parameters[13] == [101]
-        assert parameters[18:] == (
+        assert parameters[14] == []
+        assert parameters[19:] == (
             "build",
             "selected_targets",
             "sql_file",

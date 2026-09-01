@@ -33,6 +33,34 @@ function parseArguments(argv) {
   return { command, options };
 }
 
+const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
+const SERVER_CONTRACT_PATH = path.resolve(__dirname, "..", "..", "..", "tool-contract.json");
+
+function commandContract(options) {
+  const contract = readJsonFile(HELPER_CONTRACT_PATH, "Local helper command contract");
+  if (!options.command) {
+    return { schema_version: contract.schema_version, commands: Object.keys(contract.commands) };
+  }
+  const command = contract.commands?.[options.command];
+  if (!command) fail(`Unknown helper command contract: ${options.command}.`);
+  return { schema_version: contract.schema_version, command: options.command, ...command };
+}
+
+function serverContractCheck(options) {
+  const actual = parseObjectOption(options.actual, "--actual");
+  const expected = readJsonFile(SERVER_CONTRACT_PATH, "Packaged MCP tool contract");
+  const fields = [
+    "schema_version",
+    "mcp_server_version",
+    "tool_count",
+    "tool_contract_sha256",
+  ];
+  const mismatches = fields.filter(
+    (field) => stableStringify(expected[field]) !== stableStringify(actual[field]),
+  );
+  return { compatible: mismatches.length === 0, mismatches, expected, actual };
+}
+
 function writeJsonAtomic(filePath, value) {
   const temporary = path.join(
     path.dirname(filePath),
@@ -224,6 +252,9 @@ function locateSnapshot(options) {
 
 function readSessionState(session) {
   const state = readJsonFile(path.join(session, "session.json"), "Session state");
+  const invalidSqlPolicy =
+    state?.sql !== undefined &&
+    !new Set(["never", "essential", "as_needed"]).has(state.sql);
   const invalidModel =
     state?.model !== undefined &&
     (!Array.isArray(state.model) ||
@@ -261,6 +292,7 @@ function readSessionState(session) {
     !Array.isArray(state.tasks) ||
     (state.current !== null && typeof state.current !== "string") ||
     invalidModel ||
+    invalidSqlPolicy ||
     invalidDraftCache ||
     state.tasks.some(
       (task) =>
@@ -650,6 +682,22 @@ function inspectSnapshot(options) {
   };
 }
 
+const COMPACT_SCHEMA_OMISSIONS = new Set([
+  "x-gds-columns",
+  "x-gds-governed-authoring-schema",
+  "x-gds-stage-record-validation",
+]);
+
+function compactAuthoringSchema(value) {
+  if (Array.isArray(value)) return value.map(compactAuthoringSchema);
+  if (!value || typeof value !== "object") return value;
+  return Object.fromEntries(
+    Object.entries(value)
+      .filter(([key]) => !COMPACT_SCHEMA_OMISSIONS.has(key))
+      .map(([key, child]) => [key, compactAuthoringSchema(child)]),
+  );
+}
+
 function describeDataset(options) {
   if (!options.dataset) fail("--dataset is required.");
   const snapshot = locateSnapshot(options);
@@ -660,11 +708,17 @@ function describeDataset(options) {
     resolveSnapshotMember(snapshot.root, dataset.schema_file, snapshot.inventory),
     `${dataset.name} schema`,
   );
+  const detail = options.detail ?? "compact";
+  if (!new Set(["compact", "full"]).has(detail)) {
+    fail("--detail must be compact or full.");
+  }
   return {
+    detail,
     dataset: dataset.name,
     count: dataset.row_count,
     canonical_key: dataset.canonical_key,
-    schema,
+    authoring_schema: compactAuthoringSchema(schema),
+    schema: detail === "full" ? schema : null,
   };
 }
 
@@ -1231,6 +1285,90 @@ function recordActive(record) {
   return null;
 }
 
+function approveReviewedChangeSet(options) {
+  if (options.area !== "model") fail("--area must be model.");
+  if (options.reviewed !== "true") {
+    fail("--reviewed true requires explicit user confirmation of the local review.");
+  }
+  const context = changeSetContext(options);
+  assertExpectedDigest(options, context);
+  const task = context.state.tasks.find((item) => item[0] === context.state.current);
+  if (!task || task[3] !== "review") {
+    fail("Current Model task must be in review before reviewed records can be approved.");
+  }
+  const pending = readPending(context);
+  const datasetCounts = [];
+  const fieldCounts = new Map();
+  const rootStatusFields = new Set([
+    "analysis_result_status",
+    "modeling_assertion_record_status",
+    "conceptual_object_status",
+    "conceptual_relationship_status",
+    "logical_submodel_status",
+    "logical_entity_status",
+    "logical_attribute_status",
+    "logical_relationship_status",
+    "dimensional_submodel_status",
+    "dimensional_entity_status",
+    "dimensional_attribute_status",
+    "dimensional_relationship_status",
+    "mapping_source_system_dependency_status",
+    "object_mapping_status",
+    "attribute_mapping_status",
+    "generated_code_status",
+  ]);
+  const nestedStatusFields = new Set(["status", "support_status", "membership_status"]);
+
+  function promote(record, fields) {
+    for (const field of fields) {
+      if (record[field] === "needs_review") {
+        record[field] = "active";
+        fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
+      }
+    }
+  }
+
+  function approve(record) {
+    promote(record, rootStatusFields);
+    for (const container of ["supports", "sources", "submodels"]) {
+      for (const child of Array.isArray(record[container]) ? record[container] : []) {
+        if (child && !Array.isArray(child) && typeof child === "object") {
+          promote(child, nestedStatusFields);
+        }
+      }
+    }
+  }
+
+  for (const datasetName of Object.keys(pending).sort()) {
+    const records = pending[datasetName];
+    const before = [...fieldCounts.values()].reduce((total, count) => total + count, 0);
+    for (const record of records) approve(record);
+    const after = [...fieldCounts.values()].reduce((total, count) => total + count, 0);
+    if (after > before) {
+      const dataset = context.byName.get(datasetName);
+      const schema = editableDatasetSchema(context, dataset);
+      for (const record of records) {
+        const issues = schemaIssues(record, schema);
+        if (issues.length) fail(`${datasetName} reviewed record fails its schema: ${issues[0]}`);
+      }
+      datasetCounts.push([datasetName, after - before]);
+    }
+  }
+  const promoted = datasetCounts.reduce((total, item) => total + item[1], 0);
+  if (promoted > 0) {
+    for (const [datasetName] of datasetCounts) {
+      writePendingDataset(context, context.byName.get(datasetName), pending[datasetName]);
+    }
+    markLocalEditForReview(context);
+  }
+  return {
+    promoted,
+    datasets: datasetCounts,
+    fields: [...fieldCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
+    digest: workspaceDigest(context),
+  };
+}
+
 function reviewChangeSet(options) {
   const context = changeSetContext(options);
   const pending = readPending(context);
@@ -1306,8 +1444,45 @@ function validateChangeSet(options) {
       overlayError,
     });
   }
-  const validationIssues = workbenchAreas[options.area].validate(loaded);
-  const issues = validationIssues.slice(0, 200).map((issue) => {
+  let metadata = null;
+  if (options.area === "model" && !context.state.stale?.includes("metadata")) {
+    try {
+      const snapshot = locateSnapshot({ session: context.session, area: "metadata" });
+      metadata = new Map();
+      for (const zone of ["source", "bronze", "silver", "gold"]) {
+        const name = `${zone}_attribute`;
+        const dataset = snapshot.byName.get(name);
+        if (dataset) {
+          metadata.set(name, { baseline: readSnapshotRecords(snapshot, dataset) });
+        }
+      }
+    } catch (error) {
+      if (error.message !== "Expected exactly one unzipped metadata Snapshot; found 0.") {
+        throw error;
+      }
+    }
+  }
+  const validationIssues = workbenchAreas[options.area].validate(loaded, metadata);
+  const boundedIssues = validationIssues.slice(0, 200);
+  const repairs = boundedIssues.map((issue) => {
+    const detail = issue.message || issue.target || issue.endpoint || issue.field || issue.code;
+    const fields = [];
+    if (typeof issue.field === "string" && issue.field) fields.push(issue.field);
+    const path = typeof detail === "string" ? detail.match(/\$((?:\.[^.\[\]]+|\[\d+\])*)/) : null;
+    if (path) {
+      for (const match of path[1].matchAll(/\.([^.\[\]]+)|\[(\d+)\]/g)) {
+        fields.push(match[1] ?? match[2]);
+      }
+    }
+    return {
+      dataset: issue.dataset ?? options.area,
+      record: issue.record ?? null,
+      code: issue.code,
+      fields: [...new Set(fields)],
+      message: detail,
+    };
+  });
+  const issues = boundedIssues.map((issue) => {
     const detail = issue.message || issue.target || issue.endpoint || issue.field || issue.code;
     const humanCode = issue.code.replaceAll("_", " ");
     return [
@@ -1321,6 +1496,8 @@ function validateChangeSet(options) {
   return {
     valid: validationIssues.length === 0,
     issues,
+    repairs,
+    truncated: validationIssues.length > boundedIssues.length,
     digest: workspaceDigest(context),
   };
 }
@@ -1690,6 +1867,7 @@ const READINESS_TARGETS = {
   "gold-registration": ["metadata", "model"],
   "dimensional-mapping": ["metadata", "model"],
   "dimensional-code": ["model"],
+  qa: ["model"],
 };
 
 const PHYSICAL_OBJECT_FIELDS = [
@@ -1708,6 +1886,7 @@ const READINESS_STATUS_FIELDS = {
   mapping_dependency: "mapping_source_system_dependency_status",
   mapping_object: "object_mapping_status",
   mapping_attribute: "attribute_mapping_status",
+  generated_code: "generated_code_status",
 };
 
 const MAPPING_TARGET_ENTITY_TYPES = {
@@ -1768,7 +1947,6 @@ function proofUnits(options) {
   if (
     !Array.isArray(units) ||
     units.length < 1 ||
-    units.length > 256 ||
     units.some(
       (unit) =>
         !exactObjectFields(unit, fields) ||
@@ -1776,7 +1954,7 @@ function proofUnits(options) {
         !positiveId(unit.source_system_id),
     )
   ) {
-    fail("--proof-units must be a JSON array of 1..256 exact target/source pairs.");
+    fail("--proof-units must be a nonempty JSON array of exact target/source pairs.");
   }
   const keys = units.map((unit) =>
     stableStringify([unit.target_object_id, unit.source_system_id]),
@@ -1785,6 +1963,38 @@ function proofUnits(options) {
     fail("--proof-units must contain unique exact target/source pairs.");
   }
   return units;
+}
+
+function selectedSystemCodes(options) {
+  if (options["system-codes"] === undefined) {
+    fail("--system-codes is required for QA readiness.");
+  }
+  let values;
+  try {
+    values = JSON.parse(options["system-codes"]);
+  } catch {
+    fail("--system-codes must be a JSON array of 1..1000 System codes.");
+  }
+  if (!Array.isArray(values) || values.length < 1 || values.length > 1000) {
+    fail("--system-codes must be a JSON array of 1..1000 System codes.");
+  }
+  const codes = values.map((value) => (typeof value === "string" ? value.trim() : value));
+  if (
+    codes.some(
+      (value) =>
+        typeof value !== "string" ||
+        !value ||
+        value.length > 100 ||
+        /[\u0000-\u001f\u007f]/u.test(value),
+    )
+  ) {
+    fail("--system-codes must contain 1..1000 nonblank System codes of at most 100 characters.");
+  }
+  const normalized = codes.map((value) => unicode.casefold(value));
+  if (new Set(normalized).size !== normalized.length) {
+    fail("--system-codes must be unique case-insensitively.");
+  }
+  return codes;
 }
 
 function validateMappingMaterializationProof(value, target) {
@@ -1823,7 +2033,7 @@ function readMappingProofs(session) {
   const filePath = mappingProofPath(session);
   if (!fs.existsSync(filePath)) return [];
   const records = readJsonFile(filePath, "Mapping server proofs");
-  if (!Array.isArray(records) || records.length > 256) {
+  if (!Array.isArray(records)) {
     fail("Mapping server proofs have an invalid shape.");
   }
   for (const record of records) {
@@ -1867,7 +2077,6 @@ function bindMappingProof(options) {
       record.proof.source_system_id !== proof.source_system_id,
   );
   records.push({ target, model_snapshot_id: snapshotId, proof });
-  if (records.length > 256) fail("Mapping server proof limit exceeded.");
   records.sort((left, right) =>
     stableStringify([
       left.target,
@@ -1943,7 +2152,7 @@ function readGeneratorProofs(session) {
   const filePath = generatorProofPath(session);
   if (!fs.existsSync(filePath)) return [];
   const records = readJsonFile(filePath, "Generator server proofs");
-  if (!Array.isArray(records) || records.length > 256) {
+  if (!Array.isArray(records)) {
     fail("Generator server proofs have an invalid shape.");
   }
   for (const record of records) {
@@ -1987,7 +2196,6 @@ function bindGeneratorProof(options) {
       record.proof.source_system_id !== proof.source_system_id,
   );
   records.push({ target, model_snapshot_id: snapshotId, proof });
-  if (records.length > 256) fail("Generator server proof limit exceeded.");
   records.sort((left, right) =>
     stableStringify([
       left.target,
@@ -2041,6 +2249,15 @@ function readinessValue(value) {
 
 function readinessObjectKey(record) {
   return stableStringify(PHYSICAL_OBJECT_FIELDS.map((field) => readinessValue(record[field])));
+}
+
+function readinessMappingKey(record) {
+  return stableStringify([
+    readinessObjectKey(record),
+    readinessValue(record.source_system_code),
+    record.modeled_entity_type,
+    readinessValue(record.modeled_entity_name),
+  ]);
 }
 
 function readinessAttributeKey(record) {
@@ -2198,7 +2415,22 @@ function logicalBuildReadiness(metadata, model, issues) {
     attributes.push(...activeMetadataAttributes(metadata, zone));
   }
   const objectKeys = new Set(objects.map(readinessObjectKey));
+  const scopeKeys = new Set(scope.map(readinessObjectKey));
   const attributeCounts = attributesByObject(attributes);
+  const scopedAttributeKeys = new Set(
+    attributes
+      .filter((record) => scopeKeys.has(readinessObjectKey(record)))
+      .map(readinessAttributeKey),
+  );
+  const profileKeys = new Set(
+    readinessRows(model, "profiling_profile")
+      .filter((record) => scopeKeys.has(readinessObjectKey(record)))
+      .map(readinessAttributeKey),
+  );
+  let profiledAttributes = 0;
+  for (const key of scopedAttributeKeys) {
+    if (profileKeys.has(key)) profiledAttributes += 1;
+  }
   if (scope.length === 0) issues.add("active_scope_missing");
   for (const record of scope) {
     const key = readinessObjectKey(record);
@@ -2208,6 +2440,9 @@ function logicalBuildReadiness(metadata, model, issues) {
   }
   return {
     scoped_objects: scope.length,
+    scoped_attributes: scopedAttributeKeys.size,
+    profiled_attributes: profiledAttributes,
+    unprofiled_attributes: scopedAttributeKeys.size - profiledAttributes,
     catalog_objects: objects.length,
     attributes: attributes.length,
   };
@@ -2283,6 +2518,74 @@ function codeReadiness(session, model, layer, target, issues, units) {
   };
 }
 
+function qaReadiness(model, issues, systemCodes) {
+  const selected = new Map(systemCodes.map((code) => [readinessValue(code), code]));
+  const contexts = new Map();
+  for (const record of readinessRows(model, "qa_authoring_context")) {
+    const normalized = readinessValue(record.system_code);
+    if (!selected.has(normalized)) continue;
+    const matches = contexts.get(normalized) ?? [];
+    matches.push(record);
+    contexts.set(normalized, matches);
+  }
+  let trustedMappingTargets = 0;
+  let trustedCurrentCode = 0;
+  for (const [normalized, code] of selected) {
+    const matches = contexts.get(normalized) ?? [];
+    if (matches.length === 0) {
+      issues.add("qa_authoring_context_missing", [code]);
+      continue;
+    }
+    if (matches.length !== 1) {
+      issues.add("qa_authoring_context_ambiguous", [code]);
+      continue;
+    }
+    trustedMappingTargets += matches[0].mapping_target_count;
+    trustedCurrentCode += matches[0].current_code_references.length;
+  }
+  const dependencies = new Set(
+    readinessRows(model, "mapping_dependency").map((record) =>
+      stableStringify([
+        record.modeled_entity_type,
+        readinessValue(record.source_system_code),
+      ]),
+    ),
+  );
+  const attributes = new Set(
+    readinessRows(model, "mapping_attribute")
+      .filter((record) => record.attribute_mapping_transformation_document != null)
+      .map(readinessMappingKey),
+  );
+  const mappings = readinessRows(model, "mapping_object").filter((record) => {
+    const source = readinessValue(record.source_system_code);
+    const dependency = stableStringify([record.modeled_entity_type, source]);
+    return (
+      selected.has(source) &&
+      authoredMappingObject(record) &&
+      dependencies.has(dependency) &&
+      attributes.has(readinessMappingKey(record))
+    );
+  });
+  const mappedSystems = new Set(mappings.map((record) => readinessValue(record.source_system_code)));
+  for (const [normalized, code] of selected) {
+    if (!mappedSystems.has(normalized)) issues.add("qa_mapping_missing", [code]);
+  }
+  const groups = readinessRows(model, "validation_group").filter((record) =>
+    selected.has(readinessValue(record.system_code)),
+  );
+  const checks = readinessRows(model, "validation_check").filter((record) =>
+    selected.has(readinessValue(record.system_code)),
+  );
+  return {
+    selected_systems: selected.size,
+    mapped_systems: mappedSystems.size,
+    mapping_targets: trustedMappingTargets,
+    code_artifacts: trustedCurrentCode,
+    validation_groups: groups.length,
+    validation_checks: checks.length,
+  };
+}
+
 function readinessPrompt(issues) {
   const prompts = [];
   if (issues.has("applied_mapping_missing")) {
@@ -2305,6 +2608,19 @@ function readinessPrompt(issues) {
       "Call get_model_code_generation_document for each exact target/source pair, bind each returned server proof with generator-proof, then rerun readiness.",
     );
   }
+  if (issues.has("qa_mapping_missing")) {
+    prompts.push(
+      "Complete and Apply active Mapping for every selected System, download a fresh Model Snapshot, then resume QA.",
+    );
+  }
+  if (
+    issues.has("qa_authoring_context_missing") ||
+    issues.has("qa_authoring_context_ambiguous")
+  ) {
+    prompts.push(
+      "Download a fresh Model Snapshot containing exactly one trusted QA authoring context for every selected System, then resume QA.",
+    );
+  }
   if (issues.has("destination_pattern_missing") || issues.has("destination_pattern_ambiguous")) {
     prompts.push(
       "Choose one exact destination System, Connection, schema, and Object Type; never infer it from a source System.",
@@ -2320,6 +2636,10 @@ function workflowReadiness(options) {
   const requiredAreas = READINESS_TARGETS[options.target];
   if (!requiredAreas) {
     fail(`--target must be one of: ${Object.keys(READINESS_TARGETS).join(", ")}.`);
+  }
+  const systems = options.target === "qa" ? selectedSystemCodes(options) : [];
+  if (options.target !== "qa" && options["system-codes"] !== undefined) {
+    fail("--system-codes is available only for QA readiness.");
   }
   const session = requireSessionPath(options.session);
   const state = readSessionState(session);
@@ -2413,7 +2733,7 @@ function workflowReadiness(options) {
         issues,
         hasCurrentMappingProof(session, model, options.target, units),
       );
-    } else {
+    } else if (options.target === "dimensional-code") {
       counts = codeReadiness(
         session,
         model,
@@ -2422,6 +2742,8 @@ function workflowReadiness(options) {
         issues,
         proofUnits(options),
       );
+    } else {
+      counts = qaReadiness(model, issues, systems);
     }
   }
   const issueOutput = issues.output();
@@ -2490,6 +2812,7 @@ function sessionStatus(options) {
     plan_digest: planDigest,
     tasks: state.tasks,
     model: state.model ?? null,
+    sql_policy: state.sql ?? null,
     cs: state.cs ?? {},
     stale: Array.isArray(state.stale) ? state.stale : [],
     snapshots,
@@ -2498,11 +2821,25 @@ function sessionStatus(options) {
   };
 }
 
+function setSqlPolicy(options) {
+  const session = requireSessionPath(options.session);
+  if (!new Set(["never", "essential", "as_needed"]).has(options.policy)) {
+    fail("--policy must be never, essential, or as_needed.");
+  }
+  const state = readSessionState(session);
+  state.sql = options.policy;
+  writeJsonAtomic(path.join(session, "session.json"), state);
+  return { sql_policy: state.sql };
+}
+
 async function main() {
   const { command, options } = parseArguments(process.argv.slice(2));
   let output;
-  if (command === "session-init") output = initializeSession(options);
+  if (command === "command-contract") output = commandContract(options);
+  else if (command === "contract-check") output = serverContractCheck(options);
+  else if (command === "session-init") output = initializeSession(options);
   else if (command === "status") output = sessionStatus(options);
+  else if (command === "sql-policy") output = setSqlPolicy(options);
   else if (command === "readiness") output = workflowReadiness(options);
   else if (command === "mapping-proof") output = bindMappingProof(options);
   else if (command === "generator-proof") output = bindGeneratorProof(options);
@@ -2520,6 +2857,7 @@ async function main() {
   else if (command === "upsert-batch") output = upsertBatch(options);
   else if (command === "discard") output = discardRecord(options);
   else if (command === "review") output = reviewChangeSet(options);
+  else if (command === "approve-reviewed") output = approveReviewedChangeSet(options);
   else if (command === "validate") output = validateChangeSet(options);
   else if (command === "accept") output = acceptChangeSet(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);

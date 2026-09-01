@@ -22,6 +22,49 @@
   border-bottom: 1px solid var(--line);
 }
 
+.workflow-run-monitor.is-collapsed .workflow-run-monitor-header {
+  padding: 0.65rem 0.85rem;
+  border-bottom: 0;
+}
+
+.workflow-run-monitor.is-collapsed .workflow-run-monitor-header > div:first-child {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem 0.75rem;
+}
+
+.workflow-run-monitor.is-collapsed .workflow-run-monitor-header > div:first-child > small {
+  display: none;
+}
+
+.workflow-run-monitor.is-collapsed .workflow-run-monitor-header h2 {
+  margin: 0;
+}
+
+.workflow-run-monitor-actions,
+.workflow-run-monitor-summary {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+}
+
+.workflow-run-monitor-summary {
+  color: var(--muted);
+  font-size: 0.58rem;
+}
+
+.workflow-run-monitor-summary strong {
+  color: var(--ink);
+}
+
+.workflow-run-monitor-applied {
+  color: var(--green);
+  font-weight: 700;
+}
+
 .workflow-run-monitor-header small,
 .workflow-run-detail-header small,
 .workflow-draft-status small {

@@ -12,6 +12,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
+from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
@@ -213,6 +214,38 @@ async def test_candidate_forbids_agent_authored_audit_columns() -> None:
     issues = (await _validator().validate(cast(JsonValue, candidate))).issues
 
     assert "candidate.audit_column_forbidden" in {issue.code for issue in issues}
+
+
+async def test_candidate_reports_cross_field_failure_at_the_invalid_record() -> None:
+    candidate = _candidate()
+    attribute = _first_record(candidate, "attributes")
+    attribute["logical_attribute_name"] = "never-copy-this-candidate-value"
+    attribute["logical_attribute_is_surrogate_key"] = True
+    validator = _validator()
+
+    assert tuple(
+        Draft202012Validator(validator.output_schema()).iter_errors(  # pyright: ignore[reportUnknownMemberType]
+            cast(JsonValue, candidate)
+        )
+    ) == ()
+
+    issues = (await validator.validate(cast(JsonValue, candidate))).issues
+
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.cross_field_invalid"
+    assert issues[0].path == ("attributes", 0)
+    assert "never-copy-this-candidate-value" not in issues[0].model_dump_json()
+
+
+def test_candidate_schema_includes_shared_logical_population_rules() -> None:
+    schema = _validator().output_schema()
+    definitions = cast(dict[str, object], schema["$defs"])
+    attribute_schema = cast(dict[str, object], definitions["LogicalAttributeRecord"])
+
+    assert any(
+        "Natural and surrogate key flags are mutually exclusive" in rule
+        for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
+    )
 
 
 def test_parse_accepts_an_explicit_unchanged_candidate() -> None:

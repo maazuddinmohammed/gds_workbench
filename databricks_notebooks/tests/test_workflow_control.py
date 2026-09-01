@@ -72,6 +72,13 @@ def _values(workflow: str) -> dict[str, str]:
                 "PromptOverridesJSON": '{"7":9}',
             }
         )
+    elif workflow == "qa":
+        values.update(
+            {
+                "SelectedObjectIDsJSON": "[]",
+                "SelectedSystemCodesJSON": '["ERP","CRM"]',
+            }
+        )
     return values
 
 
@@ -181,6 +188,7 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
         10,
         2,
         [11],
+        [],
         None,
         None,
         _CORRELATION_ID,
@@ -199,6 +207,21 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
     assert result.prompt_snapshot_count == 6
 
 
+def test_qa_create_passes_system_codes_immediately_after_empty_object_ids() -> None:
+    request = build_notebook_request("qa", _values("qa"))
+    connection = FakeConnection(_create_row(selected_scope_count=2))
+
+    result = NotebookWorkflowControlClient(connection).create_workflow_run(request)
+
+    statement, parameters = connection.calls[0]
+    assert "%s::BIGINT[],\n                  %s::VARCHAR[]" in statement
+    assert parameters is not None
+    assert parameters[4] is None
+    assert parameters[11:13] == ([], ["ERP", "CRM"])
+    assert result.workflow == "qa"
+    assert result.selected_scope_count == 2
+
+
 def test_create_replay_preserves_idempotency_key_and_run_id() -> None:
     request = build_notebook_request("profiling", _values("profiling"))
     connection = FakeConnection(_create_row(), _create_row(created=False))
@@ -213,7 +236,7 @@ def test_create_replay_preserves_idempotency_key_and_run_id() -> None:
     assert replayed.correlation_id == request.idempotency_key
     assert connection.calls[0][1] == connection.calls[1][1]
     assert connection.calls[0][1] is not None
-    assert connection.calls[0][1][14] == _CORRELATION_ID
+    assert connection.calls[0][1][15] == _CORRELATION_ID
 
 
 def test_start_claim_renew_and_release_use_exact_wrapper_parameters() -> None:

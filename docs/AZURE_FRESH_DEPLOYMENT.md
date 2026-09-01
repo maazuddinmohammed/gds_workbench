@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.2.1.zip
+   plugins/v2/dist/gds-agent-plugin-0.3.0.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -134,12 +134,16 @@ for file in \
   database/07_workflow_logical.sql \
   database/08_workflow_dimensional.sql \
   database/09_workflow_mapping.sql \
-  database/10_application.sql \
-  database/10_mcp.sql \
-  database/10_workflow_eligibility.sql \
-  database/11_mcp_metadata_apply.sql \
-  database/11_runtime_account.sql \
-  database/12_runtime_integrity.sql
+  database/10_workflow_code_qa.sql \
+  database/11_workflow_eligibility.sql \
+  database/12_application_configuration.sql \
+  database/13_application_workflow_runs.sql \
+  database/14_application_workflow_execution.sql \
+  database/15_mcp_change_sets.sql \
+  database/16_mcp_metadata_apply.sql \
+  database/17_mcp_tool_call_log.sql \
+  database/18_runtime_account.sql \
+  database/19_runtime_integrity.sql
 do
   psql -X -v ON_ERROR_STOP=1 --single-transaction -f "$file" || break
 done
@@ -166,7 +170,7 @@ Store both generated passwords in your approved password manager. Finally,
 verify the installation:
 
 ```bash
-psql -X -v ON_ERROR_STOP=1 -f database/13_verify_install.sql
+psql -X -v ON_ERROR_STOP=1 -f database/20_verify_install.sql
 ```
 
 The last row must say:
@@ -185,7 +189,7 @@ psql -X -v ON_ERROR_STOP=1 --single-transaction \
   -f database/seed/04_application_reference.sql
 ```
 
-This installs exactly 47 workflow stages and 78 backend-resolved prompt
+This installs exactly 49 workflow stages and 80 backend-resolved prompt
 variables. It contains no credentials, prompt bodies, connection values, or
 business data and is safe to replay unchanged.
 
@@ -200,7 +204,7 @@ Choose one route:
 Do not run demo seed data in production. A successfully authenticated Entra
 user must also have an active matching database Principal and Tenant access.
 
-After the active Super Admin identity exists, install the 35 agentic global
+After the active Super Admin identity exists, install the 36 agentic global
 defaults from `database/seed/05_global_prompt_defaults.template.sql` by
 following `database/seed/README.md`. Replace its identity placeholders with
 that exact Super Admin identity. The script is replay-safe and does not create

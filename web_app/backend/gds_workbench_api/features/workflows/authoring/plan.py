@@ -22,6 +22,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",
@@ -132,6 +133,25 @@ SELECT selection.object_id,
           selection.workflow_run_object_selection_id
 """
 
+_RUN_SYSTEM_SELECTION_SQL: LiteralString = """
+SELECT selection.system_code,
+       selection.selection_order
+  FROM application.workflow_run_system_selection AS selection
+  JOIN application.workflow_run AS run
+    ON run.workflow_run_id = selection.workflow_run_id
+   AND run.model_id = selection.model_id
+  JOIN model.model AS target_model
+    ON target_model.model_id = run.model_id
+   AND target_model.tenant_id = %s
+   AND target_model.is_active
+ WHERE selection.model_id = %s
+   AND selection.workflow_run_id = %s
+   AND run.model_workflow = 'qa'
+   AND run.workflow_run_state = 'running'
+ ORDER BY selection.selection_order,
+          selection.workflow_run_system_selection_id
+"""
+
 
 class AgentRunPlanUnavailableError(WorkbenchError):
     def __init__(self) -> None:
@@ -185,7 +205,8 @@ class AgentRunPlan(BaseModel):
         pattern=r"^[0-9a-f]{64}$",
     )
     selected_scope_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    selected_object_ids: tuple[int, ...] = Field(min_length=1)
+    selected_object_ids: tuple[int, ...] = Field(max_length=50_000)
+    selected_system_codes: tuple[str, ...] = Field(default=(), max_length=1_000)
     selection: AgentRunSelection
     stages: tuple[FrozenAgentStage, ...] = Field(min_length=1, max_length=100)
 
@@ -204,6 +225,16 @@ class AgentRunPlan(BaseModel):
             raise ValueError("Code Generation plan snapshot is unavailable")
         if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
             raise ValueError("Selected Objects must be unique")
+        normalized_system_codes = [value.strip().casefold() for value in self.selected_system_codes]
+        if any(not value for value in normalized_system_codes) or len(
+            normalized_system_codes
+        ) != len(set(normalized_system_codes)):
+            raise ValueError("Selected Systems must be nonblank and unique")
+        if self.model_workflow == "qa":
+            if self.selected_object_ids or not self.selected_system_codes:
+                raise ValueError("QA requires only an explicit System selection")
+        elif self.selected_system_codes or not self.selected_object_ids:
+            raise ValueError("Only QA may use a System selection")
         stage_ids = [stage.workflow_stage_id for stage in self.stages]
         stage_orders = [stage.stage_order for stage in self.stages]
         if len(stage_ids) != len(set(stage_ids)) or len(stage_orders) != len(set(stage_orders)):
@@ -225,8 +256,17 @@ class PostgresAgentRunPlanRepository:
         parameters = (tenant_id, model_id, workflow_run_id)
         rows = await transaction.fetch_all(_RUN_PLAN_SQL, parameters)
         selection_rows = await transaction.fetch_all(_RUN_SELECTION_SQL, parameters)
+        system_selection_rows = (
+            await transaction.fetch_all(_RUN_SYSTEM_SELECTION_SQL, parameters)
+            if rows and rows[0].get("model_workflow") == "qa"
+            else []
+        )
         try:
-            return _assemble_plan(rows=rows, selection_rows=selection_rows)
+            return _assemble_plan(
+                rows=rows,
+                selection_rows=selection_rows,
+                system_selection_rows=system_selection_rows,
+            )
         except AgentRunPlanUnavailableError:
             raise
         except Exception:
@@ -237,11 +277,17 @@ def _assemble_plan(
     *,
     rows: Sequence[dict[str, Any]],
     selection_rows: Sequence[dict[str, Any]],
+    system_selection_rows: Sequence[dict[str, Any]] = (),
 ) -> AgentRunPlan:
-    if not rows or not selection_rows:
+    if not rows:
         raise AgentRunPlanUnavailableError()
 
     first = rows[0]
+    model_workflow = _required_str(first, "model_workflow")
+    if (model_workflow == "qa") == bool(selection_rows):
+        raise AgentRunPlanUnavailableError()
+    if model_workflow != "qa" and system_selection_rows:
+        raise AgentRunPlanUnavailableError()
     expected_stage_count = _required_int(first, "expected_stage_count")
     selected_scope_count = _required_int(first, "selected_scope_count")
     if expected_stage_count < 1 or selected_scope_count < 1:
@@ -252,8 +298,21 @@ def _assemble_plan(
         if _required_int(row, "selection_order") != expected_order:
             raise AgentRunPlanUnavailableError()
         selected_object_ids.append(_required_int(row, "object_id"))
-    if len(selected_object_ids) != selected_scope_count or len(selected_object_ids) != len(
-        set(selected_object_ids)
+    if model_workflow != "qa" and (
+        len(selected_object_ids) != selected_scope_count
+        or len(selected_object_ids) != len(set(selected_object_ids))
+    ):
+        raise AgentRunPlanUnavailableError()
+    selected_system_codes: list[str] = []
+    for expected_order, row in enumerate(system_selection_rows, start=1):
+        if _required_int(row, "selection_order") != expected_order:
+            raise AgentRunPlanUnavailableError()
+        selected_system_codes.append(_required_str(row, "system_code"))
+    normalized_system_codes = [value.strip().casefold() for value in selected_system_codes]
+    if model_workflow == "qa" and (
+        len(selected_system_codes) != selected_scope_count
+        or not selected_system_codes
+        or len(normalized_system_codes) != len(set(normalized_system_codes))
     ):
         raise AgentRunPlanUnavailableError()
 
@@ -372,7 +431,7 @@ def _assemble_plan(
         model_id=_required_int(first, "model_id"),
         correlation_id=_required_uuid(first, "correlation_id"),
         model_revision=_required_int(first, "model_revision"),
-        model_workflow=cast(ModelWorkflow, _required_str(first, "model_workflow")),
+        model_workflow=cast(ModelWorkflow, model_workflow),
         workflow_execution_mode=cast(
             WorkflowExecutionMode | None,
             _optional_str(first, "workflow_execution_mode"),
@@ -399,6 +458,7 @@ def _assemble_plan(
         ),
         selected_scope_digest=_required_str(first, "selected_scope_digest"),
         selected_object_ids=tuple(selected_object_ids),
+        selected_system_codes=tuple(selected_system_codes),
         selection=AgentRunSelection(
             sdk_code=_required_str(first, "agent_sdk_code"),
             provider_code=_required_str(first, "agent_provider_code"),

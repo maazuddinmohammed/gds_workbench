@@ -53,9 +53,23 @@ _MODEL_CHANGE_SET_DATASETS = (
     "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
+    "generated_code",
+    "validation_group",
+    "validation_check",
 )
 _MODEL_CHANGE_SET_DATASET_SET = frozenset(_MODEL_CHANGE_SET_DATASETS)
-_WORKFLOWS = frozenset({"profiling", "analysis", "conceptual", "logical", "dimensional", "mapping"})
+_WORKFLOWS = frozenset(
+    {
+        "profiling",
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "qa",
+    }
+)
 _WORKFLOW_STATES = frozenset({"queued", "running", "completed", "completed_with_repair", "failed"})
 _DRAFT_STATUSES = frozenset(
     {"active", "validated", "applied", "expired", "discarded", "superseded"}

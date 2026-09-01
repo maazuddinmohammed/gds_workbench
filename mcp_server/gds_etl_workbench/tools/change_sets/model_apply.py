@@ -22,6 +22,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
     DimensionalSubmodelRecord,
+    GeneratedCodeRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalRelationshipRecord,
@@ -36,6 +37,8 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
     ProfilingProfileRecord,
+    ValidationCheckRecord,
+    ValidationGroupRecord,
     normalize_model_key_value,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
@@ -665,6 +668,139 @@ UPDATE workflow.mapping_attribute
 RETURNING mapping_attribute_id
 """
 
+_FIND_GENERATED_CODE_SQL: LiteralString = """
+SELECT generated_code_id
+  FROM workflow.generated_code
+ WHERE model_id = %s
+   AND object_id = %s
+ FOR UPDATE
+"""
+
+_INSERT_GENERATED_CODE_SQL: LiteralString = """
+INSERT INTO workflow.generated_code (
+    model_id,
+    agent_run_id,
+    workflow_run_id,
+    object_id,
+    modeled_entity_type,
+    artifact_type,
+    generated_code_content,
+    mapping_context_digest,
+    source_context_digest,
+    generated_code_digest,
+    generated_code_status,
+    generated_code_is_locked
+)
+VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+RETURNING generated_code_id
+"""
+
+_UPDATE_GENERATED_CODE_SQL: LiteralString = """
+UPDATE workflow.generated_code
+   SET agent_run_id = NULL,
+       workflow_run_id = %s,
+       modeled_entity_type = %s,
+       artifact_type = %s,
+       generated_code_content = %s,
+       mapping_context_digest = %s,
+       source_context_digest = %s,
+       generated_code_digest = %s,
+       generated_code_status = %s,
+       generated_code_is_locked = %s,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+ WHERE generated_code_id = %s
+RETURNING generated_code_id
+"""
+
+_FIND_VALIDATION_GROUP_SQL: LiteralString = """
+SELECT validation_group_id
+  FROM workflow.validation_group
+ WHERE model_id = %s
+   AND tenant_id = %s
+   AND system_id = %s
+   AND lower(btrim(validation_group_name)) = lower(btrim(%s))
+ FOR UPDATE
+"""
+
+_INSERT_VALIDATION_GROUP_SQL: LiteralString = """
+INSERT INTO workflow.validation_group (
+    model_id,
+    tenant_id,
+    system_id,
+    agent_run_id,
+    workflow_run_id,
+    validation_group_name,
+    validation_group_description,
+    mapping_context_digest,
+    code_context_digest,
+    is_active
+)
+VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s)
+RETURNING validation_group_id
+"""
+
+_UPDATE_VALIDATION_GROUP_SQL: LiteralString = """
+UPDATE workflow.validation_group
+   SET agent_run_id = NULL,
+       workflow_run_id = %s,
+       validation_group_name = %s,
+       validation_group_description = %s,
+       mapping_context_digest = %s,
+       code_context_digest = %s,
+       is_active = %s,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+ WHERE validation_group_id = %s
+RETURNING validation_group_id
+"""
+
+_FIND_VALIDATION_CHECK_SQL: LiteralString = """
+SELECT validation_check_id
+  FROM workflow.validation_check
+ WHERE validation_group_id = %s
+   AND lower(btrim(validation_check_name)) = lower(btrim(%s))
+ FOR UPDATE
+"""
+
+_INSERT_VALIDATION_CHECK_SQL: LiteralString = """
+INSERT INTO workflow.validation_check (
+    validation_group_id,
+    validation_check_name,
+    validation_check_description,
+    validation_category_code,
+    validation_severity,
+    validation_query_sql,
+    validation_comparison_query_sql,
+    validation_result_data_type,
+    validation_comparison_operator,
+    validation_comparison_value_type,
+    validation_comparison_value,
+    is_active
+)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+RETURNING validation_check_id
+"""
+
+_UPDATE_VALIDATION_CHECK_SQL: LiteralString = """
+UPDATE workflow.validation_check
+   SET validation_check_name = %s,
+       validation_check_description = %s,
+       validation_category_code = %s,
+       validation_severity = %s,
+       validation_query_sql = %s,
+       validation_comparison_query_sql = %s,
+       validation_result_data_type = %s,
+       validation_comparison_operator = %s,
+       validation_comparison_value_type = %s,
+       validation_comparison_value = %s,
+       is_active = %s,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+ WHERE validation_check_id = %s
+RETURNING validation_check_id
+"""
+
 
 @dataclass(frozen=True, slots=True)
 class _MappingMaterializationPolicy:
@@ -679,6 +815,7 @@ class ModelMaterializer:
     model_id: int
     source_context_digest: str
     workflow_run_id: int | None = None
+    _model_workflow: str | None = None
     _mapping_policy: _MappingMaterializationPolicy | None = None
     _object_ids: dict[tuple[str, ...], tuple[int, int]] = field(
         default_factory=dict[tuple[str, ...], tuple[int, int]]
@@ -703,6 +840,9 @@ class ModelMaterializer:
     )
     _mapping_object_ids: dict[tuple[str, ...], int] = field(
         default_factory=dict[tuple[str, ...], int]
+    )
+    _validation_group_ids: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
     )
 
     @classmethod
@@ -744,6 +884,7 @@ class ModelMaterializer:
             model_id=model_id,
             source_context_digest=source_context_digest,
             workflow_run_id=workflow_run_id,
+            _model_workflow=model_workflow,
             _mapping_policy=policy,
         )
 
@@ -769,6 +910,9 @@ class ModelMaterializer:
         action_count += await self._apply_logical(records)
         action_count += await self._apply_dimensional(records)
         action_count += await self._apply_mapping(records)
+        action_count += await self._apply_generated_code(records.get("generated_code", ()))
+        action_count += await self._apply_validation_groups(records.get("validation_group", ()))
+        action_count += await self._apply_validation_checks(records.get("validation_check", ()))
         return action_count
 
     async def _apply_model_details(self, records: tuple[ModelingRecord, ...]) -> int:
@@ -2016,6 +2160,147 @@ SELECT attribute.{config.attribute_id}
             action_count += 1
         return action_count
 
+    async def _apply_generated_code(self, records: tuple[ModelingRecord, ...]) -> int:
+        code_workflow_run_id = (
+            self.workflow_run_id if self._model_workflow == "code_generation" else None
+        )
+        for raw in records:
+            record = _as(raw, GeneratedCodeRecord)
+            object_id, _ = await self.resolve_object(record)
+            existing = await self.transaction.fetch_one(
+                _FIND_GENERATED_CODE_SQL,
+                (self.model_id, object_id),
+            )
+            values = (
+                code_workflow_run_id,
+                record.modeled_entity_type,
+                record.artifact_type,
+                record.generated_code_content,
+                record.mapping_context_digest,
+                record.source_context_digest,
+                record.generated_code_digest,
+                record.generated_code_status,
+                record.generated_code_is_locked,
+            )
+            if existing is None:
+                row = await self.transaction.fetch_one(
+                    _INSERT_GENERATED_CODE_SQL,
+                    (self.model_id, code_workflow_run_id, object_id, *values[1:]),
+                )
+            else:
+                row = await self.transaction.fetch_one(
+                    _UPDATE_GENERATED_CODE_SQL,
+                    (*values, existing["generated_code_id"]),
+                )
+            assert row is not None
+        return len(records)
+
+    async def _apply_validation_groups(self, records: tuple[ModelingRecord, ...]) -> int:
+        qa_workflow_run_id = self.workflow_run_id if self._model_workflow == "qa" else None
+        for raw in records:
+            record = _as(raw, ValidationGroupRecord)
+            tenant_id = await self.resolve_tenant(record.tenant_code)
+            system_id = await self.resolve_system(record.system_code)
+            existing = await self.transaction.fetch_one(
+                _FIND_VALIDATION_GROUP_SQL,
+                (
+                    self.model_id,
+                    tenant_id,
+                    system_id,
+                    record.validation_group_name,
+                ),
+            )
+            mutable_values = (
+                record.validation_group_name,
+                record.validation_group_description,
+                record.mapping_context_digest,
+                record.code_context_digest,
+                record.is_active,
+            )
+            if existing is None:
+                row = await self.transaction.fetch_one(
+                    _INSERT_VALIDATION_GROUP_SQL,
+                    (
+                        self.model_id,
+                        tenant_id,
+                        system_id,
+                        qa_workflow_run_id,
+                        *mutable_values,
+                    ),
+                )
+            else:
+                row = await self.transaction.fetch_one(
+                    _UPDATE_VALIDATION_GROUP_SQL,
+                    (
+                        qa_workflow_run_id,
+                        *mutable_values,
+                        existing["validation_group_id"],
+                    ),
+                )
+            assert row is not None
+            self._validation_group_ids[_validation_group_key(record)] = row["validation_group_id"]
+        return len(records)
+
+    async def _apply_validation_checks(self, records: tuple[ModelingRecord, ...]) -> int:
+        for raw in records:
+            record = _as(raw, ValidationCheckRecord)
+            validation_group_id = await self.resolve_validation_group(record)
+            existing = await self.transaction.fetch_one(
+                _FIND_VALIDATION_CHECK_SQL,
+                (validation_group_id, record.validation_check_name),
+            )
+            comparison_value = (
+                None
+                if record.validation_comparison_value is None
+                else Jsonb(record.validation_comparison_value)
+            )
+            values = (
+                record.validation_check_name,
+                record.validation_check_description,
+                record.validation_category_code,
+                record.validation_severity,
+                record.validation_query_sql,
+                record.validation_comparison_query_sql,
+                record.validation_result_data_type,
+                record.validation_comparison_operator,
+                record.validation_comparison_value_type,
+                comparison_value,
+                record.is_active,
+            )
+            if existing is None:
+                row = await self.transaction.fetch_one(
+                    _INSERT_VALIDATION_CHECK_SQL,
+                    (validation_group_id, *values),
+                )
+            else:
+                row = await self.transaction.fetch_one(
+                    _UPDATE_VALIDATION_CHECK_SQL,
+                    (*values, existing["validation_check_id"]),
+                )
+            assert row is not None
+        return len(records)
+
+    async def resolve_validation_group(self, record: ValidationCheckRecord) -> int:
+        key = _validation_group_key(record)
+        cached = self._validation_group_ids.get(key)
+        if cached is not None:
+            return cached
+        tenant_id = await self.resolve_tenant(record.tenant_code)
+        system_id = await self.resolve_system(record.system_code)
+        row = await self.transaction.fetch_one(
+            _FIND_VALIDATION_GROUP_SQL,
+            (
+                self.model_id,
+                tenant_id,
+                system_id,
+                record.validation_group_name,
+            ),
+        )
+        if row is None:
+            raise InvalidRequestError("A referenced Validation Group was not found.")
+        self._validation_group_ids[key] = row["validation_group_id"]
+        return row["validation_group_id"]
+
     async def _upsert_mapping_object(self, record: MappingObjectRecord) -> int:
         object_id, _ = await self.resolve_object(record)
         source_system_id = await self.resolve_system(record.source_system_code)
@@ -2267,4 +2552,14 @@ def _mapping_key(record: MappingObjectRecord | MappingAttributeRecord) -> tuple[
         normalize_model_key_value(record.source_system_code),
         record.modeled_entity_type,
         normalize_model_key_value(record.modeled_entity_name),
+    )
+
+
+def _validation_group_key(
+    record: ValidationGroupRecord | ValidationCheckRecord,
+) -> tuple[str, str, str]:
+    return (
+        normalize_model_key_value(record.tenant_code),
+        normalize_model_key_value(record.system_code),
+        normalize_model_key_value(record.validation_group_name),
     )

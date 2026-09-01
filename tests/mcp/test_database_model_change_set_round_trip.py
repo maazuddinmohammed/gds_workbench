@@ -1,6 +1,8 @@
 from __future__ import annotations
 
 import asyncio
+import base64
+import hashlib
 import io
 import json
 import zipfile
@@ -25,18 +27,29 @@ from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.modeling_records import ANALYSIS_VALIDATION_FIELDS
+from gds_etl_workbench.domain.modeling_records import (
+    ANALYSIS_VALIDATION_FIELDS,
+    GeneratedCodeRecord,
+    normalize_model_key_value,
+)
 from gds_etl_workbench.tools.change_sets.model import (
     _DATABASE_TIME_SQL,
     _EXPIRE_OWNED_SQL,
     _LOCK_OWNED_CHANGE_SETS_SQL,
     _STAGE_SQL,
     _TOUCH_MODEL_STAGE_BATCH_SQL,
+    WRITE_SECTION_COLUMNS,
     register_model_change_set_tools,
 )
 from gds_etl_workbench.tools.change_sets.common import (
+    MAX_MODEL_STAGE_CHUNK_BYTES,
     canonical_records_sha256,
     stage_batch_sha256,
+)
+from gds_etl_workbench.tools.change_sets.model_validation import (
+    CodeGenerationTargetContext,
+    qa_code_context_digest,
+    qa_mapping_context_digest,
 )
 from gds_etl_workbench.tools.modeling.assertions import (
     register_modeling_assertion_tools,
@@ -341,7 +354,7 @@ def test_model_stage_sql_null_revision_cannot_bypass_compare_and_swap(
         staged = connection.execute(
             _STAGE_SQL,
             (
-                *(Jsonb({}) for _ in range(7)),
+                *(Jsonb({}) for _ in WRITE_SECTION_COLUMNS),
                 change_set_id,
                 model_id,
                 principal["principal_id"],
@@ -1203,6 +1216,160 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
 
 
 @pytest.mark.asyncio
+async def test_model_stage_batch_reassembles_generated_code_json_fragments(
+    postgres_database: DisposablePostgres,
+) -> None:
+    model_id, tenant_id = _seed_model_foundation(
+        postgres_database,
+        code_prefix="MODEL_CODE_FRAGMENTS",
+    )
+    _acquire_tenant_lock(postgres_database, tenant_id)
+    content = "-- " + ("x" * 1_100_000) + " café\nSELECT 1 AS result;"
+    record: dict[str, object] = {
+        "tenant_code": "MODEL_CODE_FRAGMENTS",
+        "system_code": "MODEL_CODE_FRAGMENTS_SYSTEM",
+        "connection_code": "MODEL_CODE_FRAGMENTS_CONNECTION",
+        "object_schema": "silver",
+        "object_name": "fragmented_code",
+        "modeled_entity_type": "logical_entity",
+        "artifact_type": "sql_file",
+        "generated_code_content": content,
+        "mapping_context_digest": "1" * 64,
+        "source_context_digest": "2" * 64,
+        "generated_code_digest": hashlib.sha256(content.encode()).hexdigest(),
+        "generated_code_status": "active",
+        "generated_code_is_locked": False,
+    }
+    payload = json.dumps(
+        [record],
+        ensure_ascii=False,
+        separators=(",", ":"),
+        sort_keys=True,
+    ).encode()
+    unicode_offset = payload.index("é".encode())
+    fragments = [
+        payload[:MAX_MODEL_STAGE_CHUNK_BYTES],
+        payload[MAX_MODEL_STAGE_CHUNK_BYTES : unicode_offset + 1],
+        payload[unicode_offset + 1 :],
+    ]
+    assert len(payload) > MAX_MODEL_STAGE_CHUNK_BYTES
+    assert all(
+        0 < len(fragment) <= MAX_MODEL_STAGE_CHUNK_BYTES for fragment in fragments
+    )
+    chunk_hashes = [hashlib.sha256(fragment).hexdigest() for fragment in fragments]
+
+    database = postgres_database.create_runtime_adapter()
+    identity_provider = StaticIdentityProvider()
+    authorizer = AuthorizationService()
+    audit = ToolCallAuditMiddleware(
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+    )
+    server = MCPServer[None](name="model-code-fragment-test", middleware=[audit])
+    register_model_change_set_tools(
+        server,
+        database=database,
+        identity_provider=identity_provider,
+        authorizer=authorizer,
+        audit=audit,
+    )
+
+    await database.open()
+    try:
+        async with Client(server) as client:
+            created = await client.call_tool(
+                "create_model_change_set", {"model_id": model_id}
+            )
+            assert created.is_error is False
+            change_set_id = created.structured_content["model_change_set_id"]
+            begun = await client.call_tool(
+                "begin_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "expected_draft_revision": 1,
+                    "dataset": "generated_code",
+                    "payload_mode": "json_fragments",
+                    "total_record_count": 1,
+                    "total_chunk_count": len(fragments),
+                    "total_payload_bytes": len(payload),
+                    "batch_sha256": stage_batch_sha256(chunk_hashes),
+                },
+            )
+            assert begun.is_error is False
+            assert begun.structured_content["payload_mode"] == "json_fragments"
+            assert begun.structured_content["total_payload_bytes"] == len(payload)
+            stage_batch_id = begun.structured_content["stage_batch_id"]
+
+            for index, (fragment, chunk_hash) in enumerate(
+                zip(fragments, chunk_hashes, strict=True),
+                start=1,
+            ):
+                put = await client.call_tool(
+                    "put_model_stage_chunk",
+                    {
+                        "model_id": model_id,
+                        "model_change_set_id": change_set_id,
+                        "stage_batch_id": stage_batch_id,
+                        "dataset": "generated_code",
+                        "payload_mode": "json_fragments",
+                        "chunk_index": index,
+                        "payload_fragment_base64": base64.b64encode(fragment).decode(),
+                        "chunk_sha256": chunk_hash,
+                    },
+                )
+                assert put.is_error is False
+                assert put.structured_content["record_count"] == 0
+                assert put.structured_content["payload_byte_count"] == len(fragment)
+
+            committed = await client.call_tool(
+                "commit_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "stage_batch_id": stage_batch_id,
+                    "expected_draft_revision": 1,
+                },
+            )
+            assert committed.is_error is False
+            assert committed.structured_content["draft_revision"] == 2
+            pending = await client.call_tool(
+                "get_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "dataset": "generated_code",
+                },
+            )
+            assert pending.is_error is False
+            assert pending.structured_content["records"] == [record]
+    finally:
+        await database.close()
+
+    with postgres_database.connect_owner() as connection:
+        audited_chunks = connection.execute(
+            """
+            SELECT input_metadata
+              FROM mcp.tool_call_log
+             WHERE tool_name = 'put_model_stage_chunk'
+               AND input_metadata ->> 'stage_batch_id' = %s
+             ORDER BY (input_metadata ->> 'chunk_index')::INTEGER
+            """,
+            (stage_batch_id,),
+        ).fetchall()
+
+    assert len(audited_chunks) == len(fragments)
+    for row, fragment in zip(audited_chunks, fragments, strict=True):
+        metadata = row["input_metadata"]
+        assert "payload_fragment_base64" not in metadata
+        assert "payload_fragment" not in metadata
+        assert metadata["payload_fragment_base64_characters"] == len(
+            base64.b64encode(fragment)
+        )
+
+
+@pytest.mark.asyncio
 async def test_model_change_set_policy_digest_includes_canonical_json_templates(
     postgres_database: DisposablePostgres,
 ) -> None:
@@ -1327,6 +1494,122 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
     scope_records = _replace_codes(model_scope_records())
     for field in ANALYSIS_VALIDATION_FIELDS:
         staged["analysis_result"][0].pop(field)
+    with postgres_database.connect_owner() as connection:
+        mapping_ids = connection.execute(
+            """
+            SELECT system.system_id AS source_system_id,
+                   max(object.object_id) FILTER (
+                       WHERE lower(btrim(object.object_name)) = 'orders'
+                   ) AS source_object_id,
+                   max(attribute.attribute_id) FILTER (
+                       WHERE lower(btrim(object.object_name)) = 'orders'
+                         AND lower(btrim(attribute.attribute_name)) = 'customer_id'
+                   ) AS source_attribute_id,
+                   max(object.object_id) FILTER (
+                       WHERE lower(btrim(object.object_name)) = 'silver_orders'
+                   ) AS target_object_id,
+                   max(attribute.attribute_id) FILTER (
+                       WHERE lower(btrim(object.object_name)) = 'silver_orders'
+                         AND lower(btrim(attribute.attribute_name)) = 'customer_id'
+                   ) AS target_attribute_id
+              FROM core.system AS system
+              JOIN core.connection AS connection
+                ON connection.system_id = system.system_id
+               AND connection.tenant_id = %s
+              JOIN core.object AS object
+                ON object.connection_id = connection.connection_id
+              JOIN core.attribute AS attribute
+                ON attribute.object_id = object.object_id
+             WHERE lower(btrim(system.system_code)) = 'model_tool_erp'
+             GROUP BY system.system_id
+            """,
+            (tenant_id,),
+        ).fetchone()
+    assert mapping_ids is not None
+    assert all(isinstance(value, int) for value in mapping_ids.values())
+    source_system_id = cast(int, mapping_ids["source_system_id"])
+    source_object_id = cast(int, mapping_ids["source_object_id"])
+    source_attribute_id = cast(int, mapping_ids["source_attribute_id"])
+    target_object_id = cast(int, mapping_ids["target_object_id"])
+    target_attribute_id = cast(int, mapping_ids["target_attribute_id"])
+    generation_instructions = "Generate deterministic Databricks SQL."
+    staged["mapping_object"][0].update(
+        {
+            "artifact_type": "sql_file",
+            "artifact_generation_instructions": generation_instructions,
+            "mapping_profile_key": "mapping.standard",
+            "mapping_profile_version": "1.0.0",
+            "mapping_package_document": {
+                "schema_version": "1.0",
+                "package_ref": "silver_orders_erp",
+                "route": "logical_to_silver",
+                "target_object_id": target_object_id,
+                "source_system_id": source_system_id,
+                "artifact_type": "sql_file",
+                "artifact_generation_instructions": generation_instructions,
+                "pydantic_profile": {
+                    "key": "mapping.standard",
+                    "version": "1.0.0",
+                    "schema_digest": (
+                        "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
+                    ),
+                },
+                "executable_sources": [
+                    {
+                        "object_id": source_object_id,
+                        "alias": "orders_source",
+                        "role": "Orders source",
+                        "batch_rule": None,
+                    }
+                ],
+                "non_executable_provenance": [],
+                "runtime_parameters": [],
+                "source_system_dependencies": [],
+                "target_dependencies": [],
+                "steps": [
+                    {
+                        "name": "load_orders",
+                        "depends_on": [],
+                        "inputs": ["orders_source"],
+                        "output": "order_rows",
+                        "logic": "Load governed Order rows.",
+                    }
+                ],
+                "grain_and_deduplication": "One row per Order.",
+                "load": {
+                    "write_mode": "merge",
+                    "merge_keys": [target_attribute_id],
+                    "partition_basis": None,
+                    "concurrent_system_write_mode": "idempotent_merge",
+                    "concurrent_write_basis": "Order customer key.",
+                },
+            },
+            "object_mapping_transformation_document": {
+                "schema_version": "1.0",
+                "transformation_kind": "direct",
+                "source_aliases": ["orders_source"],
+                "joins": [],
+                "unions": [],
+                "filters": [],
+                "aggregations": [],
+                "entity_contribution_logic": "Orders source contributes Order rows.",
+                "rationale": "The governed ERP source directly represents Orders.",
+            },
+        }
+    )
+    staged["mapping_attribute"][0]["attribute_mapping_transformation_document"] = {
+        "schema_version": "1.0",
+        "transformation_kind": "direct",
+        "source_columns": [
+            {
+                "source_alias": "orders_source",
+                "source_attribute_id": source_attribute_id,
+            }
+        ],
+        "step_output": None,
+        "expression": None,
+        "logic": "Copy the governed Order customer key.",
+    }
     _acquire_tenant_lock(postgres_database, tenant_id)
 
     database = postgres_database.create_runtime_adapter()
@@ -1563,6 +1846,213 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             )
             assert applied.is_error is False
             action_count = applied.structured_content["action_count"]
+
+            with postgres_database.connect_owner() as connection:
+                context_row = connection.execute(
+                    """
+                    SELECT tenant.tenant_code,
+                           system.system_code,
+                           connection.connection_code,
+                           object.object_schema,
+                           object.object_name,
+                           context.modeled_entity_type,
+                           btrim(context.mapping_context_digest)::TEXT
+                               AS mapping_context_digest,
+                           btrim(context.source_context_digest)::TEXT
+                               AS source_context_digest,
+                           ARRAY(
+                               SELECT source_system ->> 'system_code'
+                                 FROM jsonb_array_elements(
+                                          context.source_context -> 'source_systems'
+                                      ) AS source_system
+                           ) AS source_system_codes
+                      FROM workflow.list_code_generation_target_context(
+                               %s,
+                               'logical_entity'
+                           ) AS context
+                      JOIN core.object AS object
+                        ON object.object_id = context.object_id
+                      JOIN core.connection AS connection
+                        ON connection.connection_id = object.connection_id
+                      JOIN core.tenant AS tenant
+                        ON tenant.tenant_id = connection.tenant_id
+                      JOIN core.system AS system
+                        ON system.system_id = connection.system_id
+                     WHERE lower(btrim(object.object_name)) = 'silver_orders'
+                    """,
+                    (model_id,),
+                ).fetchone()
+            assert context_row is not None
+            source_system_codes = frozenset(
+                cast(list[str], context_row["source_system_codes"])
+            )
+            assert len(source_system_codes) == 1
+            code_context = CodeGenerationTargetContext(
+                object_key=tuple(
+                    normalize_model_key_value(cast(str, context_row[field]))
+                    for field in (
+                        "tenant_code",
+                        "system_code",
+                        "connection_code",
+                        "object_schema",
+                        "object_name",
+                    )
+                ),
+                modeled_entity_type=cast(str, context_row["modeled_entity_type"]),
+                source_system_codes=source_system_codes,
+                mapping_context_digest=cast(str, context_row["mapping_context_digest"]),
+                source_context_digest=cast(str, context_row["source_context_digest"]),
+            )
+            generated_code_content = (
+                "CREATE OR REPLACE TEMP VIEW prepared_orders AS SELECT 1 AS order_id;\n"
+                "SELECT * FROM prepared_orders;"
+            )
+            generated_code_record: dict[str, object] = {
+                "tenant_code": code_context.object_key[0],
+                "system_code": code_context.object_key[1],
+                "connection_code": code_context.object_key[2],
+                "object_schema": code_context.object_key[3],
+                "object_name": code_context.object_key[4],
+                "modeled_entity_type": code_context.modeled_entity_type,
+                "artifact_type": "sql_file",
+                "generated_code_content": generated_code_content,
+                "mapping_context_digest": code_context.mapping_context_digest,
+                "source_context_digest": code_context.source_context_digest,
+                "generated_code_digest": hashlib.sha256(
+                    generated_code_content.encode("utf-8")
+                ).hexdigest(),
+                "generated_code_status": "active",
+                "generated_code_is_locked": False,
+            }
+            code_change_set = await client.call_tool(
+                "create_model_change_set",
+                {"model_id": model_id},
+            )
+            assert code_change_set.is_error is False
+            code_change_set_id = code_change_set.structured_content[
+                "model_change_set_id"
+            ]
+            code_stage = await client.call_tool(
+                "stage_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": code_change_set_id,
+                    "expected_draft_revision": 1,
+                    "changes": [
+                        {
+                            "dataset": "generated_code",
+                            "records": [generated_code_record],
+                        }
+                    ],
+                },
+            )
+            assert code_stage.is_error is False
+            code_validation = await client.call_tool(
+                "validate_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": code_change_set_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert code_validation.is_error is False
+            assert code_validation.structured_content["valid"] is True
+            assert len(code_validation.structured_content["action_review"]) == 1
+            code_apply = await client.call_tool(
+                "apply_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": code_change_set_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert code_apply.is_error is False
+            action_count += code_apply.structured_content["action_count"]
+
+            qa_system_code = next(iter(code_context.source_system_codes))
+            qa_mapping_digest = qa_mapping_context_digest(
+                (code_context,),
+                qa_system_code,
+            )
+            qa_code_digest = qa_code_context_digest(
+                (code_context,),
+                (GeneratedCodeRecord.model_validate(generated_code_record),),
+                qa_system_code,
+            )
+            assert qa_mapping_digest is not None
+            assert qa_code_digest is not None
+            validation_group_record: dict[str, object] = {
+                "tenant_code": code_context.object_key[0],
+                "system_code": qa_system_code,
+                "validation_group_name": "Order QA",
+                "validation_group_description": "Order pipeline checks.",
+                "mapping_context_digest": qa_mapping_digest,
+                "code_context_digest": qa_code_digest,
+                "is_active": True,
+            }
+            validation_check_record: dict[str, object] = {
+                "tenant_code": code_context.object_key[0],
+                "system_code": qa_system_code,
+                "validation_group_name": "Order QA",
+                "validation_check_name": "Query executes",
+                "validation_check_description": "The governed QA query completes.",
+                "validation_category_code": "technical.execution",
+                "validation_severity": "blocking",
+                "validation_query_sql": "CREATE TEMP VIEW qa_probe AS SELECT 1",
+                "validation_comparison_query_sql": None,
+                "validation_result_data_type": None,
+                "validation_comparison_operator": "executes_successfully",
+                "validation_comparison_value_type": "none",
+                "validation_comparison_value": None,
+                "is_active": True,
+            }
+            qa_change_set = await client.call_tool(
+                "create_model_change_set",
+                {"model_id": model_id},
+            )
+            assert qa_change_set.is_error is False
+            qa_change_set_id = qa_change_set.structured_content["model_change_set_id"]
+            qa_stage = await client.call_tool(
+                "stage_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": qa_change_set_id,
+                    "expected_draft_revision": 1,
+                    "changes": [
+                        {
+                            "dataset": "validation_group",
+                            "records": [validation_group_record],
+                        },
+                        {
+                            "dataset": "validation_check",
+                            "records": [validation_check_record],
+                        },
+                    ],
+                },
+            )
+            assert qa_stage.is_error is False
+            qa_validation = await client.call_tool(
+                "validate_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": qa_change_set_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert qa_validation.is_error is False
+            assert qa_validation.structured_content["valid"] is True
+            assert len(qa_validation.structured_content["action_review"]) == 2
+            qa_apply = await client.call_tool(
+                "apply_model_change_set",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": qa_change_set_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert qa_apply.is_error is False
+            action_count += qa_apply.structured_content["action_count"]
+
             snapshot_result = await client.call_tool(
                 "get_model_snapshot",
                 {"model_id": model_id},
@@ -1573,7 +2063,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             assert descriptor["snapshot_kind"] == "model"
             assert descriptor["status"] == "ready"
             assert descriptor["model_id"] == model_id
-            assert descriptor["model_revision"] == 2
+            assert descriptor["model_revision"] == 4
             assert descriptor["content_type"] == "application/zip"
             snapshot_counts, serialized = _snapshot_archive(
                 snapshot_store.archive_content["model"]
@@ -1589,7 +2079,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             assert dbml_result.is_error is False
             dbml_descriptor = dbml_result.structured_content
             assert dbml_descriptor["snapshot_kind"] == "dbml"
-            assert dbml_descriptor["model_revision"] == 2
+            assert dbml_descriptor["model_revision"] == 4
             assert dbml_descriptor["model_type"] == "full"
             assert dbml_descriptor["include_submodels"] is True
             assert dbml_descriptor["dbml_file_count"] == 5
@@ -1808,7 +2298,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         "relationship_name": "sale customer role",
         "relationship_is_required": True,
     }
-    assert action_count == 33
+    assert action_count == 36
     assert snapshot_counts == {
         "model_details": 1,
         "model_scope": 4,
@@ -1829,6 +2319,10 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         "mapping_dependency": 1,
         "mapping_object": 1,
         "mapping_attribute": 1,
+        "generated_code": 1,
+        "qa_authoring_context": 1,
+        "validation_group": 1,
+        "validation_check": 1,
     }
     for forbidden in (
         "agent_run_id",
@@ -1836,13 +2330,24 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
         "created_time",
         "updated_by",
         "updated_time",
-        "source_context_digest",
         "analysis_result_id",
+        "generated_code_id",
+        "validation_group_id",
+        "validation_check_id",
     ):
         assert forbidden not in serialized
+    assert (
+        f'"mapping_context_digest":"{code_context.mapping_context_digest}"'
+        in serialized
+    )
+    assert (
+        f'"source_context_digest":"{code_context.source_context_digest}"' in serialized
+    )
     assert '"zone_code":"bronze"' in serialized
     assert '"is_bronze_source_eligible":true' in serialized
     assert '"is_dimensional_source_eligible":true' in serialized
+    assert '"current_code_target_count":1' in serialized
+    assert '"current_code_references":[' in serialized
     assert '"dimensional_relationship_is_optional":false' in serialized
 
 

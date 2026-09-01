@@ -5,6 +5,7 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 from collections.abc import Mapping
 from datetime import datetime
@@ -47,17 +48,22 @@ from gds_etl_workbench.tools.snapshots.model.selection import build_model_snapsh
 
 from .action_review import DatasetActionReview
 from .common import (
-    MAX_STAGE_CHUNK_BYTES,
+    MAX_MODEL_STAGE_CHUNK_BYTES,
+    MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS,
+    MAX_MODEL_STAGE_PAYLOAD_BYTES,
     MAX_STAGE_CHUNK_RECORDS,
     MAX_STAGE_CHUNKS,
     SHA256_PATTERN,
     ChangeSetContractModel,
+    canonical_records_bytes,
     canonical_records_sha256,
     change_set_annotations,
+    decode_canonical_base64_fragment,
     stage_batch_sha256,
 )
 from .model_apply import ModelMaterializer
 from .model_validation import (
+    CodeGenerationTargetContext,
     ModelValidationIssue,
     PhysicalModelScope,
     ValidatedModelChangeSet,
@@ -74,6 +80,7 @@ POLICY = ToolPolicy.TENANT_MODEL_WRITE
 READ_POLICY = ToolPolicy.TENANT_READ
 ContractModel = ChangeSetContractModel
 _annotations = change_set_annotations
+ModelStagePayloadMode = Literal["records", "json_fragments"]
 
 READ_SECTION_COLUMNS = (
     "model_scope_document",
@@ -84,6 +91,8 @@ READ_SECTION_COLUMNS = (
     "logical_document",
     "dimensional_document",
     "mapping_document",
+    "code_generation_document",
+    "qa_document",
 )
 WRITE_SECTION_COLUMNS = READ_SECTION_COLUMNS[1:]
 
@@ -148,6 +157,30 @@ SELECT attribute_id,
        is_logical_mapping_target_eligible,
        is_dimensional_mapping_target_eligible
   FROM workflow.list_model_attribute_eligibility(%s)
+"""
+
+_CODE_GENERATION_CONTEXT_SQL: LiteralString = """
+SELECT modeled_entity_type,
+       object_id,
+       mapping_context_digest,
+       source_context_digest,
+       source_context
+  FROM workflow.list_code_generation_target_context(
+           %s,
+           'logical_entity',
+           %s
+       )
+UNION ALL
+SELECT modeled_entity_type,
+       object_id,
+       mapping_context_digest,
+       source_context_digest,
+       source_context
+  FROM workflow.list_code_generation_target_context(
+           %s,
+           'dimensional_entity',
+           %s
+       )
 """
 
 _OTHER_MODEL_NAMES_SQL: LiteralString = """
@@ -383,6 +416,8 @@ UPDATE mcp.model_change_set AS change_set
        logical_document = %s,
        dimensional_document = %s,
        mapping_document = %s,
+       code_generation_document = %s,
+       qa_document = %s,
        model_change_set_status = 'active',
        draft_revision = draft_revision + 1,
        candidate_digest = NULL,
@@ -457,11 +492,18 @@ RETURNING batch.stage_batch_id
 _FIND_MODEL_STAGE_BATCH_SQL: LiteralString = """
 SELECT batch.*,
        batch.expires_time <= clock_timestamp() AS is_expired,
-       (
-           SELECT count(*)
-             FROM mcp.model_stage_chunk AS chunk
-            WHERE chunk.stage_batch_id = batch.stage_batch_id
-       ) AS received_chunk_count
+       CASE batch.payload_mode
+           WHEN 'json_fragments' THEN (
+               SELECT count(*)
+                 FROM mcp.model_stage_payload_chunk AS chunk
+                WHERE chunk.stage_batch_id = batch.stage_batch_id
+           )
+           ELSE (
+               SELECT count(*)
+                 FROM mcp.model_stage_chunk AS chunk
+                WHERE chunk.stage_batch_id = batch.stage_batch_id
+           )
+       END AS received_chunk_count
   FROM mcp.model_stage_batch AS batch
  WHERE batch.model_change_set_id = %s
    AND batch.dataset_name = %s
@@ -481,6 +523,8 @@ INSERT INTO mcp.model_stage_batch (
     expected_draft_revision,
     total_record_count,
     total_chunk_count,
+    payload_mode,
+    total_payload_bytes,
     batch_sha256,
     created_by_principal_id,
     correlation_id,
@@ -488,7 +532,7 @@ INSERT INTO mcp.model_stage_batch (
     last_activity_time,
     expires_time
 )
-SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
+SELECT %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s,
        operation_time.current_time,
        operation_time.current_time,
        least(change_set.expires_time, operation_time.current_time + INTERVAL '4 hours')
@@ -552,6 +596,35 @@ RETURNING batch.expires_time
 _GET_MODEL_STAGE_CHUNKS_SQL: LiteralString = """
 SELECT chunk_index, record_count, chunk_sha256, records_document
   FROM mcp.model_stage_chunk
+ WHERE stage_batch_id = %s
+ ORDER BY chunk_index
+"""
+
+_GET_MODEL_STAGE_PAYLOAD_CHUNK_SQL: LiteralString = """
+SELECT chunk_sha256, chunk_byte_count, payload_fragment
+  FROM mcp.model_stage_payload_chunk
+ WHERE stage_batch_id = %s
+   AND chunk_index = %s
+"""
+
+_MODEL_STAGE_PAYLOAD_CHUNK_TOTALS_SQL: LiteralString = """
+SELECT count(*) AS chunk_count,
+       coalesce(sum(chunk_byte_count), 0) AS payload_byte_count
+  FROM mcp.model_stage_payload_chunk
+ WHERE stage_batch_id = %s
+"""
+
+_INSERT_MODEL_STAGE_PAYLOAD_CHUNK_SQL: LiteralString = """
+INSERT INTO mcp.model_stage_payload_chunk (
+    stage_batch_id, chunk_index, chunk_byte_count, chunk_sha256, payload_fragment
+)
+VALUES (%s, %s, %s, %s, %s)
+RETURNING chunk_byte_count
+"""
+
+_GET_MODEL_STAGE_PAYLOAD_CHUNKS_SQL: LiteralString = """
+SELECT chunk_index, chunk_byte_count, chunk_sha256, payload_fragment
+  FROM mcp.model_stage_payload_chunk
  WHERE stage_batch_id = %s
  ORDER BY chunk_index
 """
@@ -744,7 +817,7 @@ class StageModelChangeSetResult(ContractModel):
     staged: Literal[True] = True
     datasets: tuple[ModelChangeSetDatasetCount, ...] = Field(
         min_length=1,
-        max_length=18,
+        max_length=21,
     )
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
@@ -763,6 +836,12 @@ class BeginModelStageBatchResult(ContractModel):
     received_chunk_count: int = Field(ge=0, le=MAX_STAGE_CHUNKS)
     expected_draft_revision: int = Field(gt=0)
     expires_at: datetime
+    payload_mode: ModelStagePayloadMode = "records"
+    total_payload_bytes: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_MODEL_STAGE_PAYLOAD_BYTES,
+    )
 
 
 class PutModelStageChunkResult(ContractModel):
@@ -774,10 +853,16 @@ class PutModelStageChunkResult(ContractModel):
     accepted: Literal[True] = True
     duplicate: bool
     chunk_index: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
-    record_count: int = Field(gt=0, le=MAX_STAGE_CHUNK_RECORDS)
+    record_count: int = Field(ge=0, le=MAX_STAGE_CHUNK_RECORDS)
     received_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
     total_chunk_count: int = Field(gt=0, le=MAX_STAGE_CHUNKS)
     expires_at: datetime
+    payload_mode: ModelStagePayloadMode = "records"
+    payload_byte_count: int | None = Field(
+        default=None,
+        gt=0,
+        le=MAX_MODEL_STAGE_CHUNK_BYTES,
+    )
 
 
 class CommitModelStageBatchResult(ContractModel):
@@ -994,7 +1079,8 @@ def register_model_change_set_tools(
     @server.tool(
         description=(
             "Replace one or more complete pending Model datasets. Records use the exact "
-            "ID-free schemas returned by describe_model_dataset."
+            "ID-free schemas returned by describe_model_dataset. Mapping, generated_code, "
+            "and QA dependencies require successive applied Change Sets."
         ),
         annotations=_annotations(read_only=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1005,7 +1091,7 @@ def register_model_change_set_tools(
         model_id: Annotated[int, Field(gt=0)],
         model_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        changes: Annotated[list[StageModelChange], Field(min_length=1, max_length=18)],
+        changes: Annotated[list[StageModelChange], Field(min_length=1, max_length=21)],
         schema_version: Literal["1.0"] = "1.0",
     ) -> StageModelChangeSetResult:
         del schema_version
@@ -1114,7 +1200,8 @@ def register_model_change_set_tools(
     @server.tool(
         description=(
             "Begin or resume an idempotent bounded upload for one complete Model "
-            "Change Set dataset. This does not change the draft revision."
+            "Change Set dataset. Record mode keeps records whole; generated_code may use "
+            "ordered JSON fragments. This does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1129,10 +1216,20 @@ def register_model_change_set_tools(
         total_record_count: Annotated[int, Field(gt=0, le=20_000)],
         total_chunk_count: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
         batch_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        payload_mode: ModelStagePayloadMode = "records",
+        total_payload_bytes: Annotated[
+            int | None,
+            Field(gt=0, le=MAX_MODEL_STAGE_PAYLOAD_BYTES),
+        ] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> BeginModelStageBatchResult:
         del schema_version
         try:
+            _validate_stage_payload_manifest(
+                dataset=dataset,
+                payload_mode=payload_mode,
+                total_payload_bytes=total_payload_bytes,
+            )
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             correlation_id = uuid4()
             expired: dict[str, Any] | None = None
@@ -1191,6 +1288,8 @@ def register_model_change_set_tools(
                             row["expected_draft_revision"] != expected_draft_revision
                             or row["total_record_count"] != total_record_count
                             or row["total_chunk_count"] != total_chunk_count
+                            or row["payload_mode"] != payload_mode
+                            or row["total_payload_bytes"] != total_payload_bytes
                             or row["batch_sha256"] != batch_sha256
                         ):
                             raise StageBatchConflictError()
@@ -1207,6 +1306,8 @@ def register_model_change_set_tools(
                                 expected_draft_revision,
                                 total_record_count,
                                 total_chunk_count,
+                                payload_mode,
+                                total_payload_bytes,
                                 batch_sha256,
                                 principal.principal_id,
                                 correlation_id,
@@ -1232,6 +1333,8 @@ def register_model_change_set_tools(
                 received_chunk_count=row["received_chunk_count"],
                 expected_draft_revision=expected_draft_revision,
                 expires_at=row["expires_time"],
+                payload_mode=cast(ModelStagePayloadMode, row["payload_mode"]),
+                total_payload_bytes=row["total_payload_bytes"],
             )
         except AuthenticationError as error:
             raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
@@ -1253,14 +1356,16 @@ def register_model_change_set_tools(
             "dataset",
             "total_record_count",
             "total_chunk_count",
+            "payload_mode",
+            "total_payload_bytes",
             "schema_version",
         },
     )
 
     @server.tool(
         description=(
-            "Idempotently store one ordered, schema-valid chunk for an active Model "
-            "Stage Batch. This does not change or validate the Change Set."
+            "Idempotently store one ordered records chunk or generated_code JSON fragment "
+            "for an active Model Stage Batch. This does not change the Change Set."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1273,30 +1378,50 @@ def register_model_change_set_tools(
         stage_batch_id: UUID,
         dataset: ModelChangeSetDataset,
         chunk_index: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
-        records: Annotated[
-            list[dict[str, object]],
-            Field(min_length=1, max_length=MAX_STAGE_CHUNK_RECORDS),
-        ],
         chunk_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        records: Annotated[
+            list[dict[str, object]] | None,
+            Field(max_length=MAX_STAGE_CHUNK_RECORDS),
+        ] = None,
+        payload_mode: ModelStagePayloadMode = "records",
+        payload_fragment_base64: Annotated[
+            str | None,
+            Field(max_length=MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS),
+        ] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> PutModelStageChunkResult:
         del schema_version
         try:
-            normalized = _validate_stage_changes(
-                [StageModelChange(dataset=dataset, records=records)]
-            )[dataset]
-            encoded = json.dumps(
-                normalized,
-                ensure_ascii=False,
-                separators=(",", ":"),
-                sort_keys=True,
-            ).encode("utf-8")
-            if len(encoded) > MAX_STAGE_CHUNK_BYTES:
-                raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
-            if canonical_records_sha256(normalized) != chunk_sha256:
-                raise InvalidRequestError(
-                    "The Stage chunk SHA-256 does not match its normalized records."
-                )
+            normalized: list[dict[str, object]] = []
+            payload_fragment: bytes | None = None
+            if payload_mode == "records":
+                if not records or payload_fragment_base64 is not None:
+                    raise InvalidRequestError("The Stage chunk payload mode is invalid.")
+                normalized = _validate_stage_changes(
+                    [StageModelChange(dataset=dataset, records=records)]
+                )[dataset]
+                encoded = canonical_records_bytes(normalized)
+                if len(encoded) > MAX_MODEL_STAGE_CHUNK_BYTES:
+                    raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
+                if canonical_records_sha256(normalized) != chunk_sha256:
+                    raise InvalidRequestError(
+                        "The Stage chunk SHA-256 does not match its normalized records."
+                    )
+            else:
+                if (
+                    dataset != "generated_code"
+                    or records is not None
+                    or payload_fragment_base64 is None
+                ):
+                    raise InvalidRequestError("The Stage chunk payload mode is invalid.")
+                try:
+                    payload_fragment = decode_canonical_base64_fragment(payload_fragment_base64)
+                except ValueError:
+                    raise InvalidRequestError("The Stage payload fragment is invalid.") from None
+                if hashlib.sha256(payload_fragment).hexdigest() != chunk_sha256:
+                    raise InvalidRequestError(
+                        "The Stage chunk SHA-256 does not match its decoded payload bytes."
+                    )
             request_principal = identity_provider.request_principal(ctx.request_context.request)
             expired: dict[str, Any] | None = None
             expired_batch: dict[str, Any] | None = None
@@ -1349,46 +1474,78 @@ def register_model_change_set_tools(
                         )
                         _require_model_stage_batch(batch, principal, dataset)
                         assert batch is not None
+                        if batch["payload_mode"] != payload_mode:
+                            raise InvalidRequestError(
+                                "Payload mode does not match the Stage Batch manifest."
+                            )
                         if change_set["draft_revision"] != batch["expected_draft_revision"]:
                             raise DraftRevisionConflictError(change_set["draft_revision"])
                         if chunk_index > batch["total_chunk_count"]:
                             raise InvalidRequestError(
                                 "Chunk index exceeds the Stage Batch manifest."
                             )
+                        chunk_query = (
+                            _GET_MODEL_STAGE_PAYLOAD_CHUNK_SQL
+                            if payload_mode == "json_fragments"
+                            else _GET_MODEL_STAGE_CHUNK_SQL
+                        )
                         existing = await transaction.fetch_one(
-                            _GET_MODEL_STAGE_CHUNK_SQL,
-                            (stage_batch_id, chunk_index),
+                            chunk_query, (stage_batch_id, chunk_index)
                         )
                         duplicate = existing is not None
                         if existing is not None:
-                            if (
-                                existing["chunk_sha256"] != chunk_sha256
-                                or existing["records_document"] != normalized
-                            ):
+                            same_payload = (
+                                bytes(existing["payload_fragment"]) == payload_fragment
+                                if payload_mode == "json_fragments"
+                                else existing["records_document"] == normalized
+                            )
+                            if existing["chunk_sha256"] != chunk_sha256 or not same_payload:
                                 raise StageChunkConflictError()
                         else:
-                            totals = await transaction.fetch_one(
-                                _MODEL_STAGE_CHUNK_TOTALS_SQL,
-                                (stage_batch_id,),
+                            totals_query = (
+                                _MODEL_STAGE_PAYLOAD_CHUNK_TOTALS_SQL
+                                if payload_mode == "json_fragments"
+                                else _MODEL_STAGE_CHUNK_TOTALS_SQL
                             )
+                            totals = await transaction.fetch_one(totals_query, (stage_batch_id,))
                             assert totals is not None
-                            if (
-                                totals["record_count"] + len(normalized)
-                                > batch["total_record_count"]
-                            ):
-                                raise InvalidRequestError(
-                                    "Stage chunks exceed the approved record count."
+                            if payload_mode == "json_fragments":
+                                assert payload_fragment is not None
+                                if (
+                                    totals["payload_byte_count"] + len(payload_fragment)
+                                    > batch["total_payload_bytes"]
+                                ):
+                                    raise InvalidRequestError(
+                                        "Stage fragments exceed the approved payload bytes."
+                                    )
+                                inserted = await transaction.fetch_one(
+                                    _INSERT_MODEL_STAGE_PAYLOAD_CHUNK_SQL,
+                                    (
+                                        stage_batch_id,
+                                        chunk_index,
+                                        len(payload_fragment),
+                                        chunk_sha256,
+                                        payload_fragment,
+                                    ),
                                 )
-                            inserted = await transaction.fetch_one(
-                                _INSERT_MODEL_STAGE_CHUNK_SQL,
-                                (
-                                    stage_batch_id,
-                                    chunk_index,
-                                    len(normalized),
-                                    chunk_sha256,
-                                    Jsonb(normalized),
-                                ),
-                            )
+                            else:
+                                if (
+                                    totals["record_count"] + len(normalized)
+                                    > batch["total_record_count"]
+                                ):
+                                    raise InvalidRequestError(
+                                        "Stage chunks exceed the approved record count."
+                                    )
+                                inserted = await transaction.fetch_one(
+                                    _INSERT_MODEL_STAGE_CHUNK_SQL,
+                                    (
+                                        stage_batch_id,
+                                        chunk_index,
+                                        len(normalized),
+                                        chunk_sha256,
+                                        Jsonb(normalized),
+                                    ),
+                                )
                             assert inserted is not None
                             touched = await transaction.fetch_one(
                                 _TOUCH_MODEL_STAGE_BATCH_SQL,
@@ -1397,7 +1554,11 @@ def register_model_change_set_tools(
                             if touched is None:
                                 raise StageBatchNotActiveError()
                         totals = await transaction.fetch_one(
-                            _MODEL_STAGE_CHUNK_TOTALS_SQL,
+                            (
+                                _MODEL_STAGE_PAYLOAD_CHUNK_TOTALS_SQL
+                                if payload_mode == "json_fragments"
+                                else _MODEL_STAGE_CHUNK_TOTALS_SQL
+                            ),
                             (stage_batch_id,),
                         )
                         assert totals is not None
@@ -1418,6 +1579,10 @@ def register_model_change_set_tools(
                 received_chunk_count=totals["chunk_count"],
                 total_chunk_count=batch["total_chunk_count"],
                 expires_at=batch["expires_time"],
+                payload_mode=payload_mode,
+                payload_byte_count=(
+                    len(payload_fragment) if payload_fragment is not None else None
+                ),
             )
         except AuthenticationError as error:
             raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
@@ -1438,6 +1603,7 @@ def register_model_change_set_tools(
             "stage_batch_id",
             "dataset",
             "chunk_index",
+            "payload_mode",
             "schema_version",
         },
     )
@@ -1530,23 +1696,44 @@ def register_model_change_set_tools(
                             _require_model_stage_batch(batch, principal, None)
                             if change_set["draft_revision"] != expected_draft_revision:
                                 raise DraftRevisionConflictError(change_set["draft_revision"])
+                            payload_mode = cast(ModelStagePayloadMode, batch["payload_mode"])
                             chunks = await transaction.fetch_all(
-                                _GET_MODEL_STAGE_CHUNKS_SQL,
+                                (
+                                    _GET_MODEL_STAGE_PAYLOAD_CHUNKS_SQL
+                                    if payload_mode == "json_fragments"
+                                    else _GET_MODEL_STAGE_CHUNKS_SQL
+                                ),
                                 (stage_batch_id,),
                             )
                             if (
                                 len(chunks) != batch["total_chunk_count"]
-                                or sum(row["record_count"] for row in chunks)
-                                != batch["total_record_count"]
                                 or stage_batch_sha256([row["chunk_sha256"] for row in chunks])
                                 != batch["batch_sha256"]
                             ):
                                 raise StageBatchIncompleteError()
-                            assembled = [
-                                cast(dict[str, object], record)
-                                for chunk in chunks
-                                for record in chunk["records_document"]
-                            ]
+                            payload: bytes | None = None
+                            if payload_mode == "json_fragments":
+                                if (
+                                    sum(row["chunk_byte_count"] for row in chunks)
+                                    != batch["total_payload_bytes"]
+                                ):
+                                    raise StageBatchIncompleteError()
+                                payload = b"".join(bytes(row["payload_fragment"]) for row in chunks)
+                                assembled = _decode_canonical_stage_payload(
+                                    payload,
+                                    expected_record_count=batch["total_record_count"],
+                                )
+                            else:
+                                if (
+                                    sum(row["record_count"] for row in chunks)
+                                    != batch["total_record_count"]
+                                ):
+                                    raise StageBatchIncompleteError()
+                                assembled = [
+                                    cast(dict[str, object], record)
+                                    for chunk in chunks
+                                    for record in chunk["records_document"]
+                                ]
                             staged = _validate_stage_changes(
                                 [
                                     StageModelChange(
@@ -1558,6 +1745,15 @@ def register_model_change_set_tools(
                                     )
                                 ]
                             )
+                            if (
+                                payload_mode == "json_fragments"
+                                and payload is not None
+                                and canonical_records_bytes(staged[batch["dataset_name"]])
+                                != payload
+                            ):
+                                raise InvalidRequestError(
+                                    "The Stage payload is not canonical normalized JSON."
+                                )
                             documents = _documents(change_set)
                             dataset_name = batch["dataset_name"]
                             section = DATASETS_BY_NAME[dataset_name].section
@@ -2094,6 +2290,9 @@ def register_model_change_set_tools(
             "create/resume or when an approved Stage has no draft. If resumed, fetch "
             "the summary and every dataset with a nonzero count before replacing "
             "anything. Use describe_model_dataset only for datasets being authored. "
+            "For Code/QA, Apply Mapping→generated_code→QA successively; omit Code when "
+            "absent. Copy Code target digests from "
+            "get_model_code_generation_document result. "
             "Show complete affected lists and ask before stage_model_change_set or "
             "begin_model_stage_batch. For a large dataset, Put every approved chunk and "
             "Commit once. "
@@ -2221,11 +2420,50 @@ def _validate_stage_changes(
             raise InvalidRequestError("Each Model dataset may be staged only once per call.")
         records, issues = validate_staged_records(change.dataset, change.records)
         if issues:
-            raise InvalidRequestError(issues[0].message)
+            issue = issues[0]
+            field_path = ".".join(issue.fields) or "<record>"
+            raise InvalidRequestError(
+                f"Record {issue.record_number or 1} at {field_path}: {issue.message}"
+            )
         staged[change.dataset] = [record.model_dump(mode="json") for record in records]
     if sum(len(records) for records in staged.values()) > 50_000:
         raise InvalidRequestError("A Model Change Set stage is limited to 50,000 records.")
     return staged
+
+
+def _validate_stage_payload_manifest(
+    *,
+    dataset: ModelChangeSetDataset,
+    payload_mode: ModelStagePayloadMode,
+    total_payload_bytes: int | None,
+) -> None:
+    if payload_mode == "records":
+        if total_payload_bytes is not None:
+            raise InvalidRequestError("Record Stage Batches cannot declare payload fragment bytes.")
+        return
+    if dataset != "generated_code" or total_payload_bytes is None:
+        raise InvalidRequestError(
+            "JSON fragment Stage Batches are available only for generated_code."
+        )
+
+
+def _decode_canonical_stage_payload(
+    payload: bytes,
+    *,
+    expected_record_count: int,
+) -> list[dict[str, object]]:
+    try:
+        parsed = cast(object, json.loads(payload.decode("utf-8")))
+    except (UnicodeDecodeError, json.JSONDecodeError):
+        raise InvalidRequestError("The Stage payload is not valid UTF-8 JSON.") from None
+    records = cast(list[object], parsed) if isinstance(parsed, list) else None
+    if (
+        records is None
+        or len(records) != expected_record_count
+        or any(not isinstance(record, dict) for record in records)
+    ):
+        raise InvalidRequestError("The Stage payload must contain the declared JSON record array.")
+    return cast(list[dict[str, object]], records)
 
 
 def _validate_document_bounds(
@@ -2243,7 +2481,7 @@ def _validate_document_bounds(
         )
         if section_name == "assertion" and encoded_size > ASSERTION_SECTION_MAX_BYTES:
             raise InvalidRequestError("The Assertion Section exceeds 4 MiB.")
-        if section_name != "assertion" and encoded_size > 16 * 1024 * 1024:
+        if section_name not in {"assertion", "code_generation"} and encoded_size > 16 * 1024 * 1024:
             raise InvalidRequestError("A Model Change Set section exceeds 16 MiB.")
 
 
@@ -2296,14 +2534,23 @@ async def _validate_locked_change_set(
             issues=(issue,),
             action_review=(),
         )
+    staged_documents = cast(
+        dict[ModelChangeSetDataset, list[dict[str, object]]],
+        _pending_datasets(row),
+    )
+    qa_is_staged = bool(
+        staged_documents.get("validation_group") or staged_documents.get("validation_check")
+    )
+    code_is_staged = bool(staged_documents.get("generated_code"))
     snapshot = await build_model_snapshot(transaction, model)
-    physical_scope = await _load_physical_scope(transaction, model)
+    physical_scope = await _load_physical_scope(
+        transaction,
+        model,
+        required_artifact_type=(None if qa_is_staged and not code_is_staged else "sql_file"),
+    )
     return validate_future_graph(
         snapshot=snapshot,
-        staged_documents=cast(
-            dict[ModelChangeSetDataset, list[dict[str, object]]],
-            _pending_datasets(row),
-        ),
+        staged_documents=staged_documents,
         physical_scope=physical_scope,
     )
 
@@ -2311,6 +2558,8 @@ async def _validate_locked_change_set(
 async def _load_physical_scope(
     transaction: WriteTransaction,
     model: ModelReadContext,
+    *,
+    required_artifact_type: Literal["sql_file"] | None = "sql_file",
 ) -> PhysicalModelScope:
     rows = await transaction.fetch_all(_MODEL_PHYSICAL_SCOPE_SQL, (model.tenant_id,))
     if not rows:
@@ -2327,6 +2576,15 @@ async def _load_physical_scope(
     attribute_eligibility_rows = await transaction.fetch_all(
         _MODEL_ATTRIBUTE_ELIGIBILITY_SQL,
         (model.model_id,),
+    )
+    code_generation_context_rows = await transaction.fetch_all(
+        _CODE_GENERATION_CONTEXT_SQL,
+        (
+            model.model_id,
+            required_artifact_type,
+            model.model_id,
+            required_artifact_type,
+        ),
     )
     objects: set[tuple[str, str, str, str, str]] = set()
     attributes: set[tuple[str, str, str, str, str, str]] = set()
@@ -2384,6 +2642,47 @@ async def _load_physical_scope(
             for flag in eligibility_flags:
                 if eligibility[flag] is True:
                     eligible_attributes[flag].add(key)
+    code_generation_contexts: list[CodeGenerationTargetContext] = []
+    for context in code_generation_context_rows:
+        object_key = object_keys_by_id.get(context["object_id"])
+        source_context = context["source_context"]
+        raw_source_systems: object = (
+            cast(Mapping[str, object], source_context).get("source_systems", ())
+            if isinstance(source_context, Mapping)
+            else ()
+        )
+        source_system_codes: frozenset[str] = frozenset(
+            normalize_model_key_value(system_code)
+            for source_system in (
+                cast(list[object], raw_source_systems)
+                if isinstance(raw_source_systems, list)
+                else ()
+            )
+            if isinstance(source_system, Mapping)
+            and isinstance(
+                system_code := cast(Mapping[str, object], source_system).get("system_code"),
+                str,
+            )
+        )
+        modeled_entity_type = context["modeled_entity_type"]
+        mapping_context_digest = context["mapping_context_digest"]
+        source_context_digest = context["source_context_digest"]
+        if (
+            object_key is not None
+            and modeled_entity_type in {"logical_entity", "dimensional_entity"}
+            and isinstance(mapping_context_digest, str)
+            and isinstance(source_context_digest, str)
+            and source_system_codes
+        ):
+            code_generation_contexts.append(
+                CodeGenerationTargetContext(
+                    object_key=object_key,
+                    modeled_entity_type=modeled_entity_type,
+                    source_system_codes=source_system_codes,
+                    mapping_context_digest=mapping_context_digest.strip().lower(),
+                    source_context_digest=source_context_digest.strip().lower(),
+                )
+            )
     return PhysicalModelScope(
         model_tenant_code=rows[0]["model_tenant_code"],
         active_system_codes=frozenset(
@@ -2412,6 +2711,7 @@ async def _load_physical_scope(
         other_model_names=frozenset(
             normalize_model_key_value(other_model["model_name"]) for other_model in other_model_rows
         ),
+        code_generation_contexts=tuple(code_generation_contexts),
     )
 
 
@@ -2533,9 +2833,19 @@ def _audit_stage_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
 def _audit_begin_stage_batch(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     result = _audit_revision_input(arguments)
     dataset = arguments.get("dataset")
-    for name in ("total_record_count", "total_chunk_count"):
+    for name in ("total_record_count", "total_chunk_count", "total_payload_bytes"):
         value = arguments.get(name)
-        result[name] = value if type(value) is int and value > 0 else "invalid"
+        result[name] = (
+            value
+            if type(value) is int and value > 0
+            else "none"
+            if name == "total_payload_bytes" and value is None
+            else "invalid"
+        )
+    payload_mode = arguments.get("payload_mode", "records")
+    result["payload_mode"] = (
+        payload_mode if payload_mode in {"records", "json_fragments"} else "invalid"
+    )
     result["dataset"] = (
         dataset
         if isinstance(dataset, str) and dataset in CHANGE_SET_DATASETS_BY_NAME
@@ -2557,9 +2867,13 @@ def _audit_put_stage_chunk(arguments: Mapping[str, Any]) -> dict[str, str | int]
         chunk_index if type(chunk_index) is int and chunk_index > 0 else "invalid"
     )
     records = arguments.get("records")
-    result["record_count"] = (
-        len(cast(list[object], records)) if isinstance(records, list) else "invalid"
+    result["record_count"] = len(cast(list[object], records)) if isinstance(records, list) else 0
+    payload_mode = arguments.get("payload_mode", "records")
+    result["payload_mode"] = (
+        payload_mode if payload_mode in {"records", "json_fragments"} else "invalid"
     )
+    fragment = arguments.get("payload_fragment_base64")
+    result["payload_fragment_base64_characters"] = len(fragment) if isinstance(fragment, str) else 0
     return result
 
 
@@ -2579,6 +2893,7 @@ def _audit_get_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
 
 # Shared application-service boundary. MCP handlers keep their existing local
 # names; the web adapter imports only these explicit public contracts.
+decode_canonical_model_stage_payload = _decode_canonical_stage_payload
 model_change_set_documents = _documents
 model_validation_error = _error
 model_action_review = _model_action_review
@@ -2593,9 +2908,11 @@ model_validation_outcome = _validation_outcome
 
 
 __all__ = [
+    "ModelStagePayloadMode",
     "ModelChangeSetDatasetCount",
     "ModelDatasetCount",
     "StageModelChange",
+    "decode_canonical_model_stage_payload",
     "model_action_review",
     "model_change_set_documents",
     "model_validation_error",

@@ -28,10 +28,10 @@ DATABASE_ROOT = Path(__file__).parents[2] / "database"
 DATABASE_FILES = tuple(
     path
     for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
-    if 1 <= int(path.name[:2]) <= 12
+    if path.name not in {"00_preflight.sql", "20_verify_install.sql"}
 )
 DATABASE_PREFLIGHT_FILE = DATABASE_ROOT / "00_preflight.sql"
-DATABASE_VERIFY_FILE = DATABASE_ROOT / "13_verify_install.sql"
+DATABASE_VERIFY_FILE = DATABASE_ROOT / "20_verify_install.sql"
 FORBIDDEN_CONNECTION_ENVIRONMENT = frozenset(
     {
         "APP_POSTGRES_DB",

@@ -51,6 +51,8 @@ import {
 import { CodeGenerationModels } from "./features/code_generation/CodeGenerationModels";
 import { CodeGenerationScreen } from "./features/code_generation/CodeGenerationScreen";
 import { GeneratedSqlDetailPage } from "./features/code_generation/GeneratedSqlDetail";
+import { QAModels } from "./features/qa/QAModels";
+import { QAScreen } from "./features/qa/QAScreen";
 import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
 import { PromptTemplateDetailPage } from "./features/prompts/PromptTemplateDetail";
@@ -159,6 +161,18 @@ const tenantGeneratedSqlArtifactRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId",
   component: TenantGeneratedSqlArtifact,
+});
+
+const tenantQARoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/qa",
+  component: TenantQA,
+});
+
+const tenantQAModelRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/qa/models/$modelId",
+  component: TenantQAModel,
 });
 
 const tenantPromptsRoute = createRoute({
@@ -319,6 +333,8 @@ const routeTree = rootRoute.addChildren([
   tenantCodeGenerationRoute,
   tenantCodeGenerationModelRoute,
   tenantGeneratedSqlArtifactRoute,
+  tenantQARoute,
+  tenantQAModelRoute,
   tenantPromptsRoute,
   tenantPromptTemplateRoute,
   tenantModelPromptSettingsRoute,
@@ -618,6 +634,52 @@ function TenantGeneratedSqlArtifact() {
             hasAppPermission={canAuthorModels(home.tenant.effective_role)}
           />
         </main>
+      )}
+    </WorkspaceModelRouteFrame>
+  );
+}
+
+function TenantQA() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId } = tenantQARoute.useParams();
+  const numericTenantId = Number(tenantId);
+  return (
+    <TenantRouteFrame
+      api={api}
+      tenantId={numericTenantId}
+      activeNav="qa"
+      loadingLabel="Loading QA"
+    >
+      {() => (
+        <main className="workspace workspace-ledger">
+          <QAModels api={api} tenantId={numericTenantId} />
+        </main>
+      )}
+    </TenantRouteFrame>
+  );
+}
+
+function TenantQAModel() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, modelId } = tenantQAModelRoute.useParams();
+  const numericTenantId = Number(tenantId);
+  const numericModelId = Number(modelId);
+  return (
+    <WorkspaceModelRouteFrame
+      api={api}
+      tenantId={numericTenantId}
+      modelId={numericModelId}
+      activeNav="qa"
+      loadingLabel="Loading QA"
+    >
+      {({ home, model }) => (
+        <QAScreen
+          api={api}
+          tenantId={numericTenantId}
+          model={model}
+          hasTenantLock={home.lock.owned_by_current_principal === true}
+          hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+        />
       )}
     </WorkspaceModelRouteFrame>
   );

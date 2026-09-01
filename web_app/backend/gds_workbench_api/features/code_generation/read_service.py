@@ -68,14 +68,14 @@ SELECT context.source_context -> 'target' AS target,
        context.mapping_context_digest,
        context.source_context_digest,
        CASE
-           WHEN artifact.generated_sql_artifact_id IS NULL THEN NULL
+           WHEN artifact.generated_code_id IS NULL THEN NULL
            ELSE jsonb_build_object(
-               'generated_sql_artifact_id', artifact.generated_sql_artifact_id,
+               'generated_sql_artifact_id', artifact.generated_code_id,
                'workflow_run_id', artifact.workflow_run_id,
-               'generated_at', artifact.generated_time,
-               'generated_sql_digest', artifact.generated_sql_digest,
+               'generated_at', artifact.updated_time,
+               'generated_sql_digest', artifact.generated_code_digest,
                'artifact_is_current',
-                   artifact.model_revision = target_model.model_revision
+                   artifact.generated_code_status = 'active'
                    AND artifact.mapping_context_digest =
                        context.mapping_context_digest
                    AND artifact.source_context_digest =
@@ -147,10 +147,11 @@ SELECT context.source_context -> 'target' AS target,
                  context.source_context -> 'source_systems'
              ) WITH ORDINALITY AS system_entry(document, position)
   ) AS source_system
-  LEFT JOIN application.generated_sql_artifact AS artifact
+  LEFT JOIN workflow.generated_code AS artifact
     ON artifact.model_id = context.model_id
    AND artifact.modeled_entity_type = context.modeled_entity_type
    AND artifact.object_id = context.object_id
+   AND artifact.artifact_type = 'sql_file'
  WHERE (%s::BIGINT IS NULL
         OR (context.source_context -> 'target' ->> 'system_id')::BIGINT = %s)
    AND (
@@ -187,7 +188,7 @@ SELECT context.source_context -> 'target' AS target,
 """
 
 _GENERATED_SQL_ARTIFACT_DETAIL_SQL: LiteralString = """
-SELECT artifact.generated_sql_artifact_id,
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        artifact.model_id,
        coalesce(
            current_context.source_context -> 'target',
@@ -215,7 +216,7 @@ SELECT artifact.generated_sql_artifact_id,
        mapping_support.mapping_support_count > 200
            AS mapping_supports_truncated,
        coalesce(
-           target_model.model_revision = artifact.model_revision
+           artifact.generated_code_status = 'active'
            AND current_context.mapping_context_digest =
                artifact.mapping_context_digest
            AND current_context.source_context_digest =
@@ -224,32 +225,38 @@ SELECT artifact.generated_sql_artifact_id,
        ) AS artifact_is_current,
        artifact.mapping_context_digest,
        artifact.source_context_digest,
-       jsonb_build_object(
-           'sql_generation_guide_id', guide.sql_generation_guide_id,
-           'sql_generation_guide_code', guide.sql_generation_guide_code,
-           'sql_generation_guide_name', guide.sql_generation_guide_name,
-           'guide_is_active', guide.is_active,
-           'sql_generation_guide_version_id',
-               guide_version.sql_generation_guide_version_id,
-           'sql_generation_guide_version_number',
-               guide_version.sql_generation_guide_version_number,
-           'sql_generation_guide_version_status',
-               guide_version.sql_generation_guide_version_status,
-           'sql_generation_guide_digest',
-               guide_version.sql_generation_guide_digest
-       ) AS guide,
+       CASE
+           WHEN guide_version.sql_generation_guide_version_id IS NULL THEN NULL
+           ELSE jsonb_build_object(
+               'sql_generation_guide_id', guide.sql_generation_guide_id,
+               'sql_generation_guide_code', guide.sql_generation_guide_code,
+               'sql_generation_guide_name', guide.sql_generation_guide_name,
+               'guide_is_active', guide.is_active,
+               'sql_generation_guide_version_id',
+                   guide_version.sql_generation_guide_version_id,
+               'sql_generation_guide_version_number',
+                   guide_version.sql_generation_guide_version_number,
+               'sql_generation_guide_version_status',
+                   guide_version.sql_generation_guide_version_status,
+               'sql_generation_guide_digest',
+                   guide_version.sql_generation_guide_digest
+           )
+       END AS guide,
        artifact.workflow_run_id,
-       jsonb_build_object(
-           'generator_code', artifact.generator_code,
-           'generator_version', artifact.generator_version,
-           'generated_by_display_name', generator.principal_display_name
-       ) AS generator,
-       artifact.generated_time AS generated_at,
-       artifact.generated_sql,
-       artifact.generated_sql_digest,
-       octet_length(artifact.generated_sql)::INTEGER
+       CASE
+           WHEN generator.principal_id IS NULL THEN NULL
+           ELSE jsonb_build_object(
+               'generator_code', generating_run.agent_sdk_code,
+               'generator_version', NULL,
+               'generated_by_display_name', generator.principal_display_name
+           )
+       END AS generator,
+       artifact.updated_time AS generated_at,
+       artifact.generated_code_content AS generated_sql,
+       artifact.generated_code_digest AS generated_sql_digest,
+       octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
-  FROM application.generated_sql_artifact AS artifact
+  FROM workflow.generated_code AS artifact
   JOIN model.model AS target_model
     ON target_model.model_id = artifact.model_id
   JOIN core.object AS target_object
@@ -277,17 +284,21 @@ SELECT artifact.generated_sql_artifact_id,
       artifact.modeled_entity_type
   ) AS current_context
     ON current_context.object_id = artifact.object_id
-  JOIN application.sql_generation_guide AS guide
-    ON guide.sql_generation_guide_id = artifact.sql_generation_guide_id
-  JOIN application.sql_generation_guide_version AS guide_version
+  LEFT JOIN application.workflow_run AS generating_run
+    ON generating_run.workflow_run_id = artifact.workflow_run_id
+   AND generating_run.model_id = artifact.model_id
+   AND generating_run.model_workflow = 'code_generation'
+  LEFT JOIN application.sql_generation_guide AS guide
+    ON guide.sql_generation_guide_id = generating_run.sql_generation_guide_id
+  LEFT JOIN application.sql_generation_guide_version AS guide_version
     ON guide_version.sql_generation_guide_version_id =
-       artifact.sql_generation_guide_version_id
+       generating_run.sql_generation_guide_version_id
    AND guide_version.sql_generation_guide_id =
-       artifact.sql_generation_guide_id
+       generating_run.sql_generation_guide_id
    AND guide_version.sql_generation_guide_digest =
-       artifact.sql_generation_guide_digest
-  JOIN security.principal AS generator
-    ON generator.principal_id = artifact.generated_by_principal_id
+       generating_run.sql_generation_guide_digest
+  LEFT JOIN security.principal AS generator
+    ON generator.principal_id = generating_run.actor_principal_id
   CROSS JOIN LATERAL (
       SELECT coalesce(
                  jsonb_agg(
@@ -353,23 +364,25 @@ SELECT artifact.generated_sql_artifact_id,
   ) AS source_system
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
-   AND artifact.generated_sql_artifact_id = %s
+   AND artifact.generated_code_id = %s
+   AND artifact.artifact_type = 'sql_file'
 """
 
 _GENERATED_SQL_DOWNLOAD_BOUNDS_SQL: LiteralString = """
 SELECT count(*)::INTEGER AS artifact_count,
-       coalesce(sum(octet_length(artifact.generated_sql)), 0)::BIGINT
+       coalesce(sum(octet_length(artifact.generated_code_content)), 0)::BIGINT
            AS total_sql_bytes
-  FROM application.generated_sql_artifact AS artifact
+  FROM workflow.generated_code AS artifact
   JOIN model.model AS target_model
     ON target_model.model_id = artifact.model_id
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
-   AND artifact.generated_sql_artifact_id = ANY(%s::BIGINT[])
+   AND artifact.generated_code_id = ANY(%s::BIGINT[])
+   AND artifact.artifact_type = 'sql_file'
 """
 
 _GENERATED_SQL_DOWNLOAD_SQL: LiteralString = """
-SELECT artifact.generated_sql_artifact_id,
+SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        jsonb_build_object(
            'object_id', target_object.object_id,
            'tenant_id', target_tenant.tenant_id,
@@ -385,11 +398,11 @@ SELECT artifact.generated_sql_artifact_id,
            'zone_code', lower(btrim(target_zone.zone_code))
        ) AS target,
        artifact.modeled_entity_type AS entity_type,
-       artifact.generated_sql,
-       artifact.generated_sql_digest,
-       octet_length(artifact.generated_sql)::INTEGER
+       artifact.generated_code_content AS generated_sql,
+       artifact.generated_code_digest AS generated_sql_digest,
+       octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
-  FROM application.generated_sql_artifact AS artifact
+  FROM workflow.generated_code AS artifact
   JOIN model.model AS target_model
     ON target_model.model_id = artifact.model_id
   JOIN core.object AS target_object
@@ -414,8 +427,9 @@ SELECT artifact.generated_sql_artifact_id,
        )
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
-   AND artifact.generated_sql_artifact_id = ANY(%s::BIGINT[])
- ORDER BY array_position(%s::BIGINT[], artifact.generated_sql_artifact_id)
+   AND artifact.generated_code_id = ANY(%s::BIGINT[])
+   AND artifact.artifact_type = 'sql_file'
+ ORDER BY array_position(%s::BIGINT[], artifact.generated_code_id)
 """
 
 

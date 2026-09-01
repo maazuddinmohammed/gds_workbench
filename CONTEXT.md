@@ -77,7 +77,7 @@ _Avoid_: Modeling Evidence, fact, transient context
 
 **Section**:
 One versioned part of a Model change: Model Scope, Profiling, Assertion,
-Analysis, Conceptual, Logical, Dimensional, or Mapping.
+Analysis, Conceptual, Logical, Dimensional, Mapping, Code Generation, or QA.
 _Avoid_: Phase document, payload type
 
 **Model Change Set**:
@@ -143,8 +143,11 @@ preregistered Gold Objects and Attributes. It is stored in the Mapping Section.
 _Avoid_: Dimensional Section, Gold deployment
 
 **Stage Batch**:
-A Change-Set-owned, revision-bound transport manifest whose ordered typed chunks are
-invisible to validation and apply until one atomic Commit replaces a complete dataset.
+A Change-Set-owned, revision-bound transport manifest whose ordered typed chunks
+are invisible to validation and Apply until one atomic Commit replaces a
+complete dataset. Ordinary datasets use complete record chunks. Generated Code
+may instead use JSON byte fragments that Commit reassembles into one complete
+Code record; fragment boundaries never become Model state.
 _Avoid_: Append Stage, file upload, partial dataset
 
 **Local Reference**:
@@ -177,10 +180,39 @@ A concise GDS-generated handoff describing a blocked package, its evidence, the
 required upstream Workflow Target, and the exact resume point.
 _Avoid_: Automatic repair, error dump, raw prompt
 
+**Code Artifact**:
+One Model-owned SQL file, Python file, or Python notebook generated for one
+in-scope target Object. It is proposed and applied through the Code Generation
+Section. Its content and digest are Model state; applying it never executes or
+deploys the artifact. It has no separate domain-size cap; transport batching
+does not split it into multiple Model records.
+_Avoid_: Process, deployment, executed code
+
 **Mapping Code Generation**:
-A read-only Workflow Target that creates selected SQL or Python artifacts from
-applied Mapping records. It neither changes server state nor executes generated code.
-_Avoid_: Mapping Section, Mapping Apply, code execution
+The Workflow Target that creates one Code Artifact per selected target Object
+from applied Mapping, then hands the Candidate to a governed Model Change Set.
+Apply advances the Model revision. Generation never executes or deploys code.
+_Avoid_: Mapping Section, local-only code, code execution
+
+**Validation Group**:
+One Model-owned QA grouping for a Tenant and System. It contains related
+Validation Checks and uses applied Mapping plus any current relevant Code
+Artifacts as authoring context. Code may be absent.
+_Avoid_: server validation phase, Workflow Run group
+
+**Validation Check**:
+One deterministic QA definition containing Query A, optional Query B or a
+literal operand, and an explicit comparison contract. It stores authoring
+intent; storing or applying it never executes it. A governed authoring policy
+may separately sample-verify the read query.
+_Avoid_: Model Change Set validation, agent judgment at runtime
+
+**QA**:
+The Workflow Target that derives Validation Groups and Validation Checks from
+applied Mapping, any current relevant Code Artifacts when present, and explicit
+user input, then hands the Candidate to a governed Model Change Set. Apply
+advances the Model revision. Operational execution is a separate concern.
+_Avoid_: Validate, server validation, Profiling
 
 **GDS Workbench**:
 The local-only interface for inspecting immutable Snapshots, editing local

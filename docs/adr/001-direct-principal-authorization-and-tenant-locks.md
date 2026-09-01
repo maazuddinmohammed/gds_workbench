@@ -46,7 +46,6 @@ Principal ID, actor kind, policy, or lock token. Workflow launch coordination is
 outside this MCP scaffold and can be designed later without pre-adding an unused
 delegation model.
 
-Older blueprint sections that describe Workflow Grants, fixed Workflow Control
-routes, a dormant Tenant Lease, or a 22-tool inventory are historical planning
-material and are superseded by this ADR, current numbered SQL, and current MCP
-source.
+Superseded planning documents that described Workflow Grants, fixed Workflow
+Control routes, a dormant Tenant Lease, or obsolete tool inventories were
+removed. This ADR, current numbered SQL, and current MCP source are authoritative.

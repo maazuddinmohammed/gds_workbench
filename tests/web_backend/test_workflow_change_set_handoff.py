@@ -20,12 +20,12 @@ from gds_etl_workbench.tools.change_sets.model_validation import (
     ValidatedModelChangeSet,
 )
 
+from gds_workbench_api.features.models import ModelRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetHandoff,
     WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
-from gds_workbench_api.features.models import ModelRevisionConflictError
 
 _NOW = datetime(2026, 8, 24, 16, 0, tzinfo=UTC)
 _CHANGE_SET_ID = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
@@ -81,6 +81,8 @@ def _change_set_row(*, status: str = "active") -> dict[str, Any]:
         "logical_document": {},
         "dimensional_document": {},
         "mapping_document": {},
+        "code_generation_document": {},
+        "qa_document": {},
         "created_by_principal_id": 41,
         "correlation_id": _CORRELATION_ID,
         "created_time": _NOW,
@@ -265,9 +267,7 @@ def _final_event() -> AgentWorkflowEvent:
 
 
 @pytest.mark.asyncio
-async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft() -> (
-    None
-):
+async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft() -> None:
     database = HandoffDatabase(HandoffTransaction())
     handoff = WorkflowChangeSetHandoff(
         database=database,
@@ -300,9 +300,7 @@ async def test_handoff_atomically_creates_stages_and_validates_one_bound_draft()
 
 @pytest.mark.asyncio
 async def test_handoff_replays_the_existing_validated_bound_draft() -> None:
-    database = HandoffDatabase(
-        HandoffTransaction(existing=_change_set_row(status="validated"))
-    )
+    database = HandoffDatabase(HandoffTransaction(existing=_change_set_row(status="validated")))
     validator_called = False
 
     async def unexpected_validator(
@@ -368,9 +366,7 @@ async def test_finalization_commits_draft_event_and_completion_together() -> Non
         for call in database.transaction.calls
         if "application.assert_workflow_run_claim" in call[0]
     ]
-    assert claim_assertions == [
-        (database.transaction.calls[0][0], (1048, _CLAIM_TOKEN))
-    ]
+    assert claim_assertions == [(database.transaction.calls[0][0], (1048, _CLAIM_TOKEN))]
     assert database.transaction.events == ["created", "section_put", "validated"]
     assert database.transaction.workflow_calls == ["append", "complete"]
 
@@ -483,9 +479,7 @@ async def test_finalization_rolls_back_the_draft_when_workflow_event_fails() -> 
 
 @pytest.mark.asyncio
 async def test_handoff_rejects_different_output_for_the_same_workflow_run() -> None:
-    database = HandoffDatabase(
-        HandoffTransaction(existing=_change_set_row(status="validated"))
-    )
+    database = HandoffDatabase(HandoffTransaction(existing=_change_set_row(status="validated")))
     handoff = WorkflowChangeSetHandoff(
         database=database,
         authorizer=AuthorizationService(),

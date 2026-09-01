@@ -91,6 +91,12 @@ from gds_workbench_api.features.profiling import (
     create_profiling_workflow_router,
 )
 from gds_workbench_api.features.prompts import PromptService, create_prompts_router
+from gds_workbench_api.features.qa import (
+    QAReadService,
+    QAWorkflowService,
+    create_qa_read_router,
+    create_qa_workflow_router,
+)
 from gds_workbench_api.features.session import SessionService, create_session_router
 from gds_workbench_api.features.sql_generation_guides import (
     SqlGenerationGuideService,
@@ -157,6 +163,8 @@ def create_app(
     mapping_workflow_service: MappingWorkflowService | None = None,
     code_generation_service: CodeGenerationService | None = None,
     code_generation_workflow_service: CodeGenerationWorkflowService | None = None,
+    qa_read_service: QAReadService | None = None,
+    qa_workflow_service: QAWorkflowService | None = None,
     workflow_overview_service: WorkflowOverviewService | None = None,
     workflow_run_service: WorkflowRunService | None = None,
     workflow_command_service: WorkflowCommandService | None = None,
@@ -410,6 +418,20 @@ def create_app(
             create_code_generation_workflow_router(
                 identity_provider=identity_provider,
                 service=code_generation_workflow_service,
+            )
+        )
+    if identity_provider is not None and qa_read_service is not None:
+        app.include_router(
+            create_qa_read_router(
+                identity_provider=identity_provider,
+                service=qa_read_service,
+            )
+        )
+    if identity_provider is not None and qa_workflow_service is not None:
+        app.include_router(
+            create_qa_workflow_router(
+                identity_provider=identity_provider,
+                service=qa_workflow_service,
             )
         )
     if identity_provider is not None and workflow_overview_service is not None:

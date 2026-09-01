@@ -7,6 +7,7 @@ from pydantic import SecretStr
 
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
 )
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
@@ -120,6 +121,7 @@ async def test_langchain_adapter_uses_prompt_json_and_bounded_turns(
     assert result.turn_count == 2
     assert result.tool_call_count == 1
     assert "response_format" not in captured["agent"]
+    assert captured["agent"]["system_prompt"].endswith(AGENT_OUTPUT_CONTRACT_INSTRUCTION)
     assert captured["config"] == {"recursion_limit": 13}
     assert captured["model"]["model"] == "production-agent-endpoint"
     assert "store" not in captured["model"]
@@ -135,9 +137,7 @@ async def test_langchain_adapter_routes_exact_model_with_shared_provider_authent
     class FakeGraph:
         async def ainvoke(self, *_: Any, **__: Any) -> dict[str, Any]:
             return {
-                "messages": [
-                    SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')
-                ]
+                "messages": [SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')]
             }
 
     def fake_model(**kwargs: Any) -> str:
@@ -193,9 +193,7 @@ async def test_langchain_adapter_distinguishes_provider_default_and_explicit_non
     class FakeGraph:
         async def ainvoke(self, *_: Any, **__: Any) -> dict[str, Any]:
             return {
-                "messages": [
-                    SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')
-                ]
+                "messages": [SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')]
             }
 
     def fake_model(**kwargs: Any) -> dict[str, Any]:
@@ -312,6 +310,7 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     assert captured["closed"] is True
     assert captured["model"]["model"] == "production-agent-endpoint"
     assert captured["agent"]["model_settings"].store is None
+    assert captured["agent"]["instructions"].endswith(AGENT_OUTPUT_CONTRACT_INSTRUCTION)
 
 
 @pytest.mark.asyncio
@@ -426,9 +425,7 @@ async def test_databricks_model_authentication_uses_unified_oauth(
 
     credentials = await DatabricksModelAuthentication().authenticate()
 
-    assert credentials.base_url == (
-        "https://fixture.azuredatabricks.net/serving-endpoints"
-    )
+    assert credentials.base_url == ("https://fixture.azuredatabricks.net/serving-endpoints")
     assert credentials.api_key.get_secret_value() == "never-log-this-token"
     assert "never-log-this-token" not in repr(credentials)
 
@@ -529,9 +526,7 @@ async def test_foundry_authentication_uses_direct_entra_token(
 
     assert credentials.base_url == "https://fixture.openai.azure.com/openai/v1/"
     assert credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
-    assert (
-        second_credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
-    )
+    assert second_credentials.api_key.get_secret_value() == "never-log-this-foundry-token"
     assert captured == {
         "created": 1,
         "credential": {

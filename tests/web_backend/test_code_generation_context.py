@@ -70,6 +70,7 @@ def _row(object_id: int) -> dict[str, Any]:
             "target": {
                 "tenant_code": "NWA",
                 "system_code": "GDS",
+                "connection_code": "WAREHOUSE",
                 "object_schema": "silver_crm",
                 "object_name": f"target_{object_id}",
             },
@@ -96,6 +97,12 @@ def _row(object_id: int) -> dict[str, Any]:
             "version_number": 1,
             "content": "Use MERGE when appropriate.",
         },
+        "tenant_code": "NWA",
+        "system_code": "GDS",
+        "connection_code": "WAREHOUSE",
+        "object_schema": "silver_crm",
+        "object_name": f"target_{object_id}",
+        "applied_generated_code_content": None,
     }
 
 

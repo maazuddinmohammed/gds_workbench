@@ -92,6 +92,11 @@ async def test_storage_atomically_upserts_exact_artifacts_then_completes_run() -
                 mapping_context_digest="a" * 64,
                 source_context_digest="b" * 64,
                 sql_generation_guide_version_id=81,
+                tenant_code="NWA",
+                system_code="GDS",
+                connection_code="WAREHOUSE",
+                object_schema="silver_crm",
+                object_name="customer",
             ),
         ),
     )
@@ -177,6 +182,11 @@ async def test_storage_rejects_a_lost_claim_before_any_artifact_or_completion_wr
                     mapping_context_digest="a" * 64,
                     source_context_digest="b" * 64,
                     sql_generation_guide_version_id=81,
+                    tenant_code="NWA",
+                    system_code="GDS",
+                    connection_code="WAREHOUSE",
+                    object_schema="silver_crm",
+                    object_name="customer",
                 ),
             ),
         )

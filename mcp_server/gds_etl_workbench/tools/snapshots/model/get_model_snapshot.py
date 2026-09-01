@@ -96,7 +96,8 @@ def register_get_model_snapshot_tool(
         description=(
             "Create one complete, immutable, ID-free Model Snapshot. Returns only a "
             "temporary read-only download URL and bounded archive metadata; snapshot "
-            "rows never enter the MCP response."
+            "rows never enter the MCP response. Includes applied Code Generation and QA, "
+            "plus trusted snapshot-only QA authoring contexts."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

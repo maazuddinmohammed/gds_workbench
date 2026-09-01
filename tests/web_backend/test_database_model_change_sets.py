@@ -1,3 +1,4 @@
+import base64
 import hashlib
 import json
 from collections.abc import Mapping
@@ -48,6 +49,7 @@ from gds_workbench_api.features.model_change_sets.contracts import (
 from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
 )
+from gds_workbench_api.features.models import ModelRevisionConflictError
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
     DatabaseWorkflowDraftApplyService,
@@ -67,9 +69,8 @@ from gds_workbench_api.features.workflows.authoring.no_op import (
 from gds_workbench_api.features.workflows.execution.repository import (
     DatabaseWorkflowClaimRepository,
 )
-from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
-from gds_workbench_api.features.models import ModelRevisionConflictError
 from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
+from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
 
 
 class DisposablePostgresFixture(Protocol):
@@ -144,6 +145,9 @@ def test_web_change_set_role_has_only_the_required_materialization_surface(
                        'gds_web_write', 'mcp.model_stage_chunk', 'SELECT,INSERT'
                    ) AS chunk_ok,
                    has_table_privilege(
+                       'gds_web_write', 'mcp.model_stage_payload_chunk', 'SELECT,INSERT'
+                   ) AS payload_chunk_ok,
+                   has_table_privilege(
                        'gds_web_write', 'mcp.model_change_set_event', 'SELECT,INSERT'
                    ) AS event_ok,
                    (
@@ -153,6 +157,12 @@ def test_web_change_set_role_has_only_the_required_materialization_surface(
                            'gds_web_write', 'mcp.model_stage_chunk', 'DELETE'
                        ) OR has_table_privilege(
                            'gds_web_write', 'mcp.model_stage_chunk', 'TRUNCATE'
+                       ) OR has_table_privilege(
+                           'gds_web_write', 'mcp.model_stage_payload_chunk', 'UPDATE'
+                       ) OR has_table_privilege(
+                           'gds_web_write', 'mcp.model_stage_payload_chunk', 'DELETE'
+                       ) OR has_table_privilege(
+                           'gds_web_write', 'mcp.model_stage_payload_chunk', 'TRUNCATE'
                        )
                    ) AS chunk_too_broad,
                    (
@@ -179,6 +189,7 @@ def test_web_change_set_role_has_only_the_required_materialization_surface(
     assert _bool(change_set, "change_set_ok")
     assert _bool(change_set, "batch_ok")
     assert _bool(change_set, "chunk_ok")
+    assert _bool(change_set, "payload_chunk_ok")
     assert _bool(change_set, "event_ok")
     assert not _bool(change_set, "chunk_too_broad")
     assert not _bool(change_set, "audit_exposed")
@@ -961,6 +972,7 @@ def _create_queued_authoring_run_with_prompt(
                   8::INTEGER,
                   1::INTEGER,
                   %s::BIGINT[],
+                  ARRAY[]::VARCHAR[],
                   NULL::VARCHAR,
                   NULL::VARCHAR,
                   %s::UUID,
@@ -1250,6 +1262,7 @@ def _create_queued_analysis_run_with_prompt(
                   8::INTEGER,
                   1::INTEGER,
                   %s::BIGINT[],
+                  ARRAY[]::VARCHAR[],
                   NULL::VARCHAR,
                   NULL::VARCHAR,
                   %s::UUID,
@@ -1352,9 +1365,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
                 change_set_id=created.model_change_set_id,
                 command=StageModelChangeSetRequest(
                     expected_draft_revision=1,
-                    changes=[
-                        StageModelChange(dataset="profiling_profile", records=[profile])
-                    ],
+                    changes=[StageModelChange(dataset="profiling_profile", records=[profile])],
                 ),
                 idempotency_key=uuid4(),
             )
@@ -1460,9 +1471,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=created.model_change_set_id,
-            command=ExpectedDraftRevisionRequest(
-                expected_draft_revision=committed.draft_revision
-            ),
+            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
             idempotency_key=uuid4(),
         )
         assert validated.valid is True
@@ -1471,11 +1480,99 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             tenant_id=tenant_id,
             model_id=model_id,
             change_set_id=created.model_change_set_id,
-            command=ExpectedDraftRevisionRequest(
-                expected_draft_revision=committed.draft_revision
+            command=ExpectedDraftRevisionRequest(expected_draft_revision=committed.draft_revision),
+            idempotency_key=uuid4(),
+        )
+
+        code_content = "SELECT 'café' AS label;\nSELECT 1 AS result;"
+        code_record: dict[str, object] = {
+            "tenant_code": "WEB_CODE_FRAGMENT",
+            "system_code": "WEB_CODE_FRAGMENT_SYSTEM",
+            "connection_code": "WEB_CODE_FRAGMENT_CONNECTION",
+            "object_schema": "silver",
+            "object_name": "fragmented_code",
+            "modeled_entity_type": "logical_entity",
+            "artifact_type": "sql_file",
+            "generated_code_content": code_content,
+            "mapping_context_digest": "1" * 64,
+            "source_context_digest": "2" * 64,
+            "generated_code_digest": hashlib.sha256(code_content.encode()).hexdigest(),
+            "generated_code_status": "active",
+            "generated_code_is_locked": False,
+        }
+        payload = json.dumps(
+            [code_record],
+            ensure_ascii=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode()
+        split = payload.index("é".encode()) + 1
+        payload_fragments = (payload[:split], payload[split:])
+        payload_hashes = tuple(
+            hashlib.sha256(fragment).hexdigest() for fragment in payload_fragments
+        )
+        code_change_set = await service.create_or_resume(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=CreateModelChangeSetRequest(expected_model_revision=2),
+            idempotency_key=uuid4(),
+        )
+        code_batch = await service.begin_stage_batch(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            change_set_id=code_change_set.model_change_set_id,
+            command=BeginModelStageBatchRequest(
+                expected_draft_revision=1,
+                dataset="generated_code",
+                payload_mode="json_fragments",
+                total_record_count=1,
+                total_chunk_count=len(payload_fragments),
+                total_payload_bytes=len(payload),
+                batch_sha256=stage_batch_sha256(list(payload_hashes)),
             ),
             idempotency_key=uuid4(),
         )
+        for chunk_index, (fragment, fragment_hash) in enumerate(
+            zip(payload_fragments, payload_hashes, strict=True),
+            start=1,
+        ):
+            put_fragment = await service.put_stage_chunk(
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                change_set_id=code_change_set.model_change_set_id,
+                stage_batch_id=code_batch.stage_batch_id,
+                chunk_index=chunk_index,
+                command=PutModelStageChunkRequest(
+                    dataset="generated_code",
+                    payload_mode="json_fragments",
+                    payload_fragment_base64=base64.b64encode(fragment).decode(),
+                    chunk_sha256=fragment_hash,
+                ),
+                idempotency_key=uuid4(),
+            )
+            assert put_fragment.record_count == 0
+            assert put_fragment.payload_byte_count == len(fragment)
+        code_commit = await service.commit_stage_batch(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            change_set_id=code_change_set.model_change_set_id,
+            stage_batch_id=code_batch.stage_batch_id,
+            command=ExpectedDraftRevisionRequest(expected_draft_revision=1),
+            idempotency_key=uuid4(),
+        )
+        pending_code = await service.get(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            change_set_id=code_change_set.model_change_set_id,
+            dataset="generated_code",
+        )
+        assert code_commit.draft_revision == 2
+        assert pending_code.records == [code_record]
     finally:
         await database.close()
 
@@ -2272,9 +2369,7 @@ async def test_completed_conceptual_draft_applies_once_with_run_provenance(
                 tenant_id=tenant_id,
                 model_id=model_id,
                 workflow_run_id=workflow_run_id,
-                command=command.model_copy(
-                    update={"expected_candidate_digest": "e" * 64}
-                ),
+                command=command.model_copy(update={"expected_candidate_digest": "e" * 64}),
                 idempotency_key=uuid4(),
             )
         with pytest.raises(ModelRevisionConflictError):

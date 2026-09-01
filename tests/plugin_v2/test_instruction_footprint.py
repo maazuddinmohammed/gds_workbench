@@ -30,11 +30,11 @@ def test_static_instruction_footprint_proxy_stays_bounded() -> None:
 def test_router_requires_progressive_reference_loading() -> None:
     router = (V2_ROOT / "skills" / "gds" / "SKILL.md").read_text()
 
-    assert "Load only the reference for the active target" in router
-    assert "Do not preload every workflow" in router
-    assert "Do not load an entire Snapshot into model context" in router
+    assert "Load only the active-target reference" in router
+    assert "Never preload every workflow" in router
+    assert "Do not load an entire Snapshot" in router
     assert "run `readiness` once for a known target" in router
-    assert "never precede it with `inspect`" in router
+    assert "without `inspect`" in router
 
     session = (V2_ROOT / "skills" / "gds" / "references" / "session.md").read_text()
     helper = (V2_ROOT / "skills" / "gds" / "references" / "local-helper.md").read_text()
@@ -42,4 +42,4 @@ def test_router_requires_progressive_reference_loading() -> None:
         "run `readiness` for a known target or `inspect` otherwise—never both"
         in session
     )
-    assert "never call both as setup" in helper
+    assert "never call both" in helper

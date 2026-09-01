@@ -24,7 +24,17 @@ from .lifecycle import (
 )
 from .plan import AgentRunPlan, ModelWorkflow, WorkflowExecutionMode
 
-_AUTHORING_WORKFLOWS = frozenset({"analysis", "conceptual", "logical", "dimensional", "mapping"})
+_AUTHORING_WORKFLOWS = frozenset(
+    {
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "qa",
+    }
+)
 
 _COMPLETE_AUTHORING_NO_OP_SQL: LiteralString = """
 SELECT receipt.changed,
@@ -77,7 +87,7 @@ class AuthoringNoOpRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     expected_workflow: ModelWorkflow
-    expected_execution_mode: WorkflowExecutionMode
+    expected_execution_mode: WorkflowExecutionMode | None
     expected_correlation_id: UUID
     expected_model_revision: int = Field(gt=0)
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -87,6 +97,10 @@ class AuthoringNoOpRequest(BaseModel):
     def validate_authoring_workflow(self) -> Self:
         if self.expected_workflow not in _AUTHORING_WORKFLOWS:
             raise ValueError("Only an authoring Workflow can complete with a no-op receipt")
+        if (self.expected_workflow in {"code_generation", "qa"}) != (
+            self.expected_execution_mode is None
+        ):
+            raise ValueError("The authoring Workflow execution mode is invalid")
         if (
             self.final_event.stage != f"{self.expected_workflow}.backend_validation"
             or self.final_event.status not in ("running", "warning")
@@ -107,7 +121,7 @@ class AuthoringNoOpReceipt(BaseModel):
     workflow_run_id: int = Field(gt=0)
     workflow_run_state: Literal["completed", "completed_with_repair"]
     model_workflow: ModelWorkflow
-    workflow_execution_mode: WorkflowExecutionMode
+    workflow_execution_mode: WorkflowExecutionMode | None
     correlation_id: UUID
     candidate_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     replayed: bool

@@ -1,6 +1,6 @@
 """Governed Model Change Set application service."""
 
-import json
+import hashlib
 from collections.abc import Iterable, Mapping
 from contextlib import AbstractAsyncContextManager
 from datetime import datetime
@@ -27,14 +27,17 @@ from gds_etl_workbench.domain.errors import (
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_etl_workbench.tools.change_sets.common import (
-    MAX_STAGE_CHUNK_BYTES,
+    MAX_MODEL_STAGE_CHUNK_BYTES,
+    canonical_records_bytes,
     canonical_records_sha256,
+    decode_canonical_base64_fragment,
     stage_batch_sha256,
 )
 from gds_etl_workbench.tools.change_sets.model import (
     ModelChangeSetDatasetCount,
     ModelDatasetCount,
     StageModelChange,
+    decode_canonical_model_stage_payload,
     model_action_review,
     model_change_set_documents,
     model_validation_error,
@@ -283,6 +286,8 @@ class DatabaseModelChangeSetService:
                     or row["expected_draft_revision"] != command.expected_draft_revision
                     or row["total_record_count"] != command.total_record_count
                     or row["total_chunk_count"] != command.total_chunk_count
+                    or row["payload_mode"] != command.payload_mode
+                    or row["total_payload_bytes"] != command.total_payload_bytes
                     or row["batch_sha256"] != command.batch_sha256
                 ):
                     raise StageBatchConflictError()
@@ -296,6 +301,8 @@ class DatabaseModelChangeSetService:
                         command.expected_draft_revision,
                         command.total_record_count,
                         command.total_chunk_count,
+                        command.payload_mode,
+                        command.total_payload_bytes,
                         command.batch_sha256,
                         principal_id,
                         idempotency_key,
@@ -315,6 +322,8 @@ class DatabaseModelChangeSetService:
             received_chunk_count=row["received_chunk_count"],
             expected_draft_revision=command.expected_draft_revision,
             expires_at=require_datetime(row, "expires_time"),
+            payload_mode=row["payload_mode"],
+            total_payload_bytes=row["total_payload_bytes"],
         )
 
     async def put_stage_chunk(
@@ -331,20 +340,26 @@ class DatabaseModelChangeSetService:
     ) -> PutModelStageChunkResult:
         del idempotency_key
         self._require_web_stage_datasets((command.dataset,))
-        normalized = validate_model_stage_changes(
-            [StageModelChange(dataset=command.dataset, records=command.records)]
-        )[command.dataset]
-        encoded = json.dumps(
-            normalized,
-            ensure_ascii=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode()
-        if len(encoded) > MAX_STAGE_CHUNK_BYTES:
-            raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
-        if canonical_records_sha256(normalized) != command.chunk_sha256:
+        normalized: list[dict[str, object]] = []
+        payload_fragment: bytes | None = None
+        if command.payload_mode == "records":
+            assert command.records is not None
+            normalized = validate_model_stage_changes(
+                [StageModelChange(dataset=command.dataset, records=command.records)]
+            )[command.dataset]
+            if len(canonical_records_bytes(normalized)) > MAX_MODEL_STAGE_CHUNK_BYTES:
+                raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
+            actual_sha256 = canonical_records_sha256(normalized)
+        else:
+            assert command.payload_fragment_base64 is not None
+            try:
+                payload_fragment = decode_canonical_base64_fragment(command.payload_fragment_base64)
+            except ValueError:
+                raise InvalidRequestError("Stage payload fragment is invalid.") from None
+            actual_sha256 = hashlib.sha256(payload_fragment).hexdigest()
+        if actual_sha256 != command.chunk_sha256:
             raise InvalidRequestError(
-                "The Stage chunk SHA-256 does not match its normalized records."
+                "The Stage chunk SHA-256 does not match its canonical payload."
             )
         async with self._database.write_transaction() as transaction:
             repository, _model, authorization = await self._authorize_model(
@@ -370,30 +385,68 @@ class DatabaseModelChangeSetService:
             require_model_stage_batch(batch, authorization.principal, command.dataset)
             assert batch is not None
             self._require_draft_revision(change_set, batch["expected_draft_revision"])
+            if batch["payload_mode"] != command.payload_mode:
+                raise InvalidRequestError("Payload mode does not match the Stage Batch manifest.")
             if chunk_index > batch["total_chunk_count"]:
                 raise InvalidRequestError("Chunk index exceeds the Stage Batch manifest.")
-            existing = await repository.get_stage_chunk(
-                stage_batch_id=stage_batch_id,
-                chunk_index=chunk_index,
+            existing = (
+                await repository.get_stage_payload_chunk(
+                    stage_batch_id=stage_batch_id,
+                    chunk_index=chunk_index,
+                )
+                if command.payload_mode == "json_fragments"
+                else await repository.get_stage_chunk(
+                    stage_batch_id=stage_batch_id,
+                    chunk_index=chunk_index,
+                )
             )
             duplicate = existing is not None
             if existing is not None:
+                fragment_conflict = command.payload_mode == "json_fragments" and (
+                    payload_fragment is None
+                    or bytes(existing["payload_fragment"]) != payload_fragment
+                )
+                record_conflict = (
+                    command.payload_mode == "records" and existing["records_document"] != normalized
+                )
                 if (
                     existing["chunk_sha256"] != command.chunk_sha256
-                    or existing["records_document"] != normalized
+                    or fragment_conflict
+                    or record_conflict
                 ):
                     raise StageChunkConflictError()
             else:
-                totals = await repository.stage_chunk_totals(stage_batch_id=stage_batch_id)
-                if totals["record_count"] + len(normalized) > batch["total_record_count"]:
-                    raise InvalidRequestError("Stage chunks exceed the approved record count.")
-                await repository.insert_stage_chunk(
-                    stage_batch_id=stage_batch_id,
-                    chunk_index=chunk_index,
-                    records=normalized,
-                    chunk_sha256=command.chunk_sha256,
-                )
-            totals = await repository.stage_chunk_totals(stage_batch_id=stage_batch_id)
+                if command.payload_mode == "json_fragments":
+                    assert payload_fragment is not None
+                    totals = await repository.stage_payload_chunk_totals(
+                        stage_batch_id=stage_batch_id
+                    )
+                    if (
+                        totals["payload_byte_count"] + len(payload_fragment)
+                        > batch["total_payload_bytes"]
+                    ):
+                        raise InvalidRequestError("Stage chunks exceed the approved payload bytes.")
+                    await repository.insert_stage_payload_chunk(
+                        stage_batch_id=stage_batch_id,
+                        chunk_index=chunk_index,
+                        payload_fragment=payload_fragment,
+                        chunk_sha256=command.chunk_sha256,
+                    )
+                else:
+                    totals = await repository.stage_chunk_totals(stage_batch_id=stage_batch_id)
+                    if totals["record_count"] + len(normalized) > batch["total_record_count"]:
+                        raise InvalidRequestError("Stage chunks exceed the approved record count.")
+                    await repository.insert_stage_chunk(
+                        stage_batch_id=stage_batch_id,
+                        chunk_index=chunk_index,
+                        records=normalized,
+                        chunk_sha256=command.chunk_sha256,
+                    )
+            totals = (
+                await repository.stage_payload_chunk_totals(stage_batch_id=stage_batch_id)
+                if command.payload_mode == "json_fragments"
+                else await repository.stage_chunk_totals(stage_batch_id=stage_batch_id)
+            )
         return PutModelStageChunkResult(
             model_id=model_id,
             model_change_set_id=change_set_id,
@@ -405,6 +458,8 @@ class DatabaseModelChangeSetService:
             received_chunk_count=totals["chunk_count"],
             total_chunk_count=batch["total_chunk_count"],
             expires_at=require_datetime(batch, "expires_time"),
+            payload_mode=command.payload_mode,
+            payload_byte_count=(len(payload_fragment) if payload_fragment is not None else None),
         )
 
     async def commit_stage_batch(
@@ -456,23 +511,51 @@ class DatabaseModelChangeSetService:
                 require_model_stage_batch(batch, authorization.principal, None)
                 require_mutable_model_change_set(change_set)
                 self._require_draft_revision(change_set, command.expected_draft_revision)
-                chunks = await repository.get_stage_chunks(stage_batch_id=stage_batch_id)
+                payload_mode = batch["payload_mode"]
+                chunks = (
+                    await repository.get_stage_payload_chunks(stage_batch_id=stage_batch_id)
+                    if payload_mode == "json_fragments"
+                    else await repository.get_stage_chunks(stage_batch_id=stage_batch_id)
+                )
                 if (
                     len(chunks) != batch["total_chunk_count"]
-                    or sum(chunk["record_count"] for chunk in chunks) != batch["total_record_count"]
                     or stage_batch_sha256([chunk["chunk_sha256"] for chunk in chunks])
                     != batch["batch_sha256"]
                 ):
                     raise StageBatchIncompleteError()
-                assembled = [
-                    cast(dict[str, object], record)
-                    for chunk in chunks
-                    for record in chunk["records_document"]
-                ]
+                payload: bytes | None = None
+                if payload_mode == "json_fragments":
+                    if (
+                        sum(chunk["chunk_byte_count"] for chunk in chunks)
+                        != batch["total_payload_bytes"]
+                    ):
+                        raise StageBatchIncompleteError()
+                    payload = b"".join(bytes(chunk["payload_fragment"]) for chunk in chunks)
+                    assembled = decode_canonical_model_stage_payload(
+                        payload,
+                        expected_record_count=batch["total_record_count"],
+                    )
+                else:
+                    if (
+                        sum(chunk["record_count"] for chunk in chunks)
+                        != batch["total_record_count"]
+                    ):
+                        raise StageBatchIncompleteError()
+                    assembled = [
+                        cast(dict[str, object], record)
+                        for chunk in chunks
+                        for record in chunk["records_document"]
+                    ]
                 dataset = cast(ModelChangeSetDataset, batch["dataset_name"])
                 staged = validate_model_stage_changes(
                     [StageModelChange(dataset=dataset, records=assembled)]
                 )
+                if (
+                    payload_mode == "json_fragments"
+                    and payload is not None
+                    and canonical_records_bytes(staged[dataset]) != payload
+                ):
+                    raise InvalidRequestError("The Stage payload is not canonical normalized JSON.")
                 documents = model_change_set_documents(change_set)
                 section = DATASETS_BY_NAME[dataset].section
                 documents[section][dataset] = staged[dataset]

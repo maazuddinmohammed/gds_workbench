@@ -38,7 +38,8 @@ CREATE_MAPPING_RUN_SQL = """
           'one_shot'::VARCHAR,
           NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR,
           NULL::INTEGER, NULL::INTEGER,
-          %s::BIGINT[], NULL::VARCHAR, NULL::VARCHAR, %s::UUID, '{}'::JSONB,
+          %s::BIGINT[], ARRAY[]::VARCHAR[], NULL::VARCHAR, NULL::VARCHAR,
+          %s::UUID, '{}'::JSONB,
           %s::VARCHAR, %s::VARCHAR, %s::VARCHAR, %s::BIGINT,
           %s::BIGINT, %s::BIGINT
       )
@@ -52,7 +53,8 @@ CREATE_PROFILING_RUN_WITH_MAPPING_TEMPLATE_SQL = """
           NULL::VARCHAR,
           NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR,
           NULL::INTEGER, NULL::INTEGER,
-          %s::BIGINT[], NULL::VARCHAR, NULL::VARCHAR, %s::UUID, '{}'::JSONB,
+          %s::BIGINT[], ARRAY[]::VARCHAR[], NULL::VARCHAR, NULL::VARCHAR,
+          %s::UUID, '{}'::JSONB,
           NULL::VARCHAR, NULL::VARCHAR, NULL::VARCHAR, NULL::BIGINT,
           %s::BIGINT, %s::BIGINT
       )

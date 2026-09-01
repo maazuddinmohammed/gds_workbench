@@ -105,6 +105,8 @@ EXPECTED_STAGES = {
     ("mapping", "detailed_coverage", "target_validator", 30, True),
     ("code_generation", None, "sql_generation", 10, True),
     ("code_generation", None, "sql_validation", 20, False),
+    ("qa", None, "validation_generation", 10, True),
+    ("qa", None, "backend_validation", 20, False),
 }
 
 NON_REFERENCE_APPLICATION_TABLES = (
@@ -121,6 +123,7 @@ NON_REFERENCE_APPLICATION_TABLES = (
     "workflow_run_mapping_target_selection",
     "workflow_run_object_selection",
     "workflow_run_prompt_snapshot",
+    "workflow_run_system_selection",
 )
 
 StageIdentity = tuple[str, str | None, str]
@@ -180,6 +183,7 @@ REPAIR_STAGES: set[StageIdentity] = {
     ("mapping", "detailed_coverage", "header_mapper"),
     ("mapping", "detailed_coverage", "attribute_mapper"),
     ("code_generation", None, "sql_generation"),
+    ("qa", None, "validation_generation"),
 }
 
 MAPPING_OBJECT_TEMPLATE_STAGES: set[StageIdentity] = {
@@ -201,19 +205,34 @@ def _expected_variables() -> set[VariableIdentity]:
         if not is_agentic:
             continue
         stage_identity = (workflow, mode, stage)
-        variables.add(
-            (
-                workflow,
-                mode,
-                stage,
-                "stage_context",
-                f"workflow.{workflow}.{mode or 'common'}.{stage}.context",
-                "json",
-                True,
-                10,
-                '{"items":[],"schema_version":"1.0"}',
+        if stage_identity == ("qa", None, "validation_generation"):
+            variables.add(
+                (
+                    workflow,
+                    mode,
+                    stage,
+                    "validation_context",
+                    "workflow.qa.common.validation_context",
+                    "json",
+                    True,
+                    10,
+                    '{"system_ref":"system_1"}',
+                )
             )
-        )
+        else:
+            variables.add(
+                (
+                    workflow,
+                    mode,
+                    stage,
+                    "stage_context",
+                    f"workflow.{workflow}.{mode or 'common'}.{stage}.context",
+                    "json",
+                    True,
+                    10,
+                    '{"items":[],"schema_version":"1.0"}',
+                )
+            )
         if stage_identity in NAMING_STAGES:
             variables.add(
                 (

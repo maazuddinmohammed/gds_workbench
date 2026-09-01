@@ -328,6 +328,50 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
     assert "created_by" not in payload
 
 
+class UnprovenancedStaticCodeGenerationService(StaticCodeGenerationService):
+    async def read_artifact(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        generated_sql_artifact_id: int,
+    ) -> GeneratedSqlArtifactDetail:
+        detail = await super().read_artifact(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            generated_sql_artifact_id=generated_sql_artifact_id,
+        )
+        return detail.model_copy(
+            update={
+                "guide": None,
+                "workflow_run_id": None,
+                "generator": None,
+            }
+        )
+
+
+def test_generated_sql_artifact_detail_allows_missing_workflow_provenance() -> None:
+    app = FastAPI()
+    app.include_router(
+        create_code_generation_router(
+            identity_provider=_identity_provider(),
+            service=UnprovenancedStaticCodeGenerationService(),
+        )
+    )
+
+    with TestClient(app) as client:
+        response = client.get(
+            "/api/v1/tenants/7/models/18/code-generation/artifacts/901"
+        )
+
+    assert response.status_code == 200
+    assert response.json()["guide"] is None
+    assert response.json()["workflow_run_id"] is None
+    assert response.json()["generator"] is None
+
+
 def test_individual_sql_download_has_safe_filename_and_content_headers() -> None:
     app = FastAPI()
     app.include_router(
@@ -528,7 +572,11 @@ class CodeTargetTransaction:
     ) -> list[dict[str, Any]]:
         assert "workflow.list_code_generation_target_context" in query
         assert "workflow.list_model_object_eligibility" not in query
-        assert "application.generated_sql_artifact" in query
+        assert "workflow.generated_code" in query
+        assert "application.generated_sql_artifact" not in query
+        assert "artifact.artifact_type = 'sql_file'" in query
+        assert "artifact.generated_code_status = 'active'" in query
+        assert "artifact.model_revision" not in query
         assert "artifact.source_system_id" not in query
         assert "jsonb_array_elements" in query
         assert "EXISTS" in query
@@ -665,9 +713,10 @@ class SqlArtifactTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
-        if "application.generated_sql_artifact" in query:
+        if "workflow.generated_code" in query:
             assert "application.store_generated_sql_artifact" not in query
             assert "application.sql_generation_guide_version" in query
+            assert "LEFT JOIN application.workflow_run AS generating_run" in query
             assert (
                 "LEFT JOIN LATERAL workflow.list_code_generation_target_context"
                 in query
@@ -675,12 +724,20 @@ class SqlArtifactTransaction:
             assert "target_model.is_active" not in query
             assert "AND guide.is_active" not in query
             assert "sql_generation_guide_version_status = 'published'" not in query
-            assert "artifact.model_revision" in query
+            assert "artifact.model_revision" not in query
             assert "current_context.mapping_context_digest" in query
             assert "current_context.source_context_digest" in query
+            assert "artifact.generated_code_content AS generated_sql" in query
+            assert "artifact.generated_code_digest AS generated_sql_digest" in query
+            assert "artifact.artifact_type = 'sql_file'" in query
+            assert "artifact.generated_code_status = 'active'" in query
             assert (
-                "coalesce(\n           target_model.model_revision = artifact.model_revision"
-            ) in query
+                "generated_code_status"
+                not in query.rsplit(
+                    " WHERE target_model.tenant_id",
+                    maxsplit=1,
+                )[1]
+            )
             assert "artifact.source_system_id" not in query
             assert parameters == (7, 18, 901)
             sql = "SELECT customer_id\nFROM silver_crm.customer;\n"
@@ -746,10 +803,10 @@ class SqlArtifactTransaction:
                     "sql_generation_guide_version_status": "published",
                     "sql_generation_guide_digest": "d" * 64,
                 },
-                "workflow_run_id": None,
+                "workflow_run_id": 1151,
                 "generator": {
-                    "generator_code": "gds.sql",
-                    "generator_version": "1.0.0",
+                    "generator_code": "openai_agents",
+                    "generator_version": None,
                     "generated_by_display_name": "Maaz",
                 },
                 "generated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -813,8 +870,117 @@ async def test_database_sql_artifact_is_authorized_and_read_from_persistence() -
     assert detail.artifact_is_current is True
     assert [system.system_code for system in detail.source_systems] == ["CRM", "ERP"]
     assert detail.mapping_supports[0].source.entity_name == "Customer"
+    assert detail.guide is not None
     assert detail.guide.sql_generation_guide_digest == "d" * 64
+    assert detail.generator is not None
+    assert detail.generator.generator_code == "openai_agents"
+    assert detail.generator.generator_version is None
+    assert detail.workflow_run_id == 1151
+
+
+class UnprovenancedSqlArtifactTransaction(SqlArtifactTransaction):
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        row = await super().fetch_one(query, parameters)
+        if row is None or "workflow.generated_code" not in query:
+            return row
+        unprovenanced = dict(row)
+        unprovenanced.update(
+            {
+                "guide": None,
+                "workflow_run_id": None,
+                "generator": None,
+            }
+        )
+        return unprovenanced
+
+
+class UnprovenancedSqlArtifactDatabase:
+    @asynccontextmanager
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncGenerator[UnprovenancedSqlArtifactTransaction]:
+        assert isolation is ReadIsolation.REPEATABLE_READ
+        yield UnprovenancedSqlArtifactTransaction()
+
+
+@pytest.mark.asyncio
+async def test_database_sql_artifact_allows_missing_workflow_provenance() -> None:
+    service = DatabaseCodeGenerationService(
+        database=UnprovenancedSqlArtifactDatabase(),
+        authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    detail = await service.read_artifact(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        generated_sql_artifact_id=901,
+    )
+
     assert detail.workflow_run_id is None
+    assert detail.guide is None
+    assert detail.generator is None
+
+
+class InactiveSqlArtifactTransaction(SqlArtifactTransaction):
+    async def fetch_one(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> dict[str, Any] | None:
+        row = await super().fetch_one(query, parameters)
+        if row is None or "workflow.generated_code" not in query:
+            return row
+        inactive = dict(row)
+        inactive["artifact_is_current"] = False
+        return inactive
+
+
+class InactiveSqlArtifactDatabase:
+    @asynccontextmanager
+    async def read_transaction(
+        self,
+        *,
+        isolation: ReadIsolation = ReadIsolation.READ_COMMITTED,
+    ) -> AsyncGenerator[InactiveSqlArtifactTransaction]:
+        assert isolation is ReadIsolation.REPEATABLE_READ
+        yield InactiveSqlArtifactTransaction()
+
+
+@pytest.mark.asyncio
+async def test_database_inactive_sql_artifact_is_readable_but_not_current() -> None:
+    service = DatabaseCodeGenerationService(
+        database=InactiveSqlArtifactDatabase(),
+        authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    detail = await service.read_artifact(
+        principal,
+        tenant_id=7,
+        model_id=18,
+        generated_sql_artifact_id=901,
+    )
+
+    assert detail.generated_sql.startswith("SELECT customer_id")
+    assert detail.artifact_is_current is False
 
 
 class StaleSqlArtifactTransaction(SqlArtifactTransaction):
@@ -824,7 +990,7 @@ class StaleSqlArtifactTransaction(SqlArtifactTransaction):
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
         row = await super().fetch_one(query, parameters)
-        if row is None or "application.generated_sql_artifact" not in query:
+        if row is None or "workflow.generated_code" not in query:
             return row
         stale = dict(row)
         stale.update(
@@ -881,6 +1047,7 @@ async def test_database_sql_artifact_remains_readable_when_context_and_guide_are
     assert detail.artifact_is_current is False
     assert detail.source_systems == ()
     assert detail.mapping_supports == ()
+    assert detail.guide is not None
     assert detail.guide.guide_is_active is False
     assert detail.guide.sql_generation_guide_version_status == "retired"
 
@@ -892,7 +1059,12 @@ class SqlDownloadTransaction:
         parameters: tuple[Any, ...] = (),
     ) -> dict[str, Any] | None:
         if "sum(octet_length" in query:
-            assert "application.generated_sql_artifact" in query
+            assert "workflow.generated_code" in query
+            assert "application.generated_sql_artifact" not in query
+            assert "artifact.generated_code_content" in query
+            assert "artifact.generated_code_id = ANY" in query
+            assert "artifact.artifact_type = 'sql_file'" in query
+            assert "generated_code_status" not in query
             assert parameters == (7, 18, [901, 902])
             return {"artifact_count": 2, "total_sql_bytes": 72}
         assert "security.entra_principal_identity" in query
@@ -913,9 +1085,14 @@ class SqlDownloadTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
-        assert "application.generated_sql_artifact" in query
+        assert "workflow.generated_code" in query
+        assert "application.generated_sql_artifact" not in query
         assert "application.store_generated_sql_artifact" not in query
-        assert "artifact.generated_sql_artifact_id = ANY" in query
+        assert "artifact.generated_code_id = ANY" in query
+        assert "artifact.generated_code_content AS generated_sql" in query
+        assert "artifact.generated_code_digest AS generated_sql_digest" in query
+        assert "artifact.artifact_type = 'sql_file'" in query
+        assert "generated_code_status" not in query
         assert "artifact.source_system_id" not in query
         assert "target_model.is_active" not in query
         assert parameters == (7, 18, [901, 902], [901, 902])

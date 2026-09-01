@@ -5,7 +5,6 @@
 .databricks
 AGENTS.md
 CONTEXT.md
-IMPLEMENTATION_PLAN.md
 artifacts
 **/.DS_Store
 **/.env*
@@ -29,4 +28,3 @@ plugins
 tests
 web_app/compose.local.yaml
 web_app/local
-web_app/prototypes

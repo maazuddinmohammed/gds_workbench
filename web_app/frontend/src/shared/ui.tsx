@@ -104,6 +104,15 @@ export function CodeIcon() {
   );
 }
 
+export function QAIcon() {
+  return (
+    <NavIcon>
+      <path d="M12 3 20 6v5c0 5.1-3.1 8.4-8 10-4.9-1.6-8-4.9-8-10V6l8-3Z" />
+      <path d="m8.5 12 2.2 2.2 4.8-5" />
+    </NavIcon>
+  );
+}
+
 export function PromptsIcon() {
   return (
     <NavIcon>

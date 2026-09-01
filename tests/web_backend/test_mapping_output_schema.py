@@ -1,9 +1,12 @@
 """Dynamic Mapping transformation schemas derived from immutable templates."""
 
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 import math
 from collections.abc import Mapping
+from copy import deepcopy
 from typing import Any, cast
 
 import pytest
@@ -13,7 +16,11 @@ from gds_workbench_api.features.mapping.output_schema import (
     compile_attribute_mapper_output_schema,
     compile_header_mapper_output_schema,
     compile_mapping_transformation_schema,
+    enrich_mapping_agent_output_schema,
     validate_mapping_transformation_document,
+)
+from gds_workbench_api.features.mapping.complete_candidate import (
+    _CompleteMappingCandidateSchemaV1,
 )
 from gds_workbench_api.features.mapping import (
     MappingOutputTemplate,
@@ -294,24 +301,49 @@ def test_stage_schemas_keep_the_frozen_envelope_and_replace_only_dynamic_leaves(
     header_definitions = _definitions(header_schema)
     attribute_definitions = _definitions(attribute_schema)
     assert "MappingPackageDocumentV1" in header_definitions
-    assert header_definitions["ObjectMappingTransformationDocumentV1"] == (
+    assert _without_semantic_guidance(
+        header_definitions["ObjectMappingTransformationDocumentV1"]
+    ) == _without_semantic_guidance(
         compile_mapping_transformation_schema(
             target_type="mapping_object",
             template=_object_template(),
         )
     )
-    assert attribute_definitions[
-        "AttributeMappingTransformationDocumentV1"
-    ] == compile_mapping_transformation_schema(
-        target_type="mapping_attribute",
-        template=None,
+    assert _without_semantic_guidance(
+        attribute_definitions["AttributeMappingTransformationDocumentV1"]
+    ) == _without_semantic_guidance(
+        compile_mapping_transformation_schema(
+            target_type="mapping_attribute",
+            template=None,
+        )
     )
-    assert header_definitions["HeaderMappingV1"]["properties"]["transformation"] == {
-        "$ref": "#/$defs/ObjectMappingTransformationDocumentV1"
-    }
-    assert attribute_definitions["AttributeMappingItemV1"]["properties"][
+    header_transformation = header_definitions["HeaderMappingV1"]["properties"][
         "transformation"
-    ] == {"$ref": "#/$defs/AttributeMappingTransformationDocumentV1"}
+    ]
+    attribute_transformation = attribute_definitions["AttributeMappingItemV1"][
+        "properties"
+    ]["transformation"]
+    assert header_transformation["$ref"] == (
+        "#/$defs/ObjectMappingTransformationDocumentV1"
+    )
+    assert attribute_transformation["$ref"] == (
+        "#/$defs/AttributeMappingTransformationDocumentV1"
+    )
+
+
+def test_stage_and_complete_mapping_schemas_explain_every_declared_field() -> None:
+    complete_schema = _CompleteMappingCandidateSchemaV1.model_json_schema()
+    complete_constraints = _without_semantic_guidance(complete_schema)
+    schemas = [
+        compile_header_mapper_output_schema(template=_object_template()),
+        compile_attribute_mapper_output_schema(template=None),
+        complete_schema,
+    ]
+    enrich_mapping_agent_output_schema(schemas[-1])
+
+    assert _without_semantic_guidance(complete_schema) == complete_constraints
+    for schema in schemas:
+        _assert_declared_fields_have_semantic_guidance(schema)
 
 
 def _object_template() -> MappingOutputTemplate:
@@ -366,3 +398,35 @@ def _definitions(schema: Mapping[str, object]) -> dict[str, dict[str, Any]]:
     value = schema["$defs"]
     assert isinstance(value, dict)
     return cast(dict[str, dict[str, Any]], value)
+
+
+def _assert_declared_fields_have_semantic_guidance(schema: Mapping[str, Any]) -> None:
+    objects = [schema, *_definitions(schema).values()]
+    for object_schema in objects:
+        properties = object_schema.get("properties")
+        if not isinstance(properties, dict):
+            continue
+        typed_properties = cast(dict[str, object], properties)
+        for field, raw_property in typed_properties.items():
+            assert isinstance(raw_property, dict), field
+            property_schema = cast(dict[str, object], raw_property)
+            description = property_schema.get("description")
+            population_guidance = property_schema.get("x-gds-population-guidance")
+            assert isinstance(description, str) and description.strip(), field
+            assert (
+                isinstance(population_guidance, str) and population_guidance.strip()
+            ), field
+
+
+def _without_semantic_guidance(value: object) -> object:
+    document = deepcopy(value)
+    if isinstance(document, dict):
+        typed_document = cast(dict[str, object], document)
+        for key in ("description", "x-gds-population-guidance", "examples"):
+            typed_document.pop(key, None)
+        return {
+            key: _without_semantic_guidance(item) for key, item in typed_document.items()
+        }
+    if isinstance(document, list):
+        return [_without_semantic_guidance(item) for item in cast(list[object], document)]
+    return document

@@ -11,7 +11,7 @@
     {
       "name": "gds",
       "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
-      "version": "0.2.1",
+      "version": "0.3.2",
       "source": "./plugins/v2/gds",
       "strict": true
     }

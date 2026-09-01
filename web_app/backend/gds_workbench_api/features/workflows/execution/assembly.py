@@ -24,8 +24,6 @@ from gds_workbench_api.features.analysis import (
 from gds_workbench_api.features.code_generation import (
     CodeGenerationWorkflow,
     DatabaseCodeGenerationExecutor,
-    DatabaseGeneratedSqlStorage,
-    SqlGeneratorIdentity,
 )
 from gds_workbench_api.features.conceptual import (
     ConceptualWorkflow,
@@ -48,6 +46,7 @@ from gds_workbench_api.features.mapping.profile_registry import (
     load_mapping_profile_registry,
 )
 from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
+from gds_workbench_api.features.qa import DatabaseQAExecutor, QAWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
 )
@@ -122,6 +121,7 @@ class WorkflowRuntimeServices:
     dimensional: DimensionalWorkflow
     mapping: MappingWorkflow
     code_generation: CodeGenerationWorkflow
+    qa: QAWorkflow
 
     async def close(self) -> None:
         await self.agent_executor.close()
@@ -136,6 +136,7 @@ class WorkflowRuntimeServices:
             dimensional=self.dimensional,
             mapping=self.mapping,
             code_generation=self.code_generation,
+            qa=self.qa,
         )
 
 
@@ -210,10 +211,16 @@ def create_workflow_runtime_services(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
-        storage=DatabaseGeneratedSqlStorage(
-            database=database,
-            generator=SqlGeneratorIdentity(code="gds.web.sql", version="1.0.0"),
-        ),
+        handoff=handoff,
+        no_op=no_op,
+        lifecycle=lifecycle,
+    )
+    qa_executor = DatabaseQAExecutor(
+        database=database,
+        authorizer=authorizer,
+        agent_executor=agent_executor,
+        handoff=handoff,
+        no_op=no_op,
         lifecycle=lifecycle,
     )
 
@@ -246,6 +253,7 @@ def create_workflow_runtime_services(
             lifecycle=lifecycle,
             executor=code_generation_executor,
         ),
+        qa=QAWorkflow(lifecycle=lifecycle, executor=qa_executor),
     )
 
 

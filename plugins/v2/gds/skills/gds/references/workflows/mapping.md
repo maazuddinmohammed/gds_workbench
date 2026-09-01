@@ -1,14 +1,25 @@
 # Logical or Dimensional Mapping
 
-Route `logical` maps source/Bronze evidence to registered Silver targets and accepts a target only with `is_logical_mapping_target_eligible=true`. Route `dimensional` maps Silver to registered Gold targets, requires applied active Logical Mapping, and accepts a target only with `is_dimensional_mapping_target_eligible=true`. Require fresh Snapshots and the route-specific derived flag; never substitute a Silver/Gold label. Otherwise emit the authorized-owner Resolution Prompt and wait.
+Route `logical` maps source/Bronze to Silver only with `is_logical_mapping_target_eligible=true`.
+Route `dimensional` requires applied Logical Mapping and maps Silver to Gold only with
+`is_dimensional_mapping_target_eligible=true`. Require fresh Snapshots and the flag, never a zone
+label; otherwise emit the authorized-owner Resolution Prompt.
 
 Ask for Full or Selected scope. Full means every eligible registered active target in the authoritative Snapshot, never session history. The fixed work unit is target Object plus source System.
 
+Before writing, load each selected Mapping output dataset contract.
+
 ## Readiness sweep
 
-Before writing a server draft, sweep every work unit. Require active target/Object/Attributes, executable applied model lineage, resolved target/source contribution, resolved write mode, and nonconflicting dependencies. Group all blockers into Resolution Prompts and set the task `waiting`. Do not create a server draft while blocked.
+Before any server draft, sweep every unit for active targets/Attributes, executable applied lineage,
+target/source contribution, write mode, and dependency conflicts. Group Resolution Prompts, set
+`waiting`, and create no draft while blocked.
 
-Automatic Mapping requires the committed mapper/materializer contract for `mapping.standard`; a generic `mapping_package_document` object is insufficient. For each exact target Object plus source System pair, call `get_model_mapping_authoring_context`. Author only from its bounded context and exact profile. Pass the unchanged `model_revision` and `context_digest` with the complete candidate to `validate_and_materialize_mapping_candidate`. This read-only tool validates the exact package, transformations, coverage, lineage, locks, dependencies, and load keys, then returns natural-key Change Set records plus a compact server proof. Block safely; never invent database IDs or a private package shape.
+Automatic Mapping requires the committed mapper/materializer contract for `mapping.standard`; a
+generic `mapping_package_document` object is insufficient. For each exact target/source pair, call
+`get_model_mapping_authoring_context`, author only from its bounded context/profile, then pass its
+unchanged revision/digest and the complete candidate to `validate_and_materialize_mapping_candidate`.
+Use the returned natural-key changes and proof, and never invent database IDs or a private package.
 
 Bind only `result.proof` locally:
 
@@ -22,19 +33,23 @@ After binding every selected unit, rerun readiness with the exact unit list:
 readiness --session <session> --target logical-mapping|dimensional-mapping --proof-units <[{target_object_id,source_system_id},...]-JSON>
 ```
 
-Selected lists exactly its requested units; Full lists every eligible unit discovered from governed MCP reads. Never omit a unit to make readiness pass. Do not cache the context, candidate, records, or raw tool result as proof. A proof must match the current Model Snapshot ID/revision; replacing that Snapshot makes it unusable. If either MCP tool is missing from the deployed runtime, ask the platform owner to deploy the latest MCP server and stop safely.
+Selected lists requested units; Full lists all eligible units from governed reads. Never omit one to
+pass. Cache only `result.proof`; it must match the current Snapshot ID/revision. If either MCP tool
+is missing, ask the platform owner to deploy the latest MCP server and stop.
 
 ## Build loop
 
 For every ready unit:
 
-1. Preserve compatible existing active mappings.
-2. Map each required target Attribute or report it skipped/blocked.
-3. Use only applied model lineage as executable sources.
-4. Use Assertions for joins, filters, defaults, deduplication, source priority, aggregation, write mode, sequencing, and rationale; Assertions never substitute for executable lineage.
-5. Preserve an existing/explicit append, overwrite, or merge mode. Keys/types may suggest a mode only as `needs_review`.
-6. Order dependencies from explicit consumption and Assertions. Never infer order by names or types. Report cycles.
-7. Shared target writes require proven disjointness, idempotence, or explicit serialization; otherwise `needs_review`.
-8. Use the materializer's complete `changes` in one local `upsert-batch`; then run local review, validation, and acceptance.
+1. Preserve compatible active mappings; map every required Attribute or report it skipped/blocked.
+2. Use only applied model lineage as executable sources.
+3. Use Assertions for transformations, source priority, write mode, sequencing, and rationale, never
+   as executable lineage.
+4. Preserve explicit append/overwrite/merge; inferred modes are `needs_review`.
+5. Order dependencies only from consumption/Assertions; report cycles. Shared-target writes need
+   proven disjointness/idempotence or serialization.
+6. Put complete materializer `changes` into one `upsert-batch`, then review, validate, and accept.
 
-Confidence is `active` for direct/deterministic/explicit supported rules, `needs_review` when lineage exists but transformation behavior is inferred, and blocked when lineage or conflict resolution is missing. Review by target then source System and accept the full digest. Show the complete affected list and obtain Stage approval before server Stage. Validate the latest server revision. Show its authoritative `action_review`, obtain fresh Apply approval, Apply once, mark Model stale, and stop. Applied `needs_review` does not unlock downstream work.
+Use `active` for supported deterministic rules, `needs_review` for inferred behavior, and block
+missing lineage/conflict resolution. Review by target/source System. Follow common governed gates,
+Apply once, mark Model stale, and stop; applied `needs_review` unlocks nothing.

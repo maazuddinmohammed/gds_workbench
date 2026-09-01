@@ -18,6 +18,12 @@ dependencies = [
     "azure-storage-blob==12.30.0",
 ]
 
+[tool.uv]
+cache-keys = [
+    { file = "pyproject.toml" },
+    { file = "gds_etl_workbench/**/*.py" },
+]
+
 [dependency-groups]
 dev = [
     "httpx==0.28.1",

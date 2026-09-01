@@ -12,18 +12,30 @@ from uuid import UUID
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from gds_etl_workbench.domain.modeling_records import GeneratedCodeRecord
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
+from gds_etl_workbench.tools.change_sets.common import MAX_MODEL_STAGE_PAYLOAD_BYTES
+from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import CODE_GENERATION_AGENT_EXECUTION_MODE
+from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+    WorkflowChangeSetFinalizationResult,
+    WorkflowChangeSetHandoffResult,
+)
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
+)
+from gds_workbench_api.features.workflows.authoring.no_op import (
+    AuthoringNoOpReceipt,
+    AuthoringNoOpRequest,
+    authoring_no_op_candidate_digest,
 )
 from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
@@ -52,7 +64,6 @@ from .context import (
 )
 from .storage import (
     CodeGenerationArtifactContext,
-    GeneratedSqlStorageResult,
     ModeledEntityType,
 )
 
@@ -88,19 +99,33 @@ class CodeGenerationContextRepository(Protocol):
     ) -> CodeGenerationExecutionContext: ...
 
 
-class GeneratedSqlStorage(Protocol):
-    async def store(
+class CodeGenerationChangeSetHandoff(Protocol):
+    async def finalize(
         self,
         principal: RequestPrincipal,
         *,
+        tenant_id: int,
         model_id: int,
-        modeled_entity_type: ModeledEntityType,
         workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
         expected_model_revision: int,
         workflow_run_claim_token: UUID,
-        artifacts: tuple[GeneratedSqlArtifact, ...],
-        contexts: tuple[CodeGenerationArtifactContext, ...],
-    ) -> GeneratedSqlStorageResult: ...
+        changes: tuple[StageModelChange, ...],
+        final_event: AgentWorkflowEvent,
+    ) -> WorkflowChangeSetFinalizationResult: ...
+
+
+class CodeGenerationNoOpCompleter(Protocol):
+    async def complete(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        workflow_run_claim_token: UUID,
+        request: AuthoringNoOpRequest,
+    ) -> AuthoringNoOpReceipt: ...
 
 
 class CodeGenerationLifecycle(Protocol):
@@ -134,6 +159,17 @@ class CodeGenerationExecutionFailedError(WorkbenchError):
         )
 
 
+class CodeGenerationFinalizationFailedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="code_generation_finalization_failed",
+            message="Code Generation finalization outcome could not be confirmed.",
+        )
+
+
+type CodeGenerationExecutionResult = WorkflowChangeSetHandoffResult | AuthoringNoOpReceipt
+
+
 class CodeGenerationRunLifecycle(Protocol):
     async def start(
         self,
@@ -158,7 +194,7 @@ class CodeGenerationExecutor(Protocol):
         workflow_run_id: int,
         expected_model_revision: int,
         workflow_run_claim_token: UUID,
-    ) -> object: ...
+    ) -> CodeGenerationExecutionResult: ...
 
 
 class CodeGenerationWorkflow:
@@ -221,7 +257,8 @@ class DatabaseCodeGenerationExecutor:
         database: CodeGenerationExecutionDatabase,
         authorizer: AuthorizationService,
         agent_executor: AgentExecutor,
-        storage: GeneratedSqlStorage,
+        handoff: CodeGenerationChangeSetHandoff,
+        no_op: CodeGenerationNoOpCompleter,
         lifecycle: CodeGenerationLifecycle,
         plan_repository: CodeGenerationPlanRepository | None = None,
         context_repository: CodeGenerationContextRepository | None = None,
@@ -235,7 +272,8 @@ class DatabaseCodeGenerationExecutor:
             executor=agent_executor,
             policy=context_policy or load_default_agent_context_policy(),
         )
-        self._storage = storage
+        self._handoff = handoff
+        self._no_op = no_op
         self._lifecycle = lifecycle
 
     async def execute_started(
@@ -247,7 +285,8 @@ class DatabaseCodeGenerationExecutor:
         workflow_run_id: int,
         expected_model_revision: int,
         workflow_run_claim_token: UUID,
-    ) -> GeneratedSqlStorageResult:
+    ) -> CodeGenerationExecutionResult:
+        finalization_attempted = False
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -331,6 +370,7 @@ class DatabaseCodeGenerationExecutor:
                     output_schema=validator.output_schema(),
                     allowed_tool_names=(),
                     validator=validator,
+                    max_candidate_bytes=MAX_MODEL_STAGE_PAYLOAD_BYTES,
                 )
                 artifacts.extend(validator.parse_validated(outcome.candidate))
                 highest_attempt = max(highest_attempt, outcome.attempt_count)
@@ -350,18 +390,74 @@ class DatabaseCodeGenerationExecutor:
                         total=target_count,
                         finding_count=0,
                     )
-            return await self._storage.store(
-                principal,
-                model_id=model_id,
-                modeled_entity_type=cast(ModeledEntityType, plan.modeled_entity_type),
-                workflow_run_id=workflow_run_id,
-                expected_model_revision=expected_model_revision,
-                workflow_run_claim_token=workflow_run_claim_token,
+            changes = _generated_code_changes(
                 artifacts=tuple(artifacts),
                 contexts=context.targets,
+                modeled_entity_type=cast(ModeledEntityType, plan.modeled_entity_type),
             )
+            if not changes:
+                finalization_attempted = True
+                return await self._no_op.complete(
+                    principal,
+                    tenant_id=tenant_id,
+                    model_id=model_id,
+                    workflow_run_id=workflow_run_id,
+                    workflow_run_claim_token=workflow_run_claim_token,
+                    request=AuthoringNoOpRequest(
+                        expected_workflow="code_generation",
+                        expected_execution_mode=None,
+                        expected_correlation_id=plan.correlation_id,
+                        expected_model_revision=expected_model_revision,
+                        candidate_digest=authoring_no_op_candidate_digest(plan),
+                        final_event=progress.event(
+                            attempt=highest_attempt,
+                            stage="code_generation.backend_validation",
+                            status="warning" if warning_seen else "running",
+                            message="Code Generation completed with no effective change.",
+                            current=1,
+                            total=1,
+                            finding_count=0,
+                        ),
+                    ),
+                )
+
+            staged_record_count = sum(len(change.records) for change in changes)
+            finalization_attempted = True
+            finalization = await self._handoff.finalize(
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                workflow_run_id=workflow_run_id,
+                expected_workflow="code_generation",
+                expected_model_revision=expected_model_revision,
+                workflow_run_claim_token=workflow_run_claim_token,
+                changes=changes,
+                final_event=progress.event(
+                    attempt=highest_attempt,
+                    stage="code_generation.backend_validation",
+                    status="warning" if warning_seen else "running",
+                    message="Generated Code is ready in a validated draft.",
+                    current=1,
+                    total=1,
+                    finding_count=staged_record_count,
+                ),
+            )
+            return finalization.handoff
         except Exception as error:
-            safe_error = _safe_execution_error(error)
+            safe_error = _safe_execution_error(
+                error,
+                finalization_attempted=finalization_attempted,
+            )
+            if finalization_attempted:
+                _logger.warning(
+                    "Code Generation Workflow Run finalization remains pending.",
+                    extra={
+                        "workflow_run_id": workflow_run_id,
+                        "model_id": model_id,
+                        "failure_code": safe_error.code[:100],
+                    },
+                )
+                raise safe_error from None
             try:
                 await self._lifecycle.fail(
                     principal,
@@ -380,7 +476,10 @@ class DatabaseCodeGenerationExecutor:
                         "failure_code": safe_error.code[:100],
                     },
                 )
-                raise _safe_execution_error(persistence_error) from None
+                raise _safe_execution_error(
+                    persistence_error,
+                    finalization_attempted=False,
+                ) from None
             raise safe_error from None
 
     @staticmethod
@@ -408,6 +507,51 @@ class DatabaseCodeGenerationExecutor:
             raise InvalidRequestError(
                 "The Code Generation run does not use the fixed execution path."
             )
+
+
+def _generated_code_changes(
+    *,
+    artifacts: tuple[GeneratedSqlArtifact, ...],
+    contexts: tuple[CodeGenerationArtifactContext, ...],
+    modeled_entity_type: ModeledEntityType,
+) -> tuple[StageModelChange, ...]:
+    by_ref = {context.target_ref: context for context in contexts}
+    if (
+        not artifacts
+        or len(by_ref) != len(contexts)
+        or {artifact.target_ref for artifact in artifacts} != set(by_ref)
+        or any(
+            artifact.object_id != by_ref[artifact.target_ref].object_id for artifact in artifacts
+        )
+    ):
+        raise InvalidRequestError("Code Generation candidate and context coverage differ.")
+
+    changed: list[dict[str, object]] = []
+    for artifact in artifacts:
+        context = by_ref[artifact.target_ref]
+        applied = context.applied_generated_code
+        record = GeneratedCodeRecord(
+            tenant_code=context.tenant_code,
+            system_code=context.system_code,
+            connection_code=context.connection_code,
+            object_schema=context.object_schema,
+            object_name=context.object_name,
+            modeled_entity_type=modeled_entity_type,
+            artifact_type="sql_file",
+            generated_code_content=artifact.generated_sql,
+            mapping_context_digest=context.mapping_context_digest,
+            source_context_digest=context.source_context_digest,
+            generated_code_digest=sha256(artifact.generated_sql.encode("utf-8")).hexdigest(),
+            generated_code_status="active",
+            generated_code_is_locked=(
+                applied.generated_code_is_locked if applied is not None else False
+            ),
+        )
+        if record != applied:
+            changed.append(record.model_dump(mode="json"))
+    if not changed:
+        return ()
+    return (StageModelChange(dataset="generated_code", records=changed),)
 
 
 def _guide_content(context: CodeGenerationExecutionContext) -> str:
@@ -517,7 +661,13 @@ def _canonical_json(value: JsonValue) -> bytes:
     ).encode("utf-8")
 
 
-def _safe_execution_error(error: Exception) -> WorkbenchError:
+def _safe_execution_error(
+    error: Exception,
+    *,
+    finalization_attempted: bool,
+) -> WorkbenchError:
     if isinstance(error, WorkbenchError):
         return error
+    if finalization_attempted:
+        return CodeGenerationFinalizationFailedError()
     return CodeGenerationExecutionFailedError()

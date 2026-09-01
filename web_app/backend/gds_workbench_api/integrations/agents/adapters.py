@@ -33,6 +33,7 @@ from openai.types.shared import Reasoning, ReasoningEffort
 from pydantic import JsonValue, SecretStr, TypeAdapter
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentContextToolResultTooLargeError,
     AgentExecutionFailedError,
     AgentExecutionRequest,
@@ -467,7 +468,7 @@ def _system_prompt(request: AgentExecutionRequest) -> str:
     sections = [request.system_prompt]
     if request.tool_instruction is not None:
         sections.append(request.tool_instruction)
-    sections.append("Return exactly one JSON object with no Markdown or surrounding text.")
+    sections.append(AGENT_OUTPUT_CONTRACT_INSTRUCTION)
     return "\n\n".join(sections)
 
 

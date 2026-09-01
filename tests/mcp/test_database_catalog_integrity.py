@@ -150,7 +150,7 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
         )
         for trigger in triggers
     )
-    assert row == {"table_count": 94, "function_count": 81, "trigger_count": 16}
+    assert row == {"table_count": 99, "function_count": 82, "trigger_count": 17}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(

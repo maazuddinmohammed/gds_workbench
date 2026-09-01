@@ -24,6 +24,7 @@ $script:ReadinessTargets = [ordered]@{
     'gold-registration' = @('metadata', 'model')
     'dimensional-mapping' = @('metadata', 'model')
     'dimensional-code' = @('model')
+    'qa' = @('model')
 }
 $script:ReadinessStatusFields = @{
     logical_entity = 'logical_entity_status'
@@ -33,6 +34,7 @@ $script:ReadinessStatusFields = @{
     mapping_dependency = 'mapping_source_system_dependency_status'
     mapping_object = 'object_mapping_status'
     mapping_attribute = 'attribute_mapping_status'
+    generated_code = 'generated_code_status'
 }
 $script:MappingTargetEntityTypes = @{
     'logical-mapping' = 'logical_entity'
@@ -601,7 +603,7 @@ function Remove-Property($Value, [string]$Name) {
 }
 
 function Read-Json([string]$Path, [string]$Label) {
-    $item = Get-Item -LiteralPath $Path -ErrorAction Stop
+    $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
     if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
         Fail "$Label must be a regular file."
     }
@@ -613,6 +615,46 @@ function Read-Json([string]$Path, [string]$Label) {
     }
     catch {
         Fail "$Label is not valid JSON."
+    }
+}
+
+function Get-CommandContract([hashtable]$Options) {
+    $path = Join-Path $PSScriptRoot '../contracts/local-helper.json'
+    $contract = Read-Json $path 'Local helper command contract'
+    $commands = Get-Property $contract 'commands'
+    if (-not $Options.ContainsKey('command')) {
+        return [ordered]@{
+            schema_version = [string](Get-Property $contract 'schema_version')
+            commands = @(Get-PropertyNames $commands)
+        }
+    }
+    $name = [string]$Options.command
+    if (-not (Test-Property $commands $name)) { Fail "Unknown helper command contract: $name." }
+    $definition = Get-Property $commands $name
+    return [ordered]@{
+        schema_version = [string](Get-Property $contract 'schema_version')
+        command = $name
+        usage = [string](Get-Property $definition 'usage')
+        session_required = [bool](Get-Property $definition 'session_required')
+        mutates = [bool](Get-Property $definition 'mutates')
+    }
+}
+
+function Test-ServerContract([hashtable]$Options) {
+    $actual = Parse-Object $Options 'actual'
+    $path = Join-Path $PSScriptRoot '../../../tool-contract.json'
+    $expected = Read-Json $path 'Packaged MCP tool contract'
+    $mismatches = New-Object Collections.ArrayList
+    foreach ($field in @('schema_version', 'mcp_server_version', 'tool_count', 'tool_contract_sha256')) {
+        if ((ConvertTo-StableJson (Get-Property $expected $field)) -cne (ConvertTo-StableJson (Get-Property $actual $field))) {
+            [void]$mismatches.Add($field)
+        }
+    }
+    return [ordered]@{
+        compatible = $mismatches.Count -eq 0
+        mismatches = @($mismatches)
+        expected = $expected
+        actual = $actual
     }
 }
 
@@ -718,6 +760,13 @@ function Read-SessionState([string]$Session) {
         if ($binding.Count -ne 2 -or -not (Test-SafeJsonInteger $binding[0] $false) -or
             $binding[1] -isnot [string] -or [string]::IsNullOrWhiteSpace([string]$binding[1]) -or
             ([string]$binding[1]).Length -gt 255) {
+            Fail 'Session state has an invalid shape.'
+        }
+    }
+    if (Test-Property $state 'sql') {
+        $sqlPolicy = Get-Property $state 'sql'
+        if ($sqlPolicy -isnot [string] -or
+            @('never', 'essential', 'as_needed') -cnotcontains [string]$sqlPolicy) {
             Fail 'Session state has an invalid shape.'
         }
     }
@@ -849,7 +898,20 @@ function Get-SessionStatus([hashtable]$Options) {
     $cache = if (Test-Property $state 'cs') { $state.cs } else { [ordered]@{} }
     $model = $null
     if (Test-Property $state 'model') { $model = @($state.model) }
-    return [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes) }
+    $sqlPolicy = if (Test-Property $state 'sql') { [string](Get-Property $state 'sql') } else { $null }
+    return [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; sql_policy = $sqlPolicy; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes) }
+}
+
+function Set-SqlPolicy([hashtable]$Options) {
+    $session = Resolve-Session $Options
+    $policy = Require-Option $Options 'policy'
+    if (@('never', 'essential', 'as_needed') -cnotcontains $policy) {
+        Fail '--policy must be never, essential, or as_needed.'
+    }
+    $state = Read-SessionState $session
+    Set-Property $state 'sql' $policy
+    Write-JsonAtomic (Join-Path $session 'session.json') $state
+    return [ordered]@{ sql_policy = $policy }
 }
 
 function Assert-SafeSnapshotMemberPath([string]$RelativePath) {
@@ -1118,6 +1180,24 @@ function Inspect-Snapshot([hashtable]$Options) {
     return [ordered]@{ area = $snapshot.Area; kind = [string]$snapshot.Catalog.snapshot_kind; id = $id; revision = $revision; datasets = @($datasets) }
 }
 
+function ConvertTo-CompactAuthoringSchema($Value) {
+    if ($null -eq $Value) { return $null }
+    if ($Value -is [Collections.IDictionary] -or ($Value -isnot [Array] -and $Value -isnot [Collections.ArrayList] -and $Value -isnot [string] -and @($Value.PSObject.Properties).Count -gt 0)) {
+        $result = New-Object Collections.Specialized.OrderedDictionary ([StringComparer]::Ordinal)
+        foreach ($name in @(Get-PropertyNames $Value)) {
+            if (@('x-gds-columns', 'x-gds-governed-authoring-schema', 'x-gds-stage-record-validation') -ccontains $name) { continue }
+            $result.Add($name, (ConvertTo-CompactAuthoringSchema (Get-Property $Value $name)))
+        }
+        return $result
+    }
+    if ($Value -is [Array] -or $Value -is [Collections.ArrayList]) {
+        $result = New-Object Collections.ArrayList
+        foreach ($item in @($Value)) { [void]$result.Add((ConvertTo-CompactAuthoringSchema $item)) }
+        return ,$result.ToArray()
+    }
+    return $Value
+}
+
 function Describe-Dataset([hashtable]$Options) {
     $snapshot = Find-Snapshot $Options
     $datasetName = Require-Option $Options 'dataset'
@@ -1125,11 +1205,15 @@ function Describe-Dataset([hashtable]$Options) {
     $dataset = $snapshot.ByName[$datasetName]
     if (-not (Test-Property $dataset 'schema_file')) { Fail "$datasetName schema path is missing." }
     $schema = Read-Json (Resolve-Member $snapshot.Root ([string]$dataset.schema_file) $snapshot.Members) "$datasetName schema"
+    $detail = if ($Options.ContainsKey('detail')) { [string]$Options.detail } else { 'compact' }
+    if (@('compact', 'full') -cnotcontains $detail) { Fail '--detail must be compact or full.' }
     return [ordered]@{
+        detail = $detail
         dataset = $datasetName
         count = [int]$dataset.row_count
         canonical_key = @($dataset.canonical_key)
-        schema = $schema
+        authoring_schema = ConvertTo-CompactAuthoringSchema $schema
+        schema = if ($detail -ceq 'full') { $schema } else { $null }
     }
 }
 
@@ -1742,6 +1826,24 @@ function Get-ReadinessObjectKey($Record) {
     return ConvertTo-GdsJson @($values)
 }
 
+function Get-ReadinessAttributeKey($Record) {
+    $values = New-Object System.Collections.ArrayList
+    foreach ($field in $script:PhysicalObjectFields) {
+        [void]$values.Add((Normalize-ReadinessValue (Get-Property $Record $field)))
+    }
+    [void]$values.Add((Normalize-ReadinessValue (Get-Property $Record 'attribute_name')))
+    return ConvertTo-GdsJson @($values)
+}
+
+function Get-ReadinessMappingKey($Record) {
+    return ConvertTo-GdsJson @(
+        (Get-ReadinessObjectKey $Record),
+        (Normalize-ReadinessValue (Get-Property $Record 'source_system_code')),
+        (Get-Property $Record 'modeled_entity_type'),
+        (Normalize-ReadinessValue (Get-Property $Record 'modeled_entity_name'))
+    )
+}
+
 function Test-ReadinessActive([string]$DatasetName, $Record) {
     if (Test-Property $Record 'is_active') {
         $active = Get-Property $Record 'is_active'
@@ -1775,11 +1877,11 @@ function Get-ProofUnits([hashtable]$Options) {
     try { $parsed = ConvertFrom-GdsJson ([string]$Options['proof-units']) }
     catch { Fail '--proof-units must be a JSON array of exact target/source pairs.' }
     if ($parsed -isnot [Array]) {
-        Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+        Fail '--proof-units must be a nonempty JSON array of exact target/source pairs.'
     }
     $units = @($parsed)
-    if ($units.Count -lt 1 -or $units.Count -gt 256) {
-        Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+    if ($units.Count -lt 1) {
+        Fail '--proof-units must be a nonempty JSON array of exact target/source pairs.'
     }
     $keys = @{}
     foreach ($unit in $units) {
@@ -1788,7 +1890,7 @@ function Get-ProofUnits([hashtable]$Options) {
         if (-not (Test-ExactObjectFields $unit @('target_object_id', 'source_system_id')) -or
             -not (Test-SafeJsonInteger $targetObjectId $false) -or
             -not (Test-SafeJsonInteger $sourceSystemId $false)) {
-            Fail '--proof-units must be a JSON array of 1..256 exact target/source pairs.'
+            Fail '--proof-units must be a nonempty JSON array of exact target/source pairs.'
         }
         $key = ConvertTo-GdsJson @($targetObjectId, $sourceSystemId)
         if ($keys.ContainsKey($key)) {
@@ -1797,6 +1899,40 @@ function Get-ProofUnits([hashtable]$Options) {
         $keys[$key] = $true
     }
     return ,@($units)
+}
+
+function Get-SelectedSystemCodes([hashtable]$Options) {
+    if (-not $Options.ContainsKey('system-codes')) {
+        Fail '--system-codes is required for QA readiness.'
+    }
+    try { $parsed = ConvertFrom-GdsJson ([string]$Options['system-codes']) }
+    catch { Fail '--system-codes must be a JSON array of 1..1000 System codes.' }
+    if ($parsed -isnot [Array]) {
+        Fail '--system-codes must be a JSON array of 1..1000 System codes.'
+    }
+    $values = @($parsed)
+    if ($values.Count -lt 1 -or $values.Count -gt 1000) {
+        Fail '--system-codes must be a JSON array of 1..1000 System codes.'
+    }
+    $codes = New-Object System.Collections.ArrayList
+    $seen = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($value in $values) {
+        if ($value -isnot [string]) {
+            Fail '--system-codes must contain 1..1000 nonblank System codes of at most 100 characters.'
+        }
+        $code = $value.Trim()
+        if ([string]::IsNullOrWhiteSpace($code) -or $code.Length -gt 100 -or
+            [regex]::IsMatch($code, '[\x00-\x1F\x7F]')) {
+            Fail '--system-codes must contain 1..1000 nonblank System codes of at most 100 characters.'
+        }
+        $normalized = [string](Normalize-ReadinessValue $code)
+        if ($seen.ContainsKey($normalized)) {
+            Fail '--system-codes must be unique case-insensitively.'
+        }
+        $seen[$normalized] = $true
+        [void]$codes.Add($code)
+    }
+    return ,@($codes)
 }
 
 function Assert-MappingMaterializationProof($Value, [string]$Target) {
@@ -1834,7 +1970,6 @@ function Read-MappingProofs([string]$Session) {
     $proofPath = Get-MappingProofPath $Session
     if (-not (Test-Path -LiteralPath $proofPath -PathType Leaf)) { return @() }
     $records = @(Read-Json $proofPath 'Mapping server proofs')
-    if ($records.Count -gt 256) { Fail 'Mapping server proofs have an invalid shape.' }
     foreach ($record in $records) {
         $target = [string](Get-Property $record 'target')
         $snapshotId = Get-Property $record 'model_snapshot_id'
@@ -1845,7 +1980,7 @@ function Read-MappingProofs([string]$Session) {
         }
         [void](Assert-MappingMaterializationProof (Get-Property $record 'proof') $target)
     }
-    return ,@($records)
+    return @($records)
 }
 
 function Set-MappingProof([hashtable]$Options) {
@@ -1875,7 +2010,6 @@ function Set-MappingProof([hashtable]$Options) {
         model_snapshot_id = $snapshotId
         proof = $proof
     })
-    if ($records.Count -gt 256) { Fail 'Mapping server proof limit exceeded.' }
     $sorted = @($records | Sort-Object {
         $itemProof = Get-Property $_ 'proof'
         ConvertTo-GdsJson @(
@@ -1958,7 +2092,6 @@ function Read-GeneratorProofs([string]$Session) {
     $proofPath = Get-GeneratorProofPath $Session
     if (-not (Test-Path -LiteralPath $proofPath -PathType Leaf)) { return @() }
     $records = @(Read-Json $proofPath 'Generator server proofs')
-    if ($records.Count -gt 256) { Fail 'Generator server proofs have an invalid shape.' }
     foreach ($record in $records) {
         $target = [string](Get-Property $record 'target')
         $snapshotId = Get-Property $record 'model_snapshot_id'
@@ -1969,7 +2102,7 @@ function Read-GeneratorProofs([string]$Session) {
         }
         [void](Assert-GeneratorDocumentProof (Get-Property $record 'proof') $target)
     }
-    return ,@($records)
+    return @($records)
 }
 
 function Set-GeneratorProof([hashtable]$Options) {
@@ -1999,7 +2132,6 @@ function Set-GeneratorProof([hashtable]$Options) {
         model_snapshot_id = $snapshotId
         proof = $proof
     })
-    if ($records.Count -gt 256) { Fail 'Generator server proof limit exceeded.' }
     $sorted = @($records | Sort-Object {
         $itemProof = Get-Property $_ 'proof'
         ConvertTo-GdsJson @(
@@ -2183,7 +2315,25 @@ function Get-LogicalBuildReadiness($Metadata, $Model, $Issues) {
     }
     $objectKeys = @{}
     foreach ($record in $objects) { $objectKeys[(Get-ReadinessObjectKey $record)] = $true }
+    $scopeKeys = @{}
+    foreach ($record in $scope) { $scopeKeys[(Get-ReadinessObjectKey $record)] = $true }
     $attributeCounts = Get-AttributeCountsByObject @($attributes)
+    $scopedAttributeKeys = @{}
+    foreach ($record in $attributes) {
+        if ($scopeKeys.ContainsKey((Get-ReadinessObjectKey $record))) {
+            $scopedAttributeKeys[(Get-ReadinessAttributeKey $record)] = $true
+        }
+    }
+    $profileKeys = @{}
+    foreach ($record in @(Get-ReadinessRows $Model 'profiling_profile')) {
+        if ($scopeKeys.ContainsKey((Get-ReadinessObjectKey $record))) {
+            $profileKeys[(Get-ReadinessAttributeKey $record)] = $true
+        }
+    }
+    $profiledAttributes = 0
+    foreach ($key in $scopedAttributeKeys.Keys) {
+        if ($profileKeys.ContainsKey($key)) { $profiledAttributes++ }
+    }
     if ($scope.Count -eq 0) { Add-ReadinessIssue $Issues 'active_scope_missing' }
     foreach ($record in $scope) {
         $key = Get-ReadinessObjectKey $record
@@ -2191,7 +2341,14 @@ function Get-LogicalBuildReadiness($Metadata, $Model, $Issues) {
         if (-not $objectKeys.ContainsKey($key)) { Add-ReadinessIssue $Issues 'catalog_object_missing' $example }
         elseif (-not $attributeCounts.ContainsKey($key)) { Add-ReadinessIssue $Issues 'attributes_missing' $example }
     }
-    return [ordered]@{ scoped_objects = $scope.Count; catalog_objects = $objects.Count; attributes = $attributes.Count }
+    return [ordered]@{
+        scoped_objects = $scope.Count
+        scoped_attributes = $scopedAttributeKeys.Count
+        profiled_attributes = $profiledAttributes
+        unprofiled_attributes = $scopedAttributeKeys.Count - $profiledAttributes
+        catalog_objects = $objects.Count
+        attributes = $attributes.Count
+    }
 }
 
 function Get-MappingReadiness($Metadata, $Model, [string]$Layer, [string]$Zone, $Issues, [bool]$ContractAvailable) {
@@ -2275,6 +2432,98 @@ function Get-CodeReadiness(
     }
 }
 
+function Get-QaReadiness($Model, $Issues, [array]$SystemCodes) {
+    $selected = New-Object 'System.Collections.Generic.Dictionary[string,string]' ([StringComparer]::Ordinal)
+    foreach ($code in $SystemCodes) {
+        $selected[[string](Normalize-ReadinessValue $code)] = [string]$code
+    }
+    $contexts = @{}
+    foreach ($record in @(Get-ReadinessRows $Model 'qa_authoring_context')) {
+        $normalized = [string](Normalize-ReadinessValue (Get-Property $record 'system_code'))
+        if (-not $selected.ContainsKey($normalized)) { continue }
+        if (-not $contexts.ContainsKey($normalized)) {
+            $contexts[$normalized] = New-Object System.Collections.ArrayList
+        }
+        [void]$contexts[$normalized].Add($record)
+    }
+    $trustedMappingTargets = 0
+    $trustedCurrentCode = 0
+    foreach ($code in $SystemCodes) {
+        $normalized = [string](Normalize-ReadinessValue $code)
+        $matches = @()
+        if ($contexts.ContainsKey($normalized)) {
+            $matches = @($contexts[$normalized])
+        }
+        if ($matches.Count -eq 0) {
+            Add-ReadinessIssue $Issues 'qa_authoring_context_missing' @([string]$code)
+            continue
+        }
+        if ($matches.Count -ne 1) {
+            Add-ReadinessIssue $Issues 'qa_authoring_context_ambiguous' @([string]$code)
+            continue
+        }
+        $trustedMappingTargets += [int](Get-Property $matches[0] 'mapping_target_count')
+        $trustedCurrentCode += @((Get-Property $matches[0] 'current_code_references')).Count
+    }
+    $dependencies = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($record in @(Get-ReadinessRows $Model 'mapping_dependency')) {
+        $key = ConvertTo-GdsJson @(
+            (Get-Property $record 'modeled_entity_type'),
+            (Normalize-ReadinessValue (Get-Property $record 'source_system_code'))
+        )
+        $dependencies[$key] = $true
+    }
+    $attributes = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($record in @(Get-ReadinessRows $Model 'mapping_attribute')) {
+        if ($null -ne (Get-Property $record 'attribute_mapping_transformation_document')) {
+            $attributes[(Get-ReadinessMappingKey $record)] = $true
+        }
+    }
+    $mappings = New-Object System.Collections.ArrayList
+    foreach ($record in @(Get-ReadinessRows $Model 'mapping_object')) {
+        $source = [string](Normalize-ReadinessValue (Get-Property $record 'source_system_code'))
+        $dependency = ConvertTo-GdsJson @(
+            (Get-Property $record 'modeled_entity_type'), $source
+        )
+        if ($selected.ContainsKey($source) -and
+            (Test-AuthoredMappingObject $record) -and
+            $dependencies.ContainsKey($dependency) -and
+            $attributes.ContainsKey((Get-ReadinessMappingKey $record))) {
+            [void]$mappings.Add($record)
+        }
+    }
+    $mappedSystems = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($record in @($mappings)) {
+        $mappedSystems[[string](Normalize-ReadinessValue (Get-Property $record 'source_system_code'))] = $true
+    }
+    foreach ($code in $SystemCodes) {
+        $normalized = [string](Normalize-ReadinessValue $code)
+        if (-not $mappedSystems.ContainsKey($normalized)) {
+            Add-ReadinessIssue $Issues 'qa_mapping_missing' @([string]$code)
+        }
+    }
+    $groupCount = 0
+    foreach ($record in @(Get-ReadinessRows $Model 'validation_group')) {
+        if ($selected.ContainsKey([string](Normalize-ReadinessValue (Get-Property $record 'system_code')))) {
+            $groupCount++
+        }
+    }
+    $checkCount = 0
+    foreach ($record in @(Get-ReadinessRows $Model 'validation_check')) {
+        if ($selected.ContainsKey([string](Normalize-ReadinessValue (Get-Property $record 'system_code')))) {
+            $checkCount++
+        }
+    }
+    return [ordered]@{
+        selected_systems = $selected.Count
+        mapped_systems = $mappedSystems.Count
+        mapping_targets = $trustedMappingTargets
+        code_artifacts = $trustedCurrentCode
+        validation_groups = $groupCount
+        validation_checks = $checkCount
+    }
+}
+
 function Get-ReadinessPrompt($Issues) {
     $prompts = New-Object System.Collections.ArrayList
     if (Test-ReadinessIssue $Issues 'applied_mapping_missing') {
@@ -2288,6 +2537,13 @@ function Get-ReadinessPrompt($Issues) {
     }
     if (Test-ReadinessIssue $Issues 'generator_contract_unavailable') {
         [void]$prompts.Add('Call get_model_code_generation_document for each exact target/source pair, bind each returned server proof with generator-proof, then rerun readiness.')
+    }
+    if (Test-ReadinessIssue $Issues 'qa_mapping_missing') {
+        [void]$prompts.Add('Complete and Apply active Mapping for every selected System, download a fresh Model Snapshot, then resume QA.')
+    }
+    if ((Test-ReadinessIssue $Issues 'qa_authoring_context_missing') -or
+        (Test-ReadinessIssue $Issues 'qa_authoring_context_ambiguous')) {
+        [void]$prompts.Add('Download a fresh Model Snapshot containing exactly one trusted QA authoring context for every selected System, then resume QA.')
     }
     if ((Test-ReadinessIssue $Issues 'destination_pattern_missing') -or
         (Test-ReadinessIssue $Issues 'destination_pattern_ambiguous')) {
@@ -2303,6 +2559,10 @@ function Get-WorkflowReadiness([hashtable]$Options) {
     $target = Require-Option $Options 'target'
     if (@($script:ReadinessTargets.Keys) -cnotcontains $target) {
         Fail ('--target must be one of: ' + [string]::Join(', ', @($script:ReadinessTargets.Keys)) + '.')
+    }
+    $systems = if ($target -ceq 'qa') { @(Get-SelectedSystemCodes $Options) } else { @() }
+    if ($target -cne 'qa' -and $Options.ContainsKey('system-codes')) {
+        Fail '--system-codes is available only for QA readiness.'
     }
     $session = Resolve-Session $Options
     $state = Read-SessionState $session
@@ -2382,6 +2642,7 @@ function Get-WorkflowReadiness([hashtable]$Options) {
             'dimensional-code' {
                 $counts = Get-CodeReadiness $session $model 'dimensional' $target $issues (Get-ProofUnits $Options)
             }
+            'qa' { $counts = Get-QaReadiness $model $issues $systems }
         }
     }
     $issueOutput = Get-ReadinessIssueOutput $issues
@@ -2715,7 +2976,14 @@ function Get-SchemaIssues {
     return @($issues)
 }
 
-function Add-LocalValidationIssue($Issues, [string]$Dataset, $Record, [string]$Code, $Detail = $null) {
+function Add-LocalValidationIssue(
+    $Issues,
+    [string]$Dataset,
+    $Record,
+    [string]$Code,
+    $Detail = $null,
+    $Field = $null
+) {
     if ($Issues.Count -ge 200) { return }
     $humanCode = $Code.Replace('_', ' ')
     $message = if ($null -eq $Detail -or [string]$Detail -ceq $Code) {
@@ -2724,7 +2992,14 @@ function Add-LocalValidationIssue($Issues, [string]$Dataset, $Record, [string]$C
     else {
         "${Code}: ${humanCode}: $Detail"
     }
-    [void]$Issues.Add(@($Dataset, $Record, $message))
+    [void]$Issues.Add([pscustomobject]@{
+        Dataset = $Dataset
+        Record = $Record
+        Code = $Code
+        Detail = if ($null -eq $Detail) { $Code } else { [string]$Detail }
+        Field = $Field
+        Issue = @($Dataset, $Record, $message)
+    })
 }
 
 function Get-EffectiveRecords($Context, $Dataset, [object[]]$Draft) {
@@ -2921,6 +3196,11 @@ function Get-ModelValidationRecords($ByName, [string]$Dataset, [bool]$Changed) {
     foreach ($record in @($records)) { Write-Output $record }
 }
 
+function Get-ModelBaselineRecords($ByName, [string]$Dataset) {
+    if (-not $ByName.ContainsKey($Dataset)) { return }
+    foreach ($record in @($ByName[$Dataset].Baseline)) { Write-Output $record }
+}
+
 function Get-ModelNormalized($Value) {
     return Normalize-Value 'model' 'value' $Value
 }
@@ -2948,6 +3228,46 @@ function Get-ModelPhysicalObjectKey($Record, [string]$Prefix = '') {
         [void]$values.Add((Get-ModelNormalized (Get-Property $Record $name)))
     }
     return ConvertTo-StableJson @($values)
+}
+
+function Get-ModelPhysicalAttributeKey($Record, [string]$Prefix = '') {
+    $values = New-Object System.Collections.ArrayList
+    foreach ($field in $script:PhysicalObjectFields) {
+        $name = if ([string]::IsNullOrEmpty($Prefix)) { $field } else { $Prefix + '_' + $field }
+        [void]$values.Add((Get-ModelNormalized (Get-Property $Record $name)))
+    }
+    $attributeField = if ([string]::IsNullOrEmpty($Prefix)) {
+        'attribute_name'
+    } else {
+        $Prefix + '_attribute_name'
+    }
+    [void]$values.Add((Get-ModelNormalized (Get-Property $Record $attributeField)))
+    return ConvertTo-StableJson @($values)
+}
+
+function Get-ModelPhysicalAttributes($Context) {
+    if ((Test-Property $Context.State 'stale') -and @($Context.State.stale) -ccontains 'metadata') {
+        return $null
+    }
+    try {
+        $metadata = Find-Snapshot @{ session = $Context.Session; area = 'metadata' }
+    }
+    catch {
+        if ($_.Exception.Message -ceq 'Expected exactly one unzipped metadata Snapshot; found 0.') {
+            return $null
+        }
+        throw
+    }
+    $attributes = New-Object 'System.Collections.Generic.Dictionary[string,bool]'
+    foreach ($zone in @('source', 'bronze', 'silver', 'gold')) {
+        $name = $zone + '_attribute'
+        if (-not $metadata.ByName.ContainsKey($name)) { continue }
+        foreach ($record in @(Read-SnapshotRecords $metadata $metadata.ByName[$name])) {
+            if ((Get-Active $record) -eq $false) { continue }
+            $attributes[(Get-ModelPhysicalAttributeKey $record)] = $true
+        }
+    }
+    return ,$attributes
 }
 
 function Get-ModelSourceKey($Source) {
@@ -2981,9 +3301,14 @@ function Get-ModelMappingObjectKey($Record) {
     )
 }
 
-function Add-ModelMissingIssue($Issues, [string]$Dataset, [int]$RecordNumber) {
+function Add-ModelMissingIssue(
+    $Issues,
+    [string]$Dataset,
+    [int]$RecordNumber,
+    [string]$Field
+) {
     $message = 'Referenced record is not present in the effective Model graph.'
-    Add-LocalValidationIssue $Issues $Dataset $RecordNumber 'reference_not_found' $message
+    Add-LocalValidationIssue $Issues $Dataset $RecordNumber 'reference_not_found' $message $Field
 }
 
 function Test-ModelNestedDuplicate($Values, [string]$Kind) {
@@ -3009,7 +3334,7 @@ function Add-ModelNestedUniquenessIssues($ByName, $Issues) {
         $field = 'modeling_assertion_applicable_layers'
         if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'normalized') {
             Add-LocalValidationIssue $Issues 'modeling_assertion_record' ($index + 1) `
-                'duplicate_nested_key' "$field contains a normalized duplicate."
+                'duplicate_nested_key' "$field contains a normalized duplicate." $field
         }
     }
     foreach ($dataset in @('conceptual_object', 'conceptual_relationship')) {
@@ -3019,13 +3344,13 @@ function Add-ModelNestedUniquenessIssues($ByName, $Issues) {
                 $field = 'conceptual_object_aliases'
                 if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'normalized') {
                     Add-LocalValidationIssue $Issues $dataset ($index + 1) 'duplicate_nested_key' `
-                        "$field contains a normalized duplicate."
+                        "$field contains a normalized duplicate." $field
                 }
             }
             $field = 'supports'
             if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'source') {
                 Add-LocalValidationIssue $Issues $dataset ($index + 1) 'duplicate_nested_key' `
-                    "$field contains a normalized duplicate."
+                    "$field contains a normalized duplicate." $field
             }
         }
     }
@@ -3036,12 +3361,12 @@ function Add-ModelNestedUniquenessIssues($ByName, $Issues) {
             $field = 'submodels'
             if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'submodel') {
                 Add-LocalValidationIssue $Issues $entityDataset ($index + 1) `
-                    'duplicate_nested_key' "$field contains a normalized duplicate."
+                    'duplicate_nested_key' "$field contains a normalized duplicate." $field
             }
             $field = 'sources'
             if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'source') {
                 Add-LocalValidationIssue $Issues $entityDataset ($index + 1) `
-                    'duplicate_nested_key' "$field contains a normalized duplicate."
+                    'duplicate_nested_key' "$field contains a normalized duplicate." $field
             }
         }
         $attributeDataset = $layer + '_attribute'
@@ -3050,7 +3375,7 @@ function Add-ModelNestedUniquenessIssues($ByName, $Issues) {
             $field = 'sources'
             if (Test-ModelNestedDuplicate (Get-Property $records[$index] $field) 'source') {
                 Add-LocalValidationIssue $Issues $attributeDataset ($index + 1) `
-                    'duplicate_nested_key' "$field contains a normalized duplicate."
+                    'duplicate_nested_key' "$field contains a normalized duplicate." $field
             }
         }
     }
@@ -3062,7 +3387,32 @@ function Add-ModelPolicyIssue(
     [int]$RecordNumber,
     [string]$Message
 ) {
-    Add-LocalValidationIssue $Issues $Dataset $RecordNumber 'record_policy_invalid' $Message
+    $fields = @{
+        'Generated Code contains an unsupported control character.' = 'generated_code_content'
+        'Generated Code digest does not match its content.' = 'generated_code_digest'
+        'Validation Group description is too large.' = 'validation_group_description'
+        'Validation Check text or comparison value is too large.' = 'validation_payload'
+        'Validation assertion shape is invalid.' = 'validation_assertion'
+        'Validation comparison value does not match its result type.' = 'validation_comparison_value'
+        'Profiling counts or length bounds are inconsistent.' = 'profiling_counts'
+        'Analysis validation fields must all be present or all be absent.' = 'analysis_validation_group'
+        'Analysis endpoints must differ.' = 'analysis_endpoints'
+        'Conceptual Relationship endpoints must differ.' = 'conceptual_relationship_endpoints'
+        'logical Relationship endpoints must differ.' = 'logical_relationship_endpoints'
+        'dimensional Relationship endpoints must differ.' = 'dimensional_relationship_endpoints'
+        'Logical Entity type detail is required only for other.' = 'logical_entity_type_detail'
+        'Logical key flags and nullability are inconsistent.' = 'logical_attribute_key_policy'
+        'Dimensional type, fact type, and grain are inconsistent.' = 'dimensional_entity_policy'
+        'A Dimensional key role requires a key or technical Attribute.' = 'dimensional_attribute_key_role'
+        'Dimensional measure policy fields are inconsistent.' = 'dimensional_attribute_measure_policy'
+        'Dimensional audit flag and role must agree.' = 'dimensional_attribute_audit_policy'
+        'Mapping authored fields must be entirely present or absent.' = 'mapping_authored_group'
+        'Mapping package document is too large.' = 'mapping_package_document'
+        'Object Mapping transformation contract is invalid.' = 'object_mapping_transformation_document'
+        'Attribute Mapping transformation contract is invalid.' = 'attribute_mapping_transformation_document'
+    }
+    Add-LocalValidationIssue $Issues $Dataset $RecordNumber 'record_policy_invalid' `
+        $Message $fields[$Message]
 }
 
 function Get-JsonStringUtf8ByteCount([string]$Value) {
@@ -3125,7 +3475,352 @@ function Get-JsonUtf8ByteCount($Value) {
     return $size
 }
 
+function Test-GregorianLeapYear([int]$Year) {
+    return $Year % 4 -eq 0 -and ($Year % 100 -ne 0 -or $Year % 400 -eq 0)
+}
+
+function Get-GregorianWeekday([int]$Year, [int]$Month, [int]$Day) {
+    $offsets = @(0, 3, 2, 5, 0, 3, 5, 1, 4, 6, 2, 4)
+    $adjustedYear = $Year
+    if ($Month -lt 3) { $adjustedYear-- }
+    $sundayBased = (
+        $adjustedYear +
+        [math]::Floor($adjustedYear / 4) -
+        [math]::Floor($adjustedYear / 100) +
+        [math]::Floor($adjustedYear / 400) +
+        $offsets[$Month - 1] +
+        $Day
+    ) % 7
+    if ($sundayBased -eq 0) { return 7 }
+    return [int]$sundayBased
+}
+
+function Get-IsoDateParts([string]$Value) {
+    if ($null -eq $Value) { return $null }
+    $calendarMatch = [regex]::Match(
+        $Value,
+        '\A([0-9]{4})(?:-([0-9]{2})-([0-9]{2})|([0-9]{2})([0-9]{2}))\z'
+    )
+    $weekMatch = [regex]::Match(
+        $Value,
+        '\A([0-9]{4})(?:-W([0-9]{2})(?:-([0-9]))?|W([0-9]{2})([0-9])?)\z'
+    )
+    if (-not $calendarMatch.Success -and -not $weekMatch.Success) { return $null }
+
+    if ($weekMatch.Success) {
+        [int]$year = $weekMatch.Groups[1].Value
+        [int]$week = if ($weekMatch.Groups[2].Success) {
+            $weekMatch.Groups[2].Value
+        }
+        else { $weekMatch.Groups[4].Value }
+        [int]$weekday = if ($weekMatch.Groups[3].Success) {
+            $weekMatch.Groups[3].Value
+        }
+        elseif ($weekMatch.Groups[5].Success) { $weekMatch.Groups[5].Value }
+        else { 1 }
+        if ($year -lt 1 -or $year -gt 9999 -or $weekday -lt 1 -or $weekday -gt 7) {
+            return $null
+        }
+        $firstWeekday = Get-GregorianWeekday $year 1 1
+        $leap = Test-GregorianLeapYear $year
+        $maximumWeek = if ($firstWeekday -eq 4 -or ($firstWeekday -eq 3 -and $leap)) {
+            53
+        }
+        else { 52 }
+        if ($week -lt 1 -or $week -gt $maximumWeek) { return $null }
+
+        $januaryFourthWeekday = Get-GregorianWeekday $year 1 4
+        $ordinal = 4 - $januaryFourthWeekday + 1 + ($week - 1) * 7 + $weekday - 1
+        $resolvedYear = $year
+        while ($ordinal -lt 1) {
+            $resolvedYear--
+            if ($resolvedYear -lt 1) { return $null }
+            $previousYearDays = if (Test-GregorianLeapYear $resolvedYear) { 366 } else { 365 }
+            $ordinal += $previousYearDays
+        }
+        $resolvedYearDays = if (Test-GregorianLeapYear $resolvedYear) { 366 } else { 365 }
+        while ($ordinal -gt $resolvedYearDays) {
+            $ordinal -= $resolvedYearDays
+            $resolvedYear++
+            if ($resolvedYear -gt 9999) { return $null }
+            $resolvedYearDays = if (Test-GregorianLeapYear $resolvedYear) { 366 } else { 365 }
+        }
+        $days = @(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+        if (Test-GregorianLeapYear $resolvedYear) { $days[1] = 29 }
+        $month = 1
+        while ($ordinal -gt $days[$month - 1]) {
+            $ordinal -= $days[$month - 1]
+            $month++
+        }
+        return [pscustomobject]@{ Year = $resolvedYear; Month = $month; Day = $ordinal }
+    }
+
+    [int]$year = $calendarMatch.Groups[1].Value
+    [int]$month = if ($calendarMatch.Groups[2].Success) {
+        $calendarMatch.Groups[2].Value
+    }
+    else { $calendarMatch.Groups[4].Value }
+    [int]$day = if ($calendarMatch.Groups[3].Success) {
+        $calendarMatch.Groups[3].Value
+    }
+    else { $calendarMatch.Groups[5].Value }
+    if ($year -lt 1 -or $year -gt 9999 -or $month -lt 1 -or $month -gt 12) {
+        return $null
+    }
+    $days = @(31, 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31)
+    if (Test-GregorianLeapYear $year) { $days[1] = 29 }
+    if ($day -lt 1 -or $day -gt $days[$month - 1]) { return $null }
+    return [pscustomobject]@{ Year = $year; Month = $month; Day = $day }
+}
+
+function Get-IsoCharacters([string]$Value) {
+    $characters = New-Object 'System.Collections.Generic.List[string]'
+    for ($index = 0; $index -lt $Value.Length; $index++) {
+        $character = $Value[$index]
+        if (
+            [char]::IsHighSurrogate($character) -and
+            $index + 1 -lt $Value.Length -and
+            [char]::IsLowSurrogate($Value[$index + 1])
+        ) {
+            $characters.Add($Value.Substring($index, 2))
+            $index++
+        }
+        else { $characters.Add($Value.Substring($index, 1)) }
+    }
+    return $characters.ToArray()
+}
+
+function Get-IsoDateSeparatorIndex([string]$Value) {
+    $characters = @(Get-IsoCharacters $Value)
+    if ($characters.Count -eq 7) { return 7 }
+    if ($characters.Count -lt 8) { return -1 }
+    if ($characters[4] -ceq '-') {
+        if ($characters[5] -cne 'W') { return 10 }
+        if ($characters.Count -gt 8 -and $characters[8] -ceq '-') {
+            if ($characters.Count -eq 9) { return -1 }
+            if (
+                $characters.Count -gt 10 -and
+                [regex]::IsMatch($characters[10], '\A[0-9]\z')
+            ) { return 8 }
+            return 10
+        }
+        return 8
+    }
+    if ($characters[4] -cne 'W') { return 8 }
+    $index = 7
+    while (
+        $index -lt $characters.Count -and
+        [regex]::IsMatch($characters[$index], '\A[0-9]\z')
+    ) { $index++ }
+    if ($index -lt 9) { return $index }
+    if ($index % 2 -eq 0) { return 7 }
+    return 8
+}
+
+function Get-IsoTimeParts([string]$Value) {
+    $match = [regex]::Match(
+        $Value,
+        '\A([0-9]{2})(?:(?::([0-9]{2})(?::([0-9]{2})(?:[.,]([0-9]+))?)?)|(?:([0-9]{2})(?:([0-9]{2})(?:[.,]([0-9]+))?)?))?(Z|[+-](?:[0-9]{2}|[0-9]{4}|[0-9]{2}:[0-9]{2}|[0-9]{6}(?:[.,][0-9]+)?|[0-9]{2}:[0-9]{2}:[0-9]{2}(?:[.,][0-9]+)?))?\z'
+    )
+    if (-not $match.Success) { return $null }
+    [int]$hour = $match.Groups[1].Value
+    [int]$minute = if ($match.Groups[2].Success) {
+        $match.Groups[2].Value
+    }
+    elseif ($match.Groups[5].Success) { $match.Groups[5].Value }
+    else { 0 }
+    [int]$second = if ($match.Groups[3].Success) {
+        $match.Groups[3].Value
+    }
+    elseif ($match.Groups[6].Success) { $match.Groups[6].Value }
+    else { 0 }
+    $fraction = if ($match.Groups[4].Success) {
+        $match.Groups[4].Value
+    }
+    elseif ($match.Groups[7].Success) { $match.Groups[7].Value }
+    else { '' }
+    if ($minute -gt 59 -or $second -gt 59 -or $hour -gt 24) { return $null }
+    $nextDay = $hour -eq 24
+    if (
+        $nextDay -and
+        ($minute -ne 0 -or $second -ne 0 -or [regex]::IsMatch($fraction, '[1-9]'))
+    ) { return $null }
+
+    if ($match.Groups[8].Success -and $match.Groups[8].Value -cne 'Z') {
+        $offset = $match.Groups[8].Value.Substring(1)
+        $offsetMatch = [regex]::Match($offset, '\A([0-9]{2})\z')
+        if (-not $offsetMatch.Success) {
+            $offsetMatch = [regex]::Match(
+                $offset,
+                '\A([0-9]{2})(?::?([0-9]{2}))(?::?([0-9]{2})(?:[.,][0-9]+)?)?\z'
+            )
+        }
+        if (-not $offsetMatch.Success) { return $null }
+        [int]$offsetHours = $offsetMatch.Groups[1].Value
+        [int]$offsetMinutes = if ($offsetMatch.Groups[2].Success) {
+            $offsetMatch.Groups[2].Value
+        }
+        else { 0 }
+        [int]$offsetSeconds = if ($offsetMatch.Groups[3].Success) {
+            $offsetMatch.Groups[3].Value
+        }
+        else { 0 }
+        if ($offsetHours * 3600 + $offsetMinutes * 60 + $offsetSeconds -ge 86400) {
+            return $null
+        }
+    }
+    return [pscustomobject]@{ NextDay = $nextDay }
+}
+
+function Test-IsoTimestamp([string]$Value) {
+    $characters = @(Get-IsoCharacters $Value)
+    $separator = Get-IsoDateSeparatorIndex $Value
+    if ($separator -lt 0 -or $separator -gt $characters.Count) { return $false }
+    $date = $characters[0..($separator - 1)] -join ''
+    $dateParts = Get-IsoDateParts $date
+    if ($null -eq $dateParts) { return $false }
+    if ($separator -eq $characters.Count) { return $true }
+    if ($separator + 1 -ge $characters.Count) { return $false }
+    $time = $characters[($separator + 1)..($characters.Count - 1)] -join ''
+    $timeParts = Get-IsoTimeParts $time
+    if ($null -eq $timeParts) { return $false }
+    return -not (
+        $timeParts.NextDay -and
+        $dateParts.Year -eq 9999 -and
+        $dateParts.Month -eq 12 -and
+        $dateParts.Day -eq 31
+    )
+}
+
+function Test-ValidationLiteralMatch([string]$ResultType, $Value) {
+    if ($ResultType -ceq 'boolean') { return $Value -is [bool] }
+    if ($ResultType -ceq 'integer') {
+        if (-not (Test-JsonNumber $Value)) { return $false }
+        $number = [double]$Value
+        return -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number) -and
+            [math]::Truncate($number) -eq $number
+    }
+    if ($ResultType -ceq 'decimal') {
+        if (-not (Test-JsonNumber $Value)) { return $false }
+        $number = [double]$Value
+        return -not [double]::IsNaN($number) -and -not [double]::IsInfinity($number)
+    }
+    if ($ResultType -ceq 'text') { return $Value -is [string] }
+    if ($ResultType -ceq 'date' -and $Value -is [string]) {
+        return $null -ne (Get-IsoDateParts $Value)
+    }
+    if ($ResultType -ceq 'timestamp' -and $Value -is [string]) {
+        return (Test-IsoTimestamp $Value)
+    }
+    return $false
+}
+
 function Add-ModelRecordPolicyIssues($ByName, $Issues) {
+    $records = @(Get-ModelValidationRecords $ByName 'generated_code' $true)
+    for ($index = 0; $index -lt $records.Count; $index++) {
+        $record = $records[$index]
+        $content = Get-Property $record 'generated_code_content'
+        $invalidContent = $content -isnot [string]
+        if (-not $invalidContent) {
+            $bytes = [Text.Encoding]::UTF8.GetBytes([string]$content)
+            foreach ($character in ([string]$content).ToCharArray()) {
+                $code = [int]$character
+                if ($code -lt 32 -and @(9, 10, 13) -notcontains $code) {
+                    $invalidContent = $true
+                    break
+                }
+            }
+        }
+        if ($invalidContent) {
+            Add-ModelPolicyIssue $Issues 'generated_code' ($index + 1) `
+                'Generated Code contains an unsupported control character.'
+        }
+        else {
+            $sha = [Security.Cryptography.SHA256]::Create()
+            try {
+                $actual = ([BitConverter]::ToString($sha.ComputeHash($bytes))).Replace('-', '').ToLowerInvariant()
+            }
+            finally { $sha.Dispose() }
+            if ($actual -cne [string](Get-Property $record 'generated_code_digest')) {
+                Add-ModelPolicyIssue $Issues 'generated_code' ($index + 1) `
+                    'Generated Code digest does not match its content.'
+            }
+        }
+    }
+
+    $records = @(Get-ModelValidationRecords $ByName 'validation_group' $true)
+    for ($index = 0; $index -lt $records.Count; $index++) {
+        $description = Get-Property $records[$index] 'validation_group_description'
+        if ($description -is [string] -and [Text.Encoding]::UTF8.GetByteCount($description) -gt 16384) {
+            Add-ModelPolicyIssue $Issues 'validation_group' ($index + 1) `
+                'Validation Group description is too large.'
+        }
+    }
+
+    $records = @(Get-ModelValidationRecords $ByName 'validation_check' $true)
+    for ($index = 0; $index -lt $records.Count; $index++) {
+        $record = $records[$index]
+        $description = Get-Property $record 'validation_check_description'
+        $queryA = Get-Property $record 'validation_query_sql'
+        $queryB = Get-Property $record 'validation_comparison_query_sql'
+        $value = Get-Property $record 'validation_comparison_value'
+        $tooLarge = (
+            ($description -is [string] -and [Text.Encoding]::UTF8.GetByteCount($description) -gt 16384) -or
+            ($queryA -is [string] -and [Text.Encoding]::UTF8.GetByteCount($queryA) -gt 100000) -or
+            ($queryB -is [string] -and [Text.Encoding]::UTF8.GetByteCount($queryB) -gt 100000) -or
+            ($null -ne $value -and (Get-JsonUtf8ByteCount $value) -gt 65536)
+        )
+        if ($tooLarge) {
+            Add-ModelPolicyIssue $Issues 'validation_check' ($index + 1) `
+                'Validation Check text or comparison value is too large.'
+        }
+        $operator = Get-Property $record 'validation_comparison_operator'
+        $resultType = Get-Property $record 'validation_result_data_type'
+        $valueType = Get-Property $record 'validation_comparison_value_type'
+        $literalOrQuery = (
+            ($valueType -ceq 'literal' -and $null -ne $value -and $null -eq $queryB) -or
+            ($valueType -ceq 'query' -and $null -eq $value -and $null -ne $queryB)
+        )
+        $shape = $false
+        if ($operator -ceq 'executes_successfully') {
+            $shape = $null -eq $resultType -and $valueType -ceq 'none' -and
+                $null -eq $value -and $null -eq $queryB
+        }
+        elseif (@('is_null', 'is_not_null') -ccontains $operator) {
+            $shape = $null -ne $resultType -and $valueType -ceq 'none' -and
+                $null -eq $value -and $null -eq $queryB
+        }
+        elseif (@('is_true', 'is_false') -ccontains $operator) {
+            $shape = $resultType -ceq 'boolean' -and $valueType -ceq 'none' -and
+                $null -eq $value -and $null -eq $queryB
+        }
+        elseif (@('equal', 'not_equal') -ccontains $operator) {
+            $shape = $null -ne $resultType -and $literalOrQuery
+        }
+        elseif (@('greater_than', 'greater_than_or_equal', 'less_than', 'less_than_or_equal') -ccontains $operator) {
+            $shape = @('integer', 'decimal', 'date', 'timestamp') -ccontains $resultType -and $literalOrQuery
+        }
+        elseif (@('in', 'not_in') -ccontains $operator) {
+            $shape = $null -ne $resultType -and $valueType -ceq 'literal_list' -and
+                $value -is [Array] -and @($value).Count -ge 1 -and @($value).Count -le 10000 -and
+                $null -eq $queryB
+        }
+        if (-not $shape) {
+            Add-ModelPolicyIssue $Issues 'validation_check' ($index + 1) `
+                'Validation assertion shape is invalid.'
+        }
+        elseif (@('literal', 'literal_list') -ccontains $valueType) {
+            $values = if ($value -is [Array]) { @($value) } else { @($value) }
+            foreach ($item in $values) {
+                if (-not (Test-ValidationLiteralMatch ([string]$resultType) $item)) {
+                    Add-ModelPolicyIssue $Issues 'validation_check' ($index + 1) `
+                        'Validation comparison value does not match its result type.'
+                    break
+                }
+            }
+        }
+    }
+
     $records = @(Get-ModelValidationRecords $ByName 'profiling_profile' $true)
     for ($index = 0; $index -lt $records.Count; $index++) {
         $record = $records[$index]
@@ -3368,7 +4063,8 @@ function Add-ModelAssertionIssues($ByName, $Issues) {
         $assertions[$key] = $record
         $document = ConvertTo-StableJson (Get-ModelNormalized (Get-Property $record 'modeling_assertion_document_name'))
         if (-not $documents.ContainsKey($document)) {
-            Add-ModelMissingIssue $Issues 'modeling_assertion_record' ($index + 1)
+            Add-ModelMissingIssue $Issues 'modeling_assertion_record' ($index + 1) `
+                'modeling_assertion_document_name'
         }
     }
     $rules = @(
@@ -3394,14 +4090,15 @@ function Add-ModelAssertionIssues($ByName, $Issues) {
                     Get-ModelNormalized (Get-Property $assertionRecord 'modeling_assertion_record_key')
                 )
                 if (-not $assertions.ContainsKey($key)) {
-                    Add-ModelMissingIssue $Issues $dataset ($index + 1)
+                    Add-ModelMissingIssue $Issues $dataset ($index + 1) `
+                        'modeling_assertion_record_key'
                     continue
                 }
                 $layers = Get-Property $assertions[$key] 'modeling_assertion_applicable_layers'
                 if ($layers -isnot [Array] -or @($layers) -cnotcontains $layer) {
                     $message = 'Referenced Assertion does not apply to this modeling layer.'
                     Add-LocalValidationIssue $Issues $dataset ($index + 1) `
-                        'assertion_layer_invalid' $message
+                        'assertion_layer_invalid' $message 'modeling_assertion_record_key'
                 }
             }
         }
@@ -3419,7 +4116,8 @@ function Add-ModelStructureIssues($ByName, $Issues) {
             Get-ModelNormalized (Get-Property $records[$index] 'to_conceptual_object_name')
         )
         if (-not $conceptual.ContainsKey($from) -or -not $conceptual.ContainsKey($to)) {
-            Add-ModelMissingIssue $Issues 'conceptual_relationship' ($index + 1)
+            Add-ModelMissingIssue $Issues 'conceptual_relationship' ($index + 1) `
+                'conceptual_object_name'
         }
     }
 
@@ -3443,7 +4141,7 @@ function Add-ModelStructureIssues($ByName, $Issues) {
                     Get-ModelNormalized (Get-Property $membership 'submodel_name')
                 )
                 if (-not $submodels.ContainsKey($key)) {
-                    Add-ModelMissingIssue $Issues $entityDataset ($index + 1)
+                    Add-ModelMissingIssue $Issues $entityDataset ($index + 1) 'submodel_name'
                 }
             }
         }
@@ -3453,7 +4151,7 @@ function Add-ModelStructureIssues($ByName, $Issues) {
             $record = $attributeRecords[$index]
             $entity = ConvertTo-StableJson (Get-ModelNormalized (Get-Property $record $entityField))
             if (-not $entities.ContainsKey($entity)) {
-                Add-ModelMissingIssue $Issues $attributeDataset ($index + 1)
+                Add-ModelMissingIssue $Issues $attributeDataset ($index + 1) $entityField
             }
             $attributes[(Get-ModelPairKey (Get-Property $record $entityField) (Get-Property $record $attributeField))] = $true
         }
@@ -3469,7 +4167,7 @@ function Add-ModelStructureIssues($ByName, $Issues) {
                 if (-not $attributes.ContainsKey($key)) { $missingEndpoint = $true }
             }
             if ($missingEndpoint) {
-                Add-ModelMissingIssue $Issues $relationshipDataset ($index + 1)
+                Add-ModelMissingIssue $Issues $relationshipDataset ($index + 1) $attributeField
             }
         }
         $indexes[$layer] = [pscustomobject]@{ Entities = $entities; Attributes = $attributes }
@@ -3477,13 +4175,19 @@ function Add-ModelStructureIssues($ByName, $Issues) {
     return [pscustomobject]$indexes
 }
 
-function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
+function Add-ModelPhysicalScopeIssues($ByName, $Issues, $PhysicalAttributes) {
     $scope = New-Object 'System.Collections.Generic.Dictionary[string,object]'
     foreach ($record in @(Get-ModelValidationRecords $ByName 'model_scope' $false)) {
         $active = Get-Property $record 'is_active'
         if ($active -is [bool] -and $active) {
             $scope[(Get-ModelPhysicalObjectKey $record)] = $record
         }
+    }
+    $appliedLogicalMappingAttributes = New-Object 'System.Collections.Generic.Dictionary[string,bool]'
+    foreach ($record in @(Get-ModelBaselineRecords $ByName 'mapping_attribute')) {
+        if ((Get-Property $record 'modeled_entity_type') -cne 'logical_entity') { continue }
+        if ((Get-Active $record) -eq $false) { continue }
+        $appliedLogicalMappingAttributes[(Get-ModelPhysicalAttributeKey $record)] = $true
     }
 
     foreach ($dataset in @('conceptual_object', 'conceptual_relationship')) {
@@ -3500,7 +4204,8 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
                 if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
                     Add-LocalValidationIssue $Issues $dataset ($index + 1) `
                         'model_scope_reference_invalid' `
-                        'Referenced physical Object is not an eligible Bronze source.'
+                        'Referenced physical Object is not an eligible Bronze source.' `
+                        'source_object'
                 }
             }
         }
@@ -3536,7 +4241,8 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
                 if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
                     Add-LocalValidationIssue $Issues $entityDataset ($index + 1) `
                         'model_scope_reference_invalid' `
-                        $objectEligibilityMessage
+                        $objectEligibilityMessage `
+                        'source_object'
                 }
             }
         }
@@ -3549,13 +4255,25 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
             foreach ($source in @($sources)) {
                 $sourceType = Get-Property $source 'support_source_type'
                 if ($sourceType -isnot [string] -or $sourceType -cne 'attribute') { continue }
-                $key = Get-ModelPhysicalObjectKey (Get-Property $source 'source_attribute')
+                $attribute = Get-Property $source 'source_attribute'
+                $key = Get-ModelPhysicalObjectKey $attribute
                 $scopeRecord = if ($scope.ContainsKey($key)) { $scope[$key] } else { $null }
                 $eligible = Get-Property $scopeRecord $eligibilityField
-                if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
+                $attributeKey = Get-ModelPhysicalAttributeKey $attribute
+                $attributeMissing = $null -ne $PhysicalAttributes -and -not $PhysicalAttributes.ContainsKey($attributeKey)
+                $mappingMissing = ($layer -ceq 'dimensional') -and (-not $appliedLogicalMappingAttributes.ContainsKey($attributeKey))
+                if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible -or
+                    $attributeMissing -or $mappingMissing) {
                     Add-LocalValidationIssue $Issues $attributeDataset ($index + 1) `
                         'model_scope_reference_invalid' `
-                        $attributeEligibilityMessage
+                        $attributeEligibilityMessage `
+                        'source_attribute'
+                }
+                if ($null -eq $PhysicalAttributes) {
+                    Add-LocalValidationIssue $Issues $attributeDataset ($index + 1) `
+                        'physical_attribute_context_missing' `
+                        'Fresh Metadata Attribute context is required for local validation.' `
+                        'source_attribute'
                 }
             }
         }
@@ -3566,10 +4284,19 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
         $key = Get-ModelPhysicalObjectKey $records[$index]
         $scopeRecord = if ($scope.ContainsKey($key)) { $scope[$key] } else { $null }
         $eligible = Get-Property $scopeRecord 'is_bronze_source_eligible'
-        if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
+        $attributeKey = Get-ModelPhysicalAttributeKey $records[$index]
+        $attributeMissing = $null -ne $PhysicalAttributes -and -not $PhysicalAttributes.ContainsKey($attributeKey)
+        if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible -or $attributeMissing) {
             Add-LocalValidationIssue $Issues 'profiling_profile' ($index + 1) `
                 'model_scope_reference_invalid' `
-                'Referenced physical Attribute is not an eligible Bronze source.'
+                'Referenced physical Attribute is not an eligible Bronze source.' `
+                'attribute_name'
+        }
+        if ($null -eq $PhysicalAttributes) {
+            Add-LocalValidationIssue $Issues 'profiling_profile' ($index + 1) `
+                'physical_attribute_context_missing' `
+                'Fresh Metadata Attribute context is required for local validation.' `
+                'attribute_name'
         }
     }
 
@@ -3579,10 +4306,19 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
             $key = Get-ModelPhysicalObjectKey $records[$index] $endpoint
             $scopeRecord = if ($scope.ContainsKey($key)) { $scope[$key] } else { $null }
             $eligible = Get-Property $scopeRecord 'is_bronze_source_eligible'
-            if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
+            $attributeKey = Get-ModelPhysicalAttributeKey $records[$index] $endpoint
+            $attributeMissing = $null -ne $PhysicalAttributes -and -not $PhysicalAttributes.ContainsKey($attributeKey)
+            if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible -or $attributeMissing) {
                 Add-LocalValidationIssue $Issues 'analysis_result' ($index + 1) `
                     'model_scope_reference_invalid' `
-                    'Referenced physical Attribute is not an eligible Bronze source.'
+                    'Referenced physical Attribute is not an eligible Bronze source.' `
+                    ($endpoint + '_attribute_name')
+            }
+            if ($null -eq $PhysicalAttributes) {
+                Add-LocalValidationIssue $Issues 'analysis_result' ($index + 1) `
+                    'physical_attribute_context_missing' `
+                    'Fresh Metadata Attribute context is required for local validation.' `
+                    ($endpoint + '_attribute_name')
             }
         }
     }
@@ -3599,10 +4335,27 @@ function Add-ModelPhysicalScopeIssues($ByName, $Issues) {
                 'is_dimensional_mapping_target_eligible'
             }
             $eligible = Get-Property $scopeRecord $eligibilityField
-            if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible) {
+            $attributeMissing = $false
+            if ($dataset -ceq 'mapping_attribute') {
+                $attributeKey = Get-ModelPhysicalAttributeKey $record
+                $attributeMissing = $null -ne $PhysicalAttributes -and -not $PhysicalAttributes.ContainsKey($attributeKey)
+            }
+            if ($null -eq $scopeRecord -or $eligible -isnot [bool] -or -not $eligible -or $attributeMissing) {
+                $message = if ($dataset -ceq 'mapping_attribute') {
+                    'Referenced Mapping target Attribute is not eligible for its modeled layer.'
+                } else {
+                    'Referenced Mapping target Object is not eligible for its modeled layer.'
+                }
                 Add-LocalValidationIssue $Issues $dataset ($index + 1) `
                     'model_scope_reference_invalid' `
-                    'Referenced Mapping target is not eligible for its modeled layer.'
+                    $message `
+                    $(if ($dataset -ceq 'mapping_attribute') { 'attribute_name' } else { 'object_name' })
+            }
+            if ($dataset -ceq 'mapping_attribute' -and $null -eq $PhysicalAttributes) {
+                Add-LocalValidationIssue $Issues $dataset ($index + 1) `
+                    'physical_attribute_context_missing' `
+                    'Fresh Metadata Attribute context is required for local validation.' `
+                    'attribute_name'
             }
         }
     }
@@ -3626,7 +4379,7 @@ function Add-ModelMappingIssues($ByName, $Indexes, $Issues) {
             (Get-ModelNormalized (Get-Property $record 'source_system_code'))
         )
         if (-not $dependencies.ContainsKey($dependency)) {
-            Add-ModelMissingIssue $Issues 'mapping_object' ($index + 1)
+            Add-ModelMissingIssue $Issues 'mapping_object' ($index + 1) 'mapping_dependency'
         }
         $entityType = Get-Property $record 'modeled_entity_type'
         $entityNames = $null
@@ -3634,7 +4387,7 @@ function Add-ModelMappingIssues($ByName, $Indexes, $Issues) {
         elseif ($entityType -ceq 'dimensional_entity') { $entityNames = $Indexes.dimensional.Entities }
         $entityName = ConvertTo-StableJson (Get-ModelNormalized (Get-Property $record 'modeled_entity_name'))
         if ($null -eq $entityNames -or -not $entityNames.ContainsKey($entityName)) {
-            Add-ModelMissingIssue $Issues 'mapping_object' ($index + 1)
+            Add-ModelMissingIssue $Issues 'mapping_object' ($index + 1) 'modeled_entity_name'
         }
         $mappingObjects[(Get-ModelMappingObjectKey $record)] = $true
     }
@@ -3642,7 +4395,7 @@ function Add-ModelMappingIssues($ByName, $Indexes, $Issues) {
     for ($index = 0; $index -lt $records.Count; $index++) {
         $record = $records[$index]
         if (-not $mappingObjects.ContainsKey((Get-ModelMappingObjectKey $record))) {
-            Add-ModelMissingIssue $Issues 'mapping_attribute' ($index + 1)
+            Add-ModelMissingIssue $Issues 'mapping_attribute' ($index + 1) 'mapping_object'
         }
         $entityType = Get-Property $record 'modeled_entity_type'
         $attributes = $null
@@ -3652,20 +4405,157 @@ function Add-ModelMappingIssues($ByName, $Indexes, $Issues) {
             (Get-Property $record 'modeled_entity_name') `
             (Get-Property $record 'modeled_attribute_name')
         if ($null -eq $attributes -or -not $attributes.ContainsKey($attribute)) {
-            Add-ModelMissingIssue $Issues 'mapping_attribute' ($index + 1)
+            Add-ModelMissingIssue $Issues 'mapping_attribute' ($index + 1) `
+                'modeled_attribute_name'
         }
     }
 }
 
-function Add-ModelValidationIssues([object[]]$States, $Issues) {
+function Get-ModelValidationGroupKey($Record) {
+    return ConvertTo-StableJson @(
+        (Get-ModelNormalized (Get-Property $Record 'tenant_code')),
+        (Get-ModelNormalized (Get-Property $Record 'system_code')),
+        (Get-ModelNormalized (Get-Property $Record 'validation_group_name'))
+    )
+}
+
+function Add-ModelAppliedLockIssues($ByName, $Issues) {
+    foreach ($datasetName in @($ByName.Keys)) {
+        $state = $ByName[$datasetName]
+        $canonicalKey = @(Get-Property $state.Dataset 'canonical_key')
+        if ($canonicalKey.Count -eq 0) { continue }
+        $applied = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+        foreach ($record in @($state.Baseline)) {
+            $applied[(Get-NormalizedValidationKey 'model' $canonicalKey $record)] = $record
+        }
+        $recordNumber = 0
+        foreach ($record in @($state.Pending)) {
+            $recordNumber++
+            $key = Get-NormalizedValidationKey 'model' $canonicalKey $record
+            if (-not $applied.ContainsKey($key)) { continue }
+            $existing = $applied[$key]
+            $locked = $false
+            foreach ($field in @(Get-PropertyNames $existing)) {
+                if (($field -ceq 'is_locked' -or $field.EndsWith('_is_locked', [StringComparison]::Ordinal)) -and
+                    (Get-Property $existing $field) -is [bool] -and (Get-Property $existing $field)) {
+                    $locked = $true
+                    break
+                }
+            }
+            if ($locked -and (ConvertTo-StableJson $existing) -cne (ConvertTo-StableJson $record)) {
+                Add-LocalValidationIssue $Issues $datasetName $recordNumber 'record_locked' `
+                    'A locked applied record cannot be changed.' `
+                    ([string]::Join(',', @($canonicalKey)))
+            }
+        }
+    }
+}
+
+function Get-ModelQaSystemKey($Record) {
+    return ConvertTo-StableJson @(
+        (Get-ModelNormalized (Get-Property $Record 'tenant_code')),
+        (Get-ModelNormalized (Get-Property $Record 'system_code'))
+    )
+}
+
+function Add-ModelQaIssues($ByName, $Issues) {
+    $groups = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+    foreach ($record in @(Get-ModelValidationRecords $ByName 'validation_group' $false)) {
+        $groups[(Get-ModelValidationGroupKey $record)] = $record
+    }
+    $checks = @(Get-ModelValidationRecords $ByName 'validation_check' $false)
+    for ($index = 0; $index -lt $checks.Count; $index++) {
+        $record = $checks[$index]
+        $key = Get-ModelValidationGroupKey $record
+        if (-not $groups.ContainsKey($key)) {
+            Add-ModelMissingIssue $Issues 'validation_check' ($index + 1) `
+                'validation_group_name'
+        }
+        else {
+            $checkActive = Get-Property $record 'is_active'
+            $groupActive = Get-Property $groups[$key] 'is_active'
+            if ($checkActive -is [bool] -and $checkActive -and
+                ($groupActive -isnot [bool] -or -not $groupActive)) {
+                Add-LocalValidationIssue $Issues 'validation_check' ($index + 1) `
+                    'validation_group_inactive' `
+                    'An active Validation Check requires an active Validation Group.' `
+                    'validation_group_name'
+            }
+        }
+    }
+
+    $mappingChanged = @(
+        @(Get-ModelValidationRecords $ByName 'mapping_dependency' $true).Count,
+        @(Get-ModelValidationRecords $ByName 'mapping_object' $true).Count,
+        @(Get-ModelValidationRecords $ByName 'mapping_attribute' $true).Count
+    ) | Where-Object { $_ -gt 0 }
+    $codeChanged = @(Get-ModelValidationRecords $ByName 'generated_code' $true).Count -gt 0
+    $qaChanged = (
+        @(Get-ModelValidationRecords $ByName 'validation_group' $true).Count -gt 0 -or
+        @(Get-ModelValidationRecords $ByName 'validation_check' $true).Count -gt 0
+    )
+    if (@($mappingChanged).Count -gt 0 -and $codeChanged) {
+        Add-LocalValidationIssue $Issues 'generated_code' $null 'context_order_invalid' `
+            'Generated Code must be authored after its Mapping Change Set is applied.' `
+            'mapping_context_digest'
+    }
+    if ($qaChanged -and (@($mappingChanged).Count -gt 0 -or $codeChanged)) {
+        Add-LocalValidationIssue $Issues 'validation_group' $null 'context_order_invalid' `
+            'QA must be authored after its Mapping and Code Change Sets are applied.' `
+            'mapping_context_digest'
+    }
+
+    $contexts = New-Object 'System.Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+    foreach ($record in @(Get-ModelValidationRecords $ByName 'qa_authoring_context' $false)) {
+        $contexts[(Get-ModelQaSystemKey $record)] = $record
+    }
+    $groupsRequiringContext = New-Object 'System.Collections.Generic.Dictionary[string,bool]' ([StringComparer]::Ordinal)
+    foreach ($record in @(Get-ModelValidationRecords $ByName 'validation_group' $true)) {
+        if ((Get-Property $record 'is_active') -is [bool] -and (Get-Property $record 'is_active')) {
+            $groupsRequiringContext[(Get-ModelValidationGroupKey $record)] = $true
+        }
+    }
+    foreach ($record in @(Get-ModelValidationRecords $ByName 'validation_check' $true)) {
+        if ((Get-Property $record 'is_active') -is [bool] -and (Get-Property $record 'is_active')) {
+            $groupsRequiringContext[(Get-ModelValidationGroupKey $record)] = $true
+        }
+    }
+    foreach ($groupKey in @($groupsRequiringContext.Keys)) {
+        if (-not $groups.ContainsKey($groupKey)) { continue }
+        $group = $groups[$groupKey]
+        if ((Get-Property $group 'is_active') -isnot [bool] -or -not (Get-Property $group 'is_active')) {
+            continue
+        }
+        $systemKey = Get-ModelQaSystemKey $group
+        $context = if ($contexts.ContainsKey($systemKey)) { $contexts[$systemKey] } else { $null }
+        if ($null -eq $context -or
+            (ConvertTo-StableJson (Get-Property $group 'mapping_context_digest')) -cne
+            (ConvertTo-StableJson (Get-Property $context 'mapping_context_digest'))) {
+            Add-LocalValidationIssue $Issues 'validation_group' $null 'context_digest_invalid' `
+                'Validation Group Mapping context digest is stale or invalid.' `
+                'mapping_context_digest'
+        }
+        if ($null -eq $context -or
+            (ConvertTo-StableJson (Get-Property $group 'code_context_digest')) -cne
+            (ConvertTo-StableJson (Get-Property $context 'code_context_digest'))) {
+            Add-LocalValidationIssue $Issues 'validation_group' $null 'context_digest_invalid' `
+                'Validation Group Code context digest is stale or invalid.' `
+                'code_context_digest'
+        }
+    }
+}
+
+function Add-ModelValidationIssues([object[]]$States, $Issues, $PhysicalAttributes) {
     $byName = New-Object 'System.Collections.Generic.Dictionary[string,object]'
     foreach ($state in @($States)) { $byName[[string]$state.Dataset.name] = $state }
+    Add-ModelAppliedLockIssues $byName $Issues
     Add-ModelNestedUniquenessIssues $byName $Issues
     Add-ModelRecordPolicyIssues $byName $Issues
     Add-ModelAssertionIssues $byName $Issues
     $indexes = Add-ModelStructureIssues $byName $Issues
-    Add-ModelPhysicalScopeIssues $byName $Issues
+    Add-ModelPhysicalScopeIssues $byName $Issues $PhysicalAttributes
     Add-ModelMappingIssues $byName $indexes $Issues
+    Add-ModelQaIssues $byName $Issues
 }
 
 function Write-Pending($Context, $Dataset, [object[]]$Records) {
@@ -3853,6 +4743,104 @@ function Get-Active($Record) {
     return $null
 }
 
+function Set-ReviewedStatusActive($Record, [hashtable]$FieldCounts) {
+    $rootFields = @(
+        'analysis_result_status',
+        'modeling_assertion_record_status',
+        'conceptual_object_status',
+        'conceptual_relationship_status',
+        'logical_submodel_status',
+        'logical_entity_status',
+        'logical_attribute_status',
+        'logical_relationship_status',
+        'dimensional_submodel_status',
+        'dimensional_entity_status',
+        'dimensional_attribute_status',
+        'dimensional_relationship_status',
+        'mapping_source_system_dependency_status',
+        'object_mapping_status',
+        'attribute_mapping_status',
+        'generated_code_status'
+    )
+    foreach ($name in $rootFields) {
+        $value = Get-Property $Record $name
+        if ($value -is [string] -and $value -ceq 'needs_review') {
+            Set-Property $Record $name 'active'
+            if ($FieldCounts.ContainsKey($name)) { $FieldCounts[$name]++ }
+            else { $FieldCounts[$name] = 1 }
+        }
+    }
+    foreach ($container in @('supports', 'sources', 'submodels')) {
+        $children = Get-Property $Record $container
+        if ($children -isnot [Array]) { continue }
+        foreach ($child in @($children)) {
+            if ($null -eq $child -or $child -is [Array] -or $child -is [string] -or
+                $child -is [ValueType]) { continue }
+            foreach ($name in @('status', 'support_status', 'membership_status')) {
+                $value = Get-Property $child $name
+                if ($value -is [string] -and $value -ceq 'needs_review') {
+                    Set-Property $child $name 'active'
+                    if ($FieldCounts.ContainsKey($name)) { $FieldCounts[$name]++ }
+                    else { $FieldCounts[$name] = 1 }
+                }
+            }
+        }
+    }
+}
+
+function Approve-ReviewedChanges([hashtable]$Options) {
+    if ((Require-Option $Options 'area') -cne 'model') { Fail '--area must be model.' }
+    if (-not $Options.ContainsKey('reviewed') -or [string]$Options.reviewed -cne 'true') {
+        Fail '--reviewed true requires explicit user confirmation of the local review.'
+    }
+    $context = Get-ChangeContext $Options
+    Assert-Digest $Options $context
+    if ([string]$context.Current[3] -cne 'review') {
+        Fail 'Current Model task must be in review before reviewed records can be approved.'
+    }
+    $pending = Read-Pending $context
+    $fieldCounts = @{}
+    $datasetCounts = New-Object Collections.ArrayList
+    $changedDatasets = New-Object Collections.ArrayList
+    [int]$promoted = 0
+    foreach ($name in @($pending.Keys | Sort-Object)) {
+        $before = $promoted
+        foreach ($record in @($pending[$name])) {
+            Set-ReviewedStatusActive $record $fieldCounts
+        }
+        $promoted = 0
+        foreach ($count in @($fieldCounts.Values)) { $promoted += [int]$count }
+        if ($promoted -gt $before) {
+            $dataset = $context.ByName[$name]
+            $schema = Get-EditableSchema $context $dataset
+            foreach ($record in @($pending[$name])) {
+                $issues = @(Get-SchemaIssues $record $schema)
+                if ($issues.Count -gt 0) {
+                    Fail "$name reviewed record fails its schema: $($issues[0])"
+                }
+            }
+            [void]$datasetCounts.Add(@($name, ($promoted - $before)))
+            [void]$changedDatasets.Add($name)
+        }
+    }
+    if ($promoted -gt 0) {
+        foreach ($name in @($changedDatasets)) {
+            Write-Pending $context $context.ByName[$name] @($pending[$name])
+        }
+        Mark-Review $context
+    }
+    $fields = New-Object Collections.ArrayList
+    foreach ($name in @($fieldCounts.Keys | Sort-Object)) {
+        [void]$fields.Add(@($name, [int]$fieldCounts[$name]))
+    }
+    return [ordered]@{
+        promoted = $promoted
+        datasets = @($datasetCounts)
+        fields = @($fields)
+        digest = Get-WorkspaceDigest $context
+    }
+}
+
 function Review-Changes([hashtable]$Options) {
     $context = Get-ChangeContext $Options
     $pending = Read-Pending $context
@@ -3909,17 +4897,19 @@ function Validate-Changes([hashtable]$Options) {
         $schema = Get-DatasetSchema $context $dataset
         $draft = @()
         if ($pending.ContainsKey([string]$dataset.name)) { $draft = @($pending[[string]$dataset.name]) }
+        $baseline = @(Read-SnapshotRecords $context $dataset)
         $effective = @()
         $overlayError = $null
         try { $effective = @(Get-EffectiveRecords $context $dataset $draft) }
         catch {
             $overlayError = $_.Exception.Message
-            $effective = @(Read-SnapshotRecords $context $dataset)
+            $effective = @($baseline)
         }
         [void]$states.Add([pscustomobject]@{
             Dataset = $dataset
             Schema = $schema
             RecordType = Get-ValidationRecordType $dataset $schema
+            Baseline = $baseline
             Pending = $draft
             Effective = $effective
             OverlayError = $overlayError
@@ -3931,9 +4921,40 @@ function Validate-Changes([hashtable]$Options) {
         Add-MetadataReferenceIssues @($states) $issues
     }
     elseif ($context.Area -ceq 'model') {
-        Add-ModelValidationIssues @($states) $issues
+        Add-ModelValidationIssues @($states) $issues (Get-ModelPhysicalAttributes $context)
     }
-    return [ordered]@{ valid = $issues.Count -eq 0; issues = @($issues); digest = Get-WorkspaceDigest $context }
+    $boundedIssues = @($issues | Select-Object -First 200)
+    $issueOutput = New-Object Collections.ArrayList
+    $repairs = New-Object Collections.ArrayList
+    foreach ($issue in $boundedIssues) {
+        [void]$issueOutput.Add(@($issue.Issue))
+        $message = [string]$issue.Detail
+        $fields = New-Object Collections.ArrayList
+        if ($issue.Field -is [string] -and -not [string]::IsNullOrWhiteSpace($issue.Field)) {
+            [void]$fields.Add([string]$issue.Field)
+        }
+        $path = [regex]::Match($message, '\$(?<path>(?:\.[^.\[\]]+|\[\d+\])*)')
+        if ($path.Success) {
+            foreach ($part in [regex]::Matches($path.Groups['path'].Value, '\.([^.\[\]]+)|\[(\d+)\]')) {
+                $field = if ($part.Groups[1].Success) { $part.Groups[1].Value } else { $part.Groups[2].Value }
+                if (@($fields) -cnotcontains $field) { [void]$fields.Add($field) }
+            }
+        }
+        [void]$repairs.Add([ordered]@{
+            dataset = [string]$issue.Dataset
+            record = $issue.Record
+            code = [string]$issue.Code
+            fields = @($fields)
+            message = $message
+        })
+    }
+    return [ordered]@{
+        valid = $issues.Count -eq 0
+        issues = @($issueOutput)
+        repairs = @($repairs)
+        truncated = $issues.Count -gt 200
+        digest = Get-WorkspaceDigest $context
+    }
 }
 
 function Accept-Changes([hashtable]$Options) {
@@ -4137,8 +5158,11 @@ function Reconcile-Changes([hashtable]$Options) {
 try {
     $options = Parse-Options $RemainingArguments
     switch ($Command) {
+        'command-contract' { $output = Get-CommandContract $options }
+        'contract-check' { $output = Test-ServerContract $options }
         'session-init' { $output = Initialize-Session $options }
         'status' { $output = Get-SessionStatus $options }
+        'sql-policy' { $output = Set-SqlPolicy $options }
         'readiness' { $output = Get-WorkflowReadiness $options }
         'mapping-proof' { $output = Set-MappingProof $options }
         'generator-proof' { $output = Set-GeneratorProof $options }
@@ -4156,6 +5180,7 @@ try {
         'upsert-batch' { $output = Upsert-RecordsBatch $options }
         'discard' { $output = Discard-Record $options }
         'review' { $output = Review-Changes $options }
+        'approve-reviewed' { $output = Approve-ReviewedChanges $options }
         'validate' { $output = Validate-Changes $options }
         'accept' { $output = Accept-Changes $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }

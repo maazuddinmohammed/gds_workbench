@@ -14,6 +14,7 @@ import {
   ModelIcon,
   PanelToggleIcon,
   PromptsIcon,
+  QAIcon,
 } from "../shared/ui";
 import { useStoredBoolean } from "../shared/useStoredBoolean";
 
@@ -23,6 +24,7 @@ export type WorkspaceNavigation =
   | "models"
   | "mapping"
   | "code-generation"
+  | "qa"
   | "prompts";
 
 export function TenantWorkspace({
@@ -150,6 +152,16 @@ export function TenantWorkspace({
             title="Code generation"
           >
             <CodeIcon /><span className="nav-item-label">Code generation</span>
+          </Link>
+          <Link
+            aria-label="QA"
+            className={`nav-item${activeNav === "qa" ? " is-active" : ""}`}
+            data-short-label="QA"
+            to="/tenants/$tenantId/qa"
+            params={{ tenantId }}
+            title="QA"
+          >
+            <QAIcon /><span className="nav-item-label">QA</span>
           </Link>
           <Link
             aria-label="Prompts"

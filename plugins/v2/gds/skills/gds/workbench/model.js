@@ -46,14 +46,27 @@
       .map(([, group]) => group);
   }
 
-  function validate(loaded) {
+  function validate(loaded, metadataLoaded = null) {
     const effective = new Map();
     for (const [name, value] of loaded) {
-      effective.set(name, { records: value.effective, pending: value.pending });
+      effective.set(name, {
+        definition: value.definition,
+        records: value.effective,
+        baseline: value.baseline,
+        pending: value.pending,
+      });
     }
+    const metadata = metadataLoaded instanceof Map
+      ? new Map(
+        [...metadataLoaded].map(([name, value]) => [
+          name,
+          { records: value.baseline ?? value.records ?? [] },
+        ]),
+      )
+      : null;
     return [
       ...common.validateLoaded("model", loaded),
-      ...modelValidation.validateGraph(effective),
+      ...modelValidation.validateGraph(effective, metadata),
     ];
   }
 

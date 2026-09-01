@@ -130,6 +130,7 @@ gds-workbench-notebooks/
     ├── dimensional.py
     ├── mapping.py
     ├── code_generation.py
+    ├── qa.py
     ├── 90_review_workflow_draft.py
     └── 91_apply_workflow_draft.py
 ```
@@ -272,15 +273,18 @@ security boundary.
    profiling -> analysis_inference -> review/apply -> analysis_validation
    -> conceptual -> review/apply -> logical -> review/apply
    -> logical mapping -> review/apply -> optional logical code_generation
-   -> optional dimensional -> review/apply -> dimensional mapping
-   -> review/apply -> dimensional code_generation
+   -> review/apply -> optional dimensional -> review/apply -> dimensional mapping
+   -> review/apply -> dimensional code_generation -> review/apply
+   -> qa -> review/apply
    ```
 
    Review and Apply are manual gates after each applicable Analysis Inference,
-   Conceptual, Logical, Dimensional, or Mapping authoring run. An applied
+   Conceptual, Logical, Dimensional, Mapping, Code Generation, or QA authoring
+   run. An applied
    logical Mapping unlocks logical Code Generation and is required before
-   Dimensional inputs become eligible. Code Generation reads applied Mapping
-   and does not create its own Apply draft.
+   Dimensional inputs become eligible. QA reads applied Mapping plus current
+   generated Code when present, then drafts Validation Groups and Checks for
+   the exact selected Systems.
 
 7. Run `00_tenant_lock.py` with `Action=release` when all work is finished. Use
    `renew` before expiry during a long controlled session. There is no force
@@ -288,8 +292,8 @@ security boundary.
 
 Drafts are durable PostgreSQL data in `mcp.model_change_set` and related
 change-set tables. Here `mcp` is a PostgreSQL schema name, not evidence that an
-MCP server is running. Profiling and Code Generation do not necessarily create
-an Apply draft; a no-op authoring run also has nothing to apply.
+MCP server is running. Profiling does not create an Apply draft; a no-op
+authoring run also has nothing to apply.
 
 Only one workflow may run for a Tenant at a time. A conflict or expired claim
 is reported as a bounded error. Do not change inputs under the same
@@ -309,6 +313,7 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 | `conceptual`, `logical`, `dimensional` | `ExecutionMode` plus agent widgets. |
 | `mapping` | `ExecutionMode`, operation, artifact type, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
 | `code_generation` | Modeled entity type, selected/all-eligible coverage, optional SQL Guide Version ID, and agent widgets. |
+| `qa` | `SelectedSystemCodesJSON` plus agent widgets. Object selection must be `[]`; System Codes must be a nonempty JSON array unique ignoring case. |
 
 Agent widget choices come from the packaged shared registry at
 `src/gds_workbench_api/config/agent_capabilities.json`, filtered to Databricks
@@ -337,8 +342,9 @@ Agentic authoring `ExecutionMode` widgets offer `one_shot`, `tool_assisted`, and
 `detailed_coverage`; they default to `tool_assisted` so larger scopes use the
 bounded local context tools instead of embedding the complete context. If the
 registry has no compatible `tool_assisted` profile, the notebook selects the
-first compatible registered mode. Code Generation has no mode widget and uses
-only registered `detailed_coverage` profiles.
+first compatible registered mode. Code Generation and QA have no mode widget
+and use only registered `detailed_coverage` profiles. Their persisted execution
+mode remains `NULL` because that fixed internal agent mode is not user input.
 
 The Tenant Lock and draft review/apply notebooks use the same two-cell pattern:
 run the first cell to create their own widgets, fill them, then run the second

@@ -14,7 +14,8 @@ This deploys the web application only. The MCP server remains separate, keeps
 its Azure authentication, and is not started or changed by the Databricks App.
 The deployment performs no database DDL or migration. PostgreSQL must already
 be at this release's schema revision, including the approved tenant-wide
-Workflow Run exclusivity contract; see the deployment guide before rollout.
+Workflow Run exclusivity contract and the Code Generation and QA Model
+Sections; see the deployment guide before rollout.
 
 ## Security boundaries
 

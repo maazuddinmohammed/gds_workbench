@@ -61,6 +61,27 @@ def test_workbench_exposes_explicit_refresh_validate_and_override() -> None:
     assert "Save writes local JSON only." in html
 
 
+def test_workbench_validates_governed_code_and_qa_records() -> None:
+    source = (WORKBENCH / "validation" / "model.js").read_text()
+    powershell = (SKILL_ROOT / "scripts" / "gds-local.ps1").read_text()
+
+    for text in (
+        "Generated Code contains an unsupported control character.",
+        "Generated Code digest does not match its content.",
+        "Validation assertion shape is invalid.",
+        "Validation comparison value does not match its result type.",
+        "An active Validation Check requires an active Validation Group.",
+        "Validation Group Mapping context digest is stale or invalid.",
+        "Validation Group Code context digest is stale or invalid.",
+        "Generated Code must be authored after its Mapping Change Set is applied.",
+        "QA must be authored after its Mapping and Code Change Sets are applied.",
+        "A locked applied record cannot be changed.",
+    ):
+        assert text in source
+        assert text in powershell
+    assert "409600" not in source
+
+
 def test_workbench_exposes_results_table_and_json_fallback() -> None:
     html = (WORKBENCH / "index.html").read_text()
 

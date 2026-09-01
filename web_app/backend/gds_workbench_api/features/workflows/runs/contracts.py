@@ -16,6 +16,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 ]
 type ExecutionMode = Literal["one_shot", "tool_assisted", "detailed_coverage"]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]

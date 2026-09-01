@@ -26,6 +26,7 @@ from gds_workbench_api.features.mapping.preparation_contracts import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    pydantic_validation_issues,
 )
 
 
@@ -112,14 +113,8 @@ class MappingHeaderCandidateValidator:
     ]:
         try:
             parsed = _AgentHeaderEnvelope.model_validate(candidate, strict=True)
-        except ValidationError:
-            return None, (
-                _issue(
-                    "candidate.schema_invalid",
-                    (),
-                    "The candidate does not match the Header Mapper envelope.",
-                ),
-            )
+        except ValidationError as error:
+            return None, pydantic_validation_issues(error)
 
         issues: list[AgentValidationIssue] = []
         plan = self._preparation.plan

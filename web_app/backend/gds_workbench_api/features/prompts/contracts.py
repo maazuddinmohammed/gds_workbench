@@ -21,6 +21,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",

@@ -2,11 +2,25 @@
 
 ## Inputs
 
-Require fresh Metadata/Model Snapshots. Only active scoped physical Objects with `is_bronze_source_eligible=true`, plus active Attributes, source Profile, Analysis, Conceptual, and Logical work. The derived flag is authoritative; a Bronze label is insufficient. Existing profiles, Analysis, Conceptual, and Assertions are context only; they cannot override physical grain or fabricate evidence.
+Require fresh Snapshots. Scope is active Objects with `is_bronze_source_eligible=true`, plus active
+Attributes, Profile, Analysis, Conceptual, and Logical work. This flag is authoritative; Bronze
+labels are insufficient. Support cannot override physical grain or fabricate evidence.
 
-Choose a Build mode, Full/Selected scope, and ordered subset of Analysis → Conceptual → Logical. Automatic Full covers each eligible item exactly once; Guided pauses by Object group; Custom preserves coverage accounting. Stopping early unlocks no later target.
+Choose Build mode, Full/Selected, and Analysis → Conceptual → Logical; first two are optional,
+Logical mandatory. Ask when unspecified; Automatic never selects silently. Full covers every
+eligible item; Guided pauses by Object group; Custom preserves coverage.
 
-Do not create a coverage file. At each selected-section checkpoint, batch-save complete records, run `review`, show counts/items, then update one plan line: `Coverage <section>: scope=<n>; covered=<n>; excluded=<n>; blocked=<n>` plus unresolved identifiers. A checkpoint never accepts, Stages, or Applies. The final review covers the digest; reuse it and do not call `review` again. Then validate, accept, and Stage once.
+Before writing, load each selected Model output dataset contract.
+
+Before selected sections, report Profile readiness as
+`scoped_attributes`, `profiled_attributes`, and `unprofiled_attributes`. For each scoped Object,
+use bounded Attribute/Profile selections for gaps. Missing Profile evidence is a quality warning
+and never blocks Logical Build by itself. Profiling remains web/notebook-governed; SQL policy may
+add bounded evidence, never fabricated or authoritative Profile records.
+
+Coverage uses scoped physical Objects: Analysis assesses candidate relationships for each Object;
+Conceptual and Logical classify each Object. Profile Attribute counts are evidence, never the
+denominator. Do not create a coverage file. At each selected-section checkpoint, batch-save complete records, run `review`, show counts/items, then update one plan line: `Coverage <section>: scope=<n>; covered=<n>; excluded=<n>; blocked=<n>` plus unresolved identifiers. A checkpoint never accepts, Stages, or Applies. The final review covers the digest; reuse it and do not call `review` again. Then validate, accept, and Stage once.
 
 ## Analysis loop
 

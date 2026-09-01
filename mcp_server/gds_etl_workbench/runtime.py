@@ -58,7 +58,8 @@ def create_application(
     application = server.streamable_http_app(
         json_response=True,
         stateless_http=True,
-        max_request_body_size=1024 * 1024,
+        # A 1 MiB Model Stage chunk still needs JSON-RPC envelope headroom.
+        max_request_body_size=2 * 1024 * 1024,
         transport_security=transport_security,
     )
     application.add_middleware(

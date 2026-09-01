@@ -81,6 +81,7 @@ from gds_workbench_api.features.profiling import (
     ProfilingReviewDatabase,
 )
 from gds_workbench_api.features.prompts import DatabasePromptService, PromptDatabase
+from gds_workbench_api.features.qa import DatabaseQAReadService, QAReadDatabase
 from gds_workbench_api.features.session import (
     DatabaseSessionService,
     SessionReadDatabase,
@@ -145,6 +146,7 @@ class RuntimeDatabase(
     DimensionalReadDatabase,
     MappingReadDatabase,
     CodeGenerationReadDatabase,
+    QAReadDatabase,
     WorkflowOverviewDatabase,
     WorkflowRunDatabase,
     WorkflowCommandDatabase,
@@ -340,6 +342,11 @@ def create_runtime_app(
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
         code_generation_workflow_service=workflow_services.code_generation,
+        qa_read_service=DatabaseQAReadService(
+            database=runtime_database,
+            authorizer=authorizer,
+        ),
+        qa_workflow_service=workflow_services.qa,
         workflow_overview_service=DatabaseWorkflowOverviewService(
             database=runtime_database,
             authorizer=authorizer,

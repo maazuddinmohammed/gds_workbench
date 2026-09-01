@@ -203,6 +203,14 @@ SELECT jsonb_build_object(
        ) AS references
 """
 
+_TARGET_CONTEXT_SQL: LiteralString = r"""
+/* code_generation_target_context_v1 */
+SELECT btrim(context.mapping_context_digest)::TEXT AS mapping_context_digest,
+       btrim(context.source_context_digest)::TEXT AS source_context_digest
+  FROM workflow.list_code_generation_target_context(%s, %s) AS context
+ WHERE context.object_id = %s
+"""
+
 
 class _ContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
@@ -246,7 +254,13 @@ class GeneratorDocumentProof(_ContractModel):
     target_object_id: int = Field(gt=0)
     source_system_id: int = Field(gt=0)
     profile_schema_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mapping_context_digest: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description=(
+            "Legacy authoring-context proof digest for this Generator document; do not "
+            "copy it into generated_code."
+        ),
+    )
     document_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
@@ -257,7 +271,25 @@ class GetModelCodeGenerationDocumentResult(_ContractModel):
     modeled_entity_type: ModeledEntityType
     target_object_id: int = Field(gt=0)
     source_system_id: int = Field(gt=0)
-    mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    mapping_context_digest: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description=(
+            "Legacy authoring-context digest binding this Generator document; use "
+            "target_mapping_context_digest for generated_code."
+        ),
+    )
+    target_mapping_context_digest: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description=(
+            "Canonical current applied Mapping digest copied into a generated_code record."
+        ),
+    )
+    target_source_context_digest: str = Field(
+        pattern=r"^[0-9a-f]{64}$",
+        description=(
+            "Canonical current applied source-context digest copied into a generated_code record."
+        ),
+    )
     document_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     proof: GeneratorDocumentProof
     document: GeneratorDocumentV1 = Field(repr=False)
@@ -278,7 +310,8 @@ def register_code_generation_authoring_tools(
     @server.tool(
         description=(
             "Derive one exact, name-only GeneratorDocumentV1 from applied Mapping for "
-            "an exact target Object and source System pair."
+            "an exact target Object and source System pair. Also returns the canonical "
+            "target Mapping and source-context digests required by generated_code."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -325,6 +358,12 @@ def register_code_generation_authoring_tools(
                     raise InvalidRequestError(
                         "The Code Generation reference context is unavailable."
                     )
+                target_context_row = await transaction.fetch_one(
+                    _TARGET_CONTEXT_SQL,
+                    (prepared.model_id, modeled_entity_type, target_object_id),
+                )
+                if target_context_row is None:
+                    raise InvalidRequestError("The Code Generation target context is unavailable.")
                 references = CodeGenerationReferenceContext.model_validate(
                     reference_row["references"],
                     strict=False,
@@ -350,6 +389,8 @@ def register_code_generation_authoring_tools(
                 target_object_id=target_object_id,
                 source_system_id=source_system_id,
                 mapping_context_digest=prepared.context_digest,
+                target_mapping_context_digest=target_context_row["mapping_context_digest"],
+                target_source_context_digest=target_context_row["source_context_digest"],
                 document_digest=document_digest,
                 proof=proof,
                 document=document,

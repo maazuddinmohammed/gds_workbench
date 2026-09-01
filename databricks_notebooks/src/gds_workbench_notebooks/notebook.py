@@ -13,6 +13,7 @@ from uuid import UUID
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.capabilities import (
     CODE_GENERATION_AGENT_EXECUTION_MODE,
+    QA_AGENT_EXECUTION_MODE,
     AgentCapabilityRegistry,
     AgentExecutionModeCode,
     AgentRunSelection,
@@ -31,6 +32,7 @@ _WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 }
 _AGENT_WORKFLOWS = {
     "analysis_inference",
@@ -39,6 +41,7 @@ _AGENT_WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 }
 _CONFIGURABLE_MODE_WORKFLOWS = {
     "analysis_inference",
@@ -106,6 +109,14 @@ def widget_specs(
         else None
     )
     specs = list(_COMMON_WIDGETS)
+    if workflow == "qa":
+        specs.append(
+            WidgetSpec(
+                "SelectedSystemCodesJSON",
+                "[]",
+                "Selected System Codes (JSON array)",
+            )
+        )
     if workflow in {"profiling", "analysis_inference", "analysis_validation"}:
         specs.append(WidgetSpec("RequestedBatchID", "", "Requested batch ID (optional)"))
     if workflow in _CONFIGURABLE_MODE_WORKFLOWS:
@@ -221,6 +232,10 @@ def _load_notebook_agent_capabilities(
     *,
     configured_model_codes: Collection[str] | None = None,
 ) -> _NotebookAgentCapabilities:
+    fixed_execution_mode = {
+        "code_generation": CODE_GENERATION_AGENT_EXECUTION_MODE,
+        "qa": QA_AGENT_EXECUTION_MODE,
+    }.get(workflow)
     complete_registry = load_default_agent_capabilities()
     available_model_codes = (
         None if configured_model_codes is None else frozenset(configured_model_codes)
@@ -248,8 +263,7 @@ def _load_notebook_agent_capabilities(
         (model, profile)
         for model in registry.models
         for profile in model.execution_profiles
-        if workflow != "code_generation"
-        or profile.execution_mode == CODE_GENERATION_AGENT_EXECUTION_MODE
+        if fixed_execution_mode is None or profile.execution_mode == fixed_execution_mode
     ]
     if not profiles:
         raise NotebookConfigurationError(
@@ -260,7 +274,7 @@ def _load_notebook_agent_capabilities(
         (
             item
             for item in profiles
-            if workflow != "code_generation" and item[1].execution_mode == "tool_assisted"
+            if fixed_execution_mode is None and item[1].execution_mode == "tool_assisted"
         ),
         profiles[0],
     )
@@ -309,6 +323,9 @@ def build_notebook_request(
     model_id = _positive_int(values, "ModelID")
     expected_revision = _positive_int(values, "ExpectedModelRevision")
     selected_ids = _positive_int_array(values, "SelectedObjectIDsJSON")
+    selected_system_codes = (
+        _system_code_array(values, "SelectedSystemCodesJSON") if workflow == "qa" else []
+    )
     idempotency_key = _uuid(values, "IdempotencyKey")
 
     model_workflow = "analysis" if workflow.startswith("analysis_") else workflow
@@ -337,6 +354,7 @@ def build_notebook_request(
         "model_workflow": model_workflow,
         "workflow_execution_mode": execution_mode,
         "selected_object_ids": selected_ids,
+        "selected_system_codes": selected_system_codes,
         "modeled_entity_type": None,
         "requested_batch_id": None,
         "mapping_operation": None,
@@ -403,6 +421,13 @@ def build_notebook_request(
                 ),
             }
         )
+    elif workflow == "qa":
+        if selected_ids:
+            raise NotebookConfigurationError("SelectedObjectIDsJSON must be [] for QA.")
+        if not selected_system_codes:
+            raise NotebookConfigurationError(
+                "SelectedSystemCodesJSON must contain at least one System Code for QA."
+            )
     elif not selected_ids:
         raise NotebookConfigurationError("SelectedObjectIDsJSON must contain at least one ID.")
 
@@ -438,11 +463,12 @@ def build_notebook_request(
                 maximum=agent_capabilities.registry.validation_retries.maximum,
             ),
         )
-        effective_execution_mode = (
-            CODE_GENERATION_AGENT_EXECUTION_MODE
-            if workflow == "code_generation"
-            else execution_mode or "one_shot"
-        )
+        if workflow == "code_generation":
+            effective_execution_mode = CODE_GENERATION_AGENT_EXECUTION_MODE
+        elif workflow == "qa":
+            effective_execution_mode = QA_AGENT_EXECUTION_MODE
+        else:
+            effective_execution_mode = execution_mode or "one_shot"
         try:
             agent_capabilities.registry.validate_selection(
                 selection,
@@ -592,6 +618,30 @@ def _positive_int_array(values: Mapping[str, str], key: str) -> list[int]:
             f"{key} must contain at most 50000 unique positive integers."
         )
     return cast(list[int], parsed)
+
+
+def _system_code_array(values: Mapping[str, str], key: str) -> list[str]:
+    raw = values.get(key, "").strip()
+    if len(raw.encode("utf-8")) > 1024 * 1024:
+        raise NotebookConfigurationError(f"{key} is too large.")
+    try:
+        decoded: object = json.loads(raw)
+    except json.JSONDecodeError:
+        raise NotebookConfigurationError(f"{key} must be a JSON array of System Codes.") from None
+    if not isinstance(decoded, list):
+        raise NotebookConfigurationError(f"{key} must contain at most 1000 unique System Codes.")
+    parsed = cast(list[object], decoded)
+    if len(parsed) > 1_000 or any(not isinstance(value, str) for value in parsed):
+        raise NotebookConfigurationError(f"{key} must contain at most 1000 unique System Codes.")
+    normalized = [cast(str, value).strip() for value in parsed]
+    if any(
+        not value or len(value) > 100 or re.search(r"[\x00-\x1f\x7f]", value) is not None
+        for value in normalized
+    ) or len(normalized) != len({value.casefold() for value in normalized}):
+        raise NotebookConfigurationError(
+            f"{key} must contain at most 1000 unique nonblank System Codes."
+        )
+    return normalized
 
 
 def _prompt_overrides(values: Mapping[str, str], key: str) -> dict[str, int]:

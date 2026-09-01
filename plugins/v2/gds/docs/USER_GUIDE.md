@@ -51,7 +51,7 @@ After installing the plugin and completing the Microsoft Entra prompt for its co
 
 For Snapshot-backed work, use this structure:
 
-> Initialize GDS Workbench. Working directory: `<absolute-path>`. Tenant Code: `<CODE>`. Focus: `<Metadata|Model|Code|Validation|Ad Hoc>`. Target: `<target, if applicable>`. Mode: `<Guided|Automatic|Custom>`. Scope: `<Full|Selected>`. Selection and outcome: `<bounded details>`. Stop at `<local review|Stage approval|Apply boundary>`.
+> Initialize GDS Workbench. Working directory: `<absolute-path>`. Tenant Code: `<CODE>`. Focus: `<Metadata|Model|Code|QA|Validation|Ad Hoc>`. Target: `<target, if applicable>`. Mode: `<Guided|Automatic|Custom>`. Scope: `<Full|Selected>`. Selection and outcome: `<bounded details>`. Stop at `<local review|Stage approval|Apply boundary>`.
 
 Give a Tenant Code, never a Tenant ID for the local folder. One session is bound to one Tenant Code and one Model. Work on another Model in a new session.
 
@@ -82,6 +82,11 @@ A requested number defines input scope, not an output quota. For example, “use
 
 V2 can inspect Snapshot-published Metadata and author complete Metadata Change Set records. It preserves fields without evidence. Omission means unchanged, never deletion; deactivation must be explicit.
 
+The platform hierarchy is Tenant → Systems → Connections → physical Objects/Attributes across
+Source, Bronze, Silver, and Gold. Source-to-Bronze ingestion uses
+`ingestion_object_mapping`, `copy_group`, and `copy`. V2 may author those records; it does not run
+the ingestion pipeline.
+
 Read-only example:
 
 > Initialize GDS Workbench for Tenant Code `ACME`. Ad Hoc read-only: inspect Metadata for `CRM.public.Customer`, its Attributes, Connection, and active ingestion relationships. Summarize only; do not create a task or changes.
@@ -92,7 +97,11 @@ Change example:
 
 ### 2. Profiling evidence
 
-Profiling is not a V2 execution target. V2 can read, summarize, validate, and use existing applied Profile evidence. It must not query Databricks or run profiling SQL as part of Model work.
+Profiling is not a V2 execution target or standalone workflow. V2 prefers applied Profile evidence. With session policy `essential` or `as_needed`, it may use existing `execute_databricks_sql` for combined, bounded evidence/profile reads; it never creates a profiling executor or persistent objects. With `never`, authoring continues from Snapshot and user evidence without profiling.
+
+Logical readiness reports `scoped_attributes`, `profiled_attributes`, and `unprofiled_attributes`.
+Missing profiles reduce evidence quality but do not block Logical Build by themselves; authoritative
+Profiles still come from the governed web/notebook Profiling workflow.
 
 > Initialize GDS Workbench for `ACME`. Ad Hoc read-only: summarize existing applied Profile evidence for Customer and Order, including null, distinct, uniqueness, and key signals. Identify missing or inconsistent evidence. Do not execute SQL or mutate records.
 
@@ -110,7 +119,7 @@ Conceptual is also a Logical Build section. It improves vocabulary and boundarie
 
 ### 5. Logical modeling
 
-Logical Build can run Analysis → Conceptual → Logical or an ordered subset. It uses only active scoped physical Objects whose Snapshot says `is_bronze_source_eligible=true`. A Bronze label alone is insufficient.
+Logical Build always produces Logical; optional Analysis and Conceptual may run first. It uses only active scoped physical Objects whose Snapshot says `is_bronze_source_eligible=true`. A Bronze label alone is insufficient.
 
 > Automatic Logical Build, Full scope, sections Analysis → Conceptual → Logical for every eligible Bronze source. Build evidence-backed third-normal-form Entities, Attributes, keys, relationships, sources, rationale, and confidence. Checkpoint every section, report unresolved evidence, and stop after one Model Apply.
 
@@ -123,6 +132,10 @@ Dimensional Build is optional and requires active applied Logical Mapping. It us
 ### 7. Silver or Gold target registration
 
 Target Registration projects an applied Logical or Dimensional model into local Databricks DDL plus complete Metadata pending records. Supply one destination System, Connection, schema, and Object Type. Metadata is applied; DDL remains local. Registration never activates Model Scope.
+
+V2 also asks whether the same Metadata task should include `process_group` and `process`. It does so
+only when the exact Copy Group, Process type, execution order, executable location/name, and target
+Object are known; otherwise it registers only the targets.
 
 > Automatic Silver Target Registration, Selected entities Customer and Order. Destination System `<system>`, Connection `<connection>`, schema `<schema>`, Object Type `<type>`. Reuse compatible targets, generate deterministic local Databricks DDL and complete Metadata changes, and stop after Metadata Apply.
 
@@ -138,15 +151,33 @@ For Gold, request **Dimensional Mapping** and name the Gold target Object plus s
 
 ### 9. Logical or Dimensional code generation
 
-Code Generation requires active applied Mapping and the governed `GeneratorDocumentV1` for every exact target/source unit. Default output is a deterministic Databricks SQL file. Python or notebook output requires an explicit artifact override. Generated output remains local and is never executed, uploaded, or deployed.
+Code Generation requires active applied Mapping and the governed `GeneratorDocumentV1` for every source of each selected target. It combines all source documents into one complete `generated_code` Model record per target Object. Default is Databricks `sql_file`; Python requires an explicit override. The artifact is never executed, uploaded, or deployed.
 
-> Logical Code Generation, Selected: Customer target plus CRM source, artifact `sql_file`, Databricks. Use the governed `GeneratorDocumentV1` for the exact unit. Generate the deterministic local file, embed Model revision and Mapping digest, show a diff if output changed, preserve manual customization, and never execute or deploy it.
+Code has no artifact-specific size limit. Large Code still remains one logical record; the existing Model Stage Batch tools may fragment its serialized bytes for transport and reassemble them before validation and storage.
+
+> Logical Code Generation, Selected: Customer target and all its active source Systems, artifact `sql_file`. Use every governed `GeneratorDocumentV1`, write one complete governed Code record with the target Mapping/source digests, show changed content, and stop after Model Apply.
 
 Use **Dimensional Code Generation** for applied active Dimensional Mapping.
 
-### 10. Validation and review
+For default GDS/Julius, generated Databricks SQL may use semicolon-separated statements and same-session temporary views. A multi-System target may use one temporary-view branch per System and one aligned final `UNION ALL`. The final statement produces the exact target dataframe; orchestration builds the merge from natural-key and Process metadata, so generated SQL does not emit the merge.
 
-Local validation checks the effective Snapshot-plus-pending graph and creates no report files. It cannot prove live data/runtime correctness and cannot replace governed server Validate.
+For the default GDS/Julius runtime, inputs are one Tenant and selected Systems, with one active pipeline per Tenant. Process retains one row per System, but several rows may reference the same target artifact; that artifact executes once. Distinct safe artifacts at one order run in parallel, and any failure blocks later orders. Upstream-target reads can support dependencies. A target self-read may only consult prior target state, so SQL alone never proves that an artifact should rerun or move to another order.
+
+### 10. QA
+
+QA creates governed `validation_group` and `validation_check` Model records for exact selected source System codes. Applied Mapping is required. Code may be absent; when current relevant Code exists, QA must use it. Query A plus an assertion may compare with a literal, list, or Query B, or use `executes_successfully`. Except for `executes_successfully`, Query A and query-valued Query B each produce exactly one row and one column using the declared result type; any other cardinality is a query-contract execution error, not an assertion failure. Removed definitions require explicit inactive records; omission means unchanged.
+
+QA SQL defaults to the governed Databricks read/temporary-object contract. Another engine is allowed only when the schema and orchestration explicitly support its confirmed contract; otherwise QA blocks instead of inventing incompatible queries.
+
+> QA, Selected Systems `["CRM","ERP"]`: derive complete groups and checks from applied Mapping, current relevant Code when present, and my business rules. Use exact System scope, review all assertion shapes, and stop after Model Apply.
+
+Before the first session task that could use live data, V2 asks once for SQL policy: `never`, `essential` (only to resolve an essential evidence gap), or `as_needed` (bounded when useful). It reuses that session choice unless you change it. Choosing `never` does not block Snapshot authoring. The other policies use only existing `execute_databricks_sql`, combine bounded reads, never execute transformation code, and may sample-verify QA queries.
+
+### 11. Validation and review
+
+Local validation checks the effective Snapshot-plus-pending graph and returns bounded repair paths. Fix only the reported dataset, record, and fields before rerunning it. Full dataset schemas are a troubleshooting fallback; the default compact authoring contract normally supplies the required fields and rules. Local validation cannot prove live data/runtime correctness or replace governed server Validate.
+
+When you explicitly confirm that the complete local Model Change Set has been reviewed, the plugin can promote its pending `needs_review` status fields to `active` in one digest-protected operation. It changes neither Snapshot/applied data nor ordinary text and does not bypass local or server validation. The plugin must show the revised review before acceptance and staging.
 
 > Validation only: review and locally validate the current Model Change Set. Show bounded issues, action counts, affected canonical keys, digest, and Stage sizing. Do not mutate, Stage, or Apply.
 
@@ -154,23 +185,23 @@ For a staged draft:
 
 > Resume the staged Model draft. Get its exact current status and revision. If it is `active`, server-Validate that exact revision; if it is already `validated`, reuse that exact validated revision. Show the authoritative `action_review`, and do not Apply until I provide fresh approval.
 
-### 11. Assertion preparation
+### 12. Assertion preparation
 
 Assertion preparation is optional Custom Model work before a main target. Persist only evidence explicitly supplied by the user. Assertions inform reasoning but are not executable lineage.
 
 > Create a Custom Selected Assertion-preparation task for the supplied Customer-to-Order business rule. Record only my stated evidence and rationale, review it with me, and stop after its Model Apply.
 
-### 12. Governed Ad Hoc Databricks SQL
+### 13. Governed Ad Hoc Databricks SQL
 
-The MCP server may expose governed Databricks SQL for explicit Ad Hoc requests. It permits reads and unqualified temporary objects only, rejects DML and persistent DDL, and returns at most 50 final rows. Do not use it to run profiling/model workflows or generated workflow code.
+The MCP server exposes governed Databricks SQL for explicit Ad Hoc work and policy-controlled bounded evidence/profile reads or QA samples. It permits reads and unqualified temporary objects only, rejects DML and persistent DDL, and returns at most 50 final rows. It is not a workflow execution engine and never runs generated transformation code.
 
 > Ad Hoc read-only: using active source Connection `<connection or connection_id>` in Environment `<environment_code>`, run this reviewed Databricks query through the governed SQL tool: `<query>`. Fully qualify every physical relation as `catalog.schema.table`, return at most the allowed bounded result, and make no persistent or data-changing operation.
 
 ## Normal dependency path
 
-Logical Build → Silver Target Registration → authorized external Model Scope activation and fresh Model Snapshot → Logical Mapping → Logical Code Generation and/or Dimensional Build → Gold Target Registration → authorized external scope activation and fresh Model Snapshot → Dimensional Mapping → Dimensional Code Generation.
+Logical Build → Silver Target Registration → authorized external Model Scope activation and fresh Model Snapshot → Logical Mapping → Logical Code Generation and/or Dimensional Build → Gold Target Registration → authorized external scope activation and fresh Model Snapshot → Dimensional Mapping → Dimensional Code Generation → QA.
 
-V2 stops after each Apply and shows only eligible next targets. Logical Code is not required before Dimensional Build.
+V2 stops after each Apply and shows only eligible next targets. Logical Code is not required before Dimensional Build. QA can follow any applied Mapping. Code may be absent; current relevant Code must be used when it exists.
 
 ## Snapshots and approval gates
 
@@ -178,14 +209,15 @@ For first mutation or stale input, V2 asks the user to download and unzip exactl
 
 The governed mutation sequence is:
 
-1. Readiness for a known target, or bounded inspect for non-target work.
-2. Ordered plan and complete local pending records.
-3. Human review and local validation/acceptance.
-4. Tenant Lock check. Obtain explicit approval before acquiring an unowned lock. Another owner's lock stops the workflow unless an authorized override is explicitly directed with a reason.
-5. Obtain separate Stage approval, then create/resume/reconcile and Stage the governed server draft.
-6. Server Validate and authoritative action review.
-7. Fresh Apply approval immediately before Apply.
-8. Apply once, mark only the written area stale, release an acquired lock, and stop.
+1. Compare the packaged and deployed MCP contract once; incompatibility stops before mutation.
+2. Readiness for a known target, or bounded inspect for non-target work.
+3. Ordered plan and complete local pending records.
+4. Human review and local validation/acceptance.
+5. Tenant Lock check. Obtain explicit approval before acquiring an unowned lock. Another owner's lock stops the workflow unless an authorized override is explicitly directed with a reason.
+6. Obtain separate Stage approval, then create/resume/reconcile and Stage the governed server draft.
+7. Server Validate and authoritative action review.
+8. Fresh Apply approval immediately before Apply.
+9. Apply once, mark only the written area stale, release an acquired lock, and stop.
 
 Stage approval and local override are never Apply approval. Automatic mode never bypasses these gates.
 
@@ -200,6 +232,7 @@ Stage approval and local override are never Apply approval. Automatic mode never
 | Local digest conflict | Refresh and review; never overwrite external edits. |
 | Server draft conflict | Fetch and reconcile; never overwrite or archive implicitly. |
 | Local validation failure | Fix, review, and accept again; override only bounded domain failures with an explicit reason. |
+| Plugin/server contract mismatch | Deploy the matching MCP server or install the matching plugin; do not mutate. |
 | Missing mapping/generator tool | Ask the platform owner to deploy the latest MCP server and stop. |
 | Missing grain, lineage, evidence, write mode, or optionality | Answer the Resolution Prompt; never request placeholders. |
 
@@ -207,7 +240,7 @@ Stage approval and local override are never Apply approval. Automatic mode never
 
 - Mutate Model Scope; that is a separate web-governed owner operation.
 - Use Application Prompt or Workflow Run surfaces.
-- Run or rerun profiling/model SQL.
+- Run profiling/model SQL outside a Code/QA task's chosen policy.
 - Execute, upload, or deploy generated workflow code.
 - Perform foundational CRUD, arbitrary PostgreSQL, deletion by omission, or invented identifiers.
 - Bypass authorization, Tenant Locks, revision fencing, local/server validation, or approvals.

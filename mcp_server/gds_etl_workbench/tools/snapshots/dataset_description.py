@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Literal
+from typing import Literal, cast
 
 from pydantic import BaseModel, ConfigDict
 
@@ -50,3 +50,30 @@ class DatasetColumnDescription(DescriptionModel):
 class DatasetDescription(DescriptionModel):
     population_rules: tuple[str, ...]
     columns: tuple[DatasetColumnDescription, ...]
+
+
+_COMPACT_SCHEMA_OMISSIONS = frozenset(
+    {
+        "x-gds-columns",
+        "x-gds-governed-authoring-schema",
+        "x-gds-stage-record-validation",
+    }
+)
+
+
+def compact_authoring_schema(schema: dict[str, object]) -> dict[str, object]:
+    """Keep authoring constraints while omitting duplicated or validator-owned detail."""
+
+    def compact(value: object) -> object:
+        if isinstance(value, dict):
+            mapping = cast(dict[str, object], value)
+            return {
+                key: compact(child)
+                for key, child in mapping.items()
+                if key not in _COMPACT_SCHEMA_OMISSIONS
+            }
+        if isinstance(value, list):
+            return [compact(child) for child in cast(list[object], value)]
+        return value
+
+    return cast(dict[str, object], compact(schema))

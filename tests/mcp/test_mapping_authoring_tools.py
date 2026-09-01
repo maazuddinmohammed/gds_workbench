@@ -34,6 +34,12 @@ PROFILE_DIGEST = "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8
 class FakeDatabase:
     context: dict[str, object]
     generator_references: dict[str, object] = field(default_factory=dict)
+    generator_target_context: dict[str, object] | None = field(
+        default_factory=lambda: {
+            "mapping_context_digest": "c" * 64,
+            "source_context_digest": "d" * 64,
+        }
+    )
     audit_records: list[ToolCallLogRecord] = field(default_factory=list)
     isolations: list[ReadIsolation] = field(default_factory=list)
 
@@ -83,6 +89,9 @@ class FakeReadTransaction:
             return {"context": self.database.context}
         if "code_generation_reference_context_v1" in query:
             return {"references": self.database.generator_references}
+        if "code_generation_target_context_v1" in query:
+            assert parameters == (7, "logical_entity", 101)
+            return self.database.generator_target_context
         raise AssertionError("unexpected query")
 
     async def fetch_all(
@@ -568,10 +577,68 @@ async def test_code_generation_document_is_exact_name_only_and_digest_bound() ->
     assert '"attribute_id"' not in serialized
     assert content["proof"]["contract"] == "generator-document@1.0"
     assert content["proof"]["document_digest"] == content["document_digest"]
+    assert content["target_mapping_context_digest"] == "c" * 64
+    assert content["target_source_context_digest"] == "d" * 64
     assert database.isolations[-1] is ReadIsolation.REPEATABLE_READ
     generator_audit = database.audit_records[-1]
     assert generator_audit.tool_name == "get_model_code_generation_document"
     assert "document" not in generator_audit.input_metadata
+
+
+@pytest.mark.asyncio
+async def test_code_generation_document_requires_canonical_target_context() -> None:
+    context = _context()
+    headers = context["headers"]
+    assert isinstance(headers, list) and isinstance(headers[0], dict)
+    headers[0]["mapping_object_id"] = 901
+    headers[0]["existing"] = {
+        "object_dependency_order": 0,
+        "artifact_type": "sql_file",
+        "artifact_generation_instructions": "Generate deterministic Databricks SQL.",
+        "mapping_profile_key": "mapping.standard",
+        "mapping_profile_version": "1.0.0",
+        "mapping_package_document": _candidate()["package"],
+        "object_mapping_transformation_document": _candidate()["headers"][0][
+            "transformation"
+        ],
+        "status": "active",
+        "is_locked": False,
+        "attributes": [
+            {
+                "mapping_attribute_id": 902,
+                "modeled_attribute_id": 601,
+                "target_attribute_id": 301,
+                "transformation": _candidate()["attribute_mappings"][0][
+                    "transformation"
+                ],
+                "status": "active",
+                "is_locked": False,
+            }
+        ],
+    }
+    database = FakeDatabase(
+        context,
+        generator_references={
+            "source_predecessors": [],
+            "target_predecessors": [],
+            "provenance": [],
+        },
+        generator_target_context=None,
+    )
+
+    async with Client(_server(database)) as client:
+        result = await client.call_tool(
+            "get_model_code_generation_document",
+            {
+                "model_id": 7,
+                "modeled_entity_type": "logical_entity",
+                "target_object_id": 101,
+                "source_system_id": 201,
+            },
+        )
+
+    assert result.is_error is True
+    assert "target context is unavailable" in result.content[0].text
 
 
 @pytest.mark.asyncio

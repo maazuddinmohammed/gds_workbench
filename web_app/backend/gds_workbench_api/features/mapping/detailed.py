@@ -18,6 +18,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentContextTooLargeError,
     AgentValidationIssue,
+    pydantic_validation_issues,
 )
 
 from .attribute_candidate import MappingAttributeBatchPlan
@@ -99,8 +100,17 @@ class MappingDetailedTargetReviewValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         try:
             parsed = MappingDetailedReviewManifest.model_validate(candidate, strict=True)
-        except ValidationError:
-            parsed = None
+        except ValidationError as error:
+            diagnostic = pydantic_validation_issues(error, maximum_issues=1)[0]
+            return AgentCandidateValidation(
+                issues=(
+                    AgentValidationIssue(
+                        code="candidate.review_manifest_mismatch",
+                        path=diagnostic.path,
+                        message=diagnostic.message,
+                    ),
+                )
+            )
         if parsed != self._manifest:
             return AgentCandidateValidation(
                 issues=(

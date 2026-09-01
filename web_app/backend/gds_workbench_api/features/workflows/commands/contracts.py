@@ -27,6 +27,9 @@ class CreateWorkflowRunRequest(BaseModel):
     selected_object_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(
         max_length=50_000,
     )
+    selected_system_codes: list[
+        Annotated[str, Field(min_length=1, max_length=100, strict=True)]
+    ] = Field(default_factory=list, max_length=1_000)
     modeled_entity_type: ModeledEntityType | None = None
     requested_batch_id: str | None = Field(default=None, min_length=1, max_length=500)
     mapping_operation: Literal["build", "extend"] | None = None
@@ -66,6 +69,14 @@ class CreateWorkflowRunRequest(BaseModel):
             raise ValueError("requested_batch_id must be nonblank")
         return normalized
 
+    @field_validator("selected_system_codes")
+    @classmethod
+    def normalize_selected_system_codes(cls, value: list[str]) -> list[str]:
+        normalized = [item.strip() for item in value]
+        if any(not item or "\x00" in item for item in normalized):
+            raise ValueError("Selected System Codes must be nonblank")
+        return normalized
+
     @field_validator("prompt_overrides")
     @classmethod
     def validate_prompt_overrides(
@@ -85,7 +96,20 @@ class CreateWorkflowRunRequest(BaseModel):
     def validate_workflow_shape(self) -> Self:
         if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
             raise ValueError("Selected Object IDs must be unique")
-        if self.model_workflow == "code_generation":
+        normalized_system_codes = [value.casefold() for value in self.selected_system_codes]
+        if len(normalized_system_codes) != len(set(normalized_system_codes)):
+            raise ValueError("Selected System Codes must be unique")
+        if self.model_workflow == "qa":
+            if self.selected_object_ids or not self.selected_system_codes:
+                raise ValueError("QA requires only an explicit System selection")
+            if (
+                self.code_generation_coverage_mode is not None
+                or self.sql_generation_guide_version_id is not None
+            ):
+                raise ValueError("Code Generation inputs are unavailable for this workflow")
+        elif self.selected_system_codes:
+            raise ValueError("System selection is available only for QA")
+        elif self.model_workflow == "code_generation":
             if (
                 (
                     self.code_generation_coverage_mode == "selected_targets"
@@ -107,7 +131,7 @@ class CreateWorkflowRunRequest(BaseModel):
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
 
-        agentic = self.model_workflow == "code_generation" or (
+        agentic = self.model_workflow in {"code_generation", "qa"} or (
             self.workflow_execution_mode is not None
         )
         requires_mode = self.model_workflow in {
@@ -118,7 +142,7 @@ class CreateWorkflowRunRequest(BaseModel):
         }
         if requires_mode and self.workflow_execution_mode is None:
             raise ValueError("This workflow requires an explicit execution mode")
-        if self.model_workflow in {"profiling", "code_generation"} and (
+        if self.model_workflow in {"profiling", "code_generation", "qa"} and (
             self.workflow_execution_mode is not None
         ):
             raise ValueError("This workflow does not accept an execution mode")

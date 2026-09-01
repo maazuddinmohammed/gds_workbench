@@ -25,6 +25,7 @@ _CREATE_PAYLOAD_KEYS = frozenset(
         "model_workflow",
         "workflow_execution_mode",
         "selected_object_ids",
+        "selected_system_codes",
         "modeled_entity_type",
         "requested_batch_id",
         "mapping_operation",
@@ -54,6 +55,7 @@ _WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 }
 
 
@@ -188,6 +190,7 @@ class NotebookWorkflowControlClient:
                   %s::INTEGER,
                   %s::INTEGER,
                   %s::BIGINT[],
+                  %s::VARCHAR[],
                   %s::VARCHAR,
                   %s::VARCHAR,
                   %s::UUID,
@@ -455,6 +458,13 @@ def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
     if any(type(object_id) is not int for object_id in selected_values):
         raise NotebookConfigurationError("The notebook Workflow selected scope is invalid.")
     selected_ids = cast(list[int], selected_values)
+    selected_system_codes = payload["selected_system_codes"]
+    if not isinstance(selected_system_codes, list):
+        raise NotebookConfigurationError("The notebook Workflow selected scope is invalid.")
+    selected_system_values = cast(list[object], selected_system_codes)
+    if any(not isinstance(system_code, str) for system_code in selected_system_values):
+        raise NotebookConfigurationError("The notebook Workflow selected scope is invalid.")
+    selected_codes = cast(list[str], selected_system_values)
     agent = payload["agent"]
     if agent is None:
         agent_values: tuple[object, ...] = (None, None, None, None, None, None)
@@ -491,6 +501,7 @@ def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
         payload["workflow_execution_mode"],
         *agent_values,
         selected_ids,
+        selected_codes,
         payload["modeled_entity_type"],
         payload["requested_batch_id"],
         request.idempotency_key,

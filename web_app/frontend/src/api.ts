@@ -52,6 +52,7 @@ import {
   createPromptsApi,
   type PromptsApi,
 } from "./features/prompts/api";
+import { createQAApi, type QATransport } from "./features/qa/api";
 import {
   createWorkflowsApi,
   type WorkflowsApi,
@@ -266,6 +267,14 @@ export type {
   UpdatePromptTemplateCommand,
 } from "./features/prompts/api";
 export type {
+  QAEligibleSystem,
+  QAEligibleSystemCollection,
+  QALedger,
+  QAValidationCheck,
+  QAValidationGroup,
+  QAValidationSeverity,
+} from "./features/qa/api";
+export type {
   AgentCapabilities,
   AgentRunSelection,
   CreateWorkflowRunCommand,
@@ -298,7 +307,8 @@ export interface WorkbenchApi
   LogicalTransport,
   DimensionalTransport,
   MappingTransport,
-  CodeGenerationTransport {}
+  CodeGenerationTransport,
+  QATransport {}
 
 export function createApiClient(fetcher: typeof fetch = globalThis.fetch): WorkbenchApi {
   const request = createHttpRequest(fetcher);
@@ -318,6 +328,7 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
     ...createDimensionalApi(request),
     ...createMappingApi(request),
     ...createCodeGenerationApi(request),
+    ...createQAApi(request),
     ...createMetadataApi(request),
   };
 }

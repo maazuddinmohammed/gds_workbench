@@ -81,9 +81,9 @@ export interface GeneratedSqlArtifactDetail {
   artifact_is_current: boolean;
   mapping_context_digest: string;
   source_context_digest: string;
-  guide: SqlGenerationGuideProvenance;
+  guide: SqlGenerationGuideProvenance | null;
   workflow_run_id: number | null;
-  generator: SqlGeneratorProvenance;
+  generator: SqlGeneratorProvenance | null;
   generated_at: string;
   generated_sql: string;
   generated_sql_digest: string;
@@ -109,7 +109,14 @@ export type CodeGenerationApi = CodeGenerationTransport
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,
-    "readAgentCapabilities" | "createWorkflowRun" | "executeCodeGenerationRun"
+    | "applyWorkflowDraft"
+    | "createWorkflowRun"
+    | "executeCodeGenerationRun"
+    | "listWorkflowRunEvents"
+    | "listWorkflowRuns"
+    | "readAgentCapabilities"
+    | "readWorkflowDraftReview"
+    | "readWorkflowRun"
   >;
 
 export function createCodeGenerationApi(request: HttpRequest): CodeGenerationTransport {

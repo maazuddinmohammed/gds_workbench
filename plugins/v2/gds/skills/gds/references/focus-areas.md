@@ -8,11 +8,22 @@ Inspect or author only Change Set-eligible Metadata datasets from a fresh Metada
 
 ## Model
 
-Use one Model per session. Route main development through `workflow-targets.md`. Profiles and Analysis are existing evidence; do not execute SQL. Assertion preparation is optional custom Model work. Never expose Model Scope mutation.
+Use one Model per session and route through `workflow-targets.md`. Prefer Snapshot evidence. Under
+`essential` or `as_needed`, the existing governed SQL tool may collect combined bounded
+evidence/profile results; `never` proceeds without them. Assertion preparation is optional.
+Never expose Model Scope mutation.
 
 ## Code
 
-Only generate/regenerate target DDL or post-Apply Mapping artifacts, inspect/diff local output, and report staleness from embedded revision/digest. Default SQL is Databricks. Never execute, upload, or deploy generated code. General application code is outside GDS.
+Generate target-registration DDL locally or author applied-Mapping artifacts as complete
+`generated_code` Model records. Default SQL is Databricks. Never execute, upload, or deploy
+generated transformation code. General application code is outside GDS.
+
+## QA
+
+Author `validation_group` and `validation_check` Model records from applied Mapping, any current
+relevant Code when present, and user rules. Scope is exact source System codes. QA Apply stores definitions;
+later orchestration executes them.
 
 ## Validation
 

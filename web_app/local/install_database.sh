@@ -64,12 +64,16 @@ release_files=(
     07_workflow_logical.sql
     08_workflow_dimensional.sql
     09_workflow_mapping.sql
-    10_application.sql
-    10_mcp.sql
-    10_workflow_eligibility.sql
-    11_mcp_metadata_apply.sql
-    11_runtime_account.sql
-    12_runtime_integrity.sql
+    10_workflow_code_qa.sql
+    11_workflow_eligibility.sql
+    12_application_configuration.sql
+    13_application_workflow_runs.sql
+    14_application_workflow_execution.sql
+    15_mcp_change_sets.sql
+    16_mcp_metadata_apply.sql
+    17_mcp_tool_call_log.sql
+    18_runtime_account.sql
+    19_runtime_integrity.sql
 )
 
 for release_file in "${release_files[@]}"
@@ -99,7 +103,7 @@ $runtime_passwords$;
 SQL
 
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-    -X -v ON_ERROR_STOP=1 -f "$database_root/13_verify_install.sql"
+    -X -v ON_ERROR_STOP=1 -f "$database_root/20_verify_install.sql"
 
 for seed_file in \
     01_metadata_snapshot_demo.sql \

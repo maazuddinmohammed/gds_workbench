@@ -13,13 +13,6 @@ from test_mapping_header_candidate import (
     _preparation as _header_preparation,  # pyright: ignore[reportPrivateUsage]
 )
 
-from gds_workbench_api.features.mapping.attribute_candidate import (
-    MappingAttributeCandidateValidator,
-    build_mapping_attribute_batch_plans,
-)
-from gds_workbench_api.features.mapping.candidate import (
-    MappingHeaderCandidateValidator,
-)
 from gds_workbench_api.features.mapping import (
     ExistingMappingAttribute,
     MappingModeledAttribute,
@@ -29,6 +22,13 @@ from gds_workbench_api.features.mapping import (
     MappingOutputTemplateSelection,
     MappingPreparation,
     assess_mapping_readiness,
+)
+from gds_workbench_api.features.mapping.attribute_candidate import (
+    MappingAttributeCandidateValidator,
+    build_mapping_attribute_batch_plans,
+)
+from gds_workbench_api.features.mapping.candidate import (
+    MappingHeaderCandidateValidator,
 )
 
 
@@ -736,6 +736,17 @@ async def test_agent_envelope_uses_shared_identifier_and_text_bounds() -> None:
         batch_plan=plan,
     )
 
+    expected = {
+        "package_ref": ("candidate.schema_bound", ("package_ref",)),
+        "local_ref": (
+            "candidate.schema_bound",
+            ("attribute_mappings", 0, "local_ref"),
+        ),
+        "reason": (
+            "candidate.schema_pattern",
+            ("target_attribute_dispositions", 0, "reason"),
+        ),
+    }
     for mutate in ("package_ref", "local_ref", "reason"):
         candidate = _candidate(preparation, package)
         if mutate == "package_ref":
@@ -755,7 +766,8 @@ async def test_agent_envelope_uses_shared_identifier_and_text_bounds() -> None:
 
         issues = (await validator.validate(cast(JsonValue, candidate))).issues
 
-        assert {issue.code for issue in issues} == {"candidate.schema_invalid"}
+        assert len(issues) == 1
+        assert (issues[0].code, issues[0].path) == expected[mutate]
 
 
 async def test_unchanged_disposition_is_absent_from_schema_and_envelope() -> None:
@@ -781,10 +793,10 @@ async def test_unchanged_disposition_is_absent_from_schema_and_envelope() -> Non
     )
 
     assert disposition_schema["enum"] == ["create", "update"]
-    assert {
-        issue.code
-        for issue in (await validator.validate(cast(JsonValue, candidate))).issues
-    } == {"candidate.schema_invalid"}
+    issues = (await validator.validate(cast(JsonValue, candidate))).issues
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.schema_value"
+    assert issues[0].path == ("attribute_mappings", 0, "disposition")
 
 
 def test_batch_planner_is_bounded_and_digest_is_deterministic() -> None:

@@ -127,8 +127,11 @@ def test_mapping_change_set_rejects_noncanonical_or_mismatched_packages() -> Non
     for record in (floating, mismatched):
         records, issues = validate_staged_records("mapping_object", [record])
         assert records == ()
-        assert len(issues) == 1
-        assert issues[0].code == "record_schema_invalid"
+        assert issues
+        assert all(issue.code == "record_schema_invalid" for issue in issues)
+        assert all(issue.dataset == "mapping_object" for issue in issues)
+        assert all(issue.record_number == 1 for issue in issues)
+        assert all(issue.fields for issue in issues)
 
 
 def test_mapping_change_set_rejects_a_package_missing_exact_v1_fields() -> None:

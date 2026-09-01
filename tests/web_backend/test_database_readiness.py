@@ -8,11 +8,11 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
-from gds_workbench_api.database import WebPostgresDatabase
 from psycopg import sql
 from psycopg.errors import InsufficientPrivilege
-
 from tests.mcp.conftest import DisposablePostgres, disposable_postgres
+
+from gds_workbench_api.database import WebPostgresDatabase
 
 APPLICATION_REFERENCE_SEED = (
     Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
@@ -125,7 +125,10 @@ async def test_readiness_rejects_an_additional_session_login_membership(
         ("list_tenant_visible_objects", ("BIGINT",)),
         ("list_model_object_eligibility", ("BIGINT",)),
         ("list_model_attribute_eligibility", ("BIGINT",)),
-        ("list_code_generation_target_context", ("BIGINT", "VARCHAR")),
+        (
+            "list_code_generation_target_context",
+            ("BIGINT", "VARCHAR", "VARCHAR"),
+        ),
     ],
 )
 async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
@@ -139,9 +142,7 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
     )
     with readiness_postgres.connect_owner() as connection:
         connection.execute(
-            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
-                signature
-            )
+            sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(signature)
         )
 
     try:
@@ -149,9 +150,7 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
     finally:
         with readiness_postgres.connect_owner() as connection:
             connection.execute(
-                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(
-                    signature
-                )
+                sql.SQL("GRANT EXECUTE ON FUNCTION {} TO gds_web_write").format(signature)
             )
 
     assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
@@ -161,10 +160,7 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
 async def test_notebook_readiness_rejects_a_missing_profiling_context_grant(
     readiness_postgres: DisposablePostgres,
 ) -> None:
-    signature = (
-        "application.get_profiling_execution_context("
-        "UUID, UUID, VARCHAR, BIGINT, BIGINT)"
-    )
+    signature = "application.get_profiling_execution_context(UUID, UUID, VARCHAR, BIGINT, BIGINT)"
     with readiness_postgres.connect_owner() as connection:
         connection.execute(
             sql.SQL("REVOKE EXECUTE ON FUNCTION {} FROM gds_web_write").format(
@@ -192,8 +188,7 @@ async def test_notebook_readiness_rejects_a_missing_profiling_context_grant(
         ):
             connection.execute("SET LOCAL ROLE gds_web_write")
             connection.execute(
-                "SELECT * FROM application.get_profiling_execution_context("
-                "%s, %s, %s, %s, %s)",
+                "SELECT * FROM application.get_profiling_execution_context(%s, %s, %s, %s, %s)",
                 (
                     UUID("00000000-0000-0000-0000-000000000001"),
                     UUID("00000000-0000-0000-0000-000000000002"),
@@ -401,8 +396,7 @@ async def test_readiness_rejects_inactive_required_application_reference_data(
     with readiness_postgres.connect_owner() as connection:
         row = connection.execute(
             sql.SQL(
-                "UPDATE {} SET is_active = FALSE "
-                "WHERE {} = (SELECT min({}) FROM {}) RETURNING {}"
+                "UPDATE {} SET is_active = FALSE WHERE {} = (SELECT min({}) FROM {}) RETURNING {}"
             ).format(table, identity, identity, table, identity)
         ).fetchone()
     assert row is not None

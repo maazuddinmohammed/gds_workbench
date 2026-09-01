@@ -35,8 +35,17 @@ from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionC
 from gds_workbench_api.features.workflows.runs import WorkflowRunNotFoundError
 
 _EXPLICIT_APPLY_WORKFLOWS = frozenset(
-    {"analysis", "conceptual", "logical", "dimensional", "mapping"}
+    {
+        "analysis",
+        "conceptual",
+        "logical",
+        "dimensional",
+        "mapping",
+        "code_generation",
+        "qa",
+    }
 )
+_MODELESS_APPLY_WORKFLOWS = frozenset({"code_generation", "qa"})
 
 
 class ApplyWorkflowDraftRequest(BaseModel):
@@ -115,13 +124,15 @@ class DatabaseWorkflowDraftApplyService:
                 raise WorkflowRunNotFoundError()
             if run["actor_principal_id"] != principal_id:
                 raise AuthorizationDeniedError()
-            if (
-                run["model_workflow"] not in _EXPLICIT_APPLY_WORKFLOWS
-                or run["workflow_execution_mode"] is None
+            model_workflow = run["model_workflow"]
+            execution_mode = run["workflow_execution_mode"]
+            if model_workflow not in _EXPLICIT_APPLY_WORKFLOWS or (
+                (model_workflow in _MODELESS_APPLY_WORKFLOWS) != (execution_mode is None)
             ):
                 raise InvalidRequestError(
-                    "Only a completed Analysis, Conceptual, Logical, Dimensional, or "
-                    "Mapping authoring run can use this apply path."
+                    "Only a completed Analysis, Conceptual, Logical, Dimensional, "
+                    "Mapping, Code Generation, or QA authoring run with its expected "
+                    "execution-mode shape can use this apply path."
                 )
             if run["workflow_run_state"] not in {
                 "completed",
@@ -131,19 +142,14 @@ class DatabaseWorkflowDraftApplyService:
                     "Workflow Run must be completed before its draft can be applied."
                 )
 
-            model_workflow = run["model_workflow"]
             object_output_template_id = run["mapping_object_output_template_id"]
             attribute_output_template_id = run["mapping_attribute_output_template_id"]
             if (
-                not isinstance(model_workflow, str)
-                or (
-                    object_output_template_id is not None
-                    and not isinstance(object_output_template_id, int)
-                )
-                or (
-                    attribute_output_template_id is not None
-                    and not isinstance(attribute_output_template_id, int)
-                )
+                object_output_template_id is not None
+                and not isinstance(object_output_template_id, int)
+            ) or (
+                attribute_output_template_id is not None
+                and not isinstance(attribute_output_template_id, int)
             ):
                 raise DependencyUnavailableError()
             if model_workflow == "mapping":

@@ -121,6 +121,10 @@ Databricks App while leaving MCP runtime behavior unchanged.
   rerun the fresh-install scripts; an authorized DBA must release the equivalent
   reviewed, non-destructive schema/function change before this App revision is
   deployed.
+- That revision also includes the Code Generation and QA Model Sections from
+  [`ADR 004`](../docs/adr/004-code-generation-and-qa-model-sections.md),
+  including their Model Change Set, Model Snapshot, and frozen QA System
+  selection contracts.
 - The runtime DSN uses the least-privilege `gds_web_runtime` account and includes
   a host, database, and TLS. `sslmode=verify-full` is the recommended default;
   when its CA source is omitted or set to `system`, the App supplies the pinned
@@ -129,13 +133,14 @@ Databricks App while leaving MCP runtime behavior unchanged.
   authenticating the server. Production startup rejects every other database
   login and rejects `disable`, `allow`, and `prefer`.
 - The required application reference seed is installed from
-  `database/seed/04_application_reference.sql`. Readiness requires exactly 47
-  active workflow stages and 78 active backend-resolved variables; missing,
+  `database/seed/04_application_reference.sql`. Readiness requires exactly 49
+  active workflow stages and 80 active backend-resolved variables; missing,
   inactive, or additional reference rows keep the App unavailable.
 - For an upgrade to this release, replay that reference seed, then replay the
   prepared `database/seed/05_global_prompt_defaults.template.sql` copy. These
-  replay-safe seed operations add the Analysis detailed stages and publish their
-  governed global defaults; they are not schema installation or data cleanup.
+  replay-safe seed operations add the current workflow stages, including QA,
+  and publish their governed global defaults; they are not schema installation
+  or data cleanup.
 - Every intended user has an active `security.entra_principal_identity` for the
   configured Entra tenant and object UUID, plus the required active Tenant role.
 - Databricks Apps serverless compute can reach PostgreSQL. Configure an approved
@@ -251,9 +256,10 @@ reviewed `app.yaml` update, never as an untracked ambient variable.
 
 ### Agent context modes
 
-The UI and independent notebooks default agentic authoring to
-`tool_assisted`. Analysis, Conceptual, Logical, Dimensional, and Mapping expose
-all three modes allowed by the selected model profile:
+For workflows with execution modes, the UI and independent notebooks default
+agentic authoring to `tool_assisted`. Analysis, Conceptual, Logical,
+Dimensional, and Mapping expose all three modes allowed by the selected model
+profile:
 
 - `one_shot` sends the complete frozen context once. It intentionally rejects a
   scope that exceeds the one-shot request bound; there is no hidden fallback.
@@ -267,6 +273,9 @@ all three modes allowed by the selected model profile:
 Use `detailed_coverage` for the largest scopes or when every selected record
 must be processed. A provider profile must explicitly register the chosen mode;
 the UI hides and the backend rejects unsupported combinations.
+
+Code Generation and QA are mode-independent agent workflows. Their requests
+store a null execution mode; the UI and notebooks do not expose a mode picker.
 
 ### Agent model registry and optional Microsoft Foundry connection
 
@@ -605,8 +614,8 @@ in production:
     route-appropriate inference RBAC on the selected resource, or its API key is
     held only in the configured secret resource.
 11. Run one approved smoke workflow through each supported agent SDK. Then cover
-    analysis, conceptual, logical, dimensional, mapping, and code-generation
-    paths, including each applicable execution mode and reasoning effort.
+    analysis, conceptual, logical, dimensional, mapping, Code Generation, and
+    QA paths, including each applicable execution mode and reasoning effort.
 12. Verify timeouts, endpoint throttling, authentication failure, dependency
     failure, and validation repair return bounded errors without raw prompts,
     physical rows, tool output, tokens, credentials, or stack traces.

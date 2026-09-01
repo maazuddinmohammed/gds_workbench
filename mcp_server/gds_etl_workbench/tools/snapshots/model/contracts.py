@@ -15,6 +15,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
     DimensionalSubmodelRecord,
+    GeneratedCodeRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalRelationshipRecord,
@@ -28,7 +29,12 @@ from gds_etl_workbench.domain.modeling_records import (
     ModelingRecord,
     ModelScopeRecord,
     ProfilingProfileRecord,
+    QAAuthoringContextRecord,
+    ValidationCheckRecord,
+    ValidationGroupRecord,
 )
+
+from .guidance import enrich_model_dataset_schema
 
 type ModelSection = Literal[
     "model_scope",
@@ -39,6 +45,8 @@ type ModelSection = Literal[
     "logical",
     "dimensional",
     "mapping",
+    "code_generation",
+    "qa",
 ]
 
 type ModelDataset = Literal[
@@ -61,6 +69,10 @@ type ModelDataset = Literal[
     "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
+    "generated_code",
+    "qa_authoring_context",
+    "validation_group",
+    "validation_check",
 ]
 
 type ModelChangeSetDataset = Literal[
@@ -82,6 +94,9 @@ type ModelChangeSetDataset = Literal[
     "mapping_dependency",
     "mapping_object",
     "mapping_attribute",
+    "generated_code",
+    "validation_group",
+    "validation_check",
 ]
 
 MODEL_SECTIONS: tuple[ModelSection, ...] = (
@@ -93,6 +108,8 @@ MODEL_SECTIONS: tuple[ModelSection, ...] = (
     "logical",
     "dimensional",
     "mapping",
+    "code_generation",
+    "qa",
 )
 
 
@@ -160,6 +177,16 @@ class MappingSection(ContractModel):
     attributes: tuple[MappingAttributeRecord, ...]
 
 
+class CodeGenerationSection(ContractModel):
+    artifacts: tuple[GeneratedCodeRecord, ...]
+
+
+class QASection(ContractModel):
+    authoring_contexts: tuple[QAAuthoringContextRecord, ...] = ()
+    groups: tuple[ValidationGroupRecord, ...]
+    checks: tuple[ValidationCheckRecord, ...]
+
+
 class ModelSnapshot(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     model_id: int
@@ -173,6 +200,8 @@ class ModelSnapshot(ContractModel):
     logical: LogicalSection
     dimensional: DimensionalSection
     mapping: MappingSection
+    code_generation: CodeGenerationSection = CodeGenerationSection(artifacts=())
+    qa: QASection = QASection(authoring_contexts=(), groups=(), checks=())
 
 
 def model_snapshot_records(
@@ -199,6 +228,10 @@ def model_snapshot_records(
         "mapping_dependency": snapshot.mapping.dependencies,
         "mapping_object": snapshot.mapping.objects,
         "mapping_attribute": snapshot.mapping.attributes,
+        "generated_code": snapshot.code_generation.artifacts,
+        "qa_authoring_context": snapshot.qa.authoring_contexts,
+        "validation_group": snapshot.qa.groups,
+        "validation_check": snapshot.qa.checks,
     }
 
 
@@ -209,7 +242,7 @@ def build_model_dataset_schema(
     properties = generated.get("properties")
     if not isinstance(properties, dict):
         raise ValueError(f"{definition.name} generated an invalid JSON Schema")
-    return {
+    schema: dict[str, object] = {
         "$schema": "https://json-schema.org/draft/2020-12/schema",
         "$id": definition.schema_path,
         "title": definition.row_model.__name__,
@@ -232,6 +265,8 @@ def build_model_dataset_schema(
         "x-gds-database-ids-included": False,
         "x-gds-change-set-eligible": definition.change_set_eligible,
     }
+    enrich_model_dataset_schema(definition.name, schema)
+    return schema
 
 
 DATASETS = (
@@ -412,6 +447,46 @@ DATASETS = (
             "modeled_entity_type",
             "modeled_entity_name",
             "modeled_attribute_name",
+        ),
+    ),
+    ModelingDatasetDefinition(
+        name="generated_code",
+        section="code_generation",
+        row_model=GeneratedCodeRecord,
+        canonical_key=(
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+        ),
+    ),
+    ModelingDatasetDefinition(
+        name="qa_authoring_context",
+        section="qa",
+        row_model=QAAuthoringContextRecord,
+        canonical_key=("tenant_code", "system_code"),
+        change_set_eligible=False,
+    ),
+    ModelingDatasetDefinition(
+        name="validation_group",
+        section="qa",
+        row_model=ValidationGroupRecord,
+        canonical_key=(
+            "tenant_code",
+            "system_code",
+            "validation_group_name",
+        ),
+    ),
+    ModelingDatasetDefinition(
+        name="validation_check",
+        section="qa",
+        row_model=ValidationCheckRecord,
+        canonical_key=(
+            "tenant_code",
+            "system_code",
+            "validation_group_name",
+            "validation_check_name",
         ),
     ),
 )

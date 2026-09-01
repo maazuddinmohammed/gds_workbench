@@ -175,10 +175,12 @@ The table is append-only. The runtime role may insert but cannot select, update,
 delete, or truncate it. A database trigger also rejects update, delete, and
 truncate attempts by more privileged callers. Input metadata must be a JSON
 object. PostgreSQL applies no application-specific byte ceiling; normal network
-tool calls remain subject to the MCP server's 1 MiB request-body limit. Input
-metadata never contains signed cursors, lock purpose/reason text, staged physical
-records, prompts, tool output, bearer tokens, Databricks connection values, or
-exception text. Callers must never place credentials in submitted SQL.
+tool calls remain subject to the MCP server's 2 MiB request-body limit. That
+leaves JSON-RPC and base64 envelope headroom for a decoded 1 MiB Model Stage
+fragment. Input metadata never contains signed cursors, lock purpose/reason
+text, staged physical records, Model payload-fragment bodies, prompts, tool
+output, bearer tokens, Databricks connection values, or exception text. Callers
+must never place credentials in submitted SQL.
 
 Central MCP middleware performs the append after the tool returns. Each tool
 registers its server-owned Tool Policy, exact safe argument names to retain, and
@@ -192,9 +194,10 @@ whether optional purpose or required override reason was supplied. Purpose and
 override reason text are not copied into the MCP tool-call log.
 Metadata Change Set tools retain their safe identifiers, dataset selection, and
 expected revision. Stage records only dataset/record counts; complete staged
-physical records are not copied into the tool-call log. Stage Batch tools retain only
-safe Batch/dataset identifiers, chunk index, and counts; chunk bodies and hashes are
-not logged.
+physical records are not copied into the tool-call log. Stage Batch tools retain
+only safe Batch/dataset identifiers, payload mode, chunk index, and counts;
+record chunks, decoded or base64 payload-fragment bodies, and hashes are not
+logged.
 `execute_databricks_sql` records schema version, source Connection ID, Environment
 code, submitted-SQL character count, and a SHA-256 digest. Submitted SQL is never
 copied into the audit record or application logs. Returned rows, host, HTTP path,

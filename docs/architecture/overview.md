@@ -57,7 +57,7 @@ outputs.
 - Anonymous `GET /health/ready`
 - Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
 - Protected stateless `/mcp`
-- 60 governed MCP tools spanning Tenant/catalog reads, Metadata and Model
+- 61 governed MCP tools spanning Tenant/catalog reads, Metadata and Model
   Snapshots, model graph reads, Mapping and code-generation authoring context,
   governed Databricks SQL, Tenant Locks, and Metadata/Model Change Sets.
 

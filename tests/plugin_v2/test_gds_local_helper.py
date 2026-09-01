@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import subprocess
 from pathlib import Path
 
@@ -28,6 +28,42 @@ def run_helper(*arguments: str) -> subprocess.CompletedProcess[str]:
         timeout=10,
         check=False,
     )
+
+
+def test_helper_exposes_bounded_command_and_server_contracts() -> None:
+    described = run_helper("command-contract", "--command", "describe")
+    assert described.returncode == 0, described.stderr
+    command = json.loads(described.stdout)
+    assert command == {
+        "schema_version": "1.0",
+        "command": "describe",
+        "usage": "describe --session <session> --area metadata|model --dataset <name> [--detail compact|full]",
+        "session_required": True,
+        "mutates": False,
+    }
+
+    expected_path = (
+        REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "tool-contract.json"
+    )
+    expected = json.loads(expected_path.read_text())
+    compatible = run_helper(
+        "contract-check",
+        "--actual",
+        json.dumps(expected, separators=(",", ":")),
+    )
+    assert compatible.returncode == 0, compatible.stderr
+    assert json.loads(compatible.stdout)["compatible"] is True
+
+    incompatible_document = {**expected, "tool_count": expected["tool_count"] + 1}
+    incompatible = run_helper(
+        "contract-check",
+        "--actual",
+        json.dumps(incompatible_document, separators=(",", ":")),
+    )
+    assert incompatible.returncode == 0, incompatible.stderr
+    output = json.loads(incompatible.stdout)
+    assert output["compatible"] is False
+    assert output["mismatches"] == ["tool_count"]
 
 
 def write_snapshot_manifest(
@@ -573,6 +609,99 @@ def test_model_details_is_change_set_eligible_for_local_edits(tmp_path: Path) ->
     ) == [{"model_purpose": "Updated purpose"}]
 
 
+def test_approve_reviewed_promotes_only_pending_model_status_fields(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Approve reviewed model records",
+        "--plan",
+        '["Author","Review","Approve","Validate"]',
+    )
+    assert added.returncode == 0, added.stderr
+    record = {
+        "logical_entity_name": "Customer",
+        "logical_entity_status": "needs_review",
+        "sources": [{"status": "needs_review", "note": "needs_review"}],
+        "payload": {"status": "needs_review", "custom_status": "needs_review"},
+        "is_active": False,
+    }
+    written = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "logical_entity",
+        "--record",
+        json.dumps(record, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    assert written.returncode == 0, written.stderr
+    original_digest = json.loads(written.stdout)["digest"]
+
+    missing_confirmation = run_helper(
+        "approve-reviewed",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--expected-digest",
+        original_digest,
+    )
+    assert missing_confirmation.returncode != 0
+    assert "explicit user confirmation" in missing_confirmation.stderr
+
+    approved = run_helper(
+        "approve-reviewed",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--reviewed",
+        "true",
+        "--expected-digest",
+        original_digest,
+    )
+    assert approved.returncode == 0, approved.stderr
+    output = json.loads(approved.stdout)
+    assert output["promoted"] == 2
+    assert output["datasets"] == [["logical_entity", 2]]
+    assert output["fields"] == [
+        ["logical_entity_status", 1],
+        ["status", 1],
+    ]
+    assert output["digest"] != original_digest
+
+    pending = json.loads(
+        (session / "model-change-set" / "logical_entity.json").read_text()
+    )
+    assert pending[0]["logical_entity_status"] == "active"
+    assert pending[0]["sources"][0] == {
+        "status": "active",
+        "note": "needs_review",
+    }
+    assert pending[0]["payload"] == {
+        "status": "needs_review",
+        "custom_status": "needs_review",
+    }
+    assert pending[0]["is_active"] is False
+    state = json.loads((session / "session.json").read_text())
+    assert state["tasks"][0][3] == "review"
+
+
 def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
     initialized = run_helper(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
@@ -834,11 +963,14 @@ def test_describe_returns_one_exact_schema_without_rows(tmp_path: Path) -> None:
         "metadata",
         "--dataset",
         "source_object",
+        "--detail",
+        "full",
     )
 
     assert result.returncode == 0, result.stderr
     output = json.loads(result.stdout)
     assert output["dataset"] == "source_object"
+    assert output["detail"] == "full"
     assert output["count"] == 2
     assert output["canonical_key"] == [
         "tenant_code",
@@ -848,7 +980,82 @@ def test_describe_returns_one_exact_schema_without_rows(tmp_path: Path) -> None:
         "object_name",
     ]
     assert output["schema"]["required"][-1] == "is_active"
+    assert output["authoring_schema"]["required"][-1] == "is_active"
     assert "Customer" not in result.stdout
+
+
+def test_describe_defaults_to_compact_schema_guidance(tmp_path: Path) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+
+    result = run_helper(
+        "describe",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["detail"] == "compact"
+    assert output["schema"] is None
+    assert output["authoring_schema"]["required"][-1] == "is_active"
+
+
+def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+    run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--title",
+        "Repair one record",
+        "--plan",
+        '["Author","Validate"]',
+    )
+    written = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--record",
+        '{"tenant_code":"TENANT_A","system_code":"CRM","connection_code":"MAIN","object_schema":"sales","object_name":"Customer"}',
+        "--expected-digest",
+        "empty",
+    )
+    assert written.returncode != 0
+
+    pending = session / "metadata-change-set" / "source_object.json"
+    pending.write_text(
+        '[{"tenant_code":"TENANT_A","system_code":"CRM","connection_code":"MAIN",'
+        '"object_schema":"sales","object_name":"Customer"}]\n'
+    )
+    validated = run_helper(
+        "validate", "--session", str(session), "--area", "metadata"
+    )
+
+    assert validated.returncode == 0, validated.stderr
+    output = json.loads(validated.stdout)
+    assert output["valid"] is False
+    assert output["truncated"] is False
+    assert output["repairs"][0]["dataset"] == "source_object"
+    assert output["repairs"][0]["record"] == 1
+    assert output["repairs"][0]["fields"]
 
 
 def test_rows_and_schema_are_verified_only_when_accessed(tmp_path: Path) -> None:
@@ -1410,6 +1617,8 @@ def test_local_change_set_copy_upsert_review_validate_and_discard(
     assert json.loads(validated.stdout) == {
         "valid": True,
         "issues": [],
+        "repairs": [],
+        "truncated": False,
         "digest": review["digest"],
     }
 

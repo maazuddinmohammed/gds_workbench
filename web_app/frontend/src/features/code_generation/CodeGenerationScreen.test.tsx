@@ -98,6 +98,22 @@ describe("Code Generation journey", () => {
     );
   });
 
+  it("renders migrated Code artifacts without legacy guide or generator provenance", async () => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(codeGenerationFetchStub({ nullableProvenance: true })),
+      history: createMemoryHistory({
+        initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"],
+      }),
+    })} />);
+
+    await screen.findByRole("heading", { name: "silver_nwa.customer" });
+    expect(screen.getByText("No legacy guide provenance")).toBeVisible();
+    expect(screen.getByText("No legacy generator provenance")).toBeVisible();
+    expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toHaveTextContent(
+      "SELECT '<script>not executable</script>' AS literal;",
+    );
+  });
+
   it("gates generation, then explicitly creates and executes selected and all coverage", async () => {
     const unlocked = render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(codeGenerationFetchStub({ hasLock: false })),
@@ -130,7 +146,9 @@ describe("Code Generation journey", () => {
     expect(await screen.findByRole("heading", { name: "Regenerate stored SQL" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Regenerate stored SQL" }));
 
-    await screen.findByText("Code Generation run 1151 started. Refresh after completion to review stored SQL.");
+    await screen.findByText(
+      "Code Generation run 1151 started. Refresh runs to review the draft, then Apply the validated draft.",
+    );
     const selectedCreate = createCalls(fetcher)[0];
     expect(JSON.parse(String(selectedCreate?.[1]?.body))).toEqual({
       expected_model_revision: 18,
@@ -162,7 +180,9 @@ describe("Code Generation journey", () => {
     await user.click(screen.getByRole("button", { name: "Generate all eligible" }));
     expect(await screen.findByRole("heading", { name: "Generate all eligible SQL" })).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Generate all eligible SQL" }));
-    await screen.findByText("Code Generation run 1151 started. Refresh after completion to review stored SQL.");
+    await screen.findByText(
+      "Code Generation run 1151 started. Refresh runs to review the draft, then Apply the validated draft.",
+    );
     const allCreate = createCalls(fetcher)[1];
     expect(JSON.parse(String(allCreate?.[1]?.body))).toEqual(expect.objectContaining({
       selected_object_ids: [],
@@ -270,9 +290,10 @@ function codeGenerationFetchStub(options: {
   role?: string;
   executeConflictOnce?: boolean;
   executePending?: boolean;
+  nullableProvenance?: boolean;
 } = {}) {
   let executeAttempts = 0;
-  return vi.fn<typeof fetch>(async (input) => {
+  return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
       ...tenantHome,
@@ -301,10 +322,15 @@ function codeGenerationFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/models/18/code-generation/artifacts/501") {
-      return jsonResponse(generatedSqlDetail);
+      return jsonResponse(options.nullableProvenance
+        ? { ...generatedSqlDetail, guide: null, generator: null }
+        : generatedSqlDetail);
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
-    if (url === "/api/v1/tenants/7/models/18/runs") {
+    if (url === "/api/v1/tenants/7/models/18/runs?workflow=code_generation&page_size=5") {
+      return jsonResponse({ items: [], next_cursor: null });
+    }
+    if (url === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST") {
       return jsonResponse({
         created: true,
         workflow_run_id: 1151,

@@ -58,6 +58,7 @@ class PlanTransaction:
         *,
         rows: list[dict[str, Any]] | None = None,
         selection: list[dict[str, Any]] | None = None,
+        system_selection: list[dict[str, Any]] | None = None,
     ) -> None:
         self.rows = (
             rows
@@ -75,6 +76,7 @@ class PlanTransaction:
                 {"object_id": 502, "selection_order": 2},
             ]
         )
+        self.system_selection = system_selection if system_selection is not None else []
 
     async def fetch_all(
         self,
@@ -84,6 +86,8 @@ class PlanTransaction:
         assert parameters == (7, 18, 1048)
         if "workflow_run_object_selection" in query:
             return self.selection
+        if "workflow_run_system_selection" in query:
+            return self.system_selection
         assert "workflow_run_prompt_snapshot" in query
         assert "run.workflow_run_state = 'running'" in query
         return self.rows
@@ -111,6 +115,35 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
     representation = repr(plan)
     assert "sensitive system" not in representation
     assert "sensitive instruction" not in representation
+
+
+@pytest.mark.asyncio
+async def test_repository_loads_exact_qa_system_selection_without_objects() -> None:
+    row = _stage_row(variable_id=1, variable_name="stage_context")
+    row.update(
+        {
+            "model_workflow": "qa",
+            "workflow_execution_mode": None,
+            "workflow_stage_code": "validation_generation",
+        }
+    )
+    plan = await PostgresAgentRunPlanRepository().load(
+        PlanTransaction(
+            rows=[row],
+            selection=[],
+            system_selection=[
+                {"system_code": "erp", "selection_order": 1},
+                {"system_code": "crm", "selection_order": 2},
+            ],
+        ),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+    )
+
+    assert plan.model_workflow == "qa"
+    assert plan.selected_object_ids == ()
+    assert plan.selected_system_codes == ("erp", "crm")
 
 
 @pytest.mark.asyncio

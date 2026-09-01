@@ -9,6 +9,7 @@ from uuid import UUID
 
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError, DependencyUnavailableError
+from gds_etl_workbench.domain.modeling_records import GeneratedCodeRecord
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_workbench_api.features.workflows.execution.fence import (
@@ -62,6 +63,12 @@ class CodeGenerationArtifactContext(BaseModel):
     mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     source_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     sql_generation_guide_version_id: int = Field(gt=0)
+    tenant_code: str = Field(min_length=1, max_length=100)
+    system_code: str = Field(min_length=1, max_length=100)
+    connection_code: str = Field(min_length=1, max_length=100)
+    object_schema: str = Field(min_length=1, max_length=400)
+    object_name: str = Field(min_length=1, max_length=400)
+    applied_generated_code: GeneratedCodeRecord | None = None
 
 
 class StoredGeneratedSqlArtifact(BaseModel):

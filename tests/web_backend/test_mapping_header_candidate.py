@@ -13,15 +13,15 @@ from test_mapping_preparation import (
     _plan,  # pyright: ignore[reportPrivateUsage]
 )
 
-from gds_workbench_api.features.mapping.candidate import (
-    MappingHeaderCandidateValidator,
-)
 from gds_workbench_api.features.mapping import (
     MappingOutputTemplate,
     MappingOutputTemplateField,
     MappingPreparation,
     MappingProfileIdentity,
     MappingRunContext,
+)
+from gds_workbench_api.features.mapping.candidate import (
+    MappingHeaderCandidateValidator,
 )
 from gds_workbench_api.features.mapping.profile_registry import (
     load_mapping_profile_registry,
@@ -471,7 +471,26 @@ async def test_agent_cannot_create_or_repoint_header_bindings_or_lock_state() ->
             )
         ).issues
 
-        assert {issue.code for issue in issues} == {"candidate.schema_invalid"}
+        assert {issue.code for issue in issues} == {
+            "candidate.schema_additional_property"
+        }
+        assert issues[0].path == ("headers", 0, field)
+
+
+async def test_header_cross_field_failure_reports_the_coverage_field() -> None:
+    candidate = _candidate()
+    coverage = cast(dict[str, Any], candidate["coverage"])
+    coverage["expected_mapping_object_ids"] = [101, 101]
+
+    issues = (
+        await MappingHeaderCandidateValidator(preparation=_preparation()).validate(
+            cast(JsonValue, candidate)
+        )
+    ).issues
+
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.cross_field_invalid"
+    assert issues[0].path == ("coverage", "expected_mapping_object_ids")
 
 
 async def test_header_mapper_rejects_partial_or_false_coverage() -> None:

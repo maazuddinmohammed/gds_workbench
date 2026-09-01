@@ -3,7 +3,7 @@
 The Release 1 database is a canonical, fresh-install PostgreSQL 18 schema. It
 is not an in-place migration set and it is not idempotent DDL. A new database
 must execute the ordered install files from `database/01_reference.sql`
-through `database/12_runtime_integrity.sql` exactly once. Run each file in its
+through `database/19_runtime_integrity.sql` exactly once. Run each file in its
 own fail-fast transaction.
 
 ## Ownership and dependency order
@@ -23,13 +23,14 @@ deployment unit:
 7. the exact seven Logical families;
 8. the exact seven Dimensional families;
 9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
-10. web Application orchestration, MCP-owned Model and Metadata Change Sets,
-    canonical workflow eligibility, their events, and tool-call log;
-11. governed Metadata Apply plus three group roles and the separate passwordless
-    `gds_mcp_runtime` and `gds_web_runtime` logins;
-12. final runtime privileges.
+10. generated Code and QA Validation Groups/Checks;
+11. canonical workflow eligibility;
+12–14. Application configuration, Workflow Runs, and governed execution;
+15–17. MCP Change Sets, governed Metadata Apply, and Tool Call Log;
+18. three group roles and the separate passwordless runtime logins;
+19. final runtime privileges.
 
-There are 93 tables across `reference`, `core`, `security`, `model`, `workflow`,
+There are 99 tables across `reference`, `core`, `security`, `model`, `workflow`,
 `application`, and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
@@ -126,24 +127,22 @@ target/System package share package metadata and object dependency order.
 Source System waves are controlled once per Model/layer/System; Object waves
 are consistent per Model/layer/target.
 
-The numbered greenfield DDL currently enforces declarative constraints only:
-primary keys, foreign keys, unique constraints, and column `CHECK` rules. Draft
-cross-table graph validation was archived until its application behavior is
-finalized. Existing read indexes remain available for evaluation.
+The numbered greenfield DDL enforces its current declarative constraints,
+installed functions, and installed triggers. Any future cross-table graph
+behavior requires new functional requirements and rejecting tests; no disabled
+draft SQL is retained as an implementation source.
 
-## Installed and archived behavior
+## Installed behavior
 
 The numbered DDL installs active Principal/Tenant authorization plus governed
 Tenant Lock acquisition, renewal, release, explicit override, audit, and bounded
-expiry. It does not install the archived draft graph, revision, or lifecycle
-triggers under `database/archived_functions_triggers/`; those need
-separate finalized requirements and rejecting tests before activation.
+expiry. Only behavior present in the numbered DDL is part of the database.
 
 ## Durable MCP state
 
-Model Change Sets store eight bounded object-shaped JSON documents—Model
-Scope, Profiling, Assertion, Analysis, Conceptual, Logical, Dimensional, and
-Mapping—plus queryable
+Model Change Sets store ten object-shaped JSON documents—Model Scope,
+Profiling, Assertion, Analysis, Conceptual, Logical, Dimensional, Mapping, Code
+Generation, and QA—plus queryable
 base revision/digests, global `draft_revision`, validation outcome, sealed
 candidate digest, activity/expiry, and terminal timestamps. Their lifecycle is
 `active`, `validated`, `applied`, `expired`, `discarded`, or `superseded`.
@@ -159,6 +158,15 @@ the same transaction. Create is serialized per Model and Principal before it
 expires/resumes or creates a draft. Stage, validation, apply, archive, and Stage
 Batch completion keep revision/digest compare-and-swap predicates in their final
 write, so a late expiry or stale/null fence cannot revive or terminalize a row.
+
+Model Stage Batches normally store ordered complete-record chunks. For
+`generated_code`, the same manifest may select `json_fragments`; decoded JSON
+byte fragments are stored in `mcp.model_stage_payload_chunk` and remain
+invisible until Commit. Commit verifies the manifest and fragment hashes,
+concatenates the ordered bytes, validates one canonical record array, and stages
+one complete Code record. Code content has no separate domain-size constraint;
+the 1 MiB fragment and 64 MiB batch limits are transport bounds. Fragment bodies
+are excluded from MCP audit metadata.
 
 Tenant-owned Metadata Change Sets store sixteen bounded list-shaped documents:
 Source/Bronze/Silver/Gold Objects and Attributes, both Ingestion Mappings, Copy
@@ -198,7 +206,7 @@ Registered workload identities map directly to active Super Admin Principals.
 
 ## Durable web Workflow Run inputs
 
-The `application` schema has 15 normalized tables. A governed Workflow Run
+The `application` schema has 16 normalized tables. A governed Workflow Run
 stores the exact active Entra identity used to create it, an optional bounded
 Profiling/Analysis batch ID, its immutable Tenant witness, and one immutable
 `workflow_run_object_selection` row per selected Object. Mapping selected

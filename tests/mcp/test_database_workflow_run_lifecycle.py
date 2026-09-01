@@ -43,6 +43,7 @@ CREATE_WORKFLOW_RUN_SQL = """
           %s::INTEGER,
           %s::INTEGER,
           %s::BIGINT[],
+          ARRAY[]::VARCHAR[],
           %s::VARCHAR,
           %s::VARCHAR,
           %s::UUID,
@@ -67,6 +68,7 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           NULL::INTEGER,
           NULL::INTEGER,
           %s::BIGINT[],
+          ARRAY[]::VARCHAR[],
           'logical_entity'::VARCHAR,
           NULL::VARCHAR,
           %s::UUID,
@@ -79,6 +81,39 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           NULL::BIGINT,
           %s::VARCHAR,
           %s::BIGINT
+      )
+"""
+
+CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL = """
+    SELECT *
+      FROM application.create_workflow_run(
+          %s::UUID,
+          %s::UUID,
+          'user'::VARCHAR,
+          %s::BIGINT,
+          %s::BIGINT,
+          %s::VARCHAR,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::INTEGER,
+          NULL::INTEGER,
+          %s::BIGINT[],
+          %s::VARCHAR[],
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          %s::UUID,
+          '{}'::JSONB,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::VARCHAR,
+          NULL::BIGINT,
+          NULL::BIGINT,
+          NULL::BIGINT,
+          NULL::VARCHAR,
+          NULL::BIGINT
       )
 """
 
@@ -851,6 +886,226 @@ def _seed_code_generation_target(
     return object_id
 
 
+def _seed_qa_prompt(
+    postgres_database: DisposablePostgres,
+    context: WorkflowContext,
+) -> None:
+    suffix = uuid4().hex
+    with postgres_database.connect_owner() as connection:
+        stage = connection.execute(
+            """
+            SELECT workflow_stage_id
+              FROM application.workflow_stage
+             WHERE model_workflow = 'qa'
+               AND workflow_execution_mode IS NULL
+               AND workflow_stage_is_agentic
+               AND is_active
+             ORDER BY workflow_stage_order
+             LIMIT 1
+            """
+        ).fetchone()
+        if stage is None:
+            stage = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO application.workflow_stage (
+                        model_workflow,
+                        workflow_execution_mode,
+                        workflow_stage_code,
+                        workflow_stage_name,
+                        workflow_stage_order,
+                        workflow_stage_is_agentic
+                    ) VALUES (
+                        'qa', NULL, 'validation_generation',
+                        'Validation Generation', 10, TRUE
+                    )
+                    RETURNING workflow_stage_id
+                    """
+                ).fetchone()
+            )
+        prompt_digest = require_row(
+            connection.execute(
+                """
+                SELECT encode(
+                           sha256(
+                               convert_to(
+                                   jsonb_build_object(
+                                       'system_prompt_template',
+                                           '{{ stage_context }}'::TEXT,
+                                       'instruction_prompt_template',
+                                           '{{ stage_context }}'::TEXT,
+                                       'tool_instruction_prompt_template',
+                                           NULL::TEXT
+                                   )::TEXT,
+                                   'UTF8'
+                               )
+                           ),
+                           'hex'
+                       ) AS digest
+                """
+            ).fetchone()
+        )["digest"]
+        prompt_template_id = require_row(
+            connection.execute(
+                """
+                INSERT INTO application.prompt_template (
+                    workflow_stage_id,
+                    prompt_template_ownership_scope,
+                    owner_tenant_id,
+                    prompt_template_code,
+                    prompt_template_name,
+                    created_by_principal_id,
+                    updated_by_principal_id
+                ) VALUES (%s, 'tenant', %s, %s, %s, %s, %s)
+                RETURNING prompt_template_id
+                """,
+                (
+                    stage["workflow_stage_id"],
+                    context.tenant_id,
+                    f"qa_prompt_{suffix}",
+                    f"QA Prompt {suffix}",
+                    context.principal_id,
+                    context.principal_id,
+                ),
+            ).fetchone()
+        )["prompt_template_id"]
+        prompt_template_version_id = require_row(
+            connection.execute(
+                """
+                INSERT INTO application.prompt_template_version (
+                    prompt_template_id,
+                    workflow_stage_id,
+                    prompt_template_version_number,
+                    system_prompt_template,
+                    instruction_prompt_template,
+                    prompt_template_digest,
+                    prompt_template_version_status,
+                    created_by_principal_id,
+                    updated_by_principal_id,
+                    published_time,
+                    published_by_principal_id
+                ) VALUES (
+                    %s, %s, 1, '{{ stage_context }}',
+                    '{{ stage_context }}', %s, 'published', %s, %s,
+                    CURRENT_TIMESTAMP, %s
+                )
+                RETURNING prompt_template_version_id
+                """,
+                (
+                    prompt_template_id,
+                    stage["workflow_stage_id"],
+                    prompt_digest,
+                    context.principal_id,
+                    context.principal_id,
+                    context.principal_id,
+                ),
+            ).fetchone()
+        )["prompt_template_version_id"]
+        connection.execute(
+            """
+            INSERT INTO application.prompt_assignment (
+                workflow_stage_id,
+                prompt_template_version_id,
+                prompt_assignment_scope,
+                model_id,
+                assigned_by_principal_id
+            ) VALUES (%s, %s, 'model_default', %s, %s)
+            """,
+            (
+                stage["workflow_stage_id"],
+                prompt_template_version_id,
+                context.model_id,
+                context.principal_id,
+            ),
+        )
+
+
+def _seed_qa_systems(
+    postgres_database: DisposablePostgres,
+    context: WorkflowContext,
+) -> tuple[tuple[int, str], tuple[int, str]]:
+    first_target_id = _seed_code_generation_target(postgres_database, context)
+    second_target_id = _seed_code_generation_target(postgres_database, context)
+    suffix = uuid4().hex
+    with postgres_database.connect_owner() as connection:
+        first = require_row(
+            connection.execute(
+                """
+                SELECT source_system.system_id,
+                       source_system.system_code,
+                       source_system.system_type_id
+                  FROM workflow.mapping_object AS mapping
+                  JOIN core.system AS source_system
+                    ON source_system.system_id = mapping.source_system_id
+                 WHERE mapping.model_id = %s
+                   AND mapping.object_id = %s
+                """,
+                (context.model_id, first_target_id),
+            ).fetchone()
+        )
+        second = require_row(
+            connection.execute(
+                """
+                INSERT INTO core.system (
+                    system_code,
+                    system_name,
+                    system_type_id
+                ) VALUES (%s, %s, %s)
+                RETURNING system_id, system_code
+                """,
+                (
+                    f"qa_source_{suffix}",
+                    f"QA Source {suffix}",
+                    first["system_type_id"],
+                ),
+            ).fetchone()
+        )
+        connection.execute(
+            """
+            INSERT INTO workflow.mapping_source_system_dependency (
+                model_id,
+                modeled_entity_type,
+                source_system_id,
+                source_system_dependency_order
+            ) VALUES (%s, 'logical_entity', %s, 1)
+            """,
+            (context.model_id, second["system_id"]),
+        )
+        connection.execute(
+            """
+            UPDATE workflow.mapping_object
+               SET source_system_id = %s
+             WHERE model_id = %s
+               AND object_id = %s
+            """,
+            (second["system_id"], context.model_id, second_target_id),
+        )
+    return (
+        (first["system_id"], first["system_code"]),
+        (second["system_id"], second["system_code"]),
+    )
+
+
+def _system_selection_parameters(
+    context: WorkflowContext,
+    *,
+    workflow: str,
+    object_ids: list[int],
+    system_codes: list[str],
+    correlation_id: UUID | None = None,
+) -> tuple[object, ...]:
+    return (
+        context.entra_tenant_id,
+        context.entra_object_id,
+        context.model_id,
+        context.model_revision,
+        workflow,
+        object_ids,
+        system_codes,
+        correlation_id or uuid4(),
+    )
+
+
 def _seed_published_sql_generation_guide(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
@@ -1183,6 +1438,208 @@ def test_create_workflow_run_freezes_server_derived_selected_scope(
         {"object_id": object_id, "selection_order": index}
         for index, object_id in enumerate(canonical_ids, start=1)
     ]
+
+
+def test_create_qa_run_freezes_ordered_system_identity_code_and_digest(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    first_system, second_system = _seed_qa_systems(postgres_database, context)
+    _seed_qa_prompt(postgres_database, context)
+    requested_codes = [f" {second_system[1].upper()} ", first_system[1].upper()]
+
+    with postgres_database.connect_owner() as connection:
+        created = require_row(
+            connection.execute(
+                CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,
+                _system_selection_parameters(
+                    context,
+                    workflow="qa",
+                    object_ids=[],
+                    system_codes=requested_codes,
+                ),
+            ).fetchone()
+        )
+        selections = connection.execute(
+            """
+            SELECT system_id, system_code, selection_order
+              FROM application.workflow_run_system_selection
+             WHERE workflow_run_id = %s
+             ORDER BY selection_order
+            """,
+            (created["workflow_run_id"],),
+        ).fetchall()
+        expected_digest = require_row(
+            connection.execute(
+                """
+                SELECT encode(
+                           sha256(
+                               convert_to(
+                                   jsonb_agg(
+                                       jsonb_build_object(
+                                           'system_id', system_id,
+                                           'system_code', system_code
+                                       )
+                                       ORDER BY selection_order
+                                   )::TEXT,
+                                   'UTF8'
+                               )
+                           ),
+                           'hex'
+                       ) AS digest
+                  FROM application.workflow_run_system_selection
+                 WHERE workflow_run_id = %s
+                """,
+                (created["workflow_run_id"],),
+            ).fetchone()
+        )["digest"]
+        object_selection_count = require_row(
+            connection.execute(
+                """
+                SELECT count(*)::INTEGER AS selection_count
+                  FROM application.workflow_run_object_selection
+                 WHERE workflow_run_id = %s
+                """,
+                (created["workflow_run_id"],),
+            ).fetchone()
+        )["selection_count"]
+
+    assert selections == [
+        {
+            "system_id": second_system[0],
+            "system_code": second_system[1],
+            "selection_order": 1,
+        },
+        {
+            "system_id": first_system[0],
+            "system_code": first_system[1],
+            "selection_order": 2,
+        },
+    ]
+    assert created["selected_scope_count"] == 2
+    assert created["selected_scope_digest"] == expected_digest
+    assert object_selection_count == 0
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="System selections are immutable"),
+    ):
+        connection.execute(
+            """
+            UPDATE application.workflow_run_system_selection
+               SET selection_order = 3
+             WHERE workflow_run_id = %s
+               AND selection_order = 1
+            """,
+            (created["workflow_run_id"],),
+        )
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE core.system
+               SET system_code = system_code || '_renamed',
+                   is_active = FALSE
+             WHERE system_id = ANY(%s::BIGINT[])
+            """,
+            ([first_system[0], second_system[0]],),
+        )
+        frozen_after_live_change = connection.execute(
+            """
+            SELECT system_id, system_code, selection_order
+              FROM application.workflow_run_system_selection
+             WHERE workflow_run_id = %s
+             ORDER BY selection_order
+            """,
+            (created["workflow_run_id"],),
+        ).fetchall()
+
+    assert frozen_after_live_change == selections
+
+
+def test_create_qa_run_rejects_system_without_applied_mapping_atomically(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    _seed_qa_prompt(postgres_database, context)
+    correlation_id = uuid4()
+    with postgres_database.connect_owner() as connection:
+        system_code = require_row(
+            connection.execute(
+                """
+                SELECT source_system.system_code
+                  FROM model.model_scope AS scope
+                  JOIN core.object AS object_record
+                    ON object_record.object_id = scope.object_id
+                  JOIN core.connection AS source_connection
+                    ON source_connection.connection_id = object_record.connection_id
+                  JOIN core.system AS source_system
+                    ON source_system.system_id = source_connection.system_id
+                 WHERE scope.model_id = %s
+                 LIMIT 1
+                """,
+                (context.model_id,),
+            ).fetchone()
+        )["system_code"]
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="complete applied Mapping"),
+    ):
+        connection.execute(
+            CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,
+            _system_selection_parameters(
+                context,
+                workflow="qa",
+                object_ids=[],
+                system_codes=[system_code],
+                correlation_id=correlation_id,
+            ),
+        )
+
+    with postgres_database.connect_owner() as connection:
+        persisted = require_row(
+            connection.execute(
+                """
+                SELECT count(*)::INTEGER AS run_count
+                  FROM application.workflow_run
+                 WHERE correlation_id = %s
+                """,
+                (correlation_id,),
+            ).fetchone()
+        )
+    assert persisted == {"run_count": 0}
+
+
+@pytest.mark.parametrize(
+    ("workflow", "object_selection", "system_selection", "message"),
+    (
+        ("qa", [1], ["erp"], "no Object selection"),
+        ("qa", [], [], "between 1 and 1000 Systems"),
+        ("conceptual", [1], ["erp"], "only for QA"),
+    ),
+)
+def test_workflow_run_rejects_invalid_system_selection_shape(
+    postgres_database: DisposablePostgres,
+    workflow: str,
+    object_selection: list[int],
+    system_selection: list[str],
+    message: str,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match=message),
+    ):
+        connection.execute(
+            CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,
+            _system_selection_parameters(
+                context,
+                workflow=workflow,
+                object_ids=object_selection,
+                system_codes=system_selection,
+            ),
+        )
 
 
 def test_create_code_generation_run_freezes_selected_targets_revision_and_guide(
@@ -2291,6 +2748,96 @@ def test_start_workflow_run_rejects_a_null_expected_model_revision(
                 context.entra_tenant_id,
                 context.entra_object_id,
                 created["workflow_run_id"],
+            ),
+        )
+
+
+def test_start_workflow_run_rejects_frozen_or_current_revision_after_model_drift(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        created = require_row(
+            connection.execute(
+                CREATE_WORKFLOW_RUN_SQL,
+                create_workflow_run_parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    workflow="profiling",
+                    execution_mode=None,
+                ),
+            ).fetchone()
+        )
+        current_revision = require_row(
+            connection.execute(
+                """
+                UPDATE model.model
+                   SET model_revision = model_revision + 1
+                 WHERE model_id = %s
+                RETURNING model_revision
+                """,
+                (context.model_id,),
+            ).fetchone()
+        )["model_revision"]
+
+    for expected_revision in (context.model_revision, current_revision):
+        with (
+            postgres_database.connect_owner() as connection,
+            pytest.raises(RaiseException, match="stale_model_revision"),
+        ):
+            connection.execute(
+                """
+                SELECT *
+                  FROM application.start_workflow_run(
+                      %s::UUID, %s::UUID, 'user'::VARCHAR,
+                      %s::BIGINT, %s::BIGINT
+                  )
+                """,
+                (
+                    context.entra_tenant_id,
+                    context.entra_object_id,
+                    created["workflow_run_id"],
+                    expected_revision,
+                ),
+            )
+
+    with postgres_database.connect_owner() as connection:
+        state = require_row(
+            connection.execute(
+                """
+                SELECT workflow_run_state
+                  FROM application.workflow_run
+                 WHERE workflow_run_id = %s
+                """,
+                (created["workflow_run_id"],),
+            ).fetchone()
+        )
+    assert state == {"workflow_run_state": "queued"}
+
+
+def test_start_workflow_run_replay_remains_revision_fenced(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = seed_workflow_context(postgres_database)
+    workflow_run_id = _create_and_start_profiling_run(postgres_database, context)
+
+    with (
+        postgres_database.connect_owner() as connection,
+        pytest.raises(RaiseException, match="stale_model_revision"),
+    ):
+        connection.execute(
+            """
+            SELECT *
+              FROM application.start_workflow_run(
+                  %s::UUID, %s::UUID, 'user'::VARCHAR,
+                  %s::BIGINT, %s::BIGINT
+              )
+            """,
+            (
+                context.entra_tenant_id,
+                context.entra_object_id,
+                workflow_run_id,
+                context.model_revision + 1,
             ),
         )
 

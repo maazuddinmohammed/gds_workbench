@@ -19,15 +19,6 @@ from test_mapping_header_candidate import (
     _object_template,  # pyright: ignore[reportPrivateUsage]
 )
 
-from gds_workbench_api.features.mapping.attribute_candidate import (
-    build_mapping_attribute_batch_plans,
-)
-from gds_workbench_api.features.mapping.candidate import (
-    MappingHeaderCandidateValidator,
-)
-from gds_workbench_api.features.mapping.complete_candidate import (
-    CompleteMappingCandidateValidator,
-)
 from gds_workbench_api.features.mapping import (
     MappingOutputTemplate,
     MappingOutputTemplateField,
@@ -36,6 +27,15 @@ from gds_workbench_api.features.mapping import (
     MappingOutputTemplateSelections,
     MappingPreparation,
     assess_mapping_readiness,
+)
+from gds_workbench_api.features.mapping.attribute_candidate import (
+    build_mapping_attribute_batch_plans,
+)
+from gds_workbench_api.features.mapping.candidate import (
+    MappingHeaderCandidateValidator,
+)
+from gds_workbench_api.features.mapping.complete_candidate import (
+    CompleteMappingCandidateValidator,
 )
 
 
@@ -248,3 +248,14 @@ async def test_pathological_batch_returns_one_bounded_error() -> None:
     assert len(issues) == 1
     assert issues[0].code == "candidate.attribute_batch_invalid"
     assert issues[0].path == ("attribute_batches", 0)
+
+
+async def test_complete_envelope_failure_reports_the_missing_field() -> None:
+    validator, candidate = _complete_candidate()
+    candidate.pop("header")
+
+    issues = (await validator.validate(cast(JsonValue, candidate))).issues
+
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.schema_required"
+    assert issues[0].path == ("header",)

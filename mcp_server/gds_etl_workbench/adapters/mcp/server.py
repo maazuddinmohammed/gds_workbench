@@ -60,6 +60,7 @@ from gds_etl_workbench.tools.modeling.profiling_analysis import (
     register_profiling_analysis_tools,
 )
 from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
+from gds_etl_workbench.tools.server_contract import register_server_contract_tool
 from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
     register_get_model_dbml_tool,
 )
@@ -134,13 +135,15 @@ def create_mcp_server(
             "only for explicit create, "
             "resume, or an approved Stage with no draft. If resumed, inspect every "
             "nonempty pending dataset before replacing anything. Describe only datasets "
-            "being authored. Show affected lists and obtain Stage approval before staging; "
+            "being authored. Apply Mapping→Code→QA successively. Show "
+            "lists and obtain Stage approval "
+            "before staging; "
             "Commit a Stage Batch once. Validate the "
             "latest revision. Show the authoritative action_review "
             "and require fresh Apply approval before Apply. Archive only when "
             "requested; archive needs no current lock. Release any lock this workflow "
             "acquired whenever it stops. "
-            "Server derives identity, authorization, and lock ownership. Never expose "
+            "Server derives identity and authorization. Never expose "
             "credentials, temporary URLs, rows, prompts, or tool output. "
             "execute_databricks_sql requires source Connection, Environment, qualified "
             "relations, and read/temporary-object SQL."
@@ -352,6 +355,13 @@ def create_mcp_server(
         download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
         retention_hours=settings.metadata_snapshot_retention_hours,
         max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
+    )
+    register_server_contract_tool(
+        server,
+        identity_provider=identity_provider,
+        audit=audit,
+        mcp_server_version=MCP_SERVER_VERSION,
+        contract_digest=tool_contract_sha256,
     )
 
     async def live(_request: Request) -> Response:

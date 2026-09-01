@@ -15,6 +15,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
+    "qa",
 ]
 
 

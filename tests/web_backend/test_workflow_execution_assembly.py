@@ -70,6 +70,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
         "DatabaseDimensionalExecutor",
         "DatabaseMappingExecutor",
         "DatabaseCodeGenerationExecutor",
+        "DatabaseQAExecutor",
     ):
         monkeypatch.setattr(
             f"gds_workbench_api.features.workflows.execution.assembly.{executor_name}",
@@ -95,6 +96,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
             "DatabaseLogicalExecutor",
             "DatabaseDimensionalExecutor",
             "DatabaseMappingExecutor",
+            "DatabaseQAExecutor",
         )
     )
     for dependency in ("agent_executor", "handoff", "no_op", "lifecycle"):
@@ -118,6 +120,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     assert execution.dimensional is services.dimensional
     assert execution.mapping is services.mapping
     assert execution.code_generation is services.code_generation
+    assert execution.qa is services.qa
 
 
 def test_workflow_runtime_services_forward_provider_authentications(

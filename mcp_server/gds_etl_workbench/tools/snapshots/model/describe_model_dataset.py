@@ -6,7 +6,7 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
-from typing import Any, Literal
+from typing import Any, Literal, cast
 
 from mcp.server.mcpserver import Context, MCPServer
 from mcp.types import ToolAnnotations
@@ -14,6 +14,10 @@ from mcp.types import ToolAnnotations
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from gds_etl_workbench.tools.snapshots.dataset_description import (
+    DatasetColumnDescription,
+    compact_authoring_schema,
+)
 
 from ...modeling.common import POLICY, ContractModel
 from .contracts import (
@@ -22,16 +26,21 @@ from .contracts import (
     ModelSection,
     build_model_dataset_schema,
 )
+from .guidance import model_dataset_population_rules
 
 
 class DescribeModelDatasetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
+    detail: Literal["compact", "full"]
     dataset: ModelDataset
     section: ModelSection
     change_set_eligible: bool
     database_ids_included: Literal[False] = False
     canonical_key: tuple[str, ...]
-    record_schema: dict[str, object]
+    population_rules: tuple[str, ...]
+    authoring_schema: dict[str, object]
+    columns: tuple[DatasetColumnDescription, ...] | None
+    record_schema: dict[str, object] | None
     usage: tuple[str, ...]
 
 
@@ -47,8 +56,10 @@ def register_describe_model_dataset_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Describe one Model dataset, including whether MCP Model Change Sets may "
-            "write it. Returns the exact ID-free JSON Schema and canonical key."
+            "Describe one Model dataset for agent authoring. Compact detail is the default "
+            "and omits duplicated column cards plus validator-owned nested schemas. Full "
+            "detail additionally returns every column card and the exact ID-free JSON "
+            "Schema. Both include canonical key and GDS population, digest, and assertion rules."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -62,6 +73,7 @@ def register_describe_model_dataset_tool(
     async def describe_model_dataset(
         ctx: Context[None],
         dataset: ModelDataset,
+        detail: Literal["compact", "full"] = "compact",
         schema_version: Literal["1.0"] = "1.0",
     ) -> DescribeModelDatasetResult:
         del schema_version
@@ -70,6 +82,17 @@ def register_describe_model_dataset_tool(
             definition = DATASETS_BY_NAME.get(dataset)
             if definition is None:
                 raise InvalidRequestError("The Model dataset is unknown.")
+            record_schema = build_model_dataset_schema(definition)
+            raw_rules = record_schema.get("x-gds-population-rules", [])
+            raw_columns = record_schema.get("x-gds-columns", [])
+            if not isinstance(raw_rules, list) or not isinstance(raw_columns, list):
+                raise ValueError("The Model dataset authoring guidance is invalid.")
+            rule_documents = cast(list[object], raw_rules)
+            column_documents = cast(list[object], raw_columns)
+            if not all(isinstance(rule, str) for rule in rule_documents) or not all(
+                isinstance(column, dict) for column in column_documents
+            ):
+                raise ValueError("The Model dataset authoring guidance is invalid.")
             usage = ("Use every required field and no unlisted field.",)
             if definition.change_set_eligible:
                 usage += (
@@ -79,12 +102,24 @@ def register_describe_model_dataset_tool(
                 )
             else:
                 usage += ("This dataset is read-only through MCP; it cannot be staged or applied.",)
+            usage += model_dataset_population_rules(definition.name)
             return DescribeModelDatasetResult(
+                detail=detail,
                 dataset=definition.name,
                 section=definition.section,
                 change_set_eligible=definition.change_set_eligible,
                 canonical_key=definition.canonical_key,
-                record_schema=build_model_dataset_schema(definition),
+                population_rules=tuple(cast(list[str], rule_documents)),
+                authoring_schema=compact_authoring_schema(record_schema),
+                columns=(
+                    tuple(
+                        DatasetColumnDescription.model_validate(column, strict=False)
+                        for column in cast(list[dict[str, object]], column_documents)
+                    )
+                    if detail == "full"
+                    else None
+                ),
+                record_schema=record_schema if detail == "full" else None,
                 usage=usage,
             )
         except AuthenticationError as error:
@@ -100,7 +135,7 @@ def register_describe_model_dataset_tool(
         "describe_model_dataset",
         policy=POLICY,
         summarize_input=_audit_input,
-        retain_arguments={"dataset", "schema_version"},
+        retain_arguments={"dataset", "detail", "schema_version"},
     )
 
 
@@ -108,6 +143,11 @@ def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str]:
     dataset = arguments.get("dataset")
     return {
         "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
+        "detail": (
+            arguments.get("detail", "compact")
+            if arguments.get("detail", "compact") in {"compact", "full"}
+            else "invalid"
+        ),
         "dataset": (
             dataset if isinstance(dataset, str) and dataset in DATASETS_BY_NAME else "invalid"
         ),

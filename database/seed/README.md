@@ -1,11 +1,11 @@
 # Seed data
 
 Seed files are separate from canonical DDL. Run them only after
-`database/13_verify_install.sql` passes.
+`database/20_verify_install.sql` passes.
 
 ## Application reference metadata
 
-`04_application_reference.sql` installs 47 stable workflow stages and 78 allowed
+`04_application_reference.sql` installs 49 stable workflow stages and 80 allowed
 backend-resolved prompt variables. It includes deterministic stages, but gives
 variables only to agentic stages. It contains no prompt or SQL-generation-guide
 bodies, credentials, connection values, or business data.
@@ -21,7 +21,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ## Global default Prompts
 
 `05_global_prompt_defaults.template.sql` creates the governed global default
-for all 35 agentic Workflow Stages. The 12 deterministic stages, including
+for all 36 agentic Workflow Stages. The 13 deterministic stages, including
 Profiling, do not accept Prompts.
 
 Run `04_application_reference.sql` first. Then find one active Super Admin

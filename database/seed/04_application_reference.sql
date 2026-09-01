@@ -257,6 +257,16 @@ VALUES
     (
         'code_generation', NULL, 'sql_validation', 'SQL Validation',
         'Validate generated SQL without executing or deploying it.', 20, FALSE
+    ),
+    (
+        'qa', NULL, 'validation_generation', 'Validation Generation',
+        'Generate deterministic validation groups and checks from applied Mapping and current Code.',
+        10, TRUE
+    ),
+    (
+        'qa', NULL, 'backend_validation', 'Backend Validation',
+        'Validate QA scope, assertion shapes, and governed SQL deterministically.',
+        20, FALSE
     )
 ON CONFLICT ON CONSTRAINT uq_workflow_stage_identity DO NOTHING;
 
@@ -429,7 +439,8 @@ WITH repair_stage_seed (
         ('mapping', 'tool_assisted', 'mapping_authoring'),
         ('mapping', 'detailed_coverage', 'header_mapper'),
         ('mapping', 'detailed_coverage', 'attribute_mapper'),
-        ('code_generation', NULL, 'sql_generation')
+        ('code_generation', NULL, 'sql_generation'),
+        ('qa', NULL, 'validation_generation')
 )
 INSERT INTO application.workflow_stage_variable (
     workflow_stage_id,
@@ -455,6 +466,31 @@ SELECT stage.workflow_stage_id,
    AND stage.workflow_execution_mode IS NOT DISTINCT FROM
        seed.workflow_execution_mode
    AND stage.workflow_stage_code = seed.workflow_stage_code
+   AND stage.workflow_stage_is_agentic
+ON CONFLICT ON CONSTRAINT uq_workflow_stage_variable_name DO NOTHING;
+
+INSERT INTO application.workflow_stage_variable (
+    workflow_stage_id,
+    workflow_stage_variable_name,
+    workflow_stage_variable_resolver_key,
+    workflow_stage_variable_data_type,
+    workflow_stage_variable_is_required,
+    workflow_stage_variable_description,
+    workflow_stage_variable_example,
+    workflow_stage_variable_order
+)
+SELECT stage.workflow_stage_id,
+       'validation_context',
+       'workflow.qa.common.validation_context',
+       'json',
+       TRUE,
+       'Bounded applied Mapping, optional current Code, and applied QA for one frozen System.',
+       '{"system_ref":"system_1"}'::JSONB,
+       10
+  FROM application.workflow_stage AS stage
+ WHERE stage.model_workflow = 'qa'
+   AND stage.workflow_execution_mode IS NULL
+   AND stage.workflow_stage_code = 'validation_generation'
    AND stage.workflow_stage_is_agentic
 ON CONFLICT ON CONSTRAINT uq_workflow_stage_variable_name DO NOTHING;
 

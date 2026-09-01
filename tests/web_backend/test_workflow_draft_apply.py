@@ -110,9 +110,16 @@ def test_workflow_draft_apply_route_is_explicit_and_fenced() -> None:
 
 
 class MissingMappingDraftTransaction:
-    def __init__(self, *, profile_schema_digest: str, model_workflow: str) -> None:
+    def __init__(
+        self,
+        *,
+        profile_schema_digest: str,
+        model_workflow: str,
+        workflow_execution_mode: str | None,
+    ) -> None:
         self.profile_schema_digest = profile_schema_digest
         self.model_workflow = model_workflow
+        self.workflow_execution_mode = workflow_execution_mode
 
     async def fetch_one(
         self,
@@ -145,7 +152,7 @@ class MissingMappingDraftTransaction:
                 "workflow_run_id": 44,
                 "model_id": 18,
                 "model_workflow": self.model_workflow,
-                "workflow_execution_mode": "one_shot",
+                "workflow_execution_mode": self.workflow_execution_mode,
                 "actor_principal_id": 41,
                 "workflow_run_state": "completed",
                 "correlation_id": UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
@@ -166,9 +173,11 @@ class MissingMappingDraftDatabase:
         *,
         profile_schema_digest: str = _MAPPING_PROFILE_SCHEMA_DIGEST,
         model_workflow: str = "mapping",
+        workflow_execution_mode: str | None = "one_shot",
     ) -> None:
         self.profile_schema_digest = profile_schema_digest
         self.model_workflow = model_workflow
+        self.workflow_execution_mode = workflow_execution_mode
 
     @asynccontextmanager
     async def write_transaction(self) -> AsyncGenerator[WriteTransaction]:
@@ -177,6 +186,7 @@ class MissingMappingDraftDatabase:
             MissingMappingDraftTransaction(
                 profile_schema_digest=self.profile_schema_digest,
                 model_workflow=self.model_workflow,
+                workflow_execution_mode=self.workflow_execution_mode,
             ),
         )
 
@@ -236,7 +246,7 @@ async def test_mapping_profile_drift_is_rejected_before_draft_lookup() -> None:
 
 
 @pytest.mark.asyncio
-async def test_apply_whitelist_message_includes_mapping() -> None:
+async def test_apply_whitelist_message_includes_all_authoring_workflows() -> None:
     service = DatabaseWorkflowDraftApplyService(
         database=MissingMappingDraftDatabase(model_workflow="profiling"),
         authorizer=AuthorizationService(),
@@ -247,7 +257,77 @@ async def test_apply_whitelist_message_includes_mapping() -> None:
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
 
-    with pytest.raises(InvalidRequestError, match="Dimensional, or Mapping authoring"):
+    with pytest.raises(InvalidRequestError, match="Code Generation, or QA authoring"):
+        await service.apply(
+            principal,
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=44,
+            command=ApplyWorkflowDraftRequest(
+                expected_model_revision=4,
+                expected_draft_revision=2,
+                expected_candidate_digest="d" * 64,
+            ),
+            idempotency_key=UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_workflow", ("code_generation", "qa"))
+async def test_modeless_authoring_run_reaches_validated_draft_lookup(
+    model_workflow: str,
+) -> None:
+    service = DatabaseWorkflowDraftApplyService(
+        database=MissingMappingDraftDatabase(
+            model_workflow=model_workflow,
+            workflow_execution_mode=None,
+        ),
+        authorizer=AuthorizationService(),
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    with pytest.raises(ModelChangeSetNotFoundError):
+        await service.apply(
+            principal,
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=44,
+            command=ApplyWorkflowDraftRequest(
+                expected_model_revision=4,
+                expected_draft_revision=2,
+                expected_candidate_digest="d" * 64,
+            ),
+            idempotency_key=UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
+        )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("model_workflow", "workflow_execution_mode"),
+    (("mapping", None), ("code_generation", "one_shot"), ("qa", "one_shot")),
+)
+async def test_apply_rejects_the_wrong_execution_mode_shape(
+    model_workflow: str,
+    workflow_execution_mode: str | None,
+) -> None:
+    service = DatabaseWorkflowDraftApplyService(
+        database=MissingMappingDraftDatabase(
+            model_workflow=model_workflow,
+            workflow_execution_mode=workflow_execution_mode,
+        ),
+        authorizer=AuthorizationService(),
+    )
+    principal = RequestPrincipal(
+        actor_kind=ActorKind.HUMAN,
+        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+    )
+
+    with pytest.raises(InvalidRequestError, match="execution-mode shape"):
         await service.apply(
             principal,
             tenant_id=7,

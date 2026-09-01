@@ -30,6 +30,7 @@ APPLICATION_TABLES = {
     "workflow_run",
     "workflow_run_mapping_target_selection",
     "workflow_run_object_selection",
+    "workflow_run_system_selection",
     "workflow_run_prompt_snapshot",
     "workflow_stage",
     "workflow_stage_variable",
@@ -42,6 +43,7 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "attribute_profile", "workflow_run_id"),
     ("workflow", "analysis_result", "inference_workflow_run_id"),
     ("workflow", "analysis_result", "validation_workflow_run_id"),
+    ("workflow", "generated_code", "workflow_run_id"),
     ("workflow", "conceptual_object", "workflow_run_id"),
     ("workflow", "conceptual_relationship", "workflow_run_id"),
     ("workflow", "conceptual_support", "workflow_run_id"),
@@ -62,6 +64,7 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "mapping_source_system_dependency", "workflow_run_id"),
     ("workflow", "mapping_object", "workflow_run_id"),
     ("workflow", "mapping_attribute", "workflow_run_id"),
+    ("workflow", "validation_group", "workflow_run_id"),
 }
 
 ANALYSIS_VALIDATION_COLUMNS = {
@@ -333,6 +336,7 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'attribute_profile', 'workflow_run_id'),
                              ('workflow', 'analysis_result', 'inference_workflow_run_id'),
                              ('workflow', 'analysis_result', 'validation_workflow_run_id'),
+                             ('workflow', 'generated_code', 'workflow_run_id'),
                              ('workflow', 'conceptual_object', 'workflow_run_id'),
                              ('workflow', 'conceptual_relationship', 'workflow_run_id'),
                              ('workflow', 'conceptual_support', 'workflow_run_id'),
@@ -352,7 +356,8 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'dimensional_relationship', 'workflow_run_id'),
                              ('workflow', 'mapping_source_system_dependency', 'workflow_run_id'),
                              ('workflow', 'mapping_object', 'workflow_run_id'),
-                             ('workflow', 'mapping_attribute', 'workflow_run_id')
+                             ('workflow', 'mapping_attribute', 'workflow_run_id'),
+                             ('workflow', 'validation_group', 'workflow_run_id')
                          ) AS expected(table_schema, table_name, column_name)
                    )
             """

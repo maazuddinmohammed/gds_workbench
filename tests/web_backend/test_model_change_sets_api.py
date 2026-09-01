@@ -314,8 +314,8 @@ def test_assertion_stage_rejects_unsafe_content_before_database_access(
         )
 
     assert response.status_code == 422
-    assert response.json()["error"]["message"] == (
-        "Record does not match the exact modeling_assertion_record schema."
+    assert response.json()["error"]["message"].startswith(
+        f"Record 1 at {field}:"
     )
     assert raw_marker not in response.text
     assert database.write_attempted is False

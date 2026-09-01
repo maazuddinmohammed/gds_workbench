@@ -7,25 +7,41 @@ from typing import cast
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
+from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
+
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
     AgentExecutionResult,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
+    AgentCandidateValidationError,
     AgentContextPolicy,
     AgentContextTooLargeError,
     AgentValidationIssue,
     ValidationRepairRunner,
+    agent_request_envelope_bytes,
     load_default_agent_context_policy,
+    parse_pydantic_candidate,
 )
-from pydantic import JsonValue
 
 
-def _request(
-    *, retries: int = 2, context: JsonValue | None = None
-) -> AgentExecutionRequest:
+class _LeakyCrossFieldCandidate(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    private_value: str
+    enabled: bool
+
+    @model_validator(mode="after")
+    def reject_enabled(self) -> _LeakyCrossFieldCandidate:
+        if self.enabled:
+            raise ValueError(f"Never expose {self.private_value}")
+        return self
+
+
+def _request(*, retries: int = 2, context: JsonValue | None = None) -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="conceptual",
@@ -113,6 +129,22 @@ def test_default_agent_context_policy_is_bounded_and_validated() -> None:
     assert policy.max_validation_issues <= 200
 
 
+def test_pydantic_diagnostics_never_copy_candidate_values_or_messages() -> None:
+    parsed, issues = parse_pydantic_candidate(
+        _LeakyCrossFieldCandidate,
+        cast(
+            JsonValue,
+            {"private_value": "never-copy-this-private-value", "enabled": True},
+        ),
+    )
+
+    assert parsed is None
+    assert len(issues) == 1
+    assert issues[0].code == "candidate.cross_field_invalid"
+    assert issues[0].path == ()
+    assert "never-copy-this-private-value" not in issues[0].model_dump_json()
+
+
 @pytest.mark.asyncio
 async def test_valid_candidate_returns_without_a_repair_attempt() -> None:
     executor = FakeExecutor(candidates=[{"entities": []}])
@@ -141,9 +173,7 @@ async def test_repair_keeps_original_context_and_exact_run_configuration() -> No
         path=("entities", 0, "name"),
         message="Every entity requires a name.",
     )
-    executor = FakeExecutor(
-        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
-    )
+    executor = FakeExecutor(candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}])
     validator = FakeValidator(outcomes=[(issue,), ()])
     request = _request(retries=1)
 
@@ -172,6 +202,187 @@ async def test_repair_keeps_original_context_and_exact_run_configuration() -> No
 
 
 @pytest.mark.asyncio
+async def test_output_schema_issues_give_exact_safe_paths_to_the_repair_turn() -> None:
+    secret_value = "never-copy-this-candidate-value"
+    patterned_secret_value = "never-copy-this-patterned-value"
+    invalid: JsonValue = {
+        "entities": [
+            {
+                "x-note": patterned_secret_value,
+                "unexpected": secret_value,
+            }
+        ]
+    }
+    valid: JsonValue = {"entities": [{"name": "customer"}]}
+    request = _request(retries=1).model_copy(
+        update={
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "entities": {
+                        "type": "array",
+                        "items": {
+                            "type": "object",
+                            "properties": {"name": {"type": "string"}},
+                            "patternProperties": {"^x-": {"type": "string"}},
+                            "required": ["name"],
+                            "additionalProperties": False,
+                        },
+                    }
+                },
+                "required": ["entities"],
+                "additionalProperties": False,
+            }
+        }
+    )
+    executor = FakeExecutor(candidates=[invalid, valid])
+    validator = FakeValidator(outcomes=[()])
+
+    result = await ValidationRepairRunner(
+        executor=executor,
+        policy=_policy(),
+    ).run(request=request, validator=validator)
+
+    assert result.candidate == valid
+    assert validator.candidates == [valid]
+    repair = cast(dict[str, JsonValue], executor.requests[1].context)["repair"]
+    assert isinstance(repair, dict)
+    raw_issues = cast(list[dict[str, JsonValue]], repair["validation_issues"])
+    assert {
+        (issue["code"], tuple(cast(list[str | int], issue["path"])), issue["message"])
+        for issue in raw_issues
+    } == {
+        (
+            "candidate.output_schema_required",
+            ("entities", 0, "name"),
+            "A required output field is missing.",
+        ),
+        (
+            "candidate.output_schema_additional_property",
+            ("entities", 0, "unexpected"),
+            "The output contains a field that the schema does not allow.",
+        ),
+    }
+    assert secret_value not in json.dumps(raw_issues, sort_keys=True)
+    assert patterned_secret_value not in json.dumps(raw_issues, sort_keys=True)
+
+
+@pytest.mark.asyncio
+async def test_invalid_output_schema_pattern_fails_without_executing_the_agent() -> None:
+    executor = FakeExecutor(candidates=[{"unexpected": "candidate-value"}])
+    request = _request().model_copy(
+        update={
+            "output_schema": {
+                "type": "object",
+                "patternProperties": {"[": {"type": "string"}},
+                "additionalProperties": False,
+            }
+        }
+    )
+
+    with pytest.raises(AgentCandidateValidationError):
+        await ValidationRepairRunner(executor=executor, policy=_policy()).run(
+            request=request,
+            validator=FakeValidator(outcomes=[()]),
+        )
+
+    assert executor.requests == []
+
+
+@pytest.mark.asyncio
+async def test_output_schema_bound_issues_are_value_free() -> None:
+    invalid: JsonValue = {
+        "short": "sek",
+        "long": "secret-candidate-value",
+        "low": -999,
+        "high": 999,
+    }
+    valid: JsonValue = {"short": "valid", "long": "ok", "low": 11, "high": 9}
+    request = _request(retries=1).model_copy(
+        update={
+            "output_schema": {
+                "type": "object",
+                "properties": {
+                    "short": {"type": "string", "minLength": 5},
+                    "long": {"type": "string", "maxLength": 2},
+                    "low": {"type": "number", "exclusiveMinimum": 10},
+                    "high": {"type": "number", "exclusiveMaximum": 10},
+                },
+                "required": ["short", "long", "low", "high"],
+                "additionalProperties": False,
+            }
+        }
+    )
+    executor = FakeExecutor(candidates=[invalid, valid])
+    validator = FakeValidator(outcomes=[()])
+
+    await ValidationRepairRunner(executor=executor, policy=_policy()).run(
+        request=request,
+        validator=validator,
+    )
+
+    repair = cast(dict[str, JsonValue], executor.requests[1].context)["repair"]
+    assert isinstance(repair, dict)
+    raw_issues = cast(list[dict[str, JsonValue]], repair["validation_issues"])
+    assert {
+        (issue["code"], tuple(cast(list[str | int], issue["path"])), issue["message"])
+        for issue in raw_issues
+    } == {
+        (
+            "candidate.output_schema_string_bound",
+            ("short",),
+            "The output string is shorter than the allowed minimum.",
+        ),
+        (
+            "candidate.output_schema_string_bound",
+            ("long",),
+            "The output string exceeds the allowed maximum length.",
+        ),
+        (
+            "candidate.output_schema_number_bound",
+            ("low",),
+            "The output number is not above the exclusive minimum.",
+        ),
+        (
+            "candidate.output_schema_number_bound",
+            ("high",),
+            "The output number is not below the exclusive maximum.",
+        ),
+    }
+    serialized_issues = json.dumps(raw_issues, sort_keys=True)
+    for candidate_value in ("sek", "secret-candidate-value", "-999", "999"):
+        assert candidate_value not in serialized_issues
+
+
+def test_agent_envelope_budget_counts_the_shared_output_contract_instruction() -> None:
+    request = _request()
+    envelope = cast(
+        JsonValue,
+        {
+            "system": f"{request.system_prompt}\n\n{AGENT_OUTPUT_CONTRACT_INSTRUCTION}",
+            "input": {
+                "instruction": request.instruction_prompt,
+                "context": request.context,
+                "required_output_schema": request.output_schema,
+            },
+            "tools": [],
+        },
+    )
+
+    expected = len(
+        json.dumps(
+            envelope,
+            ensure_ascii=False,
+            allow_nan=False,
+            separators=(",", ":"),
+            sort_keys=True,
+        ).encode("utf-8")
+    )
+
+    assert agent_request_envelope_bytes(request) == expected
+
+
+@pytest.mark.asyncio
 async def test_context_limit_applies_to_the_complete_outbound_envelope() -> None:
     context: JsonValue = {"scope": ["x" * 100]}
     context_bytes = len(
@@ -188,9 +399,7 @@ async def test_context_limit_applies_to_the_complete_outbound_envelope() -> None
         path=("entities", 0, "name"),
         message="Every entity requires a name.",
     )
-    executor = FakeExecutor(
-        candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}]
-    )
+    executor = FakeExecutor(candidates=[{"entities": [{}]}, {"entities": [{"name": "customer"}]}])
 
     with pytest.raises(AgentContextTooLargeError):
         await ValidationRepairRunner(
@@ -245,7 +454,7 @@ async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
 
     result = await ValidationRepairRunner(
         executor=executor,
-        policy=_policy(one_shot_bytes=700),
+        policy=_policy(one_shot_bytes=1000),
     ).run(
         request=_request(retries=1),
         validator=FakeValidator(outcomes=[(issue,), ()]),
@@ -279,10 +488,7 @@ async def test_repair_gives_each_adapter_attempt_a_fresh_original_context() -> N
     )
 
     assert result.attempt_count == 2
-    assert [
-        cast(dict[str, JsonValue], item)["original_context"]
-        for item in executor.requests
-    ] == [
+    assert [cast(dict[str, JsonValue], item)["original_context"] for item in executor.requests] == [
         {"scope": [1, 2]},
         {"scope": [1, 2]},
     ]
@@ -310,9 +516,7 @@ async def test_validation_exhaustion_fails_loudly_without_returning_candidate() 
 
 
 @pytest.mark.asyncio
-async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> (
-    None
-):
+async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback() -> None:
     executor = FakeExecutor(candidates=[{}])
     validator = FakeValidator(outcomes=[()])
 

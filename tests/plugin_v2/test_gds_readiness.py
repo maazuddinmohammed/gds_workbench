@@ -5,6 +5,8 @@ import json
 import subprocess
 from pathlib import Path
 
+import pytest
+from gds_etl_workbench.domain.modeling_records import ValidationCheckRecord
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HELPER = (
@@ -56,7 +58,7 @@ def _write_snapshot(
             "properties": {},
             "required": [],
             "x-gds-change-set-eligible": not (
-                area == "model" and name == "model_scope"
+                area == "model" and name in {"model_scope", "qa_authoring_context"}
             ),
             "x-gds-canonical-key": key,
         }
@@ -161,6 +163,13 @@ def write_ready_snapshots(
     dimensional_source_eligible: bool = True,
     dimensional_target_eligible: bool = True,
     policies_present: bool = True,
+    include_generated_code: bool = True,
+    include_qa_authoring_context: bool = True,
+    duplicate_qa_authoring_context: bool = False,
+    qa_references_generated_code: bool | None = None,
+    include_profile: bool = False,
+    profile_attribute_name: str = "CustomerId",
+    include_unmapped_silver_attribute: bool = False,
 ) -> None:
     source = _physical("source", "Customer")
     silver = _physical("silver", "CustomerSilver")
@@ -177,7 +186,14 @@ def write_ready_snapshots(
             "silver_object": (OBJECT_KEY, [silver]),
             "silver_attribute": (
                 [*OBJECT_KEY, "attribute_name"],
-                [_attribute(silver, "CustomerId")],
+                [
+                    _attribute(silver, "CustomerId"),
+                    *(
+                        [_attribute(silver, "Name")]
+                        if include_unmapped_silver_attribute
+                        else []
+                    ),
+                ],
             ),
             "gold_object": (OBJECT_KEY, [gold]),
             "gold_attribute": (
@@ -249,6 +265,50 @@ def write_ready_snapshots(
         },
         "object_mapping_status": "active",
     }
+    generated_code = {
+        **{field: silver[field] for field in OBJECT_KEY},
+        "modeled_entity_type": "logical_entity",
+        "artifact_type": "sql_file",
+        "generated_code_content": "SELECT 1",
+        "mapping_context_digest": "1" * 64,
+        "source_context_digest": "2" * 64,
+        "generated_code_digest": hashlib.sha256(b"SELECT 1").hexdigest(),
+        "generated_code_status": "active",
+        "generated_code_is_locked": False,
+    }
+    references_generated_code = (
+        include_generated_code
+        if qa_references_generated_code is None
+        else qa_references_generated_code
+    )
+    current_code_references = (
+        [
+            {
+                **{field: generated_code[field] for field in OBJECT_KEY},
+                "modeled_entity_type": generated_code["modeled_entity_type"],
+                "artifact_type": generated_code["artifact_type"],
+                "generated_code_digest": generated_code["generated_code_digest"],
+            }
+        ]
+        if references_generated_code
+        else []
+    )
+    qa_authoring_context = {
+        "tenant_code": "TENANT_A",
+        "system_code": "SOURCE",
+        "mapping_context_digest": "3" * 64,
+        "code_context_digest": "4" * 64 if current_code_references else None,
+        "mapping_target_count": 1,
+        "current_code_target_count": len(current_code_references),
+        "current_code_references": current_code_references,
+    }
+    qa_authoring_contexts = (
+        [qa_authoring_context, dict(qa_authoring_context)]
+        if duplicate_qa_authoring_context
+        else [qa_authoring_context]
+    )
+    if not include_qa_authoring_context:
+        qa_authoring_contexts = []
     _write_snapshot(
         session,
         "model",
@@ -276,6 +336,30 @@ def write_ready_snapshots(
                 ],
             ),
             "model_scope": (OBJECT_KEY, scope),
+            "profiling_profile": (
+                [*OBJECT_KEY, "attribute_name"],
+                [
+                    {
+                        **{field: source[field] for field in OBJECT_KEY},
+                        "attribute_name": profile_attribute_name,
+                        "row_count": 10,
+                        "non_null_count": 10,
+                        "null_count": 0,
+                        "blank_count": 0,
+                        "distinct_count": 10,
+                        "min_data_length": 1,
+                        "max_data_length": 2,
+                        "avg_data_length": "1.500000",
+                        "percent_populated": "100.0000",
+                        "percent_duplicates": "0.0000",
+                        "percent_null": "0.0000",
+                        "percent_blank": "0.0000",
+                        "percent_distinct": "100.0000",
+                    }
+                ]
+                if include_profile
+                else [],
+            ),
             "logical_entity": (
                 ["logical_entity_name"],
                 [
@@ -384,6 +468,27 @@ def write_ready_snapshots(
                 if include_mappings
                 else [],
             ),
+            "generated_code": (
+                OBJECT_KEY,
+                [generated_code] if include_generated_code else [],
+            ),
+            "qa_authoring_context": (
+                ["tenant_code", "system_code"],
+                qa_authoring_contexts,
+            ),
+            "validation_group": (
+                ["tenant_code", "system_code", "validation_group_name"],
+                [],
+            ),
+            "validation_check": (
+                [
+                    "tenant_code",
+                    "system_code",
+                    "validation_group_name",
+                    "validation_check_name",
+                ],
+                [],
+            ),
         },
     )
 
@@ -392,6 +497,190 @@ def initialized_session(tmp_path: Path) -> Path:
     result = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     assert result.returncode == 0, result.stderr
     return Path(json.loads(result.stdout)["path"])
+
+
+def _validation_check(
+    result_type: str,
+    comparison_value: str,
+) -> dict[str, object]:
+    return {
+        "tenant_code": "TENANT_A",
+        "system_code": "SOURCE",
+        "validation_group_name": "literal-parity",
+        "validation_check_name": "literal-parity",
+        "validation_check_description": None,
+        "validation_category_code": "technical.literal",
+        "validation_severity": "blocking",
+        "validation_query_sql": "SELECT 1",
+        "validation_comparison_query_sql": None,
+        "validation_result_data_type": result_type,
+        "validation_comparison_operator": "equal",
+        "validation_comparison_value_type": "literal",
+        "validation_comparison_value": comparison_value,
+        "is_active": True,
+    }
+
+
+def _validate_local_qa_literal(
+    tmp_path: Path,
+    result_type: str,
+    comparison_value: str,
+) -> dict[str, object]:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate QA literal",
+        "--plan",
+        '["Validate QA literal against the server contract"]',
+    )
+    assert added.returncode == 0, added.stderr
+    changes = {
+        "validation_group": [
+            {
+                "tenant_code": "TENANT_A",
+                "system_code": "SOURCE",
+                "validation_group_name": "literal-parity",
+                "validation_group_description": None,
+                "mapping_context_digest": "3" * 64,
+                "code_context_digest": "4" * 64,
+                "is_active": True,
+            }
+        ],
+        "validation_check": [_validation_check(result_type, comparison_value)],
+    }
+    written = run_helper(
+        "upsert-batch",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--changes",
+        json.dumps(changes, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+
+    assert written.returncode == 0, written.stderr
+    assert validated.returncode == 0, validated.stderr
+    return json.loads(validated.stdout)
+
+
+def test_qa_plugin_scenario_reaches_digest_bound_local_acceptance(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    expected_contract = json.loads(
+        (
+            REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "tool-contract.json"
+        ).read_text()
+    )
+    compatible = run_helper(
+        "contract-check",
+        "--actual",
+        json.dumps(expected_contract, separators=(",", ":")),
+    )
+    readiness = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["SOURCE"]',
+    )
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Author QA",
+        "--plan",
+        '["Inputs: model=model-snapshot-01@8","Author QA","Review and validate"]',
+    )
+    check = _validation_check("integer", "1")
+    check["validation_comparison_value"] = 1
+    changes = {
+        "validation_group": [
+            {
+                "tenant_code": "TENANT_A",
+                "system_code": "SOURCE",
+                "validation_group_name": "literal-parity",
+                "validation_group_description": None,
+                "mapping_context_digest": "3" * 64,
+                "code_context_digest": "4" * 64,
+                "is_active": True,
+            }
+        ],
+        "validation_check": [check],
+    }
+    written = run_helper(
+        "upsert-batch",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--changes",
+        json.dumps(changes, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    assert compatible.returncode == 0, compatible.stderr
+    assert json.loads(compatible.stdout)["compatible"] is True
+    assert readiness.returncode == 0, readiness.stderr
+    assert json.loads(readiness.stdout)["ready"] is True
+    assert added.returncode == 0, added.stderr
+    assert written.returncode == 0, written.stderr
+
+    digest = json.loads(written.stdout)["digest"]
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--digest",
+        digest,
+    )
+    status = run_helper("status", "--session", str(session))
+
+    assert validated.returncode == 0, validated.stderr
+    assert json.loads(validated.stdout)["valid"] is True
+    assert accepted.returncode == 0, accepted.stderr
+    assert json.loads(status.stdout)["current"][3] == "ready"
+
+
+def test_session_sql_policy_is_absent_then_persisted_and_reused(tmp_path: Path) -> None:
+    session = initialized_session(tmp_path)
+
+    before = run_helper("status", "--session", str(session))
+    selected = run_helper(
+        "sql-policy", "--session", str(session), "--policy", "essential"
+    )
+    after = run_helper("status", "--session", str(session))
+    invalid = run_helper(
+        "sql-policy", "--session", str(session), "--policy", "sometimes"
+    )
+
+    assert before.returncode == 0, before.stderr
+    assert json.loads(before.stdout)["sql_policy"] is None
+    assert selected.returncode == 0, selected.stderr
+    assert json.loads(selected.stdout) == {"sql_policy": "essential"}
+    assert after.returncode == 0, after.stderr
+    assert json.loads(after.stdout)["sql_policy"] == "essential"
+    assert json.loads((session / "session.json").read_text())["sql"] == "essential"
+    assert invalid.returncode != 0
+    assert "never, essential, or as_needed" in invalid.stderr
 
 
 def _mapping_materialization_proof(
@@ -436,6 +725,71 @@ def _proof_units(*pairs: tuple[int, int]) -> str:
         ],
         separators=(",", ":"),
     )
+
+
+@pytest.mark.parametrize("proof_kind", ("mapping", "generator"))
+def test_proof_sidecars_and_readiness_units_can_exceed_256(
+    tmp_path: Path,
+    proof_kind: str,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    if proof_kind == "mapping":
+        command = "mapping-proof"
+        target = "logical-mapping"
+        sidecar = session / "tasks" / ".mapping-proofs.json"
+        proof_factory = _mapping_materialization_proof
+    else:
+        command = "generator-proof"
+        target = "logical-code"
+        sidecar = session / "tasks" / ".generator-proofs.json"
+        proof_factory = _generator_document_proof
+
+    records = []
+    pairs = []
+    for target_object_id in range(1, 257):
+        source_system_id = 1_000 + target_object_id
+        proof = proof_factory()
+        proof["target_object_id"] = target_object_id
+        proof["source_system_id"] = source_system_id
+        records.append(
+            {
+                "target": target,
+                "model_snapshot_id": "model-snapshot-01",
+                "proof": proof,
+            }
+        )
+        pairs.append((target_object_id, source_system_id))
+    sidecar.write_text(json.dumps(records, separators=(",", ":")))
+
+    final_proof = proof_factory()
+    final_proof["target_object_id"] = 257
+    final_proof["source_system_id"] = 1_257
+    bound = run_helper(
+        command,
+        "--session",
+        str(session),
+        "--target",
+        target,
+        "--proof",
+        json.dumps(final_proof, separators=(",", ":")),
+    )
+
+    assert bound.returncode == 0, bound.stderr
+    stored = json.loads(sidecar.read_text())
+    assert len(stored) == 257
+    pairs.append((257, 1_257))
+    ready = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        target,
+        "--proof-units",
+        _proof_units(*pairs),
+    )
+    assert ready.returncode == 0, ready.stderr
+    assert json.loads(ready.stdout)["ready"] is True
 
 
 def test_mapping_readiness_requires_bound_server_materialization_proof(
@@ -736,7 +1090,7 @@ def test_generator_proof_rejects_a_different_model_revision(tmp_path: Path) -> N
     assert not (session / "tasks" / ".generator-proofs.json").exists()
 
 
-def test_readiness_supports_all_eight_targets_without_returning_rows(
+def test_readiness_supports_all_nine_targets_without_returning_rows(
     tmp_path: Path,
 ) -> None:
     session = initialized_session(tmp_path)
@@ -750,11 +1104,15 @@ def test_readiness_supports_all_eight_targets_without_returning_rows(
         "gold-registration",
         "dimensional-mapping",
         "dimensional-code",
+        "qa",
     )
 
     outputs = {}
     for target in targets:
-        result = run_helper("readiness", "--session", str(session), "--target", target)
+        arguments = ["readiness", "--session", str(session), "--target", target]
+        if target == "qa":
+            arguments.extend(("--system-codes", '["SOURCE"]'))
+        result = run_helper(*arguments)
         assert result.returncode == 0, result.stderr
         outputs[target] = json.loads(result.stdout)
         assert outputs[target]["target"] == target
@@ -773,6 +1131,386 @@ def test_readiness_supports_all_eight_targets_without_returning_rows(
     assert ["generator_contract_unavailable", 1] in outputs["dimensional-code"][
         "blockers"
     ]
+    assert outputs["qa"]["ready"] is True
+    assert outputs["qa"]["counts"] == {
+        "selected_systems": 1,
+        "mapped_systems": 1,
+        "mapping_targets": 1,
+        "code_artifacts": 1,
+        "validation_groups": 0,
+        "validation_checks": 0,
+    }
+
+
+def test_qa_readiness_uses_exact_system_scope_and_code_is_optional(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session, include_generated_code=False)
+
+    result = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '[" source "]',
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["ready"] is True
+    assert output["counts"]["mapped_systems"] == 1
+    assert output["counts"]["code_artifacts"] == 0
+
+
+def test_qa_readiness_counts_only_trusted_current_code_references(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(
+        session,
+        include_generated_code=True,
+        qa_references_generated_code=False,
+    )
+
+    result = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["SOURCE"]',
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["ready"] is True
+    assert output["counts"]["code_artifacts"] == 0
+
+
+def test_qa_readiness_reports_missing_or_ambiguous_trusted_context(
+    tmp_path: Path,
+) -> None:
+    outputs = {}
+    for name, settings in (
+        ("missing", {"include_qa_authoring_context": False}),
+        ("ambiguous", {"duplicate_qa_authoring_context": True}),
+    ):
+        session = initialized_session(tmp_path / name)
+        write_ready_snapshots(session, **settings)
+        result = run_helper(
+            "readiness",
+            "--session",
+            str(session),
+            "--target",
+            "qa",
+            "--system-codes",
+            '["SOURCE"]',
+        )
+        assert result.returncode == 0, result.stderr
+        outputs[name] = json.loads(result.stdout)
+
+    assert ["qa_authoring_context_missing", 1] in outputs["missing"]["blockers"]
+    assert ["qa_authoring_context_missing", ["SOURCE"]] in outputs["missing"][
+        "examples"
+    ]
+    assert ["qa_authoring_context_ambiguous", 1] in outputs["ambiguous"]["blockers"]
+    assert ["qa_authoring_context_ambiguous", ["SOURCE"]] in outputs["ambiguous"][
+        "examples"
+    ]
+    assert all(output["ready"] is False for output in outputs.values())
+    assert all(
+        "exactly one trusted QA authoring context" in output["resolution_prompt"]
+        for output in outputs.values()
+    )
+
+
+def test_qa_readiness_reports_each_selected_system_without_complete_mapping(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+
+    result = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["SOURCE","ERP"]',
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["ready"] is False
+    assert ["qa_mapping_missing", 1] in output["blockers"]
+    assert ["qa_mapping_missing", ["ERP"]] in output["examples"]
+    assert "every selected System" in output["resolution_prompt"]
+
+
+def test_qa_readiness_preserves_requested_system_order_in_examples(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session, duplicate_qa_authoring_context=True)
+
+    result = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["ERP","SOURCE","CRM"]',
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["blockers"] == [
+        ["qa_authoring_context_missing", 2],
+        ["qa_authoring_context_ambiguous", 1],
+        ["qa_mapping_missing", 2],
+    ]
+    assert output["examples"] == [
+        ["qa_authoring_context_missing", ["ERP"]],
+        ["qa_authoring_context_ambiguous", ["SOURCE"]],
+        ["qa_authoring_context_missing", ["CRM"]],
+        ["qa_mapping_missing", ["ERP"]],
+        ["qa_mapping_missing", ["CRM"]],
+    ]
+
+
+def test_qa_readiness_rejects_case_insensitive_duplicate_or_oversized_scope(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+
+    duplicate = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["SOURCE","source"]',
+    )
+    oversized = run_helper(
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        json.dumps([f"S{index}" for index in range(1001)]),
+    )
+
+    assert duplicate.returncode != 0
+    assert "unique case-insensitively" in duplicate.stderr
+    assert oversized.returncode != 0
+    assert "1..1000" in oversized.stderr
+
+
+def test_local_model_validation_enforces_generated_code_and_qa_policies(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Author QA",
+        "--plan",
+        '["Inputs: model=model-snapshot-01@8","Author governed Code and QA"]',
+    )
+    assert added.returncode == 0, added.stderr
+    changes = {
+        "generated_code": [
+            {
+                "tenant_code": "TENANT_A",
+                "system_code": "SILVER",
+                "connection_code": "MAIN",
+                "object_schema": "silver",
+                "object_name": "CustomerSilver",
+                "modeled_entity_type": "logical_entity",
+                "artifact_type": "sql_file",
+                "generated_code_content": "SELECT 1",
+                "mapping_context_digest": "1" * 64,
+                "source_context_digest": "2" * 64,
+                "generated_code_digest": "0" * 64,
+                "generated_code_status": "active",
+                "generated_code_is_locked": False,
+            }
+        ],
+        "validation_check": [
+            {
+                "tenant_code": "TENANT_A",
+                "system_code": "SOURCE",
+                "validation_group_name": "missing-parent",
+                "validation_check_name": "query-runs",
+                "validation_check_description": None,
+                "validation_category_code": "technical.execution",
+                "validation_severity": "blocking",
+                "validation_query_sql": "SELECT 1",
+                "validation_comparison_query_sql": None,
+                "validation_result_data_type": "integer",
+                "validation_comparison_operator": "executes_successfully",
+                "validation_comparison_value_type": "none",
+                "validation_comparison_value": None,
+                "is_active": True,
+            }
+        ],
+    }
+    written = run_helper(
+        "upsert-batch",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--changes",
+        json.dumps(changes, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+
+    assert written.returncode == 0, written.stderr
+    assert validated.returncode == 0, validated.stderr
+    output = json.loads(validated.stdout)
+    assert output["valid"] is False
+    serialized = json.dumps(output["issues"])
+    assert "Generated Code digest does not match its content" in serialized
+    assert "Validation assertion shape is invalid" in serialized
+    assert "Referenced record is not present" in serialized
+
+
+def test_local_qa_date_literal_matches_server_calendar_validation(
+    tmp_path: Path,
+) -> None:
+    check = _validation_check("date", "2026-02-30")
+    with pytest.raises(ValueError, match="comparison value does not match"):
+        ValidationCheckRecord.model_validate(check, strict=True)
+
+    output = _validate_local_qa_literal(tmp_path, "date", "2026-02-30")
+    assert output["valid"] is False
+    assert any(
+        issue[0] == "validation_check"
+        and "Validation comparison value does not match its result type" in issue[2]
+        for issue in output["issues"]
+    )
+
+
+def test_local_qa_timestamp_literal_matches_server_calendar_validation(
+    tmp_path: Path,
+) -> None:
+    value = "2026-02-30T10:30:00Z"
+    check = _validation_check("timestamp", value)
+    with pytest.raises(ValueError, match="comparison value does not match"):
+        ValidationCheckRecord.model_validate(check, strict=True)
+
+    output = _validate_local_qa_literal(tmp_path, "timestamp", value)
+
+    assert output["valid"] is False
+    assert any(
+        issue[0] == "validation_check"
+        and "Validation comparison value does not match its result type" in issue[2]
+        for issue in output["issues"]
+    )
+
+
+def test_local_qa_date_literal_accepts_server_basic_iso_format(
+    tmp_path: Path,
+) -> None:
+    value = "20260831"
+    ValidationCheckRecord.model_validate(_validation_check("date", value), strict=True)
+
+    output = _validate_local_qa_literal(tmp_path, "date", value)
+
+    assert output["valid"] is True
+
+
+def test_local_qa_date_literal_accepts_server_iso_week_format(
+    tmp_path: Path,
+) -> None:
+    value = "2026-W36-1"
+    ValidationCheckRecord.model_validate(_validation_check("date", value), strict=True)
+
+    output = _validate_local_qa_literal(tmp_path, "date", value)
+
+    assert output["valid"] is True
+
+
+def test_local_qa_timestamp_literal_rejects_non_iso_server_input(
+    tmp_path: Path,
+) -> None:
+    value = "08/31/2026 10:30:00"
+    with pytest.raises(ValueError, match="comparison value does not match"):
+        ValidationCheckRecord.model_validate(
+            _validation_check("timestamp", value),
+            strict=True,
+        )
+
+    output = _validate_local_qa_literal(tmp_path, "timestamp", value)
+
+    assert output["valid"] is False
+
+
+@pytest.mark.parametrize(
+    ("result_type", "value"),
+    (
+        ("date", "2024-02-29"),
+        ("date", "20240229"),
+        ("date", "2024-W09-4"),
+        ("date", "2024W094"),
+        ("date", "2024-W09"),
+        ("date", "2023-02-29"),
+        ("date", "2024-W54-1"),
+        ("date", "2024-060"),
+        ("date", "0000-01-01"),
+        ("date", "2026-08-31\n"),
+        ("timestamp", "2026-08-31"),
+        ("timestamp", "20260831"),
+        ("timestamp", "2026-W36-1T10:30:00Z"),
+        ("timestamp", "2026W361T103000Z"),
+        ("timestamp", "2026-08-31 10:30:00"),
+        ("timestamp", "2026-08-31😀10:30:00"),
+        ("timestamp", "2026-08-31T24:00:00"),
+        ("timestamp", "9999-12-31T24:00:00"),
+        ("timestamp", "2026-08-31T10:30:00+05:30:15.5"),
+        ("timestamp", "2026-08-31T10:30:00+05:60"),
+        ("timestamp", "2026-08-31T10:30:00+24:00"),
+        ("timestamp", "2026-08-31T10:30.5"),
+        ("timestamp", "2026-08-31T"),
+        ("timestamp", "2026-02-30T10:30:00Z"),
+        ("timestamp", "08/31/2026 10:30:00"),
+        ("timestamp", "2026-08-31T10:30:00Z\n"),
+    ),
+)
+def test_local_qa_iso_literal_matrix_matches_server(
+    tmp_path: Path,
+    result_type: str,
+    value: str,
+) -> None:
+    try:
+        ValidationCheckRecord.model_validate(
+            _validation_check(result_type, value),
+            strict=True,
+        )
+        server_valid = True
+    except ValueError:
+        server_valid = False
+
+    output = _validate_local_qa_literal(tmp_path, result_type, value)
+
+    assert output["valid"] is server_valid
 
 
 def test_code_readiness_prompts_for_required_applied_mapping(tmp_path: Path) -> None:
@@ -806,6 +1544,156 @@ def test_logical_build_uses_only_bronze_eligible_scope(tmp_path: Path) -> None:
     assert output["counts"]["scoped_objects"] == 1
     assert not any(
         blocker[0] == "catalog_object_missing" for blocker in output["blockers"]
+    )
+
+
+@pytest.mark.parametrize(
+    ("include_profile", "profile_attribute_name", "profiled", "unprofiled"),
+    (
+        (False, "CustomerId", 0, 1),
+        (True, "CustomerId", 1, 0),
+        (True, "MissingAttribute", 0, 1),
+    ),
+)
+def test_logical_build_reports_bounded_profile_coverage(
+    tmp_path: Path,
+    include_profile: bool,
+    profile_attribute_name: str,
+    profiled: int,
+    unprofiled: int,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(
+        session,
+        include_profile=include_profile,
+        profile_attribute_name=profile_attribute_name,
+    )
+
+    result = run_helper(
+        "readiness", "--session", str(session), "--target", "logical-build"
+    )
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["ready"] is True
+    assert output["counts"] == {
+        "scoped_objects": 1,
+        "scoped_attributes": 1,
+        "profiled_attributes": profiled,
+        "unprofiled_attributes": unprofiled,
+        "catalog_objects": 3,
+        "attributes": 3,
+    }
+
+
+def test_local_model_validation_rejects_missing_physical_attribute(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate Profile Attribute",
+        "--plan",
+        '["Validate exact physical Attribute references"]',
+    )
+    assert added.returncode == 0, added.stderr
+    source = _physical("source", "Customer")
+    profile = {
+        **{field: source[field] for field in OBJECT_KEY},
+        "attribute_name": "MissingAttribute",
+        "row_count": 1,
+        "non_null_count": 1,
+        "null_count": 0,
+    }
+    written = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "profiling_profile",
+        "--record",
+        json.dumps(profile, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+
+    assert written.returncode == 0, written.stderr
+    assert validated.returncode == 0, validated.stderr
+    output = json.loads(validated.stdout)
+    assert output["valid"] is False
+    assert any(
+        issue[0] == "profiling_profile"
+        and "model_scope_reference_invalid" in issue[2]
+        and "eligible Bronze source" in issue[2]
+        for issue in output["issues"]
+    )
+
+
+def test_local_model_validation_rejects_unmapped_silver_sibling_attribute(
+    tmp_path: Path,
+) -> None:
+    session = initialized_session(tmp_path)
+    write_ready_snapshots(session, include_unmapped_silver_attribute=True)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate Dimensional Attribute",
+        "--plan",
+        '["Validate applied Logical Mapping Attribute eligibility"]',
+    )
+    assert added.returncode == 0, added.stderr
+    silver = _physical("silver", "CustomerSilver")
+    dimensional_attribute = {
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_attribute_name": "Name",
+        "dimensional_attribute_status": "active",
+        "sources": [
+            {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                    **{field: silver[field] for field in OBJECT_KEY},
+                    "attribute_name": "Name",
+                },
+            }
+        ],
+    }
+    written = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "dimensional_attribute",
+        "--record",
+        json.dumps(dimensional_attribute, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+
+    assert written.returncode == 0, written.stderr
+    assert validated.returncode == 0, validated.stderr
+    output = json.loads(validated.stdout)
+    assert output["valid"] is False
+    assert any(
+        issue[0] == "dimensional_attribute"
+        and "model_scope_reference_invalid" in issue[2]
+        and "applied Logical Mapping" in issue[2]
+        for issue in output["issues"]
     )
 
 

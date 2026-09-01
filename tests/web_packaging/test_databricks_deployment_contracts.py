@@ -98,8 +98,6 @@ def test_bundle_grants_only_required_app_resources() -> None:
     assert "deployment/**" in bundle
     assert "artifacts/**" in bundle
     assert "plugins/**" in bundle
-    assert "IMPLEMENTATION_PLAN.md" in bundle
-    assert "web_app/prototypes/**" in bundle
 
 
 def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
@@ -131,6 +129,24 @@ def test_root_manifests_are_locked_hybrid_app_inputs() -> None:
         node_project["scripts"]["build"]
         == "npm run build --workspace=gds-workbench-web"
     )
+
+
+def test_noneditable_mcp_dependency_rebuilds_when_its_source_changes() -> None:
+    backend_project = tomllib.loads(
+        (ROOT / "web_app" / "backend" / "pyproject.toml").read_text(encoding="utf-8")
+    )
+    mcp_project = tomllib.loads(
+        (ROOT / "mcp_server" / "pyproject.toml").read_text(encoding="utf-8")
+    )
+
+    assert backend_project["tool"]["uv"]["sources"]["gds-etl-workbench-mcp"] == {
+        "path": "../../mcp_server",
+        "editable": False,
+    }
+    assert mcp_project["tool"]["uv"]["cache-keys"] == [
+        {"file": "pyproject.toml"},
+        {"file": "gds_etl_workbench/**/*.py"},
+    ]
 
 
 def test_frontend_build_dependencies_are_available_in_production() -> None:

@@ -18,6 +18,7 @@ from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.tools.snapshots.dataset_description import (
     DatasetColumnDescription,
+    compact_authoring_schema,
 )
 
 from .archive import build_dataset_document
@@ -42,6 +43,7 @@ class MetadataDatasetDependency(ContractModel):
 
 class DescribeMetadataDatasetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
+    detail: Literal["compact", "full"]
     dataset: MetadataDataset
     record_type: str
     section: Literal["foundational", "reference", "operational"]
@@ -50,8 +52,9 @@ class DescribeMetadataDatasetResult(ContractModel):
     references: list[MetadataDatasetReference]
     dependencies: list[MetadataDatasetDependency]
     population_rules: tuple[str, ...]
-    columns: tuple[DatasetColumnDescription, ...]
-    dataset_schema: dict[str, object]
+    authoring_schema: dict[str, object]
+    columns: tuple[DatasetColumnDescription, ...] | None
+    dataset_schema: dict[str, object] | None
 
 
 class MetadataDatasetToolError(Exception):
@@ -66,10 +69,10 @@ def register_describe_metadata_dataset_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Describe one Metadata Snapshot dataset from the server's shared contract. "
-            "Returns each column's meaning, population guidance, accepted values or "
-            "reference source, examples, and its exact JSON Schema; never returns "
-            "physical rows."
+            "Describe one Metadata Snapshot dataset for agent authoring. Compact detail is "
+            "the default and omits duplicated column cards plus validator-owned nested "
+            "schemas. Full detail additionally returns every column card and the exact JSON "
+            "Schema. Neither mode returns physical rows."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -83,6 +86,7 @@ def register_describe_metadata_dataset_tool(
     async def describe_metadata_dataset(
         ctx: Context[None],
         dataset: MetadataDataset,
+        detail: Literal["compact", "full"] = "compact",
         schema_version: Literal["1.0"] = "1.0",
     ) -> DescribeMetadataDatasetResult:
         del schema_version
@@ -96,6 +100,7 @@ def register_describe_metadata_dataset_tool(
             )
             dataset_document = build_dataset_document(definition)
             return DescribeMetadataDatasetResult(
+                detail=detail,
                 dataset=definition.name,
                 record_type=definition.record_type,
                 section=definition.section.value,
@@ -122,8 +127,9 @@ def register_describe_metadata_dataset_tool(
                     for record_type in dependency_record_types
                 ],
                 population_rules=dataset_document.description.population_rules,
-                columns=dataset_document.description.columns,
-                dataset_schema=dataset_document.schema,
+                authoring_schema=compact_authoring_schema(dataset_document.schema),
+                columns=(dataset_document.description.columns if detail == "full" else None),
+                dataset_schema=(dataset_document.schema if detail == "full" else None),
             )
         except AuthenticationError as error:
             raise MetadataDatasetToolError(f"{error.public_code}: {error.message}") from None
@@ -138,7 +144,7 @@ def register_describe_metadata_dataset_tool(
         "describe_metadata_dataset",
         policy=ToolPolicy.TENANT_READ,
         summarize_input=_audit_input,
-        retain_arguments={"dataset", "schema_version"},
+        retain_arguments={"dataset", "detail", "schema_version"},
     )
 
 
@@ -146,6 +152,11 @@ def _audit_input(arguments: Mapping[str, Any]) -> dict[str, str]:
     raw_dataset = arguments.get("dataset")
     return {
         "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
+        "detail": (
+            arguments.get("detail", "compact")
+            if arguments.get("detail", "compact") in {"compact", "full"}
+            else "invalid"
+        ),
         "dataset": (
             raw_dataset
             if isinstance(raw_dataset, str) and raw_dataset in DATASETS_BY_NAME

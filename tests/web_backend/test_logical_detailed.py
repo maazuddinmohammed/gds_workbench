@@ -13,6 +13,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
+from jsonschema import Draft202012Validator
 from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
@@ -630,6 +631,34 @@ async def test_entity_detail_preserves_sources_and_exact_many_to_many_membership
     cast(dict[str, JsonValue], incomplete["entity"])["submodels"] = []
     assert (await validator.validate(cast(JsonValue, incomplete))).issues[0].code == (
         "detailed.entity_detail_coverage_invalid"
+    )
+
+    cross_field_invalid = cast(
+        dict[str, JsonValue], json.loads(json.dumps(candidate))
+    )
+    invalid_attribute = cast(
+        list[dict[str, JsonValue]], cross_field_invalid["attributes"]
+    )[0]
+    invalid_attribute["logical_attribute_is_surrogate_key"] = True
+    schema = validator.output_schema()
+
+    assert tuple(
+        Draft202012Validator(schema).iter_errors(  # pyright: ignore[reportUnknownMemberType]
+            cross_field_invalid
+        )
+    ) == ()
+    issues = (
+        await validator.validate(cast(JsonValue, cross_field_invalid))
+    ).issues
+    assert len(issues) == 1
+    assert issues[0].code == "detailed.entity_detail_invalid"
+    assert issues[0].path == ("attributes", 0)
+
+    definitions = cast(dict[str, object], schema["$defs"])
+    attribute_schema = cast(dict[str, object], definitions["LogicalAttributeRecord"])
+    assert any(
+        "Natural and surrogate key flags are mutually exclusive" in rule
+        for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
     )
 
 

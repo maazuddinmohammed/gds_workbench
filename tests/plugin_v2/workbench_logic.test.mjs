@@ -697,6 +697,50 @@ test("model validation requires Bronze eligibility for physical evidence", () =>
   );
 });
 
+test("model validation requires exact active physical Attributes", () => {
+  const customer = {
+    tenant_code: "T",
+    system_code: "CRM",
+    connection_code: "MAIN",
+    object_schema: "sales",
+    object_name: "Customer",
+  };
+  const datasets = new Map([
+    [
+      "model_scope",
+      {
+        records: [{ ...customer, is_active: true, is_bronze_source_eligible: true }],
+      },
+    ],
+    [
+      "profiling_profile",
+      {
+        records: [{ ...customer, attribute_name: "MissingAttribute" }],
+        pending: [{ ...customer, attribute_name: "MissingAttribute" }],
+      },
+    ],
+  ]);
+  const metadata = new Map([
+    [
+      "source_attribute",
+      {
+        records: [{ ...customer, attribute_name: "CustomerId", is_active: true }],
+      },
+    ],
+  ]);
+
+  const issues = modelValidation.validateGraph(datasets, metadata);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "model_scope_reference_invalid" &&
+        issue.dataset === "profiling_profile" &&
+        issue.field === "attribute_name",
+    ),
+  );
+});
+
 test("model validation requires dimensional-source eligibility", () => {
   const silver = {
     tenant_code: "T",
@@ -752,6 +796,86 @@ test("model validation requires dimensional-source eligibility", () => {
   assert.deepEqual(
     invalidDatasets,
     new Set(["dimensional_entity", "dimensional_attribute"]),
+  );
+});
+
+test("model validation rejects an unmapped sibling Silver Attribute", () => {
+  const silver = {
+    tenant_code: "T",
+    system_code: "SILVER",
+    connection_code: "MAIN",
+    object_schema: "silver",
+    object_name: "Customer",
+  };
+  const mapped = {
+    ...silver,
+    attribute_name: "CustomerId",
+    source_system_code: "CRM",
+    modeled_entity_type: "logical_entity",
+    modeled_entity_name: "Customer",
+    modeled_attribute_name: "CustomerId",
+    attribute_mapping_status: "active",
+  };
+  const datasets = new Map([
+    [
+      "model_scope",
+      {
+        records: [{ ...silver, is_active: true, is_dimensional_source_eligible: true }],
+      },
+    ],
+    ["mapping_attribute", { records: [mapped], baseline: [mapped], pending: [] }],
+    [
+      "dimensional_attribute",
+      {
+        records: [
+          {
+            dimensional_entity_name: "Customer",
+            dimensional_attribute_name: "Name",
+            sources: [
+              {
+                support_source_type: "attribute",
+                source_attribute: { ...silver, attribute_name: "Name" },
+              },
+            ],
+          },
+        ],
+        pending: [
+          {
+            dimensional_entity_name: "Customer",
+            dimensional_attribute_name: "Name",
+            sources: [
+              {
+                support_source_type: "attribute",
+                source_attribute: { ...silver, attribute_name: "Name" },
+              },
+            ],
+          },
+        ],
+      },
+    ],
+  ]);
+  const metadata = new Map([
+    [
+      "silver_attribute",
+      {
+        records: [
+          { ...silver, attribute_name: "CustomerId", is_active: true },
+          { ...silver, attribute_name: "Name", is_active: true },
+        ],
+      },
+    ],
+  ]);
+
+  const issues = modelValidation.validateGraph(datasets, metadata);
+
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "model_scope_reference_invalid" &&
+        issue.dataset === "dimensional_attribute" &&
+        issue.field === "source_attribute" &&
+        issue.message.includes("applied Logical Mapping"),
+    ),
   );
 });
 
@@ -1140,4 +1264,118 @@ test("model validation enforces remaining local record policies", () => {
   ]) {
     assert.ok(fields.has(field), field);
   }
+});
+
+test("model validation checks QA context digests and upstream apply order", () => {
+  const expectedMappingDigest = "a".repeat(64);
+  const datasets = new Map([
+    [
+      "qa_authoring_context",
+      {
+        records: [
+          {
+            tenant_code: "TENANT",
+            system_code: "CRM",
+            mapping_context_digest: expectedMappingDigest,
+            code_context_digest: null,
+          },
+        ],
+      },
+    ],
+    [
+      "mapping_object",
+      {
+        records: [],
+        pending: [{ modeled_entity_type: "logical_entity" }],
+      },
+    ],
+    [
+      "generated_code",
+      {
+        records: [],
+        pending: [{ generated_code_content: "SELECT 1", generated_code_digest: "invalid" }],
+      },
+    ],
+    [
+      "validation_group",
+      {
+        records: [
+          {
+            tenant_code: "tenant",
+            system_code: "crm",
+            validation_group_name: "technical",
+            mapping_context_digest: "b".repeat(64),
+            code_context_digest: "c".repeat(64),
+            is_active: true,
+          },
+        ],
+        pending: [
+          {
+            tenant_code: "tenant",
+            system_code: "crm",
+            validation_group_name: "technical",
+            mapping_context_digest: "b".repeat(64),
+            code_context_digest: "c".repeat(64),
+            is_active: true,
+          },
+        ],
+      },
+    ],
+    ["validation_check", { records: [], pending: [] }],
+  ]);
+
+  const issues = modelValidation.validateGraph(datasets);
+  const fields = new Set(
+    issues
+      .filter((issue) => issue.code === "context_digest_invalid")
+      .map((issue) => issue.field),
+  );
+
+  assert.ok(fields.has("mapping_context_digest"));
+  assert.ok(fields.has("code_context_digest"));
+  assert.ok(
+    issues.some(
+      (issue) =>
+        issue.code === "context_order_invalid" && issue.dataset === "generated_code",
+    ),
+  );
+  assert.ok(
+    issues.some(
+      (issue) => issue.code === "context_order_invalid" && issue.dataset === "validation_group",
+    ),
+  );
+});
+
+test("model validation rejects changes to a locked applied record", () => {
+  const applied = {
+    conceptual_object_name: "Customer",
+    conceptual_object_definition: "A customer.",
+    conceptual_object_is_locked: true,
+  };
+  const changed = {
+    ...applied,
+    conceptual_object_definition: "Changed definition.",
+  };
+  const datasets = new Map([
+    [
+      "conceptual_object",
+      {
+        definition: {
+          name: "conceptual_object",
+          canonical_key: ["conceptual_object_name"],
+        },
+        baseline: [applied],
+        pending: [changed],
+        records: [changed],
+      },
+    ],
+  ]);
+
+  const issues = modelValidation.validateGraph(datasets);
+
+  assert.ok(
+    issues.some(
+      (issue) => issue.code === "record_locked" && issue.dataset === "conceptual_object",
+    ),
+  );
 });

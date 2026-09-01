@@ -255,12 +255,16 @@
         typeof state.model[1] !== "string" ||
         !state.model[1].trim() ||
         state.model[1].length > 255);
+    const invalidSqlPolicy =
+      state?.sql !== undefined &&
+      !new Set(["never", "essential", "as_needed"]).has(state.sql);
     if (
       !state ||
       typeof state !== "object" ||
       !Array.isArray(state.tasks) ||
       (state.current !== null && typeof state.current !== "string") ||
       invalidModel ||
+      invalidSqlPolicy ||
       state.tasks.some(
         (task) =>
           !Array.isArray(task) ||

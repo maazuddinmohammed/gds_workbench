@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   useInfiniteQuery,
@@ -25,7 +25,13 @@ import {
 
 type DraftWorkflow = Extract<
   ModelWorkflow,
-  "analysis" | "conceptual" | "logical" | "dimensional" | "mapping"
+  | "analysis"
+  | "conceptual"
+  | "logical"
+  | "dimensional"
+  | "mapping"
+  | "code_generation"
+  | "qa"
 >;
 
 const WORKFLOW_EVENT_PAGE_SIZE = 200;
@@ -50,6 +56,8 @@ export function WorkflowRunMonitor({
   onApplied: () => Promise<void>;
 }) {
   const queryClient = useQueryClient();
+  const monitorBodyId = useId();
+  const [expanded, setExpanded] = useState(focusRunId !== null || workflow === "analysis");
   const [selectedRunId, setSelectedRunId] = useState<number | null>(focusRunId);
   const [runIdInput, setRunIdInput] = useState(focusRunId === null ? "" : String(focusRunId));
   const [confirmApply, setConfirmApply] = useState(false);
@@ -76,6 +84,9 @@ export function WorkflowRunMonitor({
     applyIdempotencyKey.current = null;
     setSelectedRunId(focusRunId);
     setRunIdInput(focusRunId === null ? "" : String(focusRunId));
+    if (focusRunId !== null || workflow === "analysis") {
+      setExpanded(true);
+    }
     if (focusRunId !== null) {
       void queryClient.invalidateQueries({
         queryKey: workflowRunQueryKeys.recent(tenantId, modelId, workflow),
@@ -187,6 +198,7 @@ export function WorkflowRunMonitor({
         queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
         onApplied(),
       ]);
+      setExpanded(false);
     },
     onError: (error) => {
       if (!isAmbiguousTransportFailure(error)) applyIdempotencyKey.current = null;
@@ -215,32 +227,62 @@ export function WorkflowRunMonitor({
   };
 
   return (
-    <section className="workflow-run-monitor" aria-label={`${label} recent runs`}>
+    <section
+      className={`workflow-run-monitor${expanded ? "" : " is-collapsed"}`}
+      aria-label={`${label} recent runs`}
+    >
       <header className="workflow-run-monitor-header">
         <div>
           <small>Workflow activity</small>
           <h2>Recent {label} runs</h2>
+          {!expanded && recentRuns[0] ? (
+            <span
+              className="workflow-run-monitor-summary"
+              aria-label={`Latest ${label} run`}
+            >
+              <strong>Run {recentRuns[0].workflow_run_id}</strong>
+              <RunStateBadge state={recentRuns[0].workflow_run_state} />
+              {applyMutation.data?.workflow_run_id === recentRuns[0].workflow_run_id ? (
+                <span className="workflow-run-monitor-applied">Draft applied</span>
+              ) : null}
+            </span>
+          ) : null}
         </div>
-        <button
-          className="button button-secondary button-small"
-          type="button"
-          disabled={refreshing}
-          onClick={() => void refreshAll()}
-        >
-          {refreshing ? "Refreshing…" : "Refresh runs"}
-        </button>
+        <div className="workflow-run-monitor-actions">
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            disabled={refreshing}
+            onClick={() => void refreshAll()}
+          >
+            {refreshing ? "Refreshing…" : "Refresh runs"}
+          </button>
+          <button
+            className="button button-secondary button-small"
+            type="button"
+            aria-label={expanded
+              ? `Hide ${label} run activity`
+              : `Show ${label} run activity`}
+            aria-controls={monitorBodyId}
+            aria-expanded={expanded}
+            onClick={() => setExpanded((current) => !current)}
+          >
+            {expanded ? "Hide activity" : "Show activity"}
+          </button>
+        </div>
       </header>
 
-      {recentQuery.isPending ? (
-        <div className="surface-state compact" aria-busy="true">Loading recent runs…</div>
-      ) : recentQuery.isError ? (
-        <div className="surface-state is-error compact" role="alert">
-          Recent runs could not be loaded.
-        </div>
-      ) : recentRuns.length === 0 && selectedRunId === null ? (
-        <div className="empty-state compact">No recent {label} runs.</div>
-      ) : (
-        <div className="workflow-run-monitor-layout">
+      <div id={monitorBodyId} hidden={!expanded}>
+        {recentQuery.isPending ? (
+          <div className="surface-state compact" aria-busy="true">Loading recent runs…</div>
+        ) : recentQuery.isError ? (
+          <div className="surface-state is-error compact" role="alert">
+            Recent runs could not be loaded.
+          </div>
+        ) : recentRuns.length === 0 && selectedRunId === null ? (
+          <div className="empty-state compact">No recent {label} runs.</div>
+        ) : (
+          <div className="workflow-run-monitor-layout">
           <div className="workflow-run-browser">
             <form
               className="workflow-run-id-navigation"
@@ -331,8 +373,9 @@ export function WorkflowRunMonitor({
               />
             )}
           </div>
-        </div>
-      )}
+          </div>
+        )}
+      </div>
 
       {confirmApply && validatedDraft && canApply ? (
         <ApplyDraftConfirmation
@@ -774,6 +817,8 @@ function isDraftReviewExpired(review: WorkflowDraftReview | null): boolean {
 }
 
 function workflowLabel(workflow: DraftWorkflow): string {
+  if (workflow === "qa") return "QA";
+  if (workflow === "code_generation") return "Code Generation";
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }
 

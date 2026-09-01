@@ -38,6 +38,8 @@ def test_generic_mcp_mutations_reject_workflow_bound_change_sets(
         "logical_document": {},
         "dimensional_document": {},
         "mapping_document": {},
+        "code_generation_document": {},
+        "qa_document": {},
         "model_scope_document": {},
     }
 

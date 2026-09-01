@@ -16,6 +16,9 @@ from gds_workbench_api.features.code_generation.router import (
 from gds_workbench_api.features.code_generation.service import (
     CodeGenerationWorkflow,
 )
+from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
+    WorkflowChangeSetHandoffResult,
+)
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
@@ -110,10 +113,20 @@ class _Executor:
         workflow_run_id: int,
         expected_model_revision: int,
         workflow_run_claim_token: UUID,
-    ) -> None:
+    ) -> WorkflowChangeSetHandoffResult:
         del principal, tenant_id, model_id, workflow_run_id, expected_model_revision
         self.calls += 1
         self.claim_tokens.append(workflow_run_claim_token)
+        return WorkflowChangeSetHandoffResult(
+            model_id=18,
+            workflow_run_id=1048,
+            model_change_set_id=UUID("55555555-5555-5555-5555-555555555555"),
+            replayed=False,
+            draft_revision=1,
+            candidate_digest="a" * 64,
+            staged_record_count=1,
+            validated_at=datetime(2026, 8, 24, 10, tzinfo=UTC),
+        )
 
 
 def _client(service: _StaticCodeGenerationWorkflowService) -> TestClient:

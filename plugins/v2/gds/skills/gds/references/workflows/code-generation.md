@@ -1,22 +1,46 @@
 # Logical or Dimensional Code Generation
 
-This is a local-only workflow. Generate code only from the matching applied Mapping, and require every selected Mapping record to be active. It never creates a Model Change Set and never executes, uploads, deploys, or runs SQL.
+Require matching active applied Mapping. Default is `sql_file`; Python file or notebook needs
+explicit override. Apply stores Code and never executes, uploads, or deploys it.
 
-Default artifact type is `sql_file`; SQL dialect and target are Databricks. Use Python file or notebook only when the user explicitly overrides the artifact type.
+Before writing, load the `generated_code` dataset contract.
 
-- Logical route: `code/logical-to-silver/<SOURCE_SYSTEM>/<SCHEMA>.<TARGET>.sql`
-- Dimensional route: `code/dimensional-to-gold/<SOURCE_SYSTEM>/<SCHEMA>.<TARGET>.sql`
+For each target, enumerate active source Systems. Call `get_model_code_generation_document` per
+exact target/source pair with applied Model ID
+and route entity type. Use every `result.document` (`GeneratorDocumentV1`) directly in memory; never reconstruct it
+from names or database IDs. A raw Mapping package or generic JSON object is insufficient.
 
-Generate one deterministic file per target plus source System. Embed the Model revision and Mapping digest in its header. Require complete executable lineage, joins, filters, expressions, aggregations, dependency order, and write mode. If any is unresolved, block with a Resolution Prompt; never emit placeholder executable logic.
-
-Require the committed name-based `GeneratorDocumentV1` for every selected package. For each exact target Object plus source System pair, call `get_model_code_generation_document` with the applied Model ID and route entity type. The read-only tool derives and strictly validates the document from active applied Mapping; use `result.document` directly in memory. A raw ID-bearing Mapping package or generic JSON object is insufficient; never reconstruct it from names or database IDs.
-
-Bind only `result.proof` locally, then rerun readiness:
+Bind each `result.proof`, then rerun readiness with every pair in `--proof-units`:
 
 ```text
 generator-proof --session <session> --target logical-code|dimensional-code --proof <result.proof-JSON>
 ```
 
-Then rerun readiness with `--proof-units <[{target_object_id,source_system_id},...]-JSON>` containing every selected unit. Selected lists exactly its requested packages; Full lists every eligible package. Never omit a unit to make readiness pass. Each proof must match the current Model Snapshot ID/revision. Never persist the Generator document or raw tool result as proof. If the MCP tool is missing from the deployed runtime: “Ask the platform owner to deploy the latest MCP server,” then stop safely.
+All results for one target must agree on `target_mapping_context_digest` and
+`target_source_context_digest`. Copy those target digests—not legacy
+`mapping_context_digest`—into one complete `generated_code` record for that target Object.
+Hash the complete UTF-8 content into `generated_code_digest`. It has no Code-specific size
+cap and remains one logical artifact and record; oversized records use
+`server-handoff.md` fragment transport.
 
-The same digest is a no-op. For a different digest, show a diff before writing. If a file was manually customized, never overwrite it; create a reviewable proposal. Full covers all eligible packages; Selected covers exact requested packages. On completion set the task `done` and stop.
+Default GDS/Julius Databricks SQL may contain semicolon-separated statements and same-session
+temporary views. For a multi-System target, use the user-approved layout; the combined default is
+one isolated temporary-view branch per System followed by one aligned `UNION ALL`. Load
+`../examples/multi-system-target.sql` only for that case. Use a governed batch predicate/token when
+provided; never invent one. The final statement must match the target shape and natural key. Runtime
+performs the merge; never emit it.
+
+Process may contain one row per System pointing to this same artifact. Do not duplicate the artifact:
+runtime executes it once, parallelizes distinct safe same-order artifacts, and stops later orders on
+failure. An upstream/common target read can support a dependency; a target self-read may be a prior-state
+lookup. Never infer a rerun or execution order without Mapping, Process, or user evidence. The governed
+Model still stores one artifact per target Object; alternate external file layouts require an explicit task contract.
+
+Require complete lineage, joins, filters, expressions, aggregations, and dependency order.
+Unresolved executable logic blocks with a Resolution Prompt; never emit placeholders. When
+the MCP tool is missing: “Ask the platform owner to deploy the latest MCP server,” then stop.
+
+Compare against current Code. Same digest is a no-op; show changed content before writing and
+preserve locked records. Use complete explicit inactive records for intended deactivation,
+never omission. Stage `generated_code` only after Mapping Apply, follow governed Model gates,
+and stop after Model Apply.

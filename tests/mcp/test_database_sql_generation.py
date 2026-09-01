@@ -14,7 +14,7 @@ if TYPE_CHECKING:
 
 
 DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
-VERIFY_FILE = DATABASE_ROOT / "13_verify_install.sql"
+VERIFY_FILE = DATABASE_ROOT / "20_verify_install.sql"
 
 
 def _seed_demo_if_needed(postgres_database: DisposablePostgres) -> None:
@@ -529,6 +529,46 @@ def test_code_generation_target_context_aggregates_all_source_systems_once(
     assert rows[0]["attribute_mappings"] == 0
     assert len(rows[0]["mapping_context_digest"]) == 64
     assert rows[0]["source_context_digest"] == rows[0]["recomputed_source_digest"]
+
+
+def test_target_context_keeps_code_generation_sql_only_and_qa_artifact_neutral(
+    postgres_database: DisposablePostgres,
+) -> None:
+    target = _seed_complete_sql_mapping_target(postgres_database)
+
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE workflow.mapping_object
+               SET artifact_type = 'python_file'
+             WHERE model_id = %s
+            """,
+            (target["model_id"],),
+        )
+        code_generation_rows = connection.execute(
+            """
+            SELECT object_id
+              FROM workflow.list_code_generation_target_context(
+                       %s,
+                       'logical_entity'
+                   )
+            """,
+            (target["model_id"],),
+        ).fetchall()
+        qa_rows = connection.execute(
+            """
+            SELECT object_id
+              FROM workflow.list_code_generation_target_context(
+                       %s,
+                       'logical_entity',
+                       NULL
+                   )
+            """,
+            (target["model_id"],),
+        ).fetchall()
+
+    assert code_generation_rows == []
+    assert [row["object_id"] for row in qa_rows] == [target["object_id"]]
 
 
 def test_generated_sql_storage_uses_a_web_only_function_boundary(

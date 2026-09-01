@@ -32,6 +32,35 @@ from .contracts import (
     model_snapshot_records,
 )
 
+_SECTION_DESCRIPTIONS = {
+    "model_scope": "Model header and read-only physical Object scope.",
+    "profiling": "Applied Attribute profiles.",
+    "analysis": "Applied relationship analysis evidence.",
+    "assertion": "Applied source assertion documents and records.",
+    "conceptual": "Applied conceptual Objects and Relationships.",
+    "logical": "Applied logical Submodels, Entities, Attributes, and Relationships.",
+    "dimensional": "Applied dimensional Submodels, Entities, Attributes, and Relationships.",
+    "mapping": "Applied source-to-target Mapping and dependency records.",
+    "code_generation": "Applied complete Code Artifacts; Apply never executes or deploys them.",
+    "qa": (
+        "Trusted read-only QA authoring contexts plus applied Validation Groups and "
+        "deterministic Validation Checks; execution is separate."
+    ),
+}
+
+_SECTION_AUTHORING_PREREQUISITES: dict[str, dict[str, object]] = {
+    "code_generation": {
+        "required_applied_sections": ["mapping"],
+        "optional_applied_sections": [],
+        "successive_change_set_required": True,
+    },
+    "qa": {
+        "required_applied_sections": ["mapping"],
+        "optional_applied_sections": ["code_generation"],
+        "successive_change_set_required": True,
+    },
+}
+
 
 @dataclass(frozen=True, slots=True)
 class EncodedModelDataset:
@@ -82,15 +111,26 @@ def build_model_snapshot_archive(
             "Choose only the needed Model section and dataset.",
             "Search rows_file using the published canonical_key.",
             "Read schema_file before authoring Model Change Set records.",
+            "Follow each schema's x-gds authoring extensions and section prerequisites.",
         ],
         "sections": [
             {
                 "name": section,
+                "description": _SECTION_DESCRIPTIONS[section],
+                "authoring_prerequisites": _SECTION_AUTHORING_PREREQUISITES.get(
+                    section,
+                    {
+                        "required_applied_sections": [],
+                        "optional_applied_sections": [],
+                        "successive_change_set_required": False,
+                    },
+                ),
                 "datasets": [
                     {
                         "name": definition.name,
                         "row_count": encoded_by_name[definition.name].row_count,
                         "canonical_key": list(definition.canonical_key),
+                        "change_set_eligible": definition.change_set_eligible,
                         "schema_file": definition.schema_path,
                         "rows_file": definition.rows_path,
                     }

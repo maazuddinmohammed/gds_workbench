@@ -130,6 +130,43 @@ class LocalFakeAgentAdapter:
                     ]
                 },
             )
+        elif request.workflow == "qa" and request.stage == "validation_generation":
+            qa_context = detailed_original_context(request.context)
+            system_ref = qa_context.get("system_ref")
+            if not isinstance(system_ref, str):
+                raise InvalidRequestError(
+                    "The local fake does not support this agent execution path."
+                )
+            candidate = cast(
+                JsonValue,
+                {
+                    "system_ref": system_ref,
+                    "validation_groups": [
+                        {
+                            "validation_group_name": "technical_execution",
+                            "validation_group_description": (
+                                "Basic executable validation for the selected System."
+                            ),
+                            "validation_checks": [
+                                {
+                                    "validation_check_name": "validation_session_executes",
+                                    "validation_check_description": (
+                                        "Confirms the governed validation query executes."
+                                    ),
+                                    "validation_category_code": "technical.execution",
+                                    "validation_severity": "blocking",
+                                    "validation_query_sql": "SELECT 1",
+                                    "validation_comparison_query_sql": None,
+                                    "validation_result_data_type": None,
+                                    "validation_comparison_operator": ("executes_successfully"),
+                                    "validation_comparison_value_type": "none",
+                                    "validation_comparison_value": None,
+                                }
+                            ],
+                        }
+                    ],
+                },
+            )
         elif (
             request.workflow == "analysis_inference"
             and request.execution_mode == "detailed_coverage"

@@ -15,6 +15,7 @@ class WorkflowExecutionServices:
     dimensional: WorkflowExecutor
     mapping: WorkflowExecutor
     code_generation: WorkflowExecutor
+    qa: WorkflowExecutor
 
 
 class WorkflowExecutionDispatcher:
@@ -38,8 +39,10 @@ class WorkflowExecutionDispatcher:
             executor = self._services.dimensional
         elif claim.model_workflow == "mapping":
             executor = self._services.mapping
-        else:
+        elif claim.model_workflow == "code_generation":
             executor = self._services.code_generation
+        else:
+            executor = self._services.qa
 
         return await executor.execute_started(
             claim.principal,

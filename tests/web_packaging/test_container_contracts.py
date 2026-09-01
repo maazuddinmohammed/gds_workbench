@@ -100,7 +100,6 @@ def test_combined_image_context_excludes_local_and_generated_content() -> None:
         "tests",
         "web_app/compose.local.yaml",
         "web_app/local",
-        "web_app/prototypes",
     } <= set(ignored)
 
 
@@ -153,8 +152,9 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     expected = [
         path.name
         for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
-        if 1 <= int(path.name[:2]) <= 12
+        if path.name not in {"00_preflight.sql", "20_verify_install.sql"}
     ]
+    assert [int(name[:2]) for name in expected] == list(range(1, 20))
     release_block = re.search(
         r"release_files=\(\n(?P<files>.*?)\n\)", initializer, re.DOTALL
     )
@@ -167,7 +167,7 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
         == expected
     )
     assert "00_preflight.sql" in initializer
-    assert "13_verify_install.sql" in initializer
+    assert "20_verify_install.sql" in initializer
     assert "--single-transaction" in initializer
     assert "01_metadata_snapshot_demo.sql" in initializer
     assert "03_local_super_admin.template.sql" in initializer
@@ -186,7 +186,7 @@ def test_documented_fresh_install_matches_the_exact_canonical_database_release()
     expected = [
         path.name
         for path in sorted(DATABASE_ROOT.glob("[0-9][0-9]_*.sql"))
-        if 1 <= int(path.name[:2]) <= 12
+        if path.name not in {"00_preflight.sql", "20_verify_install.sql"}
     ]
     install_block = re.search(r"for file in \\\n(?P<files>.*?)\ndo", guide, re.DOTALL)
 
@@ -199,7 +199,7 @@ def test_documented_fresh_install_matches_the_exact_canonical_database_release()
     assert "\\password gds_web_runtime" in guide
     assert "database/seed/04_application_reference.sql" in guide
     assert "database/seed/05_global_prompt_defaults.template.sql" in guide
-    assert guide.index("database/13_verify_install.sql") < guide.index(
+    assert guide.index("database/20_verify_install.sql") < guide.index(
         "database/seed/04_application_reference.sql"
     )
     assert guide.index("database/seed/04_application_reference.sql") < guide.index(
@@ -290,7 +290,7 @@ def test_current_architecture_counts_match_checked_in_contracts() -> None:
     mcp_architecture = MCP_ARCHITECTURE.read_text(encoding="utf-8")
     tool_contract = json.loads(MCP_TOOL_CONTRACT.read_text(encoding="utf-8"))
 
-    assert "There are 93 tables" in database_architecture
+    assert "There are 99 tables" in database_architecture
     assert "defines three non-login, non-superuser group roles" in database_architecture
     assert "exact 32 secure `application` functions" in database_architecture
     assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture

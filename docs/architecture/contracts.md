@@ -3,6 +3,15 @@
 The scaffold exposes stateless Streamable HTTP at `/mcp`. Request and result
 models are immutable Pydantic models with unknown fields forbidden.
 
+## Transport envelope
+
+The MCP request body is limited to 2 MiB. A Model Stage Batch record chunk or
+decoded generated-Code JSON fragment is limited to 1 MiB; the larger request
+envelope leaves room for base64 and JSON-RPC framing. In `json_fragments` mode,
+Commit concatenates the ordered decoded bytes, validates the canonical JSON
+record array, and stages one complete `generated_code` record. Fragmentation is
+transport-only and does not impose a Code Artifact domain-size limit.
+
 ## `list_tenants`
 
 Policy: `tenant_read`

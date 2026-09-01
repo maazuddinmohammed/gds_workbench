@@ -33,6 +33,8 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentCandidateValidator,
     AgentValidationIssue,
+    enrich_agent_output_model_definitions,
+    parse_pydantic_candidate,
 )
 
 _REFERENCE_PATTERN = r"^[a-z][a-z0-9_]{0,99}$"
@@ -187,7 +189,14 @@ class DetailedObjectContributionValidator:
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         parsed = _parse(DetailedObjectContribution, candidate)
-        if parsed is None or not self._is_valid(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedObjectContribution,
+                candidate,
+                "detailed.object_contribution_invalid",
+                "The Object contribution is incomplete or outside its fixed source.",
+            )
+        if not self._is_valid(parsed):
             return _validation_issue(
                 "detailed.object_contribution_invalid",
                 "The Object contribution is incomplete or outside its fixed source.",
@@ -242,7 +251,9 @@ class DetailedEntityConsolidationValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         parsed = _parse(DetailedEntityConsolidation, candidate)
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedEntityConsolidation,
+                candidate,
                 "detailed.entity_consolidation_invalid",
                 "The entity consolidation does not match its bounded schema.",
             )
@@ -310,7 +321,9 @@ class DetailedEntityDetailValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         parsed = _parse(DetailedEntityDetail, candidate)
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedEntityDetail,
+                candidate,
                 "detailed.entity_detail_invalid",
                 "The detailed entity does not match its bounded schema.",
             )
@@ -352,7 +365,14 @@ class DetailedRelationshipRefinementValidator:
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         parsed = _parse(DetailedRelationshipRefinement, candidate)
-        if parsed is None or not self._is_valid(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedRelationshipRefinement,
+                candidate,
+                "detailed.relationship_refinement_invalid",
+                "The relationship package refinement is incomplete or mismatched.",
+            )
+        if not self._is_valid(parsed):
             return _validation_issue(
                 "detailed.relationship_refinement_invalid",
                 "The relationship package refinement is incomplete or mismatched.",
@@ -406,7 +426,9 @@ class DetailedReconciliationValidator:
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
         parsed = _parse(DetailedReconciliationCandidate, candidate)
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedReconciliationCandidate,
+                candidate,
                 "detailed.reconciliation_invalid",
                 "The final reconciliation does not match its bounded schema.",
             )
@@ -602,7 +624,33 @@ def _materialize(candidate: DetailedReconciliationCandidate) -> JsonValue:
 
 
 def _output_schema(model: type[BaseModel]) -> dict[str, JsonValue]:
-    return cast(dict[str, JsonValue], deepcopy(model.model_json_schema()))
+    schema = cast(dict[str, JsonValue], deepcopy(model.model_json_schema()))
+    enrich_agent_output_model_definitions(schema)
+    return schema
+
+
+def _parse_failure_validation(
+    model: type[BaseModel],
+    candidate: JsonValue,
+    fallback_code: str,
+    fallback_message: str,
+) -> AgentCandidateValidation:
+    _, issues = parse_pydantic_candidate(model, candidate)
+    cross_field_issues = tuple(
+        issue for issue in issues if issue.code == "candidate.cross_field_invalid"
+    )
+    if cross_field_issues:
+        return AgentCandidateValidation(
+            issues=tuple(
+                AgentValidationIssue(
+                    code=fallback_code,
+                    path=issue.path,
+                    message=issue.message,
+                )
+                for issue in cross_field_issues
+            )
+        )
+    return _validation_issue(fallback_code, fallback_message)
 
 
 def _validation_issue(code: str, message: str) -> AgentCandidateValidation:

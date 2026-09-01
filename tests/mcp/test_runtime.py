@@ -38,6 +38,9 @@ from gds_etl_workbench.runtime import (
 from gds_etl_workbench.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
+from gds_etl_workbench.tools.snapshots.dataset_description import (
+    compact_authoring_schema,
+)
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotArchive,
     build_dataset_document,
@@ -47,6 +50,7 @@ from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import (
+    CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
 )
 
@@ -287,6 +291,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "get_model_dbml",
         "describe_metadata_dataset",
         "get_metadata_snapshot",
+        "get_server_contract",
     ]
     tools_by_name = {tool.name: tool for tool in tools.tools}
     generator = tools_by_name["get_model_code_generation_document"]
@@ -388,7 +393,7 @@ async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes()
     tools = {tool.name: tool for tool in listed.tools}
     schemas = {name: tool.input_schema for name, tool in tools.items()}
     expected = list(MODEL_DATASETS_BY_NAME)
-    writable = [dataset for dataset in expected if dataset != "model_scope"]
+    writable = list(CHANGE_SET_DATASETS_BY_NAME)
     assert (
         schemas["stage_model_change_set"]["$defs"]["ModelChangeSetDataset"]["enum"]
         == writable
@@ -442,8 +447,12 @@ async def test_describe_model_scope_marks_it_read_only_for_mcp() -> None:
     assert result.structured_content is not None
     assert result.structured_content["change_set_eligible"] is False
     assert (
-        result.structured_content["record_schema"]["x-gds-change-set-eligible"] is False
+        result.structured_content["authoring_schema"]["x-gds-change-set-eligible"]
+        is False
     )
+    assert result.structured_content["detail"] == "compact"
+    assert result.structured_content["columns"] is None
+    assert result.structured_content["record_schema"] is None
     assert "read-only" in " ".join(result.structured_content["usage"]).lower()
 
 
@@ -456,7 +465,7 @@ async def test_describe_metadata_dataset_returns_the_exact_generated_contract() 
     async with Client(server) as client:
         result = await client.call_tool(
             "describe_metadata_dataset",
-            {"dataset": "copy_group"},
+            {"dataset": "copy_group", "detail": "full"},
         )
 
     assert result.is_error is False
@@ -464,6 +473,7 @@ async def test_describe_metadata_dataset_returns_the_exact_generated_contract() 
     dataset_schema = build_dataset_document(DATASETS_BY_NAME["copy_group"]).schema
     assert result.structured_content == {
         "schema_version": "1.0",
+        "detail": "full",
         "dataset": "copy_group",
         "record_type": "copy_group",
         "section": "operational",
@@ -488,11 +498,13 @@ async def test_describe_metadata_dataset_returns_the_exact_generated_contract() 
             {"record_type": "system", "datasets": ["system"]},
         ],
         "population_rules": dataset_schema["x-gds-population-rules"],
+        "authoring_schema": compact_authoring_schema(dataset_schema),
         "columns": dataset_schema["x-gds-columns"],
         "dataset_schema": dataset_schema,
     }
     assert database.audit_records[0].input_metadata == {
         "schema_version": "1.0",
+        "detail": "full",
         "dataset": "copy_group",
     }
 
@@ -639,7 +651,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 60
+    assert ready_body["tool_count"] == 61
     fingerprint = ready_body["tool_contract_sha256"]
     assert len(fingerprint) == 64
     assert all(character in "0123456789abcdef" for character in fingerprint)

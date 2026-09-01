@@ -39,6 +39,8 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidationError,
     AgentCandidateValidator,
     AgentValidationIssue,
+    enrich_agent_output_model_definitions,
+    parse_pydantic_candidate,
 )
 
 _REFERENCE_PATTERN = r"^[a-z][a-z0-9_]{0,99}$"
@@ -399,7 +401,14 @@ class DetailedDimensionalTopologyContributionValidator:
             candidate,
             maximum_bytes=self._max_result_bytes,
         )
-        if parsed is None or not self._has_fixed_identity(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedDimensionalTopologyContribution,
+                candidate,
+                "detailed.topology_contribution_invalid",
+                "The topology contribution is incomplete or outside its fixed Object.",
+            )
+        if not self._has_fixed_identity(parsed):
             return _validation_issue(
                 "detailed.topology_contribution_invalid",
                 "The topology contribution is incomplete or outside its fixed Object.",
@@ -479,7 +488,9 @@ class DetailedDimensionalTopologyReconciliationValidator:
             maximum_bytes=self._max_result_bytes,
         )
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedDimensionalTopologyReconciliation,
+                candidate,
                 "detailed.topology_reconciliation_invalid",
                 "The Dimensional topology reconciliation does not match its bounded schema.",
             )
@@ -621,7 +632,9 @@ class DetailedDimensionalEntityDetailValidator:
             maximum_bytes=self._max_result_bytes,
         )
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedDimensionalEntityDetail,
+                candidate,
                 "detailed.entity_detail_invalid",
                 "The Dimensional Entity detail does not match its bounded schema.",
             )
@@ -798,7 +811,9 @@ class DetailedDimensionalReconciliationValidator:
             maximum_bytes=self._max_result_bytes,
         )
         if parsed is None:
-            return _validation_issue(
+            return _parse_failure_validation(
+                DetailedDimensionalReconciliationCandidate,
+                candidate,
                 "detailed.reconciliation_invalid",
                 "The Dimensional whole-model reconciliation does not match its bounded schema.",
             )
@@ -941,7 +956,14 @@ class DetailedDimensionalReconciliationReceiptValidator:
             candidate,
             maximum_bytes=self._max_result_bytes,
         )
-        if parsed is None or not self._has_exact_coverage(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedDimensionalReconciliationReceipt,
+                candidate,
+                "detailed.reconciliation_receipt_invalid",
+                "The Dimensional reconciliation receipt must preserve its exact manifest.",
+            )
+        if not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.reconciliation_receipt_invalid",
                 "The Dimensional reconciliation receipt must preserve its exact manifest.",
@@ -1028,7 +1050,14 @@ class DetailedDimensionalValidationWorkerValidator:
             candidate,
             maximum_bytes=self._max_result_bytes,
         )
-        if parsed is None or not self._has_exact_coverage(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedDimensionalValidationWorkerResult,
+                candidate,
+                "detailed.validation_worker_coverage_invalid",
+                "The Dimensional validator worker must review its complete bounded package.",
+            )
+        if not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_worker_coverage_invalid",
                 "The Dimensional validator worker must review its complete bounded package.",
@@ -1091,7 +1120,14 @@ class DetailedDimensionalValidationLeadValidator:
             candidate,
             maximum_bytes=self._max_result_bytes,
         )
-        if parsed is None or not self._has_exact_coverage(parsed):
+        if parsed is None:
+            return _parse_failure_validation(
+                DetailedDimensionalValidationLead,
+                candidate,
+                "detailed.validation_lead_coverage_invalid",
+                "The Dimensional validator lead must reconcile every package and finding once.",
+            )
+        if not self._has_exact_coverage(parsed):
             return _validation_issue(
                 "detailed.validation_lead_coverage_invalid",
                 "The Dimensional validator lead must reconcile every package and finding once.",
@@ -2047,7 +2083,33 @@ def _parse[CandidateT: BaseModel](
 
 
 def _output_schema(model: type[BaseModel]) -> dict[str, JsonValue]:
-    return cast(dict[str, JsonValue], deepcopy(model.model_json_schema()))
+    schema = cast(dict[str, JsonValue], deepcopy(model.model_json_schema()))
+    enrich_agent_output_model_definitions(schema)
+    return schema
+
+
+def _parse_failure_validation(
+    model: type[BaseModel],
+    candidate: JsonValue,
+    fallback_code: str,
+    fallback_message: str,
+) -> AgentCandidateValidation:
+    _, issues = parse_pydantic_candidate(model, candidate)
+    cross_field_issues = tuple(
+        issue for issue in issues if issue.code == "candidate.cross_field_invalid"
+    )
+    if cross_field_issues:
+        return AgentCandidateValidation(
+            issues=tuple(
+                AgentValidationIssue(
+                    code=fallback_code,
+                    path=issue.path,
+                    message=issue.message,
+                )
+                for issue in cross_field_issues
+            )
+        )
+    return _validation_issue(fallback_code, fallback_message)
 
 
 def _validation_issue(code: str, message: str) -> AgentCandidateValidation:

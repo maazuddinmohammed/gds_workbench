@@ -1,16 +1,21 @@
 from __future__ import annotations
 
-import json
 import hashlib
+import json
 import os
 import shutil
 import subprocess
 from pathlib import Path
 
 import pytest
-
-from test_gds_readiness import write_ready_snapshots
-
+from gds_etl_workbench.domain.modeling_records import ValidationCheckRecord
+from test_gds_readiness import (
+    _generator_document_proof,
+    _mapping_materialization_proof,
+    _proof_units,
+    _validation_check,
+    write_ready_snapshots,
+)
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 SKILL_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "skills" / "gds"
@@ -887,6 +892,18 @@ def test_powershell_fallback_is_native_local_only_and_command_compatible() -> No
     assert "Test-JsonNumber $maximum" in source
 
 
+def test_powershell_proof_sidecars_have_no_artificial_unit_cap() -> None:
+    source = HELPER.read_text()
+
+    for fragment in (
+        "1..256 exact target/source pairs",
+        "$units.Count -gt 256",
+        "$records.Count -gt 256",
+        "server proof limit exceeded",
+    ):
+        assert fragment not in source
+
+
 def test_powershell_registration_allows_optional_model_policies_to_be_absent() -> None:
     source = HELPER.read_text()
 
@@ -928,6 +945,31 @@ def test_powershell_readiness_uses_scope_eligibility_flags() -> None:
     assert "$eligibleSources" in source
 
 
+def test_powershell_logical_readiness_reports_profile_coverage() -> None:
+    source = HELPER.read_text()
+
+    assert "function Get-ReadinessAttributeKey" in source
+    for field in (
+        "scoped_attributes",
+        "profiled_attributes",
+        "unprofiled_attributes",
+    ):
+        assert field in source
+
+
+def test_powershell_model_validation_uses_exact_metadata_attributes() -> None:
+    source = HELPER.read_text()
+
+    assert "function Get-ModelPhysicalAttributeKey" in source
+    assert "foreach ($zone in @('source', 'bronze', 'silver', 'gold'))" in source
+    assert "$zone + '_attribute'" in source
+    assert "$PhysicalAttributes.ContainsKey" in source
+    assert "function Get-ModelBaselineRecords" in source
+    assert "$appliedLogicalMappingAttributes" in source
+    assert "$mappingMissing" in source
+    assert "Baseline = $baseline" in source
+
+
 def test_powershell_model_validator_enforces_scope_eligibility() -> None:
     source = HELPER.read_text()
 
@@ -936,9 +978,29 @@ def test_powershell_model_validator_enforces_scope_eligibility() -> None:
         "Referenced physical Attribute is not an eligible Bronze source.",
         "Referenced physical Object is not an eligible Silver contribution from applied Logical Mapping.",
         "Referenced physical Attribute is not an eligible Silver contribution from applied Logical Mapping.",
-        "Referenced Mapping target is not eligible for its modeled layer.",
+        "Referenced Mapping target Object is not eligible for its modeled layer.",
+        "Referenced Mapping target Attribute is not eligible for its modeled layer.",
     ):
         assert message in source
+
+
+def test_powershell_model_validator_covers_generated_code_and_qa() -> None:
+    source = HELPER.read_text()
+
+    for text in (
+        "Generated Code contains an unsupported control character.",
+        "Generated Code digest does not match its content.",
+        "Validation assertion shape is invalid.",
+        "Validation comparison value does not match its result type.",
+        "An active Validation Check requires an active Validation Group.",
+        "function Get-QaReadiness",
+        "function Get-SelectedSystemCodes",
+        "function Set-SqlPolicy",
+        "function Get-IsoDateParts",
+        "function Test-IsoTimestamp",
+    ):
+        assert text in source
+    assert "409600" not in source
 
 
 def test_powershell_allows_model_details_but_not_model_scope_mutation() -> None:
@@ -975,6 +1037,127 @@ def test_powershell_registration_optional_policies_match_javascript(
     assert output["ready"] is True
     assert all(blocker[0] != "policy_missing" for blocker in output["blockers"])
     assert output == json.loads(javascript.stdout)
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+@pytest.mark.parametrize(
+    ("include_profile", "profile_attribute_name"),
+    (
+        (False, "CustomerId"),
+        (True, "CustomerId"),
+        (True, "MissingAttribute"),
+    ),
+)
+def test_powershell_profile_coverage_matches_javascript(
+    tmp_path: Path,
+    include_profile: bool,
+    profile_attribute_name: str,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(
+        session,
+        include_profile=include_profile,
+        profile_attribute_name=profile_attribute_name,
+    )
+    arguments = (
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "logical-build",
+    )
+
+    powershell = run_powershell(*arguments)
+    javascript = run_javascript(*arguments)
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert javascript.returncode == 0, javascript.stderr
+    assert json.loads(powershell.stdout) == json.loads(javascript.stdout)
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+@pytest.mark.parametrize("proof_kind", ("mapping", "generator"))
+def test_powershell_proof_sidecars_over_256_match_javascript(
+    tmp_path: Path,
+    proof_kind: str,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session)
+    if proof_kind == "mapping":
+        command = "mapping-proof"
+        target = "logical-mapping"
+        sidecar = session / "tasks" / ".mapping-proofs.json"
+        proof_factory = _mapping_materialization_proof
+    else:
+        command = "generator-proof"
+        target = "logical-code"
+        sidecar = session / "tasks" / ".generator-proofs.json"
+        proof_factory = _generator_document_proof
+
+    records = []
+    pairs = []
+    for target_object_id in range(1, 257):
+        source_system_id = 1_000 + target_object_id
+        proof = proof_factory()
+        proof["target_object_id"] = target_object_id
+        proof["source_system_id"] = source_system_id
+        records.append(
+            {
+                "target": target,
+                "model_snapshot_id": "model-snapshot-01",
+                "proof": proof,
+            }
+        )
+        pairs.append((target_object_id, source_system_id))
+    sidecar.write_text(json.dumps(records, separators=(",", ":")))
+
+    final_proof = proof_factory()
+    final_proof["target_object_id"] = 257
+    final_proof["source_system_id"] = 1_257
+    bind_arguments = (
+        command,
+        "--session",
+        str(session),
+        "--target",
+        target,
+        "--proof",
+        json.dumps(final_proof, separators=(",", ":")),
+    )
+    powershell_bound = run_powershell(*bind_arguments)
+    javascript_bound = run_javascript(*bind_arguments)
+
+    assert powershell_bound.returncode == 0, powershell_bound.stderr
+    assert javascript_bound.returncode == 0, javascript_bound.stderr
+    assert json.loads(powershell_bound.stdout) == json.loads(javascript_bound.stdout)
+    assert len(json.loads(sidecar.read_text())) == 257
+    pairs.append((257, 1_257))
+    readiness_arguments = (
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        target,
+        "--proof-units",
+        _proof_units(*pairs),
+    )
+    powershell_ready = run_powershell(*readiness_arguments)
+    javascript_ready = run_javascript(*readiness_arguments)
+    assert powershell_ready.returncode == 0, powershell_ready.stderr
+    assert javascript_ready.returncode == 0, javascript_ready.stderr
+    assert json.loads(powershell_ready.stdout) == json.loads(javascript_ready.stdout)
+    assert json.loads(powershell_ready.stdout)["ready"] is True
 
 
 @pytest.mark.skipif(
@@ -1037,6 +1220,388 @@ def test_powershell_scope_eligibility_matches_javascript(
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )
+def test_powershell_exact_physical_attribute_validation_matches_javascript(
+    tmp_path: Path,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session)
+    added = run_powershell(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate Profile Attribute",
+        "--plan",
+        '["Validate exact physical Attribute references"]',
+    )
+    assert added.returncode == 0, added.stderr
+    profile = {
+        "tenant_code": "TENANT_A",
+        "system_code": "SOURCE",
+        "connection_code": "MAIN",
+        "object_schema": "source",
+        "object_name": "Customer",
+        "attribute_name": "MissingAttribute",
+        "row_count": 1,
+        "non_null_count": 1,
+        "null_count": 0,
+    }
+    upserted = run_powershell(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "profiling_profile",
+        "--record",
+        json.dumps(profile, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    assert upserted.returncode == 0, upserted.stderr
+
+    powershell = run_powershell("validate", "--session", str(session), "--area", "model")
+    javascript = run_javascript("validate", "--session", str(session), "--area", "model")
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert javascript.returncode == 0, javascript.stderr
+    assert json.loads(powershell.stdout) == json.loads(javascript.stdout)
+    assert json.loads(powershell.stdout)["valid"] is False
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+def test_powershell_approve_reviewed_matches_javascript(tmp_path: Path) -> None:
+    sessions: dict[str, Path] = {}
+    outputs: dict[str, dict[str, object]] = {}
+    for name, runner in (("powershell", run_powershell), ("javascript", run_javascript)):
+        initialized = runner(
+            "session-init",
+            "--root",
+            str(tmp_path / name),
+            "--tenant",
+            "TENANT_A",
+        )
+        assert initialized.returncode == 0, initialized.stderr
+        session = Path(json.loads(initialized.stdout)["path"])
+        sessions[name] = session
+        write_ready_snapshots(session)
+        added = runner(
+            "task-add",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--title",
+            "Approve reviewed records",
+            "--plan",
+            '["Author","Review","Approve"]',
+        )
+        assert added.returncode == 0, added.stderr
+        record = {
+            "logical_entity_name": "Reviewed Customer",
+            "logical_entity_status": "needs_review",
+            "sources": [{"status": "needs_review", "note": "needs_review"}],
+            "payload": {"status": "needs_review", "custom_status": "needs_review"},
+            "is_active": False,
+        }
+        written = runner(
+            "upsert",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--dataset",
+            "logical_entity",
+            "--record",
+            json.dumps(record, separators=(",", ":")),
+            "--expected-digest",
+            "empty",
+        )
+        assert written.returncode == 0, written.stderr
+        digest = json.loads(written.stdout)["digest"]
+        approved = runner(
+            "approve-reviewed",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--reviewed",
+            "true",
+            "--expected-digest",
+            digest,
+        )
+        assert approved.returncode == 0, approved.stderr
+        outputs[name] = json.loads(approved.stdout)
+
+    assert outputs["powershell"] == outputs["javascript"]
+    for name in ("powershell", "javascript"):
+        records = json.loads(
+            (sessions[name] / "model-change-set" / "logical_entity.json").read_text()
+        )
+        reviewed = next(
+            record
+            for record in records
+            if record["logical_entity_name"] == "Reviewed Customer"
+        )
+        assert reviewed["logical_entity_status"] == "active"
+        assert reviewed["sources"][0] == {
+            "status": "active",
+            "note": "needs_review",
+        }
+        assert reviewed["payload"] == {
+            "status": "needs_review",
+            "custom_status": "needs_review",
+        }
+        assert reviewed["is_active"] is False
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+def test_powershell_unmapped_silver_attribute_matches_javascript(
+    tmp_path: Path,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session, include_unmapped_silver_attribute=True)
+    added = run_powershell(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate Dimensional Attribute",
+        "--plan",
+        '["Validate applied Logical Mapping Attribute eligibility"]',
+    )
+    assert added.returncode == 0, added.stderr
+    record = {
+        "dimensional_entity_name": "DimCustomer",
+        "dimensional_attribute_name": "Name",
+        "dimensional_attribute_status": "active",
+        "sources": [
+            {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                    "tenant_code": "TENANT_A",
+                    "system_code": "SILVER",
+                    "connection_code": "MAIN",
+                    "object_schema": "silver",
+                    "object_name": "CustomerSilver",
+                    "attribute_name": "Name",
+                },
+            }
+        ],
+    }
+    upserted = run_powershell(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "dimensional_attribute",
+        "--record",
+        json.dumps(record, separators=(",", ":")),
+        "--expected-digest",
+        "empty",
+    )
+    assert upserted.returncode == 0, upserted.stderr
+
+    powershell = run_powershell("validate", "--session", str(session), "--area", "model")
+    javascript = run_javascript("validate", "--session", str(session), "--area", "model")
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert javascript.returncode == 0, javascript.stderr
+    assert json.loads(powershell.stdout) == json.loads(javascript.stdout)
+    assert any(
+        issue[0] == "dimensional_attribute" and "applied Logical Mapping" in issue[2]
+        for issue in json.loads(powershell.stdout)["issues"]
+    )
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+def test_powershell_qa_iso_literals_match_server_and_javascript(
+    tmp_path: Path,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session)
+    added = run_powershell(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate QA ISO literals",
+        "--plan",
+        '["Validate QA literals against the server contract"]',
+    )
+    assert added.returncode == 0, added.stderr
+
+    cases = (
+        ("date", "20260831"),
+        ("date", "2026-W36-1"),
+        ("date", "2026-02-30"),
+        ("date", "2026-243"),
+        ("timestamp", "2026W361T103000Z"),
+        ("timestamp", "2026-08-31😀10:30:00"),
+        ("timestamp", "2026-08-31T24:00:00"),
+        ("timestamp", "9999-12-31T24:00:00"),
+        ("timestamp", "2026-08-31T10:30:00+05:60"),
+        ("timestamp", "2026-08-31T10:30:00+24:00"),
+        ("timestamp", "2026-08-31T10:30.5"),
+        ("timestamp", "08/31/2026 10:30:00"),
+        ("timestamp", "2026-08-31T10:30:00Z\n"),
+    )
+    expected_digest = "empty"
+    for result_type, value in cases:
+        check = _validation_check(result_type, value)
+        try:
+            ValidationCheckRecord.model_validate(check, strict=True)
+            server_valid = True
+        except ValueError:
+            server_valid = False
+        changes = {
+            "validation_group": [
+                {
+                    "tenant_code": "TENANT_A",
+                    "system_code": "SOURCE",
+                    "validation_group_name": "literal-parity",
+                    "validation_group_description": None,
+                    "mapping_context_digest": "3" * 64,
+                    "code_context_digest": "4" * 64,
+                    "is_active": True,
+                }
+            ],
+            "validation_check": [check],
+        }
+        written = run_javascript(
+            "upsert-batch",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--changes",
+            json.dumps(changes, separators=(",", ":")),
+            "--expected-digest",
+            expected_digest,
+        )
+        assert written.returncode == 0, written.stderr
+        expected_digest = json.loads(written.stdout)["digest"]
+
+        arguments = ("validate", "--session", str(session), "--area", "model")
+        powershell = run_powershell(*arguments)
+        javascript = run_javascript(*arguments)
+
+        assert powershell.returncode == 0, powershell.stderr
+        assert javascript.returncode == 0, javascript.stderr
+        output = json.loads(powershell.stdout)
+        assert output == json.loads(javascript.stdout)
+        assert output["valid"] is server_valid
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+@pytest.mark.parametrize(
+    "settings",
+    (
+        {"include_generated_code": False},
+        {"include_qa_authoring_context": False},
+        {"duplicate_qa_authoring_context": True},
+        {"qa_references_generated_code": False},
+    ),
+    ids=("no-code", "missing-context", "ambiguous-context", "stale-raw-code"),
+)
+def test_powershell_qa_readiness_matches_javascript(
+    tmp_path: Path,
+    settings: dict[str, bool],
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session, **settings)
+    arguments = (
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '[" source "]',
+    )
+
+    powershell = run_powershell(*arguments)
+    javascript = run_javascript(*arguments)
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert javascript.returncode == 0, javascript.stderr
+    assert json.loads(powershell.stdout) == json.loads(javascript.stdout)
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+def test_powershell_multi_system_qa_order_matches_javascript(
+    tmp_path: Path,
+) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_ready_snapshots(session, duplicate_qa_authoring_context=True)
+    arguments = (
+        "readiness",
+        "--session",
+        str(session),
+        "--target",
+        "qa",
+        "--system-codes",
+        '["ERP","SOURCE","CRM"]',
+    )
+
+    powershell = run_powershell(*arguments)
+    javascript = run_javascript(*arguments)
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert javascript.returncode == 0, javascript.stderr
+    javascript_output = json.loads(javascript.stdout)
+    assert javascript_output["examples"] == [
+        ["qa_authoring_context_missing", ["ERP"]],
+        ["qa_authoring_context_ambiguous", ["SOURCE"]],
+        ["qa_authoring_context_missing", ["CRM"]],
+        ["qa_mapping_missing", ["ERP"]],
+        ["qa_mapping_missing", ["CRM"]],
+    ]
+    assert json.loads(powershell.stdout) == javascript_output
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
 def test_powershell_session_init_matches_javascript_shape(tmp_path: Path) -> None:
     result = run_powershell(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
@@ -1048,6 +1613,27 @@ def test_powershell_session_init_matches_javascript_shape(tmp_path: Path) -> Non
         "session": "01",
         "path": str(tmp_path / "GDS" / "TENANT_A" / "01"),
     }
+
+
+@pytest.mark.skipif(
+    not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
+)
+def test_powershell_sql_policy_matches_javascript(tmp_path: Path) -> None:
+    initialized = run_powershell(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    assert initialized.returncode == 0, initialized.stderr
+    session = Path(json.loads(initialized.stdout)["path"])
+
+    powershell = run_powershell(
+        "sql-policy", "--session", str(session), "--policy", "as_needed"
+    )
+    javascript = run_javascript("status", "--session", str(session))
+
+    assert powershell.returncode == 0, powershell.stderr
+    assert json.loads(powershell.stdout) == {"sql_policy": "as_needed"}
+    assert javascript.returncode == 0, javascript.stderr
+    assert json.loads(javascript.stdout)["sql_policy"] == "as_needed"
 
 
 @pytest.mark.skipif(

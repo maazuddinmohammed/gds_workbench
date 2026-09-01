@@ -5,6 +5,7 @@ import { Link } from "@tanstack/react-router";
 import { ApiError } from "../../core/http";
 import type { MappingEntityType } from "../mapping/api";
 import type { ModelDetail } from "../models/api";
+import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 import {
   codeGenerationQueryKeys,
   type CodeGenerationApi,
@@ -80,7 +81,6 @@ export function CodeGenerationScreen({
   const selected = [...selectedTargets.values()];
 
   const refresh = async () => {
-    setStartedRunId(null);
     await Promise.all([
       targetsQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
@@ -173,13 +173,23 @@ export function CodeGenerationScreen({
       </header>
       <div className="workflow-context-line code-generation-context-line">
         <strong>{model.model_name} · r{model.model_revision}</strong>
-        <span>Target Objects are primary. Modeled Entities appear only as applied Mapping support.</span>
+        <span>Generation produces a Model Change Set draft. Review its validation, then Apply it to store SQL.</span>
       </div>
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
-          Code Generation run {startedRunId} started. Refresh after completion to review stored SQL.
+          Code Generation run {startedRunId} started. Refresh runs to review the draft, then Apply the validated draft.
         </p>
       ) : null}
+      <WorkflowRunMonitor
+        api={api}
+        tenantId={tenantId}
+        modelId={model.model_id}
+        modelRevision={model.model_revision}
+        workflow="code_generation"
+        hasTenantLock={canGenerate}
+        focusRunId={startedRunId}
+        onApplied={refresh}
+      />
       <CodeGenerationLedger
         tenantId={tenantId}
         modelId={model.model_id}

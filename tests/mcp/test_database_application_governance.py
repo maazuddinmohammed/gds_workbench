@@ -26,6 +26,7 @@ APPLICATION_TABLES = (
     "workflow_run_mapping_target_selection",
     "workflow_run_object_selection",
     "workflow_run_prompt_snapshot",
+    "workflow_run_system_selection",
     "workflow_stage",
     "workflow_stage_variable",
 )
@@ -73,7 +74,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "create_workflow_run",
         "uuid, uuid, character varying, bigint, bigint, character varying, "
         "character varying, character varying, character varying, character varying, "
-        "character varying, integer, integer, bigint[], character varying, "
+        "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
         "character varying, bigint, bigint, bigint, character varying, bigint",
     ),
@@ -177,7 +178,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "boolean, timestamp with time zone",
     ),
 )
-VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "13_verify_install.sql"
+VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "20_verify_install.sql"
 
 
 def test_application_web_function_allowlist_is_exact_and_verified(

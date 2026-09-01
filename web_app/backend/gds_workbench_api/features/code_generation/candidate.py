@@ -16,9 +16,9 @@ from sqlglot.expressions.query import Query
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    pydantic_validation_issues,
 )
 
-_MAX_SQL_BYTES = 4 * 1024 * 1024
 _UNSAFE_SQL_CONTROL = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
 
 
@@ -47,14 +47,29 @@ class GeneratedSqlArtifact(BaseModel):
 class _AgentSqlArtifact(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    target_ref: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
-    generated_sql: str = Field(min_length=1, repr=False)
+    target_ref: str = Field(
+        pattern=r"^[a-z][a-z0-9_]{0,99}$",
+        description="Copy the exact opaque target reference from frozen authoring context.",
+    )
+    generated_sql: str = Field(
+        min_length=1,
+        repr=False,
+        description=(
+            "Complete SQL-only artifact as plain text with no Markdown fences. Separate "
+            "multiple statements with semicolons; an earlier temporary view may be used by "
+            "later statements in the same orchestration session."
+        ),
+    )
 
 
 class _AgentSqlBatch(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    artifacts: list[_AgentSqlArtifact] = Field(min_length=1, max_length=50_000)
+    artifacts: list[_AgentSqlArtifact] = Field(
+        min_length=1,
+        max_length=50_000,
+        description="Complete artifact ledger covering every frozen target exactly once.",
+    )
 
 
 class CodeGenerationCandidateValidator:
@@ -74,9 +89,9 @@ class CodeGenerationCandidateValidator:
         return cast(dict[str, JsonValue], _AgentSqlBatch.model_json_schema())
 
     async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
-        batch, issue = _parse_batch(candidate)
-        if issue is not None:
-            return AgentCandidateValidation(issues=(issue,))
+        batch, issues = _parse_batch(candidate)
+        if issues:
+            return AgentCandidateValidation(issues=issues)
         if batch is None:
             raise AssertionError("validated SQL batch is missing")
 
@@ -102,8 +117,8 @@ class CodeGenerationCandidateValidator:
         return AgentCandidateValidation(issues=())
 
     def parse_validated(self, candidate: JsonValue) -> tuple[GeneratedSqlArtifact, ...]:
-        batch, issue = _parse_batch(candidate)
-        if issue is not None or batch is None:
+        batch, issues = _parse_batch(candidate)
+        if issues or batch is None:
             raise InvalidRequestError("The Code Generation candidate is invalid.")
         refs = [artifact.target_ref for artifact in batch.artifacts]
         if len(refs) != len(set(refs)) or set(refs) != set(self._by_ref):
@@ -126,15 +141,11 @@ class CodeGenerationCandidateValidator:
 
 def _parse_batch(
     candidate: JsonValue,
-) -> tuple[_AgentSqlBatch | None, AgentValidationIssue | None]:
+) -> tuple[_AgentSqlBatch | None, tuple[AgentValidationIssue, ...]]:
     try:
-        return _AgentSqlBatch.model_validate(candidate, strict=True), None
-    except ValidationError:
-        return None, AgentValidationIssue(
-            code="candidate.schema_invalid",
-            path=(),
-            message="The candidate does not match the required SQL artifact schema.",
-        )
+        return _AgentSqlBatch.model_validate(candidate, strict=True), ()
+    except ValidationError as error:
+        return None, pydantic_validation_issues(error)
 
 
 def _validation(code: str, message: str) -> AgentCandidateValidation:
@@ -149,7 +160,6 @@ def _is_valid_sql(value: Any) -> bool:
         or not value.strip()
         or "```" in value
         or _UNSAFE_SQL_CONTROL.search(value) is not None
-        or len(value.encode("utf-8")) > _MAX_SQL_BYTES
     ):
         return False
     try:
