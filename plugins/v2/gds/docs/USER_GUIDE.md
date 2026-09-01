@@ -49,9 +49,13 @@ After installing the plugin and completing the Microsoft Entra prompt for its co
 
 > List the GDS Tenants I can access. Do not make any changes.
 
-For Snapshot-backed work, use this structure:
+For a single Snapshot-backed target, use this structure:
 
-> Initialize GDS Workbench. Working directory: `<absolute-path>`. Tenant Code: `<CODE>`. Focus: `<Metadata|Model|Code|QA|Validation|Ad Hoc>`. Target: `<target, if applicable>`. Mode: `<Guided|Automatic|Custom>`. Scope: `<Full|Selected>`. Selection and outcome: `<bounded details>`. Stop at `<local review|Stage approval|Apply boundary>`.
+> Initialize GDS Workbench. Working directory: `<absolute-path>`. Tenant Code: `<CODE>`. Mode: `<Guided|Automatic|Custom>`. Scope: `<Full|Selected>`. Target or journey: `<single target or end-to-end delivery>`. Selection and outcome: `<bounded details>`. Stop after `<final local review|server Validate|Apply>`.
+
+For the normal Automatic journey:
+
+> Automatic end-to-end delivery for this Model: Profiling evidence → Analysis → Conceptual → Logical → Silver Target Registration → external scope activation → Logical Mapping → Code Generation and QA. Ask one compact intake, queue the journey, complete each target without intermediate review prompts, and stop after each Apply for my explicit continue.
 
 Give a Tenant Code, never a Tenant ID for the local folder. One session is bound to one Tenant Code and one Model. Work on another Model in a new session.
 
@@ -69,7 +73,7 @@ For a known workflow target, V2 runs readiness once and does not precede it with
 
 - **Quick / Ad Hoc** — read-only explanation or bounded inspection. An explanation needs no session; local Snapshot inspection does.
 - **Guided** — builds with explicit review checkpoints. Logical Build pauses by Object group.
-- **Automatic** — covers the complete declared scope in compact batches. It is not unattended: review, Stage approval, server Validate, and fresh Apply approval still apply.
+- **Automatic** — asks one compact intake, may queue an ordered multi-target journey, and completes the current target in compact batches with internal coverage checks. It is not unattended: it asks once at final target review, uses that approval as Stage intent when reconciliation is unchanged, then requires fresh Apply approval. It stops after Apply and asks whether to continue to the next queued target.
 - **Custom** — handles bounded asks and exceptions outside the standard automatic shape.
 - **Full** — every currently eligible item for the selected target.
 - **Selected** — only explicitly named items. Name exact Objects, processes, entities, or target/source pairs.
@@ -120,8 +124,11 @@ Conceptual is also a Logical Build section. It improves vocabulary and boundarie
 ### 5. Logical modeling
 
 Logical Build always produces Logical; optional Analysis and Conceptual may run first. It uses only active scoped physical Objects whose Snapshot says `is_bronze_source_eligible=true`. A Bronze label alone is insufficient.
+The session/Model Tenant is not a default physical key. Object and Attribute support always copies
+the exact Tenant, System, Connection, schema, Object, and Attribute identity from eligible Model
+Scope and Bronze Snapshot records.
 
-> Automatic Logical Build, Full scope, sections Analysis → Conceptual → Logical for every eligible Bronze source. Build evidence-backed third-normal-form Entities, Attributes, keys, relationships, sources, rationale, and confidence. Checkpoint every section, report unresolved evidence, and stop after one Model Apply.
+> Automatic Logical Build, Full scope, sections Analysis → Conceptual → Logical for every eligible Bronze source. Build evidence-backed third-normal-form Entities, Attributes, keys, relationships, sources, rationale, and confidence. Run an internal coverage check after every section without pausing me; ask once when the complete Logical target digest is ready, and stop after one Model Apply.
 
 ### 6. Dimensional modeling
 
@@ -131,19 +138,21 @@ Dimensional Build is optional and requires active applied Logical Mapping. It us
 
 ### 7. Silver or Gold target registration
 
-Target Registration projects an applied Logical or Dimensional model into local Databricks DDL plus complete Metadata pending records. Supply one destination System, Connection, schema, and Object Type. Metadata is applied; DDL remains local. Registration never activates Model Scope.
+Target Registration projects an applied Logical or Dimensional model into local Databricks DDL plus complete Metadata pending records. Supply one destination Object Tenant, System, Connection, schema, and Object Type. For a global GDS Connection, V2 resolves these from the active Metadata Discovery Scope; it never substitutes the session/Model Tenant or a source System. Metadata is applied; DDL remains local. Registration never activates Model Scope.
 
 V2 also asks whether the same Metadata task should include `process_group` and `process`. It does so
 only when the exact Copy Group, Process type, execution order, executable location/name, and target
 Object are known; otherwise it registers only the targets.
 
-> Automatic Silver Target Registration, Selected entities Customer and Order. Destination System `<system>`, Connection `<connection>`, schema `<schema>`, Object Type `<type>`. Reuse compatible targets, generate deterministic local Databricks DDL and complete Metadata changes, and stop after Metadata Apply.
+> Automatic Silver Target Registration, Selected entities Customer and Order. Destination Object Tenant `<tenant>`, System `<system>`, Connection `<connection>`, schema `<schema>`, Object Type `<type>`. Reuse compatible targets, generate deterministic local Databricks DDL and complete Metadata changes, and stop after Metadata Apply.
 
 Use **Gold Target Registration** for applied Dimensional entities.
 
 ### 8. Logical or Dimensional Mapping
 
 Mapping works on an exact target Object plus source System unit. Logical Mapping maps Bronze/Logical evidence to registered Silver targets. Dimensional Mapping maps eligible Silver sources to registered Gold targets. V2 uses governed authoring context and candidate materialization; it never invents database IDs, transformations, lineage, dependencies, or write modes.
+The Mapping `source_system_code` is the contributing pipeline System and may differ from the target
+physical Object's `system_code`; V2 preserves both authoritative values.
 
 > Automatic Logical Mapping, Selected: Silver target Customer from source System CRM. Use the governed authoring context and materializer for that exact target/source unit, report every blocker, review the complete materialized changes, and stop after one Model Apply.
 
@@ -177,7 +186,7 @@ Before the first session task that could use live data, V2 asks once for SQL pol
 
 Local validation checks the effective Snapshot-plus-pending graph and returns bounded repair paths. Fix only the reported dataset, record, and fields before rerunning it. Full dataset schemas are a troubleshooting fallback; the default compact authoring contract normally supplies the required fields and rules. Local validation cannot prove live data/runtime correctness or replace governed server Validate.
 
-When you explicitly confirm that the complete local Model Change Set has been reviewed, the plugin can promote its pending `needs_review` status fields to `active` in one digest-protected operation. It changes neither Snapshot/applied data nor ordinary text and does not bypass local or server validation. The plugin must show the revised review before acceptance and staging.
+Task state `review` only means local bytes await acceptance; it is not record status `needs_review`. Evidence-supported records should be `active`. Use `needs_review` only for a complete, supportable proposal with one unresolved semantic decision. After you approve the complete digest, the plugin may promote listed reviewed statuses once. It then validates and accepts the promoted digest without requesting the same review again. The operation changes neither Snapshot/applied data nor ordinary text and does not bypass validation. Any non-status content change requires a new review.
 
 > Validation only: review and locally validate the current Model Change Set. Show bounded issues, action counts, affected canonical keys, digest, and Stage sizing. Do not mutate, Stage, or Apply.
 
@@ -199,9 +208,17 @@ The MCP server exposes governed Databricks SQL for explicit Ad Hoc work and poli
 
 ## Normal dependency path
 
-Logical Build → Silver Target Registration → authorized external Model Scope activation and fresh Model Snapshot → Logical Mapping → Logical Code Generation and/or Dimensional Build → Gold Target Registration → authorized external scope activation and fresh Model Snapshot → Dimensional Mapping → Dimensional Code Generation → QA.
+```text
+Profiling evidence → optional Analysis → optional Conceptual → Logical
+→ Silver Target Registration → external scope activation and fresh Model Snapshot
+→ Logical Mapping → Logical Code and/or QA
 
-V2 stops after each Apply and shows only eligible next targets. Logical Code is not required before Dimensional Build. QA can follow any applied Mapping. Code may be absent; current relevant Code must be used when it exists.
+Logical Mapping → optional Dimensional Build
+→ Gold Target Registration → external scope activation and fresh Model Snapshot
+→ Dimensional Mapping → Dimensional Code and/or QA
+```
+
+In an Automatic journey, V2 queues the requested targets once. After each Apply, it exposes the next waiting or queued target, states any prerequisite, asks one continue question, and reuses still-valid intake decisions. Logical Code is not required before Dimensional Build. QA can follow any applied Mapping. Code may be absent; current relevant Code must be used when it exists.
 
 ## Snapshots and approval gates
 
@@ -211,15 +228,16 @@ The governed mutation sequence is:
 
 1. Compare the packaged and deployed MCP contract once; incompatibility stops before mutation.
 2. Readiness for a known target, or bounded inspect for non-target work.
-3. Ordered plan and complete local pending records.
-4. Human review and local validation/acceptance.
-5. Tenant Lock check. Obtain explicit approval before acquiring an unowned lock. Another owner's lock stops the workflow unless an authorized override is explicitly directed with a reason.
-6. Obtain separate Stage approval, then create/resume/reconcile and Stage the governed server draft.
-7. Server Validate and authoritative action review.
-8. Fresh Apply approval immediately before Apply.
-9. Apply once, mark only the written area stale, release an acquired lock, and stop.
+3. Complete all selected scope with internal checkpoints.
+4. Run one final local review and bounded validation.
+5. Ask once to approve the exact digest, deterministic status promotion when needed, acceptance, acquisition of an unowned Tenant Lock, and Stage intent. This supplies approval before acquiring an unowned lock.
+6. Promote once if needed, validate the resulting digest, and accept it.
+7. Check the Tenant Lock. If its acquisition was not included above, ask before acquiring it. Another owner's lock stops unless an authorized override is explicitly directed with a reason. Reconcile and Stage without another question when digest/actions remain unchanged; re-review any change.
+8. Server Validate and show authoritative `action_review`.
+9. Fresh Apply approval immediately before Apply.
+10. Apply once, mark only the written area stale, release an acquired lock, stop, and ask whether to continue to the next queued/eligible target.
 
-Stage approval and local override are never Apply approval. Automatic mode never bypasses these gates.
+Final local-review/Stage intent and any local override are never Apply approval. Automatic mode never bypasses these gates.
 
 ## Common blockers
 
@@ -244,7 +262,7 @@ Stage approval and local override are never Apply approval. Automatic mode never
 - Execute, upload, or deploy generated workflow code.
 - Perform foundational CRUD, arbitrary PostgreSQL, deletion by omission, or invented identifiers.
 - Bypass authorization, Tenant Locks, revision fencing, local/server validation, or approvals.
-- Automatically run multiple targets across Apply boundaries.
+- Cross an Apply boundary without explicit user continuation. Automatic may queue multiple targets, but it stops after each Apply.
 - Work on multiple Models in one session.
 - Export/import/share a session through a supported command. Treat session files, Snapshots, pending records, and generated code as local potentially sensitive material.
 
@@ -253,11 +271,11 @@ Stage approval and local override are never Apply approval. Automatic mode never
 For best results, state:
 
 1. Working directory and Tenant Code.
-2. Focus area and exact workflow target.
+2. Exact single target, or the desired end-to-end Automatic journey and optional branches.
 3. Guided, Automatic, or Custom mode.
 4. Full or Selected scope with exact selected items.
 5. Required destination pattern or artifact type when applicable.
 6. Evidence and business decisions the agent must use.
 7. Desired stop point.
 
-Do not ask “build everything automatically and apply it.” Ask for one target, one bounded scope, and one approval boundary at a time.
+You may request the complete Automatic journey once. Do not ask it to apply every target unattended: expect one final review per target, fresh Apply approval, and one explicit continue after each Apply.

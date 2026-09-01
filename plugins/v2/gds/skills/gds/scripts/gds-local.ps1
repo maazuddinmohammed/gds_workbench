@@ -865,6 +865,14 @@ function Get-SessionStatus([hashtable]$Options) {
     $resume = $null
     if ($null -eq $current) {
         foreach ($task in @($state.tasks)) { if ($task[3] -eq 'waiting') { $resume = @($task); break } }
+        if ($null -eq $resume) {
+            foreach ($task in @($state.tasks)) {
+                if (@('todo', 'queued') -ccontains [string]$task[3]) {
+                    $resume = @($task)
+                    break
+                }
+            }
+        }
     }
     $planTask = if ($null -ne $current) { $current } else { $resume }
     $plan = $null
@@ -4838,6 +4846,10 @@ function Approve-ReviewedChanges([hashtable]$Options) {
         datasets = @($datasetCounts)
         fields = @($fields)
         digest = Get-WorkspaceDigest $context
+        task_state = 'review'
+        approval_applied = $promoted -gt 0
+        human_review_required = $false
+        next_action = 'validate_then_accept_promoted_digest'
     }
 }
 

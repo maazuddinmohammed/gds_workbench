@@ -6,14 +6,18 @@ Route `dimensional` requires applied Logical Mapping and maps Silver to Gold onl
 label; otherwise emit the authorized-owner Resolution Prompt.
 
 Ask for Full or Selected scope. Full means every eligible registered active target in the authoritative Snapshot, never session history. The fixed work unit is target Object plus source System.
+`source_system_code` is not the target physical Object's `system_code`; preserve both exact values
+from governed context.
 
-Before writing, load each selected Mapping output dataset contract.
+Load each compact Mapping dataset contract only immediately before its first batch.
 
 ## Readiness sweep
 
 Before any server draft, sweep every unit for active targets/Attributes, executable applied lineage,
-target/source contribution, write mode, and dependency conflicts. Group Resolution Prompts, set
-`waiting`, and create no draft while blocked.
+target/source contribution, write mode, and dependency conflicts. Group real Resolution Prompts,
+set `waiting`, and create no draft while blocked. Missing materializer proof during this first sweep
+is an expected preflight action, not a terminal blocker: collect every proof below and run final
+readiness. Only a failure returned by authoring/materialization or final readiness blocks.
 
 Automatic Mapping requires the committed mapper/materializer contract for `mapping.standard`; a
 generic `mapping_package_document` object is insufficient. For each exact target/source pair, call
@@ -27,7 +31,7 @@ Bind only `result.proof` locally:
 mapping-proof --session <session> --target logical-mapping|dimensional-mapping --proof <result.proof-JSON>
 ```
 
-After binding every selected unit, rerun readiness with the exact unit list:
+After binding every selected unit, run final readiness with the exact unit list:
 
 ```text
 readiness --session <session> --target logical-mapping|dimensional-mapping --proof-units <[{target_object_id,source_system_id},...]-JSON>

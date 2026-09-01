@@ -155,6 +155,8 @@ def _scope_record(
 def write_ready_snapshots(
     session: Path,
     *,
+    physical_source_tenant_code: str = "TENANT_A",
+    physical_source_system_code: str = "SOURCE",
     silver_in_scope: bool = True,
     include_mappings: bool = True,
     include_ineligible_scope: bool = False,
@@ -171,7 +173,11 @@ def write_ready_snapshots(
     profile_attribute_name: str = "CustomerId",
     include_unmapped_silver_attribute: bool = False,
 ) -> None:
-    source = _physical("source", "Customer")
+    source = {
+        **_physical("source", "Customer"),
+        "tenant_code": physical_source_tenant_code,
+        "system_code": physical_source_system_code,
+    }
     silver = _physical("silver", "CustomerSilver")
     gold = _physical("gold", "CustomerGold")
     _write_snapshot(
@@ -1584,6 +1590,85 @@ def test_logical_build_reports_bounded_profile_coverage(
         "catalog_objects": 3,
         "attributes": 3,
     }
+
+
+def test_logical_support_uses_authoritative_physical_tenant_and_system(
+    tmp_path: Path,
+) -> None:
+    authoritative_source = {
+        "tenant_code": "PHYSICAL_TENANT",
+        "system_code": "GDS",
+        "connection_code": "MAIN",
+        "object_schema": "source",
+        "object_name": "Customer",
+    }
+    references = {
+        "authoritative": authoritative_source,
+        "session_tenant": {**authoritative_source, "tenant_code": "TENANT_A"},
+        "upstream_system": {**authoritative_source, "system_code": "SOURCE"},
+    }
+
+    outputs = {}
+    for name, source_object in references.items():
+        session = initialized_session(tmp_path / name)
+        write_ready_snapshots(
+            session,
+            physical_source_tenant_code=authoritative_source["tenant_code"],
+            physical_source_system_code=authoritative_source["system_code"],
+        )
+        added = run_helper(
+            "task-add",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--title",
+            "Validate Logical support identity",
+            "--plan",
+            '["Validate exact physical Object reference"]',
+        )
+        logical_entity = {
+            "logical_entity_name": "IdentityCheck",
+            "logical_entity_status": "active",
+            "sources": [
+                {
+                    "support_source_type": "object",
+                    "source_object": source_object,
+                    "status": "active",
+                }
+            ],
+        }
+        written = run_helper(
+            "upsert",
+            "--session",
+            str(session),
+            "--area",
+            "model",
+            "--dataset",
+            "logical_entity",
+            "--record",
+            json.dumps(logical_entity, separators=(",", ":")),
+            "--expected-digest",
+            "empty",
+        )
+        validated = run_helper(
+            "validate", "--session", str(session), "--area", "model"
+        )
+
+        assert added.returncode == 0, added.stderr
+        assert written.returncode == 0, written.stderr
+        assert validated.returncode == 0, validated.stderr
+        outputs[name] = json.loads(validated.stdout)
+
+    assert outputs["authoritative"]["valid"] is True
+    for name in ("session_tenant", "upstream_system"):
+        assert outputs[name]["valid"] is False
+        assert any(
+            issue[0] == "logical_entity"
+            and "model_scope_reference_invalid" in issue[2]
+            and "eligible Bronze source" in issue[2]
+            for issue in outputs[name]["issues"]
+        )
 
 
 def test_local_model_validation_rejects_missing_physical_attribute(

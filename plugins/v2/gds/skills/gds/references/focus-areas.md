@@ -1,34 +1,35 @@
 # Focus areas
 
-Allow multiple selections, but execute one current task at a time.
+Allow multiple selections; execute one current task.
 
 ## Metadata
 
-Inspect or author only Change Set-eligible Metadata datasets from a fresh Metadata Snapshot. Use canonical keys and complete records. Preserve fields without evidence. Deactivation is explicit; omission never means deletion. Target Registration uses its own workflow target.
+Inspect or author Change Set-eligible Metadata from a fresh Snapshot. Use canonical keys and complete
+records; preserve unsupported fields. Deactivation is explicit. Registration has its own target.
 
 ## Model
 
-Use one Model per session and route through `workflow-targets.md`. Prefer Snapshot evidence. Under
-`essential` or `as_needed`, the existing governed SQL tool may collect combined bounded
-evidence/profile results; `never` proceeds without them. Assertion preparation is optional.
+Use one Model and `workflow-targets.md`. Prefer Snapshot evidence. SQL policy `essential` or
+`as_needed` permits bounded governed evidence; `never` proceeds without it. Assertions are optional.
 Never expose Model Scope mutation.
 
 ## Code
 
-Generate target-registration DDL locally or author applied-Mapping artifacts as complete
-`generated_code` Model records. Default SQL is Databricks. Never execute, upload, or deploy
-generated transformation code. General application code is outside GDS.
+Generate local Registration DDL or complete `generated_code` Model records from applied Mapping.
+Default SQL is Databricks. Never execute, upload, or deploy transformations.
 
 ## QA
 
-Author `validation_group` and `validation_check` Model records from applied Mapping, any current
-relevant Code when present, and user rules. Scope is exact source System codes. QA Apply stores definitions;
-later orchestration executes them.
+Author `validation_group`/`validation_check` from applied Mapping, current relevant Code, and user
+rules for exact source System codes. Apply stores definitions; orchestration executes them later.
 
 ## Validation
 
-Run local Metadata, Model, generated DDL/code, or session-readiness checks. Read the effective Snapshot-plus-pending graph. Return bounded issues in memory; do not create report files or mutate records. This cannot prove runtime/data correctness and cannot replace governed server Validate. A validation-only task ends as `done`.
+Validate local Metadata, Model, DDL/code, or readiness against the effective graph. Return bounded
+in-memory issues; do not mutate or create reports. It cannot prove runtime/data correctness or
+replace server Validate. Validation-only ends `done`.
 
 ## Ad Hoc
 
-Use the read-only fast path for bounded inspection or explanation. If the request grows into mutation, stop, create a normal area task and plan, then enter the required gates.
+Use bounded read-only inspection/explanation. If mutation emerges, create a normal task/plan and
+enter all gates.

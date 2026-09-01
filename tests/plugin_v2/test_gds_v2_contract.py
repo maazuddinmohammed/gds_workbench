@@ -18,7 +18,7 @@ def test_plugin_exposes_one_strict_gds_router() -> None:
         "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
     )
     assert manifest["name"] == "gds"
-    assert manifest["version"] == "0.3.2"
+    assert manifest["version"] == "0.3.3"
     assert mcp_manifest == {
         "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
         "mcpServers": {
@@ -262,13 +262,15 @@ def test_workflow_router_has_exact_main_targets_and_apply_boundaries() -> None:
 def test_plugin_carries_the_platform_lifecycle_and_default_orchestration_intent() -> None:
     skill_root = PLUGIN_ROOT / "skills" / "gds"
     skill = (skill_root / "SKILL.md").read_text()
+    journey = (skill_root / "references" / "automatic-journey.md").read_text()
     lifecycle = (skill_root / "references" / "platform-lifecycle.md").read_text()
     registration = (
         skill_root / "references" / "workflows" / "target-registration.md"
     ).read_text()
     logical = (skill_root / "references" / "workflows" / "logical-build.md").read_text()
 
-    assert "load `references/platform-lifecycle.md`" in skill
+    assert "platform lifecycle" in skill
+    assert "Load `platform-lifecycle.md` once" in journey
     for text in (
         "Tenant owns Systems",
         "Connections locate physical Objects and Attributes",
@@ -462,8 +464,92 @@ def test_logical_automatic_build_has_complete_ordered_coverage() -> None:
     assert "covered, excluded with reason, or blocked" in workflow
     assert "Conceptual never drives Logical structure" in workflow
     assert "selected-section checkpoint" in workflow
-    assert "do not call `review` again" in workflow
+    assert "Only the final complete digest is a human review boundary" in workflow
     assert "one Stage, server Validate, and Apply" in workflow
+
+
+def test_automatic_build_has_one_final_human_review_and_a_deterministic_handoff() -> None:
+    skill_root = PLUGIN_ROOT / "skills" / "gds"
+    router = (skill_root / "SKILL.md").read_text()
+    journey = (skill_root / "references" / "automatic-journey.md").read_text()
+    logical = (
+        skill_root / "references" / "workflows" / "logical-build.md"
+    ).read_text()
+    helper = (skill_root / "references" / "local-helper.md").read_text()
+
+    assert "internal checkpoints without human pauses" in router
+    assert "one final local review" in router
+    assert "Task `review` is not record `needs_review`" in router
+    assert "`approve-reviewed` at most once" in router
+    assert "then `validate` and `accept`" in router
+    assert "do not ask for the same review again" in router
+
+    assert "Profiling evidence → Analysis → Conceptual → Logical" in journey
+    assert "Silver Target Registration" in journey
+    assert "Logical Mapping" in journey
+    assert "Code Generation" in journey
+    assert "QA" in journey
+    assert "queue the requested targets" in journey
+    assert "ask one continue question" in journey
+    assert "fresh Apply approval" in journey
+
+    assert "do not ask the user at a section checkpoint" in logical
+    assert "Only the final complete digest is a human review boundary" in logical
+    assert "promoted digest" in helper
+    assert "Never repeat `approve-reviewed`" in helper
+
+
+def test_long_running_task_loops_start_immediately_and_resume_from_plan() -> None:
+    skill_root = PLUGIN_ROOT / "skills" / "gds"
+    router = (skill_root / "SKILL.md").read_text()
+    journey = (skill_root / "references" / "automatic-journey.md").read_text()
+    session = (skill_root / "references" / "session.md").read_text()
+    logical = (
+        skill_root / "references" / "workflows" / "logical-build.md"
+    ).read_text()
+
+    assert "Every mutating mode creates its target task before work" in router
+    assert "The first `task-add` returns `doing`; start it immediately" in journey
+    assert "Do not create separate tasks for Profiling, Analysis, Conceptual" in journey
+    assert "external scope activation is a prerequisite on the Mapping task" in journey
+    assert "When `status.resume` is null, report the journey complete" in journey
+    assert "if none, report completion" in router
+    assert "`Loop: target=<target>; phase=<phase>" in session
+    assert "Task state alone never identifies a final review" in session
+    assert "recompute coverage from pending records before continuing" in session
+    assert "transition `review` → `doing` and continue" in logical
+
+
+def test_physical_object_identity_comes_from_scope_not_session_or_source_owner() -> None:
+    skill_root = PLUGIN_ROOT / "skills" / "gds"
+    router = (skill_root / "SKILL.md").read_text()
+    logical = (
+        skill_root / "references" / "workflows" / "logical-build.md"
+    ).read_text()
+    registration = (
+        skill_root / "references" / "workflows" / "target-registration.md"
+    ).read_text()
+    mapping = (skill_root / "references" / "workflows" / "mapping.md").read_text()
+
+    assert "Session Tenant Code is never a physical Object key default" in router
+    assert "Model ownership does not own or rewrite physical Object identity" in router
+    assert "`tenant_code`, `system_code`, `connection_code`, `object_schema`, and `object_name`" in logical
+    assert "copy them exactly from the eligible `model_scope` record" in logical
+    assert "`tenant_metadata_discovery_scope`" in registration
+    assert "`tenant_code=scope_tenant_code`" in registration
+    assert "`system_code=connection_system_code`" in registration
+    assert "never substitute the session, Model, or source Tenant/System" in registration
+    assert "`source_system_code` is not the target physical Object's `system_code`" in mapping
+
+
+def test_mapping_and_code_proof_preflight_is_not_a_terminal_blocker() -> None:
+    workflow_root = PLUGIN_ROOT / "skills" / "gds" / "references" / "workflows"
+    mapping = (workflow_root / "mapping.md").read_text()
+    code = (workflow_root / "code-generation.md").read_text()
+
+    for workflow in (mapping, code):
+        assert "expected preflight action, not a terminal blocker" in workflow
+        assert "final readiness" in workflow
 
 
 def test_local_change_set_contract_never_confuses_pending_with_deletion() -> None:
@@ -571,7 +657,7 @@ def test_server_handoff_names_the_minimal_governed_sequence() -> None:
         "Call `check_tenant_lock`",
         "If `status.cs` contains this task",
         "For a resumed draft",
-        "ask for Stage approval",
+        "use the Stage intent already granted",
         "call `validate_metadata_change_set`",
         "fresh Apply approval",
     )

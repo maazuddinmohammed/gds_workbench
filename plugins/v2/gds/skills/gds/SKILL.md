@@ -1,81 +1,76 @@
 ---
 name: gds
-description: Run the strict GDS Workbench workflow for metadata, model, mapping, Databricks code, validation, snapshots, and Change Sets. Use when the user says initialize GDS, start GDS, initialize GDS Workbench, start GDS Workbench, GDS Workbench, asks to resume GDS work, or requests governed GDS changes.
+description: Run strict GDS Workbench workflows for metadata, models, mappings, code, QA, Snapshots, and Change Sets. Use to initialize GDS Workbench, resume work, or request governed changes.
 ---
 
 # GDS router
 
-Plan mutations.
-
 ## Start or resume
 
-Pure explanations must answer directly; do not create or resume a session.
+Pure explanations must answer directly; do not create a session.
 
-1. For session work, load `references/platform-lifecycle.md`, then establish directory, Tenant Code,
-   and session via `references/session.md`.
-2. Ask for one or more focus areas: Metadata, Model, Code, QA, Validation, or Ad Hoc.
-3. Infer obvious areas; ask only when blocked.
-4. For predefined Model work, select exactly one workflow target from `references/workflow-targets.md`. Assertion preparation is the one pre-process, non-target Model exception.
-5. Unless resume proof is reusable, run `readiness` once for a known target, without `inspect`. For
-   generic Metadata mutation or assertion preparation, run one `inspect` per area. Record plan inputs.
-6. Before first write, load `references/change-sets.md` and `references/local-helper.md`.
-7. Before first server mutation, call `get_server_contract`, pass its exact result to local
-   `contract-check`, and stop on incompatibility. Run once per resumed work period.
-8. Load only the active-target reference. Never preload every workflow.
+1. For session work, establish directory, Tenant Code, and state through `references/session.md`.
+   On resume run `status` once and continue its current/resume task.
+2. Infer focus, target, mode, and scope; ask only for a blocker.
+   Every mutating mode creates its target task before work and starts the first task immediately.
+   For an end-to-end Automatic request, load `references/automatic-journey.md`, ask one compact
+   intake, and queue the requested targets. Otherwise select one target from
+   `references/workflow-targets.md`.
+3. For predefined Model work, select its target; run `readiness` once for a known target without `inspect`,
+   unless resume proof is reusable. Mapping/Code collect proof then run final readiness. For
+   generic Metadata mutation or assertion preparation, use one `inspect` per area.
+4. Before a dataset's first write, load `references/change-sets.md` and `references/local-helper.md`,
+   then its compact contract. Load contracts lazily, never for future datasets.
+5. Before server mutation, call `get_server_contract` once; pass its exact result to local
+   `contract-check`. Incompatibility stops.
+6. Load only the active-target reference. Never preload every workflow. Load platform lifecycle
+   detail only for an Automatic journey, Target Registration, Code, or QA.
 
 `Open Workbench` is local after the session folder is known.
 
-## Choose the path
+Do not load an entire Snapshot. Use bounded reads. Local authority remains unchanged.
+`Application Prompt` and `Workflow Run` surfaces are out of scope; never discover, call, or depend on them.
+Session Tenant Code is never a physical Object key default. Model ownership does not own or rewrite physical Object identity.
+Copy physical keys from authoritative records; never synthesize them.
 
-- **Quick / Ad Hoc**: explanations bypass setup. Local inspection needs a session, not a task. Mark stale Snapshot results unverified. Create a task if work becomes mutation.
-- **Guided Build**: predefined workflow with a human review checkpoint.
-- **Automatic Build**: predefined complete coverage, compact batches, and review after each selected section.
-- **Custom Build**: fallback outside predefined paths; every gate still applies.
+## Modes
 
-Infer Custom + Selected for a specific bounded ask unless the user requests another mode/scope.
+- **Quick / Ad Hoc**: bounded read/explanation; mutation creates a task.
+- **Guided Build**: selected human checkpoints.
+- **Automatic Build**: complete coverage, internal checkpoints without human pauses, one final local review.
+- **Custom Build**: bounded exception path; all gates still apply.
 
-Mutation requires a task/plan; keep one Model per session.
+Infer Custom + Selected for a specific bounded ask. Keep one Model per session.
 
-Before live-data use, if `status.sql_policy` is absent, ask and persist via `sql-policy`: `never`,
-`essential`, or `as_needed`. Reuse until changed. `never` uses Snapshots; `essential` queries
-only blocking gaps; `as_needed` permits bounded useful evidence. Use only
-`execute_databricks_sql`, combine reads, and never run generated transformations. QA may be
-sample-verified; Apply never executes queries.
+Before live-data use, ask once for `never`, `essential`, or `as_needed`; persist `sql-policy`.
+Only use `execute_databricks_sql`; combine reads and never run generated transformations. Declining
+SQL never blocks Snapshot-based authoring.
 
-## Context rule
+## Review meanings
 
-Do not load an entire Snapshot. Use compact contracts, the local catalog, and selected records.
-Snapshots are immutable; write only complete pending records to the matching local Change Set.
+Task `review` is not record `needs_review`; it means local bytes await acceptance. Write supported
+records `active`. Use `needs_review` only for a complete, supportable
+proposal with one unresolved semantic decision; missing grain, lineage, keys, or conflicts are
+blockers instead. Never blanket-mark agent-generated records `needs_review`.
 
-First area mutation needs a newly downloaded, unzipped Snapshot. Reuse until Apply marks it stale.
-Never infer freshness from file times.
+## One target boundary
 
-Local authority remains unchanged. `Application Prompt` and `Workflow Run` surfaces are out of scope; never discover, call, or depend on them.
+1. Complete all selected scope/sections. Automatic checkpoints update coverage and continue.
+2. Run one final local review and validation. Show digest, actions, blockers, and `needs_review`.
+3. Ask once whether to approve that digest, promote reviewed statuses, acquire an unowned Tenant Lock,
+   and proceed through Stage plus server Validate. On approval call `approve-reviewed` at most once, use its
+   promoted digest, then `validate` and `accept`; do not ask for the same review again. Re-ask only
+   if non-status content changes.
+4. Check/acquire the Tenant Lock, reconcile, and Stage. Review changed actions/content; never duplicate approval.
+5. Server Validate, show authoritative `action_review`, and obtain fresh Apply approval.
+6. Apply once, mark that area stale, release a lock acquired here, and stop. Show the exact next
+   queued/eligible target and ask one continue question; if none, report completion. Never cross an Apply boundary automatically.
 
-## Mandatory gates
-
-For mutating work follow:
-
-1. One target `readiness`, or one `inspect` per area for non-target mutation.
-2. Build/update the ordered plan from discussion and compact evidence.
-3. Edit the local Change Set.
-4. Human review in conversation or Workbench. After explicit approval, run `approve-reviewed` for pending Model statuses; never infer approval.
-5. Local validation. A local override is digest-bound and never overrides server validation.
-6. Stage or resume the one governed server draft.
-7. Server Validate.
-8. Apply.
-9. Mark only the applied area stale, update the task, stop, and show eligible targets.
-
-Never Stage, Apply, archive, deploy, execute generated code, or mutate a server from Workbench. Never cross an Apply boundary automatically.
+Workbench never calls MCP, Stages, Applies, archives, deploys, or executes generated code.
 
 ## References
 
-- Session, queue, freshness: `references/session.md`
-- Platform lifecycle and default orchestration: `references/platform-lifecycle.md`
-- Focus-area behavior: `references/focus-areas.md`
-- Local Change Sets and reconciliation: `references/change-sets.md`
-- Local helper commands: `references/local-helper.md`
-- Governed handoff, loaded only at accepted Stage or an upstream archive boundary: `references/server-handoff.md`
-- Workflow target router: `references/workflow-targets.md`
-- Workbench behavior: `references/workbench.md`
-- Target-specific rules: `references/workflows/`
+- Lifecycle/session/targets: `references/automatic-journey.md`, `references/session.md`, `references/workflow-targets.md`
+- Local records: `references/change-sets.md`, `references/local-helper.md`
+- Server handoff: `references/server-handoff.md`
+- Other rules: `references/focus-areas.md`, `references/workbench.md`, `references/workflows/`

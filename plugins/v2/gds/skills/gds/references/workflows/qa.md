@@ -9,7 +9,8 @@ authoritative allowlist: join Code by complete target key, modeled type, artifac
 ignore every unreferenced or stale artifact. Empty references/null Code digest means Mapping-only.
 The context is Snapshot-only and must never be staged.
 
-Before writing, load all QA authoring and output dataset contracts.
+Load `qa_authoring_context` plus each compact QA output dataset contract only when beginning that System's
+first QA batch; never load contracts for future Systems together.
 
 Follow each Snapshot schema's assertion contract when constructing one or more complete
 `validation_group` parents and their `validation_check` children.

@@ -5,7 +5,7 @@ with `is_dimensional_source_eligible=true`; that flag requires an active applied
 Never treat every Silver Object as eligible. Dimensional is optional. Ask for Build
 mode and Full/Selected process scope.
 
-Before writing, load each selected Model output dataset contract.
+Load each compact Model dataset contract only immediately before that dataset's first batch.
 
 For each selected process:
 

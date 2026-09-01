@@ -3,14 +3,15 @@
 Require matching active applied Mapping. Default is `sql_file`; Python file or notebook needs
 explicit override. Apply stores Code and never executes, uploads, or deploys it.
 
-Before writing, load the `generated_code` dataset contract.
+Load the compact `generated_code` dataset contract immediately before its first write.
 
-For each target, enumerate active source Systems. Call `get_model_code_generation_document` per
+For each target, enumerate active source Systems. Missing generator proof at preflight is an
+expected preflight action, not a terminal blocker: call `get_model_code_generation_document` per
 exact target/source pair with applied Model ID
 and route entity type. Use every `result.document` (`GeneratorDocumentV1`) directly in memory; never reconstruct it
 from names or database IDs. A raw Mapping package or generic JSON object is insufficient.
 
-Bind each `result.proof`, then rerun readiness with every pair in `--proof-units`:
+Bind each `result.proof`, then run final readiness with every pair in `--proof-units`:
 
 ```text
 generator-proof --session <session> --target logical-code|dimensional-code --proof <result.proof-JSON>

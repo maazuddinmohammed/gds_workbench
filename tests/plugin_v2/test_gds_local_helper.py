@@ -684,6 +684,9 @@ def test_approve_reviewed_promotes_only_pending_model_status_fields(
         ["status", 1],
     ]
     assert output["digest"] != original_digest
+    assert output["task_state"] == "review"
+    assert output["next_action"] == "validate_then_accept_promoted_digest"
+    assert output["human_review_required"] is False
 
     pending = json.loads(
         (session / "model-change-set" / "logical_entity.json").read_text()
@@ -700,6 +703,49 @@ def test_approve_reviewed_promotes_only_pending_model_status_fields(
     assert pending[0]["is_active"] is False
     state = json.loads((session / "session.json").read_text())
     assert state["tasks"][0][3] == "review"
+
+
+def test_status_resumes_the_next_queued_automatic_journey_task(tmp_path: Path) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    first = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "validation",
+        "--title",
+        "Check profiling evidence",
+        "--plan",
+        '["Check current evidence"]',
+    )
+    second = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Logical Build",
+        "--plan",
+        '["Build complete coverage"]',
+    )
+    assert first.returncode == 0, first.stderr
+    assert second.returncode == 0, second.stderr
+    completed = run_helper(
+        "task-state", "--session", str(session), "--task", "01", "--state", "done"
+    )
+    assert completed.returncode == 0, completed.stderr
+
+    status = run_helper("status", "--session", str(session))
+
+    assert status.returncode == 0, status.stderr
+    output = json.loads(status.stdout)
+    assert output["current"] is None
+    assert output["resume"] == ["02", "model", "Logical Build", "queued"]
+    assert output["plan"] == ["Build complete coverage"]
 
 
 def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
@@ -1267,6 +1313,93 @@ def test_status_returns_current_plan_and_task_plan_update_is_digest_guarded(
     output = json.loads(status.stdout)
     assert output["plan"] == ["Inspect scope", "Build", "Review"]
     assert output["plan_digest"] == updated_digest
+
+
+def test_long_running_task_checkpoints_loop_and_resumes_after_internal_write(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+    initial_plan = [
+        "Inputs: metadata=snapshot-01",
+        "Loop: target=Customer; phase=metadata; scope=2; covered=0; excluded=0; blocked=0; next=CRM.Customer",
+    ]
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--title",
+        "Process scoped Objects",
+        "--plan",
+        json.dumps(initial_plan, separators=(",", ":")),
+    )
+    assert added.returncode == 0, added.stderr
+    initial_digest = json.loads(added.stdout)["plan_digest"]
+
+    copied = run_helper(
+        "copy",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--where",
+        '{"system_code":"CRM"}',
+        "--expected-digest",
+        "empty",
+    )
+    assert copied.returncode == 0, copied.stderr
+    after_write = json.loads(run_helper("status", "--session", str(session)).stdout)
+    assert after_write["current"] == [
+        "01",
+        "metadata",
+        "Process scoped Objects",
+        "review",
+    ]
+
+    checkpoint_plan = [
+        "Inputs: metadata=snapshot-01",
+        "Loop: target=Customer; phase=metadata; scope=2; covered=1; excluded=0; blocked=0; next=ERP.Order",
+    ]
+    checkpointed = run_helper(
+        "task-plan",
+        "--session",
+        str(session),
+        "--task",
+        "01",
+        "--plan",
+        json.dumps(checkpoint_plan, separators=(",", ":")),
+        "--expected-digest",
+        initial_digest,
+    )
+    assert checkpointed.returncode == 0, checkpointed.stderr
+    checkpoint_digest = json.loads(checkpointed.stdout)["plan_digest"]
+    assert checkpoint_digest != initial_digest
+
+    resumed = run_helper(
+        "task-state", "--session", str(session), "--task", "01", "--state", "doing"
+    )
+    assert resumed.returncode == 0, resumed.stderr
+
+    status = run_helper("status", "--session", str(session))
+
+    assert status.returncode == 0, status.stderr
+    output = json.loads(status.stdout)
+    assert output["current"] == [
+        "01",
+        "metadata",
+        "Process scoped Objects",
+        "doing",
+    ]
+    assert output["resume"] is None
+    assert output["plan"] == checkpoint_plan
+    assert output["plan_digest"] == checkpoint_digest
 
 
 def test_status_returns_waiting_task_plan_without_mutating_session(

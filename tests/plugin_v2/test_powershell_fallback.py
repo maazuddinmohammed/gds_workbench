@@ -121,6 +121,30 @@ def run_javascript(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_powershell_approval_handoff_fields_are_on_the_approval_command() -> None:
+    script = HELPER.read_text()
+    batch = script.split("function Upsert-RecordsBatch", 1)[1].split(
+        "function Discard-Record", 1
+    )[0]
+    approval = script.split("function Approve-ReviewedChanges", 1)[1].split(
+        "function Review-Changes", 1
+    )[0]
+
+    for field in (
+        "task_state = 'review'",
+        "approval_applied = $promoted -gt 0",
+        "human_review_required = $false",
+        "next_action = 'validate_then_accept_promoted_digest'",
+    ):
+        assert field in approval
+        assert field not in batch
+
+    status = script.split("function Get-SessionStatus", 1)[1].split(
+        "function Set-SqlPolicy", 1
+    )[0]
+    assert "@('todo', 'queued')" in status
+
+
 @pytest.mark.skipif(
     not POWERSHELL_AVAILABLE, reason="PowerShell runtime is unavailable"
 )

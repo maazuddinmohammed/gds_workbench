@@ -1366,6 +1366,10 @@ function approveReviewedChangeSet(options) {
     datasets: datasetCounts,
     fields: [...fieldCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
     digest: workspaceDigest(context),
+    task_state: "review",
+    approval_applied: promoted > 0,
+    human_review_required: false,
+    next_action: "validate_then_accept_promoted_digest",
   };
 }
 
@@ -2780,7 +2784,9 @@ function sessionStatus(options) {
   const current = state.tasks.find((task) => task[0] === state.current) ?? null;
   const resume = current
     ? null
-    : state.tasks.find((task) => task[3] === "waiting") ?? null;
+    : state.tasks.find((task) => task[3] === "waiting") ??
+      state.tasks.find((task) => new Set(["todo", "queued"]).has(task[3])) ??
+      null;
   const planTask = current ?? resume;
   let plan = null;
   let planDigest = null;

@@ -3,13 +3,16 @@
 `silver` requires applied active Logical; `gold` requires applied active Dimensional. Use fresh
 Snapshots.
 
-Before writing, load each selected Metadata output dataset contract.
+Load each compact Metadata dataset contract only immediately before that dataset's first batch.
 
 Automatic uses one Object per active Entity and one target Attribute per modeled Attribute. Reuse
 compatible targets; splits, merges, and exceptions use Custom.
 
-Resolve destination System, Connection, schema, and Object Type from one pattern. Never infer from a
-source System. Ask once if absent; allow target overrides.
+Resolve destination Object Tenant, System, Connection, schema, and Object Type from one pattern. For
+a global GDS destination, use one active `tenant_metadata_discovery_scope`: set
+`tenant_code=scope_tenant_code`, `system_code=connection_system_code`, and its exact Connection/schema.
+The Object Tenant may differ from the Connection owner. If no unambiguous pattern exists, ask once;
+never substitute the session, Model, or source Tenant/System. Allow explicit target overrides.
 
 Model policy fields are independently optional. Apply present `silver_model_naming_instructions` or `gold_model_naming_instructions` in agent naming work. Add every configured audit/technical column exactly from `silver_model_audit_columns_template`, `gold_model_technical_columns_template`, or `gold_model_audit_columns_template` for its route. Missing policy fields never block Target Registration; never invent their contents.
 
