@@ -9,6 +9,6 @@ Before writing a dataset, request its compact schema through `describe_metadata_
 - Never edit Snapshot files or invent IDs.
 - Metadata registration uses only a Metadata Change Set. Model Input Scope, Model Binding, models, Mapping, Code, and Validation use only a Model Change Set.
 
-Local review overlays pending records on the Snapshot and computes the exact digest. The agent runs review and validation before notifying the user. A positive acknowledgement accepts that digest internally; edits invalidate it.
+Local validation overlays pending records on the Snapshot, compiles the complete effective graph, writes the shared report, and computes the exact digest. The agent runs it before notifying the user. `review` is an optional action summary, not another user gate. A positive acknowledgement accepts that digest internally; edits invalidate it.
 
 At Stage, fetch any existing draft and reconcile by normalized canonical key. Exact resumes; non-overlap can combine; differing overlap is a conflict. A revision mismatch stops for a fresh Snapshot and reassessment. Then read `staging.md` and use local `prepare-stage`; never calculate packing or hashes manually. Server Change Set validation seals the final revision, and Apply is separately approved.

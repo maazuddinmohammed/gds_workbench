@@ -662,6 +662,43 @@ function Write-JsonAtomic([string]$Path, $Value) {
     }
 }
 
+function Write-TextAtomic([string]$Path, [string]$Value) {
+    $directory = Split-Path -Parent $Path
+    $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($Path) + '.' + [Guid]::NewGuid().ToString('N') + '.tmp')
+    [IO.File]::WriteAllText($temporary, $Value, $script:Utf8NoBom)
+    try {
+        if (Test-Path -LiteralPath $Path) {
+            $item = Get-Item -LiteralPath $Path -Force -ErrorAction Stop
+            if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+                Fail 'Generated DBML member must be a regular file.'
+            }
+            [IO.File]::Delete($item.FullName)
+        }
+        [IO.File]::Move($temporary, $Path)
+    }
+    catch {
+        if (Test-Path -LiteralPath $temporary -PathType Leaf) {
+            [IO.File]::Delete($temporary)
+        }
+        throw
+    }
+}
+
+function Get-ValidationReportPath($Context) {
+    $current = [string]$Context.Session
+    foreach ($segment in @('reports', 'local-validation')) {
+        $current = Join-Path $current $segment
+        if (-not (Test-Path -LiteralPath $current)) {
+            [void](New-Item -ItemType Directory -Path $current -ErrorAction Stop)
+        }
+        $item = Get-Item -LiteralPath $current -ErrorAction Stop
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            Fail 'Local validation report directory must be a regular directory.'
+        }
+    }
+    return Join-Path $current ([string]$Context.Area + '.json')
+}
+
 function Resolve-RegularDirectory([string]$Path, [string]$Label) {
     $item = Get-Item -LiteralPath ([IO.Path]::GetFullPath($Path)) -ErrorAction Stop
     if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
@@ -2812,13 +2849,43 @@ function Validate-Changes([hashtable]$Options) {
             message = $message
         })
     }
-    return [ordered]@{
+    $output = [ordered]@{
         valid = $issues.Count -eq 0
         issues = @($issueOutput)
         repairs = @($repairs)
         truncated = $issues.Count -gt 200
         digest = Get-WorkspaceDigest $context
     }
+    $reportIssues = New-Object Collections.ArrayList
+    foreach ($repair in @($repairs)) {
+        [void]$reportIssues.Add([ordered]@{
+            severity = 'error'
+            dataset = [string]$repair.dataset
+            record = $repair.record
+            code = [string]$repair.code
+            fields = @($repair.fields)
+            message = [string]$repair.message
+        })
+    }
+    $revision = if (Test-Property $context.Manifest 'model_revision') { $context.Manifest.model_revision } else { $null }
+    $report = [ordered]@{
+        schema_version = '1.0'
+        area = [string]$context.Area
+        run_by = 'agent'
+        generated_at = [DateTimeOffset]::UtcNow.ToString('o', [Globalization.CultureInfo]::InvariantCulture)
+        digest = [string]$output.digest
+        snapshot = [ordered]@{
+            id = [string]$context.Manifest.snapshot_id
+            revision = $revision
+            manifest_digest = Get-Sha256Digest (Join-Path $context.Root 'manifest.json')
+        }
+        valid = [bool]$output.valid
+        issue_count = [int]$issues.Count
+        truncated = [bool]$output.truncated
+        issues = @($reportIssues)
+    }
+    Write-JsonAtomic (Get-ValidationReportPath $context) $report
+    return $output
 }
 
 function Accept-Changes([hashtable]$Options) {
@@ -3076,6 +3143,401 @@ function Get-RecordChunks($Records, [int]$MaximumBytes) {
     return [ordered]@{ fits = $true; chunks = @($chunks) }
 }
 
+function ConvertTo-DbmlLine($Value) {
+    if ($null -eq $Value) { return '' }
+    if ($Value -is [Array]) {
+        $parts = @($Value | ForEach-Object { ConvertTo-DbmlLine $_ })
+        $text = $parts -join ', '
+    }
+    else { $text = [string]$Value }
+    $text = $text.Normalize([Text.NormalizationForm]::FormC)
+    $text = [regex]::Replace($text, '[\x00-\x1F\x7F]', ' ')
+    return ([regex]::Replace($text.Trim(), '\s+', ' '))
+}
+
+function ConvertTo-DbmlIdentifier($Value) {
+    $text = ConvertTo-DbmlLine $Value
+    return '"' + $text.Replace('\', '\\').Replace('"', '\"') + '"'
+}
+
+function ConvertTo-DbmlQuoted($Value) {
+    $text = ConvertTo-DbmlLine $Value
+    return "'" + $text.Replace('\', '\\').Replace("'", "\'") + "'"
+}
+
+function ConvertTo-DbmlToken($Value, [string]$Fallback = 'item', [int]$Limit = 128) {
+    $text = [regex]::Replace((ConvertTo-DbmlLine $Value), '[^A-Za-z0-9_]+', '_').Trim('_')
+    if ([string]::IsNullOrEmpty($text)) { $text = $Fallback }
+    if ($text -match '^\d') { $text = '_' + $text }
+    if ($text.Length -gt $Limit) { $text = $text.Substring(0, $Limit) }
+    return $text
+}
+
+function ConvertTo-DbmlType($Value) {
+    $text = ConvertTo-DbmlLine $Value
+    if ([string]::IsNullOrEmpty($text)) { return 'unknown' }
+    if ($text -match '^[A-Za-z_][A-Za-z0-9_]*(?:\.[A-Za-z_][A-Za-z0-9_]*)*(?:\((?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?)(?: *, *(?:[A-Za-z_][A-Za-z0-9_]*|[0-9]+(?:\.[0-9]+)?))*\))?$') {
+        return $text
+    }
+    return ConvertTo-DbmlIdentifier $text
+}
+
+function Get-DbmlNormalizedName($Value) {
+    return ConvertTo-Casefold (ConvertTo-DbmlLine $Value)
+}
+
+function Get-DbmlRows($Loaded, [string]$Name) {
+    if ($Loaded.ContainsKey($Name)) { return @($Loaded[$Name]) }
+    return @()
+}
+
+function New-DbmlDocument(
+    [string]$Path,
+    [string]$Layer,
+    [string]$View,
+    $SubmodelName,
+    $Lines,
+    [int]$TableCount,
+    [int]$RelationshipCount
+) {
+    return [pscustomobject]@{
+        path = $Path
+        layer = $Layer
+        view = $View
+        submodel_name = $SubmodelName
+        content = (($Lines -join [Environment]::NewLine).TrimEnd() + [Environment]::NewLine)
+        table_count = $TableCount
+        relationship_count = $RelationshipCount
+    }
+}
+
+function Add-DbmlProjectLines($Lines, $Model, [string]$Suffix, [string]$Description) {
+    $name = ConvertTo-DbmlToken (([string](Get-Property $Model 'model_name')) + '_' + $Suffix) 'model'
+    [void]$Lines.Add("Project $name {")
+    [void]$Lines.Add("  Note: " + (ConvertTo-DbmlQuoted (
+        'Model: ' + [string](Get-Property $Model 'model_name') +
+        ' | Model ID: ' + [string](Get-Property $Model 'model_id') +
+        ' | Model revision: ' + [string](Get-Property $Model 'model_revision') +
+        ' | View: ' + $Description
+    )))
+    [void]$Lines.Add('}')
+    [void]$Lines.Add('')
+}
+
+function Render-ConceptualDbml($Loaded, $Model) {
+    $objects = @(Get-DbmlRows $Loaded 'conceptual_object' | Where-Object {
+        [string](Get-Property $_ 'conceptual_object_status') -ceq 'active'
+    } | Sort-Object @{ Expression = { Get-DbmlNormalizedName (Get-Property $_ 'conceptual_object_name') } })
+    $objectMap = @{}
+    foreach ($record in $objects) {
+        $key = Get-DbmlNormalizedName (Get-Property $record 'conceptual_object_name')
+        if ($objectMap.ContainsKey($key)) { Fail 'Effective Conceptual Object names are not unique.' }
+        $objectMap[$key] = $record
+    }
+    $relationships = @(Get-DbmlRows $Loaded 'conceptual_relationship' | Where-Object {
+        [string](Get-Property $_ 'conceptual_relationship_status') -ceq 'active'
+    } | Sort-Object @{ Expression = {
+        (Get-DbmlNormalizedName (Get-Property $_ 'from_conceptual_object_name')) + [char]0 +
+        (Get-DbmlNormalizedName (Get-Property $_ 'to_conceptual_object_name')) + [char]0 +
+        (Get-DbmlNormalizedName (Get-Property $_ 'conceptual_relationship_name'))
+    } })
+    $lines = New-Object System.Collections.ArrayList
+    Add-DbmlProjectLines $lines $Model 'conceptual' 'Complete conceptual model'
+    foreach ($record in $objects) {
+        $name = Get-Property $record 'conceptual_object_name'
+        [void]$lines.Add("Table $(ConvertTo-DbmlIdentifier $name) [headercolor: #4E79A7] {")
+        [void]$lines.Add("  \"__conceptual_key\" conceptual_key [pk, not null, note: 'Visualization-only endpoint; not a modeled Attribute.']")
+        $note = @(
+            'Type: ' + [string](Get-Property $record 'conceptual_object_type'),
+            'Grain: ' + [string](Get-Property $record 'conceptual_object_grain'),
+            'Definition: ' + [string](Get-Property $record 'conceptual_object_definition')
+        ) -join ' | '
+        if (-not [string]::IsNullOrWhiteSpace($note.Replace('Type:  | Grain:  | Definition: ', ''))) {
+            [void]$lines.Add('  Note: ' + (ConvertTo-DbmlQuoted $note))
+        }
+        [void]$lines.Add('}')
+        [void]$lines.Add('')
+    }
+    $cardinalities = @{ one_to_one = '-'; one_to_many = '<'; many_to_one = '>'; many_to_many = '<>' }
+    $index = 0
+    foreach ($record in $relationships) {
+        $fromKey = Get-DbmlNormalizedName (Get-Property $record 'from_conceptual_object_name')
+        $toKey = Get-DbmlNormalizedName (Get-Property $record 'to_conceptual_object_name')
+        if (-not $objectMap.ContainsKey($fromKey) -or -not $objectMap.ContainsKey($toKey)) {
+            Fail 'An effective Conceptual Relationship has an inactive or missing endpoint.'
+        }
+        $index++
+        $cardinality = [string](Get-Property $record 'conceptual_relationship_cardinality')
+        $operator = if ($cardinalities.ContainsKey($cardinality)) { $cardinalities[$cardinality] } else { '-' }
+        [void]$lines.Add('// Relationship: ' + (ConvertTo-DbmlLine (Get-Property $record 'conceptual_relationship_name')))
+        [void]$lines.Add(
+            "Ref conceptual_relationship_${index}: " +
+            (ConvertTo-DbmlIdentifier (Get-Property $objectMap[$fromKey] 'conceptual_object_name')) + '."__conceptual_key" ' +
+            $operator + ' ' +
+            (ConvertTo-DbmlIdentifier (Get-Property $objectMap[$toKey] 'conceptual_object_name')) + '."__conceptual_key"'
+        )
+        [void]$lines.Add('')
+    }
+    return New-DbmlDocument 'conceptual.dbml' 'conceptual' 'complete' $null $lines $objects.Count $relationships.Count
+}
+
+function Get-DbmlLayerSpec([string]$Layer) {
+    if ($Layer -ceq 'logical') {
+        return [ordered]@{
+            submodel_dataset = 'logical_submodel'; submodel_name = 'logical_submodel_name'; submodel_definition = 'logical_submodel_definition'; submodel_status = 'logical_submodel_status'
+            entity_dataset = 'logical_entity'; entity_name = 'logical_entity_name'; entity_status = 'logical_entity_status'; entity_order = 'logical_entity_dependency_order'; entity_definition = 'logical_entity_definition'
+            attribute_dataset = 'logical_attribute'; attribute_entity = 'logical_entity_name'; attribute_name = 'logical_attribute_name'; attribute_status = 'logical_attribute_status'; attribute_type = 'logical_attribute_data_type'; attribute_ordinal = 'logical_attribute_ordinal_position'; attribute_nullable = 'logical_attribute_is_nullable'
+            relationship_dataset = 'logical_relationship'; relationship_name = 'logical_relationship_name'; relationship_status = 'logical_relationship_status'; from_entity = 'from_logical_entity_name'; from_attribute = 'from_logical_attribute_name'; to_entity = 'to_logical_entity_name'; to_attribute = 'to_logical_attribute_name'; relationship_cardinality = 'logical_relationship_cardinality'
+        }
+    }
+    return [ordered]@{
+        submodel_dataset = 'dimensional_submodel'; submodel_name = 'dimensional_submodel_name'; submodel_definition = 'dimensional_submodel_definition'; submodel_status = 'dimensional_submodel_status'
+        entity_dataset = 'dimensional_entity'; entity_name = 'dimensional_entity_name'; entity_status = 'dimensional_entity_status'; entity_order = 'dimensional_entity_dependency_order'; entity_definition = 'dimensional_entity_definition'
+        attribute_dataset = 'dimensional_attribute'; attribute_entity = 'dimensional_entity_name'; attribute_name = 'dimensional_attribute_name'; attribute_status = 'dimensional_attribute_status'; attribute_type = 'dimensional_attribute_data_type'; attribute_ordinal = 'dimensional_attribute_ordinal_position'; attribute_nullable = 'dimensional_attribute_is_nullable'
+        relationship_dataset = 'dimensional_relationship'; relationship_name = 'dimensional_relationship_name'; relationship_status = 'dimensional_relationship_status'; from_entity = 'from_dimensional_entity_name'; from_attribute = 'from_dimensional_attribute_name'; to_entity = 'to_dimensional_entity_name'; to_attribute = 'to_dimensional_attribute_name'; relationship_cardinality = 'dimensional_relationship_cardinality'
+    }
+}
+
+function Get-DbmlLayerData($Loaded, [string]$Layer) {
+    $spec = Get-DbmlLayerSpec $Layer
+    $submodels = @(Get-DbmlRows $Loaded $spec.submodel_dataset | Where-Object {
+        [string](Get-Property $_ $spec.submodel_status) -ceq 'active'
+    } | Sort-Object @{ Expression = { Get-DbmlNormalizedName (Get-Property $_ $spec.submodel_name) } })
+    $submodelMap = @{}
+    foreach ($record in $submodels) {
+        $key = Get-DbmlNormalizedName (Get-Property $record $spec.submodel_name)
+        if ($submodelMap.ContainsKey($key)) { Fail "Effective $Layer Submodel names are not unique." }
+        $submodelMap[$key] = $record
+    }
+    $entities = @(Get-DbmlRows $Loaded $spec.entity_dataset | Where-Object {
+        [string](Get-Property $_ $spec.entity_status) -ceq 'active'
+    } | Sort-Object @{ Expression = { Get-Property $_ $spec.entity_order } }, @{ Expression = { Get-DbmlNormalizedName (Get-Property $_ $spec.entity_name) } })
+    $entityMap = @{}
+    $memberships = @{}
+    foreach ($record in $entities) {
+        $key = Get-DbmlNormalizedName (Get-Property $record $spec.entity_name)
+        if ($entityMap.ContainsKey($key)) { Fail "Effective $Layer Entity names are not unique." }
+        $entityMap[$key] = $record
+        $memberships[$key] = @{}
+        $values = Get-Property $record 'submodels'
+        if ($values -is [Array]) {
+            foreach ($membership in @($values)) {
+                if ([string](Get-Property $membership 'membership_status') -cne 'active') { continue }
+                $submodelKey = Get-DbmlNormalizedName (Get-Property $membership 'submodel_name')
+                if (-not $submodelMap.ContainsKey($submodelKey)) {
+                    Fail "An effective $Layer Entity membership has an inactive or missing Submodel."
+                }
+                $memberships[$key][$submodelKey] = $true
+            }
+        }
+    }
+    $attributes = @{}
+    $attributeKeys = @{}
+    foreach ($record in @(Get-DbmlRows $Loaded $spec.attribute_dataset | Where-Object {
+        [string](Get-Property $_ $spec.attribute_status) -ceq 'active'
+    })) {
+        $entityKey = Get-DbmlNormalizedName (Get-Property $record $spec.attribute_entity)
+        $attributeKey = Get-DbmlNormalizedName (Get-Property $record $spec.attribute_name)
+        if (-not $entityMap.ContainsKey($entityKey)) { Fail "An effective $Layer Attribute has an inactive or missing Entity." }
+        $combined = $entityKey + [char]0 + $attributeKey
+        if ($attributeKeys.ContainsKey($combined)) { Fail "Effective $Layer Attribute names are not unique." }
+        $attributeKeys[$combined] = $true
+        if (-not $attributes.ContainsKey($entityKey)) { $attributes[$entityKey] = New-Object System.Collections.ArrayList }
+        [void]$attributes[$entityKey].Add($record)
+    }
+    foreach ($entityKey in @($attributes.Keys)) {
+        $attributes[$entityKey] = @($attributes[$entityKey] | Sort-Object @{ Expression = { Get-Property $_ $spec.attribute_ordinal } }, @{ Expression = { Get-DbmlNormalizedName (Get-Property $_ $spec.attribute_name) } })
+    }
+    $relationships = @(Get-DbmlRows $Loaded $spec.relationship_dataset | Where-Object {
+        [string](Get-Property $_ $spec.relationship_status) -ceq 'active'
+    })
+    $validCardinalities = @('one_to_one', 'one_to_many', 'many_to_one', 'many_to_many')
+    foreach ($record in $relationships) {
+        $fromEntity = Get-DbmlNormalizedName (Get-Property $record $spec.from_entity)
+        $fromAttribute = Get-DbmlNormalizedName (Get-Property $record $spec.from_attribute)
+        $toEntity = Get-DbmlNormalizedName (Get-Property $record $spec.to_entity)
+        $toAttribute = Get-DbmlNormalizedName (Get-Property $record $spec.to_attribute)
+        if (-not $entityMap.ContainsKey($fromEntity) -or -not $entityMap.ContainsKey($toEntity) -or
+            -not $attributeKeys.ContainsKey($fromEntity + [char]0 + $fromAttribute) -or
+            -not $attributeKeys.ContainsKey($toEntity + [char]0 + $toAttribute)) {
+            Fail "An effective $Layer Relationship has an inactive or missing endpoint."
+        }
+        if ($validCardinalities -cnotcontains [string](Get-Property $record $spec.relationship_cardinality)) {
+            Fail "An effective $Layer Relationship has invalid cardinality."
+        }
+    }
+    return [pscustomobject]@{
+        Spec = $spec; Submodels = $submodels; SubmodelMap = $submodelMap
+        Entities = $entities; EntityMap = $entityMap; Memberships = $memberships
+        Attributes = $attributes; Relationships = $relationships
+    }
+}
+
+function Render-ModeledDbml($Data, $Model, [string]$Layer, $Included, [string]$Path, [string]$View, $SubmodelName, [string]$Description) {
+    $spec = $Data.Spec
+    $lines = New-Object System.Collections.ArrayList
+    Add-DbmlProjectLines $lines $Model (ConvertTo-DbmlToken $Description 'model') $Description
+    $tableCount = 0
+    foreach ($entity in @($Data.Entities)) {
+        $entityKey = Get-DbmlNormalizedName (Get-Property $entity $spec.entity_name)
+        if ($null -ne $Included -and -not $Included.ContainsKey($entityKey)) { continue }
+        $tableCount++
+        [void]$lines.Add("Table $(ConvertTo-DbmlIdentifier (Get-Property $entity $spec.entity_name)) [headercolor: #4E79A7] {")
+        $entityAttributes = if ($Data.Attributes.ContainsKey($entityKey)) { @($Data.Attributes[$entityKey]) } else { @() }
+        foreach ($attribute in $entityAttributes) {
+            $settings = New-Object System.Collections.Generic.List[string]
+            if ($Layer -ceq 'logical' -and [bool](Get-Property $attribute 'logical_attribute_is_primary_key')) { [void]$settings.Add('pk') }
+            if ($Layer -ceq 'dimensional' -and [string](Get-Property $attribute 'dimensional_attribute_key_role') -ceq 'surrogate') { [void]$settings.Add('pk') }
+            if ([bool](Get-Property $attribute $spec.attribute_nullable)) { [void]$settings.Add('null') } else { [void]$settings.Add('not null') }
+            $definition = Get-Property $attribute ($Layer + '_attribute_definition')
+            if (-not [string]::IsNullOrWhiteSpace([string]$definition)) { [void]$settings.Add('note: ' + (ConvertTo-DbmlQuoted $definition)) }
+            [void]$lines.Add(
+                '  ' + (ConvertTo-DbmlIdentifier (Get-Property $attribute $spec.attribute_name)) + ' ' +
+                (ConvertTo-DbmlType (Get-Property $attribute $spec.attribute_type)) + ' [' + ($settings -join ', ') + ']'
+            )
+        }
+        $definition = Get-Property $entity $spec.entity_definition
+        if (-not [string]::IsNullOrWhiteSpace([string]$definition)) { [void]$lines.Add('  Note: ' + (ConvertTo-DbmlQuoted $definition)) }
+        [void]$lines.Add('}')
+        [void]$lines.Add('')
+    }
+    $operators = @{ one_to_one = '-'; one_to_many = '<'; many_to_one = '>'; many_to_many = '<>' }
+    $relationshipCount = 0
+    foreach ($relationship in @($Data.Relationships)) {
+        $fromKey = Get-DbmlNormalizedName (Get-Property $relationship $spec.from_entity)
+        $toKey = Get-DbmlNormalizedName (Get-Property $relationship $spec.to_entity)
+        if ($null -ne $Included -and (-not $Included.ContainsKey($fromKey) -or -not $Included.ContainsKey($toKey))) { continue }
+        $relationshipCount++
+        [void]$lines.Add('// Relationship: ' + (ConvertTo-DbmlLine (Get-Property $relationship $spec.relationship_name)))
+        [void]$lines.Add(
+            "Ref ${Layer}_relationship_${relationshipCount}: " +
+            (ConvertTo-DbmlIdentifier (Get-Property $Data.EntityMap[$fromKey] $spec.entity_name)) + '.' +
+            (ConvertTo-DbmlIdentifier (Get-Property $relationship $spec.from_attribute)) + ' ' +
+            $operators[[string](Get-Property $relationship $spec.relationship_cardinality)] + ' ' +
+            (ConvertTo-DbmlIdentifier (Get-Property $Data.EntityMap[$toKey] $spec.entity_name)) + '.' +
+            (ConvertTo-DbmlIdentifier (Get-Property $relationship $spec.to_attribute))
+        )
+        [void]$lines.Add('')
+    }
+    return New-DbmlDocument $Path $Layer $View $SubmodelName $lines $tableCount $relationshipCount
+}
+
+function Render-ModeledDbmlDocuments($Loaded, $Model, [string]$Layer, [bool]$IncludeSubmodels) {
+    $data = Get-DbmlLayerData $Loaded $Layer
+    $documents = New-Object System.Collections.ArrayList
+    [void]$documents.Add((Render-ModeledDbml $data $Model $Layer $null ($Layer + '_complete.dbml') 'complete' $null ('Complete ' + $Layer + ' model')))
+    if (-not $IncludeSubmodels) { return @($documents) }
+    $used = @{ ($Layer + '_complete.dbml') = $true; ($Layer + '_default.dbml') = $true }
+    $assigned = @{}
+    foreach ($submodel in @($data.Submodels)) {
+        $name = Get-Property $submodel $data.Spec.submodel_name
+        $key = Get-DbmlNormalizedName $name
+        $included = @{}
+        foreach ($entityKey in @($data.Memberships.Keys)) {
+            if ($data.Memberships[$entityKey].ContainsKey($key)) { $included[$entityKey] = $true; $assigned[$entityKey] = $true }
+        }
+        $base = $Layer + '_' + (ConvertTo-DbmlToken $name 'submodel' 220).ToLowerInvariant()
+        $path = $base + '.dbml'
+        $suffix = 2
+        while ($used.ContainsKey($path.ToLowerInvariant())) { $path = $base + '_' + $suffix + '.dbml'; $suffix++ }
+        $used[$path.ToLowerInvariant()] = $true
+        $description = $Layer.Substring(0, 1).ToUpperInvariant() + $Layer.Substring(1) + ' Submodel: ' + [string]$name
+        [void]$documents.Add((Render-ModeledDbml $data $Model $Layer $included $path 'submodel' $name $description))
+    }
+    $unassigned = @{}
+    foreach ($entityKey in @($data.EntityMap.Keys)) { if (-not $assigned.ContainsKey($entityKey)) { $unassigned[$entityKey] = $true } }
+    if ($unassigned.Count -gt 0) {
+        [void]$documents.Add((Render-ModeledDbml $data $Model $Layer $unassigned ($Layer + '_default.dbml') 'default' $null ($Layer + ' Entities without an active Submodel membership')))
+    }
+    return @($documents)
+}
+
+function Generate-LocalDbml([hashtable]$Options) {
+    if ((Require-Option $Options 'area') -cne 'model') { Fail '--area must be model for generate-dbml.' }
+    $modelType = if ($Options.ContainsKey('model-type')) { [string]$Options['model-type'] } else { 'full' }
+    if (@('full', 'conceptual', 'logical', 'dimensional') -cnotcontains $modelType) {
+        Fail '--model-type must be full, conceptual, logical, or dimensional.'
+    }
+    $includeText = if ($Options.ContainsKey('include-submodels')) { [string]$Options['include-submodels'] } else { 'true' }
+    if (@('true', 'false') -cnotcontains $includeText) { Fail '--include-submodels must be true or false.' }
+    $includeSubmodels = $includeText -ceq 'true'
+    $context = Get-ChangeContext $Options
+    $pending = Read-Pending $context
+    $loaded = [ordered]@{}
+    foreach ($dataset in @($context.Datasets)) {
+        $draft = if ($pending.ContainsKey([string]$dataset.name)) { @($pending[[string]$dataset.name]) } else { @() }
+        $loaded[[string]$dataset.name] = @(Get-EffectiveRecords $context $dataset $draft)
+    }
+    $model = Get-Property $context.Catalog 'model'
+    if ($null -eq $model -or -not (Test-SafeJsonInteger (Get-Property $model 'model_id') $false) -or
+        -not (Test-SafeJsonInteger (Get-Property $model 'model_revision') $true) -or
+        [string]::IsNullOrWhiteSpace([string](Get-Property $model 'model_name'))) {
+        Fail 'Model identity is required for DBML generation.'
+    }
+    $documents = New-Object System.Collections.ArrayList
+    if (@('full', 'conceptual') -ccontains $modelType) { [void]$documents.Add((Render-ConceptualDbml $loaded $model)) }
+    if (@('full', 'logical') -ccontains $modelType) {
+        foreach ($document in @(Render-ModeledDbmlDocuments $loaded $model 'logical' $includeSubmodels)) { [void]$documents.Add($document) }
+    }
+    if (@('full', 'dimensional') -ccontains $modelType) {
+        foreach ($document in @(Render-ModeledDbmlDocuments $loaded $model 'dimensional' $includeSubmodels)) { [void]$documents.Add($document) }
+    }
+    $documents = @($documents | Sort-Object path)
+    if ($documents.Count -lt 1 -or $documents.Count -gt 1002) { Fail 'DBML file inventory is invalid.' }
+
+    $directory = Join-Path $context.Session 'model-dbml'
+    if (-not (Test-Path -LiteralPath $directory)) { [void](New-Item -ItemType Directory -Path $directory -ErrorAction Stop) }
+    $directory = Resolve-RegularDirectory $directory 'Generated DBML directory'
+    $manifestPath = Join-Path $directory 'manifest.json'
+    $previousFiles = @()
+    if (Test-Path -LiteralPath $manifestPath -PathType Leaf) {
+        $previous = Read-Json $manifestPath 'Generated DBML manifest'
+        if ((Get-Property $previous 'files') -is [Array]) {
+            $previousFiles = @((Get-Property $previous 'files') | ForEach-Object { [string](Get-Property $_ 'path') } | Where-Object { $_ -match '^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$' })
+        }
+    }
+    $files = New-Object System.Collections.ArrayList
+    $names = @{}
+    [long]$totalBytes = 0
+    foreach ($document in $documents) {
+        $name = [string]$document.path
+        if ($name -notmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$' -or $names.ContainsKey($name.ToLowerInvariant())) {
+            Fail 'DBML file inventory is invalid.'
+        }
+        $names[$name.ToLowerInvariant()] = $true
+        [byte[]]$bytes = $script:Utf8NoBom.GetBytes([string]$document.content)
+        if ($bytes.Length -lt 1 -or $bytes.Length -gt 12 * 1024 * 1024) { Fail 'DBML output exceeds its safe file bounds.' }
+        $totalBytes += $bytes.Length
+        if ($totalBytes -gt 16 * 1024 * 1024) { Fail 'DBML output exceeds its safe file bounds.' }
+        Write-TextAtomic (Join-Path $directory $name) ([string]$document.content)
+        [void]$files.Add([ordered]@{
+            path = $name; layer = [string]$document.layer; view = [string]$document.view
+            submodel_name = $document.submodel_name; table_count = [int]$document.table_count
+            relationship_count = [int]$document.relationship_count; size_bytes = $bytes.Length
+            sha256 = Get-ByteDigest $bytes
+        })
+    }
+    foreach ($name in $previousFiles) {
+        if ($names.ContainsKey($name.ToLowerInvariant())) { continue }
+        $stalePath = Join-Path $directory $name
+        if (-not (Test-Path -LiteralPath $stalePath)) { continue }
+        $item = Get-Item -LiteralPath $stalePath -Force -ErrorAction Stop
+        if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) { Fail 'Stale DBML member must be a regular file.' }
+        [IO.File]::Delete($item.FullName)
+    }
+    $manifest = [ordered]@{
+        schema_version = '1.0'; snapshot_kind = 'dbml'; source = 'local_effective_model'
+        model = [ordered]@{ id = Get-Property $model 'model_id'; name = Get-Property $model 'model_name'; revision = Get-Property $model 'model_revision' }
+        draft_digest = Get-WorkspaceDigest $context; model_type = $modelType
+        include_submodels = $includeSubmodels; files = @($files)
+    }
+    Write-JsonAtomic $manifestPath $manifest
+    return [ordered]@{
+        directory = $directory; manifest = $manifestPath; file_count = $files.Count
+        draft_digest = [string]$manifest.draft_digest; files = @($files | ForEach-Object { [string](Get-Property $_ 'path') })
+    }
+}
+
 function Prepare-Stage([hashtable]$Options) {
     $reconciliation = Reconcile-Changes $Options
     if (-not [bool](Get-Property $reconciliation 'ready')) {
@@ -3218,6 +3680,57 @@ function Prepare-Stage([hashtable]$Options) {
     } else {
         'batched'
     }
+    $operations = New-Object System.Collections.ArrayList
+    $expectedRevisionFrom = 'manifest.starting_revision'
+    if ($null -ne $direct) {
+        [void]$operations.Add([ordered]@{
+            sequence = $operations.Count + 1
+            tool = 'stage_' + [string]$context.Area + '_change_set'
+            payload_file = [string]$direct.file
+            expected_revision_from = $expectedRevisionFrom
+            returns_revision_for = 'next operation'
+        })
+        $expectedRevisionFrom = 'operation ' + $operations.Count + ' response draft_revision'
+    }
+    foreach ($batch in @($batches)) {
+        $beginSequence = $operations.Count + 1
+        $begin = [ordered]@{
+            sequence = $beginSequence
+            tool = 'begin_' + [string]$context.Area + '_stage_batch'
+            dataset = [string]$batch.dataset
+            total_record_count = [int]$batch.total_record_count
+            total_chunk_count = [int]$batch.total_chunk_count
+            payload_mode = [string]$batch.payload_mode
+            batch_sha256 = [string]$batch.batch_sha256
+            expected_revision_from = $expectedRevisionFrom
+            returns_stage_batch_id_for = 'following Put and Commit operations'
+        }
+        if (Test-Property $batch 'total_payload_bytes') {
+            $begin['total_payload_bytes'] = [int]$batch.total_payload_bytes
+        }
+        [void]$operations.Add($begin)
+        foreach ($chunk in @($batch.chunks)) {
+            [void]$operations.Add([ordered]@{
+                sequence = $operations.Count + 1
+                tool = 'put_' + [string]$context.Area + '_stage_chunk'
+                dataset = [string]$batch.dataset
+                chunk_index = [int]$chunk.index
+                payload_mode = [string]$batch.payload_mode
+                payload_file = [string]$chunk.file
+                chunk_sha256 = [string]$chunk.sha256
+                stage_batch_id_from = 'operation ' + $beginSequence + ' response stage_batch_id'
+            })
+        }
+        [void]$operations.Add([ordered]@{
+            sequence = $operations.Count + 1
+            tool = 'commit_' + [string]$context.Area + '_stage_batch'
+            dataset = [string]$batch.dataset
+            expected_revision_from = 'matching begin operation'
+            stage_batch_id_from = 'operation ' + $beginSequence + ' response stage_batch_id'
+            returns_revision_for = 'next operation'
+        })
+        $expectedRevisionFrom = 'operation ' + $operations.Count + ' response draft_revision'
+    }
     $manifest = [ordered]@{
         schema_version = '1.0'
         area = $context.Area
@@ -3235,6 +3748,7 @@ function Prepare-Stage([hashtable]$Options) {
         revision_rule = 'Use the returned draft_revision after direct Stage and after every batch commit.'
         direct = $direct
         batches = @($batches)
+        operations = @($operations)
     }
     $manifestPath = Join-Path $stageDirectory 'manifest.json'
     Write-JsonAtomic $manifestPath $manifest
@@ -3243,6 +3757,8 @@ function Prepare-Stage([hashtable]$Options) {
         manifest = $manifestPath
         direct_datasets = if ($null -eq $direct) { @() } else { @($direct.datasets) }
         batch_datasets = @($batches | ForEach-Object { [string](Get-Property $_ 'dataset') })
+        operation_count = $operations.Count
+        next_operation = $operations[0]
     }
 }
 
@@ -3269,6 +3785,7 @@ try {
         'discard' { $output = Discard-Record $options }
         'review' { $output = Review-Changes $options }
         'validate' { $output = Validate-Changes $options }
+        'generate-dbml' { $output = Generate-LocalDbml $options }
         'accept' { $output = Accept-Changes $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }
         'reconcile' { $output = Reconcile-Changes $options }

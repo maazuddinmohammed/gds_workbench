@@ -1,13 +1,15 @@
 # Local helper
 
-Use Node `scripts/gds-local.js` or PowerShell `scripts/gds-local.ps1`. Run `command-contract --command <name>` for one command's syntax.
+Use Node `scripts/gds-local.js` or PowerShell `scripts/gds-local.ps1`. Run `command-contract --command <name>` for syntax.
 
-Use `session-init`, `status`, `sql-policy`, task commands, `readiness`, and `snapshot-refresh` for state. Use `inspect`, `describe`, and bounded `select` for local Snapshot reads. Use `copy`, `upsert`, `upsert-batch`, and `discard` for complete local records.
+State: `session-init`, `status`, `sql-policy`, task commands, `readiness`, `snapshot-refresh`. Snapshot reads: `inspect`, `describe`, bounded `select`. Complete-record edits: `copy`, `upsert`, `upsert-batch`, `discard`.
 
-After authoring, run `review` and `validate` internally. Tell the user to Refresh Workbench. After an unambiguous positive acknowledgement, run `accept` for the exact digest, then obtain current server state and run `reconcile`. These helper names are implementation details, not user steps.
+Before user review, run `validate`. It compiles the effective graph and writes `reports/local-validation/<area>.json`. Use `review` only for its action summary. After acknowledgement, `accept` the exact digest, fetch server state, then `reconcile`.
 
-After successful reconciliation, read `staging.md` and run `prepare-stage` with the exact server pending datasets. It writes the direct request and any bounded batch chunks; use its manifest instead of hand-building hashes or deciding chunk boundaries.
+After reconciliation, read `staging.md`. Run `prepare-stage` with the exact server pending datasets and execute its ordered `operations`; never split records, calculate hashes, or infer revision flow.
 
-`validate` is schema-driven: it checks signed JSON Schemas, canonical-key uniqueness, declared references, locks, and safe local state. It does not replace authorization, database constraints, or Change Set validation on the server.
+`validate` checks signed schemas, key uniqueness, declared references, locks, and safe local state. Workbench runs the same checks. Server authorization, constraints, and Change Set validation remain authoritative.
 
-`task-state staged` requires digest acceptance and server-draft cache. `applied` requires a validated cache. A content edit removes acceptance. Workbench may remain open throughout; never relaunch it after every update.
+`generate-dbml --session <session> --area model` writes the effective local Model to `model-dbml/`; Workbench uses the same renderer.
+
+`task-state staged` requires digest acceptance and server-draft cache. `applied` requires a validated cache. Edits remove acceptance; never relaunch it after every update.

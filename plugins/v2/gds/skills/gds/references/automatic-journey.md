@@ -6,10 +6,10 @@ Queue only requested targets in dependency order. Work one target at a time. Ins
 
 When a target is complete:
 
-1. Run local review and validation internally.
+1. Run local validation against the complete effective graph. Use local review only when its action summary is useful.
 2. Notify the user to Refresh the already-open Workbench.
 3. Treat a clear positive acknowledgement as acceptance of the exact digest.
-4. Check current revision, reconcile, Stage, and validate the Change Set on the server.
+4. Check current revision, reconcile, run `prepare-stage` once, execute its ordered operations, and validate the Change Set on the server.
 5. Ask separately before Apply.
 6. Apply once and stop at the target boundary. Leave later requested targets queued until the required fresh Snapshot is in place and the user resumes.
 

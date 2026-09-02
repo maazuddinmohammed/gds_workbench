@@ -21,6 +21,7 @@
     "discard": {"usage": "discard --session <session> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <digest>", "session_required": true, "mutates": true},
     "review": {"usage": "review --session <session> --area metadata|model", "session_required": true, "mutates": false},
     "validate": {"usage": "validate --session <session> --area metadata|model", "session_required": true, "mutates": false},
+    "generate-dbml": {"usage": "generate-dbml --session <session> --area model [--model-type full|conceptual|logical|dimensional] [--include-submodels true|false]", "session_required": true, "mutates": true},
     "accept": {"usage": "accept --session <session> --area metadata|model --digest <digest> [--override true --reason <reason>]", "session_required": true, "mutates": true},
     "reconcile": {"usage": "reconcile --session <session> --area metadata|model --server <server-pending-JSON-object>", "session_required": true, "mutates": false},
     "prepare-stage": {"usage": "prepare-stage --session <session> --area metadata|model --server <server-pending-JSON-object>", "session_required": true, "mutates": true},

@@ -72,6 +72,10 @@ class MemoryDirectoryHandle {
   async *values() {
     yield* this.entries.values();
   }
+
+  async removeEntry(name) {
+    if (!this.entries.delete(name)) throw new DOMException("Missing entry", "NotFoundError");
+  }
 }
 
 function digest(text) {
@@ -278,6 +282,80 @@ test("Save accepts a JSON draft, marks review, and detects external edits", asyn
     workspace.saveDataset("metadata", "source_object", "[]", saved.pendingDigest),
     /external-edit conflict/,
   );
+});
+
+test("Workbench and agent share digest-bound local validation reports", async () => {
+  const { session } = buildSession();
+  const workspace = await workspaceModule.connect(session);
+  assert.equal(await workspace.loadValidationReport("metadata"), null);
+
+  const digestValue = await workspace.changeSetDigest("metadata");
+  const written = await workspace.saveValidationReport("metadata", {
+    digest: digestValue,
+    valid: false,
+    issueCount: 1,
+    truncated: false,
+    issues: [
+      {
+        severity: "error",
+        dataset: "source_object",
+        record: 1,
+        code: "schema",
+        fields: ["object_name"],
+        message: "Object Name is required.",
+      },
+    ],
+  });
+
+  assert.equal(written.run_by, "workbench");
+  assert.equal(written.stale, false);
+  const loaded = await workspace.loadValidationReport("metadata");
+  assert.equal(loaded.digest, digestValue);
+  assert.equal(loaded.issues[0].dataset, "source_object");
+
+  session.entries
+    .get("metadata-change-set")
+    .file("source_object.json", '[{"object_name":"Changed"}]\n');
+  const stale = await workspace.loadValidationReport("metadata");
+  assert.equal(stale.stale, true);
+});
+
+test("Workbench writes bounded DBML files and removes stale generated members", async () => {
+  const { session } = buildSession();
+  const model = session.entries.get("model");
+  signModelSnapshot(model, 41, "Customer Model", 8, "model-snapshot-01");
+  const state = JSON.parse(session.entries.get("session.json").text);
+  state.model = [41, "Customer Model"];
+  state.tasks = [["01", "model", "Build model", "doing"]];
+  session.entries.get("session.json").text = JSON.stringify(state);
+  const output = session.directory("model-dbml");
+  output.file("old.dbml", "old");
+  output.file(
+    "manifest.json",
+    JSON.stringify({ files: [{ path: "old.dbml" }] }),
+  );
+  const workspace = await workspaceModule.connect(session);
+  const result = await workspace.saveDbmlDocuments(
+    [
+      {
+        path: "logical_complete.dbml",
+        layer: "logical",
+        view: "complete",
+        submodel_name: null,
+        content: 'Table "Customer" {}\n',
+        table_count: 1,
+        relationship_count: 0,
+      },
+    ],
+    { modelType: "logical", includeSubmodels: true },
+  );
+
+  assert.equal(result.file_count, 1);
+  assert.equal(output.entries.has("old.dbml"), false);
+  assert.equal(output.entries.get("logical_complete.dbml").text, 'Table "Customer" {}\n');
+  const manifest = JSON.parse(output.entries.get("manifest.json").text);
+  assert.equal(manifest.source, "local_effective_model");
+  assert.equal(manifest.generated_by, "workbench");
 });
 
 test("stale Snapshots reject save and validation digest", async () => {

@@ -46,6 +46,13 @@ for (const fixture of datasets) {
     area: (name) => name === fixture.area ? area : emptyArea,
     loadArea: async () => new Map([[fixture.name, loaded]]),
     loadDataset: async () => loaded,
+    loadValidationReport: async () => null,
+    saveDataset: async (_area, _dataset, text) => {
+      loaded.pending = JSON.parse(text);
+      loaded.effective = [...loaded.pending];
+      loaded.pendingDigest = "a".repeat(64);
+      return { records: loaded.pending, pendingDigest: loaded.pendingDigest };
+    },
   };
   window.GDSMetadata = { label: "Metadata", reviewGroups: () => [] };
   window.GDSModel = { label: "Model", reviewGroups: () => [] };
@@ -74,13 +81,23 @@ for (const fixture of datasets) {
   await window.GDSWorkbenchApp.connectDirectoryHandle({ name: workspace.handle.name });
   window.document.querySelector(".dataset-button")?.click();
   await new Promise((resolve) => window.setTimeout(resolve, 0));
-  const addButton = window.document.getElementById("add-row-button");
-  assert.equal(
-    addButton.disabled,
-    !fixture.change_set_eligible,
-    `${fixture.area}/${fixture.name}: Add row eligibility`,
+  const changeSetButton = window.document.querySelector('[data-source="changeset"]');
+  assert.ok(
+    changeSetButton,
+    `${fixture.area}/${fixture.name}: Change Set source exists; ${window.GDSWorkbenchApp.state.message}`,
   );
-  if (!fixture.change_set_eligible) continue;
+  assert.equal(
+    changeSetButton.disabled,
+    !fixture.change_set_eligible,
+    `${fixture.area}/${fixture.name}: Change Set eligibility`,
+  );
+  if (!fixture.change_set_eligible) {
+    assert.equal(window.document.getElementById("add-row-button"), null);
+    continue;
+  }
+  changeSetButton.click();
+  const addButton = window.document.getElementById("add-row-button");
+  assert.equal(addButton.disabled, false, `${fixture.area}/${fixture.name}: Add row eligibility`);
 
   addButton.click();
   assert.equal(
@@ -142,12 +159,13 @@ for (const fixture of datasets) {
   window.document.getElementById("row-editor-form")?.dispatchEvent(
     new window.Event("submit", { bubbles: true, cancelable: true }),
   );
+  await new Promise((resolve) => window.setTimeout(resolve, 0));
   assert.equal(
     window.document.getElementById("row-editor-dialog")?.open,
     false,
     `${fixture.area}/${fixture.name}: completed form stages a row`,
   );
-  const staged = JSON.parse(window.document.getElementById("pending-editor")?.value || "[]");
+  const staged = loaded.pending;
   assert.equal(staged.length, 1, `${fixture.area}/${fixture.name}: one row is staged`);
   for (const field of propertyNames) {
     assert.ok(

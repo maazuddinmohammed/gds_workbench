@@ -1,12 +1,15 @@
 # Workbench
 
-Workbench is a static local viewer/editor for one existing session. It never uses the network, calls MCP, executes SQL, or creates, stages, validates, applies, or archives server Change Sets.
+Workbench edits one local session. It never uses the network, calls MCP, runs SQL, or mutates server Change Sets. Local validation only compiles files.
 
-- Open it once when the session is created. Later ask the user to Refresh.
-- It discovers datasets, fields, canonical keys, editability, and forms from signed Snapshot catalogs and JSON Schemas.
-- It reads Snapshots without modifying them and saves only complete local Change Set arrays.
-- A save compares the edit-start digest and refuses external-edit conflicts.
-- Stale areas and datasets without `x-gds-change-set-eligible: true` are read-only.
-- Table and JSON text stay compact for dense review.
+- Open once at session creation; later ask the user to Refresh.
+- Signed Snapshot catalogs and schemas define sheets, keys, fields, forms, and editability.
+- Snapshot is read-only. **Add to Change Set** copies a complete record into the sparse draft.
+- Only Change Set records are editable. **Save changes** writes immediately and rejects edit-start digest conflicts.
+- Stale areas and schemas without `x-gds-change-set-eligible: true` are read-only.
+- Each sheet has at most three useful multi-select filters.
+- Mapping documents, generated SQL, and Validation SQL open through **Show details**, not in the ledger.
+- **Validate locally** writes the shared digest-bound `reports/local-validation/<area>.json` report.
+- **Generate DBML** renders Snapshot plus Model Change Set into `model-dbml/` and replaces only prior generated members.
 
-The Workbench has no approval button or review ceremony. The user may edit locally, ask the agent to edit, or acknowledge in chat. The agent always reruns internal local validation against the exact digest before reconciliation. Server validation remains authoritative.
+The Workbench has no approval button or review ceremony. Users may edit, ask the agent to edit, or acknowledge in chat. Edits make prior reports stale. The agent reruns validation for the exact digest before reconciliation; server validation remains authoritative.

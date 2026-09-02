@@ -9,143 +9,24 @@
     <link rel="stylesheet" href="styles.css">
   </head>
   <body>
-    <header class="topbar">
-      <div class="brand" aria-label="GDS Workbench">
-        <span class="brand-mark">GDS</span>
-        <span class="brand-name">Workbench</span>
-      </div>
-      <div class="session-line">
-        <span class="eyebrow">Local session</span>
-        <strong id="session-name">Not connected</strong>
-        <span id="task-state" class="state-pill">idle</span>
-      </div>
-      <div class="top-actions">
-        <button id="connect-button" class="button button-primary">Connect session</button>
-        <button id="refresh-button" class="button" disabled>Refresh</button>
-      </div>
-    </header>
-
-    <nav class="area-tabs" aria-label="Focus area" role="tablist">
-      <button class="area-tab is-active" data-area="metadata" role="tab" aria-selected="true" aria-controls="workspace-panel" disabled>Metadata</button>
-      <button class="area-tab" data-area="model" role="tab" aria-selected="false" aria-controls="workspace-panel" disabled>Model</button>
-      <span id="snapshot-state" class="snapshot-state">Select one existing session folder.</span>
-    </nav>
-
-    <main class="layout">
-      <aside class="dataset-rail" aria-label="Datasets">
-        <label class="field-label" for="dataset-search">Datasets</label>
-        <input id="dataset-search" class="input" type="search" placeholder="Filter datasets" disabled>
-        <div id="dataset-list" class="dataset-list">
-          <p class="empty-copy">No session connected.</p>
-        </div>
-      </aside>
-
-      <section id="workspace-panel" class="work-area" role="tabpanel" aria-labelledby="dataset-title">
-        <div class="work-heading">
-          <div>
-            <span id="dataset-section" class="eyebrow">No dataset</span>
-            <h1 id="dataset-title">Connect a session to begin</h1>
-          </div>
-          <div class="record-nav" aria-label="Record page controls">
-            <button id="previous-page" class="icon-button" disabled aria-label="Previous page">←</button>
-            <button id="all-groups" class="group-toggle" disabled aria-pressed="false">All</button>
-            <span id="page-label">0 / 0</span>
-            <button id="next-page" class="icon-button" disabled aria-label="Next page">→</button>
-          </div>
-        </div>
-
-        <div class="record-filter-row">
-          <input id="record-filter" class="input" type="search" aria-label="Filter visible records" placeholder="Filter results" disabled>
-          <div class="view-controls">
-            <div class="workspace-view-tabs" aria-label="Dataset view" role="tablist">
-              <button data-view="results" class="is-active" role="tab" aria-selected="true" aria-controls="results-view" disabled>Results</button>
-              <button data-view="json" role="tab" aria-selected="false" aria-controls="json-view" disabled>JSON</button>
-            </div>
-            <div class="segmented" aria-label="Preview source">
-              <button data-preview="effective" class="is-active" aria-pressed="true" disabled>Effective</button>
-              <button data-preview="snapshot" aria-pressed="false" disabled>Snapshot</button>
-            </div>
-          </div>
-        </div>
-
-        <section id="results-view" class="results-pane" role="tabpanel">
-          <div class="pane-heading results-heading">
-            <div>
-              <span id="preview-label">Effective records</span>
-              <span id="preview-count" class="muted">0 records</span>
-            </div>
-            <button id="add-row-button" class="button" disabled>Add row</button>
-          </div>
-          <div class="results-table-scroll">
-            <table id="results-table" aria-label="Normalized dataset results" hidden>
-              <thead id="results-head"></thead>
-              <tbody id="results-body"></tbody>
-            </table>
-            <p id="results-empty" class="empty-copy">Choose a dataset to see normalized results.</p>
-          </div>
-        </section>
-
-        <div id="json-view" class="editor-grid is-hidden" role="tabpanel" hidden>
-          <section class="pane pane-preview">
-            <div class="pane-heading">
-              <span>Visible records</span>
-              <span class="muted">Read-only JSON</span>
-            </div>
-            <pre id="record-preview" tabindex="0" aria-label="Read-only Snapshot or effective record preview">[]</pre>
-          </section>
-          <section class="pane pane-editor">
-            <div class="pane-heading">
-              <span>Local Change Set</span>
-              <span id="pending-digest" class="digest">not created</span>
-            </div>
-            <textarea id="pending-editor" aria-label="Local Change Set JSON draft" spellcheck="false" disabled>[]</textarea>
-          </section>
-        </div>
-
-        <div class="edit-actions">
-          <button id="copy-visible" class="button" disabled>Copy visible</button>
-          <span class="action-note">Save writes local JSON only.</span>
-          <button id="discard-button" class="button" disabled>Discard edits</button>
-          <button id="save-button" class="button button-primary" disabled>Save dataset</button>
-        </div>
-      </section>
-
-      <aside class="validation-rail" aria-label="Validation">
-        <div class="validation-heading">
-          <div>
-            <span class="eyebrow">On demand</span>
-            <h2>Validation</h2>
-          </div>
-          <button id="validate-button" class="button" disabled>Validate</button>
-        </div>
-        <div id="validation-summary" class="validation-summary is-neutral" role="status" aria-live="polite">
-          Validation has not run.
-        </div>
-        <ol id="issue-list" class="issue-list" aria-label="Local validation issues"></ol>
-        <p class="rail-note">These checks are optional diagnostics. Tell the agent to proceed in chat when the result looks right.</p>
-      </aside>
-    </main>
-
-    <footer class="statusbar">
-      <span id="status-message" role="status" aria-live="polite" aria-atomic="true">Workbench is local-only. No network or server actions are available.</span>
-      <span id="connection-capability">Chrome or Edge directory access required</span>
-    </footer>
+    <div id="workbench-root" class="app-shell" aria-live="off"></div>
 
     <dialog id="row-editor-dialog" class="row-editor-dialog" aria-labelledby="row-editor-title">
-      <form id="row-editor-form" class="dialog-form row-editor-form">
-        <div class="row-editor-heading">
+      <form id="row-editor-form" class="dialog-form">
+        <div class="dialog-heading">
           <div>
-            <span id="row-editor-eyebrow" class="eyebrow">Effective record</span>
-            <h2 id="row-editor-title">Row details</h2>
-            <p id="row-editor-key" class="row-editor-key"></p>
+            <span id="row-editor-eyebrow" class="eyebrow">Change Set record</span>
+            <h2 id="row-editor-title">Edit draft</h2>
+            <p id="row-editor-key" class="dialog-key"></p>
           </div>
-          <button id="close-row-editor" type="button" class="dialog-close" aria-label="Close row editor">×</button>
+          <button id="close-row-editor" type="button" class="icon-button" aria-label="Close editor">×</button>
         </div>
         <div id="row-editor-fields" class="row-editor-fields"></div>
-        <p id="row-editor-message" class="row-editor-message" role="alert"></p>
+        <p id="row-editor-message" class="dialog-message" role="alert"></p>
         <div class="dialog-actions">
+          <span>Writes only to this session's local Change Set.</span>
           <button id="cancel-row-editor" type="button" class="button">Cancel</button>
-          <button id="save-row-editor" type="submit" class="button button-primary">Update local draft</button>
+          <button id="save-row-editor" type="submit" class="button button-primary">Save changes</button>
         </div>
       </form>
     </dialog>
@@ -158,6 +39,7 @@
     <script src="metadata.js"></script>
     <script src="model.js"></script>
     <script src="workspace.js"></script>
+    <script src="dbml.js"></script>
     <script src="ui-state.js"></script>
     <script src="app.js"></script>
   </body>

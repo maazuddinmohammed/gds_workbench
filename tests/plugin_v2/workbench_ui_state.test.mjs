@@ -17,7 +17,7 @@ test("dirty drafts block navigation and validation until saved or discarded", ()
   );
 });
 
-test("editing and validation require the current task for the visible area", () => {
+test("editing and validation require an active current task for the visible area", () => {
   assert.equal(uiState.canEdit(["01", "metadata", "Edit", "doing"], "metadata", true, false), true);
   assert.equal(uiState.canEdit(["01", "model", "Edit", "doing"], "metadata", true), false);
   assert.equal(uiState.canEdit(["01", "metadata", "Edit", "done"], "metadata", true), false);
@@ -27,7 +27,7 @@ test("editing and validation require the current task for the visible area", () 
   );
   assert.equal(
     uiState.canValidate(["01", "metadata", "Edit", "doing"], "metadata", true, false),
-    false,
+    true,
   );
 });
 

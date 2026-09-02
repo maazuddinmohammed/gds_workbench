@@ -277,6 +277,55 @@
     return state;
   }
 
+  function validateValidationReport(value, area) {
+    const validIssue = (issue) =>
+      issue &&
+      !Array.isArray(issue) &&
+      typeof issue === "object" &&
+      new Set(["error", "warning"]).has(issue.severity) &&
+      typeof issue.dataset === "string" &&
+      issue.dataset.length > 0 &&
+      (issue.record === null || (Number.isSafeInteger(issue.record) && issue.record > 0)) &&
+      typeof issue.code === "string" &&
+      issue.code.length > 0 &&
+      Array.isArray(issue.fields) &&
+      issue.fields.every((field) => typeof field === "string" && field.length > 0) &&
+      typeof issue.message === "string" &&
+      issue.message.length > 0;
+    if (
+      !value ||
+      Array.isArray(value) ||
+      typeof value !== "object" ||
+      value.schema_version !== "1.0" ||
+      value.area !== area ||
+      !new Set(["agent", "workbench"]).has(value.run_by) ||
+      typeof value.generated_at !== "string" ||
+      !value.generated_at ||
+      typeof value.digest !== "string" ||
+      !/^[0-9a-f]{64}$/.test(value.digest) ||
+      !value.snapshot ||
+      Array.isArray(value.snapshot) ||
+      typeof value.snapshot !== "object" ||
+      typeof value.snapshot.id !== "string" ||
+      !value.snapshot.id ||
+      (value.snapshot.revision !== null &&
+        (!Number.isSafeInteger(value.snapshot.revision) || value.snapshot.revision < 0)) ||
+      typeof value.snapshot.manifest_digest !== "string" ||
+      !/^[0-9a-f]{64}$/.test(value.snapshot.manifest_digest) ||
+      typeof value.valid !== "boolean" ||
+      !Number.isSafeInteger(value.issue_count) ||
+      value.issue_count < 0 ||
+      typeof value.truncated !== "boolean" ||
+      !Array.isArray(value.issues) ||
+      value.issues.length > 200 ||
+      value.issue_count < value.issues.length ||
+      value.issues.some((issue) => !validIssue(issue))
+    ) {
+      throw new Error(`${area} local validation report has an invalid shape.`);
+    }
+    return value;
+  }
+
   class Workspace {
     constructor(handle) {
       this.handle = handle;
@@ -428,8 +477,7 @@
       return files;
     }
 
-    async changeSetDigest(area) {
-      this.requireFresh(area);
+    async localChangeSetDigest(area) {
       const files = await this.inspectChangeSet(area);
       const parts = [];
       let total = 0;
@@ -446,6 +494,170 @@
         offset += part.length;
       }
       return sha256Bytes(combined);
+    }
+
+    async changeSetDigest(area) {
+      this.requireFresh(area);
+      return this.localChangeSetDigest(area);
+    }
+
+    async validationReportDirectory(create = false) {
+      let directory = this.handle;
+      for (const name of ["reports", "local-validation"]) {
+        const next = create
+          ? await directory.getDirectoryHandle(name, { create: true })
+          : await optionalDirectory(directory, name);
+        if (!next) return null;
+        directory = next;
+      }
+      return directory;
+    }
+
+    async loadValidationReport(area) {
+      if (!new Set(["metadata", "model"]).has(area)) {
+        throw new Error("Validation report area must be metadata or model.");
+      }
+      const directory = await this.validationReportDirectory(false);
+      if (!directory) return null;
+      const handle = await optionalFile(directory, `${area}.json`);
+      if (!handle) return null;
+      const report = validateValidationReport(
+        parseJson((await readFile(handle)).text, `${area} local validation report`),
+        area,
+      );
+      const snapshot = this.areas.get(area);
+      const currentDigest = await this.localChangeSetDigest(area);
+      return {
+        ...report,
+        stale:
+          this.state?.stale?.includes(area) ||
+          !snapshot ||
+          report.snapshot.id !== snapshot.manifest.snapshot_id ||
+          report.snapshot.manifest_digest !== snapshot.manifestDigest ||
+          report.digest !== currentDigest,
+      };
+    }
+
+    async saveValidationReport(area, validation) {
+      const digest = await this.changeSetDigest(area);
+      if (!validation || validation.digest !== digest) {
+        throw new Error("Local validation report digest does not match the current Change Set.");
+      }
+      const snapshot = this.areas.get(area);
+      if (!snapshot) throw new Error(`${area} Snapshot is not available.`);
+      const report = validateValidationReport(
+        {
+          schema_version: "1.0",
+          area,
+          run_by: "workbench",
+          generated_at: new Date().toISOString(),
+          digest,
+          snapshot: {
+            id: snapshot.manifest.snapshot_id,
+            revision: snapshot.manifest.model_revision ?? null,
+            manifest_digest: snapshot.manifestDigest,
+          },
+          valid: validation.valid,
+          issue_count: validation.issueCount,
+          truncated: validation.truncated,
+          issues: validation.issues,
+        },
+        area,
+      );
+      const directory = await this.validationReportDirectory(true);
+      const handle = await directory.getFileHandle(`${area}.json`, { create: true });
+      await writeText(handle, `${JSON.stringify(report, null, 2)}\n`);
+      return { ...report, stale: false };
+    }
+
+    async saveDbmlDocuments(documents, options = {}) {
+      this.requireFresh("model");
+      if (!Array.isArray(documents) || !documents.length || documents.length > 1002) {
+        throw new Error("Generated DBML file inventory is invalid.");
+      }
+      const names = new Set();
+      let totalBytes = 0;
+      for (const document of documents) {
+        const size = encoder.encode(document?.content || "").length;
+        if (
+          !document ||
+          typeof document !== "object" ||
+          typeof document.path !== "string" ||
+          !/^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$/.test(document.path) ||
+          names.has(document.path.toLowerCase()) ||
+          typeof document.content !== "string" ||
+          size < 1 ||
+          size > 12 * 1024 * 1024
+        ) {
+          throw new Error("Generated DBML member is invalid.");
+        }
+        names.add(document.path.toLowerCase());
+        totalBytes += size;
+      }
+      if (totalBytes > 16 * 1024 * 1024) {
+        throw new Error("Generated DBML files exceed their aggregate byte limit.");
+      }
+      const snapshot = this.areas.get("model");
+      if (!snapshot?.catalog?.model) throw new Error("Model Snapshot identity is unavailable.");
+      const directory = await this.handle.getDirectoryHandle("model-dbml", { create: true });
+      const previousHandle = await optionalFile(directory, "manifest.json");
+      let previousFiles = [];
+      if (previousHandle) {
+        const previous = parseJson((await readFile(previousHandle)).text, "Generated DBML manifest");
+        if (Array.isArray(previous.files)) {
+          previousFiles = previous.files
+            .map((item) => item?.path)
+            .filter((name) => typeof name === "string" && /^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$/.test(name));
+        }
+      }
+      const files = [];
+      for (const document of documents) {
+        const bytes = encoder.encode(document.content);
+        await writeText(
+          await directory.getFileHandle(document.path, { create: true }),
+          document.content,
+        );
+        files.push({
+          path: document.path,
+          layer: document.layer,
+          view: document.view,
+          submodel_name: document.submodel_name,
+          table_count: document.table_count,
+          relationship_count: document.relationship_count,
+          size_bytes: bytes.length,
+          sha256: await sha256Bytes(bytes),
+        });
+      }
+      const currentNames = new Set(files.map((item) => item.path));
+      for (const name of previousFiles) {
+        if (!currentNames.has(name)) await directory.removeEntry(name);
+      }
+      const manifest = {
+        schema_version: "1.0",
+        snapshot_kind: "dbml",
+        source: "local_effective_model",
+        generated_by: "workbench",
+        model: {
+          id: snapshot.catalog.model.model_id,
+          name: snapshot.catalog.model.model_name,
+          revision: snapshot.catalog.model.model_revision,
+        },
+        draft_digest: await this.changeSetDigest("model"),
+        model_type: options.modelType || "full",
+        include_submodels: options.includeSubmodels !== false,
+        files,
+      };
+      await writeText(
+        await directory.getFileHandle("manifest.json", { create: true }),
+        `${JSON.stringify(manifest, null, 2)}\n`,
+      );
+      return {
+        directory: "model-dbml",
+        manifest: "model-dbml/manifest.json",
+        file_count: files.length,
+        draft_digest: manifest.draft_digest,
+        files: files.map((item) => item.path),
+      };
     }
 
     async loadArea(area) {

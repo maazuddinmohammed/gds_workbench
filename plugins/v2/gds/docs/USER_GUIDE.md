@@ -27,11 +27,15 @@ Read-only smoke test:
 
 One session belongs to one Tenant and optionally one Model. After a Model is selected, use another session for another Model.
 
-Workbench opens once when the session starts. Keep it open. When the agent says results are ready, click **Refresh**. Edit in Workbench, ask the agent for changes, or reply “proceed”, “OK”, or another clear positive acknowledgement.
+Workbench opens once when the session starts. Keep it open. When the agent says results are ready, click **Refresh**. Each sheet has a read-only **Snapshot** ledger and an editable **Change Set** ledger. Select Snapshot rows and choose **Add selected to Change Set**, or add a new row in Change Set. Editing is available only for Change Set drafts; **Save changes** writes immediately to the local session.
 
-There is no separate user review command. The agent performs local comparison and validation internally. A positive acknowledgement accepts the exact current content. Any later content edit requires another look.
+Each sheet has up to three useful multi-select filters. Mapping documents, generated SQL, and Validation SQL stay compact in the ledger; choose **Show details** to open the complete content on its own record page. **Validate locally** runs the same effective-graph checks used by the agent and stores the digest-bound report under `reports/local-validation/`. **Generate DBML** renders the current Model Snapshot plus local Model Change Set into `model-dbml/` for iterative review.
 
-Before staging, the agent checks the authoritative revision. If it changed, work stops for a fresh Snapshot and reassessment. An unchanged result keeps the acknowledgement; changed content is shown again. A positive acknowledgement authorizes an ordinary free Tenant Lock, reconciliation, staging, and server Change Set validation. The agent reconciles existing non-overlapping draft records and automatically chooses direct or chunked staging; conflicts stop for resolution. Users never calculate chunks or hashes manually. Lock override and Apply always require separate confirmation.
+Edit in Workbench, ask the agent for changes, or reply “proceed”, “OK”, or another clear positive acknowledgement.
+
+There is no separate user review command. Before presenting work, the agent compiles and validates the complete effective local graph. A positive acknowledgement accepts the exact current content. Any later content edit makes the report stale and requires another look.
+
+Before staging, the agent checks the authoritative revision. If it changed, work stops for a fresh Snapshot and reassessment. An unchanged result keeps the acknowledgement; changed content is shown again. A positive acknowledgement authorizes an ordinary free Tenant Lock, reconciliation, staging, and server Change Set validation. The agent reconciles existing non-overlapping draft records, runs the local Stage planner once, and follows its ordered direct/batch operations. Conflicts stop for resolution. Users never calculate chunks or hashes manually; agents follow the generated operation plan. Lock override and Apply always require separate confirmation.
 
 ## Interaction modes
 

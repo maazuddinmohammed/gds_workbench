@@ -33,6 +33,7 @@ def test_workbench_is_classic_modular_and_network_blocked() -> None:
         "workspace.js",
         "metadata.js",
         "model.js",
+        "dbml.js",
         "validation/common.js",
         "validation/metadata.js",
         "validation/model.js",
@@ -51,16 +52,18 @@ def test_workbench_is_classic_modular_and_network_blocked() -> None:
 
 def test_workbench_exposes_refresh_and_optional_validation_without_review_buttons() -> None:
     html = (WORKBENCH / "index.html").read_text()
+    app = (WORKBENCH / "app.js").read_text()
 
-    assert 'id="refresh-button"' in html
-    assert 'id="validate-button"' in html
-    assert 'id="override-button"' not in html
-    assert 'id="accept-button"' not in html
-    assert 'id="all-groups"' in html
-    assert 'data-area="metadata"' in html
-    assert 'data-area="model"' in html
-    assert "Save writes local JSON only." in html
-    assert "Tell the agent to proceed in chat" in html
+    assert 'id="refresh-button"' in app
+    assert 'id="validate-button"' in app
+    assert 'id="dbml-button"' in app
+    assert 'id="override-button"' not in html + app
+    assert 'id="accept-button"' not in html + app
+    assert '["metadata", "Metadata"]' in app
+    assert '["model", "Model"]' in app
+    assert "Snapshot stays unchanged." in app
+    assert "Save changes" in html
+    assert "shared local validation reports" in app
 
 
 def test_workbench_validation_is_schema_driven() -> None:
@@ -78,14 +81,19 @@ def test_workbench_validation_is_schema_driven() -> None:
     assert "Add-DeclaredReferenceIssues" in powershell
 
 
-def test_workbench_exposes_results_table_and_json_fallback() -> None:
+def test_workbench_exposes_the_record_ledger_and_dedicated_document_details() -> None:
     html = (WORKBENCH / "index.html").read_text()
+    app = (WORKBENCH / "app.js").read_text()
 
-    assert 'data-view="results"' in html
-    assert 'data-view="json"' in html
-    assert 'id="results-table"' in html
-    assert 'aria-label="Normalized dataset results"' in html
+    assert 'class="data-table"' in app
+    assert 'data-source="snapshot"' in app
+    assert 'data-source="changeset"' in app
+    assert 'data-action="back-to-ledger"' in app
+    assert 'mapping_transformation_document' in app
+    assert 'generated_code_content' in app
+    assert 'validation_query_sql' in app
     assert 'id="row-editor-dialog"' in html
+    assert 'id="pending-editor"' not in html + app
 
 
 def test_workbench_results_use_visible_spreadsheet_grid_lines() -> None:
@@ -93,10 +101,10 @@ def test_workbench_results_use_visible_spreadsheet_grid_lines() -> None:
 
     assert "border-right: 1px solid var(--grid-line);" in styles
     assert "border-bottom: 1px solid var(--grid-line);" in styles
-    assert "border: 1px solid var(--grid-line-strong);" in styles
-    assert "padding: 6px 8px;" in styles
-    assert "#results-table th {" in styles and "font-size: 9px;" in styles
-    assert "#results-table td { font-size: 10px; }" in styles
+    assert "border: 1px solid var(--line-strong);" in styles
+    assert "padding: 7px 9px;" in styles
+    assert ".data-table th," in styles and "font-size: 9px;" in styles
+    assert ".data-table td," in styles and "font-size: 10px;" in styles
 
 
 def test_add_row_form_covers_every_snapshot_dataset_schema(tmp_path: Path) -> None:
@@ -142,15 +150,15 @@ def test_add_row_form_covers_every_snapshot_dataset_schema(tmp_path: Path) -> No
 
 def test_workbench_labels_dynamic_state_and_supports_narrow_screens() -> None:
     html = (WORKBENCH / "index.html").read_text()
+    app = (WORKBENCH / "app.js").read_text()
     styles = (WORKBENCH / "styles.css").read_text()
 
-    assert 'role="tablist"' in html
-    assert 'aria-selected="true"' in html
-    assert 'aria-label="Local Change Set JSON draft"' in html
-    assert 'id="status-message" role="status" aria-live="polite"' in html
+    assert 'role="tablist"' in app
+    assert 'aria-selected="${active === value}"' in app
+    assert 'id="status-message" role="status" aria-live="polite"' in app
     assert 'aria-labelledby="override-title"' not in html
-    assert "@media (max-width: 720px)" in styles
-    assert ".validation-rail { position: static;" in styles
+    assert "@media (max-width: 820px)" in styles
+    assert ".record-layout," in styles and "grid-template-columns: 170px" in styles
 
 
 def test_workbench_uses_the_approved_visual_foundations() -> None:
@@ -163,10 +171,10 @@ def test_workbench_uses_the_approved_visual_foundations() -> None:
         "--paper: #f2f4f6;",
         "--blue: #315fcf;",
         "--orange: #b75c27;",
-        'font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;',
+        'font-family: ui-sans-serif, -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI", sans-serif;',
     ):
         assert token in styles
-    assert "backdrop-filter: blur(22px) saturate(155%);" in styles
+    assert "backdrop-filter: blur(22px) saturate(150%);" in styles
     assert ".button-primary" in styles and "background: var(--orange);" in styles
 
 
@@ -184,40 +192,34 @@ def test_workbench_visual_feedback_respects_accessibility_preferences() -> None:
 def test_workbench_shell_uses_a_calm_ledger_hierarchy() -> None:
     styles = (WORKBENCH / "styles.css").read_text()
 
-    assert "grid-template-columns: 206px minmax(480px, 1fr) 300px;" in styles
-    assert (
-        ".dataset-rail,\n.validation-rail { min-height: 0; background: #fafbfc; }"
-        in styles
-    )
+    assert ".record-layout { grid-template-columns: 220px minmax(0, 1fr); }" in styles
+    assert ".validation-layout { grid-template-columns: 245px minmax(0, 1fr); }" in styles
+    assert ".dataset-rail,\n.report-rail" in styles
     assert "border-top: 2px solid var(--ink);" in styles
     assert ".statusbar" in styles and "background: var(--ink);" in styles
-    assert "box-shadow: none;" in styles
+    assert ".validation-rail" not in styles
 
 
 def test_workbench_keeps_fluid_layout_and_restrained_panel_motion() -> None:
     styles = (WORKBENCH / "styles.css").read_text()
 
     assert "html { min-width: 1000px" not in styles
-    assert "@media (max-width: 1050px)" in styles
-    assert "@media (max-width: 720px)" in styles
-    assert "@keyframes panel-enter" in styles
-    assert "animation: panel-enter 180ms cubic-bezier(.22, 1, .36, 1) both;" in styles
+    assert "@media (max-width: 1080px)" in styles
+    assert "@media (max-width: 820px)" in styles
+    assert "@keyframes page-enter" in styles
+    assert "animation: page-enter 170ms var(--ease-fluid) both;" in styles
 
 
 def test_workbench_keeps_utility_controls_dense_and_fallback_boundaries_clear() -> None:
     styles = (WORKBENCH / "styles.css").read_text()
 
-    assert (
-        ".field-label { display: block; margin-bottom: 7px; font-size: 9px;" in styles
-    )
-    assert (
-        ".dataset-button span:last-child { color: var(--faint); font-size: 8px;"
-        in styles
-    )
+    assert ".field-label { color: var(--muted); font-size: 9px;" in styles
+    assert ".dataset-button > span:last-child { color: var(--faint); font-size: 8px;" in styles
     assert (
         ".topbar,\n  .area-tabs { background: #fff; backdrop-filter: none; }" in styles
     )
-    assert ".icon-button,\n  .segmented button,\n  .editor-grid" in styles
+    assert ".row-editor-field" in styles
+    assert ".detail-document pre" in styles
 
 
 def test_shell_launcher_is_static_and_syntax_valid() -> None:

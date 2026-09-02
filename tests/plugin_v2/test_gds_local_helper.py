@@ -994,6 +994,18 @@ def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
     assert output["repairs"][0]["dataset"] == "source_object"
     assert output["repairs"][0]["record"] == 1
     assert output["repairs"][0]["fields"]
+    report = json.loads(
+        (session / "reports" / "local-validation" / "metadata.json").read_text()
+    )
+    assert report["schema_version"] == "1.0"
+    assert report["area"] == "metadata"
+    assert report["run_by"] == "agent"
+    assert report["digest"] == output["digest"]
+    assert report["snapshot"]["id"] == "snapshot-01"
+    assert report["valid"] is False
+    assert report["issue_count"] == len(output["issues"])
+    assert report["issues"][0]["dataset"] == "source_object"
+    assert report["issues"][0]["severity"] == "error"
 
 
 def test_rows_and_schema_are_verified_only_when_accessed(tmp_path: Path) -> None:
@@ -1869,6 +1881,59 @@ def test_helper_model_validation_is_schema_driven(tmp_path: Path) -> None:
     assert output["issues"] == []
 
 
+def test_generate_dbml_writes_local_effective_model_files(tmp_path: Path) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Preview logical model",
+        "--plan",
+        '["Generate DBML"]',
+    )
+    assert added.returncode == 0, added.stderr
+    (session / "model-change-set" / "logical_entity.json").write_text(
+        json.dumps(
+            [
+                {
+                    "logical_entity_name": "Customer",
+                    "logical_entity_definition": "Customer master",
+                    "logical_entity_type": "master",
+                    "logical_entity_grain": "One row per customer",
+                    "logical_entity_dependency_order": 10,
+                    "logical_entity_status": "active",
+                    "submodels": [],
+                }
+            ]
+        )
+        + "\n"
+    )
+
+    generated = run_helper(
+        "generate-dbml", "--session", str(session), "--area", "model"
+    )
+
+    assert generated.returncode == 0, generated.stderr
+    output = json.loads(generated.stdout)
+    assert output["file_count"] == 4
+    manifest = json.loads(Path(output["manifest"]).read_text())
+    assert manifest["source"] == "local_effective_model"
+    assert manifest["model"] == {
+        "id": 41,
+        "name": "Customer Model",
+        "revision": 8,
+    }
+    logical = session / "model-dbml" / "logical_complete.dbml"
+    assert 'Table "Customer"' in logical.read_text()
+
+
 def test_upsert_rejects_incomplete_record_and_digest_conflict(tmp_path: Path) -> None:
     initialized = run_helper(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
@@ -2219,6 +2284,15 @@ def test_prepare_stage_writes_one_direct_request_for_small_datasets(
     assert [change["dataset"] for change in direct] == ["source_object"]
     assert direct[0]["records"][0]["object_name"] == "Customer"
     assert manifest["batches"] == []
+    assert manifest["operations"] == [
+        {
+            "sequence": 1,
+            "tool": "stage_metadata_change_set",
+            "payload_file": manifest["direct"]["file"],
+            "expected_revision_from": "manifest.starting_revision",
+            "returns_revision_for": "next operation",
+        }
+    ]
 
 
 def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
@@ -2296,6 +2370,20 @@ def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
     assert batch["batch_sha256"] == hashlib.sha256(
         "".join(chunk["sha256"] for chunk in batch["chunks"]).encode("ascii")
     ).hexdigest()
+    assert [operation["tool"] for operation in manifest["operations"]] == [
+        "begin_metadata_stage_batch",
+        "put_metadata_stage_chunk",
+        "put_metadata_stage_chunk",
+        "put_metadata_stage_chunk",
+        "put_metadata_stage_chunk",
+        "commit_metadata_stage_batch",
+    ]
+    assert manifest["operations"][0]["expected_revision_from"] == (
+        "manifest.starting_revision"
+    )
+    assert manifest["operations"][-1]["expected_revision_from"] == (
+        "matching begin operation"
+    )
 
 
 def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(

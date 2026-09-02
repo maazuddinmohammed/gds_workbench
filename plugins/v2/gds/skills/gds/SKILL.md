@@ -1,6 +1,6 @@
 ---
 name: gds
-description: Build and deliver governed GDS metadata, models, bindings, mappings, code, and validations from signed Snapshots and Change Sets. Use to initialize or resume GDS Workbench, inspect GDS context, run a GDS workflow, or start a Grill With Docs discussion for deep collaborative GDS design.
+description: Govern GDS metadata, models, bindings, mappings, code, and validations from signed Snapshots and Change Sets. Use for GDS Workbench sessions, inspection, workflows, or Grill With Docs design.
 ---
 
 # GDS router
@@ -33,10 +33,10 @@ Full covers every eligible input within the task boundary. Selected covers only 
 ## User-visible lifecycle
 
 1. Author complete local records with internal coverage loops; keep supported applied records `active`.
-2. Run local review and validation internally. When complete, tell the user the result is ready and ask them to Refresh Workbench.
+2. Run `validate` against the complete effective local graph before the first user review. It also writes the shared digest-bound local report. Use `review` only when its action summary is useful. When valid, tell the user the result is ready and ask them to Refresh Workbench.
 3. Any unambiguous positive acknowledgement—such as “proceed”, “OK”, or “looks good”—accepts the exact current digest and authorizes an ordinary free Tenant Lock, reconciliation, Stage, and server Change Set validation. Do not ask again before those actions.
 4. Before reconciliation, confirm the authoritative revision still matches. If it changed, stop, request a fresh Snapshot, and reassess. Keep the acknowledgement only when local content is byte-identical; otherwise notify the user again.
-5. If another Principal owns the lock, stop. Lock override always requires separate explicit authorization and a reason. After reconciliation, read `references/staging.md`; do not plan chunks manually. After server validation, show the authoritative actions and ask separately for Apply approval.
+5. If another Principal owns the lock, stop. Lock override always requires separate explicit authorization and a reason. After reconciliation, read `references/staging.md`; run `prepare-stage` once and execute its ordered `operations` exactly. After server validation, show the authoritative actions and ask separately for Apply approval.
 6. Apply once, mark that Snapshot area stale, release a lock acquired here, and stop at the target boundary.
 
 Workbench is a local viewer/editor. It never calls MCP, stages, applies, deploys, or executes generated code.

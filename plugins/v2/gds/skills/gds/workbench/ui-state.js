@@ -25,7 +25,7 @@
         !stale &&
         Array.isArray(task) &&
         task[1] === area &&
-        task[3] === "review",
+        EDIT_STATES.has(task[3]),
     );
   }
 

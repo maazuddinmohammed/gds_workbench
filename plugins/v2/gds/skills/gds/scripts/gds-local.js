@@ -12,6 +12,7 @@ const workbenchAreas = {
   metadata: require("../workbench/metadata.js"),
   model: require("../workbench/model.js"),
 };
+const workbenchDbml = require("../workbench/dbml.js");
 
 function fail(message) {
   throw new Error(message);
@@ -62,6 +63,67 @@ function writeJsonAtomic(filePath, value) {
     mode: 0o600,
   });
   fs.renameSync(temporary, filePath);
+}
+
+function writeTextAtomic(filePath, value) {
+  const temporary = path.join(
+    path.dirname(filePath),
+    `.${path.basename(filePath)}.${process.pid}.${Date.now()}.tmp`,
+  );
+  fs.writeFileSync(temporary, value, { encoding: "utf8", flag: "wx", mode: 0o600 });
+  try {
+    if (fs.existsSync(filePath)) {
+      const stat = fs.lstatSync(filePath);
+      if (!stat.isFile() || stat.isSymbolicLink()) fail("Generated DBML member must be a regular file.");
+    }
+    fs.renameSync(temporary, filePath);
+  } catch (error) {
+    if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
+    throw error;
+  }
+}
+
+function validationReportPath(session, area) {
+  let current = session;
+  for (const segment of ["reports", "local-validation"]) {
+    current = path.join(current, segment);
+    if (!fs.existsSync(current)) {
+      fs.mkdirSync(current, { mode: 0o700 });
+      continue;
+    }
+    const stat = fs.lstatSync(current);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) {
+      fail("Local validation report directory must be a regular directory.");
+    }
+  }
+  return path.join(current, `${area}.json`);
+}
+
+function writeValidationReport(context, validationIssues, output) {
+  const manifestPath = path.join(context.root, "manifest.json");
+  writeJsonAtomic(validationReportPath(context.session, optionsArea(context)), {
+    schema_version: "1.0",
+    area: optionsArea(context),
+    run_by: "agent",
+    generated_at: new Date().toISOString(),
+    digest: output.digest,
+    snapshot: {
+      id: context.manifest.snapshot_id,
+      revision: context.manifest.model_revision ?? null,
+      manifest_digest: crypto.createHash("sha256").update(fs.readFileSync(manifestPath)).digest("hex"),
+    },
+    valid: output.valid,
+    issue_count: validationIssues.length,
+    truncated: output.truncated,
+    issues: output.repairs.map((repair) => ({
+      severity: "error",
+      dataset: repair.dataset,
+      record: repair.record,
+      code: repair.code,
+      fields: repair.fields,
+      message: repair.message,
+    })),
+  });
 }
 
 function readManifest(filePath) {
@@ -1400,12 +1462,103 @@ function validateChangeSet(options) {
         : `${issue.code}: ${humanCode}: ${detail}`,
     ];
   });
-  return {
+  const output = {
     valid: validationIssues.length === 0,
     issues,
     repairs,
     truncated: validationIssues.length > boundedIssues.length,
     digest: workspaceDigest(context),
+  };
+  writeValidationReport(context, validationIssues, output);
+  return output;
+}
+
+function generateLocalDbml(options) {
+  if (options.area !== "model") fail("--area must be model for generate-dbml.");
+  const modelType = options["model-type"] ?? "full";
+  if (!new Set(["full", "conceptual", "logical", "dimensional"]).has(modelType)) {
+    fail("--model-type must be full, conceptual, logical, or dimensional.");
+  }
+  const includeSubmodels = options["include-submodels"] ?? "true";
+  if (!new Set(["true", "false"]).has(includeSubmodels)) {
+    fail("--include-submodels must be true or false.");
+  }
+  const context = changeSetContext(options);
+  const pending = readPending(context);
+  const loaded = new Map();
+  for (const dataset of context.datasets) {
+    const baseline = readSnapshotRecords(context, dataset);
+    const draft = pending[dataset.name] ?? [];
+    loaded.set(dataset.name, {
+      effective: workbenchCore.overlay("model", dataset, baseline, draft),
+    });
+  }
+  const documents = workbenchDbml.render(loaded, context.catalog.model, {
+    modelType,
+    includeSubmodels: includeSubmodels === "true",
+  });
+
+  const directory = path.join(context.session, "model-dbml");
+  if (!fs.existsSync(directory)) fs.mkdirSync(directory, { mode: 0o700 });
+  const directoryStat = fs.lstatSync(directory);
+  if (!directoryStat.isDirectory() || directoryStat.isSymbolicLink()) {
+    fail("Generated DBML path must be a regular directory.");
+  }
+  const previousManifestPath = path.join(directory, "manifest.json");
+  let previousFiles = [];
+  if (fs.existsSync(previousManifestPath)) {
+    const previous = readJsonFile(previousManifestPath, "Generated DBML manifest");
+    if (Array.isArray(previous.files)) {
+      previousFiles = previous.files
+        .map((item) => item?.path)
+        .filter((name) => typeof name === "string" && /^[A-Za-z0-9_][A-Za-z0-9_.-]*\.dbml$/.test(name));
+    }
+  }
+  const files = documents.map((document) => {
+    const filePath = path.join(directory, document.path);
+    writeTextAtomic(filePath, document.content);
+    const bytes = Buffer.from(document.content, "utf8");
+    return {
+      path: document.path,
+      layer: document.layer,
+      view: document.view,
+      submodel_name: document.submodel_name,
+      table_count: document.table_count,
+      relationship_count: document.relationship_count,
+      size_bytes: bytes.length,
+      sha256: sha256Bytes(bytes),
+    };
+  });
+  const currentFiles = new Set(files.map((item) => item.path));
+  for (const name of previousFiles) {
+    if (currentFiles.has(name)) continue;
+    const stalePath = path.join(directory, name);
+    if (!fs.existsSync(stalePath)) continue;
+    const stat = fs.lstatSync(stalePath);
+    if (!stat.isFile() || stat.isSymbolicLink()) fail("Stale DBML member must be a regular file.");
+    fs.unlinkSync(stalePath);
+  }
+  const manifest = {
+    schema_version: "1.0",
+    snapshot_kind: "dbml",
+    source: "local_effective_model",
+    model: {
+      id: context.catalog.model.model_id,
+      name: context.catalog.model.model_name,
+      revision: context.catalog.model.model_revision,
+    },
+    draft_digest: workspaceDigest(context),
+    model_type: modelType,
+    include_submodels: includeSubmodels === "true",
+    files,
+  };
+  writeJsonAtomic(previousManifestPath, manifest);
+  return {
+    directory,
+    manifest: previousManifestPath,
+    file_count: files.length,
+    draft_digest: manifest.draft_digest,
+    files: files.map((item) => item.path),
   };
 }
 
@@ -1822,6 +1975,56 @@ function prepareStage(options) {
   }
 
   const strategy = direct && batches.length ? "mixed" : direct ? "direct" : "batched";
+  const operations = [];
+  let expectedRevisionFrom = "manifest.starting_revision";
+  if (direct) {
+    operations.push({
+      sequence: operations.length + 1,
+      tool: `stage_${area}_change_set`,
+      payload_file: direct.file,
+      expected_revision_from: expectedRevisionFrom,
+      returns_revision_for: "next operation",
+    });
+    expectedRevisionFrom = `operation ${operations.length} response draft_revision`;
+  }
+  for (const batch of batches) {
+    const beginSequence = operations.length + 1;
+    operations.push({
+      sequence: beginSequence,
+      tool: `begin_${area}_stage_batch`,
+      dataset: batch.dataset,
+      total_record_count: batch.total_record_count,
+      total_chunk_count: batch.total_chunk_count,
+      payload_mode: batch.payload_mode,
+      ...(batch.total_payload_bytes === undefined
+        ? {}
+        : { total_payload_bytes: batch.total_payload_bytes }),
+      batch_sha256: batch.batch_sha256,
+      expected_revision_from: expectedRevisionFrom,
+      returns_stage_batch_id_for: "following Put and Commit operations",
+    });
+    for (const chunk of batch.chunks) {
+      operations.push({
+        sequence: operations.length + 1,
+        tool: `put_${area}_stage_chunk`,
+        dataset: batch.dataset,
+        chunk_index: chunk.index,
+        payload_mode: batch.payload_mode,
+        payload_file: chunk.file,
+        chunk_sha256: chunk.sha256,
+        stage_batch_id_from: `operation ${beginSequence} response stage_batch_id`,
+      });
+    }
+    operations.push({
+      sequence: operations.length + 1,
+      tool: `commit_${area}_stage_batch`,
+      dataset: batch.dataset,
+      expected_revision_from: "matching begin operation",
+      stage_batch_id_from: `operation ${beginSequence} response stage_batch_id`,
+      returns_revision_for: "next operation",
+    });
+    expectedRevisionFrom = `operation ${operations.length} response draft_revision`;
+  }
   const manifest = {
     schema_version: "1.0",
     area,
@@ -1839,6 +2042,7 @@ function prepareStage(options) {
     revision_rule: "Use the returned draft_revision after direct Stage and after every batch commit.",
     direct,
     batches,
+    operations,
   };
   const manifestPath = path.join(stageDirectory, "manifest.json");
   writeJsonAtomic(manifestPath, manifest);
@@ -1847,6 +2051,8 @@ function prepareStage(options) {
     manifest: manifestPath,
     direct_datasets: direct?.datasets ?? [],
     batch_datasets: batches.map((batch) => batch.dataset),
+    operation_count: operations.length,
+    next_operation: operations[0],
   };
 }
 
@@ -2172,6 +2378,7 @@ async function main() {
   else if (command === "discard") output = discardRecord(options);
   else if (command === "review") output = reviewChangeSet(options);
   else if (command === "validate") output = validateChangeSet(options);
+  else if (command === "generate-dbml") output = generateLocalDbml(options);
   else if (command === "accept") output = acceptChangeSet(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);
   else if (command === "reconcile") output = reconcileChangeSet(options);

@@ -1,17 +1,17 @@
 # Staging
 
-Load only after the user accepted the local digest and the current server draft was fetched.
+Load only after local-digest acceptance and fetching the current server draft.
 
-Run local `prepare-stage` with the exact server pending datasets returned by the Change Set read. It reconciles by canonical key, refuses conflicts or a stale draft binding, merges non-overlapping records, and writes a deterministic manifest under `tasks/<task>.stage/`. Do not calculate chunks or hashes manually.
+Run `prepare-stage` once with the exact server pending datasets. It reconciles normalized keys, rejects conflicts/stale bindings, combines non-overlap, and writes `tasks/<task>.stage/manifest.json`. Never stage record by record or invent chunks/hashes.
 
-Follow `manifest.json` in this order:
+Execute `manifest.json.operations` by `sequence`:
 
-1. If `direct` is present, read its file and make one direct Stage call with that complete `changes` array and `starting_revision`.
-2. For each batch, call Begin with its dataset, record count, chunk count, payload mode, optional payload bytes, and batch hash.
-3. Put every chunk in index order. In `records` mode the file is the `records` value. In `json_fragments` mode the file contains the `payload_fragment_base64` string and is allowed only for Model `generated_code`.
-4. Commit that batch. Use every returned `draft_revision` as the expected revision for the next direct or Begin/Commit operation.
-5. After all entries succeed, fetch the draft again and cache its new active revision before server validation.
+1. Direct Stage: use `payload_file` as the complete `changes`; resolve `expected_revision_from` exactly.
+2. Begin: copy its dataset, counts, mode, optional bytes, batch hash, and revision.
+3. Put: use its payload file, index, hash, and referenced Begin `stage_batch_id`. `records` files become `records`; Model `generated_code` fragment files become `payload_fragment_base64`.
+4. Commit: use the referenced Begin ID/revision. Carry the returned revision only where the next operation directs.
+5. When all operations succeed, refetch and cache the active draft revision before server validation.
 
-A present dataset is its complete pending replacement. Direct Stage replaces all listed datasets once; repeated direct calls do not append. Empty replacements must remain in the direct request because a batch cannot be empty.
+A present dataset replaces its complete pending server dataset. Repeated direct calls do not append. Empty replacements remain direct because batches cannot be empty.
 
-The planner keeps a direct request at or below 1 MiB. Metadata record chunks are at most 450 KiB and 5,000 records; Model record chunks use a conservative 900 KiB and 5,000 records. A batch has at most 64 chunks. These are packing rules, not output quotas.
+Limits: direct request 1 MiB; Metadata chunks 450 KiB/5,000 records; Model record chunks 900 KiB/5,000; 64 chunks per batch. Metadata's server contract enforces 450 KiB. These are packing limits, not output quotas.
