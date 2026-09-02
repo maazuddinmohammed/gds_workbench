@@ -43,6 +43,8 @@ def test_router_has_simple_modes_and_no_server_contract_preflight() -> None:
     for mode in ("Quick", "Guided", "Automatic", "Custom", "Grill With Docs"):
         assert f"**{mode}**" in router
     assert "Open Workbench only when the session is first created" in router
+    assert "Read `references/workflow-targets.md` and only the active guide" in router
+    assert "For Automatic, also read `references/automatic-journey.md`" in router
     assert "ask them to Refresh Workbench" in router
     assert "Any unambiguous positive acknowledgement" in router
     assert "There is no packaged server-contract hash preflight" in router
@@ -63,7 +65,6 @@ def test_workflow_router_names_current_targets_and_validation_terms() -> None:
     router = read(REFERENCES / "workflow-targets.md")
 
     for target in (
-        "Tenant Intake",
         "Metadata Authoring",
         "Model Input Scope Authoring",
         "Logical Build",
@@ -164,11 +165,31 @@ def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
     assert "No Object may contain data from multiple source Tenants" in combined
 
 
+def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> None:
+    registration = read(WORKFLOWS / "target-registration.md")
+    binding = read(WORKFLOWS / "model-binding.md")
+
+    gate = registration.index("confirm the exact target schema name")
+    authoring = registration.index("Use PascalCase")
+    assert gate < authoring
+    assert "Do not begin authoring until the user confirms" in registration
+    assert "every interaction mode" in registration
+    assert "Do not add an optional design-confirmation pause" in binding
+    assert "missing or more than one compatible match" in binding
+
+
 def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
+    router = read(SKILL_ROOT / "SKILL.md")
     conceptual = read(WORKFLOWS / "conceptual.md")
     logical = read(WORKFLOWS / "logical-build.md")
     dimensional = read(WORKFLOWS / "dimensional-build.md")
 
+    phases = ["**Profile**", "**Analyze relationships**", "**Build Conceptual**", "**Build Logical**"]
+    assert [logical.index(phase) for phase in phases] == sorted(
+        logical.index(phase) for phase in phases
+    )
+    assert "table-by-table pass" in conceptual
+    assert "required Logical Build phase" in conceptual
     assert "Conceptual-to-Logical copy" in conceptual
     assert "one-concept-per-Object" in conceptual
     for state in ("represented", "context-only", "excluded", "blocked"):
@@ -176,17 +197,64 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     assert "PascalCase" in conceptual
     assert "PascalCase" in logical and "CustomerID" in logical
     assert "PascalCase" in dimensional and "CustomerKey" in dimensional
+    for policy in ("`never`", "`essential`", "`as_needed`"):
+        assert policy in router
+        assert policy in logical
+    assert "never persist raw query output" in logical
 
 
 def test_mapping_is_flexible_but_has_a_standard_default() -> None:
     mapping = read(WORKFLOWS / "mapping.md")
 
+    assert mapping.index("wait for user confirmation") < mapping.index(
+        "The work unit is"
+    )
+    assert "object-level and attribute-level JSON shape" in mapping
+    assert "One confirmation may cover every selected target" in mapping
+    assert "structural change requires confirmation again" in mapping
     assert "advisory default" in mapping
     assert "target `model_object_binding`" in mapping
     assert "source System" in mapping
     assert "transformation_document" in mapping
     assert "authoring guidance" in mapping
     assert "JSON storage is flexible" in mapping
+
+
+def test_code_generation_confirms_a_small_layout_preview_before_authoring() -> None:
+    code = read(WORKFLOWS / "code-generation.md")
+    example = read(REFERENCES / "examples" / "multi-system-target.sql")
+
+    assert code.index("Before authoring code") < code.index(
+        "Code Generation decides artifact/file grouping"
+    )
+    assert "small representative preview" in code
+    assert "wait for user confirmation" in code
+    assert "reconfirm if the layout changes" in code
+    assert "CREATE OR REPLACE TEMPORARY VIEW" in example
+    assert "UNION ALL" in example
+
+
+def test_validation_confirms_broad_categories_before_authoring_checks() -> None:
+    validation = read(WORKFLOWS / "validation.md")
+
+    assert validation.index("broad validation coverage plan") < validation.index(
+        "Use applied Mapping"
+    )
+    for category in ("Technical", "Reconciliation", "Functional/business"):
+        assert f"**{category}**" in validation
+    assert "representative examples, not every final query" in validation
+    assert "wait for user confirmation" in validation
+    assert "material coverage change requires confirmation again" in validation
+
+
+def test_process_registration_collects_missing_details_before_authoring() -> None:
+    process = read(WORKFLOWS / "process-registration.md")
+
+    assert process.index("Before authoring") < process.index("Do not infer triggers")
+    assert "Ask one consolidated question" in process
+    assert "only the missing required details" in process
+    assert "artifact-to-Process assignment" in process
+    assert "wait for confirmation" in process
 
 
 def test_grill_with_docs_is_lazy_and_may_promote_decisions() -> None:
@@ -235,3 +303,24 @@ def test_user_guide_explains_vs_code_and_the_simple_workflow() -> None:
     assert "proceed" in guide
     assert "Validation Authoring" in guide
     assert "SQL Preflight" in guide
+    assert "## Work targets" in guide
+    assert "Tenant, System, and Connection setup is an external" in guide
+    assert "Tenant Intake" not in guide
+    assert "Users never calculate chunks or hashes manually" in guide
+    for target in (
+        "Metadata Authoring",
+        "Model Input Scope Authoring",
+        "Logical Build",
+        "Silver Target Registration",
+        "Logical Model Binding",
+        "Logical Mapping",
+        "Logical Code Generation",
+        "Dimensional Build",
+        "Gold Target Registration",
+        "Dimensional Model Binding",
+        "Dimensional Mapping",
+        "Dimensional Code Generation",
+        "Validation Authoring",
+        "Process Registration",
+    ):
+        assert target in guide

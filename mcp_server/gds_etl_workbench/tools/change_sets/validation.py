@@ -302,15 +302,19 @@ def _validate_tenant_scope(
         and normalize_natural_key_value("tenant_code", row.values["tenant_code"])
         == normalized_tenant
     }
-    global_connections = {
-        _normalized_key(
-            ("system_code", "connection_code"),
-            row.values,
+    configured_gds_connections = {
+        (
+            _normalize_key_value("tenant_code", row.values["gds_connection_tenant_code"]),
+            _normalize_key_value("system_code", row.values["gds_connection_system_code"]),
+            _normalize_key_value("connection_code", row.values["gds_connection_code"]),
         )
         for row in current
-        if row.dataset == "connection"
-        and row.values["is_global_data_store"] is True
-        and row.values["is_active"] is True
+        if row.dataset == "tenant"
+        and normalize_natural_key_value("tenant_code", row.values["tenant_code"])
+        == normalized_tenant
+        and row.values["gds_connection_tenant_code"] is not None
+        and row.values["gds_connection_system_code"] is not None
+        and row.values["gds_connection_code"] is not None
     }
     effective_objects: dict[tuple[object, ...], Mapping[str, object]] = {}
     for row in (*current, *staged):
@@ -338,28 +342,23 @@ def _validate_tenant_scope(
                 )
             )
             continue
-        object_values = _mutated_object_values(row, effective_objects)
-        if object_values is not None and not _object_is_mutable(
-            object_values,
-            owned_connections,
-            global_connections,
-            normalized_tenant,
-        ):
-            issues.append(
-                ValidationIssue(
-                    "tenant_scope_mismatch",
-                    row.dataset,
-                    row.record_number,
-                    (
-                        "tenant_code",
-                        "system_code",
-                        "connection_code",
-                        "object_schema",
-                        "object_name",
-                    ),
-                    "Object does not belong to the locked Tenant.",
+        for object_values, fields in _referenced_object_values(row, effective_objects):
+            if not _object_is_mutable(
+                object_values,
+                owned_connections,
+                configured_gds_connections,
+                normalized_tenant,
+            ):
+                issues.append(
+                    ValidationIssue(
+                        "tenant_scope_mismatch",
+                        row.dataset,
+                        row.record_number,
+                        fields,
+                        "Referenced Object is not owned by the locked Tenant.",
+                    )
                 )
-            )
+                break
         if len(issues) >= MAX_VALIDATION_ISSUES:
             break
     return issues
@@ -379,57 +378,70 @@ def _tenant_owner_fields(dataset: str) -> tuple[str, ...]:
     return ()
 
 
-def _mutated_object_values(
+def _referenced_object_values(
     row: _Row,
     effective_objects: Mapping[tuple[object, ...], Mapping[str, object]],
-) -> Mapping[str, object] | None:
+) -> tuple[tuple[Mapping[str, object], tuple[str, ...]], ...]:
     record_type = _definition(row.dataset).record_type
     if record_type == "object":
-        return row.values
+        return ((row.values, OBJECT_KEY),)
     if record_type == "attribute":
-        key = _normalized_key(
-            ("tenant_code", "system_code", "connection_code", "object_schema", "object_name"),
-            row.values,
-        )
-        return effective_objects.get(key)
+        values = effective_objects.get(_normalized_key(OBJECT_KEY, row.values))
+        return ((values, OBJECT_KEY),) if values is not None else ()
     if row.dataset in {
         "ingestion_object_mapping",
         "ingestion_attribute_mapping",
         "copy",
     }:
-        key = tuple(
-            _normalize_key_value(column, row.values[f"target_{column}"])
-            for column in (
-                "tenant_code",
-                "system_code",
-                "connection_code",
-                "object_schema",
-                "object_name",
+        references: list[tuple[Mapping[str, object], tuple[str, ...]]] = []
+        for prefix in ("source", "target"):
+            fields = tuple(f"{prefix}_{column}" for column in OBJECT_KEY)
+            key = tuple(
+                _normalize_key_value(column, row.values[field])
+                for column, field in zip(OBJECT_KEY, fields, strict=True)
             )
+            values = effective_objects.get(key)
+            if values is not None:
+                references.append((values, fields))
+        return tuple(references)
+    if row.dataset == "process":
+        fields = (
+            "object_tenant_code",
+            "object_system_code",
+            "object_connection_code",
+            "object_schema",
+            "object_name",
         )
-        return effective_objects.get(key)
-    return None
+        key = tuple(
+            _normalize_key_value(column, row.values[field])
+            for column, field in zip(OBJECT_KEY, fields, strict=True)
+        )
+        values = effective_objects.get(key)
+        return ((values, fields),) if values is not None else ()
+    return ()
 
 
 def _object_is_mutable(
     values: Mapping[str, object],
     owned_connections: set[tuple[object, ...]],
-    global_connections: set[tuple[object, ...]],
+    configured_gds_connections: set[tuple[object, ...]],
     normalized_tenant: object,
 ) -> bool:
-    if normalize_natural_key_value("tenant_code", values["tenant_code"]) != normalized_tenant:
+    if (
+        normalize_natural_key_value("source_tenant_code", values["source_tenant_code"])
+        != normalized_tenant
+    ):
         return False
     connection_key = _normalized_key(
         ("tenant_code", "system_code", "connection_code"),
         values,
     )
-    if connection_key in owned_connections:
-        return True
-    global_connection_key = _normalized_key(
-        ("system_code", "connection_code"),
-        values,
+    zone_code = normalize_natural_key_value("zone_code", values["zone_code"])
+    if zone_code == "source":
+        return connection_key in owned_connections
+    return zone_code in {"bronze", "silver", "gold"} and (
+        connection_key in configured_gds_connections
     )
-    return global_connection_key in global_connections
 
 
 def _validate_staged_uniqueness(rows: Sequence[_Row]) -> list[ValidationIssue]:

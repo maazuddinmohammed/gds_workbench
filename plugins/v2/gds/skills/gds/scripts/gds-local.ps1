@@ -14,8 +14,15 @@ $script:JsonMaxDepth = 512
 $script:CasefoldMap = $null
 $script:Areas = @('metadata', 'model')
 $script:TaskAreas = @('metadata', 'model', 'code', 'validation')
+$script:DirectStageMaxBytes = 1024 * 1024
+$script:MetadataStageChunkMaxBytes = 450 * 1024
+$script:ModelStageRecordChunkMaxBytes = 900 * 1024
+$script:ModelStageFragmentMaxBytes = 1024 * 1024
+$script:StageChunkMaxRecords = 5000
+$script:StageMaxChunks = 64
 $script:ReadinessTargets = [ordered]@{
     'metadata-authoring' = @('metadata')
+    'model-input-scope' = @('metadata', 'model')
     'logical-build' = @('metadata', 'model')
     'silver-registration' = @('metadata', 'model')
     'logical-binding' = @('metadata', 'model')
@@ -2720,26 +2727,6 @@ function Review-Changes([hashtable]$Options) {
     return [ordered]@{ counts = $counts; actions = @($actions); truncated = $counts.total -gt $actions.Count; digest = Get-WorkspaceDigest $context }
 }
 
-function Get-StagePlan($Context) {
-    $pending = Read-Pending $Context
-    $names = New-Object 'System.Collections.Generic.List[string]'
-    foreach ($name in $pending.Keys) { [void]$names.Add([string]$name) }
-    $names.Sort([StringComparer]::Ordinal)
-    $datasets = New-Object System.Collections.ArrayList
-    $records = 0
-    foreach ($name in $names) {
-        $count = @($pending[$name]).Count
-        [void]$datasets.Add(@($name, $count))
-        $records += $count
-    }
-    $bytes = 0
-    foreach ($item in @(Get-ChildItem -LiteralPath $Context.ChangeDirectory -Force)) {
-        if (-not $item.PSIsContainer -and $item.Name.EndsWith('.json')) { $bytes += [int64]$item.Length }
-    }
-    $mode = if ($records -le 5000 -and $bytes -le (450 * 1024)) { 'direct' } else { 'batch' }
-    return [ordered]@{ mode = $mode; datasets = @($datasets); records = $records; bytes = $bytes }
-}
-
 function Validate-Changes([hashtable]$Options) {
     $context = Get-ChangeContext $Options
     $pending = Read-Pending $context
@@ -2863,7 +2850,6 @@ function Accept-Changes([hashtable]$Options) {
         task = [string]$context.Current[0]
         state = [string]$context.Current[3]
         digest = $actual
-        stage = Get-StagePlan $context
     }
 }
 
@@ -3032,6 +3018,234 @@ function Reconcile-Changes([hashtable]$Options) {
     return $output
 }
 
+function Get-JsonByteCount($Value) {
+    return $script:Utf8NoBom.GetByteCount((ConvertTo-StableJson $Value))
+}
+
+function Get-ByteDigest([byte[]]$Bytes) {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try { return ([BitConverter]::ToString($sha.ComputeHash($Bytes))).Replace('-', '').ToLowerInvariant() }
+    finally { $sha.Dispose() }
+}
+
+function Merge-StageDocuments($Context, $Pending, $Server) {
+    $documents = [ordered]@{}
+    foreach ($name in @($Pending.Keys | Sort-Object)) {
+        $dataset = $Context.ByName[$name]
+        $records = @{}
+        $serverRecords = @()
+        if (Test-Property $Server $name) { $serverRecords = @((Get-Property $Server $name)) }
+        foreach ($record in @($serverRecords) + @($Pending[$name])) {
+            $records[(Get-CanonicalKey $Context.Area $dataset $record)] = $record
+        }
+        $orderedRecords = New-Object System.Collections.ArrayList
+        foreach ($key in @($records.Keys | Sort-Object)) { [void]$orderedRecords.Add($records[$key]) }
+        $documents[$name] = @($orderedRecords)
+    }
+    return $documents
+}
+
+function Get-DirectStageDocument($Names, $DirectNames, $Documents) {
+    $changes = New-Object System.Collections.ArrayList
+    foreach ($name in @($Names)) {
+        if ($DirectNames.ContainsKey([string]$name)) {
+            [void]$changes.Add([ordered]@{ dataset = [string]$name; records = @($Documents[$name]) })
+        }
+    }
+    return ,@($changes)
+}
+
+function Get-RecordChunks($Records, [int]$MaximumBytes) {
+    $chunks = New-Object System.Collections.ArrayList
+    $current = @()
+    foreach ($record in @($Records)) {
+        $candidate = @($current) + @($record)
+        if ($candidate.Count -le $script:StageChunkMaxRecords -and
+            (Get-JsonByteCount $candidate) -le $MaximumBytes) {
+            $current = @($candidate)
+            continue
+        }
+        if ($current.Count -eq 0) { return [ordered]@{ fits = $false; chunks = @() } }
+        [void]$chunks.Add(@($current))
+        $current = @($record)
+        if ((Get-JsonByteCount $current) -gt $MaximumBytes) {
+            return [ordered]@{ fits = $false; chunks = @() }
+        }
+    }
+    if ($current.Count -gt 0) { [void]$chunks.Add(@($current)) }
+    return [ordered]@{ fits = $true; chunks = @($chunks) }
+}
+
+function Prepare-Stage([hashtable]$Options) {
+    $reconciliation = Reconcile-Changes $Options
+    if (-not [bool](Get-Property $reconciliation 'ready')) {
+        Fail 'Resolve reconciliation conflicts before preparing Stage.'
+    }
+    if (-not [bool](Get-Property $reconciliation 'cache_bound')) {
+        Fail 'Cached server draft is not bound to the accepted local Change Set digest.'
+    }
+    $context = Get-ChangeContext $Options
+    $cs = Get-Property $context.State 'cs'
+    $draft = @((Get-Property $cs $context.Area))
+    if ($draft.Count -lt 5 -or [string]$draft[2] -cne 'active') {
+        Fail "Cached $($context.Area) server draft must be active."
+    }
+    $pending = Read-Pending $context
+    if ($pending.Count -eq 0) { Fail 'Local Change Set has no affected datasets.' }
+    $server = Parse-Object $Options 'server'
+    $documents = Merge-StageDocuments $context $pending $server
+    $maximumRecords = if ($context.Area -ceq 'metadata') { 50000 } else { 20000 }
+    foreach ($name in $documents.Keys) {
+        if (@($documents[$name]).Count -gt $maximumRecords) {
+            Fail "$name exceeds the $maximumRecords-record dataset limit."
+        }
+    }
+
+    $names = @($documents.Keys | Sort-Object)
+    $directNames = @{}
+    foreach ($name in $names) { $directNames[[string]$name] = $true }
+    while ((Get-JsonByteCount (Get-DirectStageDocument $names $directNames $documents)) -gt
+        $script:DirectStageMaxBytes) {
+        $removable = @(
+            foreach ($name in $names) {
+                if ($directNames.ContainsKey([string]$name) -and @($documents[$name]).Count -gt 0) {
+                    [pscustomobject]@{ Name = [string]$name; Bytes = Get-JsonByteCount @($documents[$name]) }
+                }
+            }
+        ) | Sort-Object @{ Expression = 'Bytes'; Descending = $true }, @{ Expression = 'Name' }
+        if (@($removable).Count -eq 0) { Fail 'Direct Stage envelope exceeds its safe byte limit.' }
+        [void]$directNames.Remove([string]$removable[0].Name)
+    }
+
+    $taskId = [string]$context.Current[0]
+    $stageDirectory = Join-Path (Join-Path $context.Session 'tasks') ($taskId + '.stage')
+    if (Test-Path -LiteralPath $stageDirectory) {
+        $item = Get-Item -LiteralPath $stageDirectory -Force
+        if (-not $item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+            Fail 'Stage plan path must be a regular directory.'
+        }
+        Remove-Item -LiteralPath $stageDirectory -Recurse -Force
+    }
+    [void](New-Item -ItemType Directory -Path $stageDirectory)
+
+    $directChanges = @(Get-DirectStageDocument $names $directNames $documents)
+    $direct = $null
+    if ($directChanges.Count -gt 0) {
+        $directPath = Join-Path $stageDirectory 'direct.json'
+        Write-JsonAtomic $directPath $directChanges
+        $direct = [ordered]@{
+            file = $directPath
+            datasets = @($directChanges | ForEach-Object { [string](Get-Property $_ 'dataset') })
+            bytes = Get-JsonByteCount $directChanges
+        }
+    }
+
+    $recordChunkBytes = if ($context.Area -ceq 'metadata') {
+        $script:MetadataStageChunkMaxBytes
+    } else {
+        $script:ModelStageRecordChunkMaxBytes
+    }
+    $batches = New-Object System.Collections.ArrayList
+    foreach ($name in $names) {
+        if ($directNames.ContainsKey([string]$name)) { continue }
+        $records = @($documents[$name])
+        $recordChunkResult = Get-RecordChunks $records $recordChunkBytes
+        $chunks = @((Get-Property $recordChunkResult 'chunks'))
+        $payloadMode = 'records'
+        $totalPayloadBytes = $null
+        if (-not [bool](Get-Property $recordChunkResult 'fits') -or
+            $chunks.Count -gt $script:StageMaxChunks) {
+            if ($context.Area -cne 'model' -or [string]$name -cne 'generated_code') {
+                Fail "$name cannot fit within $($script:StageMaxChunks) bounded record chunks."
+            }
+            $payloadMode = 'json_fragments'
+            [byte[]]$payload = $script:Utf8NoBom.GetBytes((ConvertTo-StableJson $records))
+            $totalPayloadBytes = $payload.Length
+            $fragments = New-Object System.Collections.ArrayList
+            for ($offset = 0; $offset -lt $payload.Length; $offset += $script:ModelStageFragmentMaxBytes) {
+                $length = [Math]::Min($script:ModelStageFragmentMaxBytes, $payload.Length - $offset)
+                $fragment = New-Object byte[] $length
+                [Array]::Copy($payload, $offset, $fragment, 0, $length)
+                [void]$fragments.Add($fragment)
+            }
+            $chunks = @($fragments)
+            if ($chunks.Count -gt $script:StageMaxChunks) {
+                Fail "generated_code exceeds the $($script:StageMaxChunks) MiB fragment limit."
+            }
+        }
+
+        $batchDirectory = Join-Path $stageDirectory ([string]$name)
+        [void](New-Item -ItemType Directory -Path $batchDirectory)
+        $chunkDocuments = New-Object System.Collections.ArrayList
+        for ($index = 0; $index -lt $chunks.Count; $index++) {
+            $chunk = $chunks[$index]
+            $chunkPath = Join-Path $batchDirectory ('chunk-{0:D2}.json' -f ($index + 1))
+            if ($payloadMode -ceq 'records') {
+                $canonicalBytes = $script:Utf8NoBom.GetBytes((ConvertTo-StableJson @($chunk)))
+                Write-JsonAtomic $chunkPath @($chunk)
+                $recordCount = @($chunk).Count
+            }
+            else {
+                [byte[]]$canonicalBytes = $chunk
+                Write-JsonAtomic $chunkPath ([Convert]::ToBase64String($canonicalBytes))
+                $recordCount = 0
+            }
+            [void]$chunkDocuments.Add([ordered]@{
+                index = $index + 1
+                file = $chunkPath
+                records = $recordCount
+                bytes = $canonicalBytes.Length
+                sha256 = Get-ByteDigest $canonicalBytes
+            })
+        }
+        $hashText = (@($chunkDocuments) | ForEach-Object { [string](Get-Property $_ 'sha256') }) -join ''
+        $batch = [ordered]@{
+            dataset = [string]$name
+            payload_mode = $payloadMode
+            total_record_count = $records.Count
+            total_chunk_count = $chunkDocuments.Count
+            batch_sha256 = Get-ByteDigest ([Text.Encoding]::ASCII.GetBytes($hashText))
+            chunks = @($chunkDocuments)
+        }
+        if ($null -ne $totalPayloadBytes) { $batch['total_payload_bytes'] = $totalPayloadBytes }
+        [void]$batches.Add($batch)
+    }
+
+    $strategy = if ($null -ne $direct -and $batches.Count -gt 0) {
+        'mixed'
+    } elseif ($null -ne $direct) {
+        'direct'
+    } else {
+        'batched'
+    }
+    $manifest = [ordered]@{
+        schema_version = '1.0'
+        area = $context.Area
+        task = $taskId
+        digest = [string](Get-Property $reconciliation 'digest')
+        change_set_id = [string]$draft[0]
+        starting_revision = [int64]$draft[1]
+        strategy = $strategy
+        limits = [ordered]@{
+            direct_bytes = $script:DirectStageMaxBytes
+            chunk_bytes = $recordChunkBytes
+            chunk_records = $script:StageChunkMaxRecords
+            chunks_per_batch = $script:StageMaxChunks
+        }
+        revision_rule = 'Use the returned draft_revision after direct Stage and after every batch commit.'
+        direct = $direct
+        batches = @($batches)
+    }
+    $manifestPath = Join-Path $stageDirectory 'manifest.json'
+    Write-JsonAtomic $manifestPath $manifest
+    return [ordered]@{
+        strategy = $strategy
+        manifest = $manifestPath
+        direct_datasets = if ($null -eq $direct) { @() } else { @($direct.datasets) }
+        batch_datasets = @($batches | ForEach-Object { [string](Get-Property $_ 'dataset') })
+    }
+}
+
 try {
     $options = Parse-Options $RemainingArguments
     switch ($Command) {
@@ -3058,6 +3272,7 @@ try {
         'accept' { $output = Accept-Changes $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }
         'reconcile' { $output = Reconcile-Changes $options }
+        'prepare-stage' { $output = Prepare-Stage $options }
         default { Fail "Unknown command: $Command." }
     }
     [Console]::Out.WriteLine((ConvertTo-GdsJson $output))

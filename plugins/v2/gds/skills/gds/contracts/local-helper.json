@@ -23,6 +23,7 @@
     "validate": {"usage": "validate --session <session> --area metadata|model", "session_required": true, "mutates": false},
     "accept": {"usage": "accept --session <session> --area metadata|model --digest <digest> [--override true --reason <reason>]", "session_required": true, "mutates": true},
     "reconcile": {"usage": "reconcile --session <session> --area metadata|model --server <server-pending-JSON-object>", "session_required": true, "mutates": false},
+    "prepare-stage": {"usage": "prepare-stage --session <session> --area metadata|model --server <server-pending-JSON-object>", "session_required": true, "mutates": true},
     "command-contract": {"usage": "command-contract [--command <name>]", "session_required": false, "mutates": false}
   }
 }

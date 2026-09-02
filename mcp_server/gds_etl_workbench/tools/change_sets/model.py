@@ -1067,9 +1067,10 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Replace one or more complete pending Model datasets in one transaction. Omitted "
-            "datasets remain unchanged. Records must use describe_model_dataset's ID-free "
-            "schemas; related replacements are checked against the complete future Model graph."
+            "Replace the complete pending record lists for one or more Model datasets in one "
+            "transaction; this never appends. Omitted datasets stay unchanged and empty lists "
+            "clear only that pending dataset. Prefer one call for all affected datasets when the "
+            "request is at most 1 MiB. The draft revision increments once."
         ),
         annotations=_annotations(read_only=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1195,9 +1196,10 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Begin or resume an oversized upload for one complete Model dataset replacement. "
-            "Use records mode normally; only generated_code may use json_fragments. Beginning "
-            "a batch is idempotent and does not change the draft revision."
+            "Begin or resume one oversized, nonempty Model dataset replacement with at most 64 "
+            "ordered chunks. Use records mode for chunks of at most 5,000 records and 1 MiB. "
+            "Only generated_code may use 1 MiB decoded json_fragments. Begin is idempotent and "
+            "does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1392,9 +1394,10 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Store one ordered chunk for an active Model Stage Batch. Supply records in records "
-            "mode, or a base64 JSON fragment only for generated_code json_fragments mode. "
-            "Repeated identical chunks are safe and do not change the Change Set."
+            "Store one ordered Model batch chunk. In records mode supply 1-5,000 whole records "
+            "whose canonical JSON is at most 1 MiB. Only generated_code json_fragments mode may "
+            "instead supply one base64 fragment of at most 1 MiB decoded. An identical retry is "
+            "safe; Put does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},

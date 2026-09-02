@@ -1,10 +1,10 @@
 from __future__ import annotations
 
+import base64
 import hashlib
 import json
 import subprocess
 from pathlib import Path
-
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HELPER = (
@@ -2171,6 +2171,251 @@ def test_reconcile_classifies_exact_non_overlap_and_conflict_without_writing(
     assert conflict_output["classification"] == "conflict"
     assert conflict_output["ready"] is False
     assert conflict_output["conflicts"][0][0] == "source_object"
+
+
+def test_prepare_stage_writes_one_direct_request_for_small_datasets(
+    tmp_path: Path,
+) -> None:
+    session, _ = prepare_accepted_metadata_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000123"
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        draft_id,
+        "--revision",
+        "2",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--server",
+        '{"source_object":[]}',
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    output = json.loads(prepared.stdout)
+    assert output["strategy"] == "direct"
+    manifest = json.loads(Path(output["manifest"]).read_text())
+    assert manifest["change_set_id"] == draft_id
+    assert manifest["starting_revision"] == 2
+    assert manifest["limits"] == {
+        "direct_bytes": 1_048_576,
+        "chunk_bytes": 460_800,
+        "chunk_records": 5_000,
+        "chunks_per_batch": 64,
+    }
+    direct = json.loads(Path(manifest["direct"]["file"]).read_text())
+    assert [change["dataset"] for change in direct] == ["source_object"]
+    assert direct[0]["records"][0]["object_name"] == "Customer"
+    assert manifest["batches"] == []
+
+
+def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
+    tmp_path: Path,
+) -> None:
+    session, _ = prepare_accepted_metadata_task(tmp_path)
+    pending_path = session / "metadata-change-set" / "source_object.json"
+    records = []
+    for index in range(4):
+        records.append(
+            {
+                "tenant_code": "TENANT_A",
+                "system_code": "CRM",
+                "connection_code": "MAIN",
+                "object_schema": "sales",
+                "object_name": f"Customer{index}_{'x' * 300_000}",
+                "is_active": True,
+            }
+        )
+    pending_path.write_text(json.dumps(records) + "\n")
+    review = run_helper("review", "--session", str(session), "--area", "metadata")
+    assert review.returncode == 0, review.stderr
+    digest = json.loads(review.stdout)["digest"]
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--digest",
+        digest,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        "00000000-0000-4000-8000-000000000123",
+        "--revision",
+        "3",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--server",
+        "{}",
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    assert manifest["strategy"] == "batched"
+    assert manifest["direct"] is None
+    assert len(manifest["batches"]) == 1
+    batch = manifest["batches"][0]
+    assert batch["dataset"] == "source_object"
+    assert batch["payload_mode"] == "records"
+    assert batch["total_record_count"] == 4
+    assert batch["total_chunk_count"] == 4
+    assert all(chunk["bytes"] <= 460_800 for chunk in batch["chunks"])
+    staged_names = [
+        json.loads(Path(chunk["file"]).read_text())[0]["object_name"]
+        for chunk in batch["chunks"]
+    ]
+    assert staged_names == [record["object_name"] for record in records]
+    assert batch["batch_sha256"] == hashlib.sha256(
+        "".join(chunk["sha256"] for chunk in batch["chunks"]).encode("ascii")
+    ).hexdigest()
+
+
+def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    snapshot = session / "model" / "model-snapshot"
+    catalog_path = snapshot / "catalog.json"
+    catalog = json.loads(catalog_path.read_text())
+    catalog["sections"].append(
+        {
+            "name": "code_generation",
+            "datasets": [
+                {
+                    "name": "generated_code",
+                    "record_type": "generated_code",
+                    "row_count": 0,
+                    "canonical_key": ["artifact_name"],
+                    "rows_file": "data/generated_code.jsonl",
+                    "schema_file": "schemas/generated_code.schema.json",
+                }
+            ],
+        }
+    )
+    catalog_path.write_text(json.dumps(catalog))
+    (snapshot / "data" / "generated_code.jsonl").write_text("")
+    (snapshot / "schemas" / "generated_code.schema.json").write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "artifact_name": {"type": "string"},
+                    "sql": {"type": "string"},
+                },
+                "required": ["artifact_name", "sql"],
+                "x-gds-change-set-eligible": True,
+                "x-gds-canonical-key": ["artifact_name"],
+                "x-gds-references": [],
+            }
+        )
+    )
+    write_snapshot_manifest(
+        snapshot,
+        kind="model",
+        snapshot_id="model-snapshot-01",
+        model_revision=8,
+    )
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Stage generated code",
+        "--plan",
+        '["Review","Stage"]',
+    )
+    assert added.returncode == 0, added.stderr
+    records = [{"artifact_name": "customers.sql", "sql": "x" * 1_200_000}]
+    (session / "model-change-set" / "generated_code.json").write_text(
+        json.dumps(records) + "\n"
+    )
+    review = run_helper("review", "--session", str(session), "--area", "model")
+    assert review.returncode == 0, review.stderr
+    digest = json.loads(review.stdout)["digest"]
+    review_state = run_helper(
+        "task-state", "--session", str(session), "--task", "01", "--state", "review"
+    )
+    assert review_state.returncode == 0, review_state.stderr
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--digest",
+        digest,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--id",
+        "00000000-0000-4000-8000-000000000123",
+        "--revision",
+        "3",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--server",
+        "{}",
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    batch = manifest["batches"][0]
+    assert batch["payload_mode"] == "json_fragments"
+    assert batch["total_chunk_count"] == 2
+    payload = b"".join(
+        base64.b64decode(json.loads(Path(chunk["file"]).read_text()), validate=True)
+        for chunk in batch["chunks"]
+    )
+    assert json.loads(payload) == records
 
 
 def test_server_draft_cache_rejects_changed_digest_and_cross_task_reuse(

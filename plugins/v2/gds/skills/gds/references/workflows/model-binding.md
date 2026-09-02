@@ -2,6 +2,8 @@
 
 Run only after target Metadata Apply succeeds and a fresh Metadata Snapshot confirms every target Object and Attribute.
 
+Once those prerequisites are present, derive and author the bindings directly from the applied Logical/Dimensional records and registered target Metadata. Do not add an optional design-confirmation pause. Stop only when a required target is missing or more than one compatible match exists.
+
 - `model_object_binding` binds one Logical Entity to one Silver Object or one Dimensional Entity to one Gold Object.
 - `model_attribute_binding` binds each modeled Attribute to one Attribute under that Object Binding.
 - Bind every modeled and physical target Attribute exactly once, including audit, technical, and constant-valued Attributes.

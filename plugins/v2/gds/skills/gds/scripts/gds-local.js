@@ -34,6 +34,12 @@ function parseArguments(argv) {
 }
 
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
+const DIRECT_STAGE_MAX_BYTES = 1024 * 1024;
+const METADATA_STAGE_CHUNK_MAX_BYTES = 450 * 1024;
+const MODEL_STAGE_RECORD_CHUNK_MAX_BYTES = 900 * 1024;
+const MODEL_STAGE_FRAGMENT_MAX_BYTES = 1024 * 1024;
+const STAGE_CHUNK_MAX_RECORDS = 5000;
+const STAGE_MAX_CHUNKS = 64;
 
 function commandContract(options) {
   const contract = readJsonFile(HELPER_CONTRACT_PATH, "Local helper command contract");
@@ -1403,26 +1409,6 @@ function validateChangeSet(options) {
   };
 }
 
-function buildStagePlan(context, pending) {
-  const datasets = Object.keys(pending)
-    .sort()
-    .map((name) => [name, pending[name].length]);
-  const records = datasets.reduce((total, item) => total + item[1], 0);
-  const bytes = fs
-    .readdirSync(context.directory, { withFileTypes: true })
-    .filter((entry) => entry.isFile() && entry.name.endsWith(".json"))
-    .reduce(
-      (total, entry) => total + fs.statSync(path.join(context.directory, entry.name)).size,
-      0,
-    );
-  return {
-    mode: records <= 5000 && bytes <= 450 * 1024 ? "direct" : "batch",
-    datasets,
-    records,
-    bytes,
-  };
-}
-
 function acceptChangeSet(options) {
   const context = changeSetContext(options);
   if (!/^[0-9a-f]{64}$/.test(options.digest ?? "")) {
@@ -1475,7 +1461,6 @@ function acceptChangeSet(options) {
     task: task[0],
     state: nextState,
     digest: actual,
-    stage: buildStagePlan(context, readPending(context)),
   };
 }
 
@@ -1675,6 +1660,196 @@ function reconcileChangeSet(options) {
   };
 }
 
+function mergeStageDocuments(context, pending, server) {
+  const merged = {};
+  for (const name of Object.keys(pending).sort()) {
+    const dataset = context.byName.get(name);
+    const records = new Map();
+    for (const record of server[name] ?? []) {
+      records.set(stableStringify(canonicalKey(optionsArea(context), dataset, record)), record);
+    }
+    for (const record of pending[name]) {
+      records.set(stableStringify(canonicalKey(optionsArea(context), dataset, record)), record);
+    }
+    merged[name] = [...records.values()].sort((left, right) =>
+      compareKeys(
+        canonicalKey(optionsArea(context), dataset, left),
+        canonicalKey(optionsArea(context), dataset, right),
+      ),
+    );
+  }
+  return merged;
+}
+
+function sha256Bytes(value) {
+  return crypto.createHash("sha256").update(value).digest("hex");
+}
+
+function recordChunks(records, maximumBytes) {
+  const chunks = [];
+  let current = [];
+  for (const record of records) {
+    const candidate = [...current, record];
+    const candidateBytes = Buffer.byteLength(stableStringify(candidate), "utf8");
+    if (candidate.length <= STAGE_CHUNK_MAX_RECORDS && candidateBytes <= maximumBytes) {
+      current = candidate;
+      continue;
+    }
+    if (current.length === 0) return null;
+    chunks.push(current);
+    current = [record];
+    if (Buffer.byteLength(stableStringify(current), "utf8") > maximumBytes) return null;
+  }
+  if (current.length) chunks.push(current);
+  return chunks;
+}
+
+function prepareStage(options) {
+  const reconciliation = reconcileChangeSet(options);
+  if (!reconciliation.ready) fail("Resolve reconciliation conflicts before preparing Stage.");
+  if (!reconciliation.cache_bound) {
+    fail("Cached server draft is not bound to the accepted local Change Set digest.");
+  }
+  const context = changeSetContext(options);
+  const area = optionsArea(context);
+  const draft = context.state.cs?.[area];
+  if (!draft || draft[2] !== "active") fail(`Cached ${area} server draft must be active.`);
+  const pending = readPending(context);
+  if (Object.keys(pending).length === 0) fail("Local Change Set has no affected datasets.");
+  const server = parseObjectOption(options.server, "--server");
+  const documents = mergeStageDocuments(context, pending, server);
+  const maximumRecords = area === "metadata" ? 50_000 : 20_000;
+  for (const [name, records] of Object.entries(documents)) {
+    if (records.length > maximumRecords) {
+      fail(`${name} exceeds the ${maximumRecords}-record dataset limit.`);
+    }
+  }
+
+  const names = Object.keys(documents).sort();
+  const directNames = new Set(names);
+  const directDocument = () =>
+    names
+      .filter((name) => directNames.has(name))
+      .map((dataset) => ({ dataset, records: documents[dataset] }));
+  while (Buffer.byteLength(stableStringify(directDocument()), "utf8") > DIRECT_STAGE_MAX_BYTES) {
+    const removable = names
+      .filter((name) => directNames.has(name) && documents[name].length > 0)
+      .sort((left, right) => {
+        const sizeDifference =
+          Buffer.byteLength(stableStringify(documents[right]), "utf8") -
+          Buffer.byteLength(stableStringify(documents[left]), "utf8");
+        return sizeDifference || left.localeCompare(right);
+      });
+    if (!removable.length) fail("Direct Stage envelope exceeds its safe byte limit.");
+    directNames.delete(removable[0]);
+  }
+
+  const taskId = context.current[0];
+  const stageDirectory = path.join(context.session, "tasks", `${taskId}.stage`);
+  if (fs.existsSync(stageDirectory)) fs.rmSync(stageDirectory, { recursive: true });
+  fs.mkdirSync(stageDirectory, { mode: 0o700 });
+  const directChanges = directDocument();
+  let direct = null;
+  if (directChanges.length) {
+    const directPath = path.join(stageDirectory, "direct.json");
+    writeJsonAtomic(directPath, directChanges);
+    direct = {
+      file: directPath,
+      datasets: directChanges.map((change) => change.dataset),
+      bytes: Buffer.byteLength(stableStringify(directChanges), "utf8"),
+    };
+  }
+
+  const batches = [];
+  const recordChunkBytes =
+    area === "metadata"
+      ? METADATA_STAGE_CHUNK_MAX_BYTES
+      : MODEL_STAGE_RECORD_CHUNK_MAX_BYTES;
+  for (const name of names.filter((dataset) => !directNames.has(dataset))) {
+    const records = documents[name];
+    let chunks = recordChunks(records, recordChunkBytes);
+    let payloadMode = "records";
+    let totalPayloadBytes = null;
+    if (chunks === null || chunks.length > STAGE_MAX_CHUNKS) {
+      if (area !== "model" || name !== "generated_code") {
+        fail(
+          `${name} cannot fit within ${STAGE_MAX_CHUNKS} chunks of ` +
+            `${STAGE_CHUNK_MAX_RECORDS} records and ${recordChunkBytes} bytes.`,
+        );
+      }
+      payloadMode = "json_fragments";
+      const payload = Buffer.from(stableStringify(records), "utf8");
+      totalPayloadBytes = payload.length;
+      chunks = [];
+      for (let offset = 0; offset < payload.length; offset += MODEL_STAGE_FRAGMENT_MAX_BYTES) {
+        chunks.push(payload.subarray(offset, offset + MODEL_STAGE_FRAGMENT_MAX_BYTES));
+      }
+      if (chunks.length > STAGE_MAX_CHUNKS) {
+        fail(`generated_code exceeds the ${STAGE_MAX_CHUNKS} MiB fragment limit.`);
+      }
+    }
+    const batchDirectory = path.join(stageDirectory, name);
+    fs.mkdirSync(batchDirectory, { mode: 0o700 });
+    const chunkDocuments = [];
+    for (let index = 0; index < chunks.length; index += 1) {
+      const chunk = chunks[index];
+      const chunkPath = path.join(
+        batchDirectory,
+        `chunk-${String(index + 1).padStart(2, "0")}.json`,
+      );
+      const canonical = payloadMode === "records" ? stableStringify(chunk) : chunk;
+      if (payloadMode === "records") writeJsonAtomic(chunkPath, chunk);
+      else writeJsonAtomic(chunkPath, chunk.toString("base64"));
+      chunkDocuments.push({
+        index: index + 1,
+        file: chunkPath,
+        records: payloadMode === "records" ? chunk.length : 0,
+        bytes: Buffer.byteLength(canonical),
+        sha256: sha256Bytes(canonical),
+      });
+    }
+    batches.push({
+      dataset: name,
+      payload_mode: payloadMode,
+      total_record_count: records.length,
+      total_chunk_count: chunkDocuments.length,
+      ...(totalPayloadBytes === null ? {} : { total_payload_bytes: totalPayloadBytes }),
+      batch_sha256: sha256Bytes(
+        Buffer.from(chunkDocuments.map((chunk) => chunk.sha256).join(""), "ascii"),
+      ),
+      chunks: chunkDocuments,
+    });
+  }
+
+  const strategy = direct && batches.length ? "mixed" : direct ? "direct" : "batched";
+  const manifest = {
+    schema_version: "1.0",
+    area,
+    task: taskId,
+    digest: reconciliation.digest,
+    change_set_id: draft[0],
+    starting_revision: draft[1],
+    strategy,
+    limits: {
+      direct_bytes: DIRECT_STAGE_MAX_BYTES,
+      chunk_bytes: recordChunkBytes,
+      chunk_records: STAGE_CHUNK_MAX_RECORDS,
+      chunks_per_batch: STAGE_MAX_CHUNKS,
+    },
+    revision_rule: "Use the returned draft_revision after direct Stage and after every batch commit.",
+    direct,
+    batches,
+  };
+  const manifestPath = path.join(stageDirectory, "manifest.json");
+  writeJsonAtomic(manifestPath, manifest);
+  return {
+    strategy,
+    manifest: manifestPath,
+    direct_datasets: direct?.datasets ?? [],
+    batch_datasets: batches.map((batch) => batch.dataset),
+  };
+}
+
 async function selectRecords(options) {
   if (!options.dataset) fail("--dataset is required.");
   const limit = options.limit === undefined ? 50 : Number(options.limit);
@@ -1761,6 +1936,7 @@ function initializeSession(options) {
 
 const READINESS_TARGETS = {
   "metadata-authoring": ["metadata"],
+  "model-input-scope": ["metadata", "model"],
   "logical-build": ["metadata", "model"],
   "silver-registration": ["metadata", "model"],
   "logical-binding": ["metadata", "model"],
@@ -1999,6 +2175,7 @@ async function main() {
   else if (command === "accept") output = acceptChangeSet(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);
   else if (command === "reconcile") output = reconcileChangeSet(options);
+  else if (command === "prepare-stage") output = prepareStage(options);
   else fail(`Unknown command: ${command}.`);
   process.stdout.write(`${JSON.stringify(output)}\n`);
 }

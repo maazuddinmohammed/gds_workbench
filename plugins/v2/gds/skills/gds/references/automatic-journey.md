@@ -1,6 +1,6 @@
 # Automatic journey
 
-Ask one compact intake for missing directory, Tenant Code, Model, desired endpoints, Full/Selected scope, optional phases, destination pattern, artifact layout, and SQL policy. Infer supplied answers.
+Ask one compact intake for missing directory, Tenant Code, Model, desired endpoints, Full/Selected scope, destination pattern, artifact layout, and SQL policy. Infer supplied answers. Logical Build always includes Profiling, relationship Analysis, Conceptual, and Logical phases.
 
 Queue only requested targets in dependency order. Work one target at a time. Inside a target, make evidence-supported decisions, batch complete records, and update coverage without optional pauses.
 

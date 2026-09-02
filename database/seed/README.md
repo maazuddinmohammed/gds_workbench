@@ -73,6 +73,34 @@ and Logical reconciliation interpolate their bounded allowlisted
 `validation_failures` value. Dimensional reconciliation reads the equivalent
 bounded summary from its receipt context, so the Prompt does not duplicate it.
 
+## Model cleanup template
+
+`06_model_cleanup.template.sql` is a destructive, owner-only reset for plugin
+retesting. It is inert until `__REPLACE_WITH_MODEL_ID__` is replaced with one
+positive Model ID. It removes that Model's workflows, Model Change Sets,
+model-specific MCP audit rows, Assertions, modeled layers, Bindings, Mapping,
+generated Code, Validations, and bound Silver/Gold physical metadata. Related
+ingestion and process records are removed; groups are removed only when unused.
+
+The cleanup refuses a missing Model, a bound Source/Bronze Object, or a bound
+Object used by another Model. Model Input Objects are preserved. Historical
+Metadata Change Sets are tenant-scoped and have no Model ID, so their
+registration documents cannot be attributed safely and are not removed. The
+applied bound physical metadata is removed.
+
+Stop the web application, MCP server, and orchestration writers first. Copy the
+template outside the repository, replace the Model ID, inspect it, then run it
+as the database owner:
+
+```bash
+cp database/seed/06_model_cleanup.template.sql /tmp/gds_model_cleanup.sql
+psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
+  -f /tmp/gds_model_cleanup.sql
+```
+
+Run it once per Model ID. Any error rolls back the whole cleanup. This is not a
+normal application operation, migration, or production lifecycle API.
+
 ## Demo metadata
 
 `01_metadata_snapshot_demo.sql` creates a small test-only dataset containing:

@@ -180,7 +180,7 @@ def test_validation_allows_copy_group_control_without_optional_member_group() ->
 
 def test_validation_still_rejects_partially_populated_nullable_connection_key() -> None:
     current = _foundation()
-    current["tenant"][0]["gds_connection_tenant_code"] = "DEMO"
+    current["tenant"][0]["gds_connection_system_code"] = None
 
     result = validate_metadata_documents(
         tenant_code="DEMO",
@@ -192,61 +192,9 @@ def test_validation_still_rejects_partially_populated_nullable_connection_key() 
     assert result.phase == "schema"
 
 
-def test_validation_allows_tenant_object_on_global_connection() -> None:
-    current = _foundation()
-    current["tenant"].append(
-        {
-            "tenant_code": "GLOBAL",
-            "project_code": "PROJECT",
-            "tenant_name": "Global",
-            "tenant_description": None,
-            "tenant_catalog": "global",
-            "gds_admin_catalog": "global_admin",
-            "gds_connection_tenant_code": None,
-            "gds_connection_system_code": None,
-            "gds_connection_code": None,
-            "tenant_visibility": "global",
-            "is_active": True,
-        }
-    )
-    current["connection_type"] = [
-        {
-            "connection_type_code": "POSTGRES",
-            "connection_type_name": "Postgres",
-            "connection_type_description": None,
-            "is_active": True,
-        }
-    ]
-    current["connection"] = [
-        {
-            "tenant_code": "GLOBAL",
-            "system_code": "CRM",
-            "connection_code": "GDS",
-            "connection_name": "GDS",
-            "connection_type_code": "POSTGRES",
-            "has_foreign_catalog": False,
-            "foreign_catalog": None,
-            "is_global_data_store": True,
-            "is_active": True,
-        }
-    ]
-    current["zone"] = [
-        {
-            "zone_code": "bronze",
-            "zone_name": "Bronze",
-            "zone_description": None,
-            "is_active": True,
-        }
-    ]
-    current["object_type"] = [
-        {
-            "object_type_code": "TABLE",
-            "object_type_name": "Table",
-            "object_type_description": None,
-            "is_active": True,
-        }
-    ]
-    record = _object_record(object_schema="demo", tenant_code="DEMO")
+def test_validation_allows_tenant_object_on_its_configured_gds_connection() -> None:
+    current = _foundation_with_external_gds()
+    record = _object_record(object_schema="demo", tenant_code="GLOBAL")
 
     result = validate_metadata_documents(
         tenant_code="DEMO",
@@ -256,7 +204,20 @@ def test_validation_allows_tenant_object_on_global_connection() -> None:
 
     assert result.valid is True
 
-    record["tenant_code"] = "GLOBAL"
+    record["connection_code"] = "OTHER_GDS"
+    current["connection"].append(
+        {
+            "tenant_code": "GLOBAL",
+            "system_code": "CRM",
+            "connection_code": "OTHER_GDS",
+            "connection_name": "Other GDS",
+            "connection_type_code": "POSTGRES",
+            "has_foreign_catalog": False,
+            "foreign_catalog": None,
+            "is_global_data_store": True,
+            "is_active": True,
+        }
+    )
     denied = validate_metadata_documents(
         tenant_code="DEMO",
         current_rows_by_dataset=current,
@@ -264,6 +225,70 @@ def test_validation_allows_tenant_object_on_global_connection() -> None:
     )
     assert denied.valid is False
     assert denied.phase == "tenant_scope"
+
+
+def test_validation_allows_gds_object_references_owned_by_locked_tenant() -> None:
+    current = _foundation_with_external_gds()
+    current["source_object"] = [_source_object_record()]
+    current["bronze_object"] = [_object_record(object_schema="bronze", tenant_code="GLOBAL")]
+    current["ingestion_object_mapping"] = [_ingestion_object_mapping()]
+    current["copy_group"] = [_copy_group()]
+    current["process_group"] = [_process_group()]
+    current["chunk_type"] = []
+    current["file_type"] = []
+    current["data_operation"] = [
+        {
+            "data_operation_name": "APPEND",
+            "data_operation_description": None,
+            "is_active": True,
+        }
+    ]
+    current["process_type"] = [
+        {
+            "process_type_name": "SQL",
+            "process_type_description": None,
+            "is_active": True,
+        }
+    ]
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={
+            "ingestion_object_mapping": [_ingestion_object_mapping()],
+            "copy": [_copy_record()],
+            "process": [_process_record()],
+        },
+    )
+
+    assert result.valid is True
+
+
+def test_validation_rejects_cross_tenant_object_references() -> None:
+    current = _foundation_with_external_gds()
+    other_object = _object_record(object_schema="other", tenant_code="GLOBAL")
+    other_object["source_tenant_code"] = "GLOBAL"
+    current["bronze_object"] = [
+        other_object,
+        _object_record(object_schema="bronze", tenant_code="GLOBAL"),
+    ]
+    mapping = _ingestion_object_mapping()
+    mapping.update(
+        {
+            "source_tenant_code": "GLOBAL",
+            "source_connection_code": "GDS",
+            "source_object_schema": "other",
+        }
+    )
+
+    result = validate_metadata_documents(
+        tenant_code="DEMO",
+        current_rows_by_dataset=current,
+        staged_rows_by_dataset={"ingestion_object_mapping": [mapping]},
+    )
+
+    assert result.valid is False
+    assert result.phase == "tenant_scope"
 
 
 def test_validation_rejects_change_to_existing_locked_object() -> None:
@@ -337,9 +362,9 @@ def _foundation() -> dict[str, list[dict[str, object]]]:
                 "tenant_description": None,
                 "tenant_catalog": "demo",
                 "gds_admin_catalog": "admin",
-                "gds_connection_tenant_code": None,
-                "gds_connection_system_code": None,
-                "gds_connection_code": None,
+                "gds_connection_tenant_code": "DEMO",
+                "gds_connection_system_code": "CRM",
+                "gds_connection_code": "GDS",
                 "tenant_visibility": "private",
                 "is_active": True,
             }
@@ -378,7 +403,7 @@ def _foundation() -> dict[str, list[dict[str, object]]]:
                 "connection_type_code": "POSTGRES",
                 "has_foreign_catalog": False,
                 "foreign_catalog": None,
-                "is_global_data_store": False,
+                "is_global_data_store": True,
                 "is_active": True,
             }
         ],
@@ -399,6 +424,55 @@ def _foundation() -> dict[str, list[dict[str, object]]]:
             }
         ],
     }
+
+
+def _foundation_with_external_gds() -> dict[str, list[dict[str, object]]]:
+    current = _foundation()
+    current["tenant"][0]["gds_connection_tenant_code"] = "GLOBAL"
+    current["tenant"].append(
+        {
+            "tenant_code": "GLOBAL",
+            "project_code": "PROJECT",
+            "tenant_name": "Global",
+            "tenant_description": None,
+            "tenant_catalog": "global",
+            "gds_admin_catalog": "global_admin",
+            "gds_connection_tenant_code": None,
+            "gds_connection_system_code": None,
+            "gds_connection_code": None,
+            "tenant_visibility": "global",
+            "is_active": True,
+        }
+    )
+    current["connection"][0].update(
+        {
+            "connection_code": "SOURCE",
+            "connection_name": "Source",
+            "is_global_data_store": False,
+        }
+    )
+    current["connection"].append(
+        {
+            "tenant_code": "GLOBAL",
+            "system_code": "CRM",
+            "connection_code": "GDS",
+            "connection_name": "GDS",
+            "connection_type_code": "POSTGRES",
+            "has_foreign_catalog": False,
+            "foreign_catalog": None,
+            "is_global_data_store": True,
+            "is_active": True,
+        }
+    )
+    current["zone"].append(
+        {
+            "zone_code": "source",
+            "zone_name": "Source",
+            "zone_description": None,
+            "is_active": True,
+        }
+    )
+    return current
 
 
 def _copy_group() -> dict[str, object]:
@@ -454,5 +528,84 @@ def _attribute_record() -> dict[str, object]:
         "is_masking_required": False,
         "is_mapped": True,
         "is_purge": False,
+        "is_active": True,
+    }
+
+
+def _source_object_record() -> dict[str, object]:
+    record = _object_record(object_schema="public", tenant_code="DEMO")
+    record.update(
+        {
+            "connection_code": "SOURCE",
+            "zone_code": "source",
+        }
+    )
+    return record
+
+
+def _ingestion_object_mapping() -> dict[str, object]:
+    return {
+        "source_tenant_code": "DEMO",
+        "source_system_code": "CRM",
+        "source_connection_code": "SOURCE",
+        "source_object_schema": "public",
+        "source_object_name": "customers",
+        "target_tenant_code": "GLOBAL",
+        "target_system_code": "CRM",
+        "target_connection_code": "GDS",
+        "target_object_schema": "bronze",
+        "target_object_name": "customers",
+        "is_active": True,
+    }
+
+
+def _copy_record() -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "copy_group_name": "CUSTOMERS",
+        **_ingestion_object_mapping(),
+        "copy_source_record_limit": None,
+        "copy_source_record_limit_attribute": None,
+        "chunk_type_name": None,
+        "copy_source_initial_sql_script": None,
+        "copy_source_incremental_sql_script": None,
+        "copy_source_file_name": None,
+        "copy_source_file_pattern": None,
+        "copy_source_file_delimiter": None,
+        "source_file_type_name": None,
+        "copy_source_order": 1,
+        "source_data_operation_name": "APPEND",
+        "target_data_operation_name": "APPEND",
+    }
+
+
+def _process_group() -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "zone_code": "bronze",
+        "process_group_name": "BRONZE_LOAD",
+        "process_group_description": None,
+        "copy_group_name": "CUSTOMERS",
+        "is_active": True,
+    }
+
+
+def _process_record() -> dict[str, object]:
+    return {
+        "tenant_code": "DEMO",
+        "system_code": "CRM",
+        "zone_code": "bronze",
+        "process_group_name": "BRONZE_LOAD",
+        "process_execution_order": 1,
+        "process_location": "/sql",
+        "process_executable": "customers.sql",
+        "object_tenant_code": "GLOBAL",
+        "object_system_code": "CRM",
+        "object_connection_code": "GDS",
+        "object_schema": "bronze",
+        "object_name": "customers",
+        "process_type_name": "SQL",
         "is_active": True,
     }

@@ -11,4 +11,4 @@ Before writing a dataset, request its compact schema through `describe_metadata_
 
 Local review overlays pending records on the Snapshot and computes the exact digest. The agent runs review and validation before notifying the user. A positive acknowledgement accepts that digest internally; edits invalidate it.
 
-At Stage, fetch any existing draft and reconcile by normalized canonical key. Exact resumes; non-overlap can combine; differing overlap is a conflict. A revision mismatch stops for a fresh Snapshot and reassessment. Use one direct Stage when within limits; otherwise commit one batch per oversized dataset and carry forward the returned revision. Server Change Set validation seals the final revision, and Apply is separately approved.
+At Stage, fetch any existing draft and reconcile by normalized canonical key. Exact resumes; non-overlap can combine; differing overlap is a conflict. A revision mismatch stops for a fresh Snapshot and reassessment. Then read `staging.md` and use local `prepare-stage`; never calculate packing or hashes manually. Server Change Set validation seals the final revision, and Apply is separately approved.

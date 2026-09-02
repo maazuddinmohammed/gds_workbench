@@ -454,9 +454,10 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Replace one or more complete pending Metadata datasets in one transaction. "
-            "Omitted datasets remain unchanged. Records must use describe_metadata_dataset's "
-            "ID-free schemas; the draft revision increments once."
+            "Replace the complete pending record lists for one or more Metadata datasets in "
+            "one transaction; this never appends. Omitted datasets stay unchanged and empty "
+            "lists clear only that pending dataset. Prefer one call for all affected datasets "
+            "when the request is at most 1 MiB. The draft revision increments once."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -537,8 +538,9 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Begin or resume an oversized upload for one complete Metadata dataset "
-            "replacement. Beginning a batch is idempotent and does not change the draft revision."
+            "Begin or resume one oversized, nonempty Metadata dataset replacement. Use at most "
+            "64 ordered chunks; each Put accepts at most 5,000 records and 450 KiB of canonical "
+            "JSON. Begin is idempotent and does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -632,8 +634,9 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Store one ordered, schema-valid records chunk for an active Metadata Stage Batch. "
-            "Repeated identical chunks are safe and do not change or validate the Change Set."
+            "Store one ordered Metadata batch chunk: 1-5,000 complete records and at most 450 "
+            "KiB after schema normalization. chunk_sha256 covers the canonical normalized list. "
+            "An identical retry is safe; Put does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -654,7 +657,13 @@ def register_metadata_change_set_tools(
         ],
         records: Annotated[
             list[dict[str, object]],
-            Field(min_length=1, max_length=MAX_STAGE_CHUNK_RECORDS),
+            Field(
+                min_length=1,
+                max_length=MAX_STAGE_CHUNK_RECORDS,
+                description=(
+                    "Whole records for this chunk; never partial records or JSON fragments."
+                ),
+            ),
         ],
         chunk_sha256: Annotated[
             str,

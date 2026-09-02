@@ -54,6 +54,7 @@ def test_powershell_and_javascript_expose_the_same_readiness_targets() -> None:
     javascript = JAVASCRIPT_HELPER.read_text(encoding="utf-8")
     targets = (
         "metadata-authoring",
+        "model-input-scope",
         "logical-build",
         "silver-registration",
         "logical-binding",

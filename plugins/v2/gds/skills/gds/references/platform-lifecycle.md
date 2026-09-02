@@ -1,12 +1,11 @@
 # Platform lifecycle
 
-Tenant intake establishes Tenant, Systems, Connections, and Source discovery through a Metadata Change Set. Source-to-Bronze ingestion uses registered Objects/Attributes, ingestion Mapping, Copy Group, and Copy. Bronze may be skipped when a Source is available through a foreign catalog.
+Tenant, System, and Connection setup is an external operator/web prerequisite. Plugin Metadata Authoring starts with Source/Bronze Objects and Attributes, ingestion Mapping, Copy Group, and Copy. Bronze may be skipped when a Source is available through a foreign catalog.
 
 ```text
-Tenant Intake and Source/Bronze Metadata
+External foundational setup, then Source/Bronze Metadata
 → Model Input Scope (Model Apply and fresh Model Snapshot)
-→ Profiling, Assertions, Analysis, optional Conceptual
-→ Logical
+→ Profiling → relationship Analysis → Conceptual → Logical
 → Silver Target Registration (Metadata Apply)
 → Logical Model Binding (Model Apply)
 → Logical Mapping → Code and/or Validation

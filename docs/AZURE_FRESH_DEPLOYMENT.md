@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.4.2.zip
+   plugins/v2/dist/gds-agent-plugin-0.4.5.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:

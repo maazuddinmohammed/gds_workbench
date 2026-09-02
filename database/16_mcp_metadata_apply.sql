@@ -442,49 +442,51 @@ BEGIN
                target_object.object_id AS target_object_id,
                records.is_active
           FROM records
-          JOIN core.tenant AS source_tenant
-            ON lower(btrim(source_tenant.tenant_code))
+          JOIN core.tenant AS owner_tenant
+            ON owner_tenant.tenant_id = p_tenant_id
+          JOIN core.tenant AS source_connection_tenant
+            ON lower(btrim(source_connection_tenant.tenant_code))
              = lower(btrim(records.source_tenant_code))
           JOIN core.system AS source_system
             ON lower(btrim(source_system.system_code))
              = lower(btrim(records.source_system_code))
           JOIN core.connection AS source_connection
-            ON source_connection.system_id = source_system.system_id
+            ON source_connection.tenant_id = source_connection_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
            AND lower(btrim(source_connection.connection_code))
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
-           AND source_object.source_tenant_id = source_tenant.tenant_id
+           AND source_object.source_tenant_id = owner_tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
              = lower(btrim(records.source_object_name))
-          JOIN core.tenant AS target_tenant
-            ON lower(btrim(target_tenant.tenant_code))
+          JOIN core.tenant AS target_connection_tenant
+            ON lower(btrim(target_connection_tenant.tenant_code))
              = lower(btrim(records.target_tenant_code))
           JOIN core.system AS target_system
             ON lower(btrim(target_system.system_code))
              = lower(btrim(records.target_system_code))
           JOIN core.connection AS target_connection
-            ON target_connection.system_id = target_system.system_id
+            ON target_connection.tenant_id = target_connection_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
            AND lower(btrim(target_connection.connection_code))
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
-           AND target_object.source_tenant_id = target_tenant.tenant_id
+           AND target_object.source_tenant_id = owner_tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
              = lower(btrim(records.target_object_name))
-         WHERE source_tenant.tenant_id = p_tenant_id
-           AND target_tenant.tenant_id = p_tenant_id
-           AND (
-               source_connection.is_global_data_store
-               OR source_connection.tenant_id = source_tenant.tenant_id
+         WHERE (
+               source_connection.tenant_id = owner_tenant.tenant_id
+               OR source_connection.connection_id = owner_tenant.gds_connection_id
            )
            AND (
-               target_connection.is_global_data_store
-               OR target_connection.tenant_id = target_tenant.tenant_id
+               target_connection.tenant_id = owner_tenant.tenant_id
+               OR target_connection.connection_id = owner_tenant.gds_connection_id
            )
     )
     INSERT INTO core.ingestion_object_mapping AS target (
@@ -526,19 +528,22 @@ BEGIN
                target_attribute.attribute_id AS target_attribute_id,
                records.is_active
           FROM records
-          JOIN core.tenant AS source_tenant
-            ON lower(btrim(source_tenant.tenant_code))
+          JOIN core.tenant AS owner_tenant
+            ON owner_tenant.tenant_id = p_tenant_id
+          JOIN core.tenant AS source_connection_tenant
+            ON lower(btrim(source_connection_tenant.tenant_code))
              = lower(btrim(records.source_tenant_code))
           JOIN core.system AS source_system
             ON lower(btrim(source_system.system_code))
              = lower(btrim(records.source_system_code))
           JOIN core.connection AS source_connection
-            ON source_connection.system_id = source_system.system_id
+            ON source_connection.tenant_id = source_connection_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
            AND lower(btrim(source_connection.connection_code))
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
-           AND source_object.source_tenant_id = source_tenant.tenant_id
+           AND source_object.source_tenant_id = owner_tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
@@ -547,19 +552,20 @@ BEGIN
             ON source_attribute.object_id = source_object.object_id
            AND lower(btrim(source_attribute.attribute_name))
              = lower(btrim(records.source_attribute_name))
-          JOIN core.tenant AS target_tenant
-            ON lower(btrim(target_tenant.tenant_code))
+          JOIN core.tenant AS target_connection_tenant
+            ON lower(btrim(target_connection_tenant.tenant_code))
              = lower(btrim(records.target_tenant_code))
           JOIN core.system AS target_system
             ON lower(btrim(target_system.system_code))
              = lower(btrim(records.target_system_code))
           JOIN core.connection AS target_connection
-            ON target_connection.system_id = target_system.system_id
+            ON target_connection.tenant_id = target_connection_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
            AND lower(btrim(target_connection.connection_code))
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
-           AND target_object.source_tenant_id = target_tenant.tenant_id
+           AND target_object.source_tenant_id = owner_tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
@@ -571,15 +577,13 @@ BEGIN
           JOIN core.ingestion_object_mapping AS parent
             ON parent.source_object_id = source_object.object_id
            AND parent.target_object_id = target_object.object_id
-         WHERE source_tenant.tenant_id = p_tenant_id
-           AND target_tenant.tenant_id = p_tenant_id
-           AND (
-               source_connection.is_global_data_store
-               OR source_connection.tenant_id = source_tenant.tenant_id
+         WHERE (
+               source_connection.tenant_id = owner_tenant.tenant_id
+               OR source_connection.connection_id = owner_tenant.gds_connection_id
            )
            AND (
-               target_connection.is_global_data_store
-               OR target_connection.tenant_id = target_tenant.tenant_id
+               target_connection.tenant_id = owner_tenant.tenant_id
+               OR target_connection.connection_id = owner_tenant.gds_connection_id
            )
     )
     INSERT INTO core.ingestion_attribute_mapping AS target (
@@ -776,36 +780,38 @@ BEGIN
            AND copy_group.system_id = system.system_id
            AND lower(btrim(copy_group.copy_group_name))
              = lower(btrim(records.copy_group_name))
-          JOIN core.tenant AS source_tenant
-            ON lower(btrim(source_tenant.tenant_code))
+          JOIN core.tenant AS source_connection_tenant
+            ON lower(btrim(source_connection_tenant.tenant_code))
              = lower(btrim(records.source_tenant_code))
           JOIN core.system AS source_system
             ON lower(btrim(source_system.system_code))
              = lower(btrim(records.source_system_code))
           JOIN core.connection AS source_connection
-            ON source_connection.system_id = source_system.system_id
+            ON source_connection.tenant_id = source_connection_tenant.tenant_id
+           AND source_connection.system_id = source_system.system_id
            AND lower(btrim(source_connection.connection_code))
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
-           AND source_object.source_tenant_id = source_tenant.tenant_id
+           AND source_object.source_tenant_id = tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
              = lower(btrim(records.source_object_name))
-          JOIN core.tenant AS target_tenant
-            ON lower(btrim(target_tenant.tenant_code))
+          JOIN core.tenant AS target_connection_tenant
+            ON lower(btrim(target_connection_tenant.tenant_code))
              = lower(btrim(records.target_tenant_code))
           JOIN core.system AS target_system
             ON lower(btrim(target_system.system_code))
              = lower(btrim(records.target_system_code))
           JOIN core.connection AS target_connection
-            ON target_connection.system_id = target_system.system_id
+            ON target_connection.tenant_id = target_connection_tenant.tenant_id
+           AND target_connection.system_id = target_system.system_id
            AND lower(btrim(target_connection.connection_code))
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
-           AND target_object.source_tenant_id = target_tenant.tenant_id
+           AND target_object.source_tenant_id = tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
@@ -827,15 +833,13 @@ BEGIN
           JOIN reference.data_operation AS target_operation
             ON lower(btrim(target_operation.data_operation_name))
              = lower(btrim(records.target_data_operation_name))
-         WHERE source_tenant.tenant_id = p_tenant_id
-           AND target_tenant.tenant_id = p_tenant_id
-           AND (
-               source_connection.is_global_data_store
-               OR source_connection.tenant_id = source_tenant.tenant_id
+         WHERE (
+               source_connection.tenant_id = tenant.tenant_id
+               OR source_connection.connection_id = tenant.gds_connection_id
            )
            AND (
-               target_connection.is_global_data_store
-               OR target_connection.tenant_id = target_tenant.tenant_id
+               target_connection.tenant_id = tenant.tenant_id
+               OR target_connection.connection_id = tenant.gds_connection_id
            )
            AND (records.chunk_type_name IS NULL OR chunk_type.chunk_type_id IS NOT NULL)
            AND (records.source_file_type_name IS NULL OR file_type.file_type_id IS NOT NULL)
@@ -965,29 +969,27 @@ BEGIN
            AND process_group.zone_id = zone.zone_id
            AND lower(btrim(process_group.process_group_name))
              = lower(btrim(records.process_group_name))
-          JOIN core.tenant AS object_tenant
-            ON lower(btrim(object_tenant.tenant_code))
+          JOIN core.tenant AS object_connection_tenant
+            ON lower(btrim(object_connection_tenant.tenant_code))
              = lower(btrim(records.object_tenant_code))
           JOIN core.system AS object_system
             ON lower(btrim(object_system.system_code))
              = lower(btrim(records.object_system_code))
           JOIN core.connection AS object_connection
-            ON object_connection.system_id = object_system.system_id
+            ON object_connection.tenant_id = object_connection_tenant.tenant_id
+           AND object_connection.system_id = object_system.system_id
            AND lower(btrim(object_connection.connection_code))
              = lower(btrim(records.object_connection_code))
           JOIN core.object AS object
             ON object.connection_id = object_connection.connection_id
-           AND object.source_tenant_id = object_tenant.tenant_id
+           AND object.source_tenant_id = tenant.tenant_id
            AND lower(btrim(object.object_schema)) = lower(btrim(records.object_schema))
            AND lower(btrim(object.object_name)) = lower(btrim(records.object_name))
           JOIN reference.process_type AS process_type
             ON lower(btrim(process_type.process_type_name))
              = lower(btrim(records.process_type_name))
-         WHERE object_tenant.tenant_id = p_tenant_id
-           AND (
-               object_connection.is_global_data_store
-               OR object_connection.tenant_id = object_tenant.tenant_id
-           )
+         WHERE object_connection.tenant_id = tenant.tenant_id
+            OR object_connection.connection_id = tenant.gds_connection_id
     )
     INSERT INTO core.process AS target (
         connection_id, object_id, process_execution_order, process_location,

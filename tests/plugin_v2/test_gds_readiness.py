@@ -148,6 +148,7 @@ def write_both_snapshots(session: Path) -> None:
     ("target", "areas"),
     (
         ("metadata-authoring", ["metadata"]),
+        ("model-input-scope", ["metadata", "model"]),
         ("logical-build", ["metadata", "model"]),
         ("silver-registration", ["metadata", "model"]),
         ("logical-binding", ["metadata", "model"]),

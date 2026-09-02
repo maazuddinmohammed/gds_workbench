@@ -2718,10 +2718,28 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
         entra_object_id=entra_object_id,
     )
     tenant_code = "CHANGE_SET_TENANT_ALL_APPLY"
-    documents = _all_apply_documents(tenant_code)
+    gds_tenant_code = "GLOBAL_ALL_APPLY"
+    documents = _all_apply_documents(tenant_code, gds_tenant_code)
     digest = "d" * 64
 
     with postgres_database.connect_owner() as connection:
+        project = connection.execute(
+            "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
+            (tenant_id,),
+        ).fetchone()
+        assert project is not None
+        gds_tenant = connection.execute(
+            """
+            INSERT INTO core.tenant (
+                project_id, tenant_code, tenant_name, tenant_catalog,
+                gds_admin_catalog, tenant_visibility
+            ) VALUES (%s, %s, 'Global All Apply', 'global_all_apply',
+                      'global_all_apply_admin', 'global')
+            RETURNING tenant_id
+            """,
+            (project["project_id"], gds_tenant_code),
+        ).fetchone()
+        assert gds_tenant is not None
         system_type = connection.execute(
             """
             INSERT INTO reference.system_type (system_type_code, system_type_name)
@@ -2801,7 +2819,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
             ) VALUES (%s, %s, 'GDS', 'GDS', %s, TRUE)
             RETURNING connection_id
             """,
-            (tenant_id, system_id, connection_type_id),
+            (gds_tenant["tenant_id"], system_id, connection_type_id),
         ).fetchone()
         assert gds_connection is not None
         connection.execute(
@@ -2882,17 +2900,13 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
             """
             SELECT (
                        SELECT count(*) FROM core.object AS object
-                       JOIN core.connection AS connection
-                         ON connection.connection_id = object.connection_id
-                      WHERE connection.tenant_id = %s
+                      WHERE object.source_tenant_id = %s
                    ) AS objects,
                    (
                        SELECT count(*) FROM core.attribute AS attribute
                        JOIN core.object AS object
                          ON object.object_id = attribute.object_id
-                       JOIN core.connection AS connection
-                         ON connection.connection_id = object.connection_id
-                      WHERE connection.tenant_id = %s
+                      WHERE object.source_tenant_id = %s
                    ) AS attributes,
                    (
                        SELECT count(*)
@@ -3134,6 +3148,7 @@ def test_apply_assigns_locked_tenant_to_object_on_global_connection(
 
 def _all_apply_documents(
     tenant_code: str,
+    gds_tenant_code: str,
 ) -> dict[str, list[dict[str, object]]]:
     system_code = "CRM_ALL_APPLY"
     object_records: dict[str, dict[str, object]] = {}
@@ -3141,7 +3156,7 @@ def _all_apply_documents(
     for zone_code in ("source", "bronze", "silver", "gold"):
         object_name = f"{zone_code}_customers"
         object_records[zone_code] = {
-            "tenant_code": tenant_code,
+            "tenant_code": tenant_code if zone_code == "source" else gds_tenant_code,
             "source_tenant_code": tenant_code,
             "system_code": system_code,
             "connection_code": "SOURCE" if zone_code == "source" else "GDS",
@@ -3158,7 +3173,7 @@ def _all_apply_documents(
             "is_active": True,
         }
         attribute_records[zone_code] = {
-            "tenant_code": tenant_code,
+            "tenant_code": tenant_code if zone_code == "source" else gds_tenant_code,
             "system_code": system_code,
             "connection_code": "SOURCE" if zone_code == "source" else "GDS",
             "object_schema": "public",
@@ -3185,7 +3200,7 @@ def _all_apply_documents(
         "source_connection_code": "SOURCE",
         "source_object_schema": "public",
         "source_object_name": "source_customers",
-        "target_tenant_code": tenant_code,
+        "target_tenant_code": gds_tenant_code,
         "target_system_code": system_code,
         "target_connection_code": "GDS",
         "target_object_schema": "public",
@@ -3290,7 +3305,7 @@ def _all_apply_documents(
                 "process_execution_order": 1,
                 "process_location": "/Workspace/customer",
                 "process_executable": "load_customer",
-                "object_tenant_code": tenant_code,
+                "object_tenant_code": gds_tenant_code,
                 "object_system_code": system_code,
                 "object_connection_code": "GDS",
                 "object_schema": "public",

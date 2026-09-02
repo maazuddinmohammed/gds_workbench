@@ -11,9 +11,10 @@ Answer explanations and one-off reads directly. Any workflow that writes local a
 
 1. Read `references/session.md`. Create or resume one Tenant-bound session and, when relevant, one Model.
 2. Open Workbench only when the session is first created or the user asks. Keep that window open; later results need only Refresh.
-3. Infer mode, target, and Full/Selected scope. Ask only for a decision that changes the result. For an Automatic journey, read `references/automatic-journey.md`; otherwise read `references/workflow-targets.md` and only the active guide.
-4. Run local `readiness` once for a known target without first running the local helper's `inspect` command. For an ad hoc read, use focused MCP `inspect_metadata` or `read_model_section`; never load a complete Snapshot into context.
-5. Before the first local write, read `references/change-sets.md` and `references/local-helper.md`, then request the compact dataset schema with `describe_metadata_dataset` or `describe_model_dataset`.
+3. Infer mode, target, and Full/Selected scope; ask only decisions that change the result. Read `references/workflow-targets.md` and only the active guide. For Automatic, also read `references/automatic-journey.md`.
+4. For a target that may query, set missing SQL policy: `never` uses Metadata/Snapshots/user evidence; `essential` queries only a blocking gap; `as_needed` permits bounded queries. Ask once; persist via `sql-policy` and reuse until changed.
+5. Run local `readiness` once for a known target without first running the local helper's `inspect` command. For an ad hoc read, use focused MCP `inspect_metadata` or `read_model_section`; never load a complete Snapshot into context.
+6. Before the first local write, read `references/change-sets.md` and `references/local-helper.md`, then request the compact dataset schema with `describe_metadata_dataset` or `describe_model_dataset`.
 
 Trust MCP tool schemas dynamically. There is no packaged server-contract hash preflight. Never use removed specialized Mapping or Code context tools.
 
@@ -35,7 +36,7 @@ Full covers every eligible input within the task boundary. Selected covers only 
 2. Run local review and validation internally. When complete, tell the user the result is ready and ask them to Refresh Workbench.
 3. Any unambiguous positive acknowledgement—such as “proceed”, “OK”, or “looks good”—accepts the exact current digest and authorizes an ordinary free Tenant Lock, reconciliation, Stage, and server Change Set validation. Do not ask again before those actions.
 4. Before reconciliation, confirm the authoritative revision still matches. If it changed, stop, request a fresh Snapshot, and reassess. Keep the acknowledgement only when local content is byte-identical; otherwise notify the user again.
-5. If another Principal owns the lock, stop. Lock override always requires separate explicit authorization and a reason. After server validation, show the authoritative actions and ask separately for Apply approval.
+5. If another Principal owns the lock, stop. Lock override always requires separate explicit authorization and a reason. After reconciliation, read `references/staging.md`; do not plan chunks manually. After server validation, show the authoritative actions and ask separately for Apply approval.
 6. Apply once, mark that Snapshot area stale, release a lock acquired here, and stop at the target boundary.
 
 Workbench is a local viewer/editor. It never calls MCP, stages, applies, deploys, or executes generated code.
@@ -44,5 +45,5 @@ Workbench is a local viewer/editor. It never calls MCP, stages, applies, deploys
 
 - Session and lifecycle: `references/session.md`, `references/workbench.md`, `references/server-handoff.md`
 - Targets and platform: `references/workflow-targets.md`, `references/platform-lifecycle.md`
-- Local records: `references/change-sets.md`, `references/local-helper.md`
+- Local records: `references/change-sets.md`, `references/local-helper.md`; Stage only: `references/staging.md`
 - Active authoring guide: `references/workflows/`
