@@ -13,7 +13,7 @@ class ReviewContract(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-type AnalysisStatus = Literal["active", "needs_review", "inactive", "deprecated"]
+type AnalysisStatus = Literal["active", "inactive", "deprecated"]
 type AnalysisValidationState = Literal["validated", "unvalidated"]
 type AnalysisValidationResult = Literal["supported", "inconclusive", "unsupported"]
 

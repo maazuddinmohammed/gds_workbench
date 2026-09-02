@@ -13,7 +13,7 @@ from uuid import UUID
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.capabilities import (
     CODE_GENERATION_AGENT_EXECUTION_MODE,
-    QA_AGENT_EXECUTION_MODE,
+    VALIDATION_AGENT_EXECUTION_MODE,
     AgentCapabilityRegistry,
     AgentExecutionModeCode,
     AgentRunSelection,
@@ -32,7 +32,7 @@ _WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 }
 _AGENT_WORKFLOWS = {
     "analysis_inference",
@@ -41,7 +41,7 @@ _AGENT_WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 }
 _CONFIGURABLE_MODE_WORKFLOWS = {
     "analysis_inference",
@@ -109,7 +109,7 @@ def widget_specs(
         else None
     )
     specs = list(_COMMON_WIDGETS)
-    if workflow == "qa":
+    if workflow == "validation":
         specs.append(
             WidgetSpec(
                 "SelectedSystemCodesJSON",
@@ -137,12 +137,6 @@ def widget_specs(
                     "build",
                     "Mapping operation",
                     ("build", "extend"),
-                ),
-                WidgetSpec(
-                    "MappingArtifactType",
-                    "sql_file",
-                    "Mapping artifact type",
-                    ("sql_file", "python_file", "python_notebook"),
                 ),
                 WidgetSpec("MappingSourceSystemID", "", "Mapping source System ID"),
                 WidgetSpec(
@@ -234,7 +228,7 @@ def _load_notebook_agent_capabilities(
 ) -> _NotebookAgentCapabilities:
     fixed_execution_mode = {
         "code_generation": CODE_GENERATION_AGENT_EXECUTION_MODE,
-        "qa": QA_AGENT_EXECUTION_MODE,
+        "validation": VALIDATION_AGENT_EXECUTION_MODE,
     }.get(workflow)
     complete_registry = load_default_agent_capabilities()
     available_model_codes = (
@@ -324,7 +318,7 @@ def build_notebook_request(
     expected_revision = _positive_int(values, "ExpectedModelRevision")
     selected_ids = _positive_int_array(values, "SelectedObjectIDsJSON")
     selected_system_codes = (
-        _system_code_array(values, "SelectedSystemCodesJSON") if workflow == "qa" else []
+        _system_code_array(values, "SelectedSystemCodesJSON") if workflow == "validation" else []
     )
     idempotency_key = _uuid(values, "IdempotencyKey")
 
@@ -359,7 +353,6 @@ def build_notebook_request(
         "requested_batch_id": None,
         "mapping_operation": None,
         "mapping_coverage_mode": None,
-        "mapping_artifact_type": None,
         "mapping_source_system_id": None,
         "mapping_object_output_template_id": None,
         "mapping_attribute_output_template_id": None,
@@ -380,11 +373,6 @@ def build_notebook_request(
             {
                 "mapping_operation": _choice(values, "MappingOperation", {"build", "extend"}),
                 "mapping_coverage_mode": "selected_targets",
-                "mapping_artifact_type": _choice(
-                    values,
-                    "MappingArtifactType",
-                    {"sql_file", "python_file", "python_notebook"},
-                ),
                 "mapping_source_system_id": _positive_int(values, "MappingSourceSystemID"),
                 "mapping_object_output_template_id": _optional_positive_int(
                     values, "MappingObjectOutputTemplateID"
@@ -421,12 +409,12 @@ def build_notebook_request(
                 ),
             }
         )
-    elif workflow == "qa":
+    elif workflow == "validation":
         if selected_ids:
-            raise NotebookConfigurationError("SelectedObjectIDsJSON must be [] for QA.")
+            raise NotebookConfigurationError("SelectedObjectIDsJSON must be [] for Validation.")
         if not selected_system_codes:
             raise NotebookConfigurationError(
-                "SelectedSystemCodesJSON must contain at least one System Code for QA."
+                "SelectedSystemCodesJSON must contain at least one System Code for Validation."
             )
     elif not selected_ids:
         raise NotebookConfigurationError("SelectedObjectIDsJSON must contain at least one ID.")
@@ -465,8 +453,8 @@ def build_notebook_request(
         )
         if workflow == "code_generation":
             effective_execution_mode = CODE_GENERATION_AGENT_EXECUTION_MODE
-        elif workflow == "qa":
-            effective_execution_mode = QA_AGENT_EXECUTION_MODE
+        elif workflow == "validation":
+            effective_execution_mode = VALIDATION_AGENT_EXECUTION_MODE
         else:
             effective_execution_mode = execution_mode or "one_shot"
         try:

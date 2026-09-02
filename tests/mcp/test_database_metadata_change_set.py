@@ -2202,6 +2202,7 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
     zone_code = f"bronze_{suffix.lower()}"
     object_record = {
         "tenant_code": tenant_code,
+        "source_tenant_code": tenant_code,
         "system_code": system_code,
         "connection_code": "MAIN",
         "object_schema": "public",
@@ -2305,12 +2306,13 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
         object_row = connection.execute(
             """
             INSERT INTO core.object (
-                connection_id, object_schema, object_name, object_description,
+                connection_id, source_tenant_id,
+                object_schema, object_name, object_description,
                 object_type_id, zone_id, is_locked
-            ) VALUES (%s, 'public', 'customers', 'Original', %s, %s, TRUE)
+            ) VALUES (%s, %s, 'public', 'customers', 'Original', %s, %s, TRUE)
             RETURNING object_id
             """,
-            (connection_id, object_type_id, zone_id),
+            (connection_id, tenant_id, object_type_id, zone_id),
         ).fetchone()
         assert object_row is not None
         object_id = object_row["object_id"]
@@ -2409,6 +2411,7 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
     tenant_code = "CHANGE_SET_TENANT_ATOMIC_ROLLBACK"
     object_record = {
         "tenant_code": tenant_code,
+        "source_tenant_code": tenant_code,
         "system_code": "CRM_ATOMIC_ROLLBACK",
         "connection_code": "MAIN",
         "object_schema": "public",
@@ -2419,7 +2422,7 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
         "object_description": "Must roll back",
         "batch_attribute_name": None,
         "object_type_code": "TABLE_ATOMIC_ROLLBACK",
-        "zone_code": "bronze_atomic_rollback",
+        "zone_code": "bronze",
         "is_locked": False,
         "is_active": True,
     }
@@ -2482,12 +2485,16 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
         assert object_type is not None
         object_type_id = object_type["object_type_id"]
         zone = connection.execute(
-            """
-            INSERT INTO reference.zone (zone_code, zone_name)
-            VALUES ('bronze_atomic_rollback', 'Bronze Atomic Rollback')
-            RETURNING zone_id
-            """
+            "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = 'bronze'"
         ).fetchone()
+        if zone is None:
+            zone = connection.execute(
+                """
+                INSERT INTO reference.zone (zone_code, zone_name)
+                VALUES ('bronze', 'Bronze')
+                RETURNING zone_id
+                """
+            ).fetchone()
         assert zone is not None
         zone_id = zone["zone_id"]
         system = connection.execute(
@@ -2500,14 +2507,20 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
         ).fetchone()
         assert system is not None
         system_id = system["system_id"]
-        connection.execute(
+        gds_connection = connection.execute(
             """
             INSERT INTO core.connection (
                 tenant_id, system_id, connection_code, connection_name,
-                connection_type_id
-            ) VALUES (%s, %s, 'MAIN', 'Main', %s)
+                connection_type_id, is_global_data_store
+            ) VALUES (%s, %s, 'MAIN', 'Main', %s, TRUE)
+            RETURNING connection_id
             """,
             (tenant_id, system_id, connection_type_id),
+        ).fetchone()
+        assert gds_connection is not None
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (gds_connection["connection_id"], tenant_id),
         )
         assert object_type_id > 0 and zone_id > 0
         connection.execute(
@@ -2735,16 +2748,18 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
             RETURNING object_type_id
             """
         )
-        for zone_code, zone_name in (
-            ("source_all_apply", "Source All Apply"),
-            ("bronze_all_apply", "Bronze All Apply"),
-            ("silver_all_apply", "Silver All Apply"),
-            ("gold_all_apply", "Gold All Apply"),
-        ):
-            connection.execute(
-                "INSERT INTO reference.zone (zone_code, zone_name) VALUES (%s, %s)",
-                (zone_code, zone_name),
-            )
+        for zone_code in ("source", "bronze", "silver", "gold"):
+            if (
+                connection.execute(
+                    "SELECT 1 FROM reference.zone WHERE lower(btrim(zone_code)) = %s",
+                    (zone_code,),
+                ).fetchone()
+                is None
+            ):
+                connection.execute(
+                    "INSERT INTO reference.zone (zone_code, zone_name) VALUES (%s, %s)",
+                    (zone_code, zone_code.title()),
+                )
         connection.execute(
             """
             INSERT INTO reference.data_operation (
@@ -2773,10 +2788,25 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
             """
             INSERT INTO core.connection (
                 tenant_id, system_id, connection_code, connection_name,
-                connection_type_id
-            ) VALUES (%s, %s, 'MAIN', 'Main', %s)
+                connection_type_id, has_foreign_catalog, foreign_catalog
+            ) VALUES (%s, %s, 'SOURCE', 'Source', %s, TRUE, 'source_catalog')
             """,
             (tenant_id, system_id, connection_type_id),
+        )
+        gds_connection = connection.execute(
+            """
+            INSERT INTO core.connection (
+                tenant_id, system_id, connection_code, connection_name,
+                connection_type_id, is_global_data_store
+            ) VALUES (%s, %s, 'GDS', 'GDS', %s, TRUE)
+            RETURNING connection_id
+            """,
+            (tenant_id, system_id, connection_type_id),
+        ).fetchone()
+        assert gds_connection is not None
+        connection.execute(
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (gds_connection["connection_id"], tenant_id),
         )
         connection.execute(
             """
@@ -2931,7 +2961,7 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
     }
 
 
-def test_apply_allows_global_object_inside_tenant_discovery_scope(
+def test_apply_assigns_locked_tenant_to_object_on_global_connection(
     postgres_database: DisposablePostgres,
 ) -> None:
     entra_tenant_id = UUID("10000000-0000-0000-0000-000000000047")
@@ -2944,7 +2974,8 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
     )
     digest = "e" * 64
     record = {
-        "tenant_code": "CHANGE_SET_TENANT_SCOPED_APPLY",
+        "tenant_code": "GLOBAL_SCOPED_APPLY",
+        "source_tenant_code": "CHANGE_SET_TENANT_SCOPED_APPLY",
         "system_code": "CRM_SCOPED_APPLY",
         "connection_code": "GDS",
         "object_schema": "demo",
@@ -2955,7 +2986,7 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
         "object_description": None,
         "batch_attribute_name": None,
         "object_type_code": "TABLE_SCOPED_APPLY",
-        "zone_code": "bronze_scoped_apply",
+        "zone_code": "bronze",
         "is_locked": False,
         "is_active": True,
     }
@@ -3014,19 +3045,18 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
             """
             SELECT zone_id
               FROM reference.zone
-             WHERE lower(btrim(zone_code)) = 'bronze_scoped_apply'
+             WHERE lower(btrim(zone_code)) = 'bronze'
             """
         ).fetchone()
         if zone is None:
             zone = connection.execute(
                 """
                 INSERT INTO reference.zone (zone_code, zone_name)
-                VALUES ('bronze_scoped_apply', 'Bronze Scoped Apply')
+                    VALUES ('bronze', 'Bronze')
                 RETURNING zone_id
                 """
             ).fetchone()
         assert zone is not None
-        zone_id = zone["zone_id"]
         system = connection.execute(
             """
             INSERT INTO core.system (system_code, system_name, system_type_id)
@@ -3050,12 +3080,8 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
         assert connection_row is not None
         connection_id = connection_row["connection_id"]
         connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, gds_connection_id, zone_id, object_schema
-            ) VALUES (%s, %s, %s, 'demo')
-            """,
-            (tenant_id, connection_id, zone_id),
+            "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
+            (connection_id, tenant_id),
         )
         connection.execute(
             """
@@ -3090,7 +3116,7 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
         ).fetchone()
         stored = connection.execute(
             """
-            SELECT object.object_name
+            SELECT object.object_name, object.source_tenant_id
               FROM core.object AS object
              WHERE object.connection_id = %s
             """,
@@ -3100,7 +3126,10 @@ def test_apply_allows_global_object_inside_tenant_discovery_scope(
 
     assert object_type_id > 0
     assert applied == {"applied": True, "denial_code": None, "action_count": 1}
-    assert stored == {"object_name": "customers"}
+    assert stored == {
+        "object_name": "customers",
+        "source_tenant_id": tenant_id,
+    }
 
 
 def _all_apply_documents(
@@ -3113,28 +3142,29 @@ def _all_apply_documents(
         object_name = f"{zone_code}_customers"
         object_records[zone_code] = {
             "tenant_code": tenant_code,
+            "source_tenant_code": tenant_code,
             "system_code": system_code,
-            "connection_code": "MAIN",
+            "connection_code": "SOURCE" if zone_code == "source" else "GDS",
             "object_schema": "public",
             "object_name": object_name,
-            "fc_object_schema": None,
-            "fc_object_name": None,
+            "fc_object_schema": "public" if zone_code == "source" else None,
+            "fc_object_name": object_name if zone_code == "source" else None,
             "object_transformation": None,
             "object_description": f"{zone_code} customers",
             "batch_attribute_name": None,
             "object_type_code": "TABLE_ALL_APPLY",
-            "zone_code": f"{zone_code}_all_apply",
+            "zone_code": zone_code,
             "is_locked": False,
             "is_active": True,
         }
         attribute_records[zone_code] = {
             "tenant_code": tenant_code,
             "system_code": system_code,
-            "connection_code": "MAIN",
+            "connection_code": "SOURCE" if zone_code == "source" else "GDS",
             "object_schema": "public",
             "object_name": object_name,
             "attribute_name": "customer_id",
-            "fc_attribute_name": None,
+            "fc_attribute_name": "customer_id" if zone_code == "source" else None,
             "attribute_ordinal_position": 1,
             "attribute_description": None,
             "attribute_data_type": "bigint",
@@ -3152,12 +3182,12 @@ def _all_apply_documents(
     object_mapping: dict[str, object] = {
         "source_tenant_code": tenant_code,
         "source_system_code": system_code,
-        "source_connection_code": "MAIN",
+        "source_connection_code": "SOURCE",
         "source_object_schema": "public",
         "source_object_name": "source_customers",
         "target_tenant_code": tenant_code,
         "target_system_code": system_code,
-        "target_connection_code": "MAIN",
+        "target_connection_code": "GDS",
         "target_object_schema": "public",
         "target_object_name": "bronze_customers",
         "is_active": True,
@@ -3244,7 +3274,7 @@ def _all_apply_documents(
             {
                 "tenant_code": tenant_code,
                 "system_code": system_code,
-                "zone_code": "bronze_all_apply",
+                "zone_code": "bronze",
                 "process_group_name": "CUSTOMER_PROCESS",
                 "process_group_description": "Customer process",
                 "copy_group_name": "CUSTOMERS",
@@ -3255,14 +3285,14 @@ def _all_apply_documents(
             {
                 "tenant_code": tenant_code,
                 "system_code": system_code,
-                "zone_code": "bronze_all_apply",
+                "zone_code": "bronze",
                 "process_group_name": "CUSTOMER_PROCESS",
                 "process_execution_order": 1,
                 "process_location": "/Workspace/customer",
                 "process_executable": "load_customer",
                 "object_tenant_code": tenant_code,
                 "object_system_code": system_code,
-                "object_connection_code": "MAIN",
+                "object_connection_code": "GDS",
                 "object_schema": "public",
                 "object_name": "bronze_customers",
                 "process_type_name": "NOTEBOOK_ALL_APPLY",

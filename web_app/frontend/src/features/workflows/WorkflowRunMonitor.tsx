@@ -31,7 +31,7 @@ type DraftWorkflow = Extract<
   | "dimensional"
   | "mapping"
   | "code_generation"
-  | "qa"
+  | "validation"
 >;
 
 const WORKFLOW_EVENT_PAGE_SIZE = 200;
@@ -817,7 +817,7 @@ function isDraftReviewExpired(review: WorkflowDraftReview | null): boolean {
 }
 
 function workflowLabel(workflow: DraftWorkflow): string {
-  if (workflow === "qa") return "QA";
+  if (workflow === "validation") return "Validation";
   if (workflow === "code_generation") return "Code Generation";
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }

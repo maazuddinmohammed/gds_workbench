@@ -20,7 +20,10 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     WorkbenchError,
 )
-from gds_etl_workbench.domain.modeling_records import GeneratedCodeRecord
+from gds_etl_workbench.domain.modeling_records import (
+    GeneratedCodeRecord,
+    GeneratedCodeSourceSystemRecord,
+)
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
 from gds_etl_workbench.tools.change_sets.common import MAX_MODEL_STAGE_PAYLOAD_BYTES
 from gds_etl_workbench.tools.change_sets.model import StageModelChange
@@ -30,6 +33,9 @@ from gds_workbench_api.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
 )
+from gds_workbench_api.features.code_generation.artifact_context import (
+    CodeGenerationArtifactContext,
+)
 from gds_workbench_api.features.code_generation.context import (
     CodeGenerationExecutionContext,
 )
@@ -37,9 +43,6 @@ from gds_workbench_api.features.code_generation.service import (
     CodeGenerationExecutionFailedError,
     CodeGenerationFinalizationFailedError,
     DatabaseCodeGenerationExecutor,
-)
-from gds_workbench_api.features.code_generation.storage import (
-    CodeGenerationArtifactContext,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -119,12 +122,16 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
                     system="Generate SQL only.",
-                    instruction=("Use {{stage_context}} and guide {{sql_generation_guide}}."),
+                    instruction=(
+                        "Use {{stage_context}} and guide {{sql_generation_guide}}."
+                    ),
                 ),
                 variables=(
                     PromptVariableDefinition(
                         name="stage_context",
-                        resolver_key=("workflow.code_generation.common.sql_generation.context"),
+                        resolver_key=(
+                            "workflow.code_generation.common.sql_generation.context"
+                        ),
                         data_type="json",
                         is_required=True,
                     ),
@@ -146,26 +153,20 @@ def _execution_context() -> CodeGenerationExecutionContext:
             CodeGenerationArtifactContext(
                 target_ref="target_1",
                 object_id=501,
-                mapping_context_digest="c" * 64,
-                source_context_digest="d" * 64,
+                code_input_digest="c" * 64,
                 sql_generation_guide_version_id=91,
-                tenant_code="NWA",
-                system_code="GDS",
-                connection_code="WAREHOUSE",
-                object_schema="silver_crm",
-                object_name="target_1",
+                modeled_entity_type="logical_entity",
+                modeled_entity_name="TargetOne",
+                source_system_codes=("CRM",),
             ),
             CodeGenerationArtifactContext(
                 target_ref="target_2",
                 object_id=502,
-                mapping_context_digest="e" * 64,
-                source_context_digest="f" * 64,
+                code_input_digest="e" * 64,
                 sql_generation_guide_version_id=91,
-                tenant_code="NWA",
-                system_code="GDS",
-                connection_code="WAREHOUSE",
-                object_schema="silver_crm",
-                object_name="target_2",
+                modeled_entity_type="logical_entity",
+                modeled_entity_name="TargetTwo",
+                source_system_codes=("CRM",),
             ),
         ),
         agent_context=cast(
@@ -200,21 +201,26 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
         targets.append(
             target.model_copy(
                 update={
-                    "applied_generated_code": GeneratedCodeRecord(
-                        tenant_code=target.tenant_code,
-                        system_code=target.system_code,
-                        connection_code=target.connection_code,
-                        object_schema=target.object_schema,
-                        object_name=target.object_name,
-                        modeled_entity_type="logical_entity",
-                        artifact_type="sql_file",
-                        generated_code_content=content,
-                        mapping_context_digest=target.mapping_context_digest,
-                        source_context_digest=target.source_context_digest,
-                        generated_code_digest=sha256(content.encode("utf-8")).hexdigest(),
-                        generated_code_status="active",
-                        generated_code_is_locked=False,
-                    )
+                    "applied_generated_code": (
+                        GeneratedCodeRecord(
+                            modeled_entity_type="logical_entity",
+                            modeled_entity_name=target.modeled_entity_name,
+                            artifact_name=f"target_{position}.sql",
+                            artifact_type="sql_file",
+                            generated_code_content=content,
+                            generated_code_status="active",
+                        ),
+                    ),
+                    "applied_generated_code_source_systems": (
+                        GeneratedCodeSourceSystemRecord(
+                            modeled_entity_type="logical_entity",
+                            modeled_entity_name=target.modeled_entity_name,
+                            artifact_name=f"target_{position}.sql",
+                            source_system_code="CRM",
+                            generated_code_source_system_status="active",
+                        ),
+                    ),
+                    "current_artifact_names": (f"target_{position}.sql",),
                 }
             )
         )
@@ -228,14 +234,11 @@ def _execution_context_for_target_count(
         CodeGenerationArtifactContext(
             target_ref=f"target_{position}",
             object_id=500 + position,
-            mapping_context_digest="c" * 64,
-            source_context_digest="d" * 64,
+            code_input_digest="c" * 64,
             sql_generation_guide_version_id=91,
-            tenant_code="NWA",
-            system_code="GDS",
-            connection_code="WAREHOUSE",
-            object_schema="silver_crm",
-            object_name=f"target_{position}",
+            modeled_entity_type="logical_entity",
+            modeled_entity_name=f"Target{position}",
+            source_system_codes=("CRM",),
         )
         for position in range(1, target_count + 1)
     )
@@ -268,14 +271,11 @@ def _multibyte_execution_context(
         CodeGenerationArtifactContext(
             target_ref=f"target_{position}",
             object_id=500 + position,
-            mapping_context_digest=f"{position}" * 64,
-            source_context_digest=f"{position + 2}" * 64,
+            code_input_digest=f"{position}" * 64,
             sql_generation_guide_version_id=91,
-            tenant_code="NWA",
-            system_code="GDS",
-            connection_code="WAREHOUSE",
-            object_schema="silver_crm",
-            object_name=f"target_{position}",
+            modeled_entity_type="logical_entity",
+            modeled_entity_name=f"Target{position}",
+            source_system_codes=("CRM",),
         )
         for position in (1, 2)
     )
@@ -294,7 +294,9 @@ def _multibyte_execution_context(
                                 "object_schema": "é" * 400,
                                 "object_name": "é" * 399 + str(position),
                             },
-                            "source_systems": [{"system_code": "é" * 100, "dependency_order": 10}],
+                            "source_systems": [
+                                {"system_code": "é" * 100, "dependency_order": 10}
+                            ],
                             "object_mappings": [
                                 {
                                     "source_system": {"system_code": "é" * 100},
@@ -349,7 +351,9 @@ class _Authorizer:
 @dataclass
 class _Database:
     transaction: object = field(default_factory=object)
-    write_isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
+    write_isolations: list[ReadIsolation] = field(
+        default_factory=lambda: list[ReadIsolation]()
+    )
 
     @asynccontextmanager
     async def write_transaction(
@@ -364,7 +368,9 @@ class _Database:
 @dataclass
 class _PlanRepository:
     plan: AgentRunPlan = field(default_factory=_plan)
-    calls: list[tuple[int, int, int]] = field(default_factory=lambda: list[tuple[int, int, int]]())
+    calls: list[tuple[int, int, int]] = field(
+        default_factory=lambda: list[tuple[int, int, int]]()
+    )
 
     async def load(
         self,
@@ -382,7 +388,9 @@ class _PlanRepository:
 @dataclass
 class _ContextRepository:
     context: CodeGenerationExecutionContext = field(default_factory=_execution_context)
-    calls: list[tuple[int, int]] = field(default_factory=lambda: list[tuple[int, int]]())
+    calls: list[tuple[int, int]] = field(
+        default_factory=lambda: list[tuple[int, int]]()
+    )
 
     async def load(
         self,
@@ -409,6 +417,24 @@ class _AgentExecutor:
         response = self.responses.pop(0)
         if isinstance(response, Exception):
             raise response
+        if isinstance(response, dict) and isinstance(response.get("artifacts"), list):
+            artifacts = cast(list[object], response["artifacts"])
+            response = cast(
+                JsonValue,
+                {
+                    **response,
+                    "artifacts": [
+                        {
+                            "artifact_name": f"{artifact['target_ref']}.sql",
+                            "artifact_role": "target_transformation",
+                            "source_system_codes": ["CRM"],
+                            **artifact,
+                        }
+                        for artifact in artifacts
+                        if isinstance(artifact, dict)
+                    ],
+                },
+            )
         return AgentExecutionResult(
             candidate=response,
             turn_count=2,
@@ -491,7 +517,9 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
+                "completed_with_repair"
+                if request.final_event.attempt > 1
+                else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -505,7 +533,9 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
+    events: list[AgentWorkflowEvent] = field(
+        default_factory=lambda: list[AgentWorkflowEvent]()
+    )
     failed: tuple[str, str] | None = None
     claim_tokens: list[UUID] = field(default_factory=lambda: list[UUID]())
     fail_error: Exception | None = None
@@ -629,7 +659,9 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
     )
     service, *_ = _service(
         executor=agent,
-        plan_repository=_PlanRepository(plan=plan.model_copy(update={"stages": (seeded_stage,)})),
+        plan_repository=_PlanRepository(
+            plan=plan.model_copy(update={"stages": (seeded_stage,)})
+        ),
     )
 
     await service.execute_started(
@@ -683,11 +715,19 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -707,7 +747,7 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    assert result.staged_record_count == 4
     assert lifecycle.failed is None
     assert [request.execution_mode for request in adapter.requests] == [
         "detailed_coverage",
@@ -721,11 +761,19 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         responses=[
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -772,19 +820,27 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     assert "request_context_original_context" in request.instruction_prompt
     assert len(handoff.calls) == 1
     assert no_op.requests == []
-    assert [change.dataset for change in handoff.calls[0]] == ["generated_code"]
+    assert [change.dataset for change in handoff.calls[0]] == [
+        "generated_code",
+        "generated_code_source_system",
+    ]
     records = handoff.calls[0][0].records
-    assert [record["object_name"] for record in records] == ["target_1", "target_2"]
+    assert [record["artifact_name"] for record in records] == [
+        "target_1.sql",
+        "target_2.sql",
+    ]
     assert [record["generated_code_content"] for record in records] == [
         "SELECT 1;",
         "SELECT 2;",
     ]
     assert all(record["modeled_entity_type"] == "logical_entity" for record in records)
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    assert result.staged_record_count == 4
     assert "SELECT" not in repr(result)
     assert lifecycle.failed is None
-    assert [(event.sequence, event.attempt, event.stage) for event in lifecycle.events] == [
+    assert [
+        (event.sequence, event.attempt, event.stage) for event in lifecycle.events
+    ] == [
         (2, 1, "code_generation.sql_generation"),
         (3, 1, "code_generation.sql_generation"),
     ]
@@ -930,7 +986,9 @@ async def test_executor_does_not_mark_run_failed_after_uncertain_finalization() 
 async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
     target_count = 80
     context = _execution_context_for_target_count(target_count)
-    plan = _plan().model_copy(update={"selected_object_ids": tuple(range(501, 501 + target_count))})
+    plan = _plan().model_copy(
+        update={"selected_object_ids": tuple(range(501, 501 + target_count))}
+    )
     agent = _AgentExecutor(
         responses=[
             cast(
@@ -980,7 +1038,9 @@ async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_requests() -> None:
+async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_requests() -> (
+    None
+):
     guide = "é" * 131_072
     mapping_expression = "é" * 40_000
     context = _multibyte_execution_context(
@@ -1002,11 +1062,19 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
             wrong_target,
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
+                    ]
+                },
             ),
             cast(
                 JsonValue,
-                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
+                {
+                    "artifacts": [
+                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
+                    ]
+                },
             ),
         ]
     )
@@ -1029,7 +1097,7 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    assert result.staged_record_count == 4
     assert lifecycle.failed is None
     assert len(handoff.calls) == 1
     assert no_op.requests == []
@@ -1062,7 +1130,9 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
 
 
 @pytest.mark.asyncio
-async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> None:
+async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> (
+    None
+):
     context = _multibyte_execution_context(
         guide_content="é" * 131_072,
         mapping_expression="é" * 90_000,
@@ -1100,12 +1170,16 @@ async def test_executor_rejects_unrepresentable_target_before_provider_without_t
     assert no_op.requests == []
     assert lifecycle.failed == (
         "agent_context_too_large",
-        ("The selected execution mode cannot accept this context. Choose another mode explicitly."),
+        (
+            "The selected execution mode cannot accept this context. Choose another mode explicitly."
+        ),
     )
 
 
 @pytest.mark.asyncio
-async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> None:
+async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> (
+    None
+):
     wrong_target = cast(
         JsonValue,
         {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 1;"}]},
@@ -1121,7 +1195,9 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     handoff = _Handoff()
     lifecycle = _Lifecycle()
     service, _database, _authorizer, handoff, _no_op, lifecycle = _service(
-        executor=_AgentExecutor(responses=[wrong_target, first_complete, second_complete]),
+        executor=_AgentExecutor(
+            responses=[wrong_target, first_complete, second_complete]
+        ),
         handoff=handoff,
         lifecycle=lifecycle,
     )
@@ -1136,15 +1212,19 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     )
 
     assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 2
+    assert result.staged_record_count == 4
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].attempt == 2
     assert handoff.final_events[-1].status == "warning"
-    assert any(event.attempt == 2 and event.status == "warning" for event in lifecycle.events)
+    assert any(
+        event.attempt == 2 and event.status == "warning" for event in lifecycle.events
+    )
 
 
 @pytest.mark.asyncio
-async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> None:
+async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> (
+    None
+):
     diagnostic = "token=secret; prompt=raw; SQL=DROP TABLE x; provider trace"
     lifecycle = _Lifecycle()
     handoff = _Handoff()
@@ -1209,7 +1289,9 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
 
 
 @pytest.mark.asyncio
-async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> None:
+async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> (
+    None
+):
     lifecycle = _Lifecycle(fail_error=DependencyUnavailableError())
     handoff = _Handoff()
     no_op = _NoOp()

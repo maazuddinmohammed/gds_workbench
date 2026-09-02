@@ -116,18 +116,18 @@ BEGIN
             ),
             (
                 'conceptual', 'one_shot', 'candidate_authoring',
-                $objective$Author all evidence-supported Conceptual records for the selected Model scope.$objective$,
+                $objective$Author all evidence-supported Conceptual records for the selected Model inputs.$objective$,
                 $method$Model stable business concepts, not physical tables one-for-one. Give every entity a precise definition and grain, exact Object or Modeling Assertion supports, evidence-calibrated confidence and status, and naming consistent with supplied guidance. Relationships must connect included entities and state semantic and support bases. Preserve compatible applied records and merge semantic duplicates; never invent an entity merely to force source coverage.$method$
             ),
             (
                 'conceptual', 'tool_assisted', 'candidate_authoring',
                 $objective$Author all evidence-supported Conceptual records after retrieving only missing bounded context.$objective$,
-                $method$Model stable business concepts, not physical-table copies. Give every entity a precise definition and grain, exact supplied supports, evidence-calibrated confidence and status, and naming consistent with supplied guidance. Relationships must connect included entities and cite semantic evidence. Preserve compatible applied records, merge semantic duplicates, and use a schema-defined review state rather than inventing uncertain concepts.$method$
+                $method$Model stable business concepts, not physical-table copies. Give every entity a precise definition and grain, exact supplied supports, evidence-calibrated confidence and status, and naming consistent with supplied guidance. Relationships must connect included entities and cite semantic evidence. Preserve compatible applied records, merge semantic duplicates, and record unresolved contributions as excluded or blocked rather than inventing uncertain concepts.$method$
             ),
             (
                 'conceptual', 'detailed_coverage', 'object_contribution',
-                $objective$Classify one assigned physical Object and, when supported, propose its Conceptual entities.$objective$,
-                $method$Preserve the contribution and Object identities. Choose represented, not_conceptual, or needs_review from supplied evidence. Represented requires one or more proposals whose physical support is exactly the assigned Object; other dispositions require no proposals. Use unique stable local references and give each proposal a defensible business meaning, definition, grain, and support rationale.$method$
+                $objective$Describe which stable business concepts, if any, one assigned physical Object supports.$objective$,
+                $method$Preserve the contribution and Object identities. One Object may support zero, one, or several concepts, and several Objects may support the same concept. Choose represented only for one or more evidence-backed proposals. Otherwise choose context_only for useful non-conceptual context, excluded when the Object is outside conceptual scope, or blocked when evidence is insufficient; these dispositions require no proposals. Use unique stable local references and give each proposal a defensible business meaning, definition, grain, and support rationale. Do not create a table-shaped concept merely to satisfy physical coverage; later consolidation will merge compatible contributions.$method$
             ),
             (
                 'conceptual', 'detailed_coverage', 'entity_consolidation',
@@ -152,12 +152,12 @@ BEGIN
             (
                 'logical', 'one_shot', 'candidate_authoring',
                 $objective$Author one normalized Logical candidate covering the selected physical scope.$objective$,
-                $method$Let selected Objects and Attributes determine structure; use profiles, Analysis Results, Conceptual records, and Modeling Assertions only as supporting evidence. Account for every selected Object and Attribute in exact source mappings. Define coherent submodels, entities, attributes, keys, grains, and evidence-backed relationships with unique identities and included endpoints. Apply naming guidance, preserve compatible applied records, and author no backend-projected audit or policy columns.$method$
+                $method$Let selected Objects and Attributes determine structure; use profiles, Analysis Results, Conceptual records, and Modeling Assertions only as supporting evidence. Account for every selected Object and Attribute in exact source mappings. Define coherent submodels, entities, attributes, keys, grains, and evidence-backed relationships with unique identities and included endpoints. Apply naming guidance, preserve compatible applied records, and represent every required audit or policy column explicitly as a Logical Attribute rather than assuming backend projection.$method$
             ),
             (
                 'logical', 'tool_assisted', 'candidate_authoring',
                 $objective$Author one normalized Logical candidate after retrieving only missing bounded context.$objective$,
-                $method$Let selected Objects and Attributes determine structure and account for each in exact source mappings; use other model layers only as evidence. Define coherent submodels, entities, attributes, keys, grains, and evidence-backed relationships with unique identities and included endpoints. Apply naming guidance, preserve compatible applied records, and author no unsupported or backend-projected audit or policy columns.$method$
+                $method$Let selected Objects and Attributes determine structure and account for each in exact source mappings; use other model layers only as evidence. Define coherent submodels, entities, attributes, keys, grains, and evidence-backed relationships with unique identities and included endpoints. Apply naming guidance, preserve compatible applied records, and include required audit or policy columns explicitly while excluding unsupported columns.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'topology_builder',
@@ -172,7 +172,7 @@ BEGIN
             (
                 'logical', 'detailed_coverage', 'entity_detail_builder',
                 $objective$Build one exact bounded Logical entity-detail partition from canonical topology.$objective$,
-                $method$Treat batch_manifest, entity, contributions, and selected_objects as this call's exact partition. Preserve canonical_entity_ref and the entity name and shape. Return exactly its required submodel memberships and source Objects, and map every supplied source Attribute exactly once with no outside source. Keep Attribute names and ordinals unique and definitions, types, keys, nullability, grain, and mappings coherent. Do not recreate omitted batches or author locked or policy-projected fields.$method$
+                $method$Treat batch_manifest, entity, contributions, and selected_objects as this call's exact partition. Preserve canonical_entity_ref and the entity name and shape. Return exactly its required submodel memberships and source Objects, and map every supplied source Attribute exactly once with no outside source. Keep Attribute names and ordinals unique and definitions, types, keys, nullability, grain, and mappings coherent. Do not recreate omitted batches; include required audit or policy fields explicitly and do not alter locked fields.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'whole_model_reconciliation',
@@ -182,7 +182,7 @@ BEGIN
             (
                 'logical', 'detailed_coverage', 'validator_worker',
                 $objective$Return evidence-backed findings for one bounded Logical validation package.$objective$,
-                $method$Preserve the package reference and list every package record reference exactly once in reviewed_record_refs. Check identity and reference integrity, source coverage, grain, keys, normalization, naming, locks, forbidden policy columns, dependency order, and relationship endpoints. Each finding must use a unique package-prefixed reference and cite only affected records in this package. Error means a blocking invariant failure; warning means a concrete nonblocking review risk. Return no finding for speculation or style, and never mutate records.$method$
+                $method$Preserve the package reference and list every package record reference exactly once in reviewed_record_refs. Check identity and reference integrity, source coverage, grain, keys, normalization, naming, locks, required or unsupported policy columns, dependency order, and relationship endpoints. Each finding must use a unique package-prefixed reference and cite only affected records in this package. Error means a blocking invariant failure; warning means a concrete nonblocking review risk. Return no finding for speculation or style, and never mutate records.$method$
             ),
             (
                 'logical', 'detailed_coverage', 'validator_lead',
@@ -192,12 +192,12 @@ BEGIN
             (
                 'dimensional', 'one_shot', 'candidate_authoring',
                 $objective$Author one evidence-backed Dimensional candidate from eligible Silver contributions.$objective$,
-                $method$Declare each business process and grain before modeling facts, dimensions, or bridges. Assign fact type only to facts and grain to facts and bridges. Account for eligible Silver sources with exact mappings; duplicate a source only when evidence establishes a conformed or role-playing use. Define coherent attributes, measures, additivity, aggregation, change behavior, business keys, and relationships. Apply naming guidance, preserve compatible applied records, and author no projected surrogate, foreign-key, audit, type-2 implementation, or physical Gold deployment fields.$method$
+                $method$Declare each business process and grain before modeling facts, dimensions, or bridges. Assign fact type only to facts and grain to facts and bridges. Account for eligible Silver sources with exact mappings; duplicate a source only when evidence establishes a conformed or role-playing use. Define coherent attributes, measures, additivity, aggregation, change behavior, business keys, and relationships. Apply naming guidance, preserve compatible applied records, and represent every required surrogate, foreign-key, audit, or type-2 field explicitly rather than assuming backend projection.$method$
             ),
             (
                 'dimensional', 'tool_assisted', 'candidate_authoring',
                 $objective$Author one evidence-backed Dimensional candidate after retrieving only missing bounded context.$objective$,
-                $method$Use eligible Silver contributions as the physical basis. Declare business process and grain before facts, dimensions, or bridges; assign fact type only to facts. Account for eligible sources with exact mappings and duplicate one only for evidence-backed conformed or role-playing use. Define coherent measures, additivity, aggregation, change behavior, business keys, and relationships. Apply naming guidance, preserve compatible applied records, and author no projected technical, audit, or Gold deployment fields.$method$
+                $method$Use eligible Silver contributions as the physical basis. Declare business process and grain before facts, dimensions, or bridges; assign fact type only to facts. Account for eligible sources with exact mappings and duplicate one only for evidence-backed conformed or role-playing use. Define coherent measures, additivity, aggregation, change behavior, business keys, and relationships. Apply naming guidance, preserve compatible applied records, and include every required technical, audit, or type-2 field explicitly while excluding unsupported fields.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'topology_builder',
@@ -212,7 +212,7 @@ BEGIN
             (
                 'dimensional', 'detailed_coverage', 'entity_detail_builder',
                 $objective$Build one exact bounded Dimensional entity-detail partition from canonical topology.$objective$,
-                $method$Treat contribution_manifest, topology, entity, and contributions as this call's exact partition. Preserve canonical_entity_ref, entity name, role, fact type, grain, submodels, and exact Silver sources. Map every supplied source Attribute exactly once with no outside source. Keep names and ordinals unique; align measures, aggregation, change behavior, keys, and nullability with grain. Do not recreate omitted partitions or author projected technical, audit, or type-2 fields.$method$
+                $method$Treat contribution_manifest, topology, entity, and contributions as this call's exact partition. Preserve canonical_entity_ref, entity name, role, fact type, grain, submodels, and exact Silver sources. Map every supplied source Attribute exactly once with no outside source. Keep names and ordinals unique; align measures, aggregation, change behavior, keys, and nullability with grain. Do not recreate omitted partitions; include required technical, audit, or type-2 fields explicitly.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'whole_model_reconciliation',
@@ -222,7 +222,7 @@ BEGIN
             (
                 'dimensional', 'detailed_coverage', 'validator_worker',
                 $objective$Return evidence-backed findings for one bounded Dimensional validation package.$objective$,
-                $method$Preserve the package reference and list every package record reference exactly once in reviewed_record_refs. Check reference integrity, eligible Silver coverage, entity role, fact type, grain, measures, aggregation, change behavior, keys, conformance, role playing, naming, locks, forbidden technical fields, and relationships. Each finding must use a unique package-prefixed reference and cite only affected records in this package. Error means a blocking invariant failure; warning means a concrete nonblocking review risk. Never mutate records or report style preferences.$method$
+                $method$Preserve the package reference and list every package record reference exactly once in reviewed_record_refs. Check reference integrity, eligible Silver coverage, entity role, fact type, grain, measures, aggregation, change behavior, keys, conformance, role playing, naming, locks, required or unsupported technical fields, and relationships. Each finding must use a unique package-prefixed reference and cite only affected records in this package. Error means a blocking invariant failure; warning means a concrete nonblocking review risk. Never mutate records or report style preferences.$method$
             ),
             (
                 'dimensional', 'detailed_coverage', 'validator_lead',
@@ -241,12 +241,12 @@ BEGIN
             ),
             (
                 'mapping', 'detailed_coverage', 'header_mapper',
-                $objective$Author the Mapping Package and actionable Object Mapping headers for the frozen pair.$objective$,
+                $objective$Author the Mapping transformation document and actionable Object Mapping headers for the frozen pair.$objective$,
                 $method$Preserve package, pair, route, profile, template, dependency, and coverage identities. coverage.expected_mapping_object_ids must contain all frozen header IDs; headers, coverage.returned_mapping_object_ids, and their IDs must contain exactly the readiness-actionable author or extend IDs once each. Do not author preserved, locked, or blocked headers. Use valid ordered steps and eligible source aliases only. Do not author Attribute Mappings or change registration.$method$
             ),
             (
                 'mapping', 'detailed_coverage', 'attribute_mapper',
-                $objective$Author one exact Attribute Mapping batch for the validated Mapping Package.$objective$,
+                $objective$Author one exact Attribute Mapping batch for the validated Mapping transformation document.$objective$,
                 $method$Preserve package reference and digest, chunk index and count, coverage-manifest digest, pair identities, and template fields. Give every expected target Attribute exactly one disposition and return every expected actionable existing Mapping Attribute ID exactly once. mapped requires a returned mapping; already_mapped requires an authoritative preserved binding and no returned mapping; intentionally_unmapped requires a specific reason and no binding. Use only eligible source columns or declared step outputs, unique local references, and never change the header.$method$
             ),
             (
@@ -260,8 +260,8 @@ BEGIN
                 $method$Return exactly one artifacts item whose target_ref matches the supplied reference. Put bounded parseable SQL-only text, with no Markdown fence or surrounding prose, in generated_sql. Follow the immutable guide below and use only registered target and source identifiers, mappings, expressions, and process semantics in context. Apply the guide's dialect, quote identifiers, and handle nulls deliberately. Never execute SQL, expose credentials, or invent objects or columns.$method$
             ),
             (
-                'qa', NULL, 'validation_generation',
-                $objective$Return the complete desired active QA ledger for the exact frozen System reference.$objective$,
+                'validation', NULL, 'validation_generation',
+                $objective$Return the complete desired active Validation ledger for the exact frozen System reference.$objective$,
                 $method$Return at least one group with at least one check. Derive technical, business, and reconciliation checks from applied Mapping and optional current Code. Preserve useful compatible applied checks, but treat the response as full replacement for this System; omission retires an applied group or check. Use only governed read-only Databricks SQL. Fully qualify every physical relation as catalog.schema.table; only temporary objects declared earlier in the same batch may be referenced unqualified. Except for executes_successfully, Query A and query-valued Query B must each end with a read that returns exactly one row and one column at runtime, and both cells must use the declared result type; any other cardinality is a query-contract execution error, not an assertion failure. executes_successfully ignores Query A result shape and never has Query B. Any preceding statements may create only unqualified temporary views or tables. Match every operator to its declared comparison-value shape. Never execute SQL, mutate data, use persistent DDL, expose credentials, or invent objects or columns.$method$
             )
           ) AS seed (
@@ -304,11 +304,11 @@ BEGIN
             WHEN 'dimensional' THEN
                 'Dimensional structure is business-process and grain oriented. Its physical basis is the eligible Silver contribution established by applied Logical Mapping.'
             WHEN 'mapping' THEN
-                'A Mapping Package binds modeled records to preregistered targets. It does not register, deploy, or mutate physical targets and must stay inside the frozen Mapping pair.'
+                'A Mapping transformation document binds modeled records to preregistered targets. It does not register, deploy, or mutate physical targets and must stay inside the frozen Mapping pair.'
             WHEN 'code_generation' THEN
                 'Mapping Code Generation is read-only artifact creation. It does not execute generated SQL or change Model, Mapping, metadata, or physical data.'
-            WHEN 'qa' THEN
-                'QA authoring creates deterministic validation definitions only. It does not execute validation SQL or change physical data.'
+            WHEN 'validation' THEN
+                'Validation authoring creates deterministic validation definitions only. It does not execute validation SQL or change physical data.'
             ELSE NULL
         END;
         IF v_domain_rules IS NULL THEN
@@ -333,8 +333,8 @@ BEGIN
             v_seed.model_workflow,
             coalesce(v_seed.workflow_execution_mode, 'common'),
             CASE
-                WHEN v_seed.model_workflow = 'qa' THEN
-                    'Preserve opaque references exactly. QA is full replacement within this frozen System; omitted applied QA is intentionally retired.'
+                WHEN v_seed.model_workflow = 'validation' THEN
+                    'Preserve opaque references exactly. Validation is full replacement within this frozen System; omitted applied Validation is intentionally retired.'
                 ELSE
                     'Preserve opaque references, compatible applied records, and locks exactly; omission is not deletion.'
             END,

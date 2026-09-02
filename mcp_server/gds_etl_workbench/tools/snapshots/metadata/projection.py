@@ -83,7 +83,7 @@ def project_id_free_rows(
     def object_connection_key(row: Mapping[str, Any], prefix: str = "") -> dict[str, object]:
         connection = connection_by_id[row["connection_id"]]
         return {
-            f"{prefix}tenant_code": tenant_code(row["object_tenant_id"]),
+            f"{prefix}tenant_code": tenant_code(connection["tenant_id"]),
             f"{prefix}system_code": system_code(connection["system_id"]),
             f"{prefix}connection_code": connection["connection_code"],
         }
@@ -125,7 +125,6 @@ def project_id_free_rows(
         "tenant": [],
         "system": [],
         "connection": [],
-        "tenant_metadata_discovery_scope": [],
     }
     for row in raw_rows["tenant"]:
         gds_connection = (
@@ -182,20 +181,6 @@ def project_id_free_rows(
                 "is_active": row["is_active"],
             }
         )
-    for row in raw_rows["tenant_metadata_discovery_scope"]:
-        scope_connection = connection_key(row["gds_connection_id"])
-        projected["tenant_metadata_discovery_scope"].append(
-            {
-                "scope_tenant_code": tenant_code(row["tenant_id"]),
-                "connection_tenant_code": scope_connection["tenant_code"],
-                "connection_system_code": scope_connection["system_code"],
-                "connection_code": scope_connection["connection_code"],
-                "zone_code": reference_value("zone", row["zone_id"], "zone_code"),
-                "object_schema": row["object_schema"],
-                "is_active": row["is_active"],
-            }
-        )
-
     for dataset_name, id_column in REFERENCE_ID_COLUMNS.items():
         projected[dataset_name] = [_without(row, id_column) for row in raw_rows[dataset_name]]
 
@@ -203,6 +188,7 @@ def project_id_free_rows(
         projected[f"{zone_code}_object"] = [
             {
                 **object_connection_key(row),
+                "source_tenant_code": tenant_code(row["source_tenant_id"]),
                 "object_schema": row["object_schema"],
                 "object_name": row["object_name"],
                 "fc_object_schema": row["fc_object_schema"],

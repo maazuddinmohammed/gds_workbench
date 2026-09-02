@@ -38,7 +38,7 @@ CREATE TABLE workflow.conceptual_object (
     ),
     CONSTRAINT ck_conceptual_object_status CHECK (
         conceptual_object_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -114,7 +114,7 @@ CREATE TABLE workflow.conceptual_relationship (
     ),
     CONSTRAINT ck_conceptual_relationship_status CHECK (
         conceptual_relationship_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -167,7 +167,7 @@ CREATE TABLE workflow.conceptual_support (
     CONSTRAINT fk_conceptual_support_physical_object FOREIGN KEY (
         model_id,
         source_object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    ) REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_conceptual_support_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -213,7 +213,7 @@ CREATE TABLE workflow.conceptual_support (
     ),
     CONSTRAINT ck_conceptual_support_status CHECK (
         conceptual_support_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );

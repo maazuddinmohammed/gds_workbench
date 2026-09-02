@@ -247,23 +247,23 @@ class DatabaseProfilingWorkflowRepository:
             if connection is None:
                 raise DependencyUnavailableError()
             used_connection_ids.add(connection_id)
+            catalog, schema, table, batch_attribute_name, attribute_names = (
+                _resolve_profiling_relation(object_rows)
+            )
             target_object = ProfileObject(
                 object_id=_required_int(header, "object_id"),
                 connection_id=connection_id,
-                catalog=_required_text(header, "relation_catalog"),
-                schema=_required_text(header, "relation_schema"),
-                table=_required_text(header, "relation_object"),
-                batch_attribute_name=_optional_text(
-                    header,
-                    "batch_attribute_name",
-                ),
+                catalog=catalog,
+                schema=schema,
+                table=table,
+                batch_attribute_name=batch_attribute_name,
                 attributes=tuple(
                     ProfileAttribute(
                         attribute_id=_required_int(row, "attribute_id"),
-                        name=_required_text(row, "attribute_name"),
+                        name=attribute_names[index],
                         data_type=_required_text(row, "attribute_data_type"),
                     )
-                    for row in object_rows
+                    for index, row in enumerate(object_rows)
                 ),
             )
             targets.append(
@@ -484,6 +484,64 @@ def _optional_text(row: dict[str, Any], key: str) -> str | None:
     return value
 
 
+def _resolve_profiling_relation(
+    rows: list[dict[str, Any]],
+) -> tuple[str, str, str, str | None, tuple[str, ...]]:
+    """Resolve the only allowed Databricks relation for Source or Bronze metadata."""
+
+    if not rows:
+        raise DependencyUnavailableError()
+    header = rows[0]
+    zone = _required_text(header, "zone_code").strip().casefold()
+    if zone == "source":
+        if header.get("has_foreign_catalog") is not True:
+            raise InvalidRequestError("Source Profiling requires an enabled foreign catalog.")
+        catalog = _required_foreign_catalog_text(header, "foreign_catalog")
+        schema = _required_foreign_catalog_text(header, "fc_object_schema")
+        table = _required_foreign_catalog_text(header, "fc_object_name")
+        names = tuple(_required_foreign_catalog_text(row, "fc_attribute_name") for row in rows)
+    elif zone == "bronze":
+        catalog = _required_text(header, "relation_catalog")
+        schema = _required_text(header, "object_schema")
+        table = _required_text(header, "object_name")
+        names = tuple(_required_text(row, "attribute_name") for row in rows)
+    else:
+        raise InvalidRequestError(
+            "Profiling supports only Source or Bronze Model Input Scope Objects."
+        )
+
+    expected_object_fields = (
+        ("relation_catalog", catalog),
+        ("relation_schema", schema),
+        ("relation_object", table),
+    )
+    batch_names: list[str] = []
+    for row, name in zip(rows, names, strict=True):
+        if _required_text(row, "zone_code").strip().casefold() != zone:
+            raise DependencyUnavailableError()
+        if any(_required_text(row, key) != expected for key, expected in expected_object_fields):
+            raise DependencyUnavailableError()
+        if _required_text(row, "relation_attribute") != name:
+            raise DependencyUnavailableError()
+        is_batch = row.get("is_batch_attribute")
+        if not isinstance(is_batch, bool):
+            raise DependencyUnavailableError()
+        if is_batch:
+            batch_names.append(name)
+    if len(batch_names) > 1:
+        raise DependencyUnavailableError()
+    return catalog, schema, table, batch_names[0] if batch_names else None, names
+
+
+def _required_foreign_catalog_text(row: dict[str, Any], key: str) -> str:
+    value = row.get(key)
+    if not isinstance(value, str) or not value.strip():
+        raise InvalidRequestError(
+            "Source Profiling requires complete foreign-catalog Object and Attribute metadata."
+        )
+    return value
+
+
 def _raise_connection_configuration_error(code: str) -> Never:
     if code == "environment_not_found":
         raise DatabricksConnectionConfigurationError("environment")
@@ -517,9 +575,10 @@ def _raise_repository_error(error: Exception) -> Never:
     safe_context_failures = {
         "profiling_run_not_running": "The Profiling Workflow Run is not running.",
         "profiling_scope_incomplete": "The Profiling selection is incomplete.",
-        "profiling_scope_changed": "The selected Model Scope changed before execution.",
-        "profiling_discovery_scope_missing": (
-            "Every selected Object requires one active Metadata Discovery Scope assignment."
+        "profiling_scope_changed": "The selected Model Input Scope changed before execution.",
+        "profiling_relation_unavailable": (
+            "Every selected Object must be an eligible Source foreign-catalog or Bronze "
+            "relation owned by the Model Tenant."
         ),
         "profiling_attributes_missing": (
             "Every selected Object requires at least one active Attribute."

@@ -72,7 +72,7 @@ def _relationship(
         relationship_kind="reference",
         relationship_confidence="high",
         relationship_basis="Registered metadata and aggregate value evidence.",
-        analysis_result_status="needs_review",
+        analysis_result_status="active",
         analysis_result_is_locked=analysis_result_id % 2 == 0,
         gds_connection_id=connection_id,
         source_context_digest=f"{analysis_result_id:064x}",

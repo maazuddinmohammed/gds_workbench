@@ -43,13 +43,13 @@ describe("Model Assertions", () => {
     expect(await screen.findByRole("table", { name: "Assertion Records" })).toBeVisible();
     await user.type(screen.getByLabelText("Record key prefix"), " Customer. ");
     await user.selectOptions(screen.getByLabelText("Applicable layer"), "logical");
-    await user.selectOptions(screen.getByLabelText("Record status"), "needs_review");
+    await user.selectOptions(screen.getByLabelText("Record status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Record lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Record filters" }));
     await screen.findByRole("table", { name: "Assertion Records" });
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/assertions/records?status=needs_review&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
+      "/api/v1/tenants/7/models/18/assertions/records?status=inactive&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -165,7 +165,7 @@ const modelPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -194,7 +194,6 @@ const assertionDocumentPayload = {
   is_active: true,
   record_count: 12,
   active_record_count: 10,
-  needs_review_record_count: 2,
   locked_record_count: 4,
   updated_at: "2026-08-24T14:20:00Z",
 };
@@ -228,7 +227,7 @@ const assertionRecordPayload = {
   modeling_assertion_record_type: "identity_rule",
   modeling_assertion_applicable_layers: ["analysis", "logical"],
   modeling_assertion_confidence: "high",
-  modeling_assertion_record_status: "needs_review",
+  modeling_assertion_record_status: "active",
   modeling_assertion_record_is_locked: false,
   updated_at: "2026-08-24T14:30:00Z",
 };

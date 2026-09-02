@@ -14,16 +14,17 @@ CREATE TABLE mcp.model_change_set (
     draft_revision BIGINT NOT NULL DEFAULT 1,
     candidate_digest CHAR(64),
     validation_outcome JSONB,
-    model_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    model_input_scope_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     profiling_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     assertion_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     analysis_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     conceptual_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     logical_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     dimensional_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    model_binding_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     mapping_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     code_generation_document JSONB NOT NULL DEFAULT '{}'::JSONB,
-    qa_document JSONB NOT NULL DEFAULT '{}'::JSONB,
+    validation_document JSONB NOT NULL DEFAULT '{}'::JSONB,
     created_by_principal_id BIGINT NOT NULL,
     correlation_id UUID NOT NULL,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
@@ -62,25 +63,28 @@ CREATE TABLE mcp.model_change_set (
         validation_outcome IS NULL OR jsonb_typeof(validation_outcome) = 'object'
     ),
     CONSTRAINT ck_change_set_documents CHECK (
-        jsonb_typeof(model_scope_document) = 'object'
+        jsonb_typeof(model_input_scope_document) = 'object'
         AND jsonb_typeof(profiling_document) = 'object'
         AND jsonb_typeof(assertion_document) = 'object'
         AND jsonb_typeof(analysis_document) = 'object'
         AND jsonb_typeof(conceptual_document) = 'object'
         AND jsonb_typeof(logical_document) = 'object'
         AND jsonb_typeof(dimensional_document) = 'object'
+        AND jsonb_typeof(model_binding_document) = 'object'
         AND jsonb_typeof(mapping_document) = 'object'
         AND jsonb_typeof(code_generation_document) = 'object'
-        AND jsonb_typeof(qa_document) = 'object'
-        AND octet_length(model_scope_document::TEXT) <= 16777216
+        AND jsonb_typeof(validation_document) = 'object'
+        AND octet_length(model_input_scope_document::TEXT) <= 16777216
         AND octet_length(profiling_document::TEXT) <= 16777216
         AND octet_length(assertion_document::TEXT) <= 16777216
         AND octet_length(analysis_document::TEXT) <= 16777216
         AND octet_length(conceptual_document::TEXT) <= 16777216
         AND octet_length(logical_document::TEXT) <= 16777216
         AND octet_length(dimensional_document::TEXT) <= 16777216
+        AND octet_length(model_binding_document::TEXT) <= 16777216
         AND octet_length(mapping_document::TEXT) <= 16777216
-        AND octet_length(qa_document::TEXT) <= 16777216
+        AND octet_length(code_generation_document::TEXT) <= 16777216
+        AND octet_length(validation_document::TEXT) <= 16777216
     ),
     CONSTRAINT ck_change_set_expiry CHECK (
         last_activity_time >= created_time
@@ -155,15 +159,17 @@ CREATE TABLE mcp.model_stage_batch (
         UNIQUE (stage_batch_id, payload_mode),
     CONSTRAINT ck_model_stage_batch_dataset CHECK (
         dataset_name IN (
-            'model_details', 'model_scope', 'profiling_profile',
+            'model_details', 'model_input_scope', 'profiling_profile',
             'analysis_result', 'modeling_assertion_document',
             'modeling_assertion_record', 'conceptual_object',
             'conceptual_relationship', 'logical_submodel', 'logical_entity',
             'logical_attribute', 'logical_relationship',
             'dimensional_submodel', 'dimensional_entity',
             'dimensional_attribute', 'dimensional_relationship',
+            'model_object_binding', 'model_attribute_binding',
             'mapping_dependency', 'mapping_object', 'mapping_attribute',
-            'generated_code', 'validation_group', 'validation_check'
+            'generated_code', 'generated_code_source_system',
+            'validation_group', 'validation_check'
         )
     ),
     CONSTRAINT ck_model_stage_batch_manifest CHECK (
@@ -304,8 +310,9 @@ CREATE TABLE mcp.model_change_set_event (
     CONSTRAINT ck_change_set_event_section CHECK (
         section_name IS NULL
         OR section_name IN (
-            'model_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
-            'logical', 'dimensional', 'mapping', 'code_generation', 'qa'
+            'model_input_scope', 'profiling', 'assertion', 'analysis', 'conceptual',
+            'logical', 'dimensional', 'model_binding', 'mapping',
+            'code_generation', 'validation'
         )
     ),
     CONSTRAINT ck_change_set_event_action_count CHECK (action_count >= 0),

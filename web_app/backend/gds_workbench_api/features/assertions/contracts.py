@@ -13,7 +13,7 @@ from gds_etl_workbench.domain.assertion_safety import (
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationInfo, field_validator
 
-type AssertionStatus = Literal["active", "needs_review", "inactive", "deprecated"]
+type AssertionStatus = Literal["active", "inactive", "deprecated"]
 type ApplicableLayer = Literal[
     "analysis",
     "conceptual",
@@ -90,7 +90,6 @@ class AssertionDocumentSummary(ContractModel):
     is_active: bool
     record_count: int = Field(ge=0)
     active_record_count: int = Field(ge=0)
-    needs_review_record_count: int = Field(ge=0)
     locked_record_count: int = Field(ge=0)
     updated_at: datetime
 

@@ -23,11 +23,7 @@ CREATE TABLE application.workflow_run (
     requested_batch_id VARCHAR(500),
     mapping_operation VARCHAR(20),
     mapping_coverage_mode VARCHAR(30),
-    mapping_artifact_type VARCHAR(30),
     mapping_route VARCHAR(30),
-    mapping_profile_key VARCHAR(100),
-    mapping_profile_version VARCHAR(50),
-    mapping_profile_schema_digest CHAR(64),
     mapping_object_output_template_id BIGINT,
     mapping_object_output_template_schema_digest CHAR(64),
     mapping_attribute_output_template_id BIGINT,
@@ -99,7 +95,7 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_workflow_run_workflow CHECK (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual', 'logical',
-            'dimensional', 'mapping', 'code_generation', 'qa'
+            'dimensional', 'mapping', 'code_generation', 'validation'
         )
     ),
     CONSTRAINT ck_workflow_run_model_revision CHECK (
@@ -109,7 +105,7 @@ CREATE TABLE application.workflow_run (
         (
             workflow_execution_mode IS NULL
             AND model_workflow IN (
-                'profiling', 'analysis', 'code_generation', 'qa'
+                'profiling', 'analysis', 'code_generation', 'validation'
             )
         ) OR (
             workflow_execution_mode IN (
@@ -123,7 +119,7 @@ CREATE TABLE application.workflow_run (
     ),
     CONSTRAINT ck_workflow_run_agent_configuration CHECK (
         (
-            model_workflow NOT IN ('code_generation', 'qa')
+            model_workflow NOT IN ('code_generation', 'validation')
             AND workflow_execution_mode IS NULL
             AND agent_sdk_code IS NULL
             AND agent_provider_code IS NULL
@@ -133,7 +129,7 @@ CREATE TABLE application.workflow_run (
             AND validation_retry_count IS NULL
         ) OR (
             (
-                model_workflow IN ('code_generation', 'qa')
+                model_workflow IN ('code_generation', 'validation')
                 OR workflow_execution_mode IS NOT NULL
             )
             AND agent_sdk_code IS NOT NULL
@@ -198,36 +194,21 @@ CREATE TABLE application.workflow_run (
             AND num_nonnulls(
                 mapping_operation,
                 mapping_coverage_mode,
-                mapping_artifact_type,
-                mapping_route,
-                mapping_profile_key,
-                mapping_profile_version,
-                mapping_profile_schema_digest
-            ) = 7
+                mapping_route
+            ) = 3
             AND mapping_operation IN ('build', 'extend')
             AND mapping_coverage_mode = 'selected_targets'
-            AND mapping_artifact_type IN (
-                'sql_file', 'python_file', 'python_notebook'
-            )
             AND mapping_route = CASE modeled_entity_type
                 WHEN 'logical_entity' THEN 'logical_to_silver'
                 WHEN 'dimensional_entity' THEN 'dimensional_to_gold'
                 ELSE NULL
             END
-            AND mapping_profile_key = 'mapping.standard'
-            AND mapping_profile_version = '1.0.0'
-            AND mapping_profile_schema_digest =
-                'b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa'
             AND selected_scope_count = 1
         ) OR (
             model_workflow <> 'mapping'
             AND mapping_operation IS NULL
             AND mapping_coverage_mode IS NULL
-            AND mapping_artifact_type IS NULL
             AND mapping_route IS NULL
-            AND mapping_profile_key IS NULL
-            AND mapping_profile_version IS NULL
-            AND mapping_profile_schema_digest IS NULL
         )
     ),
     CONSTRAINT ck_workflow_run_mapping_output_templates CHECK (
@@ -347,7 +328,7 @@ CREATE TABLE application.workflow_run (
                 workflow_run_state IN ('completed', 'completed_with_repair')
                 AND model_workflow IN (
                     'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
-                    'code_generation', 'qa'
+                    'code_generation', 'validation'
                 )
                 AND (
                     (
@@ -357,7 +338,7 @@ CREATE TABLE application.workflow_run (
                         )
                         AND workflow_execution_mode IS NOT NULL
                     ) OR (
-                        model_workflow IN ('code_generation', 'qa')
+                        model_workflow IN ('code_generation', 'validation')
                         AND workflow_execution_mode IS NULL
                     )
                 )
@@ -399,10 +380,8 @@ CREATE TABLE application.workflow_run_object_selection (
         model_id
     ) REFERENCES application.workflow_run (workflow_run_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT fk_workflow_run_object_selection_scope FOREIGN KEY (
-        model_id,
-        object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_workflow_run_object_selection_object FOREIGN KEY (object_id)
+        REFERENCES core.object (object_id) ON DELETE NO ACTION,
     CONSTRAINT uq_workflow_run_object_selection_object UNIQUE (
         workflow_run_id,
         object_id
@@ -415,13 +394,6 @@ CREATE TABLE application.workflow_run_object_selection (
         selection_order > 0
     )
 );
-
-CREATE INDEX ix_workflow_run_object_selection_scope
-    ON application.workflow_run_object_selection (
-        model_id,
-        object_id,
-        workflow_run_id
-    );
 
 CREATE TABLE application.workflow_run_system_selection (
     workflow_run_system_selection_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -457,13 +429,6 @@ CREATE TABLE application.workflow_run_system_selection (
     )
 );
 
-CREATE INDEX ix_workflow_run_system_selection_scope
-    ON application.workflow_run_system_selection (
-        model_id,
-        system_id,
-        workflow_run_id
-    );
-
 CREATE TABLE application.workflow_run_mapping_target_selection (
     workflow_run_mapping_target_selection_id BIGINT GENERATED ALWAYS AS IDENTITY
         PRIMARY KEY,
@@ -481,10 +446,11 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
         model_id
     ) REFERENCES application.workflow_run (workflow_run_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT fk_workflow_run_mapping_target_selection_scope FOREIGN KEY (
+    CONSTRAINT fk_workflow_run_mapping_target_selection_binding FOREIGN KEY (
         model_id,
         object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    ) REFERENCES workflow.model_object_binding (model_id, object_id)
+        ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_mapping_target_selection_system FOREIGN KEY (
         source_system_id
     ) REFERENCES core.system (system_id) ON DELETE NO ACTION,
@@ -501,14 +467,6 @@ CREATE TABLE application.workflow_run_mapping_target_selection (
         selection_order > 0
     )
 );
-
-CREATE INDEX ix_workflow_run_mapping_target_selection_pair
-    ON application.workflow_run_mapping_target_selection (
-        model_id,
-        object_id,
-        source_system_id,
-        workflow_run_id
-    );
 
 CREATE FUNCTION application.guard_workflow_run_mapping_target_selection()
 RETURNS TRIGGER
@@ -585,11 +543,7 @@ BEGIN
         NEW.requested_batch_id,
         NEW.mapping_operation,
         NEW.mapping_coverage_mode,
-        NEW.mapping_artifact_type,
         NEW.mapping_route,
-        NEW.mapping_profile_key,
-        NEW.mapping_profile_version,
-        NEW.mapping_profile_schema_digest,
         NEW.mapping_object_output_template_id,
         NEW.mapping_object_output_template_schema_digest,
         NEW.mapping_attribute_output_template_id,
@@ -622,11 +576,7 @@ BEGIN
         OLD.requested_batch_id,
         OLD.mapping_operation,
         OLD.mapping_coverage_mode,
-        OLD.mapping_artifact_type,
         OLD.mapping_route,
-        OLD.mapping_profile_key,
-        OLD.mapping_profile_version,
-        OLD.mapping_profile_schema_digest,
         OLD.mapping_object_output_template_id,
         OLD.mapping_object_output_template_schema_digest,
         OLD.mapping_attribute_output_template_id,
@@ -724,36 +674,24 @@ ALTER TABLE model.model_event_log
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_model_event_log_workflow_run
-    ON model.model_event_log (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE model.modeling_assertion_document
     ADD CONSTRAINT fk_modeling_assertion_document_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_modeling_assertion_document_workflow_run
-    ON model.modeling_assertion_document (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE model.modeling_assertion_record
     ADD CONSTRAINT fk_modeling_assertion_record_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_modeling_assertion_record_workflow_run
-    ON model.modeling_assertion_record (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.attribute_profile
     ADD CONSTRAINT fk_attribute_profile_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_attribute_profile_workflow_run
-    ON workflow.attribute_profile (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.analysis_result
     ADD CONSTRAINT fk_analysis_result_inference_workflow_run
@@ -764,197 +702,149 @@ ALTER TABLE workflow.analysis_result
     FOREIGN KEY (validation_workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_analysis_result_inference_workflow_run
-    ON workflow.analysis_result (inference_workflow_run_id, model_id)
-    WHERE inference_workflow_run_id IS NOT NULL;
-CREATE INDEX ix_analysis_result_validation_workflow_run
-    ON workflow.analysis_result (validation_workflow_run_id, model_id)
-    WHERE validation_workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.conceptual_object
     ADD CONSTRAINT fk_conceptual_object_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_conceptual_object_workflow_run
-    ON workflow.conceptual_object (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.conceptual_relationship
     ADD CONSTRAINT fk_conceptual_relationship_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_conceptual_relationship_workflow_run
-    ON workflow.conceptual_relationship (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.conceptual_support
     ADD CONSTRAINT fk_conceptual_support_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_conceptual_support_workflow_run
-    ON workflow.conceptual_support (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_submodel
     ADD CONSTRAINT fk_logical_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_submodel_workflow_run
-    ON workflow.logical_submodel (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_entity
     ADD CONSTRAINT fk_logical_entity_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_entity_workflow_run
-    ON workflow.logical_entity (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_entity_submodel
     ADD CONSTRAINT fk_logical_entity_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_entity_submodel_workflow_run
-    ON workflow.logical_entity_submodel (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_attribute
     ADD CONSTRAINT fk_logical_attribute_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_attribute_workflow_run
-    ON workflow.logical_attribute (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_entity_source_mapping
     ADD CONSTRAINT fk_logical_entity_source_mapping_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_entity_source_mapping_workflow_run
-    ON workflow.logical_entity_source_mapping (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_attribute_source_mapping
     ADD CONSTRAINT fk_logical_attribute_source_mapping_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_attribute_source_mapping_workflow_run
-    ON workflow.logical_attribute_source_mapping (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.logical_relationship
     ADD CONSTRAINT fk_logical_relationship_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_logical_relationship_workflow_run
-    ON workflow.logical_relationship (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_submodel
     ADD CONSTRAINT fk_dimensional_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_submodel_workflow_run
-    ON workflow.dimensional_submodel (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_entity
     ADD CONSTRAINT fk_dimensional_entity_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_entity_workflow_run
-    ON workflow.dimensional_entity (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_entity_submodel
     ADD CONSTRAINT fk_dimensional_entity_submodel_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_entity_submodel_workflow_run
-    ON workflow.dimensional_entity_submodel (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_attribute
     ADD CONSTRAINT fk_dimensional_attribute_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_attribute_workflow_run
-    ON workflow.dimensional_attribute (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_entity_source_mapping
     ADD CONSTRAINT fk_dimensional_entity_source_mapping_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_entity_source_mapping_workflow_run
-    ON workflow.dimensional_entity_source_mapping (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_attribute_source_mapping
     ADD CONSTRAINT fk_dimensional_attribute_source_mapping_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_attribute_source_mapping_workflow_run
-    ON workflow.dimensional_attribute_source_mapping (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.dimensional_relationship
     ADD CONSTRAINT fk_dimensional_relationship_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_dimensional_relationship_workflow_run
-    ON workflow.dimensional_relationship (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
+
+ALTER TABLE workflow.model_object_binding
+    ADD CONSTRAINT fk_model_object_binding_workflow_run
+    FOREIGN KEY (workflow_run_id, model_id)
+    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    ON DELETE NO ACTION;
+
+ALTER TABLE workflow.model_attribute_binding
+    ADD CONSTRAINT fk_model_attribute_binding_workflow_run
+    FOREIGN KEY (workflow_run_id)
+    REFERENCES application.workflow_run (workflow_run_id)
+    ON DELETE NO ACTION;
 
 ALTER TABLE workflow.mapping_source_system_dependency
     ADD CONSTRAINT fk_mapping_source_system_dependency_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_mapping_source_system_dependency_workflow_run
-    ON workflow.mapping_source_system_dependency (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.mapping_object
     ADD CONSTRAINT fk_mapping_object_workflow_run
     FOREIGN KEY (workflow_run_id, model_id)
     REFERENCES application.workflow_run (workflow_run_id, model_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_mapping_object_workflow_run
-    ON workflow.mapping_object (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.mapping_attribute
     ADD CONSTRAINT fk_mapping_attribute_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id)
+    REFERENCES application.workflow_run (workflow_run_id)
     ON DELETE NO ACTION;
-CREATE INDEX ix_mapping_attribute_workflow_run
-    ON workflow.mapping_attribute (workflow_run_id, model_id)
-    WHERE workflow_run_id IS NOT NULL;
 
 ALTER TABLE workflow.generated_code
     ADD CONSTRAINT fk_generated_code_workflow_run
-    FOREIGN KEY (workflow_run_id, model_id)
-    REFERENCES application.workflow_run (workflow_run_id, model_id)
+    FOREIGN KEY (workflow_run_id)
+    REFERENCES application.workflow_run (workflow_run_id)
+    ON DELETE NO ACTION;
+
+ALTER TABLE workflow.generated_code_source_system
+    ADD CONSTRAINT fk_generated_code_source_system_workflow_run
+    FOREIGN KEY (workflow_run_id)
+    REFERENCES application.workflow_run (workflow_run_id)
     ON DELETE NO ACTION;
 
 ALTER TABLE workflow.validation_group
@@ -1002,12 +892,6 @@ CREATE TABLE application.workflow_run_prompt_snapshot (
         prompt_template_digest ~ '^[0-9a-f]{64}$'
     )
 );
-
-CREATE INDEX ix_workflow_run_prompt_snapshot_version
-    ON application.workflow_run_prompt_snapshot (
-        prompt_template_version_id,
-        workflow_run_id
-    );
 
 CREATE FUNCTION application.guard_workflow_run_prompt_snapshot()
 RETURNS TRIGGER
@@ -1200,7 +1084,6 @@ CREATE FUNCTION application.create_workflow_run(
     p_prompt_overrides JSONB,
     p_mapping_operation VARCHAR(20) DEFAULT NULL,
     p_mapping_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_mapping_artifact_type VARCHAR(30) DEFAULT NULL,
     p_mapping_source_system_id BIGINT DEFAULT NULL,
     p_mapping_object_output_template_id BIGINT DEFAULT NULL,
     p_mapping_attribute_output_template_id BIGINT DEFAULT NULL,
@@ -1260,10 +1143,6 @@ DECLARE
     v_mapping_header_layer_count INTEGER;
     v_mapping_invalid_header_count INTEGER;
     v_mapping_zone_code TEXT;
-    v_mapping_profile_key CONSTANT VARCHAR(100) := 'mapping.standard';
-    v_mapping_profile_version CONSTANT VARCHAR(50) := '1.0.0';
-    v_mapping_profile_schema_digest CONSTANT CHAR(64) :=
-        'b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa';
     v_mapping_object_output_template_schema_digest CHAR(64);
     v_mapping_attribute_output_template_schema_digest CHAR(64);
     v_sql_generation_guide_id BIGINT;
@@ -1278,11 +1157,11 @@ BEGIN
     IF p_selected_object_ids IS NULL OR p_selected_system_codes IS NULL THEN
         RAISE EXCEPTION 'Selected Scope is required';
     END IF;
-    IF p_model_workflow = 'qa' THEN
+    IF p_model_workflow = 'validation' THEN
         IF cardinality(p_selected_object_ids) <> 0
            OR cardinality(p_selected_system_codes) NOT BETWEEN 1 AND 1000 THEN
             RAISE EXCEPTION
-                'QA requires between 1 and 1000 Systems and no Object selection';
+                'Validation requires between 1 and 1000 Systems and no Object selection';
         END IF;
         IF p_code_generation_coverage_mode IS NOT NULL
            OR p_sql_generation_guide_version_id IS NOT NULL THEN
@@ -1292,7 +1171,7 @@ BEGIN
     ELSIF p_model_workflow = 'code_generation' THEN
         IF cardinality(p_selected_system_codes) <> 0 THEN
             RAISE EXCEPTION
-                'System selection is available only for QA';
+                'System selection is available only for Validation';
         END IF;
         IF p_code_generation_coverage_mode IS NULL
            OR p_code_generation_coverage_mode NOT IN (
@@ -1319,7 +1198,7 @@ BEGIN
     ELSE
         IF cardinality(p_selected_system_codes) <> 0 THEN
             RAISE EXCEPTION
-                'System selection is available only for QA';
+                'System selection is available only for Validation';
         END IF;
         IF p_code_generation_coverage_mode IS NOT NULL
            OR p_sql_generation_guide_version_id IS NOT NULL THEN
@@ -1392,7 +1271,7 @@ BEGIN
       INTO v_caller_selected_system_codes
       FROM unnest(p_selected_system_codes) WITH ORDINALITY
            AS selected(system_code, selection_order);
-    IF p_model_workflow = 'qa' THEN
+    IF p_model_workflow = 'validation' THEN
         v_selected_scope_count := cardinality(v_caller_selected_system_codes);
         v_selected_scope_digest := encode(
             sha256(
@@ -1413,15 +1292,11 @@ BEGIN
         IF num_nonnulls(
                p_mapping_operation,
                p_mapping_coverage_mode,
-               p_mapping_artifact_type,
                p_mapping_source_system_id
-           ) <> 4
+           ) <> 3
            OR v_selected_scope_count <> 1
            OR p_mapping_operation NOT IN ('build', 'extend')
            OR p_mapping_coverage_mode <> 'selected_targets'
-           OR p_mapping_artifact_type NOT IN (
-               'sql_file', 'python_file', 'python_notebook'
-           )
            OR p_mapping_source_system_id IS NULL
            OR p_mapping_source_system_id <= 0
            OR (
@@ -1446,7 +1321,6 @@ BEGIN
         IF num_nonnulls(
             p_mapping_operation,
             p_mapping_coverage_mode,
-            p_mapping_artifact_type,
             p_mapping_source_system_id,
             p_mapping_object_output_template_id,
             p_mapping_attribute_output_template_id
@@ -1460,7 +1334,6 @@ BEGIN
     ELSIF num_nonnulls(
         p_mapping_operation,
         p_mapping_coverage_mode,
-        p_mapping_artifact_type,
         p_mapping_source_system_id,
         p_mapping_object_output_template_id,
         p_mapping_attribute_output_template_id
@@ -1590,12 +1463,7 @@ BEGIN
                     'requested_batch_id', v_requested_batch_id,
                     'mapping_operation', p_mapping_operation,
                     'mapping_coverage_mode', p_mapping_coverage_mode,
-                    'mapping_artifact_type', p_mapping_artifact_type,
                     'mapping_source_system_id', p_mapping_source_system_id,
-                    'mapping_profile_key', v_mapping_profile_key,
-                    'mapping_profile_version', v_mapping_profile_version,
-                    'mapping_profile_schema_digest',
-                        v_mapping_profile_schema_digest,
                     'mapping_object_output_template_id',
                         p_mapping_object_output_template_id,
                     'mapping_object_output_template_schema_digest',
@@ -1659,7 +1527,7 @@ BEGIN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
-    IF p_model_workflow = 'qa' THEN
+    IF p_model_workflow = 'validation' THEN
         WITH target_context AS MATERIALIZED (
             SELECT context.*
               FROM workflow.list_code_generation_target_context(
@@ -1708,7 +1576,7 @@ BEGIN
             ON eligible_system.system_id = source_system.system_id;
         IF cardinality(v_selected_system_ids) <> v_selected_scope_count THEN
             RAISE EXCEPTION
-                'Selected QA System lacks complete applied Mapping';
+                'Selected Validation System lacks complete applied Mapping';
         END IF;
         SELECT encode(
                    sha256(
@@ -1814,77 +1682,69 @@ BEGIN
 
     IF p_model_workflow = 'mapping' THEN
         SELECT count(*)::INTEGER,
-               count(DISTINCT mapping.modeled_entity_type)::INTEGER,
+               count(DISTINCT binding.modeled_entity_type)::INTEGER,
                count(*) FILTER (
-                   WHERE mapping.object_mapping_status <> 'active'
+                   WHERE binding.model_object_binding_status <> 'active'
+                      OR binding.model_object_binding_is_locked
                       OR NOT EXISTS (
                           SELECT 1
                             FROM workflow.mapping_source_system_dependency
                                  AS dependency
-                           WHERE dependency.model_id = mapping.model_id
+                           WHERE dependency.model_id = binding.model_id
                              AND dependency.modeled_entity_type =
-                                 mapping.modeled_entity_type
+                                 binding.modeled_entity_type
                              AND dependency.source_system_id =
-                                 mapping.source_system_id
+                                 p_mapping_source_system_id
                              AND dependency.mapping_source_system_dependency_status =
                                  'active'
                       )
                       OR NOT EXISTS (
                           SELECT 1
                             FROM core.system AS source_system
-                           WHERE source_system.system_id = mapping.source_system_id
+                           WHERE source_system.system_id =
+                                 p_mapping_source_system_id
                              AND source_system.is_active
                       )
                       OR (
-                          mapping.modeled_entity_type = 'logical_entity'
+                          binding.modeled_entity_type = 'logical_entity'
                           AND NOT EXISTS (
                               SELECT 1
                                 FROM workflow.logical_entity AS entity
                                WHERE entity.logical_entity_id =
-                                     mapping.logical_entity_id
-                                 AND entity.model_id = mapping.model_id
+                                     binding.logical_entity_id
+                                 AND entity.model_id = binding.model_id
                                  AND entity.logical_entity_status = 'active'
                           )
                       )
                       OR (
-                          mapping.modeled_entity_type = 'dimensional_entity'
+                          binding.modeled_entity_type = 'dimensional_entity'
                           AND NOT EXISTS (
                               SELECT 1
                                 FROM workflow.dimensional_entity AS entity
                                WHERE entity.dimensional_entity_id =
-                                     mapping.dimensional_entity_id
-                                 AND entity.model_id = mapping.model_id
+                                     binding.dimensional_entity_id
+                                 AND entity.model_id = binding.model_id
                                  AND entity.dimensional_entity_status = 'active'
                           )
                       )
-                      OR (
-                          mapping.object_mapping_is_locked
-                          AND mapping.mapping_profile_key IS NULL
-                      )
                       OR EXISTS (
                           SELECT 1
-                            FROM workflow.mapping_attribute AS child
-                           WHERE child.model_id = mapping.model_id
-                             AND child.mapping_object_id =
-                                 mapping.mapping_object_id
-                             AND child.attribute_mapping_status = 'active'
-                             AND child.attribute_mapping_transformation_document
-                                 IS NULL
-                             AND (
-                                 child.attribute_mapping_is_locked
-                                 OR mapping.object_mapping_is_locked
-                             )
+                            FROM workflow.mapping_object AS mapping
+                           WHERE mapping.model_object_binding_id =
+                                 binding.model_object_binding_id
+                             AND mapping.source_system_id =
+                                 p_mapping_source_system_id
+                             AND mapping.object_mapping_is_locked
                       )
                )::INTEGER,
-               min(mapping.modeled_entity_type)
+               min(binding.modeled_entity_type)
           INTO v_mapping_header_count,
                v_mapping_header_layer_count,
                v_mapping_invalid_header_count,
                v_modeled_entity_type
-          FROM workflow.mapping_object AS mapping
-         WHERE mapping.model_id = p_model_id
-           AND mapping.object_id = v_selected_object_ids[1]
-           AND mapping.source_system_id = p_mapping_source_system_id;
+          FROM workflow.model_object_binding AS binding
+         WHERE binding.model_id = p_model_id
+           AND binding.object_id = v_selected_object_ids[1];
 
         IF v_mapping_header_count = 0 THEN
             RAISE EXCEPTION
@@ -1899,10 +1759,18 @@ BEGIN
                 'Selected Mapping target contains an unavailable or locked header';
         END IF;
 
-        SELECT eligible.zone_code
+        SELECT zone.zone_code
           INTO v_mapping_zone_code
-          FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
-         WHERE eligible.object_id = v_selected_object_ids[1];
+          FROM workflow.model_object_binding AS binding
+          JOIN core.object AS object
+            ON object.object_id = binding.object_id
+           AND object.is_active
+          JOIN reference.zone AS zone
+            ON zone.zone_id = object.zone_id
+           AND zone.is_active
+         WHERE binding.model_id = p_model_id
+           AND binding.object_id = v_selected_object_ids[1]
+           AND binding.model_object_binding_status = 'active';
         IF NOT FOUND THEN
             RAISE EXCEPTION 'Selected Mapping target is unavailable';
         END IF;
@@ -1919,7 +1787,7 @@ BEGIN
         END IF;
     END IF;
 
-    IF p_model_workflow <> 'qa' THEN
+    IF p_model_workflow <> 'validation' THEN
         SELECT count(*)::INTEGER
           INTO v_eligible_scope_count
           FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
@@ -1927,7 +1795,7 @@ BEGIN
            AND CASE
                    WHEN p_model_workflow IN (
                        'profiling', 'analysis', 'conceptual', 'logical'
-                   ) THEN eligible.is_bronze_source_eligible
+                   ) THEN eligible.is_model_input_eligible
                    WHEN p_model_workflow = 'dimensional' THEN
                        eligible.is_dimensional_source_eligible
                    WHEN p_model_workflow = 'mapping'
@@ -1955,14 +1823,14 @@ BEGIN
           INTO v_selected_system_count
           FROM workflow.list_model_object_eligibility(p_model_id) AS eligible
          WHERE eligible.object_id = ANY(v_selected_object_ids)
-           AND eligible.is_bronze_source_eligible;
+           AND eligible.is_model_input_eligible;
         IF v_selected_system_count <> 1 THEN
             RAISE EXCEPTION
                 'Requested batch ID requires Selected Scope from one System';
         END IF;
     END IF;
 
-    v_is_agentic := p_model_workflow IN ('code_generation', 'qa')
+    v_is_agentic := p_model_workflow IN ('code_generation', 'validation')
         OR p_workflow_execution_mode IS NOT NULL;
     v_agent_input_count := num_nonnulls(
         p_agent_sdk_code,
@@ -2032,11 +1900,7 @@ BEGIN
         requested_batch_id,
         mapping_operation,
         mapping_coverage_mode,
-        mapping_artifact_type,
         mapping_route,
-        mapping_profile_key,
-        mapping_profile_version,
-        mapping_profile_schema_digest,
         mapping_object_output_template_id,
         mapping_object_output_template_schema_digest,
         mapping_attribute_output_template_id,
@@ -2067,14 +1931,7 @@ BEGIN
         v_requested_batch_id,
         p_mapping_operation,
         p_mapping_coverage_mode,
-        p_mapping_artifact_type,
         v_mapping_route,
-        CASE WHEN p_model_workflow = 'mapping'
-             THEN v_mapping_profile_key END,
-        CASE WHEN p_model_workflow = 'mapping'
-             THEN v_mapping_profile_version END,
-        CASE WHEN p_model_workflow = 'mapping'
-             THEN v_mapping_profile_schema_digest END,
         p_mapping_object_output_template_id,
         v_mapping_object_output_template_schema_digest,
         p_mapping_attribute_output_template_id,
@@ -2086,7 +1943,7 @@ BEGIN
     )
     RETURNING run.* INTO v_created;
 
-    IF p_model_workflow = 'qa' THEN
+    IF p_model_workflow = 'validation' THEN
         INSERT INTO application.workflow_run_system_selection (
             workflow_run_id,
             model_id,
@@ -2180,7 +2037,6 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     JSONB,
     VARCHAR,
     VARCHAR,
-    VARCHAR,
     BIGINT,
     BIGINT,
     BIGINT,
@@ -2223,7 +2079,7 @@ AS $lock_authoring_workflow_run$
                )
                AND run.workflow_execution_mode IS NOT NULL
            ) OR (
-               run.model_workflow IN ('code_generation', 'qa')
+               run.model_workflow IN ('code_generation', 'validation')
                AND run.workflow_execution_mode IS NULL
            )
        )
@@ -2736,7 +2592,7 @@ BEGIN
     IF p_expected_model_workflow IS NULL
        OR p_expected_model_workflow NOT IN (
            'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'qa'
+           'dimensional', 'mapping', 'code_generation', 'validation'
        ) THEN
         RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
     END IF;
@@ -3109,7 +2965,6 @@ CREATE FUNCTION application.create_notebook_workflow_run(
     p_prompt_overrides JSONB,
     p_mapping_operation VARCHAR(20) DEFAULT NULL,
     p_mapping_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_mapping_artifact_type VARCHAR(30) DEFAULT NULL,
     p_mapping_source_system_id BIGINT DEFAULT NULL,
     p_mapping_object_output_template_id BIGINT DEFAULT NULL,
     p_mapping_attribute_output_template_id BIGINT DEFAULT NULL,
@@ -3181,7 +3036,6 @@ BEGIN
           p_prompt_overrides,
           p_mapping_operation,
           p_mapping_coverage_mode,
-          p_mapping_artifact_type,
           p_mapping_source_system_id,
           p_mapping_object_output_template_id,
           p_mapping_attribute_output_template_id,
@@ -3209,7 +3063,6 @@ REVOKE ALL ON FUNCTION application.create_notebook_workflow_run(
     VARCHAR,
     UUID,
     JSONB,
-    VARCHAR,
     VARCHAR,
     VARCHAR,
     BIGINT,
@@ -3264,7 +3117,7 @@ BEGIN
     IF p_expected_model_workflow IS NULL
        OR p_expected_model_workflow NOT IN (
            'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'qa'
+           'dimensional', 'mapping', 'code_generation', 'validation'
        ) THEN
         RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
     END IF;
@@ -3551,7 +3404,7 @@ BEGIN
     END IF;
 
     v_max_attempt := CASE
-        WHEN v_run.model_workflow IN ('code_generation', 'qa')
+        WHEN v_run.model_workflow IN ('code_generation', 'validation')
              OR v_run.workflow_execution_mode IS NOT NULL
             THEN v_run.validation_retry_count + 1
         ELSE 1
@@ -3851,15 +3704,15 @@ BEGIN
     END IF;
     IF p_expected_workflow IS NULL OR p_expected_workflow NOT IN (
         'analysis', 'conceptual', 'logical', 'dimensional', 'mapping',
-        'code_generation', 'qa'
+        'code_generation', 'validation'
     ) THEN
         RAISE EXCEPTION 'Workflow Run no-op Workflow is invalid';
     END IF;
     IF (
-        p_expected_workflow IN ('code_generation', 'qa')
+        p_expected_workflow IN ('code_generation', 'validation')
         AND p_expected_execution_mode IS NOT NULL
     ) OR (
-        p_expected_workflow NOT IN ('code_generation', 'qa')
+        p_expected_workflow NOT IN ('code_generation', 'validation')
         AND (
             p_expected_execution_mode IS NULL
             OR p_expected_execution_mode NOT IN (

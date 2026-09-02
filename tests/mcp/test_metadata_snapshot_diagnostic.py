@@ -173,7 +173,7 @@ class _SelectionFailureConnection(_RoleFailureConnection):
                     {
                         "relation_name": name,
                         "relation_exists": True,
-                        "can_select": name != "model.model_scope",
+                        "can_select": name != "model.model_input_scope",
                     }
                     for name in diagnostic_module._SNAPSHOT_RELATIONS
                 ]
@@ -234,7 +234,7 @@ async def test_diagnostic_identifies_acl_and_exact_selection_stage(
     assert "transaction_posture=OK" in output
     assert "snapshot_acl=FAILED" in output
     assert "schema_usage_missing=model" in output
-    assert "select_missing=model.model_scope" in output
+    assert "select_missing=model.model_input_scope" in output
     assert "selection=FAILED stage=object_closure" in output
     assert "sqlstate=42501" in output
     assert "SENTINEL_QUERY_AND_ROW_DATA" not in output

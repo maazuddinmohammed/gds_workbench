@@ -41,7 +41,7 @@ class StaticModelService:
                     model_name="Customer 360",
                     model_description="Cross-system customer domain",
                     model_revision=18,
-                    model_scope_object_count=25,
+                    model_input_scope_object_count=25,
                     latest_workflow="analysis",
                     latest_run_status="completed",
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -65,7 +65,7 @@ class StaticModelService:
             model_name="Customer 360",
             model_description="Cross-system customer domain",
             model_revision=18,
-            model_scope_object_count=25,
+            model_input_scope_object_count=25,
             silver_model_naming_instructions="Use business names.",
             silver_model_audit_columns_template={"columns": ["created_at"]},
             gold_model_naming_instructions=None,
@@ -103,7 +103,7 @@ def test_model_ledger_is_tenant_scoped_and_contains_current_workflow_state() -> 
                 "model_name": "Customer 360",
                 "model_description": "Cross-system customer domain",
                 "model_revision": 18,
-                "model_scope_object_count": 25,
+                "model_input_scope_object_count": 25,
                 "latest_workflow": "analysis",
                 "latest_run_status": "completed",
                 "updated_at": "2026-08-24T14:00:00Z",
@@ -130,7 +130,7 @@ def test_model_detail_exposes_server_stored_settings_without_raw_prompts() -> No
     detail = response.json()
     assert detail["model_name"] == "Customer 360"
     assert detail["default_agent_provider_code"] == "databricks"
-    assert detail["model_scope_object_count"] == 25
+    assert detail["model_input_scope_object_count"] == 25
     assert "prompt_text" not in detail
 
 
@@ -151,7 +151,7 @@ class ModelTransaction:
                 "model_name": "Customer 360",
                 "model_description": "Cross-system customer domain",
                 "model_revision": 18,
-                "model_scope_object_count": 25,
+                "model_input_scope_object_count": 25,
                 "silver_model_naming_instructions": None,
                 "silver_model_audit_columns_template": None,
                 "gold_model_naming_instructions": None,
@@ -197,7 +197,7 @@ class ModelTransaction:
                 "model_name": "Customer 360",
                 "model_description": None,
                 "model_revision": 18,
-                "model_scope_object_count": 25,
+                "model_input_scope_object_count": 25,
                 "latest_workflow": "analysis",
                 "latest_run_status": "completed",
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -207,7 +207,7 @@ class ModelTransaction:
                 "model_name": "Finance Core",
                 "model_description": None,
                 "model_revision": 6,
-                "model_scope_object_count": 42,
+                "model_input_scope_object_count": 42,
                 "latest_workflow": "logical",
                 "latest_run_status": "completed",
                 "updated_at": datetime(2026, 8, 23, 14, 0, tzinfo=UTC),
@@ -288,4 +288,4 @@ async def test_database_model_detail_is_authorized_and_tenant_scoped() -> None:
     )
 
     assert detail.model_name == "Customer 360"
-    assert detail.model_scope_object_count == 25
+    assert detail.model_input_scope_object_count == 25

@@ -218,7 +218,7 @@ def test_assertion_stage_route_accepts_bounded_structured_records() -> None:
                                 },
                                 "modeling_assertion_applicable_layers": ["logical"],
                                 "modeling_assertion_confidence": "high",
-                                "modeling_assertion_record_status": "needs_review",
+                                "modeling_assertion_record_status": "active",
                                 "modeling_assertion_record_is_locked": False,
                             }
                         ],
@@ -293,7 +293,7 @@ def test_assertion_stage_rejects_unsafe_content_before_database_access(
         "modeling_assertion_source_location": None,
         "modeling_assertion_applicable_layers": ["logical"],
         "modeling_assertion_confidence": "high",
-        "modeling_assertion_record_status": "needs_review",
+        "modeling_assertion_record_status": "active",
         "modeling_assertion_record_is_locked": False,
     }
     record[field] = unsafe_value

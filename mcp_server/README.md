@@ -1,108 +1,90 @@
-# GDS ETL Workbench MCP scaffold
+# GDS Workbench MCP server
 
-This is the Azure App Service code root. It contains governed read, Databricks
-SQL, Tenant Lock, Metadata Change Set, and Model Change Set tools:
+This folder is the Python 3.14 Azure App Service that exposes the governed GDS
+MCP surface. The server is stateless. PostgreSQL owns authorization, Tenant
+Locks, revision fencing, Change Set validation, idempotency, and audit truth.
 
-- `list_tenants`, `get_tenant_details`, `get_model`, `get_model_scope`;
-- `list_objects`, `get_objects`, `get_object_lineage`;
-- `list_copy_groups`, `get_copy_group`;
-- `list_process_groups`, `get_process_group`; and
-- `describe_metadata_dataset`, `get_metadata_snapshot`;
-- `execute_databricks_sql`;
-- `check_tenant_lock`, `acquire_tenant_lock`, `renew_tenant_lock`,
-  `release_tenant_lock`, `override_tenant_lock`; and
-- `create_metadata_change_set`, `stage_metadata_change_set`,
-  `get_metadata_change_set`, `validate_metadata_change_set`,
-  `apply_metadata_change_set`, `archive_metadata_change_set`;
-- `get_model_profiling`, `get_model_analysis`, Modeling Assertion, Conceptual,
-  Logical, Dimensional, and Mapping reads;
-- `describe_model_dataset`, `get_model_snapshot`, `get_model_dbml`; and
-- `create_model_change_set`, `stage_model_change_set`,
-  `begin_model_stage_batch`, `put_model_stage_chunk`,
-  `commit_model_stage_batch`,
-  `get_model_change_set`, `validate_model_change_set`,
-  `apply_model_change_set`, `archive_model_change_set`.
+## Public MCP surface
 
-It also contains health routes and private Snapshot storage.
+The server registers 35 focused tools:
 
-`describe_metadata_dataset` returns a model-friendly column card for one dataset:
-meaning, required/nullability state, population guidance, fixed or literal values,
-reference value sources, constraints, examples, and the exact shared JSON Schema.
-The same guidance is embedded in Metadata Snapshot schema files.
+- Tenant and Model navigation: `list_tenants`, `get_tenant_details`,
+  `list_models`, `get_model_input_scope`.
+- Tenant Locks: `check_tenant_lock`, `acquire_tenant_lock`,
+  `renew_tenant_lock`, `release_tenant_lock`, `override_tenant_lock`.
+- Metadata Change Sets: create, stage, inspect, validate, apply, archive, plus
+  their bounded Stage Batch transport.
+- Model Change Sets: create, stage, inspect, validate, apply, archive, plus
+  their bounded Stage Batch transport.
+- Focused reads: `inspect_metadata`, `read_model_section`.
+- Snapshots and contracts: `describe_metadata_dataset`,
+  `create_metadata_snapshot`, `describe_model_dataset`, `create_model_snapshot`,
+  `export_model_dbml`.
+- Governed SQL preflight: `execute_databricks_sql`.
 
-## Boundaries
+It registers no MCP prompts or resources. The plugin owns user interaction;
+server instructions contain only shared safety and dependency rules.
 
-- `adapters/`: Easy Auth, MCP server composition, and centralized tool-call audit.
-- `tools/`: vertical tool modules. Each module keeps its MCP binding, contracts,
-  authorization flow, pagination, and SQL together.
-- `tools/catalog/`: Object visibility, Object detail, and ingestion-lineage reads.
-- `tools/ingestion/`: Tenant-owned Copy Group reads.
-- `tools/processing/`: Process Group reads resolved through Tenant Copy Groups.
-- `tools/databricks/`: SQL validation, bounded Connector execution, and the
-  governed `execute_databricks_sql` MCP binding.
-- `tools/tenants/tenant_locks.py`: all five governed Tenant Lock contracts and
-  fixed SQL calls in one module.
-- `tools/modeling/`: focused, paginated Model reads with shared Logical and
-  Dimensional query machinery.
-- `tools/change_sets/`: governed Metadata and Model Change Set contracts,
-  shared contract/action-review primitives, validation, and atomic materialization.
-- `tools/snapshots/`: shared deterministic archive, private storage, and temporary
-  build/upload/cleanup orchestration for every Snapshot kind.
-- `tools/snapshots/metadata/`: Metadata Snapshot contracts, fixed SQL, archive
-  content, and MCP binding.
-- `tools/snapshots/model/`: the 23-dataset ID-free Model contract registry,
-  schema description, and complete Model Snapshot.
-- `tools/snapshots/dbml/`: deterministic conceptual, logical, and dimensional
-  DBML projection, ZIP generation, and MCP binding.
-- `application/`: shared authorization boundary and signed pagination cursor.
-- `domain/`: role and Tool Policy vocabulary, safe errors, and shared ID-free
-  metadata/modeling Pydantic records used by snapshots and Change Sets.
-- `infrastructure/`: shared PostgreSQL pool, readiness, read transactions,
-  governed-function write transactions, and append-only audit inserts.
-- `diagnostics/`: bounded, read-only runtime checks for deployed Snapshot failures.
-- Tests live outside this deployable folder in `../tests/mcp/`.
+Foundational CRUD, individual graph mutation, direct lock-table writes,
+PostgreSQL SQL, file upload, secret reads, and code execution are not exposed.
 
-Production trusts only Azure Easy Auth's bounded `X-MS-CLIENT-PRINCIPAL`
-envelope. Tool requests supply the target Tenant ID, but never Principal IDs or roles.
-PostgreSQL resolves the active Principal and effective Tenant access.
+## Delivery boundaries
 
-Every completed tool call by an active resolved Principal appends one row to
-`mcp.tool_call_log`. Each tool explicitly declares which normal input arguments
-may be retained, and those values are copied into `input_metadata`. PostgreSQL
-does not impose an application-specific byte ceiling on that JSONB object. The
-MCP request-body limit is 2 MiB, leaving JSON-RPC and base64 envelope headroom
-for one decoded 1 MiB Model Stage fragment. Cursors, lock purpose/reason text,
-staged physical records, Model payload-fragment bodies, prompts, output,
-credentials, tokens, connection values, submitted SQL, and exceptions are not
-logged. `execute_databricks_sql` retains only the SQL character count and
-SHA-256 digest.
+- Metadata Change Sets own all physical metadata registration.
+- Model Change Sets own Model Input Scope, profiling, analysis, Assertions,
+  conceptual/logical/dimensional Models, Model Bindings, Mapping, generated
+  Code, and Validation definitions.
+- Target physical Objects and Attributes must be applied through a Metadata
+  Change Set before their Model Bindings can be applied.
+- Mapping refers to existing Model Bindings; it does not establish physical
+  identity.
+- Generated Code and Validation are definitions only. Model Change Sets never
+  execute them and never store execution results.
+- A changed Model revision invalidates the caller's working Snapshot. Download
+  a fresh Snapshot and reassess before continuing.
 
-Humans require delegated scope `workbench.access`. Workloads require application
-permission `workbench.workflow` and an active registered service Principal with
-the server-owned Super Admin flag.
+`create_model_snapshot` produces one ID-free 25-dataset archive. Its sections are
+Model Input Scope, Profiling, Analysis, Assertion, Conceptual, Logical,
+Dimensional, Model Binding, Mapping, Code Generation, and Validation. Every
+dataset uses the same strict Pydantic contract for Snapshot reads and Change
+Set writes. Call `describe_model_dataset` for exact schema and guidance.
 
-`GDS_ENVIRONMENT=local` disables request authentication and maps every request
-to one explicitly configured, database-backed `Local Developer` user. That user
-must be seeded with `is_super_admin=true`. It can read every Tenant and use all
-authorized tools, but Tenant Locks, revisions, validation, audit, and business
-invariants still apply. Never expose local mode to an untrusted network.
-Production ignores this path and derives Easy Auth, HTTPS, and the public host
-allowlist.
+Model Input Scope may contain Source and Bronze Objects. When both represent
+the same input, Bronze is the default. Source profiling is valid only through a
+foreign catalog and uses Connection `foreign_catalog`, Object
+`fc_object_schema`/`fc_object_name`, and Attribute `fc_attribute_name`.
+Missing foreign-catalog coordinates are a hard error. Bronze profiling uses its
+normal Object schema/name and Attribute name.
+
+## Security
+
+Production trusts only Azure Easy Auth's bounded
+`X-MS-CLIENT-PRINCIPAL` envelope. PostgreSQL resolves the active Principal and
+effective Tenant access. Human tokens require delegated scope
+`workbench.access`; workload tokens require application permission
+`workbench.workflow` and an active registered Super Admin service Principal.
+
+`GDS_ENVIRONMENT=local` disables request authentication and maps requests to
+one explicitly configured database-backed Local Developer. Tenant Locks,
+revisions, validation, audit, and business invariants still apply. Never expose
+local mode to an untrusted network.
+
+Completed tool calls append a redacted `mcp.tool_call_log` row. The server
+never logs credentials, tokens, connection values, raw prompts, staged records,
+submitted SQL, returned rows, raw outputs, or exception text.
+
+`execute_databricks_sql` is the only arbitrary-SQL exception. It accepts at
+most 25 statements, permits reads and unqualified temporary views/tables,
+rejects DML and persistent DDL, and returns at most 50 rows from the final
+statement. Connection values are derived server-side and never returned.
 
 ## Local run
 
-1. Generate one UUID for `GDS_LOCAL_PRINCIPAL_OBJECT_ID`. Copy
-   `database/seed/03_local_super_admin.template.sql` outside the repository,
-   replace its three placeholders, and run that copy once as the database
-   administrator. Use the same UUID in the seed and application setting.
-2. Copy `.env.example` to an untracked `.env`.
-3. Supply the canonical `gds_mcp_runtime` database DSN, a random cursor key of
-   at least 32 bytes, and the private Azure Blob account URL/container used for
-   Metadata Snapshots. Each database transaction activates `gds_app_write`
-   locally in both local and production modes.
-4. Export those settings into the shell. The app deliberately does not load
-   `.env` files.
-5. Run:
+1. Seed the Local Developer identity using an untracked copy of
+   `database/seed/03_local_super_admin.template.sql`.
+2. Copy `.env.example` to an untracked `.env` and provide the governed runtime
+   settings. The application does not load `.env` automatically.
+3. Run:
 
 ```bash
 uv sync --project mcp_server --frozen --python 3.14
@@ -110,96 +92,14 @@ cd mcp_server
 ./startup.sh
 ```
 
-On Windows PowerShell, run this from the repository root after setting the same
-environment variables:
+For Windows development, run Uvicorn from the repository root:
 
 ```powershell
 uv sync --project mcp_server --frozen --python 3.14
 uv run --project mcp_server --frozen python -m uvicorn --app-dir mcp_server app:app --host 127.0.0.1 --port 8000
 ```
 
-`startup.sh` and Gunicorn are for the Linux Azure host. Windows local development
-uses Uvicorn directly.
-
-Connect an MCP client to `http://localhost:8000/mcp`.
-
-`GDS_MCP_PUBLIC_URL`, `GDS_ENTRA_TENANT_ID`, and
-`GDS_ENTRA_API_CLIENT_ID` publish the MCP OAuth protected-resource metadata.
-They are public deployment identifiers and do not need Key Vault. The server
-derives the Entra authorization-server URL and the delegated
-`workbench.access` scope from them. In local mode, the Tenant ID also forms the
-database identity key with `GDS_LOCAL_PRINCIPAL_OBJECT_ID`; the API Client ID is
-metadata only because authentication is disabled. Production must omit
-`GDS_LOCAL_PRINCIPAL_OBJECT_ID`.
-
-`GDS_DATABRICKS_SQL_MAX_ROWS` configures the returned final-statement rows from
-1 through the hard cap of 50; its default is 50.
-`GDS_DATABRICKS_SQL_TIMEOUT_SECONDS` configures the statement/socket timeout
-from 1 through 600 seconds; its default is 120. Schema version, snapshot bounds,
-PostgreSQL pool sizing, connection budget, Gunicorn workers, and request timeout
-remain checked-in runtime policy.
-
-`execute_databricks_sql` accepts an active source `connection_id`, an active
-`environment_code`, and up to 25 semicolon-separated statements. It authorizes
-the source Tenant, derives `tenant.gds_connection_id`, and reads that GDS
-Connection's host, HTTP path, and token for the requested Environment through one
-fixed least-privilege function. Physical relations must use
-`catalog.schema.table`; unqualified CTE and temporary names remain allowed. It
-rejects DML and persistent DDL, executes the batch in one Databricks SQL Warehouse
-session, and returns only the final statement's bounded result. Connection values
-and submitted SQL are never logged. The append-only tool-call log retains only
-the SQL character count and SHA-256 digest.
-
-Call `get_metadata_snapshot` with a positive `tenant_id`. Its small result
-contains a 15-minute read-only SAS URL for the exact ZIP, URL expiry time, byte
-count, and SHA-256. It never contains snapshot rows or ZIP bytes. Tenant Read is
-authorized before the URL is created. Opening the URL downloads directly from
-the private Blob container. The SAS URL is returned only in the MCP result and
-must not be logged.
-
-Model-focused reads return database IDs for navigation but omit agent-run and
-audit columns. Empty filter lists mean all matching Model records.
-`get_model` accepts one authorized Tenant ID and returns up to 200 active Model
-headers, naming/audit policy templates, revisions, and Model Scope Object counts.
-`get_model_scope` accepts one authorized Model ID and returns up to 2,000 active
-Scope Objects with expanded Tenant, System, Connection, Object Type, Zone, and
-physical Object names plus the four derived workflow-eligibility flags. Database
-IDs remain in this focused navigation result. Model Scope is read-only through
-MCP; explicit Scope changes belong to the governed web workflow.
-`get_model_snapshot` returns only a temporary read-only URL plus ZIP metadata;
-its 23 archive datasets are ID-free and use exact Pydantic records. The
-`model_scope` and `qa_authoring_context` datasets are Snapshot-only; all others
-use the records accepted by Model Change Sets. `get_model_dbml` accepts `full`, `conceptual`, `logical`,
-or `dimensional`; each selected layer always has a complete DBML file. When
-`include_submodels` is true, logical and dimensional layers also have one file
-per active Submodel and a default file only when active Entities are unassigned.
-The MCP result contains only the temporary URL and bounded ZIP metadata. Call
-`describe_model_dataset` before authoring a dataset.
-The Snapshot includes `generated_code`, snapshot-only `qa_authoring_context`,
-`validation_group`, and `validation_check`. Their schemas publish machine-readable
-digest, Apply-order, SQL, and assertion-shape rules. QA copies the server-derived
-context digests and uses only its allowlisted current Code references; the context
-itself cannot be staged. `get_model_code_generation_document` returns
-`target_mapping_context_digest` and `target_source_context_digest`; copy those
-exact fields into a `generated_code` record. Apply Mapping, Code when present,
-then QA in successive Change Sets. No Model Change Set tool executes Code or QA
-SQL.
-Each `stage_model_change_set` item replaces that dataset's pending records;
-omitted pending datasets remain unchanged. Validate reports the first failed
-phase and a bounded action review, including physical Model Scope checks. Apply
-revalidates and writes atomically. Stage `model_details` to update the Model name,
-description, or naming/audit templates. Model Scope cannot be staged or applied
-through this public Change Set contract. `archive_model_change_set` retains an
-abandoned draft as terminal history; it does not delete it.
-
-The same Model Stage Batch supports two transport modes. `records` stores
-ordinary complete records. For `generated_code` only, `json_fragments` stores
-ordered base64-wrapped fragments of one canonical JSON record array in
-`mcp.model_stage_payload_chunk`. Each decoded fragment is at most 1 MiB. Commit
-verifies the manifest, hashes, order, and byte count, concatenates the decoded
-bytes, validates the reconstructed array, and stages one complete Code record.
-Fragment boundaries never become Model state. Code Artifact content has no
-separate domain-size limit; Stage Batch limits are transport safety bounds.
+Connect the client to `http://localhost:8000/mcp`.
 
 ## Tests
 
@@ -210,66 +110,17 @@ uv run --project mcp_server pyright --project mcp_server mcp_server/gds_etl_work
 uv run --project mcp_server pytest tests/mcp
 ```
 
-Tests never read `.env` or connect to an existing database. Database tests reject
-connection environment, create random credentials and a per-run sentinel in a
-disposable loopback PostgreSQL 18 container, install the canonical SQL once, and
-dispose only that verified container.
+Database tests reject external DSNs. They create random credentials, a random
+database, and a sentinel in one disposable PostgreSQL container, then dispose
+the verified container. No cleanup SQL targets a populated database.
 
-## Azure ZIP shape
-
-Build the deterministic runtime-only ZIP:
+## Deployment ZIP
 
 ```bash
 uv run --project mcp_server python mcp_server/build_zip.py
 ```
 
-The ZIP places `app.py`, `startup.sh`, `requirements.txt`, and
-`BUILD_MANIFEST.json` at its root. The builder includes the complete
-`gds_etl_workbench/` runtime package and excludes `.env`, `.env.example`, tests,
-`.venv`, SQL, caches, and documentation. It refuses to overwrite an existing
-artifact.
-
-After deployment, diagnose the complete Metadata Snapshot path in one read-only
-run from the App Service SSH console:
-
-```bash
-cd /home/site/wwwroot
-python3 -m gds_etl_workbench.diagnostics.metadata_snapshot --tenant-id 5
-```
-
-The command checks every manifest file, configuration, the exact runtime login
-and transaction role, PostgreSQL readiness, required schema/table access, every
-Tenant selection stage, local archive generation, Storage authentication,
-container access, and delegation-key access. It reports only bounded stage
-names, booleans, counts, hashes, and error codes. It does not upload a Blob or
-print settings, credentials, URLs, SQL, database rows, or raw dependency errors.
-
-Azure App Service must use Python 3.14, build automation
-(`SCM_DO_BUILD_DURING_DEPLOYMENT=1`), and startup command `startup.sh`. Configure
-Easy Auth to require authentication, reject unauthenticated requests with 401,
-and accept only the intended Entra tenant/audience. Human tokens need delegated
-scope `workbench.access`; workload tokens need application permission
-`workbench.workflow`. Configure the Entra access-token optional claim `idtyp`.
-Configure these Easy Auth excluded paths so health and OAuth discovery remain
-anonymous:
-
-```text
-/health/live
-/health/ready
-/.well-known/oauth-protected-resource
-/.well-known/oauth-protected-resource/mcp
-```
-
-`/mcp` remains protected. The database login must have exactly one direct
-membership: `gds_app_write`; each transaction activates that `NOINHERIT` role.
-
-The configured Blob container must already exist and remain private. Grant the
-App Service identity narrowly scoped Blob create/read access and Storage Blob
-Delegator at account scope. Configure lifecycle deletion for the code-owned
-`metadata/`, `model/`, and `dbml/` prefixes at or after the configured retention
-period. The application does not create containers, alter roles, or run broad
-Blob cleanup.
-
-Startup never applies DDL. Background mutation is limited to bounded, audited
-expiration of stale Tenant Locks. Lock tools can mutate locks only through the
-governed SQL functions; they cannot directly change the lock tables.
+The runtime ZIP contains only `app.py`, `startup.sh`, `requirements.txt`,
+`BUILD_MANIFEST.json`, and `gds_etl_workbench/`. It excludes SQL, tests,
+documentation, environments, caches, and nested archives. Startup never
+applies DDL.

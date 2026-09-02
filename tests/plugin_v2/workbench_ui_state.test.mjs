@@ -37,8 +37,8 @@ test("stale Snapshots disable editing and validation", () => {
   assert.equal(uiState.canValidate(task, "metadata", true, false, true), false);
 });
 
-test("Model Scope stays readable without enabling local edit controls", () => {
-  const task = ["01", "model", "Inspect scope", "doing"];
-  assert.equal(uiState.canEdit(task, "model", true, false, "model_scope"), false);
+test("UI task state does not hardcode dataset names", () => {
+  const task = ["01", "model", "Edit model", "doing"];
+  assert.equal(uiState.canEdit(task, "model", true, false, "model_input_scope"), true);
   assert.equal(uiState.canEdit(task, "model", true, false, "model_details"), true);
 });

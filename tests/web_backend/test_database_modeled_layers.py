@@ -198,7 +198,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     logical_entity_confidence,
                     logical_entity_status
                 ) VALUES (%s, 'Customer', 'A governed Customer.', 'core',
-                          'One Customer', 'high', 'needs_review')
+                          'One Customer', 'high', 'active')
                 RETURNING logical_entity_id
                 """,
                 (model_id,),
@@ -357,7 +357,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
                     dimensional_entity_status
                 ) VALUES (%s, 'Fact Order', 'Submitted Orders.', 'fact',
                           'transaction', 'One submitted Order', 'high',
-                          'needs_review')
+                          'active')
                 RETURNING dimensional_entity_id
                 """,
                 (model_id,),
@@ -525,7 +525,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
             tenant_id=tenant_id,
             model_id=model_id,
             filters=LogicalEntityFilters(
-                status="needs_review",
+                status="active",
                 name_exact="customer",
                 logical_submodel_id=logical_submodel_id,
             ),
@@ -585,7 +585,7 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
             principal,
             tenant_id=tenant_id,
             model_id=model_id,
-            filters=ModeledFilters(status="needs_review", name_exact="fact order"),
+            filters=ModeledFilters(status="active", name_exact="fact order"),
             page_size=10,
             cursor=None,
         )

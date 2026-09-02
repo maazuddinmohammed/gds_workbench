@@ -176,6 +176,7 @@ def _selected_object() -> dict[str, object]:
         "selection_order": 1,
         "object": {
             "tenant_code": "NWA",
+            "source_tenant_code": "NWA",
             "system_code": "CRM",
             "connection_code": "SOURCE",
             "object_schema": "bronze",

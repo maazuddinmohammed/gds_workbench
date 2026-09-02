@@ -3,9 +3,9 @@ from __future__ import annotations
 from copy import deepcopy
 
 import pytest
-from tests.mcp.test_model_change_set_validation import (
-    complete_graph,
-    model_scope_records,
+from tests.mcp.model_test_fixtures import (
+    complete_model_graph,
+    snapshot_from_graph,
 )
 
 from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
@@ -26,14 +26,14 @@ def test_full_dbml_renders_complete_and_submodel_files() -> None:
     assert [document.path for document in documents] == [
         "conceptual.dbml",
         "dimensional_complete.dbml",
-        "dimensional_sales_mart.dbml",
+        "dimensional_salesmart.dbml",
         "logical_complete.dbml",
         "logical_sales.dbml",
     ]
     contents = {document.path: document.content.decode() for document in documents}
     assert 'Table "Customer"' in contents["conceptual.dbml"]
     assert "Ref conceptual_relationship_1:" in contents["conceptual.dbml"]
-    assert '"customer_id" bigint [pk, not null' in contents["logical_complete.dbml"]
+    assert '"CustomerID" bigint [pk, not null' in contents["logical_complete.dbml"]
     assert "Ref logical_relationship_1:" in contents["logical_complete.dbml"]
     assert "Ref dimensional_relationship_1:" in contents["dimensional_complete.dbml"]
     assert "Optional: no" in contents["dimensional_complete.dbml"]
@@ -64,7 +64,7 @@ def test_full_dbml_without_submodels_contains_only_complete_files() -> None:
 
 
 def test_dbml_adds_default_file_only_for_unassigned_entities() -> None:
-    graph = complete_graph()
+    graph = complete_model_graph()
     entities = graph["logical_entity"]
     entities[0]["submodels"] = []
 
@@ -88,7 +88,7 @@ def test_dbml_adds_default_file_only_for_unassigned_entities() -> None:
 
 
 def test_dbml_rejects_effective_relationship_with_inactive_endpoint() -> None:
-    graph = complete_graph()
+    graph = complete_model_graph()
     objects = graph["conceptual_object"]
     objects[0]["conceptual_object_status"] = "inactive"
 
@@ -101,7 +101,7 @@ def test_dbml_rejects_effective_relationship_with_inactive_endpoint() -> None:
 
 
 def test_dbml_quotes_unsafe_data_types_and_is_deterministic() -> None:
-    graph = complete_graph()
+    graph = complete_model_graph()
     attributes = graph["logical_attribute"]
     attributes[0]["logical_attribute_data_type"] = "decimal(18, 2) injected"
     snapshot = snapshot_fixture(graph)
@@ -124,43 +124,4 @@ def test_dbml_quotes_unsafe_data_types_and_is_deterministic() -> None:
 def snapshot_fixture(
     graph: dict[ModelChangeSetDataset, list[dict[str, object]]] | None = None,
 ) -> ModelSnapshot:
-    records = deepcopy(graph or complete_graph())
-    return ModelSnapshot.model_validate(
-        {
-            "model_id": 1,
-            "model_name": "Sales Model",
-            "model_revision": 2,
-            "model_scope": {
-                "details": records["model_details"][0],
-                "objects": model_scope_records(),
-            },
-            "profiling": {"profiles": records["profiling_profile"]},
-            "analysis": {"relationships": records["analysis_result"]},
-            "assertion": {
-                "documents": records["modeling_assertion_document"],
-                "records": records["modeling_assertion_record"],
-            },
-            "conceptual": {
-                "objects": records["conceptual_object"],
-                "relationships": records["conceptual_relationship"],
-            },
-            "logical": {
-                "submodels": records["logical_submodel"],
-                "entities": records["logical_entity"],
-                "attributes": records["logical_attribute"],
-                "relationships": records["logical_relationship"],
-            },
-            "dimensional": {
-                "submodels": records["dimensional_submodel"],
-                "entities": records["dimensional_entity"],
-                "attributes": records["dimensional_attribute"],
-                "relationships": records["dimensional_relationship"],
-            },
-            "mapping": {
-                "dependencies": records["mapping_dependency"],
-                "objects": records["mapping_object"],
-                "attributes": records["mapping_attribute"],
-            },
-        },
-        strict=False,
-    )
+    return snapshot_from_graph(deepcopy(graph or complete_model_graph()))

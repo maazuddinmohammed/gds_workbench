@@ -199,7 +199,7 @@ def project_dimensional_gold_policy(
 
     projected: list[DimensionalAttributeRecord] = []
     for entity_key, entity in sorted(entities.items()):
-        if entity.dimensional_entity_status not in ("active", "needs_review"):
+        if entity.dimensional_entity_status != "active":
             continue
         entity_attributes = [record for key, record in attributes.items() if key[0] == entity_key]
         business_ordinal = max(
@@ -214,7 +214,7 @@ def project_dimensional_gold_policy(
         if entity.dimensional_entity_type in ("fact", "bridge"):
             policy_ordinal_base += sum(
                 record.dimensional_attribute_key_role == "foreign"
-                and record.dimensional_attribute_status in ("active", "needs_review")
+                and record.dimensional_attribute_status == "active"
                 for record in entity_attributes
             )
         specifications: list[tuple[GoldPolicyColumn, Literal["technical", "audit"], str]] = []
@@ -238,7 +238,7 @@ def project_dimensional_gold_policy(
             if any(
                 record.dimensional_attribute_change_behavior == "historize"
                 and record.dimensional_attribute_role not in ("technical", "audit")
-                and record.dimensional_attribute_status in ("active", "needs_review")
+                and record.dimensional_attribute_status == "active"
                 for record in entity_attributes
             ):
                 specifications.extend(
@@ -366,7 +366,7 @@ def project_dimensional_foreign_key_policy(
                 if _entity_key_from_attribute(attribute) == to_key
                 and attribute.dimensional_attribute_role == "technical"
                 and attribute.dimensional_attribute_key_role == "surrogate"
-                and attribute.dimensional_attribute_status in ("active", "needs_review")
+                and attribute.dimensional_attribute_status == "active"
             ]
             if len(surrogate_candidates) != 1:
                 raise InvalidRequestError(

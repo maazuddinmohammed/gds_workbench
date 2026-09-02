@@ -135,7 +135,7 @@ class AnalysisValidationRelationship(BaseModel):
     relationship_kind: str = Field(min_length=1, max_length=100)
     relationship_confidence: Literal["low", "medium", "high"]
     relationship_basis: str = Field(min_length=1, max_length=8_000)
-    analysis_result_status: Literal["active", "needs_review"]
+    analysis_result_status: Literal["active"]
     analysis_result_is_locked: bool
     gds_connection_id: int = Field(gt=0)
     source_context_digest: str | None = Field(

@@ -10,322 +10,172 @@ if TYPE_CHECKING:
     from psycopg import Connection
 
 
-EXPECTED_COLUMNS = [
-    "tenant_metadata_discovery_scope_id",
-    "tenant_id",
-    "gds_connection_id",
-    "zone_id",
-    "object_schema",
-    "is_active",
-    "created_time",
-    "created_by",
-    "updated_time",
-    "updated_by",
-]
-
-
-def test_metadata_discovery_scope_has_exact_structure_and_runtime_posture(
+def test_object_has_mandatory_source_tenant_ownership(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        columns = connection.execute(
+        column = connection.execute(
             """
-            SELECT column_name, is_nullable
+            SELECT data_type, is_nullable
               FROM information_schema.columns
              WHERE table_schema = 'core'
-               AND table_name = 'tenant_metadata_discovery_scope'
-             ORDER BY ordinal_position
+               AND table_name = 'object'
+               AND column_name = 'source_tenant_id'
             """
-        ).fetchall()
-        constraints = connection.execute(
+        ).fetchone()
+        foreign_key = connection.execute(
             """
-            SELECT conname, pg_get_constraintdef(oid) AS definition
-             FROM pg_constraint
-             WHERE conrelid = 'core.tenant_metadata_discovery_scope'::REGCLASS
-               AND contype IN ('p', 'f', 'c', 'u')
-             ORDER BY conname
+            SELECT pg_get_constraintdef(oid) AS definition
+              FROM pg_constraint
+             WHERE conrelid = 'core.object'::REGCLASS
+               AND conname = 'fk_object_source_tenant'
+               AND contype = 'f'
             """
-        ).fetchall()
-        indexes = connection.execute(
+        ).fetchone()
+        ownership_index = connection.execute(
             """
-            SELECT indexname, indexdef
+            SELECT indexdef
               FROM pg_indexes
              WHERE schemaname = 'core'
-               AND tablename = 'tenant_metadata_discovery_scope'
-             ORDER BY indexname
-            """
-        ).fetchall()
-        privileges = connection.execute(
-            """
-            SELECT has_table_privilege(
-                       'gds_app_write',
-                       'core.tenant_metadata_discovery_scope',
-                       'SELECT'
-                   ) AS can_select,
-                   has_table_privilege(
-                       'gds_app_write',
-                       'core.tenant_metadata_discovery_scope',
-                       'INSERT'
-                   )
-                   OR has_table_privilege(
-                       'gds_app_write',
-                       'core.tenant_metadata_discovery_scope',
-                       'UPDATE'
-                   )
-                   OR has_table_privilege(
-                       'gds_app_write',
-                       'core.tenant_metadata_discovery_scope',
-                       'DELETE'
-                   )
-                   OR has_table_privilege(
-                       'gds_app_write',
-                       'core.tenant_metadata_discovery_scope',
-                       'TRUNCATE'
-                   ) AS can_mutate
+               AND indexname = 'ix_object_source_tenant_zone_active'
             """
         ).fetchone()
 
-    assert [column["column_name"] for column in columns] == EXPECTED_COLUMNS
-    assert all(column["is_nullable"] == "NO" for column in columns)
-    assert {
-        constraint["conname"]: constraint["definition"] for constraint in constraints
-    } == {
-        "ck_metadata_discovery_scope_schema": (
-            "CHECK (reference.is_nonblank((object_schema)::text))"
-        ),
-        "fk_metadata_discovery_scope_connection": (
-            "FOREIGN KEY (gds_connection_id) REFERENCES core.connection(connection_id)"
-        ),
-        "fk_metadata_discovery_scope_tenant": (
-            "FOREIGN KEY (tenant_id) REFERENCES core.tenant(tenant_id)"
-        ),
-        "fk_metadata_discovery_scope_zone": (
-            "FOREIGN KEY (zone_id) REFERENCES reference.zone(zone_id)"
-        ),
-        "tenant_metadata_discovery_scope_pkey": (
-            "PRIMARY KEY (tenant_metadata_discovery_scope_id)"
-        ),
+    assert column == {"data_type": "bigint", "is_nullable": "NO"}
+    assert foreign_key == {
+        "definition": "FOREIGN KEY (source_tenant_id) REFERENCES core.tenant(tenant_id)"
     }
-    assert any(
-        index["indexname"] == "ux_metadata_discovery_scope"
-        and "UNIQUE INDEX" in index["indexdef"]
-        and "lower(btrim((object_schema)::text))" in index["indexdef"]
-        for index in indexes
-    )
-    assert any(
-        index["indexname"] == "ux_active_metadata_discovery_scope_assignment"
-        and "UNIQUE INDEX" in index["indexdef"]
-        and "(gds_connection_id, zone_id, lower(btrim((object_schema)::text)))"
-        in index["indexdef"]
-        and "WHERE is_active" in index["indexdef"]
-        for index in indexes
-    )
-    assert privileges == {"can_select": True, "can_mutate": False}
+    assert ownership_index is not None
+    assert "(source_tenant_id, zone_id) WHERE is_active" in ownership_index["indexdef"]
 
 
-def test_metadata_discovery_scope_uses_normalized_schema_identity(
+def test_discovery_scope_table_is_removed(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        tenant_id, connection_id, zone_id = _seed_scope_parents(connection)
+        row = connection.execute(
+            "SELECT to_regclass('core.tenant_metadata_discovery_scope') AS relation"
+        ).fetchone()
+
+    assert row == {"relation": None}
+
+
+def test_global_connection_object_stores_the_data_tenant_directly(
+    postgres_database: DisposablePostgres,
+) -> None:
+    with postgres_database.connect_owner() as connection:
+        data_tenant_id, connection_id, zone_id, object_type_id = _seed_object_parents(
+            connection
+        )
         row = connection.execute(
             """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id,
-                gds_connection_id,
-                zone_id,
-                object_schema
-            )
-            VALUES (%s, %s, %s, 'risk_curated')
-            RETURNING tenant_metadata_discovery_scope_id,
-                      tenant_id,
-                      gds_connection_id,
-                      zone_id,
-                      object_schema,
-                      is_active
+            INSERT INTO core.object (
+                connection_id,
+                source_tenant_id,
+                object_schema,
+                object_name,
+                object_type_id,
+                zone_id
+            ) VALUES (%s, %s, 'bronze_data', 'customer', %s, %s)
+            RETURNING source_tenant_id
             """,
-            (tenant_id, connection_id, zone_id),
+            (connection_id, data_tenant_id, object_type_id, zone_id),
         ).fetchone()
 
-        assert row is not None
-        assert row["tenant_metadata_discovery_scope_id"] > 0
-        assert row["tenant_id"] == tenant_id
-        assert row["gds_connection_id"] == connection_id
-        assert row["zone_id"] == zone_id
-        assert row["object_schema"] == "risk_curated"
-        assert row["is_active"] is True
+        assert row == {"source_tenant_id": data_tenant_id}
 
-        with pytest.raises(psycopg.errors.UniqueViolation), connection.transaction():
+        with (
+            pytest.raises(psycopg.errors.ForeignKeyViolation),
+            connection.transaction(),
+        ):
             connection.execute(
                 """
-                    INSERT INTO core.tenant_metadata_discovery_scope (
-                        tenant_id,
-                        gds_connection_id,
-                        zone_id,
-                        object_schema
-                    )
-                    VALUES (%s, %s, %s, '  RISK_CURATED  ')
-                    """,
-                (tenant_id, connection_id, zone_id),
-            )
-
-        with pytest.raises(psycopg.errors.CheckViolation), connection.transaction():
-            connection.execute(
-                """
-                    INSERT INTO core.tenant_metadata_discovery_scope (
-                        tenant_id,
-                        gds_connection_id,
-                        zone_id,
-                        object_schema
-                    )
-                    VALUES (%s, %s, %s, '   ')
-                    """,
-                (tenant_id, connection_id, zone_id),
-            )
-
-        connection.rollback()
-
-
-def test_active_discovery_scope_assigns_each_gds_schema_to_one_tenant(
-    postgres_database: DisposablePostgres,
-) -> None:
-    with postgres_database.connect_owner() as connection:
-        tenant_id, connection_id, zone_id = _seed_scope_parents(connection)
-        project_id = connection.execute(
-            "SELECT project_id FROM core.tenant WHERE tenant_id = %s",
-            (tenant_id,),
-        ).fetchone()["project_id"]
-        second_tenant_id = connection.execute(
-            """
-            INSERT INTO core.tenant (
-                project_id,
-                tenant_code,
-                tenant_name,
-                tenant_catalog,
-                gds_admin_catalog
-            ) VALUES (
-                %s,
-                'SECOND_DISCOVERY_TENANT',
-                'Second Discovery Tenant',
-                'second_discovery_catalog',
-                'second_discovery_admin'
-            )
-            RETURNING tenant_id
-            """,
-            (project_id,),
-        ).fetchone()["tenant_id"]
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, gds_connection_id, zone_id, object_schema
-            ) VALUES (%s, %s, %s, 'governed_bronze')
-            """,
-            (tenant_id, connection_id, zone_id),
-        )
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, gds_connection_id, zone_id, object_schema, is_active
-            ) VALUES (%s, %s, %s, ' governed_bronze ', FALSE)
-            """,
-            (second_tenant_id, connection_id, zone_id),
-        )
-
-        with pytest.raises(psycopg.errors.UniqueViolation), connection.transaction():
-            connection.execute(
-                """
-                UPDATE core.tenant_metadata_discovery_scope
-                   SET is_active = TRUE
-                 WHERE tenant_id = %s
-                   AND gds_connection_id = %s
-                   AND zone_id = %s
-                   AND lower(btrim(object_schema)) = 'governed_bronze'
+                INSERT INTO core.object (
+                    connection_id,
+                    source_tenant_id,
+                    object_schema,
+                    object_name,
+                    object_type_id,
+                    zone_id
+                ) VALUES (%s, 9223372036854775807, 'bronze_data', 'invalid', %s, %s)
                 """,
-                (second_tenant_id, connection_id, zone_id),
+                (connection_id, object_type_id, zone_id),
             )
 
         connection.rollback()
 
 
-def _seed_scope_parents(connection: Connection[Any]) -> tuple[int, int, int]:
-    project = connection.execute(
+def _seed_object_parents(connection: Connection[Any]) -> tuple[int, int, int, int]:
+    project_id = connection.execute(
         """
         INSERT INTO core.project (project_code, project_name)
-        VALUES ('DISCOVERY_PROJECT', 'Discovery Project')
+        VALUES ('OBJECT_OWNER_PROJECT', 'Object Owner Project')
         RETURNING project_id
         """
-    ).fetchone()
-    assert project is not None
-    tenant = connection.execute(
+    ).fetchone()["project_id"]
+    data_tenant_id = connection.execute(
         """
         INSERT INTO core.tenant (
-            project_id,
-            tenant_code,
-            tenant_name,
-            tenant_catalog,
-            gds_admin_catalog
-        )
-        VALUES (%s, 'DISCOVERY_TENANT', 'Discovery Tenant',
-                'discovery_catalog', 'discovery_admin')
+            project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
+        ) VALUES (%s, 'OBJECT_DATA_TENANT', 'Object Data Tenant', 'data', 'data_admin')
         RETURNING tenant_id
         """,
-        (project["project_id"],),
-    ).fetchone()
-    assert tenant is not None
-    system_type = connection.execute(
+        (project_id,),
+    ).fetchone()["tenant_id"]
+    gds_tenant_id = connection.execute(
+        """
+        INSERT INTO core.tenant (
+            project_id, tenant_code, tenant_name, tenant_catalog, gds_admin_catalog
+        ) VALUES (%s, 'OBJECT_GDS_TENANT', 'Object GDS Tenant', 'gds', 'gds_admin')
+        RETURNING tenant_id
+        """,
+        (project_id,),
+    ).fetchone()["tenant_id"]
+    system_type_id = connection.execute(
         """
         INSERT INTO reference.system_type (system_type_code, system_type_name)
-        VALUES ('DISCOVERY_TYPE', 'Discovery Type')
+        VALUES ('OBJECT_OWNER_TYPE', 'Object Owner Type')
         RETURNING system_type_id
         """
-    ).fetchone()
-    assert system_type is not None
-    system = connection.execute(
+    ).fetchone()["system_type_id"]
+    system_id = connection.execute(
         """
         INSERT INTO core.system (system_code, system_name, system_type_id)
-        VALUES ('DISCOVERY_SYSTEM', 'Discovery System', %s)
+        VALUES ('OBJECT_OWNER_SYSTEM', 'Object Owner System', %s)
         RETURNING system_id
         """,
-        (system_type["system_type_id"],),
-    ).fetchone()
-    assert system is not None
-    connection_type = connection.execute(
+        (system_type_id,),
+    ).fetchone()["system_id"]
+    connection_type_id = connection.execute(
         """
         INSERT INTO reference.connection_type (
-            connection_type_code,
-            connection_type_name
-        )
-        VALUES ('DISCOVERY_CONNECTION', 'Discovery Connection')
+            connection_type_code, connection_type_name
+        ) VALUES ('OBJECT_OWNER_CONNECTION', 'Object Owner Connection')
         RETURNING connection_type_id
         """
-    ).fetchone()
-    assert connection_type is not None
-    global_connection = connection.execute(
+    ).fetchone()["connection_type_id"]
+    connection_id = connection.execute(
         """
         INSERT INTO core.connection (
-            tenant_id,
-            system_id,
-            connection_code,
-            connection_name,
-            connection_type_id,
-            is_global_data_store
-        )
-        VALUES (%s, %s, 'DISCOVERY_GLOBAL', 'Discovery Global', %s, TRUE)
+            tenant_id, system_id, connection_code, connection_name,
+            connection_type_id, is_global_data_store
+        ) VALUES (%s, %s, 'OBJECT_GDS', 'Object GDS', %s, TRUE)
         RETURNING connection_id
         """,
-        (
-            tenant["tenant_id"],
-            system["system_id"],
-            connection_type["connection_type_id"],
-        ),
-    ).fetchone()
-    assert global_connection is not None
-    zone = connection.execute(
+        (gds_tenant_id, system_id, connection_type_id),
+    ).fetchone()["connection_id"]
+    zone_id = connection.execute(
         """
         INSERT INTO reference.zone (zone_code, zone_name)
-        VALUES ('discovery_bronze', 'Discovery Bronze')
+        VALUES ('object_owner_bronze', 'Object Owner Bronze')
         RETURNING zone_id
         """
-    ).fetchone()
-    assert zone is not None
-    return tenant["tenant_id"], global_connection["connection_id"], zone["zone_id"]
+    ).fetchone()["zone_id"]
+    object_type_id = connection.execute(
+        """
+        INSERT INTO reference.object_type (object_type_code, object_type_name)
+        VALUES ('OBJECT_OWNER_TABLE', 'Object Owner Table')
+        RETURNING object_type_id
+        """
+    ).fetchone()["object_type_id"]
+    return data_tenant_id, connection_id, zone_id, object_type_id

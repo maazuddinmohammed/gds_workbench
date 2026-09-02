@@ -656,7 +656,7 @@ def test_output_template_mutations_are_web_only_security_definer_functions(
         {
             "table_name": "output_template",
             "web_can_mutate": False,
-            "mcp_can_access": False,
+            "mcp_can_access": True,
         },
         {
             "table_name": "output_template_field",

@@ -34,7 +34,6 @@ function parseArguments(argv) {
 }
 
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
-const SERVER_CONTRACT_PATH = path.resolve(__dirname, "..", "..", "..", "tool-contract.json");
 
 function commandContract(options) {
   const contract = readJsonFile(HELPER_CONTRACT_PATH, "Local helper command contract");
@@ -44,21 +43,6 @@ function commandContract(options) {
   const command = contract.commands?.[options.command];
   if (!command) fail(`Unknown helper command contract: ${options.command}.`);
   return { schema_version: contract.schema_version, command: options.command, ...command };
-}
-
-function serverContractCheck(options) {
-  const actual = parseObjectOption(options.actual, "--actual");
-  const expected = readJsonFile(SERVER_CONTRACT_PATH, "Packaged MCP tool contract");
-  const fields = [
-    "schema_version",
-    "mcp_server_version",
-    "tool_count",
-    "tool_contract_sha256",
-  ];
-  const mismatches = fields.filter(
-    (field) => stableStringify(expected[field]) !== stableStringify(actual[field]),
-  );
-  return { compatible: mismatches.length === 0, mismatches, expected, actual };
 }
 
 function writeJsonAtomic(filePath, value) {
@@ -1079,9 +1063,6 @@ function editableDatasetSchema(context, dataset) {
   if (schema["x-gds-change-set-eligible"] !== true) {
     fail(`${dataset.name} is not Change Set eligible.`);
   }
-  if (optionsArea(context) === "model" && dataset.name === "model_scope") {
-    fail(`${dataset.name} mutation is not exposed by GDS Workbench.`);
-  }
   return schema;
 }
 
@@ -1285,94 +1266,6 @@ function recordActive(record) {
   return null;
 }
 
-function approveReviewedChangeSet(options) {
-  if (options.area !== "model") fail("--area must be model.");
-  if (options.reviewed !== "true") {
-    fail("--reviewed true requires explicit user confirmation of the local review.");
-  }
-  const context = changeSetContext(options);
-  assertExpectedDigest(options, context);
-  const task = context.state.tasks.find((item) => item[0] === context.state.current);
-  if (!task || task[3] !== "review") {
-    fail("Current Model task must be in review before reviewed records can be approved.");
-  }
-  const pending = readPending(context);
-  const datasetCounts = [];
-  const fieldCounts = new Map();
-  const rootStatusFields = new Set([
-    "analysis_result_status",
-    "modeling_assertion_record_status",
-    "conceptual_object_status",
-    "conceptual_relationship_status",
-    "logical_submodel_status",
-    "logical_entity_status",
-    "logical_attribute_status",
-    "logical_relationship_status",
-    "dimensional_submodel_status",
-    "dimensional_entity_status",
-    "dimensional_attribute_status",
-    "dimensional_relationship_status",
-    "mapping_source_system_dependency_status",
-    "object_mapping_status",
-    "attribute_mapping_status",
-    "generated_code_status",
-  ]);
-  const nestedStatusFields = new Set(["status", "support_status", "membership_status"]);
-
-  function promote(record, fields) {
-    for (const field of fields) {
-      if (record[field] === "needs_review") {
-        record[field] = "active";
-        fieldCounts.set(field, (fieldCounts.get(field) ?? 0) + 1);
-      }
-    }
-  }
-
-  function approve(record) {
-    promote(record, rootStatusFields);
-    for (const container of ["supports", "sources", "submodels"]) {
-      for (const child of Array.isArray(record[container]) ? record[container] : []) {
-        if (child && !Array.isArray(child) && typeof child === "object") {
-          promote(child, nestedStatusFields);
-        }
-      }
-    }
-  }
-
-  for (const datasetName of Object.keys(pending).sort()) {
-    const records = pending[datasetName];
-    const before = [...fieldCounts.values()].reduce((total, count) => total + count, 0);
-    for (const record of records) approve(record);
-    const after = [...fieldCounts.values()].reduce((total, count) => total + count, 0);
-    if (after > before) {
-      const dataset = context.byName.get(datasetName);
-      const schema = editableDatasetSchema(context, dataset);
-      for (const record of records) {
-        const issues = schemaIssues(record, schema);
-        if (issues.length) fail(`${datasetName} reviewed record fails its schema: ${issues[0]}`);
-      }
-      datasetCounts.push([datasetName, after - before]);
-    }
-  }
-  const promoted = datasetCounts.reduce((total, item) => total + item[1], 0);
-  if (promoted > 0) {
-    for (const [datasetName] of datasetCounts) {
-      writePendingDataset(context, context.byName.get(datasetName), pending[datasetName]);
-    }
-    markLocalEditForReview(context);
-  }
-  return {
-    promoted,
-    datasets: datasetCounts,
-    fields: [...fieldCounts.entries()].sort(([left], [right]) => left.localeCompare(right)),
-    digest: workspaceDigest(context),
-    task_state: "review",
-    approval_applied: promoted > 0,
-    human_review_required: false,
-    next_action: "validate_then_accept_promoted_digest",
-  };
-}
-
 function reviewChangeSet(options) {
   const context = changeSetContext(options);
   const pending = readPending(context);
@@ -1453,12 +1346,16 @@ function validateChangeSet(options) {
     try {
       const snapshot = locateSnapshot({ session: context.session, area: "metadata" });
       metadata = new Map();
-      for (const zone of ["source", "bronze", "silver", "gold"]) {
-        const name = `${zone}_attribute`;
-        const dataset = snapshot.byName.get(name);
-        if (dataset) {
-          metadata.set(name, { baseline: readSnapshotRecords(snapshot, dataset) });
-        }
+      for (const dataset of snapshot.datasets) {
+        const schema = datasetSchema(snapshot, dataset);
+        metadata.set(dataset.name, {
+          definition: {
+            ...dataset,
+            record_type: schema["x-gds-record-type"] ?? dataset.record_type ?? dataset.name,
+          },
+          schema,
+          baseline: readSnapshotRecords(snapshot, dataset),
+        });
       }
     } catch (error) {
       if (error.message !== "Expected exactly one unzipped metadata Snapshot; found 0.") {
@@ -1863,115 +1760,24 @@ function initializeSession(options) {
 }
 
 const READINESS_TARGETS = {
+  "metadata-authoring": ["metadata"],
   "logical-build": ["metadata", "model"],
   "silver-registration": ["metadata", "model"],
+  "logical-binding": ["metadata", "model"],
   "logical-mapping": ["metadata", "model"],
   "logical-code": ["model"],
   "dimensional-build": ["metadata", "model"],
   "gold-registration": ["metadata", "model"],
+  "dimensional-binding": ["metadata", "model"],
   "dimensional-mapping": ["metadata", "model"],
   "dimensional-code": ["model"],
-  qa: ["model"],
+  validation: ["model"],
+  "process-registration": ["metadata", "model"],
 };
-
-const PHYSICAL_OBJECT_FIELDS = [
-  "tenant_code",
-  "system_code",
-  "connection_code",
-  "object_schema",
-  "object_name",
-];
-
-const READINESS_STATUS_FIELDS = {
-  logical_entity: "logical_entity_status",
-  logical_attribute: "logical_attribute_status",
-  dimensional_entity: "dimensional_entity_status",
-  dimensional_attribute: "dimensional_attribute_status",
-  mapping_dependency: "mapping_source_system_dependency_status",
-  mapping_object: "object_mapping_status",
-  mapping_attribute: "attribute_mapping_status",
-  generated_code: "generated_code_status",
-};
-
-const MAPPING_TARGET_ENTITY_TYPES = {
-  "logical-mapping": "logical_entity",
-  "dimensional-mapping": "dimensional_entity",
-};
-
-const MAPPING_PROOF_FIELDS = [
-  "contract",
-  "model_id",
-  "model_revision",
-  "modeled_entity_type",
-  "target_object_id",
-  "source_system_id",
-  "profile_schema_digest",
-  "context_digest",
-  "candidate_digest",
-  "change_count",
-  "record_count",
-];
-
-const GENERATOR_TARGET_ENTITY_TYPES = {
-  "logical-code": "logical_entity",
-  "dimensional-code": "dimensional_entity",
-};
-
-const GENERATOR_PROOF_FIELDS = [
-  "contract",
-  "model_id",
-  "model_revision",
-  "modeled_entity_type",
-  "target_object_id",
-  "source_system_id",
-  "profile_schema_digest",
-  "mapping_context_digest",
-  "document_digest",
-];
-
-function exactObjectFields(value, fields) {
-  return (
-    value &&
-    !Array.isArray(value) &&
-    typeof value === "object" &&
-    stableStringify(Object.keys(value).sort()) === stableStringify([...fields].sort())
-  );
-}
-
-function proofUnits(options) {
-  if (options["proof-units"] === undefined) return [];
-  let units;
-  try {
-    units = JSON.parse(options["proof-units"]);
-  } catch {
-    fail("--proof-units must be a JSON array of exact target/source pairs.");
-  }
-  const fields = ["target_object_id", "source_system_id"];
-  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
-  if (
-    !Array.isArray(units) ||
-    units.length < 1 ||
-    units.some(
-      (unit) =>
-        !exactObjectFields(unit, fields) ||
-        !positiveId(unit.target_object_id) ||
-        !positiveId(unit.source_system_id),
-    )
-  ) {
-    fail("--proof-units must be a nonempty JSON array of exact target/source pairs.");
-  }
-  const keys = units.map((unit) =>
-    stableStringify([unit.target_object_id, unit.source_system_id]),
-  );
-  if (new Set(keys).size !== keys.length) {
-    fail("--proof-units must contain unique exact target/source pairs.");
-  }
-  return units;
-}
 
 function selectedSystemCodes(options) {
   if (options["system-codes"] === undefined) {
-    fail("--system-codes is required for QA readiness.");
+    fail("--system-codes is required for Validation readiness.");
   }
   let values;
   try {
@@ -2001,291 +1807,6 @@ function selectedSystemCodes(options) {
   return codes;
 }
 
-function validateMappingMaterializationProof(value, target) {
-  const entityType = MAPPING_TARGET_ENTITY_TYPES[target];
-  if (!entityType) fail("--target must be logical-mapping or dimensional-mapping.");
-  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
-  const digest = (item) => typeof item === "string" && /^[0-9a-f]{64}$/.test(item);
-  if (
-    !exactObjectFields(value, MAPPING_PROOF_FIELDS) ||
-    value.contract !== "mapping-authoring@1.0" ||
-    value.modeled_entity_type !== entityType ||
-    !positiveId(value.model_id) ||
-    !positiveId(value.model_revision) ||
-    !positiveId(value.target_object_id) ||
-    !positiveId(value.source_system_id) ||
-    !digest(value.profile_schema_digest) ||
-    !digest(value.context_digest) ||
-    !digest(value.candidate_digest) ||
-    !Number.isSafeInteger(value.change_count) ||
-    value.change_count < 0 ||
-    value.change_count > 2 ||
-    !Number.isSafeInteger(value.record_count) ||
-    value.record_count < 0 ||
-    value.record_count > 10000
-  ) {
-    fail("--proof must be an exact Mapping materialization proof for the selected target.");
-  }
-  return value;
-}
-
-function mappingProofPath(session) {
-  return path.join(session, "tasks", ".mapping-proofs.json");
-}
-
-function readMappingProofs(session) {
-  const filePath = mappingProofPath(session);
-  if (!fs.existsSync(filePath)) return [];
-  const records = readJsonFile(filePath, "Mapping server proofs");
-  if (!Array.isArray(records)) {
-    fail("Mapping server proofs have an invalid shape.");
-  }
-  for (const record of records) {
-    const target = record?.target;
-    const proof = record?.proof;
-    if (
-      !exactObjectFields(record, ["target", "model_snapshot_id", "proof"]) ||
-      typeof record.model_snapshot_id !== "string" ||
-      !record.model_snapshot_id ||
-      !MAPPING_TARGET_ENTITY_TYPES[target]
-    ) {
-      fail("Mapping server proofs have an invalid shape.");
-    }
-    validateMappingMaterializationProof(proof, target);
-  }
-  return records;
-}
-
-function bindMappingProof(options) {
-  const session = requireSessionPath(options.session);
-  const target = options.target;
-  const proof = validateMappingMaterializationProof(
-    parseObjectOption(options.proof, "--proof"),
-    target,
-  );
-  const snapshot = locateSnapshot({ session, area: "model" });
-  if (
-    proof.model_id !== snapshot.manifest.model_id ||
-    proof.model_revision !== snapshot.manifest.model_revision
-  ) {
-    fail("Mapping materialization proof does not match the current Model Snapshot.");
-  }
-  const snapshotId = snapshot.manifest.snapshot_id;
-  if (typeof snapshotId !== "string" || !snapshotId || snapshotId.length > 255) {
-    fail("Model Snapshot ID is invalid.");
-  }
-  const records = readMappingProofs(session).filter(
-    (record) =>
-      record.target !== target ||
-      record.proof.target_object_id !== proof.target_object_id ||
-      record.proof.source_system_id !== proof.source_system_id,
-  );
-  records.push({ target, model_snapshot_id: snapshotId, proof });
-  records.sort((left, right) =>
-    stableStringify([
-      left.target,
-      left.proof.target_object_id,
-      left.proof.source_system_id,
-    ]).localeCompare(
-      stableStringify([
-        right.target,
-        right.proof.target_object_id,
-        right.proof.source_system_id,
-      ]),
-    ),
-  );
-  writeJsonAtomic(mappingProofPath(session), records);
-  return {
-    target,
-    bound: true,
-    model_snapshot_id: snapshotId,
-    model_revision: proof.model_revision,
-    target_object_id: proof.target_object_id,
-    source_system_id: proof.source_system_id,
-    candidate_digest: proof.candidate_digest,
-  };
-}
-
-function hasCurrentMappingProof(session, snapshot, target, units) {
-  if (units.length === 0) return false;
-  const current = new Set(
-    readMappingProofs(session)
-      .filter(
-        (record) =>
-          record.target === target &&
-          record.model_snapshot_id === snapshot.manifest.snapshot_id &&
-          record.proof.model_id === snapshot.manifest.model_id &&
-          record.proof.model_revision === snapshot.manifest.model_revision,
-      )
-      .map((record) =>
-        stableStringify([record.proof.target_object_id, record.proof.source_system_id]),
-      ),
-  );
-  return units.every((unit) =>
-    current.has(stableStringify([unit.target_object_id, unit.source_system_id])),
-  );
-}
-
-function validateGeneratorDocumentProof(value, target) {
-  const entityType = GENERATOR_TARGET_ENTITY_TYPES[target];
-  if (!entityType) fail("--target must be logical-code or dimensional-code.");
-  const positiveId = (item) => Number.isSafeInteger(item) && item > 0;
-  const digest = (item) => typeof item === "string" && /^[0-9a-f]{64}$/.test(item);
-  if (
-    !exactObjectFields(value, GENERATOR_PROOF_FIELDS) ||
-    value.contract !== "generator-document@1.0" ||
-    value.modeled_entity_type !== entityType ||
-    !positiveId(value.model_id) ||
-    !positiveId(value.model_revision) ||
-    !positiveId(value.target_object_id) ||
-    !positiveId(value.source_system_id) ||
-    !digest(value.profile_schema_digest) ||
-    !digest(value.mapping_context_digest) ||
-    !digest(value.document_digest)
-  ) {
-    fail("--proof must be an exact Generator document proof for the selected target.");
-  }
-  return value;
-}
-
-function generatorProofPath(session) {
-  return path.join(session, "tasks", ".generator-proofs.json");
-}
-
-function readGeneratorProofs(session) {
-  const filePath = generatorProofPath(session);
-  if (!fs.existsSync(filePath)) return [];
-  const records = readJsonFile(filePath, "Generator server proofs");
-  if (!Array.isArray(records)) {
-    fail("Generator server proofs have an invalid shape.");
-  }
-  for (const record of records) {
-    const target = record?.target;
-    const proof = record?.proof;
-    if (
-      !exactObjectFields(record, ["target", "model_snapshot_id", "proof"]) ||
-      typeof record.model_snapshot_id !== "string" ||
-      !record.model_snapshot_id ||
-      !GENERATOR_TARGET_ENTITY_TYPES[target]
-    ) {
-      fail("Generator server proofs have an invalid shape.");
-    }
-    validateGeneratorDocumentProof(proof, target);
-  }
-  return records;
-}
-
-function bindGeneratorProof(options) {
-  const session = requireSessionPath(options.session);
-  const target = options.target;
-  const proof = validateGeneratorDocumentProof(
-    parseObjectOption(options.proof, "--proof"),
-    target,
-  );
-  const snapshot = locateSnapshot({ session, area: "model" });
-  if (
-    proof.model_id !== snapshot.manifest.model_id ||
-    proof.model_revision !== snapshot.manifest.model_revision
-  ) {
-    fail("Generator document proof does not match the current Model Snapshot.");
-  }
-  const snapshotId = snapshot.manifest.snapshot_id;
-  if (typeof snapshotId !== "string" || !snapshotId || snapshotId.length > 255) {
-    fail("Model Snapshot ID is invalid.");
-  }
-  const records = readGeneratorProofs(session).filter(
-    (record) =>
-      record.target !== target ||
-      record.proof.target_object_id !== proof.target_object_id ||
-      record.proof.source_system_id !== proof.source_system_id,
-  );
-  records.push({ target, model_snapshot_id: snapshotId, proof });
-  records.sort((left, right) =>
-    stableStringify([
-      left.target,
-      left.proof.target_object_id,
-      left.proof.source_system_id,
-    ]).localeCompare(
-      stableStringify([
-        right.target,
-        right.proof.target_object_id,
-        right.proof.source_system_id,
-      ]),
-    ),
-  );
-  writeJsonAtomic(generatorProofPath(session), records);
-  return {
-    target,
-    bound: true,
-    model_snapshot_id: snapshotId,
-    model_revision: proof.model_revision,
-    target_object_id: proof.target_object_id,
-    source_system_id: proof.source_system_id,
-    document_digest: proof.document_digest,
-  };
-}
-
-function hasCurrentGeneratorProof(session, snapshot, target, units) {
-  if (units.length === 0) return false;
-  const current = new Set(
-    readGeneratorProofs(session)
-      .filter(
-        (record) =>
-          record.target === target &&
-          record.model_snapshot_id === snapshot.manifest.snapshot_id &&
-          record.proof.model_id === snapshot.manifest.model_id &&
-          record.proof.model_revision === snapshot.manifest.model_revision,
-      )
-      .map((record) =>
-        stableStringify([record.proof.target_object_id, record.proof.source_system_id]),
-      ),
-  );
-  return units.every((unit) =>
-    current.has(stableStringify([unit.target_object_id, unit.source_system_id])),
-  );
-}
-
-function readinessValue(value) {
-  return typeof value === "string"
-    ? unicode.casefold(value.replace(/^ +| +$/g, ""))
-    : value;
-}
-
-function readinessObjectKey(record) {
-  return stableStringify(PHYSICAL_OBJECT_FIELDS.map((field) => readinessValue(record[field])));
-}
-
-function readinessMappingKey(record) {
-  return stableStringify([
-    readinessObjectKey(record),
-    readinessValue(record.source_system_code),
-    record.modeled_entity_type,
-    readinessValue(record.modeled_entity_name),
-  ]);
-}
-
-function readinessAttributeKey(record) {
-  return stableStringify([
-    ...PHYSICAL_OBJECT_FIELDS.map((field) => readinessValue(record[field])),
-    readinessValue(record.attribute_name),
-  ]);
-}
-
-function readinessActive(datasetName, record) {
-  if (typeof record?.is_active === "boolean") return record.is_active;
-  const field = READINESS_STATUS_FIELDS[datasetName];
-  return field ? record?.[field] === "active" : true;
-}
-
-function readinessRows(snapshot, datasetName) {
-  const dataset = snapshot?.byName.get(datasetName);
-  return dataset
-    ? readSnapshotRecords(snapshot, dataset).filter((record) =>
-        readinessActive(datasetName, record),
-      )
-    : [];
-}
-
 function readinessIssueCollector() {
   const counts = new Map();
   const examples = [];
@@ -2311,329 +1832,10 @@ function readinessIssueCollector() {
   };
 }
 
-function activeMetadataObjects(metadata, zone) {
-  return readinessRows(metadata, `${zone}_object`);
-}
-
-function activeMetadataAttributes(metadata, zone) {
-  return readinessRows(metadata, `${zone}_attribute`);
-}
-
-function attributesByObject(records) {
-  const grouped = new Map();
-  for (const record of records) {
-    const key = readinessObjectKey(record);
-    grouped.set(key, (grouped.get(key) ?? 0) + 1);
-  }
-  return grouped;
-}
-
-function authoredMappingObject(record) {
-  return [
-    "artifact_type",
-    "artifact_generation_instructions",
-    "mapping_profile_key",
-    "mapping_profile_version",
-    "mapping_package_document",
-    "object_mapping_transformation_document",
-  ].every((field) => record[field] !== null && record[field] !== undefined);
-}
-
-function modeledLayerReadiness(model, layer, issues) {
-  const entityDataset = `${layer}_entity`;
-  const attributeDataset = `${layer}_attribute`;
-  const entityName = `${layer}_entity_name`;
-  const attributeEntityName = `${layer}_entity_name`;
-  const entities = readinessRows(model, entityDataset);
-  const attributes = readinessRows(model, attributeDataset);
-  const countsByEntity = new Map();
-  for (const record of attributes) {
-    const key = readinessValue(record[attributeEntityName]);
-    countsByEntity.set(key, (countsByEntity.get(key) ?? 0) + 1);
-  }
-  if (entities.length === 0) issues.add("upstream_missing");
-  for (const entity of entities) {
-    if (!countsByEntity.has(readinessValue(entity[entityName]))) {
-      issues.add("attributes_missing", [entity[entityName]]);
-    }
-  }
-  return { entities, attributes };
-}
-
-function registrationReadiness(metadata, model, layer, zone, issues) {
-  const modeled = modeledLayerReadiness(model, layer, issues);
-
-  const patterns = new Map();
-  for (const record of activeMetadataObjects(metadata, zone)) {
-    const pattern = [
-      record.tenant_code,
-      record.system_code,
-      record.connection_code,
-      record.object_schema,
-      record.object_type_code,
-    ];
-    patterns.set(stableStringify(pattern.map(readinessValue)), pattern);
-  }
-  if (patterns.size === 0) issues.add("destination_pattern_missing");
-  if (patterns.size > 1) {
-    for (const pattern of patterns.values()) issues.add("destination_pattern_ambiguous", pattern);
-  }
-  return {
-    entities: modeled.entities.length,
-    attributes: modeled.attributes.length,
-    destination_patterns: patterns.size,
-  };
-}
-
-function completeMappingLayer(model, layer, issues) {
-  const dependencies = readinessRows(model, "mapping_dependency").filter(
-    (record) => record.modeled_entity_type === `${layer}_entity`,
-  );
-  const objects = readinessRows(model, "mapping_object").filter(
-    (record) => record.modeled_entity_type === `${layer}_entity`,
-  );
-  const attributes = readinessRows(model, "mapping_attribute").filter(
-    (record) => record.modeled_entity_type === `${layer}_entity`,
-  );
-  if (dependencies.length === 0 || objects.length === 0 || attributes.length === 0) {
-    issues.add("applied_mapping_missing");
-  }
-  const unauthoredObjects = objects.filter((record) => !authoredMappingObject(record));
-  const unauthoredAttributes = attributes.filter(
-    (record) => record.attribute_mapping_transformation_document == null,
-  );
-  if (unauthoredObjects.length + unauthoredAttributes.length) {
-    issues.add("mapping_unauthored", null, unauthoredObjects.length + unauthoredAttributes.length);
-  }
-  return { dependencies, objects, attributes };
-}
-
-function logicalBuildReadiness(metadata, model, issues) {
-  const scope = readinessRows(model, "model_scope").filter(
-    (record) => record.is_bronze_source_eligible === true,
-  );
-  const objects = [];
-  const attributes = [];
-  for (const zone of ["source", "bronze", "silver", "gold"]) {
-    objects.push(...activeMetadataObjects(metadata, zone));
-    attributes.push(...activeMetadataAttributes(metadata, zone));
-  }
-  const objectKeys = new Set(objects.map(readinessObjectKey));
-  const scopeKeys = new Set(scope.map(readinessObjectKey));
-  const attributeCounts = attributesByObject(attributes);
-  const scopedAttributeKeys = new Set(
-    attributes
-      .filter((record) => scopeKeys.has(readinessObjectKey(record)))
-      .map(readinessAttributeKey),
-  );
-  const profileKeys = new Set(
-    readinessRows(model, "profiling_profile")
-      .filter((record) => scopeKeys.has(readinessObjectKey(record)))
-      .map(readinessAttributeKey),
-  );
-  let profiledAttributes = 0;
-  for (const key of scopedAttributeKeys) {
-    if (profileKeys.has(key)) profiledAttributes += 1;
-  }
-  if (scope.length === 0) issues.add("active_scope_missing");
-  for (const record of scope) {
-    const key = readinessObjectKey(record);
-    const example = PHYSICAL_OBJECT_FIELDS.map((field) => record[field]);
-    if (!objectKeys.has(key)) issues.add("catalog_object_missing", example);
-    else if (!attributeCounts.has(key)) issues.add("attributes_missing", example);
-  }
-  return {
-    scoped_objects: scope.length,
-    scoped_attributes: scopedAttributeKeys.size,
-    profiled_attributes: profiledAttributes,
-    unprofiled_attributes: scopedAttributeKeys.size - profiledAttributes,
-    catalog_objects: objects.length,
-    attributes: attributes.length,
-  };
-}
-
-function mappingReadiness(metadata, model, layer, zone, issues, contractAvailable) {
-  const modeled = modeledLayerReadiness(model, layer, issues);
-  const targets = activeMetadataObjects(metadata, zone);
-  const targetAttributes = activeMetadataAttributes(metadata, zone);
-  const targetAttributeCounts = attributesByObject(targetAttributes);
-  const targetEligibilityField =
-    layer === "logical"
-      ? "is_logical_mapping_target_eligible"
-      : "is_dimensional_mapping_target_eligible";
-  const scope = new Set(
-    readinessRows(model, "model_scope")
-      .filter((record) => record[targetEligibilityField] === true)
-      .map(readinessObjectKey),
-  );
-  const existing = readinessRows(model, "mapping_object").filter(
-    (record) => record.modeled_entity_type === `${layer}_entity`,
-  );
-  const mappedTargets = new Set(existing.map(readinessObjectKey));
-  if (targets.length === 0) issues.add("registered_targets_missing");
-  for (const target of targets) {
-    const key = readinessObjectKey(target);
-    const example = PHYSICAL_OBJECT_FIELDS.map((field) => target[field]);
-    if (!scope.has(key)) issues.add("scope_missing", example);
-    if (!targetAttributeCounts.has(key)) issues.add("attributes_missing", example);
-    if (!mappedTargets.has(key) && modeled.entities.length !== 1) {
-      issues.add("target_association_required", example);
-    }
-  }
-
-  const executableEligibilityField =
-    layer === "logical" ? "is_bronze_source_eligible" : "is_dimensional_source_eligible";
-  const executableObjects = new Set(
-    readinessRows(model, "model_scope")
-      .filter((record) => record[executableEligibilityField] === true)
-      .map(readinessObjectKey),
-  );
-  for (const entity of modeled.entities) {
-    const sources = Array.isArray(entity.sources) ? entity.sources : [];
-    const executable = sources.some(
-      (source) =>
-        source?.support_source_type === "object" &&
-        source.status === "active" &&
-        executableObjects.has(readinessObjectKey(source.source_object ?? {})),
-    );
-    if (!executable) {
-      const name = entity[`${layer}_entity_name`];
-      issues.add("lineage_missing", [name]);
-    }
-  }
-  if (!contractAvailable) issues.add("mapping_contract_unavailable");
-  return {
-    targets: targets.length,
-    attributes: targetAttributes.length,
-    modeled_entities: modeled.entities.length,
-    modeled_attributes: modeled.attributes.length,
-  };
-}
-
-function codeReadiness(session, model, layer, target, issues, units) {
-  const mapping = completeMappingLayer(model, layer, issues);
-  if (!hasCurrentGeneratorProof(session, model, target, units)) {
-    issues.add("generator_contract_unavailable");
-  }
-  return {
-    packages: mapping.objects.length,
-    attributes: mapping.attributes.length,
-    dependencies: mapping.dependencies.length,
-  };
-}
-
-function qaReadiness(model, issues, systemCodes) {
-  const selected = new Map(systemCodes.map((code) => [readinessValue(code), code]));
-  const contexts = new Map();
-  for (const record of readinessRows(model, "qa_authoring_context")) {
-    const normalized = readinessValue(record.system_code);
-    if (!selected.has(normalized)) continue;
-    const matches = contexts.get(normalized) ?? [];
-    matches.push(record);
-    contexts.set(normalized, matches);
-  }
-  let trustedMappingTargets = 0;
-  let trustedCurrentCode = 0;
-  for (const [normalized, code] of selected) {
-    const matches = contexts.get(normalized) ?? [];
-    if (matches.length === 0) {
-      issues.add("qa_authoring_context_missing", [code]);
-      continue;
-    }
-    if (matches.length !== 1) {
-      issues.add("qa_authoring_context_ambiguous", [code]);
-      continue;
-    }
-    trustedMappingTargets += matches[0].mapping_target_count;
-    trustedCurrentCode += matches[0].current_code_references.length;
-  }
-  const dependencies = new Set(
-    readinessRows(model, "mapping_dependency").map((record) =>
-      stableStringify([
-        record.modeled_entity_type,
-        readinessValue(record.source_system_code),
-      ]),
-    ),
-  );
-  const attributes = new Set(
-    readinessRows(model, "mapping_attribute")
-      .filter((record) => record.attribute_mapping_transformation_document != null)
-      .map(readinessMappingKey),
-  );
-  const mappings = readinessRows(model, "mapping_object").filter((record) => {
-    const source = readinessValue(record.source_system_code);
-    const dependency = stableStringify([record.modeled_entity_type, source]);
-    return (
-      selected.has(source) &&
-      authoredMappingObject(record) &&
-      dependencies.has(dependency) &&
-      attributes.has(readinessMappingKey(record))
-    );
-  });
-  const mappedSystems = new Set(mappings.map((record) => readinessValue(record.source_system_code)));
-  for (const [normalized, code] of selected) {
-    if (!mappedSystems.has(normalized)) issues.add("qa_mapping_missing", [code]);
-  }
-  const groups = readinessRows(model, "validation_group").filter((record) =>
-    selected.has(readinessValue(record.system_code)),
-  );
-  const checks = readinessRows(model, "validation_check").filter((record) =>
-    selected.has(readinessValue(record.system_code)),
-  );
-  return {
-    selected_systems: selected.size,
-    mapped_systems: mappedSystems.size,
-    mapping_targets: trustedMappingTargets,
-    code_artifacts: trustedCurrentCode,
-    validation_groups: groups.length,
-    validation_checks: checks.length,
-  };
-}
-
 function readinessPrompt(issues) {
-  const prompts = [];
-  if (issues.has("applied_mapping_missing")) {
-    prompts.push(
-      "Complete and Apply the matching Logical or Dimensional Mapping, download a fresh Model Snapshot, then resume code generation.",
-    );
-  }
-  if (issues.has("scope_missing")) {
-    prompts.push(
-      "Ask the authorized scope owner to add and apply this target to Model Scope, download a fresh Model Snapshot, replace model/, then resume this task.",
-    );
-  }
-  if (issues.has("mapping_contract_unavailable")) {
-    prompts.push(
-      "Call the MCP Mapping authoring context and candidate materializer for each exact target/source pair, bind each returned server proof with mapping-proof, then rerun readiness.",
-    );
-  }
-  if (issues.has("generator_contract_unavailable")) {
-    prompts.push(
-      "Call get_model_code_generation_document for each exact target/source pair, bind each returned server proof with generator-proof, then rerun readiness.",
-    );
-  }
-  if (issues.has("qa_mapping_missing")) {
-    prompts.push(
-      "Complete and Apply active Mapping for every selected System, download a fresh Model Snapshot, then resume QA.",
-    );
-  }
-  if (
-    issues.has("qa_authoring_context_missing") ||
-    issues.has("qa_authoring_context_ambiguous")
-  ) {
-    prompts.push(
-      "Download a fresh Model Snapshot containing exactly one trusted QA authoring context for every selected System, then resume QA.",
-    );
-  }
-  if (issues.has("destination_pattern_missing") || issues.has("destination_pattern_ambiguous")) {
-    prompts.push(
-      "Choose one exact destination System, Connection, schema, and Object Type; never infer it from a source System.",
-    );
-  }
-  if (issues.has("snapshot_missing") || issues.has("snapshot_stale")) {
-    prompts.push("Download and unzip exactly one fresh required Snapshot, replace its area, then resume.");
-  }
-  return prompts.join(" ");
+  return issues.has("snapshot_missing") || issues.has("snapshot_stale")
+    ? "Download and unzip one fresh required Snapshot, replace its area, then resume."
+    : "";
 }
 
 function workflowReadiness(options) {
@@ -2641,9 +1843,9 @@ function workflowReadiness(options) {
   if (!requiredAreas) {
     fail(`--target must be one of: ${Object.keys(READINESS_TARGETS).join(", ")}.`);
   }
-  const systems = options.target === "qa" ? selectedSystemCodes(options) : [];
-  if (options.target !== "qa" && options["system-codes"] !== undefined) {
-    fail("--system-codes is available only for QA readiness.");
+  const systems = options.target === "validation" ? selectedSystemCodes(options) : [];
+  if (options.target !== "validation" && options["system-codes"] !== undefined) {
+    fail("--system-codes is available only for Validation readiness.");
   }
   const session = requireSessionPath(options.session);
   const state = readSessionState(session);
@@ -2672,83 +1874,16 @@ function workflowReadiness(options) {
     }
   }
 
-  let counts = {};
+  const counts = {};
   if (!issues.has("snapshot_missing") && !issues.has("snapshot_stale")) {
-    const metadata = snapshots.metadata;
-    const model = snapshots.model;
-    if (options.target === "logical-build") {
-      counts = logicalBuildReadiness(metadata, model, issues);
-    } else if (options.target === "silver-registration") {
-      counts = registrationReadiness(metadata, model, "logical", "silver", issues);
-    } else if (options.target === "logical-mapping") {
-      const units = proofUnits(options);
-      counts = mappingReadiness(
-        metadata,
-        model,
-        "logical",
-        "silver",
-        issues,
-        hasCurrentMappingProof(session, model, options.target, units),
-      );
-    } else if (options.target === "logical-code") {
-      counts = codeReadiness(
-        session,
-        model,
-        "logical",
-        options.target,
-        issues,
-        proofUnits(options),
-      );
-    } else if (options.target === "dimensional-build") {
-      const mapping = completeMappingLayer(model, "logical", issues);
-      const silverKeys = new Set(activeMetadataObjects(metadata, "silver").map(readinessObjectKey));
-      const eligibleSourceKeys = new Set(
-        readinessRows(model, "model_scope")
-          .filter(
-            (record) =>
-              record.is_active !== false && record.is_dimensional_source_eligible === true,
-          )
-          .map(readinessObjectKey),
-      );
-      for (const record of mapping.objects) {
-        const key = readinessObjectKey(record);
-        if (!silverKeys.has(key)) {
-          issues.add("silver_target_missing", PHYSICAL_OBJECT_FIELDS.map((field) => record[field]));
-        }
-        if (!eligibleSourceKeys.has(key)) {
-          issues.add("scope_missing", PHYSICAL_OBJECT_FIELDS.map((field) => record[field]));
-        }
-      }
-      counts = {
-        packages: mapping.objects.length,
-        attributes: mapping.attributes.length,
-        silver_targets: silverKeys.size,
+    for (const area of requiredAreas) {
+      const definitions = [...snapshots[area].byName.values()];
+      counts[area] = {
+        datasets: definitions.length,
+        records: definitions.reduce((total, item) => total + (item.row_count ?? 0), 0),
       };
-    } else if (options.target === "gold-registration") {
-      counts = registrationReadiness(metadata, model, "dimensional", "gold", issues);
-    } else if (options.target === "dimensional-mapping") {
-      const units = proofUnits(options);
-      completeMappingLayer(model, "logical", issues);
-      counts = mappingReadiness(
-        metadata,
-        model,
-        "dimensional",
-        "gold",
-        issues,
-        hasCurrentMappingProof(session, model, options.target, units),
-      );
-    } else if (options.target === "dimensional-code") {
-      counts = codeReadiness(
-        session,
-        model,
-        "dimensional",
-        options.target,
-        issues,
-        proofUnits(options),
-      );
-    } else {
-      counts = qaReadiness(model, issues, systems);
     }
+    if (systems.length) counts.selected_systems = systems.length;
   }
   const issueOutput = issues.output();
   const prompt = readinessPrompt(issues);
@@ -2842,13 +1977,10 @@ async function main() {
   const { command, options } = parseArguments(process.argv.slice(2));
   let output;
   if (command === "command-contract") output = commandContract(options);
-  else if (command === "contract-check") output = serverContractCheck(options);
   else if (command === "session-init") output = initializeSession(options);
   else if (command === "status") output = sessionStatus(options);
   else if (command === "sql-policy") output = setSqlPolicy(options);
   else if (command === "readiness") output = workflowReadiness(options);
-  else if (command === "mapping-proof") output = bindMappingProof(options);
-  else if (command === "generator-proof") output = bindGeneratorProof(options);
   else if (command === "inspect") output = inspectSnapshot(options);
   else if (command === "describe") output = describeDataset(options);
   else if (command === "select") output = await selectRecords(options);
@@ -2863,7 +1995,6 @@ async function main() {
   else if (command === "upsert-batch") output = upsertBatch(options);
   else if (command === "discard") output = discardRecord(options);
   else if (command === "review") output = reviewChangeSet(options);
-  else if (command === "approve-reviewed") output = approveReviewedChangeSet(options);
   else if (command === "validate") output = validateChangeSet(options);
   else if (command === "accept") output = acceptChangeSet(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);

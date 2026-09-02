@@ -29,7 +29,6 @@ from gds_etl_workbench.domain.metadata_records import (
     ProjectRecord,
     SystemRecord,
     SystemTypeRecord,
-    TenantMetadataDiscoveryScopeRecord,
     TenantRecord,
     ZoneRecord,
 )
@@ -67,7 +66,6 @@ type MetadataDataset = Literal[
     "tenant",
     "system",
     "connection",
-    "tenant_metadata_discovery_scope",
     "system_type",
     "connection_type",
     "object_type",
@@ -283,32 +281,6 @@ DATASETS = (
         ),
     ),
     _dataset(
-        "tenant_metadata_discovery_scope",
-        "Tenant Metadata Discovery Scopes",
-        "core.tenant_metadata_discovery_scope",
-        "tenant_metadata_discovery_scope",
-        SnapshotSection.FOUNDATIONAL,
-        False,
-        TenantMetadataDiscoveryScopeRecord,
-        (
-            "scope_tenant_code",
-            "connection_tenant_code",
-            "connection_system_code",
-            "connection_code",
-            "zone_code",
-            "object_schema",
-        ),
-        references=(
-            _reference(("scope_tenant_code",), "tenant", TENANT_KEY),
-            _reference(
-                ("connection_tenant_code", "connection_system_code", "connection_code"),
-                "connection",
-                CONNECTION_KEY,
-            ),
-            _reference(("zone_code",), "zone", ("zone_code",)),
-        ),
-    ),
-    _dataset(
         "system_type",
         "System Types",
         "reference.system_type",
@@ -409,11 +381,18 @@ DATASETS = (
                 OBJECT_KEY,
                 references=(
                     _reference(("tenant_code",), "tenant", TENANT_KEY),
+                    _reference(("source_tenant_code",), "tenant", TENANT_KEY),
                     _reference(("system_code",), "system", SYSTEM_KEY),
                     _reference(("object_type_code",), "object_type", ("object_type_code",)),
                     _reference(("zone_code",), "zone", ("zone_code",)),
                 ),
-                lookup_fields=("object_type_code", "zone_code", "is_locked", "is_active"),
+                lookup_fields=(
+                    "source_tenant_code",
+                    "object_type_code",
+                    "zone_code",
+                    "is_locked",
+                    "is_active",
+                ),
                 fixed_values=(("zone_code", zone_code),),
             ),
             _dataset(

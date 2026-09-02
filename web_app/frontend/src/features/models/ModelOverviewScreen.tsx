@@ -137,10 +137,10 @@ function ModelOverviewView({
                       {row.workflow === "scope" ? (
                         <Link
                           className="text-action"
-                          to="/tenants/$tenantId/models/$modelId/scope"
+                          to="/tenants/$tenantId/models/$modelId/input-scope"
                           params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
                         >
-                          Review Scope
+                          Review Input Scope
                         </Link>
                       ) : row.workflow === "profiling" ? (
                         <Link
@@ -193,7 +193,6 @@ function WorkflowCoverage({ row }: { row: WorkflowLedgerEntry }) {
       <strong>
         {row.result_count} {row.workflow === "scope" ? "Objects" : "results"}
       </strong>
-      {row.needs_review_count ? <small>{row.needs_review_count} need review</small> : null}
       {row.locked_count ? <small>{row.locked_count} locked</small> : null}
     </span>
   );
@@ -207,13 +206,12 @@ function WorkflowStateBadge({ state }: { state: WorkflowLedgerEntry["state"] }) 
     queued: "Queued",
     running: "Running",
     results_available: "Results available",
-    needs_review: "Needs review",
     completed_no_results: "Completed · no results",
     failed: "Failed",
   };
   const tone = state === "ready" || state === "results_available"
     ? "is-success"
-    : state === "needs_review" || state === "queued" || state === "running"
+    : state === "queued" || state === "running"
       ? "is-warning"
       : state === "failed"
         ? "is-danger"
@@ -227,7 +225,7 @@ function ledgerWorkflowLabel(workflow: WorkflowLedgerEntry["workflow"]): string 
 
 function qualityWarningLabel(warning: QualityWarningCode): string {
   const labels: Record<QualityWarningCode, string> = {
-    scope_empty: "Scope is empty",
+    scope_empty: "Model Input Scope is empty",
     profiling_results_unavailable: "Profiling results unavailable",
     conceptual_results_unavailable: "Conceptual results unavailable",
     logical_results_unavailable: "Logical results unavailable",

@@ -36,9 +36,9 @@ import {
   type ModelsApi,
 } from "./features/models/api";
 import {
-  createModelScopeApi,
-  type ModelScopeApi,
-} from "./features/model_scope/api";
+  createModelInputScopeApi,
+  type ModelInputScopeApi,
+} from "./features/model_input_scope/api";
 import {
   createTenantLockApi,
   type TenantLockApi,
@@ -52,7 +52,7 @@ import {
   createPromptsApi,
   type PromptsApi,
 } from "./features/prompts/api";
-import { createQAApi, type QATransport } from "./features/qa/api";
+import { createValidationApi, type ValidationTransport } from "./features/validation/api";
 import {
   createWorkflowsApi,
   type WorkflowsApi,
@@ -178,9 +178,10 @@ export type {
   MappingParentObjectReference,
   MappingPhysicalAttribute,
   MappingPhysicalObject,
-  MappingProfileProvenance,
   MappingSourceSystem,
   MappingStatus,
+  MappingTarget,
+  MappingTargetPage,
   OutputTemplatePage,
   OutputTemplateSummary,
   OutputTemplateTargetType,
@@ -222,13 +223,13 @@ export type {
   WorkflowLedgerState,
 } from "./features/models/api";
 export type {
-  ModelScopeDetail,
-  ModelScopeFilters,
-  ModelScopeObject,
-  ModelScopePage,
+  ModelInputScopeDetail,
+  ModelInputScopeFilters,
+  ModelInputScopeObject,
+  ModelInputScopePage,
   ObjectAttribute,
   ZoneCode,
-} from "./features/model_scope/api";
+} from "./features/model_input_scope/api";
 export type {
   SessionRecord,
   SystemRecord,
@@ -267,13 +268,13 @@ export type {
   UpdatePromptTemplateCommand,
 } from "./features/prompts/api";
 export type {
-  QAEligibleSystem,
-  QAEligibleSystemCollection,
-  QALedger,
-  QAValidationCheck,
-  QAValidationGroup,
-  QAValidationSeverity,
-} from "./features/qa/api";
+  ValidationEligibleSystem,
+  ValidationEligibleSystemCollection,
+  ValidationLedger,
+  ValidationValidationCheck,
+  ValidationValidationGroup,
+  ValidationValidationSeverity,
+} from "./features/validation/api";
 export type {
   AgentCapabilities,
   AgentRunSelection,
@@ -296,7 +297,7 @@ export interface WorkbenchApi
   extends TenantsApi,
   TenantLockApi,
   ModelsApi,
-  ModelScopeApi,
+  ModelInputScopeApi,
   MetadataApi,
   WorkflowsApi,
   ProfilingTransport,
@@ -308,7 +309,7 @@ export interface WorkbenchApi
   DimensionalTransport,
   MappingTransport,
   CodeGenerationTransport,
-  QATransport {}
+  ValidationTransport {}
 
 export function createApiClient(fetcher: typeof fetch = globalThis.fetch): WorkbenchApi {
   const request = createHttpRequest(fetcher);
@@ -317,7 +318,7 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
     ...createTenantsApi(request),
     ...createTenantLockApi(request),
     ...createModelsApi(request),
-    ...createModelScopeApi(request),
+    ...createModelInputScopeApi(request),
     ...createWorkflowsApi(request),
     ...createProfilingApi(request),
     ...createPromptsApi(request),
@@ -328,7 +329,7 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
     ...createDimensionalApi(request),
     ...createMappingApi(request),
     ...createCodeGenerationApi(request),
-    ...createQAApi(request),
+    ...createValidationApi(request),
     ...createMetadataApi(request),
   };
 }

@@ -64,7 +64,7 @@ _AUTHORING_WORKFLOWS = frozenset(
         "dimensional",
         "mapping",
         "code_generation",
-        "qa",
+        "validation",
     }
 )
 
@@ -262,7 +262,7 @@ class WorkflowChangeSetHandoff:
             )
         if run["workflow_execution_mode"] is None and expected_workflow not in {
             "code_generation",
-            "qa",
+            "validation",
         }:
             raise InvalidRequestError(
                 "A deterministic Workflow Run cannot author a Model Change Set."

@@ -81,9 +81,11 @@ class CodeGenerationTargetQuery(BaseModel):
 
 class StoredSqlArtifactSummary(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
+    artifact_name: str = Field(min_length=1, max_length=400)
     workflow_run_id: int | None = Field(default=None, gt=0)
     generated_at: datetime
-    generated_sql_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generated_code_status: Literal["active", "inactive", "deprecated"]
+    source_system_codes: tuple[str, ...] = Field(max_length=200)
     artifact_is_current: bool
 
 
@@ -94,8 +96,21 @@ class CodeMappingSupport(ContractModel):
     dependency_order: int = Field(ge=0)
 
 
+class CodeGenerationTargetObjectReference(PhysicalObjectReference):
+    """A physical target and the Tenant whose data it represents.
+
+    The regular Tenant/System/Connection fields identify the physical placement.
+    For Bronze, Silver, and Gold that placement can be GDS; source Tenant remains
+    a distinct Object property.
+    """
+
+    source_tenant_id: int = Field(gt=0)
+    source_tenant_code: str = Field(min_length=1, max_length=100)
+    source_tenant_name: str = Field(min_length=1, max_length=200)
+
+
 class CodeGenerationTargetSummary(ContractModel):
-    target: PhysicalObjectReference
+    target: CodeGenerationTargetObjectReference
     entity_type: MappingEntityType
     mapping_supports: tuple[CodeMappingSupport, ...] = Field(
         min_length=1,
@@ -108,14 +123,15 @@ class CodeGenerationTargetSummary(ContractModel):
         max_length=200,
     )
     source_system_count: int = Field(gt=0, le=200)
-    mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    latest_artifact: StoredSqlArtifactSummary | None = None
+    artifacts: tuple[StoredSqlArtifactSummary, ...] = Field(max_length=5_000)
+    artifact_count: int = Field(ge=0, le=5_000)
 
     @model_validator(mode="after")
     def validate_source_system_count(self) -> Self:
         if self.source_system_count != len(self.source_systems):
             raise ValueError("Source System count does not match returned Systems")
+        if self.artifact_count != len(self.artifacts):
+            raise ValueError("Artifact count does not match returned artifacts")
         return self
 
 
@@ -149,8 +165,9 @@ class SqlGeneratorProvenance(ContractModel):
 
 class GeneratedSqlArtifactDetail(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
+    artifact_name: str = Field(min_length=1, max_length=400)
     model_id: int = Field(gt=0)
-    target: PhysicalObjectReference
+    target: CodeGenerationTargetObjectReference
     entity_type: MappingEntityType
     source_systems: tuple[SourceSystemReference, ...] = Field(max_length=200)
     source_system_count: int = Field(ge=0, le=200)
@@ -158,14 +175,12 @@ class GeneratedSqlArtifactDetail(ContractModel):
     mapping_support_count: int = Field(ge=0)
     mapping_supports_truncated: bool
     artifact_is_current: bool
-    mapping_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
-    source_context_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
+    generated_code_status: Literal["active", "inactive", "deprecated"]
     guide: SqlGenerationGuideProvenance | None
     workflow_run_id: int | None = Field(default=None, gt=0)
     generator: SqlGeneratorProvenance | None
     generated_at: datetime
     generated_sql: str = Field(min_length=1, repr=False)
-    generated_sql_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     generated_sql_byte_count: int = Field(gt=0)
 
     @model_validator(mode="after")
@@ -185,10 +200,10 @@ class GeneratedSqlArtifactDetail(ContractModel):
 
 class SqlArtifactDownload(ContractModel):
     generated_sql_artifact_id: int = Field(gt=0)
-    target: PhysicalObjectReference
+    artifact_name: str = Field(min_length=1, max_length=400)
+    target: CodeGenerationTargetObjectReference
     entity_type: MappingEntityType
     generated_sql: str = Field(min_length=1, repr=False)
-    generated_sql_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     generated_sql_byte_count: int = Field(gt=0)
 
     @model_validator(mode="after")

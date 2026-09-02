@@ -87,6 +87,7 @@ class StaticMetadataService:
                     "connection_code": "MAIN",
                     "object_schema": "sales",
                     "object_name": "Customer",
+                    "source_tenant_code": "NWA",
                     "fc_object_schema": None,
                     "fc_object_name": None,
                     "object_transformation": None,
@@ -227,7 +228,6 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "tenant",
         "system",
         "connection",
-        "tenant_metadata_discovery_scope",
         "system_type",
         "connection_type",
         "object_type",
@@ -253,18 +253,18 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "process_group",
         "process",
     ]
-    assert [item["section"] for item in document["datasets"][:5]] == [
+    assert [item["section"] for item in document["datasets"][:4]] == [
         "foundational"
-    ] * 5
-    assert [item["section"] for item in document["datasets"][5:13]] == ["reference"] * 8
-    assert [item["section"] for item in document["datasets"][13:]] == [
+    ] * 4
+    assert [item["section"] for item in document["datasets"][4:12]] == ["reference"] * 8
+    assert [item["section"] for item in document["datasets"][12:]] == [
         "operational"
     ] * 16
-    assert all(item["read_only"] for item in document["datasets"][:13])
-    assert all(not item["change_set_eligible"] for item in document["datasets"][:13])
-    assert all(not item["read_only"] for item in document["datasets"][13:])
-    assert all(item["change_set_eligible"] for item in document["datasets"][13:])
-    source_object = document["datasets"][13]
+    assert all(item["read_only"] for item in document["datasets"][:12])
+    assert all(not item["change_set_eligible"] for item in document["datasets"][:12])
+    assert all(not item["read_only"] for item in document["datasets"][12:])
+    assert all(item["change_set_eligible"] for item in document["datasets"][12:])
+    source_object = document["datasets"][12]
     assert source_object["natural_key"] == [
         "tenant_code",
         "system_code",
@@ -278,6 +278,7 @@ def test_dataset_registry_uses_server_derived_identity_and_complete_v2_inventory
         "connection_code",
         "object_schema",
         "object_name",
+        "source_tenant_code",
         "object_type_code",
         "zone_code",
         "is_locked",
@@ -359,6 +360,7 @@ def test_dataset_rows_normalize_exact_sheet_filters_without_free_text_search() -
                 "connection_code": "MAIN",
                 "object_schema": "sales",
                 "object_name": "Customer",
+                "source_tenant_code": "NWA",
                 "fc_object_schema": None,
                 "fc_object_name": None,
                 "object_transformation": None,
@@ -515,6 +517,7 @@ def _source_object(name: str) -> dict[str, object]:
         "connection_code": "MAIN",
         "object_schema": "sales",
         "object_name": name,
+        "source_tenant_code": "NWA",
         "fc_object_schema": None,
         "fc_object_name": None,
         "object_transformation": None,

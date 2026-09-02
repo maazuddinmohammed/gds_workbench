@@ -105,28 +105,6 @@ CREATE TABLE core.connection (
     CONSTRAINT ck_connection_name CHECK (reference.is_nonblank(connection_name))
 );
 
-CREATE TABLE core.tenant_metadata_discovery_scope (
-    tenant_metadata_discovery_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    gds_connection_id BIGINT NOT NULL,
-    zone_id BIGINT NOT NULL,
-    object_schema VARCHAR(400) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_metadata_discovery_scope_tenant FOREIGN KEY (tenant_id)
-        REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (gds_connection_id)
-        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_zone FOREIGN KEY (zone_id)
-        REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
-    CONSTRAINT ck_metadata_discovery_scope_schema CHECK (
-        reference.is_nonblank(object_schema)
-    )
-);
-
 CREATE TABLE core.connection_location (
     connection_location_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     connection_id BIGINT NOT NULL,
@@ -187,6 +165,7 @@ CREATE TABLE core.connection_value (
 CREATE TABLE core.object (
     object_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     connection_id BIGINT NOT NULL,
+    source_tenant_id BIGINT NOT NULL,
     object_schema VARCHAR(400) NOT NULL,
     object_name VARCHAR(400) NOT NULL,
     fc_object_schema VARCHAR(400),
@@ -204,6 +183,8 @@ CREATE TABLE core.object (
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     CONSTRAINT fk_object_connection FOREIGN KEY (connection_id)
         REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
+    CONSTRAINT fk_object_source_tenant FOREIGN KEY (source_tenant_id)
+        REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
     CONSTRAINT fk_object_type FOREIGN KEY (object_type_id)
         REFERENCES reference.object_type (object_type_id) ON DELETE NO ACTION,
     CONSTRAINT fk_object_zone FOREIGN KEY (zone_id)
@@ -539,20 +520,6 @@ CREATE UNIQUE INDEX ux_member_group_name_ci
         system_id,
         lower(btrim(member_group_name))
     );
-CREATE UNIQUE INDEX ux_metadata_discovery_scope
-    ON core.tenant_metadata_discovery_scope (
-        tenant_id,
-        gds_connection_id,
-        zone_id,
-        lower(btrim(object_schema))
-    );
-CREATE UNIQUE INDEX ux_active_metadata_discovery_scope_assignment
-    ON core.tenant_metadata_discovery_scope (
-        gds_connection_id,
-        zone_id,
-        lower(btrim(object_schema))
-    )
-    WHERE is_active;
 CREATE UNIQUE INDEX ux_process_group_name_ci
     ON core.process_group (
         tenant_id,
@@ -565,13 +532,9 @@ CREATE INDEX ix_tenant_project_active ON core.tenant (project_id, is_active);
 CREATE INDEX ix_system_system_type_active ON core.system (system_type_id, is_active);
 CREATE INDEX ix_connection_tenant_active ON core.connection (tenant_id, is_active);
 CREATE INDEX ix_connection_system_active ON core.connection (system_id, is_active);
-CREATE INDEX ix_metadata_discovery_scope_tenant_active
-    ON core.tenant_metadata_discovery_scope (
-        tenant_id,
-        is_active,
-        gds_connection_id,
-        zone_id
-    );
+CREATE INDEX ix_object_source_tenant_zone_active
+    ON core.object (source_tenant_id, zone_id)
+    WHERE is_active;
 CREATE INDEX ix_object_connection_active ON core.object (connection_id, is_active);
 CREATE INDEX ix_object_zone_active ON core.object (zone_id, is_active);
 CREATE INDEX ix_attribute_object_active ON core.attribute (object_id, is_active);

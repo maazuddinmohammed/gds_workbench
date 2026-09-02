@@ -233,8 +233,8 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert [tool.name for tool in tools.tools] == [
         "list_tenants",
         "get_tenant_details",
-        "get_model",
-        "get_model_scope",
+        "list_models",
+        "get_model_input_scope",
         "check_tenant_lock",
         "acquire_tenant_lock",
         "renew_tenant_lock",
@@ -258,47 +258,21 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "validate_model_change_set",
         "apply_model_change_set",
         "archive_model_change_set",
-        "list_objects",
-        "get_objects",
-        "get_object_lineage",
-        "list_copy_groups",
-        "get_copy_group",
-        "list_process_groups",
-        "get_process_group",
-        "get_model_profiling",
-        "get_model_analysis",
-        "get_modeling_assertion_documents",
-        "get_modeling_assertion_records",
-        "get_model_conceptual_objects",
-        "get_model_conceptual_relationships",
-        "get_model_logical_submodels",
-        "get_model_logical_entities",
-        "get_model_logical_attributes",
-        "get_model_logical_relationships",
-        "get_model_dimensional_submodels",
-        "get_model_dimensional_entities",
-        "get_model_dimensional_attributes",
-        "get_model_dimensional_relationships",
-        "get_model_mapping_dependencies",
-        "get_model_object_mappings",
-        "get_model_attribute_mappings",
-        "get_model_mapping_authoring_context",
-        "validate_and_materialize_mapping_candidate",
-        "get_model_code_generation_document",
+        "inspect_metadata",
+        "read_model_section",
         "execute_databricks_sql",
         "describe_model_dataset",
-        "get_model_snapshot",
-        "get_model_dbml",
+        "create_model_snapshot",
+        "export_model_dbml",
         "describe_metadata_dataset",
-        "get_metadata_snapshot",
-        "get_server_contract",
+        "create_metadata_snapshot",
     ]
     tools_by_name = {tool.name: tool for tool in tools.tools}
-    generator = tools_by_name["get_model_code_generation_document"]
-    assert generator.annotations is not None
-    assert generator.annotations.read_only_hint is True
-    assert generator.annotations.destructive_hint is False
-    assert generator.annotations.idempotent_hint is True
+    section_reader = tools_by_name["read_model_section"]
+    assert section_reader.annotations is not None
+    assert section_reader.annotations.read_only_hint is True
+    assert section_reader.annotations.destructive_hint is False
+    assert section_reader.annotations.idempotent_hint is True
     assert tools_by_name["validate_model_change_set"].annotations is not None
     assert (
         tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
@@ -309,10 +283,10 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert (
         tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
     )
-    assert tools_by_name["get_model_snapshot"].annotations is not None
-    assert tools_by_name["get_model_snapshot"].annotations.idempotent_hint is False
-    assert tools_by_name["get_model_dbml"].annotations is not None
-    assert tools_by_name["get_model_dbml"].annotations.idempotent_hint is False
+    assert tools_by_name["create_model_snapshot"].annotations is not None
+    assert tools_by_name["create_model_snapshot"].annotations.idempotent_hint is False
+    assert tools_by_name["export_model_dbml"].annotations is not None
+    assert tools_by_name["export_model_dbml"].annotations.idempotent_hint is False
     assert all(
         tool.meta
         == {
@@ -429,7 +403,7 @@ async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes()
 
 
 @pytest.mark.asyncio
-async def test_describe_model_scope_marks_it_read_only_for_mcp() -> None:
+async def test_describe_model_input_scope_is_change_set_eligible() -> None:
     settings = development_settings()
     server = create_mcp_server(
         settings,
@@ -440,20 +414,22 @@ async def test_describe_model_scope_marks_it_read_only_for_mcp() -> None:
     async with Client(server) as client:
         result = await client.call_tool(
             "describe_model_dataset",
-            {"dataset": "model_scope"},
+            {"dataset": "model_input_scope"},
         )
 
     assert result.is_error is False
     assert result.structured_content is not None
-    assert result.structured_content["change_set_eligible"] is False
+    assert result.structured_content["change_set_eligible"] is True
     assert (
         result.structured_content["authoring_schema"]["x-gds-change-set-eligible"]
-        is False
+        is True
     )
     assert result.structured_content["detail"] == "compact"
     assert result.structured_content["columns"] is None
     assert result.structured_content["record_schema"] is None
-    assert "read-only" in " ".join(result.structured_content["usage"]).lower()
+    usage = " ".join(result.structured_content["usage"]).lower()
+    assert "source and bronze" in usage
+    assert "bronze unless the user directs otherwise" in usage
 
 
 @pytest.mark.asyncio
@@ -510,7 +486,7 @@ async def test_describe_metadata_dataset_returns_the_exact_generated_contract() 
 
 
 @pytest.mark.asyncio
-async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
+async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_http(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     snapshot_id = UUID("7d7cc8ad-62b5-44ef-aeb0-c09c770ff233")
@@ -562,7 +538,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
         )
         async with Client(transport) as client:
             result = await client.call_tool(
-                "get_metadata_snapshot",
+                "create_metadata_snapshot",
                 {"tenant_id": 123},
             )
 
@@ -596,7 +572,7 @@ async def test_get_metadata_snapshot_returns_only_bounded_descriptor_over_http(
         "content_type",
     }
     assert len(database.audit_records) == 1
-    assert database.audit_records[0].tool_name == "get_metadata_snapshot"
+    assert database.audit_records[0].tool_name == "create_metadata_snapshot"
     assert database.audit_records[0].tenant_id == 123
     assert database.audit_records[0].input_metadata == {
         "schema_version": "2.0",
@@ -651,10 +627,8 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 61
-    fingerprint = ready_body["tool_contract_sha256"]
-    assert len(fingerprint) == 64
-    assert all(character in "0123456789abcdef" for character in fingerprint)
+    assert ready_body["tool_count"] == 35
+    assert "tool_contract_sha256" not in ready_body
 
 
 def test_oauth_protected_resource_metadata_is_anonymous_and_configured() -> None:
@@ -1175,7 +1149,7 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
         )
         async with Client(transport) as client:
             result = await client.call_tool(
-                "get_metadata_snapshot",
+                "create_metadata_snapshot",
                 {"tenant_id": tenant["tenant_id"]},
             )
 
@@ -1196,8 +1170,8 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
     with zipfile.ZipFile(BytesIO(store.archive_bytes)) as archive:
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
     assert manifest["tenant_code"] == "LOCAL_SNAPSHOT_RUNTIME"
-    assert manifest["counts"]["logical_dataset_count"] == 29
-    assert manifest["counts"]["file_count"] == 70
+    assert manifest["counts"]["logical_dataset_count"] == 28
+    assert manifest["counts"]["file_count"] == 68
 
 
 def test_invalid_configuration_preserves_only_safe_health_behavior() -> None:

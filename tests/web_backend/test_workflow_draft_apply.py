@@ -11,11 +11,7 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import (
-    DependencyUnavailableError,
-    InvalidRequestError,
-    ModelChangeSetNotFoundError,
-)
+from gds_etl_workbench.domain.errors import InvalidRequestError, ModelChangeSetNotFoundError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
@@ -27,11 +23,6 @@ from gds_workbench_api.features.workflows.authoring.change_set_apply_router impo
     WorkflowDraftApplyService,
     create_workflow_draft_apply_router,
 )
-
-_MAPPING_PROFILE_SCHEMA_DIGEST = (
-    "b3b324170019b51d2b812c3735fa6215e463209ea39e4099b44c786b956da8fa"
-)
-
 
 class StaticWorkflowDraftApplyService:
     async def apply(
@@ -113,11 +104,9 @@ class MissingMappingDraftTransaction:
     def __init__(
         self,
         *,
-        profile_schema_digest: str,
         model_workflow: str,
         workflow_execution_mode: str | None,
     ) -> None:
-        self.profile_schema_digest = profile_schema_digest
         self.model_workflow = model_workflow
         self.workflow_execution_mode = workflow_execution_mode
 
@@ -145,7 +134,6 @@ class MissingMappingDraftTransaction:
                 "lock_expires_time": datetime(2026, 8, 24, 17, 0, tzinfo=UTC),
             }
         if "application.lock_authoring_workflow_run" in query:
-            assert "mapping_profile_schema_digest" in query
             assert "mapping_object_output_template_id" in query
             assert "mapping_attribute_output_template_id" in query
             return {
@@ -156,9 +144,6 @@ class MissingMappingDraftTransaction:
                 "actor_principal_id": 41,
                 "workflow_run_state": "completed",
                 "correlation_id": UUID("cccccccc-cccc-4ccc-8ccc-cccccccccccc"),
-                "mapping_profile_key": "mapping.standard",
-                "mapping_profile_version": "1.0.0",
-                "mapping_profile_schema_digest": self.profile_schema_digest,
                 "mapping_object_output_template_id": 501,
                 "mapping_attribute_output_template_id": 502,
             }
@@ -171,11 +156,9 @@ class MissingMappingDraftDatabase:
     def __init__(
         self,
         *,
-        profile_schema_digest: str = _MAPPING_PROFILE_SCHEMA_DIGEST,
         model_workflow: str = "mapping",
         workflow_execution_mode: str | None = "one_shot",
     ) -> None:
-        self.profile_schema_digest = profile_schema_digest
         self.model_workflow = model_workflow
         self.workflow_execution_mode = workflow_execution_mode
 
@@ -184,7 +167,6 @@ class MissingMappingDraftDatabase:
         yield cast(
             WriteTransaction,
             MissingMappingDraftTransaction(
-                profile_schema_digest=self.profile_schema_digest,
                 model_workflow=self.model_workflow,
                 workflow_execution_mode=self.workflow_execution_mode,
             ),
@@ -219,33 +201,6 @@ async def test_completed_mapping_run_reaches_validated_draft_lookup() -> None:
 
 
 @pytest.mark.asyncio
-async def test_mapping_profile_drift_is_rejected_before_draft_lookup() -> None:
-    service = DatabaseWorkflowDraftApplyService(
-        database=MissingMappingDraftDatabase(profile_schema_digest="b" * 64),
-        authorizer=AuthorizationService(),
-    )
-    principal = RequestPrincipal(
-        actor_kind=ActorKind.HUMAN,
-        entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-        entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
-    )
-
-    with pytest.raises(DependencyUnavailableError):
-        await service.apply(
-            principal,
-            tenant_id=7,
-            model_id=18,
-            workflow_run_id=44,
-            command=ApplyWorkflowDraftRequest(
-                expected_model_revision=4,
-                expected_draft_revision=2,
-                expected_candidate_digest="d" * 64,
-            ),
-            idempotency_key=UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"),
-        )
-
-
-@pytest.mark.asyncio
 async def test_apply_whitelist_message_includes_all_authoring_workflows() -> None:
     service = DatabaseWorkflowDraftApplyService(
         database=MissingMappingDraftDatabase(model_workflow="profiling"),
@@ -257,7 +212,7 @@ async def test_apply_whitelist_message_includes_all_authoring_workflows() -> Non
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
 
-    with pytest.raises(InvalidRequestError, match="Code Generation, or QA authoring"):
+    with pytest.raises(InvalidRequestError, match="Code Generation, or Validation authoring"):
         await service.apply(
             principal,
             tenant_id=7,
@@ -273,7 +228,7 @@ async def test_apply_whitelist_message_includes_all_authoring_workflows() -> Non
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("model_workflow", ("code_generation", "qa"))
+@pytest.mark.parametrize("model_workflow", ("code_generation", "validation"))
 async def test_modeless_authoring_run_reaches_validated_draft_lookup(
     model_workflow: str,
 ) -> None:
@@ -308,7 +263,7 @@ async def test_modeless_authoring_run_reaches_validated_draft_lookup(
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("model_workflow", "workflow_execution_mode"),
-    (("mapping", None), ("code_generation", "one_shot"), ("qa", "one_shot")),
+    (("mapping", None), ("code_generation", "one_shot"), ("validation", "one_shot")),
 )
 async def test_apply_rejects_the_wrong_execution_mode_shape(
     model_workflow: str,

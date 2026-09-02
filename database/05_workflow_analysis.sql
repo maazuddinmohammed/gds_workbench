@@ -30,7 +30,7 @@ CREATE TABLE workflow.attribute_profile (
     CONSTRAINT fk_attribute_profile_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT fk_attribute_profile_scope FOREIGN KEY (model_id, object_id)
-        REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_attribute_profile_attribute FOREIGN KEY (
         attribute_id,
         object_id
@@ -98,9 +98,9 @@ CREATE TABLE workflow.analysis_result (
     CONSTRAINT fk_analysis_result_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
     CONSTRAINT fk_analysis_from_scope FOREIGN KEY (model_id, from_object_id)
-        REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_analysis_to_scope FOREIGN KEY (model_id, to_object_id)
-        REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+        REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_analysis_from_attribute FOREIGN KEY (
         from_attribute_id,
         from_object_id
@@ -174,7 +174,7 @@ CREATE TABLE workflow.analysis_result (
     ),
     CONSTRAINT ck_analysis_result_status CHECK (
         analysis_result_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );

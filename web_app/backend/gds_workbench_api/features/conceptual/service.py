@@ -45,6 +45,9 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
+from gds_workbench_api.features.workflows.authoring.naming import (
+    effective_naming_instructions,
+)
 from gds_workbench_api.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
@@ -395,9 +398,10 @@ class DatabaseConceptualExecutor:
                     resolver_key: context.embedded_context,
                     "workflow.validation_failures": [],
                 }
-                naming = context.context.model_details.silver_model_naming_instructions
-                if naming is not None:
-                    resolver_values["model.naming_instructions"] = naming
+                resolver_values["model.naming_instructions"] = effective_naming_instructions(
+                    "conceptual",
+                    context.context.model_details.silver_model_naming_instructions,
+                )
                 outcome = await self._stage_runner.run(
                     plan=plan,
                     stage_code="candidate_authoring",
@@ -557,7 +561,7 @@ class DatabaseConceptualExecutor:
                 max_attempt = max(max_attempt, outcome.attempt_count)
                 intermediate_warning = (
                     intermediate_warning
-                    or contribution.disposition == "needs_review"
+                    or contribution.disposition == "blocked"
                     or outcome.was_repaired
                     or bool(outcome.warning_codes)
                 )
@@ -593,7 +597,7 @@ class DatabaseConceptualExecutor:
             attempt=1,
             stage="conceptual.entity_consolidation",
             status="warning" if intermediate_warning else "running",
-            message="Object contributions are ready for entity consolidation.",
+            message="Input coverage is ready for business-concept consolidation.",
             current=len(contributions),
             total=len(contributions),
             finding_count=len(contributions),
@@ -653,7 +657,7 @@ class DatabaseConceptualExecutor:
                     stage="conceptual.entity_consolidation",
                     status="warning" if intermediate_warning else "running",
                     message=(
-                        f"Entity consolidation processed {consolidation_index} of "
+                        f"Concept consolidation processed {consolidation_index} of "
                         f"{consolidation_context_count} bounded batches."
                     ),
                     current=consolidation_index,
@@ -670,7 +674,7 @@ class DatabaseConceptualExecutor:
                 stage="conceptual.entity_consolidation",
                 status="warning" if intermediate_warning else "running",
                 message=(
-                    f"Entity consolidation completed {consolidation_context_count} of "
+                    f"Concept consolidation completed {consolidation_context_count} of "
                     f"{consolidation_context_count} bounded batches."
                 ),
                 current=consolidation_context_count,
@@ -682,7 +686,7 @@ class DatabaseConceptualExecutor:
             attempt=1,
             stage="conceptual.entity_attribute_detail",
             status="warning" if intermediate_warning else "running",
-            message="Consolidated entities are ready for detailed authoring.",
+            message="Consolidated business concepts are ready for detailed authoring.",
             current=0 if consolidation.entities else None,
             total=(len(consolidation.entities) if consolidation.entities else None),
             finding_count=len(consolidation.entities),
@@ -738,8 +742,8 @@ class DatabaseConceptualExecutor:
                     stage="conceptual.entity_attribute_detail",
                     status="warning" if intermediate_warning else "running",
                     message=(
-                        f"Entity detail authoring processed {entity_index} of "
-                        f"{len(consolidation.entities)} consolidated entities."
+                        f"Concept detail authoring processed {entity_index} of "
+                        f"{len(consolidation.entities)} consolidated concepts."
                     ),
                     current=entity_index,
                     total=len(consolidation.entities),
@@ -751,8 +755,8 @@ class DatabaseConceptualExecutor:
                 stage="conceptual.entity_attribute_detail",
                 status="warning" if intermediate_warning else "running",
                 message=(
-                    f"Entity detail authoring completed {len(consolidation.entities)} of "
-                    f"{len(consolidation.entities)} consolidated entities."
+                    f"Concept detail authoring completed {len(consolidation.entities)} of "
+                    f"{len(consolidation.entities)} consolidated concepts."
                 ),
                 current=len(consolidation.entities),
                 total=len(consolidation.entities),
@@ -874,6 +878,7 @@ class DatabaseConceptualExecutor:
             1
             for _ in _reconciliation_contexts(
                 context,
+                contributions=tuple(contributions),
                 consolidation=consolidation,
                 entity_details=tuple(details),
                 relationship_packages=relationship_packages,
@@ -899,11 +904,13 @@ class DatabaseConceptualExecutor:
         for reconciliation_index, (
             reconciliation_context,
             scoped_details,
+            scoped_input_refs,
             scoped_package_refs,
             scoped_applied_refs,
         ) in enumerate(
             _reconciliation_contexts(
                 context,
+                contributions=tuple(contributions),
                 consolidation=consolidation,
                 entity_details=tuple(details),
                 relationship_packages=relationship_packages,
@@ -914,6 +921,7 @@ class DatabaseConceptualExecutor:
         ):
             reconciliation_validator = DetailedReconciliationValidator(
                 entity_details=scoped_details,
+                input_contribution_refs=scoped_input_refs,
                 relationship_package_refs=scoped_package_refs,
                 applied_record_refs=scoped_applied_refs,
             )
@@ -1046,9 +1054,10 @@ def _detailed_resolver_values(
     values: dict[str, object] = {
         f"workflow.conceptual.detailed_coverage.{stage_code}.context": stage_context
     }
-    naming = context.context.model_details.silver_model_naming_instructions
-    if naming is not None:
-        values["model.naming_instructions"] = naming
+    values["model.naming_instructions"] = effective_naming_instructions(
+        "conceptual",
+        context.context.model_details.silver_model_naming_instructions,
+    )
     if include_validation_failures:
         values["workflow.validation_failures"] = []
     return values
@@ -1062,6 +1071,30 @@ def _detailed_model_context(context: AgentContextBundle) -> JsonValue:
             "model_name": context.context.model_name,
             "model_revision": context.context.model_revision,
             "model_description": context.context.model_details.model_description,
+            "conceptual_authoring_guidance": {
+                "purpose": (
+                    "Create a compact business view of important concepts and their "
+                    "business relationships."
+                ),
+                "grouping": (
+                    "Many selected physical Objects may support one Conceptual concept; "
+                    "never create one concept per Object merely for coverage."
+                ),
+                "excluded_structure": (
+                    "Do not model physical columns, keys, normalization, table design, "
+                    "dependency order, or a copy of the Logical Model."
+                ),
+                "coverage_dispositions": [
+                    "represented",
+                    "context_only",
+                    "excluded",
+                    "blocked",
+                ],
+                "relationship_rule": (
+                    "Use business meaning and supported Analysis or Assertions first; "
+                    "matching physical names are supporting evidence only."
+                ),
+            },
         },
     )
 
@@ -1353,20 +1386,14 @@ def _merge_consolidations(
     for part in parts:
         for entity in part.entities:
             references = set(entity.contribution_refs)
-            names = {
-                normalize_model_key_value(proposal_by_ref[reference].object.conceptual_object_name)
-                for reference in references
+            semantic_keys = {
+                _proposal_semantic_key(proposal_by_ref[reference]) for reference in references
             }
             matches = [
                 index
                 for index, component in enumerate(components)
-                if names
-                & {
-                    normalize_model_key_value(
-                        proposal_by_ref[reference].object.conceptual_object_name
-                    )
-                    for reference in component
-                }
+                if semantic_keys
+                & {_proposal_semantic_key(proposal_by_ref[reference]) for reference in component}
             ]
             if not matches:
                 components.append(references)
@@ -1689,6 +1716,7 @@ def _merge_relationship_refinements(
 def _reconciliation_contexts(
     context: AgentContextBundle,
     *,
+    contributions: tuple[DetailedObjectContribution, ...],
     consolidation: DetailedEntityConsolidation,
     entity_details: tuple[DetailedEntityDetail, ...],
     relationship_packages: tuple[DetailedRelationshipPackage, ...],
@@ -1700,9 +1728,11 @@ def _reconciliation_contexts(
         tuple[DetailedEntityDetail, ...],
         tuple[str, ...],
         tuple[str, ...],
+        tuple[str, ...],
     ],
     ...,
 ]:
+    input_refs = tuple(item.contribution_ref for item in contributions)
     applied_refs = conceptual_applied_record_refs(context.context.applied.conceptual)
     legacy = cast(
         JsonValue,
@@ -1717,6 +1747,16 @@ def _reconciliation_contexts(
             "relationship_refinements": [
                 item.model_dump(mode="json") for item in relationship_refinements
             ],
+            "input_coverage": [
+                {
+                    "contribution_ref": item.contribution_ref,
+                    "source_object": item.source_object.model_dump(mode="json"),
+                    "disposition": item.disposition,
+                    "rationale": item.rationale,
+                }
+                for item in contributions
+            ],
+            "required_input_contribution_refs": list(input_refs),
             "applied_conceptual": (
                 None
                 if context.context.applied.conceptual is None
@@ -1730,6 +1770,7 @@ def _reconciliation_contexts(
             (
                 legacy,
                 entity_details,
+                input_refs,
                 tuple(item.package_ref for item in relationship_packages),
                 applied_refs,
             ),
@@ -1746,6 +1787,19 @@ def _reconciliation_contexts(
         )
         for detail in entity_details
     ]
+    items.extend(
+        cast(
+            JsonValue,
+            {
+                "work_item_type": "input_coverage",
+                "contribution_ref": item.contribution_ref,
+                "source_object": item.source_object.model_dump(mode="json"),
+                "disposition": item.disposition,
+                "rationale": _truncate_utf8(item.rationale, 2_000),
+            },
+        )
+        for item in contributions
+    )
     refinement_by_ref = {item.package_ref: item for item in relationship_refinements}
     items.extend(
         cast(
@@ -1811,7 +1865,13 @@ def _reconciliation_contexts(
     )
     detail_by_ref = {item.canonical_entity_ref: item for item in entity_details}
     results: list[
-        tuple[JsonValue, tuple[DetailedEntityDetail, ...], tuple[str, ...], tuple[str, ...]]
+        tuple[
+            JsonValue,
+            tuple[DetailedEntityDetail, ...],
+            tuple[str, ...],
+            tuple[str, ...],
+            tuple[str, ...],
+        ]
     ] = []
     for page in pages:
         raw_items = cast(dict[str, JsonValue], page)["reconciliation_work_items"]
@@ -1821,6 +1881,11 @@ def _reconciliation_contexts(
             cast(str, item["entity_ref"])
             for item in raw_items
             if isinstance(item, dict) and item.get("work_item_type") == "entity_detail"
+        )
+        input_contribution_refs = tuple(
+            cast(str, item["contribution_ref"])
+            for item in raw_items
+            if isinstance(item, dict) and item.get("work_item_type") == "input_coverage"
         )
         package_refs = tuple(
             cast(str, item["package_ref"])
@@ -1834,6 +1899,7 @@ def _reconciliation_contexts(
         )
         page_context = cast(dict[str, JsonValue], page)
         page_context["required_entity_refs"] = list(entity_refs)
+        page_context["required_input_contribution_refs"] = list(input_contribution_refs)
         page_context["required_relationship_package_refs"] = list(package_refs)
         page_context["required_applied_review_refs"] = list(review_refs)
         if _json_bytes(cast(JsonValue, page_context)) > maximum_bytes:
@@ -1844,6 +1910,7 @@ def _reconciliation_contexts(
             (
                 cast(JsonValue, page_context),
                 tuple(detail_by_ref[reference] for reference in entity_refs),
+                input_contribution_refs,
                 package_refs,
                 review_refs,
             )
@@ -1910,7 +1977,17 @@ def _compact_proposal(
             "proposal_ref": proposal_ref,
             "local_entity_ref": proposal.local_entity_ref,
             "candidate_name": proposal.object.conceptual_object_name,
+            "candidate_definition": _truncate_utf8(
+                proposal.object.conceptual_object_definition,
+                2_000,
+            ),
             "candidate_type": proposal.object.conceptual_object_type,
+            "candidate_grain": _truncate_utf8(
+                proposal.object.conceptual_object_grain,
+                2_000,
+            ),
+            "candidate_aliases": list(proposal.object.conceptual_object_aliases[:20]),
+            "candidate_alias_count": len(proposal.object.conceptual_object_aliases),
             "physical_support_sources": [
                 _compact_support_source(item)
                 for item in proposal.object.supports
@@ -1920,6 +1997,15 @@ def _compact_proposal(
                 not isinstance(item, ObjectSupportRecord) for item in proposal.object.supports
             ),
         },
+    )
+
+
+def _proposal_semantic_key(proposal: DetailedEntityProposal) -> tuple[str, str, str]:
+    record = proposal.object
+    return (
+        " ".join(record.conceptual_object_definition.split()).casefold(),
+        " ".join(record.conceptual_object_grain.split()).casefold(),
+        normalize_model_key_value(record.conceptual_object_type),
     )
 
 
@@ -2075,7 +2161,7 @@ def _merge_conceptual_relationships(
             "Byte-bounded evidence pages disagreed; user review is required."
         )
         first_dump["conceptual_relationship_confidence"] = "low"
-        first_dump["conceptual_relationship_status"] = "needs_review"
+        first_dump["conceptual_relationship_status"] = "active"
     supports = _merge_supports(first.supports, second.supports)
     first_dump["supports"] = [item.model_dump(mode="json") for item in supports]
     return ConceptualRelationshipRecord.model_validate_json(

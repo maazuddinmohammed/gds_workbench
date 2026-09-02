@@ -97,7 +97,7 @@ function ModelLedgerTable({
       cell: ({ getValue }) => `r${getValue<number>()}`,
     },
     {
-      accessorKey: "model_scope_object_count",
+      accessorKey: "model_input_scope_object_count",
       header: "Active scope",
       cell: ({ getValue }) => `${getValue<number>()} Objects`,
     },

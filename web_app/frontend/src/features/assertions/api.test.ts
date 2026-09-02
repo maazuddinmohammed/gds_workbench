@@ -21,7 +21,7 @@ describe("Assertions HTTP adapter", () => {
       documentName: " Customer Rules ",
       sourceSystemId: 2,
       sourceSystemCode: " CRM ",
-      status: "needs_review",
+      status: "inactive",
       locked: false,
       applicableLayer: "logical",
       keyPrefix: " Customer. ",
@@ -33,7 +33,7 @@ describe("Assertions HTTP adapter", () => {
       "/api/v1/tenants/7/models/18/assertions/documents?source_system_id=2&source_system_code=crm&active=false&name_prefix=customer&page_size=50&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/assertions/documents?page_size=200",
       "/api/v1/tenants/7/models/18/assertions/documents/31",
-      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&document_name=customer+rules&source_system_id=2&source_system_code=crm&status=needs_review&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=25&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&document_name=customer+rules&source_system_id=2&source_system_code=crm&status=inactive&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=25&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/assertions/records?page_size=200",
       "/api/v1/tenants/7/models/18/assertions/records/91",
     ]);

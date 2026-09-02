@@ -1,5 +1,5 @@
 import type { HttpRequest } from "../../core/http";
-import type { ModelScopeApi } from "../model_scope/api";
+import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type {
   WorkflowRunCommandResult,
   WorkflowRunStart,
@@ -113,7 +113,7 @@ export type ProfilingApi = ProfilingTransport
     | "listWorkflowRunEvents"
     | "executeProfilingRun"
   >
-  & Pick<ModelScopeApi, "listModelScope">;
+  & Pick<ModelInputScopeApi, "listModelInputScope">;
 
 export function createProfilingApi(request: HttpRequest): ProfilingTransport {
   return {

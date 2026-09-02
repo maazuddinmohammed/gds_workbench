@@ -192,19 +192,19 @@ describe("Workbench API client", () => {
 
     await api.listModels(7, "active");
     await api.readModel(7, 18);
-    await api.listModelScope(7, 18, {
+    await api.listModelInputScope(7, 18, {
       zone: " Bronze ",
       systemCode: " CRM ",
       sourceTenantCode: " GRDM ",
       objectName: " Customer_Raw ",
     });
-    await api.readModelScopeObject(7, 18, 501);
+    await api.readModelInputScopeObject(7, 18, 501);
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
       "/api/v1/tenants/7/models?status=active&page_size=200",
       "/api/v1/tenants/7/models/18",
-      "/api/v1/tenants/7/models/18/scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
-      "/api/v1/tenants/7/models/18/scope/501",
+      "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/models/18/input-scope/501",
     ]);
   });
 
@@ -322,7 +322,7 @@ describe("Workbench API client", () => {
       documentName: " Customer Rules ",
       sourceSystemId: 2,
       sourceSystemCode: " CRM ",
-      status: "needs_review",
+      status: "inactive",
       locked: false,
       applicableLayer: "logical",
       keyPrefix: " Customer. ",
@@ -332,7 +332,7 @@ describe("Workbench API client", () => {
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
       "/api/v1/tenants/7/models/18/assertions/documents?source_system_id=2&source_system_code=crm&active=true&name_prefix=customer&page_size=200",
       "/api/v1/tenants/7/models/18/assertions/documents/31",
-      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&document_name=customer+rules&source_system_id=2&source_system_code=crm&status=needs_review&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
+      "/api/v1/tenants/7/models/18/assertions/records?document_id=31&document_name=customer+rules&source_system_id=2&source_system_code=crm&status=inactive&locked=false&applicable_layer=logical&key_prefix=customer.&page_size=200",
       "/api/v1/tenants/7/models/18/assertions/records/91",
     ]);
   });
@@ -439,7 +439,7 @@ describe("Workbench API client", () => {
     const api = createApiClient(fetcher);
 
     await api.listConceptualObjects(7, 18, {
-      status: "needs_review",
+      status: "inactive",
       locked: true,
       namePrefix: " Customer ",
     });
@@ -452,7 +452,7 @@ describe("Workbench API client", () => {
     await api.readConceptualRelationship(7, 18, 51);
 
     expect(fetcher.mock.calls.map(([input]) => input)).toEqual([
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=needs_review&locked=true&name_prefix=customer&page_size=200",
+      "/api/v1/tenants/7/models/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
       "/api/v1/tenants/7/models/18/conceptual/objects/41",
       "/api/v1/tenants/7/models/18/conceptual/relationships?status=active&locked=false&name_exact=places+order&page_size=200",
       "/api/v1/tenants/7/models/18/conceptual/relationships/51",

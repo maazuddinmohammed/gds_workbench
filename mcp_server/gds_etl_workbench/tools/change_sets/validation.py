@@ -302,21 +302,14 @@ def _validate_tenant_scope(
         and normalize_natural_key_value("tenant_code", row.values["tenant_code"])
         == normalized_tenant
     }
-    discovery_scopes = {
+    global_connections = {
         _normalized_key(
-            (
-                "scope_tenant_code",
-                "connection_system_code",
-                "connection_code",
-                "zone_code",
-                "object_schema",
-            ),
+            ("system_code", "connection_code"),
             row.values,
         )
         for row in current
-        if row.dataset == "tenant_metadata_discovery_scope"
-        and normalize_natural_key_value("scope_tenant_code", row.values["scope_tenant_code"])
-        == normalized_tenant
+        if row.dataset == "connection"
+        and row.values["is_global_data_store"] is True
         and row.values["is_active"] is True
     }
     effective_objects: dict[tuple[object, ...], Mapping[str, object]] = {}
@@ -349,7 +342,8 @@ def _validate_tenant_scope(
         if object_values is not None and not _object_is_mutable(
             object_values,
             owned_connections,
-            discovery_scopes,
+            global_connections,
+            normalized_tenant,
         ):
             issues.append(
                 ValidationIssue(
@@ -363,7 +357,7 @@ def _validate_tenant_scope(
                         "object_schema",
                         "object_name",
                     ),
-                    "Object is outside the Tenant's connections and discovery scopes.",
+                    "Object does not belong to the locked Tenant.",
                 )
             )
         if len(issues) >= MAX_VALIDATION_ISSUES:
@@ -420,19 +414,22 @@ def _mutated_object_values(
 def _object_is_mutable(
     values: Mapping[str, object],
     owned_connections: set[tuple[object, ...]],
-    discovery_scopes: set[tuple[object, ...]],
+    global_connections: set[tuple[object, ...]],
+    normalized_tenant: object,
 ) -> bool:
+    if normalize_natural_key_value("tenant_code", values["tenant_code"]) != normalized_tenant:
+        return False
     connection_key = _normalized_key(
         ("tenant_code", "system_code", "connection_code"),
         values,
     )
     if connection_key in owned_connections:
         return True
-    scope_key = _normalized_key(
-        ("tenant_code", "system_code", "connection_code", "zone_code", "object_schema"),
+    global_connection_key = _normalized_key(
+        ("system_code", "connection_code"),
         values,
     )
-    return scope_key in discovery_scopes
+    return global_connection_key in global_connections
 
 
 def _validate_staged_uniqueness(rows: Sequence[_Row]) -> list[ValidationIssue]:

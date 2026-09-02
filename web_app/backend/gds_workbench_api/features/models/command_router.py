@@ -9,8 +9,6 @@ from gds_workbench_api.features.models.command_contracts import (
     ArchiveModelRequest,
     CompleteModelRequest,
     ModelCommandResult,
-    ModelScopeCommandResult,
-    ReplaceModelScopeRequest,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.command_service import ModelCommandService
@@ -87,24 +85,4 @@ def create_model_commands_router(
         response_model=ModelCommandResult,
     )
 
-    async def replace_model_scope(
-        request: Request,
-        tenant_id: PositivePathId,
-        model_id: PositivePathId,
-        command: ReplaceModelScopeRequest,
-    ) -> ModelScopeCommandResult:
-        principal = identity_provider.authenticate(request.headers)
-        return await service.replace_model_scope(
-            principal,
-            tenant_id=tenant_id,
-            model_id=model_id,
-            request=command,
-        )
-
-    router.add_api_route(
-        "/{model_id}/scope",
-        replace_model_scope,
-        methods=["PUT"],
-        response_model=ModelScopeCommandResult,
-    )
     return router

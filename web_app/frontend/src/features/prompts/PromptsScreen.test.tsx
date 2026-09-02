@@ -465,7 +465,7 @@ const modelDetail = {
   model_name: "Customer 360",
   model_description: "Governed customer model",
   model_revision: 18,
-  model_scope_object_count: 4,
+  model_input_scope_object_count: 4,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,

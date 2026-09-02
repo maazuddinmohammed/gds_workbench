@@ -10,7 +10,7 @@ export interface ModelLedgerRecord {
   model_name: string;
   model_description: string | null;
   model_revision: number;
-  model_scope_object_count: number;
+  model_input_scope_object_count: number;
   latest_workflow: ModelWorkflow | null;
   latest_run_status: string | null;
   updated_at: string;
@@ -27,7 +27,7 @@ export interface ModelDetail {
   model_name: string;
   model_description: string | null;
   model_revision: number;
-  model_scope_object_count: number;
+  model_input_scope_object_count: number;
   silver_model_naming_instructions: string | null;
   silver_model_audit_columns_template: unknown;
   gold_model_naming_instructions: string | null;
@@ -59,7 +59,6 @@ export type WorkflowLedgerState =
   | "queued"
   | "running"
   | "results_available"
-  | "needs_review"
   | "completed_no_results"
   | "failed";
 
@@ -72,7 +71,6 @@ export type QualityWarningCode =
 export interface WorkflowLedgerEntry {
   workflow: LedgerWorkflow;
   result_count: number;
-  needs_review_count: number;
   locked_count: number;
   latest_run_id: number | null;
   latest_run_state: WorkflowRunState | null;

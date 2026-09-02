@@ -1,8 +1,7 @@
 -- GDS ETL Workbench Release 1: governed workflow execution and persistence.
 
 -- Resolve the complete immutable physical input for one running Profiling Run.
--- Relation catalog ownership comes only from the exact active Metadata
--- Discovery Scope assignment; Connection ownership is never a fallback.
+-- Relation catalog ownership comes from core.object.source_tenant_id.
 CREATE FUNCTION application.get_profiling_execution_context(
     p_entra_tenant_id UUID,
     p_entra_object_id UUID,
@@ -18,7 +17,15 @@ RETURNS TABLE (
     selection_order INTEGER,
     source_tenant_id BIGINT,
     source_tenant_code VARCHAR(100),
+    zone_code TEXT,
+    source_connection_id BIGINT,
     gds_connection_id BIGINT,
+    has_foreign_catalog BOOLEAN,
+    foreign_catalog VARCHAR(255),
+    object_schema VARCHAR(400),
+    object_name VARCHAR(400),
+    fc_object_schema VARCHAR(400),
+    fc_object_name VARCHAR(400),
     relation_catalog VARCHAR(255),
     relation_schema VARCHAR(400),
     relation_object VARCHAR(400),
@@ -28,6 +35,8 @@ RETURNS TABLE (
     batch_attribute_name VARCHAR(400),
     attribute_id BIGINT,
     attribute_name VARCHAR(400),
+    fc_attribute_name VARCHAR(400),
+    relation_attribute VARCHAR(400),
     attribute_data_type VARCHAR(100),
     attribute_ordinal_position INTEGER,
     is_batch_attribute BOOLEAN
@@ -42,7 +51,7 @@ DECLARE
     v_decision RECORD;
     v_selected_scope_count INTEGER;
     v_eligible_object_count INTEGER;
-    v_discovery_object_count INTEGER;
+    v_owned_object_count INTEGER;
     v_attribute_object_count INTEGER;
     v_attribute_count INTEGER;
 BEGIN
@@ -112,36 +121,45 @@ BEGIN
     END IF;
 
     SELECT count(DISTINCT selection.object_id)::INTEGER
-      INTO v_discovery_object_count
+      INTO v_owned_object_count
       FROM application.workflow_run_object_selection AS selection
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
+       AND object_record.source_tenant_id = v_run.tenant_id
        AND object_record.is_active
-      JOIN core.connection AS gds_connection
-        ON gds_connection.connection_id = object_record.connection_id
-       AND gds_connection.is_active
-       AND gds_connection.is_global_data_store
+      JOIN core.connection AS source_connection
+        ON source_connection.connection_id = object_record.connection_id
+       AND source_connection.is_active
       JOIN core.system AS system_record
-        ON system_record.system_id = gds_connection.system_id
+        ON system_record.system_id = source_connection.system_id
        AND system_record.is_active
       JOIN reference.zone AS zone_record
         ON zone_record.zone_id = object_record.zone_id
        AND zone_record.is_active
-       AND lower(btrim(zone_record.zone_code)) = 'bronze'
-      JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-        ON discovery_scope.gds_connection_id = gds_connection.connection_id
-       AND discovery_scope.zone_id = object_record.zone_id
-       AND lower(btrim(discovery_scope.object_schema)) =
-           lower(btrim(object_record.object_schema))
-       AND discovery_scope.is_active
+       AND lower(btrim(zone_record.zone_code)) IN ('source', 'bronze')
       JOIN core.tenant AS source_tenant
-        ON source_tenant.tenant_id = discovery_scope.tenant_id
+        ON source_tenant.tenant_id = object_record.source_tenant_id
        AND source_tenant.is_active
+      JOIN core.connection AS gds_connection
+        ON gds_connection.connection_id = source_tenant.gds_connection_id
+       AND gds_connection.is_active
+       AND gds_connection.is_global_data_store
      WHERE selection.workflow_run_id = p_workflow_run_id
-       AND selection.model_id = v_run.model_id;
-    IF v_discovery_object_count <> v_run.selected_scope_count THEN
+       AND selection.model_id = v_run.model_id
+       AND CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN
+                   source_connection.has_foreign_catalog
+                   AND reference.is_nonblank(source_connection.foreign_catalog)
+                   AND reference.is_nonblank(object_record.fc_object_schema)
+                   AND reference.is_nonblank(object_record.fc_object_name)
+               WHEN 'bronze' THEN
+                   source_connection.connection_id =
+                       source_tenant.gds_connection_id
+               ELSE FALSE
+           END;
+    IF v_owned_object_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
-            'profiling_discovery_scope_missing: Every selected Object requires one active Discovery Scope assignment';
+            'profiling_relation_unavailable: Every selected Object must be an eligible Source foreign-catalog or Bronze relation owned by the Model Tenant';
     END IF;
 
     SELECT count(*)::INTEGER
@@ -150,12 +168,12 @@ BEGIN
       JOIN workflow.list_model_object_eligibility(v_run.model_id) AS eligible
         ON eligible.model_id = selection.model_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_bronze_source_eligible
+       AND eligible.is_model_input_eligible
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id;
     IF v_eligible_object_count <> v_run.selected_scope_count THEN
         RAISE EXCEPTION
-            'profiling_scope_changed: Selected Bronze Object membership has changed';
+            'profiling_scope_changed: Selected Model Input Scope membership has changed';
     END IF;
 
     SELECT count(DISTINCT eligible.object_id)::INTEGER,
@@ -166,7 +184,18 @@ BEGIN
       JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS eligible
         ON eligible.model_id = selection.model_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_bronze_source_eligible
+       AND eligible.is_model_input_eligible
+      JOIN core.object AS selected_object
+        ON selected_object.object_id = eligible.object_id
+      JOIN reference.zone AS selected_zone
+        ON selected_zone.zone_id = selected_object.zone_id
+      JOIN core.attribute AS selected_attribute
+        ON selected_attribute.attribute_id = eligible.attribute_id
+       AND selected_attribute.object_id = eligible.object_id
+       AND (
+           lower(btrim(selected_zone.zone_code)) = 'bronze'
+           OR reference.is_nonblank(selected_attribute.fc_attribute_name)
+       )
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id;
     IF v_attribute_object_count <> v_run.selected_scope_count THEN
@@ -186,16 +215,38 @@ BEGIN
            selection.selection_order,
            source_tenant.tenant_id,
            source_tenant.tenant_code,
+           lower(btrim(zone_record.zone_code)),
+           source_connection.connection_id,
            gds_connection.connection_id,
-           source_tenant.tenant_catalog,
+           source_connection.has_foreign_catalog,
+           source_connection.foreign_catalog,
            object_record.object_schema,
            object_record.object_name,
+           object_record.fc_object_schema,
+           object_record.fc_object_name,
+           CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN source_connection.foreign_catalog
+               ELSE source_tenant.tenant_catalog
+           END,
+           CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN object_record.fc_object_schema
+               ELSE object_record.object_schema
+           END,
+           CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN object_record.fc_object_name
+               ELSE object_record.object_name
+           END,
            system_record.system_id,
            system_record.system_code,
            object_record.object_id,
            object_record.batch_attribute_name,
            eligible.attribute_id,
            eligible.attribute_name,
+           attribute_record.fc_attribute_name,
+           CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN attribute_record.fc_attribute_name
+               ELSE attribute_record.attribute_name
+           END,
            attribute_record.attribute_data_type,
            eligible.attribute_ordinal_position,
            object_record.batch_attribute_name IS NOT NULL
@@ -205,36 +256,46 @@ BEGIN
       JOIN workflow.list_model_attribute_eligibility(v_run.model_id) AS eligible
         ON eligible.model_id = selection.model_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_bronze_source_eligible
+       AND eligible.is_model_input_eligible
       JOIN core.attribute AS attribute_record
         ON attribute_record.attribute_id = eligible.attribute_id
        AND attribute_record.object_id = eligible.object_id
        AND attribute_record.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
+       AND object_record.source_tenant_id = v_run.tenant_id
        AND object_record.is_active
-      JOIN core.connection AS gds_connection
-        ON gds_connection.connection_id = object_record.connection_id
-       AND gds_connection.is_active
-       AND gds_connection.is_global_data_store
+      JOIN core.connection AS source_connection
+        ON source_connection.connection_id = object_record.connection_id
+       AND source_connection.is_active
       JOIN core.system AS system_record
-        ON system_record.system_id = gds_connection.system_id
+        ON system_record.system_id = source_connection.system_id
        AND system_record.is_active
       JOIN reference.zone AS zone_record
         ON zone_record.zone_id = object_record.zone_id
        AND zone_record.is_active
-       AND lower(btrim(zone_record.zone_code)) = 'bronze'
-      JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-        ON discovery_scope.gds_connection_id = gds_connection.connection_id
-       AND discovery_scope.zone_id = object_record.zone_id
-       AND lower(btrim(discovery_scope.object_schema)) =
-           lower(btrim(object_record.object_schema))
-       AND discovery_scope.is_active
+       AND lower(btrim(zone_record.zone_code)) IN ('source', 'bronze')
       JOIN core.tenant AS source_tenant
-        ON source_tenant.tenant_id = discovery_scope.tenant_id
+        ON source_tenant.tenant_id = object_record.source_tenant_id
        AND source_tenant.is_active
+      JOIN core.connection AS gds_connection
+        ON gds_connection.connection_id = source_tenant.gds_connection_id
+       AND gds_connection.is_active
+       AND gds_connection.is_global_data_store
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id
+       AND CASE lower(btrim(zone_record.zone_code))
+               WHEN 'source' THEN
+                   source_connection.has_foreign_catalog
+                   AND reference.is_nonblank(source_connection.foreign_catalog)
+                   AND reference.is_nonblank(object_record.fc_object_schema)
+                   AND reference.is_nonblank(object_record.fc_object_name)
+                   AND reference.is_nonblank(attribute_record.fc_attribute_name)
+               WHEN 'bronze' THEN
+                   source_connection.connection_id =
+                       source_tenant.gds_connection_id
+               ELSE FALSE
+           END
      ORDER BY selection.selection_order,
               eligible.attribute_ordinal_position,
               eligible.attribute_id;
@@ -248,7 +309,6 @@ REVOKE ALL ON FUNCTION application.get_profiling_execution_context(
     BIGINT,
     BIGINT
 ) FROM PUBLIC;
-
 -- Return one credential tuple per exact GDS Connection selected through the
 -- validated execution context. Any configuration gap returns one fixed safe
 -- failure row and no partial credential values.
@@ -640,7 +700,7 @@ BEGIN
            AND to_selection.model_id = result.model_id
            AND to_selection.object_id = result.to_object_id
          WHERE result.model_id = v_run.model_id
-           AND result.analysis_result_status IN ('active', 'needs_review')
+           AND result.analysis_result_status = 'active'
     ), selected_relationship AS MATERIALIZED (
         SELECT membership.*
           FROM relationship_membership AS membership
@@ -692,20 +752,22 @@ BEGIN
             ON from_eligible.model_id = result.model_id
            AND from_eligible.object_id = result.from_object_id
            AND from_eligible.attribute_id = result.from_attribute_id
-           AND from_eligible.is_bronze_source_eligible
+           AND from_eligible.is_model_input_eligible
           JOIN workflow.list_model_attribute_eligibility(v_run.model_id)
                AS to_eligible
             ON to_eligible.model_id = result.model_id
            AND to_eligible.object_id = result.to_object_id
            AND to_eligible.attribute_id = result.to_attribute_id
-           AND to_eligible.is_bronze_source_eligible
+           AND to_eligible.is_model_input_eligible
           JOIN core.object AS from_object
             ON from_object.object_id = result.from_object_id
            AND from_object.connection_id = from_eligible.connection_id
+           AND from_object.source_tenant_id = v_run.tenant_id
            AND from_object.is_active
           JOIN core.object AS to_object
             ON to_object.object_id = result.to_object_id
            AND to_object.connection_id = to_eligible.connection_id
+           AND to_object.source_tenant_id = v_run.tenant_id
            AND to_object.is_active
           JOIN core.connection AS from_connection
             ON from_connection.connection_id = from_object.connection_id
@@ -723,26 +785,12 @@ BEGIN
             ON to_attribute.attribute_id = result.to_attribute_id
            AND to_attribute.object_id = result.to_object_id
            AND to_attribute.is_active
-          JOIN core.tenant_metadata_discovery_scope AS from_discovery_scope
-            ON from_discovery_scope.gds_connection_id =
-               from_connection.connection_id
-           AND from_discovery_scope.zone_id = from_object.zone_id
-           AND lower(btrim(from_discovery_scope.object_schema)) =
-               lower(btrim(from_object.object_schema))
-           AND from_discovery_scope.is_active
           JOIN core.tenant AS from_source_tenant
-            ON from_source_tenant.tenant_id = from_discovery_scope.tenant_id
+            ON from_source_tenant.tenant_id = from_object.source_tenant_id
            AND from_source_tenant.is_active
            AND reference.is_nonblank(from_source_tenant.tenant_catalog)
-          JOIN core.tenant_metadata_discovery_scope AS to_discovery_scope
-            ON to_discovery_scope.gds_connection_id =
-               to_connection.connection_id
-           AND to_discovery_scope.zone_id = to_object.zone_id
-           AND lower(btrim(to_discovery_scope.object_schema)) =
-               lower(btrim(to_object.object_schema))
-           AND to_discovery_scope.is_active
           JOIN core.tenant AS to_source_tenant
-            ON to_source_tenant.tenant_id = to_discovery_scope.tenant_id
+            ON to_source_tenant.tenant_id = to_object.source_tenant_id
            AND to_source_tenant.is_active
            AND reference.is_nonblank(to_source_tenant.tenant_catalog)
           LEFT JOIN core.attribute AS from_batch_attribute
@@ -2064,35 +2112,20 @@ BEGIN
     -- activation and membership changes.
     PERFORM object_record.object_id
       FROM application.workflow_run_object_selection AS selection
-      JOIN model.model_scope AS scope
+      JOIN model.model_input_scope AS scope
         ON scope.model_id = selection.model_id
        AND scope.object_id = selection.object_id
        AND scope.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
+       AND object_record.source_tenant_id = v_run.tenant_id
        AND object_record.is_active
       JOIN core.connection AS connection
         ON connection.connection_id = object_record.connection_id
        AND connection.is_active
-      LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-        ON connection.is_global_data_store
-       AND discovery_scope.gds_connection_id = connection.connection_id
-       AND discovery_scope.zone_id = object_record.zone_id
-       AND lower(btrim(discovery_scope.object_schema)) =
-           lower(btrim(object_record.object_schema))
-       AND discovery_scope.is_active
       JOIN core.tenant AS object_tenant
-        ON object_tenant.is_active
-       AND (
-               (
-                   NOT connection.is_global_data_store
-                   AND object_tenant.tenant_id = connection.tenant_id
-               )
-               OR (
-                   connection.is_global_data_store
-                   AND object_tenant.tenant_id = discovery_scope.tenant_id
-               )
-           )
+        ON object_tenant.tenant_id = object_record.source_tenant_id
+       AND object_tenant.is_active
       JOIN core.system AS system
         ON system.system_id = connection.system_id
        AND system.is_active
@@ -2141,7 +2174,7 @@ BEGIN
            AS eligible
         ON eligible.model_id = selection.model_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_bronze_source_eligible
+       AND eligible.is_model_input_eligible
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id;
 
@@ -2213,30 +2246,20 @@ BEGIN
            AS eligible
         ON eligible.model_id = selection.model_id
        AND eligible.object_id = selection.object_id
-       AND eligible.is_bronze_source_eligible
+       AND eligible.is_model_input_eligible
       JOIN core.attribute AS attribute
         ON attribute.attribute_id = eligible.attribute_id
        AND attribute.object_id = eligible.object_id
        AND attribute.is_active
       JOIN core.object AS object_record
         ON object_record.object_id = selection.object_id
+       AND object_record.source_tenant_id = v_run.tenant_id
        AND object_record.is_active
       JOIN core.connection AS connection
         ON connection.connection_id = object_record.connection_id
        AND connection.is_active
-      LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-        ON connection.is_global_data_store
-       AND discovery_scope.gds_connection_id = connection.connection_id
-       AND discovery_scope.zone_id = object_record.zone_id
-       AND lower(btrim(discovery_scope.object_schema)) =
-           lower(btrim(object_record.object_schema))
-       AND discovery_scope.is_active
       JOIN core.tenant AS source_tenant
-        ON source_tenant.tenant_id = CASE
-               WHEN connection.is_global_data_store
-                   THEN discovery_scope.tenant_id
-               ELSE connection.tenant_id
-           END
+        ON source_tenant.tenant_id = object_record.source_tenant_id
        AND source_tenant.is_active
      WHERE selection.workflow_run_id = p_workflow_run_id
        AND selection.model_id = v_run.model_id;
@@ -2440,307 +2463,4 @@ REVOKE ALL ON FUNCTION application.persist_profiling_results(
     BIGINT,
     BIGINT,
     JSONB
-) FROM PUBLIC;
-
-CREATE TABLE application.generated_sql_artifact (
-    generated_sql_artifact_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    model_id BIGINT NOT NULL,
-    model_revision BIGINT NOT NULL,
-    modeled_entity_type VARCHAR(30) NOT NULL,
-    object_id BIGINT NOT NULL,
-    mapping_context_digest CHAR(64) NOT NULL,
-    source_context_digest CHAR(64) NOT NULL,
-    sql_generation_guide_id BIGINT NOT NULL,
-    sql_generation_guide_version_id BIGINT NOT NULL,
-    sql_generation_guide_digest CHAR(64) NOT NULL,
-    workflow_run_id BIGINT,
-    generator_code VARCHAR(100) NOT NULL,
-    generator_version VARCHAR(50) NOT NULL,
-    generated_by_principal_id BIGINT NOT NULL,
-    generated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    generated_sql TEXT NOT NULL,
-    generated_sql_digest CHAR(64) NOT NULL,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_generated_sql_artifact_scope FOREIGN KEY (
-        model_id,
-        object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_generated_sql_artifact_guide_version FOREIGN KEY (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id,
-        sql_generation_guide_digest
-    ) REFERENCES application.sql_generation_guide_version (
-        sql_generation_guide_version_id,
-        sql_generation_guide_id,
-        sql_generation_guide_digest
-    ) ON DELETE NO ACTION,
-    CONSTRAINT fk_generated_sql_artifact_generator FOREIGN KEY (
-        generated_by_principal_id
-    ) REFERENCES security.principal (principal_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_generated_sql_artifact_run FOREIGN KEY (
-        workflow_run_id,
-        model_id
-    ) REFERENCES application.workflow_run (workflow_run_id, model_id)
-        ON DELETE NO ACTION,
-    CONSTRAINT uq_generated_sql_artifact_identity UNIQUE (
-        model_id,
-        modeled_entity_type,
-        object_id
-    ),
-    CONSTRAINT ck_generated_sql_artifact_model_revision CHECK (
-        model_revision > 0
-    ),
-    CONSTRAINT ck_generated_sql_artifact_entity_type CHECK (
-        modeled_entity_type IN ('logical_entity', 'dimensional_entity')
-    ),
-    CONSTRAINT ck_generated_sql_artifact_digests CHECK (
-        mapping_context_digest ~ '^[0-9a-f]{64}$'
-        AND source_context_digest ~ '^[0-9a-f]{64}$'
-        AND sql_generation_guide_digest ~ '^[0-9a-f]{64}$'
-        AND generated_sql_digest ~ '^[0-9a-f]{64}$'
-    ),
-    CONSTRAINT ck_generated_sql_artifact_generator CHECK (
-        generator_code ~ '^[a-z][a-z0-9_.-]{0,99}$'
-        AND generator_version ~ '^[0-9]+\.[0-9]+\.[0-9]+$'
-    ),
-    CONSTRAINT ck_generated_sql_artifact_sql CHECK (
-        reference.is_nonblank(generated_sql)
-    )
-);
-
-CREATE INDEX ix_generated_sql_artifact_run
-    ON application.generated_sql_artifact (workflow_run_id)
-    WHERE workflow_run_id IS NOT NULL;
-
-CREATE FUNCTION application.store_generated_sql_artifact(
-    p_entra_tenant_id UUID,
-    p_entra_object_id UUID,
-    p_expected_principal_type VARCHAR(30),
-    p_model_id BIGINT,
-    p_expected_model_revision BIGINT,
-    p_modeled_entity_type VARCHAR(30),
-    p_object_id BIGINT,
-    p_mapping_context_digest CHAR(64),
-    p_source_context_digest CHAR(64),
-    p_sql_generation_guide_version_id BIGINT,
-    p_workflow_run_id BIGINT,
-    p_generator_code VARCHAR(100),
-    p_generator_version VARCHAR(50),
-    p_generated_sql TEXT,
-    p_generated_sql_digest CHAR(64)
-)
-RETURNS SETOF application.generated_sql_artifact
-LANGUAGE plpgsql
-VOLATILE
-SECURITY DEFINER
-SET search_path = pg_catalog
-AS $store_generated_sql_artifact$
-DECLARE
-    v_model_tenant_id BIGINT;
-    v_decision RECORD;
-    v_actor_entra_principal_identity_id BIGINT;
-    v_target RECORD;
-    v_sql_generation_guide_id BIGINT;
-    v_sql_generation_guide_digest CHAR(64);
-    v_run RECORD;
-    v_actual_sql_digest CHAR(64);
-    v_stored application.generated_sql_artifact%ROWTYPE;
-BEGIN
-    SELECT target_model.tenant_id
-      INTO v_model_tenant_id
-      FROM model.model AS target_model
-     WHERE target_model.model_id = p_model_id
-       AND target_model.is_active
-       AND target_model.model_revision = p_expected_model_revision
-     FOR SHARE OF target_model;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'generated SQL Model is unavailable';
-    END IF;
-
-    SELECT *
-      INTO v_decision
-      FROM security.authorize_tenant_operation(
-          p_entra_tenant_id,
-          p_entra_object_id,
-          p_expected_principal_type,
-          v_model_tenant_id,
-          'tenant_model_write'
-      );
-    IF NOT FOUND OR NOT v_decision.authorized THEN
-        RAISE EXCEPTION 'generated SQL storage denied: %',
-            coalesce(v_decision.denial_code, 'authorization_denied');
-    END IF;
-
-    SELECT identity.entra_principal_identity_id
-      INTO v_actor_entra_principal_identity_id
-      FROM security.entra_principal_identity AS identity
-     WHERE identity.principal_id = v_decision.principal_id
-       AND identity.principal_type = p_expected_principal_type
-       AND identity.entra_tenant_id = p_entra_tenant_id
-       AND identity.entra_object_id = p_entra_object_id
-       AND identity.is_active
-     FOR SHARE OF identity;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'generated SQL actor identity is unavailable';
-    END IF;
-
-    SELECT context.*
-      INTO v_target
-      FROM workflow.list_code_generation_target_context(
-               p_model_id,
-               p_modeled_entity_type
-           ) AS context
-     WHERE context.object_id = p_object_id;
-    IF NOT FOUND THEN
-        RAISE EXCEPTION 'generated SQL target is not eligible';
-    END IF;
-    IF v_target.mapping_context_digest IS DISTINCT FROM
-       p_mapping_context_digest THEN
-        RAISE EXCEPTION 'generated SQL Mapping context digest is stale';
-    END IF;
-    IF v_target.source_context_digest IS DISTINCT FROM
-       p_source_context_digest THEN
-        RAISE EXCEPTION 'generated SQL source context digest is stale';
-    END IF;
-
-    IF p_workflow_run_id IS NOT NULL THEN
-        SELECT run.actor_principal_id,
-               run.actor_entra_principal_identity_id,
-               run.sql_generation_guide_id,
-               run.sql_generation_guide_version_id,
-               run.sql_generation_guide_digest
-          INTO v_run
-          FROM application.workflow_run AS run
-         WHERE run.workflow_run_id = p_workflow_run_id
-           AND run.model_id = p_model_id
-           AND run.model_revision = p_expected_model_revision
-           AND run.model_workflow = 'code_generation'
-           AND run.workflow_run_state = 'running'
-           AND run.modeled_entity_type = p_modeled_entity_type
-           AND run.actor_principal_id = v_decision.principal_id
-           AND run.actor_entra_principal_identity_id =
-               v_actor_entra_principal_identity_id
-           AND run.sql_generation_guide_version_id =
-               p_sql_generation_guide_version_id
-           AND EXISTS (
-               SELECT 1
-                 FROM application.workflow_run_object_selection AS selection
-                WHERE selection.workflow_run_id = run.workflow_run_id
-                  AND selection.model_id = run.model_id
-                  AND selection.object_id = p_object_id
-           )
-         FOR SHARE OF run;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'running Code Generation Workflow Run is required';
-        END IF;
-        v_sql_generation_guide_id := v_run.sql_generation_guide_id;
-        v_sql_generation_guide_digest :=
-            v_run.sql_generation_guide_digest;
-    ELSE
-        SELECT guide_version.sql_generation_guide_id,
-               guide_version.sql_generation_guide_digest
-          INTO v_sql_generation_guide_id,
-               v_sql_generation_guide_digest
-          FROM application.sql_generation_guide_version AS guide_version
-          JOIN application.sql_generation_guide AS guide
-            ON guide.sql_generation_guide_id =
-               guide_version.sql_generation_guide_id
-           AND guide.is_active
-         WHERE guide_version.sql_generation_guide_version_id =
-               p_sql_generation_guide_version_id
-           AND guide_version.sql_generation_guide_version_status = 'published'
-         FOR SHARE OF guide_version, guide;
-        IF NOT FOUND THEN
-            RAISE EXCEPTION 'published SQL generation guide is required';
-        END IF;
-    END IF;
-
-    v_actual_sql_digest := encode(
-        sha256(convert_to(p_generated_sql, 'UTF8')),
-        'hex'
-    );
-    IF v_actual_sql_digest <> p_generated_sql_digest THEN
-        RAISE EXCEPTION 'generated SQL digest does not match the SQL content';
-    END IF;
-
-    INSERT INTO application.generated_sql_artifact AS artifact (
-        model_id,
-        model_revision,
-        modeled_entity_type,
-        object_id,
-        mapping_context_digest,
-        source_context_digest,
-        sql_generation_guide_id,
-        sql_generation_guide_version_id,
-        sql_generation_guide_digest,
-        workflow_run_id,
-        generator_code,
-        generator_version,
-        generated_by_principal_id,
-        generated_sql,
-        generated_sql_digest
-    ) VALUES (
-        p_model_id,
-        p_expected_model_revision,
-        p_modeled_entity_type,
-        p_object_id,
-        p_mapping_context_digest,
-        p_source_context_digest,
-        v_sql_generation_guide_id,
-        p_sql_generation_guide_version_id,
-        v_sql_generation_guide_digest,
-        p_workflow_run_id,
-        p_generator_code,
-        p_generator_version,
-        v_decision.principal_id,
-        p_generated_sql,
-        p_generated_sql_digest
-    )
-    ON CONFLICT (
-        model_id,
-        modeled_entity_type,
-        object_id
-    ) DO UPDATE
-       SET model_revision = EXCLUDED.model_revision,
-           mapping_context_digest = EXCLUDED.mapping_context_digest,
-           source_context_digest = EXCLUDED.source_context_digest,
-           sql_generation_guide_id = EXCLUDED.sql_generation_guide_id,
-           sql_generation_guide_version_id =
-               EXCLUDED.sql_generation_guide_version_id,
-           sql_generation_guide_digest =
-               EXCLUDED.sql_generation_guide_digest,
-           workflow_run_id = EXCLUDED.workflow_run_id,
-           generator_code = EXCLUDED.generator_code,
-           generator_version = EXCLUDED.generator_version,
-           generated_by_principal_id = EXCLUDED.generated_by_principal_id,
-           generated_time = CURRENT_TIMESTAMP,
-           generated_sql = EXCLUDED.generated_sql,
-           generated_sql_digest = EXCLUDED.generated_sql_digest,
-           updated_time = CURRENT_TIMESTAMP,
-           updated_by = CURRENT_USER
-    RETURNING artifact.* INTO v_stored;
-
-    RETURN NEXT v_stored;
-END;
-$store_generated_sql_artifact$;
-
-REVOKE ALL ON FUNCTION application.store_generated_sql_artifact(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    BIGINT,
-    CHAR,
-    CHAR,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    TEXT,
-    CHAR
 ) FROM PUBLIC;

@@ -104,7 +104,7 @@ export function CodeIcon() {
   );
 }
 
-export function QAIcon() {
+export function ValidationIcon() {
   return (
     <NavIcon>
       <path d="M12 3 20 6v5c0 5.1-3.1 8.4-8 10-4.9-1.6-8-4.9-8-10V6l8-3Z" />

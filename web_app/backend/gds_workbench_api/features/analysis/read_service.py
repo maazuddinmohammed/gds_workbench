@@ -98,11 +98,11 @@ SELECT result.analysis_result_id,
   FROM target_model
   JOIN workflow.analysis_result AS result
     ON result.model_id = target_model.model_id
-  JOIN model.model_scope AS from_scope
+  JOIN model.model_input_scope AS from_scope
     ON from_scope.model_id = target_model.model_id
    AND from_scope.object_id = result.from_object_id
    AND from_scope.is_active
-  JOIN model.model_scope AS to_scope
+  JOIN model.model_input_scope AS to_scope
     ON to_scope.model_id = target_model.model_id
    AND to_scope.object_id = result.to_object_id
    AND to_scope.is_active
@@ -157,7 +157,7 @@ SELECT result.analysis_result_id,
            %s::TEXT IS NULL
            AND (
                %s
-               OR result.analysis_result_status IN ('active', 'needs_review')
+               OR result.analysis_result_status = 'active'
            )
        )
    )
@@ -251,11 +251,11 @@ SELECT result.analysis_result_id,
   FROM target_model
   JOIN workflow.analysis_result AS result
     ON result.model_id = target_model.model_id
-  JOIN model.model_scope AS from_scope
+  JOIN model.model_input_scope AS from_scope
     ON from_scope.model_id = target_model.model_id
    AND from_scope.object_id = result.from_object_id
    AND from_scope.is_active
-  JOIN model.model_scope AS to_scope
+  JOIN model.model_input_scope AS to_scope
     ON to_scope.model_id = target_model.model_id
    AND to_scope.object_id = result.to_object_id
    AND to_scope.is_active

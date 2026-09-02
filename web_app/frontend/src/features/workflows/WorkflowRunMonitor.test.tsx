@@ -113,14 +113,14 @@ describe("Workflow Run monitor", () => {
     expect(compactSummary).toHaveTextContent("Draft applied");
   });
 
-  it("reviews and applies an exact validated QA draft", async () => {
+  it("reviews and applies an exact validated Validation draft", async () => {
     const api = monitorApi();
-    const qaRun: WorkflowRunDetail = {
+    const validationRun: WorkflowRunDetail = {
       ...workflowRun(false),
-      model_workflow: "qa",
+      model_workflow: "validation",
       workflow_execution_mode: "detailed_coverage",
     };
-    const qaReview: WorkflowDraftReview = {
+    const validationReview: WorkflowDraftReview = {
       ...workflowDraftReview(false),
       validation_outcome: {
         schema_version: "1.0",
@@ -152,19 +152,19 @@ describe("Workflow Run monitor", () => {
         { dataset: "validation_check", record_count: 2 },
       ],
     };
-    api.listWorkflowRuns.mockResolvedValue({ items: [qaRun], next_cursor: null });
-    api.readWorkflowRun.mockResolvedValue(qaRun);
-    api.readWorkflowDraftReview.mockResolvedValue(qaReview);
+    api.listWorkflowRuns.mockResolvedValue({ items: [validationRun], next_cursor: null });
+    api.readWorkflowRun.mockResolvedValue(validationRun);
+    api.readWorkflowDraftReview.mockResolvedValue(validationReview);
     const onApplied = vi.fn(async () => undefined);
     const user = userEvent.setup();
-    renderMonitor(api, onApplied, "qa");
+    renderMonitor(api, onApplied, "validation");
 
     const review = await screen.findByRole("table", { name: "Validated draft action counts" });
     expect(within(review).getByText("validation group")).toBeVisible();
     expect(within(review).getByText("validation check")).toBeVisible();
     await user.click(screen.getByRole("button", { name: "Apply validated draft" }));
     const confirmation = await screen.findByRole("dialog", {
-      name: "Apply validated QA draft?",
+      name: "Apply validated Validation draft?",
     });
     await user.click(within(confirmation).getByRole("button", { name: "Apply exact draft" }));
 
@@ -482,7 +482,7 @@ describe("Workflow Run monitor", () => {
 function renderMonitor(
   api: WorkflowRunMonitorApi,
   onApplied: () => Promise<void>,
-  workflow: "analysis" | "conceptual" | "qa" = "conceptual",
+  workflow: "analysis" | "conceptual" | "validation" = "conceptual",
   focusRunId: number | null = 1048,
 ) {
   const queryClient = new QueryClient({

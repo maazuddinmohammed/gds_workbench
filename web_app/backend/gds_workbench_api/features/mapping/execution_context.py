@@ -271,13 +271,6 @@ def build_mapping_execution_context(
             embedded_context=catalog.manifest,
             tool_catalog=catalog,
         )
-    if execution_mode == "detailed_coverage":
-        reject_forbidden_provider_json(
-            cast(JsonValue, preparation.context.authoring.model_dump(mode="json")),
-            allow_identity_keys=True,
-            reject_sensitive_values=True,
-        )
-        return MappingExecutionContext(embedded_context=None)
     return MappingExecutionContext(
         embedded_context=_mapping_provider_context(preparation),
     )
@@ -301,8 +294,6 @@ def _mapping_provider_context(preparation: MappingPreparation) -> JsonValue:
                 "operation": plan.operation,
                 "coverage_mode": plan.coverage_mode,
                 "route": plan.route,
-                "artifact_type": plan.artifact_type,
-                "profile": plan.profile.model_dump(mode="json"),
                 "output_template_selections": (
                     plan.output_template_selections.model_dump(mode="json")
                 ),
@@ -369,6 +360,7 @@ def _mapping_context_datasets(
                 cast(
                     JsonValue,
                     {
+                        "model_object_binding_id": header.model_object_binding_id,
                         "mapping_object_id": header.mapping_object_id,
                         "modeled_entity_id": entity.entity_id,
                         **attribute.model_dump(mode="json"),
@@ -380,6 +372,7 @@ def _mapping_context_datasets(
                 cast(
                     JsonValue,
                     {
+                        "model_object_binding_id": header.model_object_binding_id,
                         "mapping_object_id": header.mapping_object_id,
                         **child.model_dump(mode="json"),
                     },
@@ -443,7 +436,6 @@ def _mapping_context_manifest(
         "model_id": plan.model_id,
         "model_revision": plan.model_revision,
         "pair": plan.pair.model_dump(mode="json"),
-        "profile": plan.profile.model_dump(mode="json"),
         "datasets": [
             {
                 "name": name,

@@ -339,12 +339,13 @@ h2 { font-size: 17px; }
 
 #results-table th,
 #results-table td {
-  max-width: 260px;
-  padding: 9px 11px;
+  max-width: 240px;
+  padding: 6px 8px;
   overflow: hidden;
   border-right: 1px solid var(--grid-line);
   border-bottom: 1px solid var(--grid-line);
   color: #35414c;
+  line-height: 1.35;
   text-align: left;
   text-overflow: ellipsis;
   white-space: nowrap;
@@ -366,7 +367,7 @@ h2 { font-size: 17px; }
 #results-table td:last-child { border-right: 0; }
 #results-table thead th { border-bottom-color: var(--grid-line-strong); }
 
-#results-table td { font-size: 11px; }
+#results-table td { font-size: 10px; }
 #results-table th.is-key,
 #results-table td.is-key { color: var(--ink); font-weight: 760; }
 #results-table tbody tr { outline: none; transition: background-color 120ms ease; }
@@ -374,14 +375,14 @@ h2 { font-size: 17px; }
 #results-table tbody tr:focus { background: #f8fafb; }
 #results-table tbody tr.is-staged { background: var(--blue-soft); }
 #results-table tbody tr.is-staged td:first-child { box-shadow: inset 3px 0 var(--blue); }
-#results-table .row-action { position: sticky; right: 0; min-width: 64px; background: inherit; text-align: right; }
+#results-table .row-action { position: sticky; right: 0; min-width: 58px; background: inherit; text-align: right; }
 
 .text-action {
   padding: 4px 2px;
   border: 0;
   color: var(--blue-dark);
   background: transparent;
-  font-size: 10px;
+  font-size: 9px;
   font-weight: 760;
   cursor: pointer;
 }
@@ -402,14 +403,14 @@ pre,
   flex: 1;
   min-height: 0;
   margin: 0;
-  padding: 14px;
+  padding: 11px;
   overflow: auto;
   color: var(--ink-2);
   border: 0;
   border-radius: 0;
   outline: none;
   background: #fbfcfd;
-  font: 12px/1.55 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font: 11px/1.45 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   tab-size: 2;
 }
 
@@ -426,7 +427,6 @@ pre,
 .issue-list li { padding: 10px 2px; border-bottom: 1px solid var(--line); }
 .issue-code { display: block; margin-bottom: 3px; color: var(--danger); font: 700 10px ui-monospace, monospace; text-transform: uppercase; }
 .issue-location { color: var(--muted); font: 11px ui-monospace, monospace; }
-.acceptance-actions { display: grid; gap: 8px; }
 .rail-note { margin: 11px 0 0; color: var(--muted); font-size: 11px; line-height: 1.45; }
 
 .statusbar {

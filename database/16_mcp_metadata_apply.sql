@@ -141,6 +141,7 @@ BEGIN
             SELECT tenant_code,
                    system_code,
                    connection_code,
+                   source_tenant_code,
                    object_schema,
                    object_name
               FROM jsonb_to_recordset(
@@ -152,6 +153,7 @@ BEGIN
                   tenant_code VARCHAR(100),
                   system_code VARCHAR(100),
                   connection_code VARCHAR(100),
+                  source_tenant_code VARCHAR(100),
                   object_schema VARCHAR(400),
                   object_name VARCHAR(400)
               )
@@ -160,6 +162,7 @@ BEGIN
             SELECT tenant_code,
                    system_code,
                    connection_code,
+                   NULL::VARCHAR(100) AS source_tenant_code,
                    object_schema,
                    object_name
               FROM jsonb_to_recordset(
@@ -183,34 +186,29 @@ BEGIN
         SELECT object.object_id,
                object.is_locked
           FROM touched_object_keys AS touched
-          JOIN core.tenant AS tenant
-            ON lower(btrim(tenant.tenant_code)) = lower(btrim(touched.tenant_code))
+          JOIN core.tenant AS connection_tenant
+            ON lower(btrim(connection_tenant.tenant_code)) =
+               lower(btrim(touched.tenant_code))
           JOIN core.system AS system
             ON lower(btrim(system.system_code)) = lower(btrim(touched.system_code))
           JOIN core.connection AS connection
-            ON connection.system_id = system.system_id
+            ON connection.tenant_id = connection_tenant.tenant_id
+           AND connection.system_id = system.system_id
            AND lower(btrim(connection.connection_code))
              = lower(btrim(touched.connection_code))
-          JOIN core.object AS object
+         JOIN core.object AS object
             ON object.connection_id = connection.connection_id
+           AND object.source_tenant_id = p_tenant_id
            AND lower(btrim(object.object_schema)) = lower(btrim(touched.object_schema))
            AND lower(btrim(object.object_name)) = lower(btrim(touched.object_name))
-         WHERE (
-               NOT connection.is_global_data_store
-               AND connection.tenant_id = tenant.tenant_id
-           ) OR (
-               connection.is_global_data_store
-               AND EXISTS (
-                   SELECT 1
-                     FROM core.tenant_metadata_discovery_scope AS scope
-                    WHERE scope.tenant_id = tenant.tenant_id
-                      AND scope.gds_connection_id = connection.connection_id
-                      AND scope.zone_id = object.zone_id
-                      AND lower(btrim(scope.object_schema)) =
-                          lower(btrim(touched.object_schema))
-                      AND scope.is_active
-               )
-           )
+         WHERE touched.source_tenant_code IS NULL
+            OR EXISTS (
+                SELECT 1
+                  FROM core.tenant AS source_tenant
+                 WHERE source_tenant.tenant_id = p_tenant_id
+                   AND lower(btrim(source_tenant.tenant_code)) =
+                       lower(btrim(touched.source_tenant_code))
+            )
          FOR UPDATE OF object
     LOOP
         IF v_touched_object.is_locked THEN
@@ -247,6 +245,7 @@ BEGIN
               tenant_code VARCHAR(100),
               system_code VARCHAR(100),
               connection_code VARCHAR(100),
+              source_tenant_code VARCHAR(100),
               object_schema VARCHAR(400),
               object_name VARCHAR(400),
               fc_object_schema VARCHAR(400),
@@ -261,12 +260,13 @@ BEGIN
           )
     )
     INSERT INTO core.object AS target (
-        connection_id, object_schema, object_name, fc_object_schema,
+        connection_id, source_tenant_id, object_schema, object_name, fc_object_schema,
         fc_object_name, object_transformation, object_description,
         batch_attribute_name, object_type_id, zone_id, is_locked, is_active,
         created_by, updated_by
     )
     SELECT connection.connection_id,
+           source_tenant.tenant_id,
            records.object_schema,
            records.object_name,
            records.fc_object_schema,
@@ -281,47 +281,39 @@ BEGIN
            v_actor,
            v_actor
       FROM records
-      JOIN core.tenant AS tenant
-        ON lower(btrim(tenant.tenant_code)) = lower(btrim(records.tenant_code))
+      JOIN core.tenant AS connection_tenant
+        ON lower(btrim(connection_tenant.tenant_code)) =
+           lower(btrim(records.tenant_code))
+      JOIN core.tenant AS source_tenant
+        ON lower(btrim(source_tenant.tenant_code)) =
+           lower(btrim(records.source_tenant_code))
       JOIN core.system AS system
         ON lower(btrim(system.system_code)) = lower(btrim(records.system_code))
       JOIN core.connection AS connection
-        ON connection.system_id = system.system_id
+        ON connection.tenant_id = connection_tenant.tenant_id
+       AND connection.system_id = system.system_id
        AND lower(btrim(connection.connection_code)) = lower(btrim(records.connection_code))
       JOIN reference.object_type AS object_type
         ON lower(btrim(object_type.object_type_code))
          = lower(btrim(records.object_type_code))
       JOIN reference.zone AS zone
         ON lower(btrim(zone.zone_code)) = lower(btrim(records.zone_code))
-     WHERE ((
-            NOT connection.is_global_data_store
-            AND connection.tenant_id = tenant.tenant_id
-       ) OR (
-            connection.is_global_data_store
-            AND EXISTS (
-                SELECT 1
-                  FROM core.tenant_metadata_discovery_scope AS scope
-                 WHERE scope.tenant_id = tenant.tenant_id
-                   AND scope.gds_connection_id = connection.connection_id
-                   AND scope.zone_id = zone.zone_id
-                   AND lower(btrim(scope.object_schema))
-                     = lower(btrim(records.object_schema))
-                   AND scope.is_active
-            )
-        ))
-       AND (
-            tenant.tenant_id = p_tenant_id
-            OR EXISTS (
-                SELECT 1
-                  FROM core.tenant_metadata_discovery_scope AS authorized_scope
-                 WHERE authorized_scope.tenant_id = p_tenant_id
-                   AND authorized_scope.gds_connection_id = connection.connection_id
-                   AND authorized_scope.zone_id = zone.zone_id
-                   AND lower(btrim(authorized_scope.object_schema)) =
-                       lower(btrim(records.object_schema))
-                   AND authorized_scope.is_active
-            )
-       )
+     WHERE source_tenant.tenant_id = p_tenant_id
+       AND CASE lower(btrim(zone.zone_code))
+               WHEN 'source' THEN
+                   NOT connection.is_global_data_store
+                   AND connection_tenant.tenant_id = source_tenant.tenant_id
+               WHEN 'bronze' THEN
+                   connection.is_global_data_store
+                   AND connection.connection_id = source_tenant.gds_connection_id
+               WHEN 'silver' THEN
+                   connection.is_global_data_store
+                   AND connection.connection_id = source_tenant.gds_connection_id
+               WHEN 'gold' THEN
+                   connection.is_global_data_store
+                   AND connection.connection_id = source_tenant.gds_connection_id
+               ELSE FALSE
+           END
     ON CONFLICT (
         connection_id,
         (lower(btrim(object_schema))),
@@ -337,7 +329,8 @@ BEGIN
         is_locked = EXCLUDED.is_locked,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
-        updated_by = EXCLUDED.updated_by;
+        updated_by = EXCLUDED.updated_by
+    WHERE target.source_tenant_id = EXCLUDED.source_tenant_id;
     GET DIAGNOSTICS v_affected_count = ROW_COUNT;
     IF v_affected_count <> v_expected_count THEN
         RAISE EXCEPTION 'Object natural-key dependency changed' USING ERRCODE = '40001';
@@ -393,46 +386,21 @@ BEGIN
            v_actor,
            v_actor
       FROM records
-      JOIN core.tenant AS tenant
-        ON lower(btrim(tenant.tenant_code)) = lower(btrim(records.tenant_code))
+      JOIN core.tenant AS connection_tenant
+        ON lower(btrim(connection_tenant.tenant_code)) =
+           lower(btrim(records.tenant_code))
       JOIN core.system AS system
         ON lower(btrim(system.system_code)) = lower(btrim(records.system_code))
       JOIN core.connection AS connection
-        ON connection.system_id = system.system_id
+        ON connection.tenant_id = connection_tenant.tenant_id
+       AND connection.system_id = system.system_id
        AND lower(btrim(connection.connection_code)) = lower(btrim(records.connection_code))
       JOIN core.object AS object
         ON object.connection_id = connection.connection_id
+       AND object.source_tenant_id = p_tenant_id
        AND lower(btrim(object.object_schema)) = lower(btrim(records.object_schema))
        AND lower(btrim(object.object_name)) = lower(btrim(records.object_name))
-     WHERE ((
-            NOT connection.is_global_data_store
-            AND connection.tenant_id = tenant.tenant_id
-       ) OR (
-            connection.is_global_data_store
-            AND EXISTS (
-                SELECT 1
-                  FROM core.tenant_metadata_discovery_scope AS scope
-                 WHERE scope.tenant_id = tenant.tenant_id
-                   AND scope.gds_connection_id = connection.connection_id
-                   AND scope.zone_id = object.zone_id
-                   AND lower(btrim(scope.object_schema))
-                     = lower(btrim(records.object_schema))
-                   AND scope.is_active
-            )
-        ))
-       AND (
-            tenant.tenant_id = p_tenant_id
-            OR EXISTS (
-                SELECT 1
-                  FROM core.tenant_metadata_discovery_scope AS authorized_scope
-                 WHERE authorized_scope.tenant_id = p_tenant_id
-                   AND authorized_scope.gds_connection_id = connection.connection_id
-                   AND authorized_scope.zone_id = object.zone_id
-                   AND lower(btrim(authorized_scope.object_schema)) =
-                       lower(btrim(records.object_schema))
-                   AND authorized_scope.is_active
-            )
-       )
+     WHERE connection_tenant.is_active
     ON CONFLICT (object_id, (lower(btrim(attribute_name)))) DO UPDATE SET
         fc_attribute_name = EXCLUDED.fc_attribute_name,
         attribute_ordinal_position = EXCLUDED.attribute_ordinal_position,
@@ -486,6 +454,7 @@ BEGIN
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
+           AND source_object.source_tenant_id = source_tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
@@ -502,63 +471,20 @@ BEGIN
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
+           AND target_object.source_tenant_id = target_tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
              = lower(btrim(records.target_object_name))
-         WHERE (
-               (
-                   NOT source_connection.is_global_data_store
-                   AND source_connection.tenant_id = source_tenant.tenant_id
-               ) OR (
-                   source_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS source_scope
-                        WHERE source_scope.tenant_id = source_tenant.tenant_id
-                          AND source_scope.gds_connection_id =
-                              source_connection.connection_id
-                          AND source_scope.zone_id = source_object.zone_id
-                          AND lower(btrim(source_scope.object_schema)) =
-                              lower(btrim(records.source_object_schema))
-                          AND source_scope.is_active
-                   )
-               )
+         WHERE source_tenant.tenant_id = p_tenant_id
+           AND target_tenant.tenant_id = p_tenant_id
+           AND (
+               source_connection.is_global_data_store
+               OR source_connection.tenant_id = source_tenant.tenant_id
            )
            AND (
-               (
-                   NOT target_connection.is_global_data_store
-                   AND target_connection.tenant_id = target_tenant.tenant_id
-               ) OR (
-                   target_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS target_scope
-                        WHERE target_scope.tenant_id = target_tenant.tenant_id
-                          AND target_scope.gds_connection_id =
-                              target_connection.connection_id
-                          AND target_scope.zone_id = target_object.zone_id
-                          AND lower(btrim(target_scope.object_schema)) =
-                              lower(btrim(records.target_object_schema))
-                          AND target_scope.is_active
-                   )
-               )
-           )
-           AND (
-               target_tenant.tenant_id = p_tenant_id
-               OR (
-                target_connection.is_global_data_store
-                AND EXISTS (
-                    SELECT 1
-                      FROM core.tenant_metadata_discovery_scope AS scope
-                     WHERE scope.tenant_id = p_tenant_id
-                       AND scope.gds_connection_id = target_connection.connection_id
-                       AND scope.zone_id = target_object.zone_id
-                       AND lower(btrim(scope.object_schema))
-                         = lower(btrim(records.target_object_schema))
-                       AND scope.is_active
-                )
-               )
+               target_connection.is_global_data_store
+               OR target_connection.tenant_id = target_tenant.tenant_id
            )
     )
     INSERT INTO core.ingestion_object_mapping AS target (
@@ -612,6 +538,7 @@ BEGIN
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
+           AND source_object.source_tenant_id = source_tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
@@ -632,6 +559,7 @@ BEGIN
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
+           AND target_object.source_tenant_id = target_tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
@@ -643,59 +571,15 @@ BEGIN
           JOIN core.ingestion_object_mapping AS parent
             ON parent.source_object_id = source_object.object_id
            AND parent.target_object_id = target_object.object_id
-         WHERE (
-               (
-                   NOT source_connection.is_global_data_store
-                   AND source_connection.tenant_id = source_tenant.tenant_id
-               ) OR (
-                   source_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS source_scope
-                        WHERE source_scope.tenant_id = source_tenant.tenant_id
-                          AND source_scope.gds_connection_id =
-                              source_connection.connection_id
-                          AND source_scope.zone_id = source_object.zone_id
-                          AND lower(btrim(source_scope.object_schema)) =
-                              lower(btrim(records.source_object_schema))
-                          AND source_scope.is_active
-                   )
-               )
+         WHERE source_tenant.tenant_id = p_tenant_id
+           AND target_tenant.tenant_id = p_tenant_id
+           AND (
+               source_connection.is_global_data_store
+               OR source_connection.tenant_id = source_tenant.tenant_id
            )
            AND (
-               (
-                   NOT target_connection.is_global_data_store
-                   AND target_connection.tenant_id = target_tenant.tenant_id
-               ) OR (
-                   target_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS target_scope
-                        WHERE target_scope.tenant_id = target_tenant.tenant_id
-                          AND target_scope.gds_connection_id =
-                              target_connection.connection_id
-                          AND target_scope.zone_id = target_object.zone_id
-                          AND lower(btrim(target_scope.object_schema)) =
-                              lower(btrim(records.target_object_schema))
-                          AND target_scope.is_active
-                   )
-               )
-           )
-           AND (
-               target_tenant.tenant_id = p_tenant_id
-               OR (
-                target_connection.is_global_data_store
-                AND EXISTS (
-                    SELECT 1
-                      FROM core.tenant_metadata_discovery_scope AS scope
-                     WHERE scope.tenant_id = p_tenant_id
-                       AND scope.gds_connection_id = target_connection.connection_id
-                       AND scope.zone_id = target_object.zone_id
-                       AND lower(btrim(scope.object_schema))
-                         = lower(btrim(records.target_object_schema))
-                       AND scope.is_active
-                )
-               )
+               target_connection.is_global_data_store
+               OR target_connection.tenant_id = target_tenant.tenant_id
            )
     )
     INSERT INTO core.ingestion_attribute_mapping AS target (
@@ -904,6 +788,7 @@ BEGIN
              = lower(btrim(records.source_connection_code))
           JOIN core.object AS source_object
             ON source_object.connection_id = source_connection.connection_id
+           AND source_object.source_tenant_id = source_tenant.tenant_id
            AND lower(btrim(source_object.object_schema))
              = lower(btrim(records.source_object_schema))
            AND lower(btrim(source_object.object_name))
@@ -920,6 +805,7 @@ BEGIN
              = lower(btrim(records.target_connection_code))
           JOIN core.object AS target_object
             ON target_object.connection_id = target_connection.connection_id
+           AND target_object.source_tenant_id = target_tenant.tenant_id
            AND lower(btrim(target_object.object_schema))
              = lower(btrim(records.target_object_schema))
            AND lower(btrim(target_object.object_name))
@@ -941,62 +827,18 @@ BEGIN
           JOIN reference.data_operation AS target_operation
             ON lower(btrim(target_operation.data_operation_name))
              = lower(btrim(records.target_data_operation_name))
-         WHERE (
-               (
-                   NOT source_connection.is_global_data_store
-                   AND source_connection.tenant_id = source_tenant.tenant_id
-               ) OR (
-                   source_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS source_scope
-                        WHERE source_scope.tenant_id = source_tenant.tenant_id
-                          AND source_scope.gds_connection_id =
-                              source_connection.connection_id
-                          AND source_scope.zone_id = source_object.zone_id
-                          AND lower(btrim(source_scope.object_schema)) =
-                              lower(btrim(records.source_object_schema))
-                          AND source_scope.is_active
-                   )
-               )
+         WHERE source_tenant.tenant_id = p_tenant_id
+           AND target_tenant.tenant_id = p_tenant_id
+           AND (
+               source_connection.is_global_data_store
+               OR source_connection.tenant_id = source_tenant.tenant_id
            )
            AND (
-               (
-                   NOT target_connection.is_global_data_store
-                   AND target_connection.tenant_id = target_tenant.tenant_id
-               ) OR (
-                   target_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS target_scope
-                        WHERE target_scope.tenant_id = target_tenant.tenant_id
-                          AND target_scope.gds_connection_id =
-                              target_connection.connection_id
-                          AND target_scope.zone_id = target_object.zone_id
-                          AND lower(btrim(target_scope.object_schema)) =
-                              lower(btrim(records.target_object_schema))
-                          AND target_scope.is_active
-                   )
-               )
+               target_connection.is_global_data_store
+               OR target_connection.tenant_id = target_tenant.tenant_id
            )
            AND (records.chunk_type_name IS NULL OR chunk_type.chunk_type_id IS NOT NULL)
            AND (records.source_file_type_name IS NULL OR file_type.file_type_id IS NOT NULL)
-           AND (
-               target_tenant.tenant_id = p_tenant_id
-               OR (
-                   target_connection.is_global_data_store
-                   AND EXISTS (
-                       SELECT 1
-                         FROM core.tenant_metadata_discovery_scope AS scope
-                        WHERE scope.tenant_id = p_tenant_id
-                          AND scope.gds_connection_id = target_connection.connection_id
-                          AND scope.zone_id = target_object.zone_id
-                          AND lower(btrim(scope.object_schema))
-                            = lower(btrim(records.target_object_schema))
-                          AND scope.is_active
-                   )
-               )
-           )
     )
     INSERT INTO core.copy AS target (
         copy_group_id, ingestion_object_mapping_id, copy_source_record_limit,
@@ -1135,27 +977,16 @@ BEGIN
              = lower(btrim(records.object_connection_code))
           JOIN core.object AS object
             ON object.connection_id = object_connection.connection_id
+           AND object.source_tenant_id = object_tenant.tenant_id
            AND lower(btrim(object.object_schema)) = lower(btrim(records.object_schema))
            AND lower(btrim(object.object_name)) = lower(btrim(records.object_name))
           JOIN reference.process_type AS process_type
             ON lower(btrim(process_type.process_type_name))
              = lower(btrim(records.process_type_name))
-         WHERE (
-               NOT object_connection.is_global_data_store
-               AND object_connection.tenant_id = object_tenant.tenant_id
-           ) OR (
+         WHERE object_tenant.tenant_id = p_tenant_id
+           AND (
                object_connection.is_global_data_store
-               AND EXISTS (
-                   SELECT 1
-                     FROM core.tenant_metadata_discovery_scope AS object_scope
-                    WHERE object_scope.tenant_id = object_tenant.tenant_id
-                      AND object_scope.gds_connection_id =
-                          object_connection.connection_id
-                      AND object_scope.zone_id = object.zone_id
-                      AND lower(btrim(object_scope.object_schema)) =
-                          lower(btrim(records.object_schema))
-                      AND object_scope.is_active
-               )
+               OR object_connection.tenant_id = object_tenant.tenant_id
            )
     )
     INSERT INTO core.process AS target (

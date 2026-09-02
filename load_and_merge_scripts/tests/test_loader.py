@@ -263,7 +263,6 @@ def test_complete_config_uses_approved_workbook_split() -> None:
             "TenantPrincipalAccess",
         },
         "operational.xlsx": {
-            "TenantMetadataDiscoveryScope",
             "ConnectionLocation",
             "ConnectionValue",
             "Object",
@@ -277,7 +276,7 @@ def test_complete_config_uses_approved_workbook_split() -> None:
             "ProcessGroup",
             "Process",
         },
-        "model.xlsx": {"Model", "ModelScope"},
+        "model.xlsx": {"Model", "ModelInputScope"},
     }
 
 
@@ -322,6 +321,50 @@ def test_model_sheet_uses_canonical_policy_columns() -> None:
         assert f"NULLIF(btrim(staged.{column}::text), '')::jsonb AS {column}" in merge_sql
     for column in definition.columns[2:]:
         assert f"{column} = source.{column}" in merge_sql
+
+
+def test_object_and_input_scope_merges_enforce_tenant_and_zone_boundaries() -> None:
+    definitions = loader.read_config()
+    object_definition = next(
+        value for value in definitions if value.selection == ("operational.xlsx", "Object")
+    )
+    object_sql = object_definition.merge_statements[0]
+
+    assert "source_tenant_code" in object_definition.required_columns
+    assert "NOT connection.is_global_data_store" in object_sql
+    assert "placement_tenant.tenant_id = source_tenant.tenant_id" in object_sql
+    assert object_sql.count("connection.connection_id = source_tenant.gds_connection_id") == 3
+    assert "ELSE FALSE" in object_sql
+
+    scope_definition = next(
+        value for value in definitions if value.selection == ("model.xlsx", "ModelInputScope")
+    )
+    scope_sql = scope_definition.merge_statements[0]
+    assert "object_record.source_tenant_id = model_tenant.tenant_id" in scope_sql
+    assert "lower(btrim(object_zone.zone_code)) IN ('source', 'bronze')" in scope_sql
+
+
+def test_bootstrap_fence_covers_binding_code_and_validation_activity() -> None:
+    required_activity = {
+        ("workflow", "model_object_binding"),
+        ("workflow", "model_attribute_binding"),
+        ("workflow", "generated_code"),
+        ("workflow", "generated_code_source_system"),
+        ("workflow", "validation_group"),
+        ("workflow", "validation_check"),
+    }
+
+    assert required_activity <= set(loader.BOOTSTRAP_ACTIVITY_TABLES)
+    assert (
+        "workflow",
+        "model_object_binding",
+        "model_object_binding_id",
+    ) in loader.LOCK_TARGETS
+    assert (
+        "workflow",
+        "model_attribute_binding",
+        "model_attribute_binding_id",
+    ) in loader.LOCK_TARGETS
 
 
 @pytest.mark.parametrize(
@@ -408,13 +451,52 @@ def test_lock_control_accepts_allowlisted_targets_and_boolean_forms(tmp_path: Pa
         workbook,
         [
             ("core", "object", "object_id", 5, 1, None),
-            ("model", "model_scope", "model_scope_id", 6, "false", 7),
+            (
+                "model",
+                "model_input_scope",
+                "model_input_scope_id",
+                6,
+                "false",
+                7,
+            ),
+            (
+                "workflow",
+                "model_object_binding",
+                "model_object_binding_id",
+                8,
+                "true",
+                7,
+            ),
+            (
+                "workflow",
+                "model_attribute_binding",
+                "model_attribute_binding_id",
+                9,
+                0,
+                7,
+            ),
         ],
     )
 
     assert loader._read_lock_rows(workbook) == (
         ("core", "object", "object_id", 5, True, None),
-        ("model", "model_scope", "model_scope_id", 6, False, 7),
+        ("model", "model_input_scope", "model_input_scope_id", 6, False, 7),
+        (
+            "workflow",
+            "model_object_binding",
+            "model_object_binding_id",
+            8,
+            True,
+            7,
+        ),
+        (
+            "workflow",
+            "model_attribute_binding",
+            "model_attribute_binding_id",
+            9,
+            False,
+            7,
+        ),
     )
 
 
@@ -424,7 +506,18 @@ def test_lock_control_accepts_allowlisted_targets_and_boolean_forms(tmp_path: Pa
         (("core", "project", "project_id", 5, 1, None), "non-allowlisted target"),
         (("core", "object", "object_id", 5, "yes", None), "must be 1 or 0"),
         (
-            ("model", "model_scope", "model_scope_id", 5, 1, None),
+            ("model", "model_input_scope", "model_input_scope_id", 5, 1, None),
+            "require expected_model_revision",
+        ),
+        (
+            (
+                "workflow",
+                "model_object_binding",
+                "model_object_binding_id",
+                5,
+                1,
+                None,
+            ),
             "require expected_model_revision",
         ),
     ],
@@ -524,11 +617,51 @@ def test_lock_update_rejects_stale_model_revision(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     cursor = FakeCursor(target_rows=((6, 9, True, 3, 8, 7),))
-    load = loader.PreparedLockLoad(rows=(("model", "model_scope", "model_scope_id", 6, True, 7),))
+    load = loader.PreparedLockLoad(
+        rows=(
+            (
+                "model",
+                "model_input_scope",
+                "model_input_scope_id",
+                6,
+                True,
+                7,
+            ),
+        )
+    )
     monkeypatch.setattr(loader, "_resolve_lock_actor", lambda value: LOCK_ACTOR)
 
     with pytest.raises(loader.LoaderError, match="revision is stale"):
         loader._execute_lock_load(cursor, load)
+
+
+def test_attribute_binding_lock_resolves_model_through_object_binding(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    cursor = FakeCursor(target_rows=((6, 9, True, 3, 8, 7),))
+    load = loader.PreparedLockLoad(
+        rows=(
+            (
+                "workflow",
+                "model_attribute_binding",
+                "model_attribute_binding_id",
+                6,
+                True,
+                7,
+            ),
+        )
+    )
+    monkeypatch.setattr(loader, "_resolve_lock_actor", lambda value: LOCK_ACTOR)
+
+    with pytest.raises(loader.LoaderError, match="revision is stale"):
+        loader._execute_lock_load(cursor, load)
+
+    query = next(
+        statement
+        for event, statement, _ in cursor.events
+        if event == "execute" and 'JOIN "workflow"."model_object_binding"' in statement
+    )
+    assert "target.model_object_binding_id" in query
 
 
 def test_main_dry_run_never_loads_dotenv_or_calls_connector(

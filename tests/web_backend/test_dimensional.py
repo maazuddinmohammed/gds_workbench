@@ -114,7 +114,7 @@ class StaticDimensionalService:
             dimensional_fact_type="transaction",
             dimensional_entity_dependency_order=0,
             dimensional_entity_confidence="high",
-            dimensional_entity_status="needs_review",
+            dimensional_entity_status="active",
             dimensional_entity_is_locked=False,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
         )
@@ -220,7 +220,7 @@ class StaticDimensionalService:
     ) -> DimensionalRelationshipPage:
         assert principal.actor_kind is ActorKind.HUMAN
         assert filters == DimensionalRelationshipFilters(
-            status="needs_review",
+            status="inactive",
             locked=True,
             dimensional_entity_id=101,
         )
@@ -269,7 +269,7 @@ class StaticDimensionalService:
             dimensional_relationship_is_optional=False,
             dimensional_relationship_role_name="ordering_customer",
             dimensional_relationship_confidence="high",
-            dimensional_relationship_status="needs_review",
+            dimensional_relationship_status="active",
             dimensional_relationship_is_locked=True,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
         )
@@ -297,7 +297,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
         collection = client.get(
             "/api/v1/tenants/7/models/18/dimensional/objects",
             params={
-                "status": "NEEDS_REVIEW",
+                "status": "INACTIVE",
                 "locked": "false",
                 "name_prefix": "  Fact  ",
                 "page_size": "25",
@@ -307,7 +307,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
 
     assert collection.status_code == 200
     assert service.filters == ModeledFilters(
-        status="needs_review",
+        status="inactive",
         locked=False,
         name_prefix="fact",
     )
@@ -365,7 +365,7 @@ def test_dimensional_relationship_collection_and_detail_return_named_endpoints()
         collection = client.get(
             "/api/v1/tenants/7/models/18/dimensional/relationships",
             params={
-                "status": "NEEDS_REVIEW",
+                "status": "INACTIVE",
                 "locked": "true",
                 "dimensional_entity_id": "101",
             },

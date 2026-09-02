@@ -657,7 +657,7 @@ async def test_entity_detail_preserves_sources_and_exact_many_to_many_membership
     definitions = cast(dict[str, object], schema["$defs"])
     attribute_schema = cast(dict[str, object], definitions["LogicalAttributeRecord"])
     assert any(
-        "Natural and surrogate key flags are mutually exclusive" in rule
+        "Use PascalCase; identifier Attributes end in ID" in rule
         for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
     )
 

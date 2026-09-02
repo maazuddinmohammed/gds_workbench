@@ -26,7 +26,7 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        AND to_regclass('application.workflow_stage_variable') IS NOT NULL
        AND to_regclass('application.prompt_template') IS NOT NULL
        AND to_regclass('application.workflow_run_object_selection') IS NOT NULL
-       AND to_regclass('application.generated_sql_artifact') IS NOT NULL
+       AND to_regclass('workflow.generated_code') IS NOT NULL
        AND to_regclass('model.model_event_log') IS NOT NULL AS schema_ready,
        current_user = 'gds_web_write'
        AND EXISTS (

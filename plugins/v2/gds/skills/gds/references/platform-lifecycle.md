@@ -1,24 +1,23 @@
-# Platform lifecycle and orchestration
+# Platform lifecycle
 
-A Tenant owns Systems for orchestration, not physical-key inference.
-Connections locate physical Objects and Attributes in Source/Bronze/Silver/Gold.
-Source → Bronze uses `ingestion_object_mapping`, `copy_group` and `copy`; the plugin authors metadata,
-not ingestion. After Bronze, create a Model with authorized Model Scope. Profiling, Analysis, and Conceptual
-are optional evidence for Logical; never fabricate unavailable data. Dimensional is optional
-after applied Logical Mapping.
+Tenant intake establishes Tenant, Systems, Connections, and Source discovery through a Metadata Change Set. Source-to-Bronze ingestion uses registered Objects/Attributes, ingestion Mapping, Copy Group, and Copy. Bronze may be skipped when a Source is available through a foreign catalog.
 
-Logical → Silver Target Registration → scope activation → Logical Mapping → Code and/or QA. The
-optional Dimensional branch uses Gold Registration, scope activation, Mapping, Code and/or QA.
-Registration produces local DDL plus target Metadata. Mapping is the executable truth source for Code.
-QA uses applied Mapping and current relevant Code when present; Code is optional.
+```text
+Tenant Intake and Source/Bronze Metadata
+→ Model Input Scope (Model Apply and fresh Model Snapshot)
+→ Profiling, Assertions, Analysis, optional Conceptual
+→ Logical
+→ Silver Target Registration (Metadata Apply)
+→ Logical Model Binding (Model Apply)
+→ Logical Mapping → Code and/or Validation
 
-Default GDS/Julius orchestration accepts one Tenant and selected Systems, with one active pipeline per
-Tenant. Process has one row per System; several rows may reference the same target artifact, and the
-runtime executes that artifact once. Distinct safe artifacts at one order run in parallel; lower orders finish first,
-and any failure blocks later orders. External triggers control prerequisite Systems.
+Logical Mapping
+→ optional Dimensional
+→ Gold Target Registration (Metadata Apply)
+→ Dimensional Model Binding (Model Apply)
+→ Dimensional Mapping → Code and/or Validation
+```
 
-Databricks SQL may contain semicolon-separated statements and same-session temporary views; its final
-statement returns the dataframe. Runtime merge uses the target natural key and Process metadata. An
-upstream-target read is dependency evidence; a target self-read may inspect only prior state. Never
-infer reruns or order from SQL. This guides generation, not orchestration code. For another runtime,
-confirm dialect/artifact, session/final-result, merge/write, dependency/concurrency, and QA rules.
+Model Input Scope must be applied before Profiling or model development. Metadata registration must succeed before Model Binding. Binding must succeed before Mapping or Code. Process metadata comes later when the user supplies real artifact paths and orchestration details.
+
+Generated SQL is handed to the user. It may be preflighted with governed Databricks SQL, but the plugin never deploys or runs the orchestration pipeline. Runtime triggers, scheduling, and loading remain orchestration ownership.

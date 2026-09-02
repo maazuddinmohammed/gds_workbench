@@ -204,7 +204,7 @@ class StaticProfilingReviewService:
                     relationship_confidence="high",
                     validation_state="validated",
                     validation_result="supported",
-                    status="needs_review",
+                    status="active",
                     is_locked=True,
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 ),
@@ -333,7 +333,7 @@ def test_analysis_ledger_keeps_from_and_to_filters_directional() -> None:
             "/api/v1/tenants/7/models/18/analysis"
             "?object_id=501&from_object_id=501&to_object_id=502"
             "&validation_state=VALIDATED"
-            "&status=Needs_Review&locked=true&show_inactive=true&page_size=25"
+            "&status=Inactive&locked=true&show_inactive=true&page_size=25"
         )
 
     assert response.status_code == 200
@@ -342,7 +342,7 @@ def test_analysis_ledger_keeps_from_and_to_filters_directional() -> None:
         from_object_id=501,
         to_object_id=502,
         validation_state="validated",
-        status="needs_review",
+        status="inactive",
         locked=True,
         show_inactive=True,
     )
@@ -486,7 +486,7 @@ class ReviewTransaction:
                 "agent_run_id": None,
                 "inference_workflow_run_id": None,
                 "validation_workflow_run_id": None,
-                "status": "needs_review",
+                "status": "active",
                 "is_locked": True,
                 "created_at": datetime(2026, 8, 24, 13, 59, tzinfo=UTC),
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -546,9 +546,9 @@ class ReviewTransaction:
                 502,
                 "validated",
                 "validated",
-                "needs_review",
-                "needs_review",
-                "needs_review",
+                "active",
+                "active",
+                "active",
                 True,
                 True,
                 True,
@@ -594,7 +594,7 @@ class ReviewTransaction:
                     "relationship_confidence": "high",
                     "validation_state": "validated",
                     "validation_result": "supported",
-                    "status": "needs_review",
+                    "status": "active",
                     "is_locked": True,
                     "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 },
@@ -605,7 +605,7 @@ class ReviewTransaction:
                     "relationship_confidence": "medium",
                     "validation_state": "validated",
                     "validation_result": "supported",
-                    "status": "needs_review",
+                    "status": "active",
                     "is_locked": True,
                     "updated_at": datetime(2026, 8, 24, 14, 1, tzinfo=UTC),
                 },
@@ -832,7 +832,7 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
         from_object_id=501,
         to_object_id=502,
         validation_state="validated",
-        status="needs_review",
+        status="active",
         locked=True,
         show_inactive=True,
     )
@@ -895,7 +895,7 @@ async def test_database_analysis_detail_normalizes_evidence_and_nullable_provena
 
 
 @pytest.mark.asyncio
-async def test_database_review_labels_gds_objects_from_discovery_scope(
+async def test_database_review_labels_objects_from_source_tenant(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     suffix = uuid4().hex[:12]
@@ -941,12 +941,14 @@ async def test_database_review_labels_gds_objects_from_discovery_scope(
             """
             INSERT INTO core.object (
                 connection_id,
+                source_tenant_id,
                 object_schema,
                 object_name,
                 object_type_id,
                 zone_id
             )
             SELECT connection.connection_id,
+                   connection.tenant_id,
                    %s,
                    %s,
                    object_type.object_type_id,
@@ -977,7 +979,7 @@ async def test_database_review_labels_gds_objects_from_discovery_scope(
         assert unassigned_attribute is not None
         connection.execute(
             """
-            INSERT INTO model.model_scope (model_id, object_id)
+            INSERT INTO model.model_input_scope (model_id, object_id)
             VALUES (%s, %s), (%s, %s), (%s, %s)
             """,
             (

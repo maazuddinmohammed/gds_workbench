@@ -138,19 +138,10 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
     assert [
         (trigger["trigger_name"], trigger["relation_name"]) for trigger in triggers
     ] == trigger_pairs
-    shared_trigger_functions = {
-        "validate_mapping_object_output_template": "validate_mapping_output_template",
-        "validate_mapping_attribute_output_template": "validate_mapping_output_template",
-    }
     assert all(
-        trigger["function_name"]
-        == shared_trigger_functions.get(
-            trigger["trigger_name"],
-            trigger["trigger_name"],
-        )
-        for trigger in triggers
+        trigger["function_name"] == trigger["trigger_name"] for trigger in triggers
     )
-    assert row == {"table_count": 99, "function_count": 82, "trigger_count": 17}
+    assert row == {"table_count": 100, "function_count": 79, "trigger_count": 15}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(

@@ -3,197 +3,37 @@
 from typing import LiteralString
 
 OBJECT_CLOSURE_SQL: LiteralString = """
-WITH RECURSIVE requested_tenant AS (
+WITH requested_tenant AS (
     SELECT tenant_id
       FROM core.tenant
      WHERE tenant_id = %s
        AND is_active
 ),
-active_scope_config AS (
-    SELECT scope.tenant_metadata_discovery_scope_id,
-           scope.gds_connection_id,
-           scope.zone_id,
-           scope.object_schema,
-           connection.is_active AS connection_is_active,
-           connection.is_global_data_store,
-           zone.zone_code,
-           zone.is_active AS zone_is_active
-      FROM requested_tenant
-      JOIN core.tenant_metadata_discovery_scope AS scope
-        ON scope.tenant_id = requested_tenant.tenant_id
-       AND scope.is_active
-      LEFT JOIN core.connection AS connection
-        ON connection.connection_id = scope.gds_connection_id
-      LEFT JOIN reference.zone AS zone
-        ON zone.zone_id = scope.zone_id
-),
-invalid_scope_config AS (
-    SELECT 1
-      FROM active_scope_config
-     WHERE connection_is_active IS DISTINCT FROM TRUE
-        OR is_global_data_store IS DISTINCT FROM TRUE
-        OR zone_is_active IS DISTINCT FROM TRUE
-        OR zone_code NOT IN ('bronze', 'silver', 'gold')
-     LIMIT 1
-),
-valid_scope_config AS (
-    SELECT gds_connection_id, zone_id, object_schema
-      FROM active_scope_config
-     WHERE connection_is_active
-       AND is_global_data_store
-       AND zone_is_active
-       AND zone_code IN ('bronze', 'silver', 'gold')
-),
-resolved_object_tenants AS (
+tenant_objects AS (
     SELECT object.object_id,
-           CASE
-               WHEN connection.is_global_data_store
-               THEN discovery_tenant.tenant_id
-               ELSE connection_tenant.tenant_id
-           END AS object_tenant_id
-      FROM core.object AS object
-      JOIN core.connection AS connection
-        ON connection.connection_id = object.connection_id
-      LEFT JOIN core.tenant AS connection_tenant
-        ON NOT connection.is_global_data_store
-       AND connection_tenant.tenant_id = connection.tenant_id
-       AND connection_tenant.is_active
-      LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-        ON connection.is_global_data_store
-       AND discovery_scope.gds_connection_id = connection.connection_id
-       AND discovery_scope.zone_id = object.zone_id
-       AND lower(btrim(discovery_scope.object_schema)) =
-           lower(btrim(object.object_schema))
-       AND discovery_scope.is_active
-      LEFT JOIN core.tenant AS discovery_tenant
-        ON discovery_tenant.tenant_id = discovery_scope.tenant_id
-       AND discovery_tenant.is_active
-     WHERE (
-               NOT connection.is_global_data_store
-               AND connection_tenant.tenant_id IS NOT NULL
-           )
-        OR (
-               connection.is_global_data_store
-               AND discovery_tenant.tenant_id IS NOT NULL
-           )
-),
-owned_objects AS (
-    SELECT object.object_id
+           object.source_tenant_id AS object_tenant_id
       FROM requested_tenant
-      JOIN core.connection AS connection
-        ON connection.tenant_id = requested_tenant.tenant_id
-       AND NOT connection.is_global_data_store
       JOIN core.object AS object
-        ON object.connection_id = connection.connection_id
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = object.object_id
-),
-scope_objects AS (
-    SELECT object.object_id
-      FROM valid_scope_config AS scope
-      JOIN core.object AS object
-        ON object.connection_id = scope.gds_connection_id
-       AND object.zone_id = scope.zone_id
-       AND lower(btrim(object.object_schema)) = lower(btrim(scope.object_schema))
-      JOIN requested_tenant ON TRUE
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = object.object_id
-       AND resolved.object_tenant_id = requested_tenant.tenant_id
-),
-copy_objects AS (
-    SELECT mapping.source_object_id AS object_id
-      FROM requested_tenant
-      JOIN core.copy_group AS copy_group
-        ON copy_group.tenant_id = requested_tenant.tenant_id
-      JOIN core.copy AS copy
-        ON copy.copy_group_id = copy_group.copy_group_id
-      JOIN core.ingestion_object_mapping AS mapping
-        ON mapping.ingestion_object_mapping_id = copy.ingestion_object_mapping_id
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = mapping.source_object_id
-    UNION
-    SELECT mapping.target_object_id
-      FROM requested_tenant
-      JOIN core.copy_group AS copy_group
-        ON copy_group.tenant_id = requested_tenant.tenant_id
-      JOIN core.copy AS copy
-        ON copy.copy_group_id = copy_group.copy_group_id
-      JOIN core.ingestion_object_mapping AS mapping
-        ON mapping.ingestion_object_mapping_id = copy.ingestion_object_mapping_id
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = mapping.target_object_id
-),
-process_objects AS (
-    SELECT process.object_id
-      FROM requested_tenant
-      JOIN core.process_group AS process_group
-        ON process_group.tenant_id = requested_tenant.tenant_id
-      JOIN core.process AS process
-        ON process.process_group_id = process_group.process_group_id
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = process.object_id
-),
-model_scope_objects AS (
-    SELECT model_scope.object_id
-      FROM requested_tenant
-      JOIN model.model AS model
-        ON model.tenant_id = requested_tenant.tenant_id
-       AND model.is_active
-      JOIN model.model_scope AS model_scope
-        ON model_scope.model_id = model.model_id
-       AND model_scope.is_active
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = model_scope.object_id
-),
-seed_objects AS (
-    SELECT object_id FROM owned_objects
-    UNION
-    SELECT object_id FROM scope_objects
-    UNION
-    SELECT object_id FROM copy_objects
-    UNION
-    SELECT object_id FROM process_objects
-    UNION
-    SELECT object_id FROM model_scope_objects
-),
-connected_objects (object_id) AS (
-    SELECT object_id FROM seed_objects
-    UNION
-    SELECT resolved.object_id
-      FROM connected_objects
-      JOIN core.ingestion_object_mapping AS mapping
-        ON mapping.is_active
-       AND (
-           mapping.source_object_id = connected_objects.object_id
-           OR mapping.target_object_id = connected_objects.object_id
-       )
-      JOIN resolved_object_tenants AS resolved
-        ON resolved.object_id = CASE
-               WHEN mapping.source_object_id = connected_objects.object_id
-               THEN mapping.target_object_id
-               ELSE mapping.source_object_id
-           END
+        ON object.source_tenant_id = requested_tenant.tenant_id
 )
 SELECT requested_tenant.tenant_id,
-       connected_objects.object_id,
-       resolved.object_tenant_id,
+       tenant_objects.object_id,
+       tenant_objects.object_tenant_id,
        zone.zone_code AS snapshot_zone_code,
-       zone.is_active AS snapshot_zone_is_active,
-       EXISTS (SELECT 1 FROM invalid_scope_config) AS invalid_discovery_scope
+       zone.is_active AS snapshot_zone_is_active
   FROM requested_tenant
-  LEFT JOIN connected_objects ON TRUE
-  LEFT JOIN resolved_object_tenants AS resolved
-    ON resolved.object_id = connected_objects.object_id
+  LEFT JOIN tenant_objects ON TRUE
   LEFT JOIN core.object AS object
-    ON object.object_id = connected_objects.object_id
+    ON object.object_id = tenant_objects.object_id
   LEFT JOIN reference.zone AS zone
     ON zone.zone_id = object.zone_id
- ORDER BY connected_objects.object_id
+ ORDER BY tenant_objects.object_id
 """
 
 OBJECT_ROWS_SQL: LiteralString = """
 SELECT object_id,
        connection_id,
+       source_tenant_id,
        object_schema,
        object_name,
        fc_object_schema,
@@ -352,18 +192,6 @@ SELECT process.process_id,
  ORDER BY process.process_id
 """
 
-
-DISCOVERY_SCOPE_ROWS_SQL: LiteralString = """
-SELECT tenant_metadata_discovery_scope_id,
-       tenant_id,
-       gds_connection_id,
-       zone_id,
-       object_schema,
-       is_active
-  FROM core.tenant_metadata_discovery_scope
- WHERE tenant_id = %s
- ORDER BY tenant_metadata_discovery_scope_id
-"""
 
 FOUNDATION_CONNECTION_ROWS_SQL: LiteralString = """
 SELECT connection.connection_id,

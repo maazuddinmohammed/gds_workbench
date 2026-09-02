@@ -230,6 +230,24 @@ async def test_tool_executes_governed_batch_and_returns_final_result() -> None:
     assert connection.access_token not in rendered_audit
 
 
+@pytest.mark.asyncio
+async def test_tool_defaults_environment_to_dev_when_omitted() -> None:
+    database = FakeDatabase({"tenant_id": 7}, _values(environment_code="dev"))
+    executor = FakeExecutor()
+
+    async with Client(_server(database, executor)) as client:
+        result = await client.call_tool(
+            "execute_databricks_sql",
+            {"connection_id": 42, "sql": "SELECT 1"},
+        )
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    assert result.structured_content["environment_code"] == "dev"
+    assert database.lookups == [(42, "dev")]
+    assert database.audit_records[0].input_metadata["environment_code"] == "dev"
+
+
 @pytest.mark.parametrize(
     ("failure_code", "expected_code"),
     [

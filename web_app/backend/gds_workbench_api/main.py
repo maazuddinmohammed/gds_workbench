@@ -73,7 +73,10 @@ from gds_workbench_api.features.model_change_sets.router import (
     ModelChangeSetService,
     create_model_change_sets_router,
 )
-from gds_workbench_api.features.model_scope import ModelScopeService, create_scope_router
+from gds_workbench_api.features.model_input_scope import (
+    ModelInputScopeService,
+    create_input_scope_router,
+)
 from gds_workbench_api.features.models import (
     ModelCommandService,
     ModelService,
@@ -91,12 +94,6 @@ from gds_workbench_api.features.profiling import (
     create_profiling_workflow_router,
 )
 from gds_workbench_api.features.prompts import PromptService, create_prompts_router
-from gds_workbench_api.features.qa import (
-    QAReadService,
-    QAWorkflowService,
-    create_qa_read_router,
-    create_qa_workflow_router,
-)
 from gds_workbench_api.features.session import SessionService, create_session_router
 from gds_workbench_api.features.sql_generation_guides import (
     SqlGenerationGuideService,
@@ -107,6 +104,12 @@ from gds_workbench_api.features.tenant_locks import (
     create_tenant_lock_router,
 )
 from gds_workbench_api.features.tenants import TenantService, create_tenants_router
+from gds_workbench_api.features.validation import (
+    ValidationReadService,
+    ValidationWorkflowService,
+    create_validation_read_router,
+    create_validation_workflow_router,
+)
 from gds_workbench_api.features.workflows.authoring.change_set_apply_router import (
     WorkflowDraftApplyService,
     create_workflow_draft_apply_router,
@@ -139,7 +142,7 @@ def create_app(
     model_command_service: ModelCommandService | None = None,
     model_change_set_service: ModelChangeSetService | None = None,
     workflow_draft_apply_service: WorkflowDraftApplyService | None = None,
-    model_scope_service: ModelScopeService | None = None,
+    model_input_scope_service: ModelInputScopeService | None = None,
     agent_capability_registry: AgentCapabilityRegistry | None = None,
     tenant_lock_service: TenantLockService | None = None,
     metadata_service: MetadataService | None = None,
@@ -163,8 +166,8 @@ def create_app(
     mapping_workflow_service: MappingWorkflowService | None = None,
     code_generation_service: CodeGenerationService | None = None,
     code_generation_workflow_service: CodeGenerationWorkflowService | None = None,
-    qa_read_service: QAReadService | None = None,
-    qa_workflow_service: QAWorkflowService | None = None,
+    validation_read_service: ValidationReadService | None = None,
+    validation_workflow_service: ValidationWorkflowService | None = None,
     workflow_overview_service: WorkflowOverviewService | None = None,
     workflow_run_service: WorkflowRunService | None = None,
     workflow_command_service: WorkflowCommandService | None = None,
@@ -243,11 +246,11 @@ def create_app(
                 service=workflow_draft_apply_service,
             )
         )
-    if identity_provider is not None and model_scope_service is not None:
+    if identity_provider is not None and model_input_scope_service is not None:
         app.include_router(
-            create_scope_router(
+            create_input_scope_router(
                 identity_provider=identity_provider,
-                service=model_scope_service,
+                service=model_input_scope_service,
             )
         )
     if identity_provider is not None and agent_capability_registry is not None:
@@ -420,18 +423,18 @@ def create_app(
                 service=code_generation_workflow_service,
             )
         )
-    if identity_provider is not None and qa_read_service is not None:
+    if identity_provider is not None and validation_read_service is not None:
         app.include_router(
-            create_qa_read_router(
+            create_validation_read_router(
                 identity_provider=identity_provider,
-                service=qa_read_service,
+                service=validation_read_service,
             )
         )
-    if identity_provider is not None and qa_workflow_service is not None:
+    if identity_provider is not None and validation_workflow_service is not None:
         app.include_router(
-            create_qa_workflow_router(
+            create_validation_workflow_router(
                 identity_provider=identity_provider,
-                service=qa_workflow_service,
+                service=validation_workflow_service,
             )
         )
     if identity_provider is not None and workflow_overview_service is not None:

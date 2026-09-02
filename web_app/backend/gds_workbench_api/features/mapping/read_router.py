@@ -10,9 +10,11 @@ from gds_workbench_api.features.mapping.read_contracts import (
     MappingAttributePage,
     MappingDependencyFilters,
     MappingDependencyPage,
+    MappingEntityType,
     MappingListQuery,
     MappingObjectDetail,
     MappingObjectPage,
+    MappingTargetPage,
 )
 from gds_workbench_api.features.mapping.read_service import MappingReviewService
 
@@ -59,6 +61,31 @@ def create_mapping_review_router(
         list_dependencies,
         methods=["GET"],
         response_model=MappingDependencyPage,
+    )
+
+    async def list_targets(
+        request: Request,
+        tenant_id: Annotated[int, Path(gt=0)],
+        model_id: Annotated[int, Path(gt=0)],
+        entity_type: Annotated[MappingEntityType, Query()],
+        page_size: Annotated[int, Query(ge=1, le=200)] = 200,
+        cursor: Annotated[str | None, Query(max_length=2048)] = None,
+    ) -> MappingTargetPage:
+        principal = identity_provider.authenticate(request.headers)
+        return await service.list_targets(
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            entity_type=entity_type,
+            page_size=page_size,
+            cursor=cursor,
+        )
+
+    router.add_api_route(
+        "/targets",
+        list_targets,
+        methods=["GET"],
+        response_model=MappingTargetPage,
     )
 
     async def list_objects(

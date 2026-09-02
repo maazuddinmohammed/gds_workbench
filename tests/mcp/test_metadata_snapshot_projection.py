@@ -113,7 +113,7 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
     }
     object_common = {
         "connection_id": 3,
-        "object_tenant_id": 2,
+        "source_tenant_id": 2,
         "fc_object_schema": None,
         "fc_object_name": None,
         "object_transformation": None,
@@ -185,16 +185,6 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                     "has_foreign_catalog": False,
                     "foreign_catalog": None,
                     "is_global_data_store": True,
-                    "is_active": True,
-                }
-            ],
-            "tenant_metadata_discovery_scope": [
-                {
-                    "tenant_metadata_discovery_scope_id": 5,
-                    "tenant_id": 2,
-                    "gds_connection_id": 3,
-                    "zone_id": 21,
-                    "object_schema": "dbo",
                     "is_active": True,
                 }
             ],

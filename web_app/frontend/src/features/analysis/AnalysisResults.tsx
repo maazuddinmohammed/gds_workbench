@@ -12,7 +12,7 @@ import type {
   AnalysisFilters,
   AnalysisFinding,
 } from "./api";
-import type { ModelScopeObject } from "../model_scope/api";
+import type { ModelInputScopeObject } from "../model_input_scope/api";
 
 export function AnalysisResults({
   tenantId,
@@ -34,7 +34,7 @@ export function AnalysisResults({
   tenantId: number;
   modelId: number;
   items: AnalysisFinding[];
-  endpointOptions: ModelScopeObject[];
+  endpointOptions: ModelInputScopeObject[];
   filters: AnalysisFilters;
   selectedIds: Set<number>;
   isLoading: boolean;

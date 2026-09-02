@@ -81,7 +81,7 @@ bounded summary from its receipt context, so the Prompt does not duplicate it.
 - Source, Bronze, Silver, and Gold objects and attributes;
 - active ingestion mappings across all four zones;
 - one copy group, member group, control row, copy, process group, and process;
-- Bronze, Silver, and Gold metadata discovery scopes; and
+- required source-Tenant ownership across Source, Bronze, Silver, and Gold; and
 - only the Reference values required by those rows.
 
 Run it only in a new test database:
@@ -111,7 +111,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ```
 
 The template grants `viewer`, which is sufficient for `list_tenants` and
-`get_metadata_snapshot`. It refuses unchanged placeholders, missing/inactive
+`create_metadata_snapshot`. It refuses unchanged placeholders, missing/inactive
 Tenants, and duplicate Principal or Entra identity records.
 
 ## Local Super Admin

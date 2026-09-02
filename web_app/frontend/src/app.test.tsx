@@ -416,9 +416,9 @@ describe("Model overview", () => {
 
     expect(workspaceNavigation).toHaveAttribute("data-collapsed", "true");
     expect(modelJourney).toHaveAttribute("data-collapsed", "true");
-    await user.click(within(modelJourney).getByRole("link", { name: "Scope" }));
+    await user.click(within(modelJourney).getByRole("link", { name: "Model Input Scope" }));
 
-    expect(await screen.findByRole("table", { name: "Active Scope" })).toBeVisible();
+    expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();
     const persistedWorkspaceNavigation = screen.getByLabelText("Workspace navigation");
     const persistedModelJourney = screen.getByLabelText("Model journey");
     expect(within(persistedWorkspaceNavigation).getByRole("button", {
@@ -451,9 +451,9 @@ describe("Model overview", () => {
     expect(within(ledger).getByText("Results available")).toBeVisible();
     expect(within(ledger).getByText("Conceptual results unavailable")).toBeVisible();
     expect(within(ledger).queryByText(/blocked/i)).not.toBeInTheDocument();
-    expect(within(ledger).getByRole("link", { name: "Review Scope" })).toHaveAttribute(
+    expect(within(ledger).getByRole("link", { name: "Review Input Scope" })).toHaveAttribute(
       "href",
-      "/tenants/7/models/18/scope",
+      "/tenants/7/models/18/input-scope",
     );
     expect(within(ledger).getByRole("link", { name: "Review Profiling" })).toHaveAttribute(
       "href",
@@ -467,17 +467,17 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
     });
     render(<WorkbenchApp router={router} />);
 
-    const scope = await screen.findByRole("table", { name: "Active Scope" });
+    const scope = await screen.findByRole("table", { name: "Active Model Input Scope" });
     expect(within(scope).getByText("customer_raw")).toBeVisible();
     expect(within(scope).getByText("GRDM")).toBeVisible();
     expect(within(scope).getByText("Bronze")).toBeVisible();
     expect(within(scope).getByRole("button", { name: "Show details for customer_raw" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/scope?page_size=200",
+      "/api/v1/tenants/7/models/18/input-scope?page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -486,11 +486,11 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
-    await screen.findByRole("table", { name: "Active Scope" });
+    await screen.findByRole("table", { name: "Active Model Input Scope" });
 
     await user.selectOptions(screen.getByLabelText("Zone"), "bronze");
     await user.type(screen.getByLabelText("System code"), " CRM ");
@@ -498,9 +498,9 @@ describe("Active Scope", () => {
     await user.type(screen.getByLabelText("Object name"), " Customer_Raw ");
     await user.click(screen.getByRole("button", { name: "Apply filters" }));
 
-    expect(await screen.findByRole("table", { name: "Active Scope" })).toBeVisible();
+    expect(await screen.findByRole("table", { name: "Active Model Input Scope" })).toBeVisible();
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
+      "/api/v1/tenants/7/models/18/input-scope?zone=bronze&system_code=crm&source_tenant_code=grdm&object_name=customer_raw&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -509,26 +509,28 @@ describe("Active Scope", () => {
     const fetcher = tenantFetchStub();
     const router = createWorkbenchRouter({
       api: createApiClient(fetcher),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/scope"] }),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/input-scope"] }),
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={router} />);
     const showDetails = await screen.findByRole("button", {
       name: "Show details for customer_raw",
     });
-    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/scope/501"))).toBe(false);
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/input-scope/501"))).toBe(false);
 
     await user.click(showDetails);
 
-    const drawer = await screen.findByRole("complementary", { name: "Scope Object details" });
+    const drawer = await screen.findByRole("complementary", { name: "Model Input Scope Object details" });
     expect(within(drawer).getByRole("heading", { name: "customer_raw" })).toBeVisible();
     expect(within(drawer).getByText("customer_id")).toBeVisible();
-    expect(within(drawer).getByText("Bronze source").parentElement).toHaveTextContent("Eligible");
+    expect(within(drawer).getByText("Source or Bronze input").parentElement).toHaveTextContent(
+      "Eligible",
+    );
     expect(within(drawer).getByText("Dimensional source").parentElement).toHaveTextContent("Not eligible");
 
     await user.click(within(drawer).getByRole("button", { name: "Close object details" }));
 
-    expect(screen.queryByRole("complementary", { name: "Scope Object details" })).not.toBeInTheDocument();
+    expect(screen.queryByRole("complementary", { name: "Model Input Scope Object details" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show details for customer_raw" })).toHaveFocus();
   });
 });
@@ -552,14 +554,14 @@ function tenantFetchStub(): ReturnType<typeof vi.fn<typeof fetch>> {
     if (url === "/api/v1/tenants/7/models/18/overview") {
       return jsonResponse(modelOverviewPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/scope?page_size=200") {
-      return jsonResponse(modelScopePayload);
+    if (url === "/api/v1/tenants/7/models/18/input-scope?page_size=200") {
+      return jsonResponse(modelInputScopePayload);
     }
-    if (url.startsWith("/api/v1/tenants/7/models/18/scope?zone=bronze")) {
-      return jsonResponse(modelScopePayload);
+    if (url.startsWith("/api/v1/tenants/7/models/18/input-scope?zone=bronze")) {
+      return jsonResponse(modelInputScopePayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/scope/501") {
-      return jsonResponse(modelScopeDetailPayload);
+    if (url === "/api/v1/tenants/7/models/18/input-scope/501") {
+      return jsonResponse(modelInputScopeDetailPayload);
     }
     return jsonResponse({ error: { code: "not_found", message: "Not found." } }, 404);
   });
@@ -684,7 +686,7 @@ const modelCollectionPayload = {
       model_name: "Customer 360",
       model_description: "Cross-system customer domain",
       model_revision: 18,
-      model_scope_object_count: 25,
+      model_input_scope_object_count: 25,
       latest_workflow: "analysis",
       latest_run_status: "completed",
       updated_at: "2026-08-24T14:00:00Z",
@@ -713,7 +715,7 @@ const modelDetailPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: "Use business names.",
   silver_model_audit_columns_template: { columns: ["created_at"] },
   gold_model_naming_instructions: null,
@@ -758,7 +760,6 @@ function workflowOverviewItem(workflow: string, resultCount: number, state: stri
   return {
     workflow,
     result_count: resultCount,
-    needs_review_count: 0,
     locked_count: 0,
     latest_run_id: null,
     latest_run_state: null,
@@ -768,12 +769,12 @@ function workflowOverviewItem(workflow: string, resultCount: number, state: stri
   };
 }
 
-const modelScopePayload = {
+const modelInputScopePayload = {
   model_id: 18,
   model_revision: 18,
   items: [
     {
-      model_scope_id: 101,
+      model_input_scope_id: 101,
       object_id: 501,
       connection_id: 21,
       system_id: 31,
@@ -787,7 +788,7 @@ const modelScopePayload = {
       zone_code: "bronze",
       batch_attribute_name: "batch_id",
       attribute_count: 12,
-      is_bronze_source_eligible: true,
+      is_model_input_eligible: true,
       is_dimensional_source_eligible: false,
       is_logical_mapping_target_eligible: false,
       is_dimensional_mapping_target_eligible: false,
@@ -798,8 +799,8 @@ const modelScopePayload = {
   next_cursor: null,
 };
 
-const modelScopeDetailPayload = {
-  ...modelScopePayload.items[0],
+const modelInputScopeDetailPayload = {
+  ...modelInputScopePayload.items[0],
   attribute_count: 2,
   attributes: [
     {

@@ -64,7 +64,7 @@ release_files=(
     07_workflow_logical.sql
     08_workflow_dimensional.sql
     09_workflow_mapping.sql
-    10_workflow_code_qa.sql
+    10_workflow_code_validation.sql
     11_workflow_eligibility.sql
     12_application_configuration.sql
     13_application_workflow_runs.sql

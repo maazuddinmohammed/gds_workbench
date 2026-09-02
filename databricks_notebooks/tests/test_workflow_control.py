@@ -65,14 +65,13 @@ def _values(workflow: str) -> dict[str, str]:
                 "SelectedObjectIDsJSON": "[11]",
                 "ExecutionMode": "tool_assisted",
                 "MappingOperation": "extend",
-                "MappingArtifactType": "python_notebook",
                 "MappingSourceSystemID": "20",
                 "MappingObjectOutputTemplateID": "21",
                 "MappingAttributeOutputTemplateID": "22",
                 "PromptOverridesJSON": '{"7":9}',
             }
         )
-    elif workflow == "qa":
+    elif workflow == "validation":
         values.update(
             {
                 "SelectedObjectIDsJSON": "[]",
@@ -195,7 +194,6 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
         '{"7":9}',
         "extend",
         "selected_targets",
-        "python_notebook",
         20,
         21,
         22,
@@ -207,8 +205,8 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
     assert result.prompt_snapshot_count == 6
 
 
-def test_qa_create_passes_system_codes_immediately_after_empty_object_ids() -> None:
-    request = build_notebook_request("qa", _values("qa"))
+def test_validation_create_passes_system_codes_immediately_after_empty_object_ids() -> None:
+    request = build_notebook_request("validation", _values("validation"))
     connection = FakeConnection(_create_row(selected_scope_count=2))
 
     result = NotebookWorkflowControlClient(connection).create_workflow_run(request)
@@ -218,7 +216,7 @@ def test_qa_create_passes_system_codes_immediately_after_empty_object_ids() -> N
     assert parameters is not None
     assert parameters[4] is None
     assert parameters[11:13] == ([], ["ERP", "CRM"])
-    assert result.workflow == "qa"
+    assert result.workflow == "validation"
     assert result.selected_scope_count == 2
 
 

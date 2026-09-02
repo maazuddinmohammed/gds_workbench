@@ -28,7 +28,6 @@ type WorkflowLedgerState = Literal[
     "queued",
     "running",
     "results_available",
-    "needs_review",
     "completed_no_results",
     "failed",
 ]
@@ -47,7 +46,6 @@ class WorkflowMetric(BaseModel):
     model_revision: int = Field(gt=0)
     workflow: LedgerWorkflow
     result_count: int = Field(ge=0)
-    needs_review_count: int = Field(ge=0)
     locked_count: int = Field(ge=0)
     latest_run_id: int | None = Field(default=None, gt=0)
     latest_run_state: WorkflowRunState | None = None
@@ -59,7 +57,6 @@ class WorkflowLedgerEntry(BaseModel):
 
     workflow: LedgerWorkflow
     result_count: int = Field(ge=0)
-    needs_review_count: int = Field(ge=0)
     locked_count: int = Field(ge=0)
     latest_run_id: int | None = Field(default=None, gt=0)
     latest_run_state: WorkflowRunState | None = None

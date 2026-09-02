@@ -75,7 +75,6 @@ CREATE_CODE_GENERATION_WORKFLOW_RUN_SQL = """
           '{}'::JSONB,
           NULL::VARCHAR,
           NULL::VARCHAR,
-          NULL::VARCHAR,
           NULL::BIGINT,
           NULL::BIGINT,
           NULL::BIGINT,
@@ -106,7 +105,6 @@ CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL = """
           NULL::VARCHAR,
           %s::UUID,
           '{}'::JSONB,
-          NULL::VARCHAR,
           NULL::VARCHAR,
           NULL::VARCHAR,
           NULL::BIGINT,
@@ -387,7 +385,7 @@ def seed_workflow_context(
     )
     return replace(
         context,
-        selected_object_ids=_seed_bronze_model_scope(
+        selected_object_ids=_seed_bronze_model_input_scope(
             postgres_database,
             context,
         ),
@@ -519,7 +517,7 @@ def _release_claim_if_present(
         )
 
 
-def _seed_bronze_model_scope(
+def _seed_bronze_model_input_scope(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
     *,
@@ -631,15 +629,17 @@ def _seed_bronze_model_scope(
                     """
                 INSERT INTO core.object (
                     connection_id,
+                    source_tenant_id,
                     object_schema,
                     object_name,
                     object_type_id,
                     zone_id
-                ) VALUES (%s, %s, %s, %s, %s)
+                ) VALUES (%s, %s, %s, %s, %s, %s)
                 RETURNING object_id
                 """,
                     (
                         connection_id,
+                        context.tenant_id,
                         f"bronze_{suffix}",
                         f"workflow_object_{object_number}_{suffix}",
                         reference_ids["object_type_id"],
@@ -649,7 +649,7 @@ def _seed_bronze_model_scope(
             )["object_id"]
             connection.execute(
                 """
-                INSERT INTO model.model_scope (model_id, object_id)
+                INSERT INTO model.model_input_scope (model_id, object_id)
                 VALUES (%s, %s)
                 """,
                 (context.model_id, object_id),
@@ -659,7 +659,7 @@ def _seed_bronze_model_scope(
     return tuple(object_ids)
 
 
-def _seed_model_scope_object_in_zone(
+def _seed_model_input_scope_object_in_zone(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
     *,
@@ -690,7 +690,9 @@ def _seed_model_scope_object_in_zone(
         physical_context = require_row(
             connection.execute(
                 """
-            SELECT object.connection_id, object.object_type_id
+            SELECT object.connection_id,
+                   object.source_tenant_id,
+                   object.object_type_id
               FROM core.object AS object
              WHERE object.object_id = %s
             """,
@@ -702,15 +704,17 @@ def _seed_model_scope_object_in_zone(
                 """
             INSERT INTO core.object (
                 connection_id,
+                source_tenant_id,
                 object_schema,
                 object_name,
                 object_type_id,
                 zone_id
-            ) VALUES (%s, %s, %s, %s, %s)
+            ) VALUES (%s, %s, %s, %s, %s, %s)
             RETURNING object_id
             """,
                 (
                     physical_context["connection_id"],
+                    physical_context["source_tenant_id"],
                     f"{zone_code}_{suffix}",
                     f"workflow_{zone_code}_object_{suffix}",
                     physical_context["object_type_id"],
@@ -720,7 +724,7 @@ def _seed_model_scope_object_in_zone(
         )["object_id"]
         connection.execute(
             """
-            INSERT INTO model.model_scope (model_id, object_id)
+            INSERT INTO model.model_input_scope (model_id, object_id)
             VALUES (%s, %s)
             """,
             (context.model_id, object_id),
@@ -800,7 +804,7 @@ def _seed_code_generation_target(
     context: WorkflowContext,
 ) -> int:
     suffix = uuid4().hex
-    object_id = _seed_model_scope_object_in_zone(
+    object_id = _seed_model_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="silver",
@@ -838,6 +842,17 @@ def _seed_code_generation_target(
                 ),
             ).fetchone()
         )["logical_entity_id"]
+        model_object_binding_id = require_row(
+            connection.execute(
+                """
+                INSERT INTO workflow.model_object_binding (
+                    model_id, object_id, modeled_entity_type, logical_entity_id
+                ) VALUES (%s, %s, 'logical_entity', %s)
+                RETURNING model_object_binding_id
+                """,
+                (context.model_id, object_id, logical_entity_id),
+            ).fetchone()
+        )["model_object_binding_id"]
         connection.execute(
             """
             INSERT INTO workflow.mapping_source_system_dependency (
@@ -854,39 +869,24 @@ def _seed_code_generation_target(
             """
             INSERT INTO workflow.mapping_object (
                 model_id,
-                object_id,
+                model_object_binding_id,
                 source_system_id,
-                modeled_entity_type,
-                logical_entity_id,
-                artifact_type,
-                artifact_generation_instructions,
-                mapping_profile_key,
-                mapping_profile_version,
-                mapping_profile_schema_digest,
-                mapping_package_document,
-                mapping_package_digest,
-                object_mapping_transformation_document
+                mapping_transformation_document
             ) VALUES (
-                %s, %s, %s, 'logical_entity', %s,
-                'sql_file', 'Generate SQL for this target.',
-                'free_form', '1.0.0', repeat('c', 64),
-                '{"schema_version":"1.0","mapping":"complete"}'::JSONB,
-                %s,
+                %s, %s, %s,
                 '{"schema_version":"1.0","transformation_kind":"direct"}'::JSONB
             )
             """,
             (
                 context.model_id,
-                object_id,
+                model_object_binding_id,
                 source_system_id,
-                logical_entity_id,
-                sha256(f"mapping:{object_id}".encode()).hexdigest(),
             ),
         )
     return object_id
 
 
-def _seed_qa_prompt(
+def _seed_validation_prompt(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
 ) -> None:
@@ -896,7 +896,7 @@ def _seed_qa_prompt(
             """
             SELECT workflow_stage_id
               FROM application.workflow_stage
-             WHERE model_workflow = 'qa'
+             WHERE model_workflow = 'validation'
                AND workflow_execution_mode IS NULL
                AND workflow_stage_is_agentic
                AND is_active
@@ -916,7 +916,7 @@ def _seed_qa_prompt(
                         workflow_stage_order,
                         workflow_stage_is_agentic
                     ) VALUES (
-                        'qa', NULL, 'validation_generation',
+                        'validation', NULL, 'validation_generation',
                         'Validation Generation', 10, TRUE
                     )
                     RETURNING workflow_stage_id
@@ -962,8 +962,8 @@ def _seed_qa_prompt(
                 (
                     stage["workflow_stage_id"],
                     context.tenant_id,
-                    f"qa_prompt_{suffix}",
-                    f"QA Prompt {suffix}",
+                    f"validation_prompt_{suffix}",
+                    f"Validation Prompt {suffix}",
                     context.principal_id,
                     context.principal_id,
                 ),
@@ -1020,7 +1020,7 @@ def _seed_qa_prompt(
         )
 
 
-def _seed_qa_systems(
+def _seed_validation_systems(
     postgres_database: DisposablePostgres,
     context: WorkflowContext,
 ) -> tuple[tuple[int, str], tuple[int, str]]:
@@ -1035,10 +1035,13 @@ def _seed_qa_systems(
                        source_system.system_code,
                        source_system.system_type_id
                   FROM workflow.mapping_object AS mapping
+                  JOIN workflow.model_object_binding AS binding
+                    ON binding.model_object_binding_id =
+                       mapping.model_object_binding_id
                   JOIN core.system AS source_system
                     ON source_system.system_id = mapping.source_system_id
                  WHERE mapping.model_id = %s
-                   AND mapping.object_id = %s
+                   AND binding.object_id = %s
                 """,
                 (context.model_id, first_target_id),
             ).fetchone()
@@ -1054,8 +1057,8 @@ def _seed_qa_systems(
                 RETURNING system_id, system_code
                 """,
                 (
-                    f"qa_source_{suffix}",
-                    f"QA Source {suffix}",
+                    f"validation_source_{suffix}",
+                    f"Validation Source {suffix}",
                     first["system_type_id"],
                 ),
             ).fetchone()
@@ -1076,9 +1079,19 @@ def _seed_qa_systems(
             UPDATE workflow.mapping_object
                SET source_system_id = %s
              WHERE model_id = %s
-               AND object_id = %s
+               AND model_object_binding_id = (
+                   SELECT model_object_binding_id
+                     FROM workflow.model_object_binding
+                    WHERE model_id = %s
+                      AND object_id = %s
+               )
             """,
-            (second["system_id"], context.model_id, second_target_id),
+            (
+                second["system_id"],
+                context.model_id,
+                context.model_id,
+                second_target_id,
+            ),
         )
     return (
         (first["system_id"], first["system_code"]),
@@ -1440,12 +1453,12 @@ def test_create_workflow_run_freezes_server_derived_selected_scope(
     ]
 
 
-def test_create_qa_run_freezes_ordered_system_identity_code_and_digest(
+def test_create_validation_run_freezes_ordered_system_identity_code_and_digest(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    first_system, second_system = _seed_qa_systems(postgres_database, context)
-    _seed_qa_prompt(postgres_database, context)
+    first_system, second_system = _seed_validation_systems(postgres_database, context)
+    _seed_validation_prompt(postgres_database, context)
     requested_codes = [f" {second_system[1].upper()} ", first_system[1].upper()]
 
     with postgres_database.connect_owner() as connection:
@@ -1454,7 +1467,7 @@ def test_create_qa_run_freezes_ordered_system_identity_code_and_digest(
                 CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,
                 _system_selection_parameters(
                     context,
-                    workflow="qa",
+                    workflow="validation",
                     object_ids=[],
                     system_codes=requested_codes,
                 ),
@@ -1557,18 +1570,18 @@ def test_create_qa_run_freezes_ordered_system_identity_code_and_digest(
     assert frozen_after_live_change == selections
 
 
-def test_create_qa_run_rejects_system_without_applied_mapping_atomically(
+def test_create_validation_run_rejects_system_without_applied_mapping_atomically(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    _seed_qa_prompt(postgres_database, context)
+    _seed_validation_prompt(postgres_database, context)
     correlation_id = uuid4()
     with postgres_database.connect_owner() as connection:
         system_code = require_row(
             connection.execute(
                 """
                 SELECT source_system.system_code
-                  FROM model.model_scope AS scope
+                  FROM model.model_input_scope AS scope
                   JOIN core.object AS object_record
                     ON object_record.object_id = scope.object_id
                   JOIN core.connection AS source_connection
@@ -1590,7 +1603,7 @@ def test_create_qa_run_rejects_system_without_applied_mapping_atomically(
             CREATE_SYSTEM_SELECTION_WORKFLOW_RUN_SQL,
             _system_selection_parameters(
                 context,
-                workflow="qa",
+                workflow="validation",
                 object_ids=[],
                 system_codes=[system_code],
                 correlation_id=correlation_id,
@@ -1614,9 +1627,9 @@ def test_create_qa_run_rejects_system_without_applied_mapping_atomically(
 @pytest.mark.parametrize(
     ("workflow", "object_selection", "system_selection", "message"),
     (
-        ("qa", [1], ["erp"], "no Object selection"),
-        ("qa", [], [], "between 1 and 1000 Systems"),
-        ("conceptual", [1], ["erp"], "only for QA"),
+        ("validation", [1], ["erp"], "no Object selection"),
+        ("validation", [], [], "between 1 and 1000 Systems"),
+        ("conceptual", [1], ["erp"], "only for Validation"),
     ),
 )
 def test_workflow_run_rejects_invalid_system_selection_shape(
@@ -1829,7 +1842,7 @@ def test_code_generation_run_rejects_zone_only_target_without_complete_mapping(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    target_id = _seed_model_scope_object_in_zone(
+    target_id = _seed_model_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="silver",
@@ -1950,27 +1963,26 @@ def test_create_workflow_run_rejects_invalid_selected_scope_atomically(
     assert rejected_rows == {"run_count": 0, "selection_count": 0}
 
 
-def test_create_workflow_run_enforces_workflow_eligibility_not_scope_zone(
+def test_create_workflow_run_accepts_source_model_input(
     postgres_database: DisposablePostgres,
 ) -> None:
     context = seed_workflow_context(postgres_database)
-    source_object_id = _seed_model_scope_object_in_zone(
+    source_object_id = _seed_model_input_scope_object_in_zone(
         postgres_database,
         context,
         zone_code="source",
     )
 
-    with (
-        postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="ineligible"),
-    ):
-        connection.execute(
-            CREATE_WORKFLOW_RUN_SQL,
-            create_workflow_run_parameters(
-                context,
-                correlation_id=uuid4(),
-                selected_object_ids=[source_object_id],
-            ),
+    with postgres_database.connect_owner() as connection:
+        created = require_row(
+            connection.execute(
+                CREATE_WORKFLOW_RUN_SQL,
+                create_workflow_run_parameters(
+                    context,
+                    correlation_id=uuid4(),
+                    selected_object_ids=[source_object_id],
+                ),
+            ).fetchone()
         )
 
     with postgres_database.connect_owner() as connection:
@@ -1978,7 +1990,7 @@ def test_create_workflow_run_enforces_workflow_eligibility_not_scope_zone(
             connection.execute(
                 """
                 SELECT is_active
-                  FROM model.model_scope
+                  FROM model.model_input_scope
                  WHERE model_id = %s
                    AND object_id = %s
                 """,
@@ -1987,6 +1999,7 @@ def test_create_workflow_run_enforces_workflow_eligibility_not_scope_zone(
         )
 
     assert scope_row["is_active"] is True
+    assert created["selected_scope_count"] == 1
 
 
 def test_create_workflow_run_rejects_workflow_incompatible_options(

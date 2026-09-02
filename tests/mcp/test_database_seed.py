@@ -128,24 +128,10 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
                                   'bronze_demo',
                                   'silver_demo'
                               )
-                   ) AS attribute_mapping_count,
-                   (
-                       SELECT count(*)
-                         FROM core.tenant_metadata_discovery_scope AS scope
-                        WHERE scope.tenant_id = tenant.tenant_id
-                   ) AS discovery_scope_count
+                   ) AS attribute_mapping_count
               FROM core.tenant AS tenant
-              JOIN core.connection AS connection
-                ON connection.tenant_id IN (
-                       tenant.tenant_id,
-                       (
-                           SELECT global_tenant.tenant_id
-                             FROM core.tenant AS global_tenant
-                            WHERE global_tenant.tenant_code = 'DEMO_GDS_TENANT'
-                       )
-                   )
               JOIN core.object AS object
-                ON object.connection_id = connection.connection_id
+                ON object.source_tenant_id = tenant.tenant_id
               JOIN core.attribute AS attribute
                 ON attribute.object_id = object.object_id
              WHERE tenant.tenant_code = 'DEMO_TENANT'
@@ -157,7 +143,6 @@ def test_demo_and_human_access_seeds_are_safe_and_complete(
         assert row["attribute_count"] == 8
         assert row["object_mapping_count"] == 3
         assert row["attribute_mapping_count"] == 6
-        assert row["discovery_scope_count"] == 3
         tenant_id = row["tenant_id"]
         decision = connection.execute(
             """

@@ -122,11 +122,7 @@
           Validation has not run.
         </div>
         <ol id="issue-list" class="issue-list" aria-label="Local validation issues"></ol>
-        <div class="acceptance-actions">
-          <button id="accept-button" class="button button-primary" disabled>Accept valid</button>
-          <button id="override-button" class="button button-danger" disabled>Override failures</button>
-        </div>
-        <p class="rail-note">Acceptance binds the exact local digest. Server validation is never bypassed.</p>
+        <p class="rail-note">These checks are optional diagnostics. Tell the agent to proceed in chat when the result looks right.</p>
       </aside>
     </main>
 
@@ -134,20 +130,6 @@
       <span id="status-message" role="status" aria-live="polite" aria-atomic="true">Workbench is local-only. No network or server actions are available.</span>
       <span id="connection-capability">Chrome or Edge directory access required</span>
     </footer>
-
-    <dialog id="override-dialog" aria-labelledby="override-title" aria-describedby="override-description">
-      <form method="dialog" class="dialog-form">
-        <span class="eyebrow">Explicit local override</span>
-        <h2 id="override-title">Accept validation failures?</h2>
-        <p id="override-description">This does not bypass server validation. Explain why local work may proceed.</p>
-        <label class="field-label" for="override-reason">Reason</label>
-        <textarea id="override-reason" maxlength="300" required></textarea>
-        <div class="dialog-actions">
-          <button value="cancel" class="button">Cancel</button>
-          <button id="confirm-override" value="confirm" class="button button-danger">Accept failures</button>
-        </div>
-      </form>
-    </dialog>
 
     <dialog id="row-editor-dialog" class="row-editor-dialog" aria-labelledby="row-editor-title">
       <form id="row-editor-form" class="dialog-form row-editor-form">

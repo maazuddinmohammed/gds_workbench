@@ -58,7 +58,6 @@ GRANT EXECUTE ON FUNCTION application.create_notebook_workflow_run(
     JSONB,
     VARCHAR,
     VARCHAR,
-    VARCHAR,
     BIGINT,
     BIGINT,
     BIGINT,
@@ -83,7 +82,7 @@ GRANT EXECUTE ON FUNCTION application.release_notebook_workflow_run_claim(
     UUID
 ) TO gds_notebook_runtime;
 
-GRANT USAGE ON SCHEMA reference, core, security, model, workflow, mcp
+GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
     TO gds_app_write;
 GRANT USAGE ON SCHEMA reference, core, security, model, workflow, application, mcp
     TO gds_web_write;
@@ -435,7 +434,6 @@ BEGIN
                    'core.system',
                    'core.connection',
                    'core.connection_value',
-                   'core.tenant_metadata_discovery_scope',
                    'core.object',
                    'core.attribute',
                    'core.ingestion_object_mapping',
@@ -453,7 +451,7 @@ BEGIN
                    'security.tenant_lock',
                    'security.tenant_lock_event',
                    'model.model',
-                   'model.model_scope',
+                   'model.model_input_scope',
                    'model.modeling_assertion_document',
                    'model.modeling_assertion_record',
                    'workflow.attribute_profile',
@@ -475,12 +473,16 @@ BEGIN
                    'workflow.dimensional_attribute',
                    'workflow.dimensional_attribute_source_mapping',
                    'workflow.dimensional_relationship',
+                   'workflow.model_object_binding',
+                   'workflow.model_attribute_binding',
                    'workflow.mapping_source_system_dependency',
                    'workflow.mapping_object',
                    'workflow.mapping_attribute',
                    'workflow.generated_code',
+                   'workflow.generated_code_source_system',
                    'workflow.validation_group',
                    'workflow.validation_check',
+                   'application.output_template',
                    'mcp.model_change_set',
                    'mcp.model_change_set_event',
                    'mcp.model_stage_batch',
@@ -508,12 +510,8 @@ BEGIN
           FROM (
                    VALUES
                        ('core.tenant', 'gds_connection_id'),
-                       ('core.tenant_metadata_discovery_scope', 'tenant_id'),
-                       ('core.tenant_metadata_discovery_scope', 'gds_connection_id'),
-                       ('core.tenant_metadata_discovery_scope', 'zone_id'),
-                       ('core.tenant_metadata_discovery_scope', 'object_schema'),
-                       ('core.tenant_metadata_discovery_scope', 'is_active'),
                        ('core.object', 'connection_id'),
+                       ('core.object', 'source_tenant_id'),
                        ('core.object', 'zone_id'),
                        ('core.object', 'object_schema'),
                        ('core.object', 'object_name'),
@@ -523,13 +521,19 @@ BEGIN
                        ('model.model', 'gold_model_naming_instructions'),
                        ('model.model', 'gold_model_technical_columns_template'),
                        ('model.model', 'gold_model_audit_columns_template'),
-                       ('model.model_scope', 'is_active'),
+                       ('model.model_input_scope', 'is_active'),
+                       ('workflow.model_object_binding', 'object_id'),
+                       ('workflow.model_attribute_binding', 'attribute_id'),
+                       ('workflow.mapping_object', 'mapping_transformation_document'),
                        ('workflow.dimensional_relationship', 'dimensional_relationship_is_optional'),
                        ('workflow.generated_code', 'generated_code_content'),
+                       ('workflow.generated_code', 'artifact_name'),
+                       ('workflow.generated_code', 'code_input_digest'),
                        ('workflow.validation_group', 'mapping_context_digest'),
                        ('workflow.validation_check', 'validation_query_sql'),
+                       ('mcp.model_change_set', 'model_binding_document'),
                        ('mcp.model_change_set', 'code_generation_document'),
-                       ('mcp.model_change_set', 'qa_document'),
+                       ('mcp.model_change_set', 'validation_document'),
                        ('core.attribute', 'object_id'),
                        ('core.attribute', 'attribute_name'),
                        ('mcp.metadata_change_set', 'created_by_principal_id'),
@@ -697,18 +701,6 @@ BEGIN
                )
     ) AND NOT EXISTS (
         SELECT 1
-          FROM pg_attribute AS old_column
-          JOIN pg_class AS relation_record
-            ON relation_record.oid = old_column.attrelid
-          JOIN pg_namespace AS namespace_record
-            ON namespace_record.oid = relation_record.relnamespace
-         WHERE namespace_record.nspname = 'core'
-           AND relation_record.relname = 'tenant_metadata_discovery_scope'
-           AND old_column.attname = 'connection_id'
-           AND old_column.attnum > 0
-           AND NOT old_column.attisdropped
-    ) AND NOT EXISTS (
-        SELECT 1
           FROM pg_attribute AS duplicate_lock
           JOIN pg_class AS relation_record
             ON relation_record.oid = duplicate_lock.attrelid
@@ -721,21 +713,20 @@ BEGIN
            AND NOT duplicate_lock.attisdropped
     ) AND EXISTS (
         SELECT 1
-          FROM pg_index AS assignment_index
+          FROM pg_index AS ownership_index
           JOIN pg_class AS index_record
-            ON index_record.oid = assignment_index.indexrelid
+            ON index_record.oid = ownership_index.indexrelid
           JOIN pg_namespace AS namespace_record
             ON namespace_record.oid = index_record.relnamespace
          WHERE namespace_record.nspname = 'core'
-           AND index_record.relname =
-               'ux_active_metadata_discovery_scope_assignment'
-           AND assignment_index.indisunique
+           AND index_record.relname = 'ix_object_source_tenant_zone_active'
+           AND NOT ownership_index.indisunique
            AND pg_get_expr(
-                   assignment_index.indpred,
-                   assignment_index.indrelid
+                   ownership_index.indpred,
+                   ownership_index.indrelid
                ) = 'is_active'
-           AND pg_get_indexdef(assignment_index.indexrelid) LIKE
-               '%(gds_connection_id, zone_id, lower(btrim((object_schema)::text)))%'
+           AND pg_get_indexdef(ownership_index.indexrelid) LIKE
+               '%(source_tenant_id, zone_id)%'
     );
 
     runtime_role_ok := CURRENT_USER = 'gds_app_write'
@@ -789,7 +780,6 @@ BEGIN
                    'core.tenant',
                    'core.system',
                    'core.connection',
-                   'core.tenant_metadata_discovery_scope',
                    'core.object',
                    'core.attribute',
                    'core.ingestion_object_mapping',
@@ -804,7 +794,7 @@ BEGIN
                    'security.entra_principal_identity',
                    'security.tenant_principal_access',
                    'model.model',
-                   'model.model_scope',
+                   'model.model_input_scope',
                    'model.modeling_assertion_document',
                    'model.modeling_assertion_record',
                    'workflow.attribute_profile',
@@ -826,10 +816,13 @@ BEGIN
                    'workflow.dimensional_attribute',
                    'workflow.dimensional_attribute_source_mapping',
                    'workflow.dimensional_relationship',
+                   'workflow.model_object_binding',
+                   'workflow.model_attribute_binding',
                    'workflow.mapping_source_system_dependency',
                    'workflow.mapping_object',
                    'workflow.mapping_attribute',
                    'workflow.generated_code',
+                   'workflow.generated_code_source_system',
                    'workflow.validation_group',
                    'workflow.validation_check',
                    'mcp.model_change_set',
@@ -845,6 +838,7 @@ BEGIN
         SELECT 1
           FROM unnest(ARRAY[
                    'workflow.generated_code',
+                   'workflow.generated_code_source_system',
                    'workflow.validation_group',
                    'workflow.validation_check'
                ]) AS model_section_relation(name)
@@ -869,6 +863,8 @@ BEGIN
         SELECT 1
           FROM (VALUES
                    ('workflow.generated_code', 'generated_code_id'),
+                   ('workflow.generated_code_source_system',
+                       'generated_code_source_system_id'),
                    ('workflow.validation_group', 'validation_group_id'),
                    ('workflow.validation_check', 'validation_check_id')
                ) AS identity_column(relation_name, column_name)
@@ -998,7 +994,6 @@ BEGIN
                    'core.system',
                    'core.connection',
                    'core.connection_value',
-                   'core.tenant_metadata_discovery_scope',
                    'core.object',
                    'core.attribute',
                    'core.ingestion_object_mapping',
@@ -1015,7 +1010,6 @@ BEGIN
                    'security.tenant_lock',
                    'security.tenant_lock_event',
                    'model.model',
-                   'model.model_scope',
                    'mcp.metadata_change_set',
                    'mcp.metadata_change_set_event',
                    'mcp.metadata_stage_batch',
@@ -1045,19 +1039,6 @@ BEGIN
                    web_only_model_column.name,
                    'UPDATE'
                )
-    ) AND NOT EXISTS (
-        SELECT 1
-          FROM pg_attribute AS attribute
-         CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE']) AS privilege_name(value)
-         WHERE attribute.attrelid = 'model.model_scope'::REGCLASS
-           AND attribute.attnum > 0
-           AND NOT attribute.attisdropped
-           AND has_column_privilege(
-                   'gds_app_write',
-                   'model.model_scope',
-                   attribute.attname,
-                   privilege_name.value
-               )
     ) AND NOT (
         has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'SELECT')
         OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'UPDATE')
@@ -1069,12 +1050,10 @@ BEGIN
     runtime_query_contract_ok := FALSE;
     IF schema_shape_ok AND runtime_role_ok AND runtime_privileges_ok THEN
         BEGIN
-            PERFORM scope.gds_connection_id
-              FROM core.tenant_metadata_discovery_scope AS scope
-              JOIN core.connection AS connection_record
-                ON connection_record.connection_id = scope.gds_connection_id
-              JOIN reference.zone AS zone_record
-                ON zone_record.zone_id = scope.zone_id
+            PERFORM object_record.source_tenant_id
+              FROM core.object AS object_record
+              JOIN core.tenant AS source_tenant
+                ON source_tenant.tenant_id = object_record.source_tenant_id
              WHERE FALSE;
 
             PERFORM 1
@@ -1140,6 +1119,9 @@ REVOKE SELECT ON core.connection_value FROM gds_app_write;
 GRANT SELECT ON ALL TABLES IN SCHEMA reference, core, model, workflow
     TO gds_web_write;
 REVOKE SELECT ON core.connection_value FROM gds_web_write;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE, REFERENCES, TRIGGER, MAINTAIN
+ON model.model_revision_transaction
+FROM gds_app_write, gds_web_write;
 GRANT SELECT ON
     mcp.model_change_set,
     mcp.model_change_set_event,
@@ -1162,14 +1144,18 @@ TO gds_web_write;
 GRANT INSERT ON mcp.tool_call_log TO gds_app_write;
 
 -- MCP mutates only normalized artifacts and workflow state through governed
--- Model Change Sets. Foundational target rows, Model Scope, web-only Model
+-- Model Change Sets. Foundational target rows, Model revision audit, web-only Model
 -- defaults, audit rows, and every DELETE remain outside its write surface.
 GRANT INSERT, UPDATE ON
+    model.model_input_scope,
     model.modeling_assertion_document,
     model.modeling_assertion_record,
     workflow.analysis_result,
     workflow.generated_code,
+    workflow.generated_code_source_system,
     workflow.mapping_attribute,
+    workflow.model_attribute_binding,
+    workflow.model_object_binding,
     workflow.attribute_profile,
     workflow.conceptual_object,
     workflow.conceptual_relationship,
@@ -1217,9 +1203,6 @@ REVOKE UPDATE (
     default_max_turns,
     default_validation_retry_count
 ) ON model.model FROM gds_app_write;
-REVOKE INSERT (model_id, object_id, model_scope_is_locked, is_active),
-       UPDATE (model_scope_is_locked, is_active, updated_time, updated_by)
-    ON model.model_scope FROM gds_app_write;
 GRANT INSERT ON
     mcp.model_change_set_event
 TO gds_app_write;
@@ -1239,7 +1222,10 @@ GRANT INSERT, UPDATE ON
     model.modeling_assertion_record,
     workflow.analysis_result,
     workflow.generated_code,
+    workflow.generated_code_source_system,
     workflow.mapping_attribute,
+    workflow.model_attribute_binding,
+    workflow.model_object_binding,
     workflow.conceptual_object,
     workflow.conceptual_relationship,
     workflow.conceptual_support,
@@ -1292,11 +1278,9 @@ REVOKE UPDATE (
     default_max_turns,
     default_validation_retry_count
 ) ON model.model FROM gds_web_write;
-REVOKE INSERT (model_id, object_id, model_scope_is_locked, is_active),
-       UPDATE (model_scope_is_locked, is_active, updated_time, updated_by)
-    ON model.model_scope FROM gds_web_write;
 REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
+GRANT SELECT ON application.output_template TO gds_app_write;
 GRANT SELECT ON ALL TABLES IN SCHEMA application TO gds_web_write;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA application
 FROM PUBLIC, gds_app_write, gds_web_write;
@@ -1351,14 +1335,6 @@ GRANT EXECUTE ON FUNCTION application.archive_model(
     VARCHAR,
     BIGINT,
     BIGINT
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.replace_model_scope(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    BIGINT[]
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.save_prompt_template(
     UUID,
@@ -1476,7 +1452,6 @@ GRANT EXECUTE ON FUNCTION application.create_workflow_run(
     VARCHAR,
     UUID,
     JSONB,
-    VARCHAR,
     VARCHAR,
     VARCHAR,
     BIGINT,
@@ -1611,23 +1586,6 @@ GRANT EXECUTE ON FUNCTION application.persist_profiling_results(
     BIGINT,
     BIGINT,
     JSONB
-) TO gds_web_write;
-GRANT EXECUTE ON FUNCTION application.store_generated_sql_artifact(
-    UUID,
-    UUID,
-    VARCHAR,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    BIGINT,
-    CHAR,
-    CHAR,
-    BIGINT,
-    BIGINT,
-    VARCHAR,
-    VARCHAR,
-    TEXT,
-    CHAR
 ) TO gds_web_write;
 
 -- Identity sequences are granted only when owned by an INSERT-allowlisted

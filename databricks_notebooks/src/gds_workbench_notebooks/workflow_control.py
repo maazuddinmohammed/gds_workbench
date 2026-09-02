@@ -30,7 +30,6 @@ _CREATE_PAYLOAD_KEYS = frozenset(
         "requested_batch_id",
         "mapping_operation",
         "mapping_coverage_mode",
-        "mapping_artifact_type",
         "mapping_source_system_id",
         "mapping_object_output_template_id",
         "mapping_attribute_output_template_id",
@@ -55,7 +54,7 @@ _WORKFLOWS = {
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 }
 
 
@@ -195,7 +194,6 @@ class NotebookWorkflowControlClient:
                   %s::VARCHAR,
                   %s::UUID,
                   %s::JSONB,
-                  %s::VARCHAR,
                   %s::VARCHAR,
                   %s::VARCHAR,
                   %s::BIGINT,
@@ -508,7 +506,6 @@ def _create_parameters(request: NotebookWorkflowRequest) -> tuple[object, ...]:
         json.dumps(prompt_override_mapping, sort_keys=True, separators=(",", ":")),
         payload["mapping_operation"],
         payload["mapping_coverage_mode"],
-        payload["mapping_artifact_type"],
         payload["mapping_source_system_id"],
         payload["mapping_object_output_template_id"],
         payload["mapping_attribute_output_template_id"],

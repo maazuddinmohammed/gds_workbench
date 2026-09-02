@@ -10,7 +10,24 @@ from gds_workbench_api.features.code_generation.candidate import (
     CodeGenerationTargetReference,
 )
 from gds_workbench_api.features.code_generation.contracts import SqlArtifactDownload
-from gds_workbench_api.features.mapping.read_contracts import PhysicalObjectReference
+from gds_workbench_api.features.code_generation.contracts import (
+    CodeGenerationTargetObjectReference,
+)
+
+
+def _artifact(
+    target_ref: str,
+    generated_sql: str,
+    *,
+    systems: list[str],
+) -> dict[str, object]:
+    return {
+        "target_ref": target_ref,
+        "artifact_name": f"{target_ref}.sql",
+        "artifact_role": "target_transformation",
+        "source_system_codes": systems,
+        "generated_sql": generated_sql,
+    }
 
 
 def _validator() -> CodeGenerationCandidateValidator:
@@ -19,10 +36,12 @@ def _validator() -> CodeGenerationCandidateValidator:
             CodeGenerationTargetReference(
                 target_ref="target_1",
                 object_id=501,
+                source_system_codes=("CRM", "ERP"),
             ),
             CodeGenerationTargetReference(
                 target_ref="target_2",
                 object_id=502,
+                source_system_codes=("MDM",),
             ),
         )
     )
@@ -35,8 +54,8 @@ async def test_candidate_requires_exact_target_coverage_and_sql_only() -> None:
         JsonValue,
         {
             "artifacts": [
-                {"target_ref": "target_1", "generated_sql": "SELECT 1;\n"},
-                {"target_ref": "target_2", "generated_sql": "SELECT 2;\n"},
+                _artifact("target_1", "SELECT 1;\n", systems=["CRM", "ERP"]),
+                _artifact("target_2", "SELECT 2;\n", systems=["MDM"]),
             ]
         },
     )
@@ -55,8 +74,13 @@ async def test_candidate_schema_failure_reports_the_exact_artifact_field() -> No
         JsonValue,
         {
             "artifacts": [
-                {"target_ref": "target_1"},
-                {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
+                {
+                    "target_ref": "target_1",
+                    "artifact_name": "target_1.sql",
+                    "artifact_role": "target_transformation",
+                    "source_system_codes": ["CRM", "ERP"],
+                },
+                _artifact("target_2", "SELECT 2;", systems=["MDM"]),
             ]
         },
     )
@@ -73,38 +97,28 @@ async def test_candidate_schema_failure_reports_the_exact_artifact_field() -> No
     ("candidate", "code"),
     [
         (
-            {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
+            {"artifacts": [_artifact("target_1", "SELECT 1;", systems=["CRM", "ERP"])]},
             "candidate.target_coverage",
         ),
         (
             {
                 "artifacts": [
-                    {"target_ref": "target_1", "generated_sql": "SELECT 1;"},
-                    {"target_ref": "target_1", "generated_sql": "SELECT 2;"},
+                    _artifact("target_1", "SELECT 1;", systems=["CRM", "ERP"]),
+                    _artifact("target_1", "SELECT 2;", systems=["CRM", "ERP"]),
+                    _artifact("target_2", "SELECT 3;", systems=["MDM"]),
                 ]
             },
-            "candidate.target_ref_duplicate",
+            "candidate.artifact_name_duplicate",
         ),
         (
             {
                 "artifacts": [
-                    {
-                        "target_ref": "target_1",
-                        "generated_sql": "```sql\nSELECT 1;\n```",
-                    },
-                    {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
-                ]
-            },
-            "candidate.sql_invalid",
-        ),
-        (
-            {
-                "artifacts": [
-                    {
-                        "target_ref": "target_1",
-                        "generated_sql": "Generate a customer table from the mapping.",
-                    },
-                    {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
+                    _artifact(
+                        "target_1",
+                        "```sql\nSELECT 1;\n```",
+                        systems=["CRM", "ERP"],
+                    ),
+                    _artifact("target_2", "SELECT 2;", systems=["MDM"]),
                 ]
             },
             "candidate.sql_invalid",
@@ -112,11 +126,12 @@ async def test_candidate_schema_failure_reports_the_exact_artifact_field() -> No
         (
             {
                 "artifacts": [
-                    {
-                        "target_ref": "target_1",
-                        "generated_sql": "def build_customer():\n    return 1",
-                    },
-                    {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
+                    _artifact(
+                        "target_1",
+                        "Generate a customer table from the mapping.",
+                        systems=["CRM", "ERP"],
+                    ),
+                    _artifact("target_2", "SELECT 2;", systems=["MDM"]),
                 ]
             },
             "candidate.sql_invalid",
@@ -124,8 +139,21 @@ async def test_candidate_schema_failure_reports_the_exact_artifact_field() -> No
         (
             {
                 "artifacts": [
-                    {"target_ref": "target_1", "generated_sql": "SELECT '\x00';"},
-                    {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
+                    _artifact(
+                        "target_1",
+                        "def build_customer():\n    return 1",
+                        systems=["CRM", "ERP"],
+                    ),
+                    _artifact("target_2", "SELECT 2;", systems=["MDM"]),
+                ]
+            },
+            "candidate.sql_invalid",
+        ),
+        (
+            {
+                "artifacts": [
+                    _artifact("target_1", "SELECT '\x00';", systems=["CRM", "ERP"]),
+                    _artifact("target_2", "SELECT 2;", systems=["MDM"]),
                 ]
             },
             "candidate.sql_invalid",
@@ -150,8 +178,8 @@ async def test_candidate_accepts_an_artifact_over_400_kib() -> None:
         JsonValue,
         {
             "artifacts": [
-                {"target_ref": "target_1", "generated_sql": large_sql},
-                {"target_ref": "target_2", "generated_sql": "SELECT 2;"},
+                _artifact("target_1", large_sql, systems=["CRM", "ERP"]),
+                _artifact("target_2", "SELECT 2;", systems=["MDM"]),
             ]
         },
     )
@@ -166,8 +194,12 @@ def test_individual_download_contract_has_no_artifact_specific_size_cap() -> Non
 
     artifact = SqlArtifactDownload(
         generated_sql_artifact_id=1,
-        target=PhysicalObjectReference(
+        artifact_name="customer.sql",
+        target=CodeGenerationTargetObjectReference(
             object_id=1,
+            source_tenant_id=2,
+            source_tenant_code="tenant",
+            source_tenant_name="Tenant",
             tenant_id=2,
             tenant_code="tenant",
             tenant_name="Tenant",
@@ -182,7 +214,6 @@ def test_individual_download_contract_has_no_artifact_specific_size_cap() -> Non
         ),
         entity_type="logical_entity",
         generated_sql=large_sql,
-        generated_sql_digest="a" * 64,
         generated_sql_byte_count=len(large_sql.encode()),
     )
 

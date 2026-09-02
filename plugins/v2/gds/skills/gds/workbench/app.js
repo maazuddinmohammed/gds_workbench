@@ -36,13 +36,8 @@
       "validate-button",
       "validation-summary",
       "issue-list",
-      "accept-button",
-      "override-button",
       "status-message",
       "connection-capability",
-      "override-dialog",
-      "override-reason",
-      "confirm-override",
       "row-editor-dialog",
       "row-editor-form",
       "row-editor-eyebrow",
@@ -105,7 +100,10 @@
     if (!state.workspace) return;
     elements["session-name"].textContent = state.workspace.handle.name;
     const task = currentTask();
-    elements["task-state"].textContent = task ? `${task[0]} · ${task[3]}` : "no current task";
+    const visibleState = task && new Set(["doing", "review"]).has(task[3])
+      ? "working"
+      : task?.[3];
+    elements["task-state"].textContent = task ? `${task[0]} · ${visibleState}` : "no current task";
     const stale = state.workspace.state.stale || [];
     const area = state.workspace.area(state.area);
     const revision = area.manifest?.model_revision;
@@ -633,8 +631,6 @@
     elements["validation-summary"].className = "validation-summary is-neutral";
     elements["validation-summary"].textContent = "Validation has not run for this digest.";
     elements["issue-list"].replaceChildren();
-    elements["accept-button"].disabled = true;
-    elements["override-button"].disabled = true;
   }
 
   async function refreshDatasetCounts() {
@@ -804,7 +800,7 @@
       clearValidation();
       updateSessionHeader();
       enableControls();
-      setStatus("Saved one local dataset atomically. Task returned to review.");
+      setStatus("Saved one local dataset. Tell the agent when you are ready to continue.");
     } catch (error) {
       showError(error);
     }
@@ -856,9 +852,6 @@
       item.append(code, message, document.createElement("br"), location);
       elements["issue-list"].append(item);
     }
-    const review = currentTask()?.[3] === "review";
-    elements["accept-button"].disabled = !validation.valid || !review;
-    elements["override-button"].disabled = validation.valid || !review;
   }
 
   async function validate() {
@@ -887,27 +880,9 @@
       renderValidation(state.validation);
       setStatus(
         state.validation.valid
-          ? "Local validation passed. Human acceptance is still required."
+          ? "Local validation passed. Tell the agent to proceed when ready."
           : "Local validation found issues. Nothing was changed.",
       );
-    } catch (error) {
-      showError(error);
-    }
-  }
-
-  async function accept(reason) {
-    if (!state.validation || state.validation.area !== state.area) return;
-    try {
-      const result = await state.workspace.accept(
-        state.area,
-        state.validation.digest,
-        state.validation,
-        reason,
-      );
-      updateSessionHeader();
-      elements["accept-button"].disabled = true;
-      elements["override-button"].disabled = true;
-      setStatus(`Local digest accepted as ${result.state}. Server validation remains required.`);
     } catch (error) {
       showError(error);
     }
@@ -949,16 +924,6 @@
         : "Unsaved JSON is incomplete or invalid; Results retain the last valid preview.",
       !previewed,
     );
-  });
-  elements["accept-button"].addEventListener("click", () => accept(null));
-  elements["override-button"].addEventListener("click", () => {
-    elements["override-reason"].value = "";
-    elements["override-dialog"].showModal();
-  });
-  elements["override-dialog"].addEventListener("close", () => {
-    if (elements["override-dialog"].returnValue === "confirm") {
-      accept(elements["override-reason"].value);
-    }
   });
   document.querySelectorAll(".area-tab").forEach((button) => {
     button.addEventListener("click", () => switchArea(button.dataset.area));

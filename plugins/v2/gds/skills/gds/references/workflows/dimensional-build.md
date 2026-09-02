@@ -1,20 +1,16 @@
 # Dimensional Build
 
-Require applied active Logical Mapping and fresh Snapshots. Eligible sources are active scoped Silver
-with `is_dimensional_source_eligible=true`; that flag requires an active applied Logical Mapping contribution.
-Never treat every Silver Object as eligible. Dimensional is optional. Ask for Build
-mode and Full/Selected process scope.
+Require applied Logical Mapping and eligible Silver contributions. Dimensional is optional.
 
-Load each compact Model dataset contract only immediately before that dataset's first batch.
+Use PascalCase by default. Dimensional key Attributes end in `Key`, such as `CustomerKey`; user instructions or Model policy override this.
 
-For each selected process:
+For each selected business process:
 
-1. Declare the fact grain before measures.
-2. Identify facts, dimensions, bridges, and conformed dimensions from Silver contributions and supporting evidence.
-3. Define measure aggregation behavior, dimension keys, history behavior, and role-playing use explicitly.
-4. Use profiles, Analysis, Conceptual results, and Assertions as context.
-5. Require active applied Logical Mapping lineage back to Silver; never source Gold directly from unmodeled physical inputs.
-6. Relationships require `dimensional_relationship_is_optional`. For Fact/Bridge-to-Dimension, `true`: projected foreign key may be null; `false` requires non-null. Never infer optionality from cardinality; explain evidence in relationship basis.
-7. Mark covered, excluded with reason, or blocked. Do not guess unresolved grain, conformance, history, optionality, or measures.
+1. Declare fact grain before measures.
+2. Identify Facts, Dimensions, Bridges, conformed Dimensions, and role-playing use.
+3. Define measures and aggregation behavior, history behavior, keys, and relationships.
+4. Trace every structure to applied Logical Mapping and supporting evidence.
+5. Record relationship optionality explicitly from evidence; never infer it only from cardinality.
+6. Mark each eligible Silver contribution represented, context-only, excluded with reason, or blocked.
 
-Build one local Model Change Set, review, accept, Stage, server Validate, Apply once, mark Model stale, and stop.
+Do not guess grain, conformance, history, measures, or optionality. Apply Dimensional records through one Model Change Set and stop before Gold registration.

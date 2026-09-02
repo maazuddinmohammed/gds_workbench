@@ -15,7 +15,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",
@@ -54,7 +54,7 @@ class WorkflowExecutionClaim(BaseModel):
         }
         if requires_mode and self.workflow_execution_mode is None:
             raise ValueError("The claimed Workflow Run requires an execution mode")
-        if self.model_workflow in {"profiling", "code_generation", "qa"} and (
+        if self.model_workflow in {"profiling", "code_generation", "validation"} and (
             self.workflow_execution_mode is not None
         ):
             raise ValueError("The claimed Workflow Run cannot use an execution mode")

@@ -77,7 +77,7 @@ def _plan(*, model_id: int, model_revision: int, object_id: int) -> AgentRunPlan
 
 
 @pytest.mark.asyncio
-async def test_database_context_uses_discovery_assigned_tenant_under_web_role(
+async def test_database_context_uses_object_source_tenant_under_web_role(
     web_postgres_database: DisposablePostgresFixture,
 ) -> None:
     with web_postgres_database.connect_owner() as connection:
@@ -98,14 +98,8 @@ async def test_database_context_uses_discovery_assigned_tenant_under_web_role(
             SELECT tenant.tenant_id,
                    object_record.object_id
               FROM core.tenant AS tenant
-              JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-                ON discovery_scope.tenant_id = tenant.tenant_id
-               AND discovery_scope.is_active
               JOIN core.object AS object_record
-                ON object_record.connection_id = discovery_scope.gds_connection_id
-               AND object_record.zone_id = discovery_scope.zone_id
-               AND lower(btrim(object_record.object_schema)) =
-                   lower(btrim(discovery_scope.object_schema))
+                ON object_record.source_tenant_id = tenant.tenant_id
              WHERE tenant.tenant_code = 'DEMO_TENANT'
                AND object_record.object_schema = 'bronze_demo'
                AND object_record.object_name = 'customer'
@@ -124,7 +118,7 @@ async def test_database_context_uses_discovery_assigned_tenant_under_web_role(
         model_id = _required_int(model, "model_id")
         model_revision = _required_int(model, "model_revision")
         connection.execute(
-            "INSERT INTO model.model_scope (model_id, object_id) VALUES (%s, %s)",
+            "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s, %s)",
             (model_id, object_id),
         )
 
@@ -152,8 +146,8 @@ async def test_database_context_uses_discovery_assigned_tenant_under_web_role(
         await database.close()
 
     selected = result.context.selected_objects[0]
-    assert selected.object.tenant_code == "DEMO_TENANT"
-    assert selected.object.tenant_code != "DEMO_GDS_TENANT"
+    assert selected.object.tenant_code == "DEMO_GDS_TENANT"
+    assert selected.object.source_tenant_code == "DEMO_TENANT"
     assert selected.object.connection_code == "DEMO_GDS"
     assert [attribute.attribute_name for attribute in selected.attributes] == [
         "customer_id",

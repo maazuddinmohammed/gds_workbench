@@ -32,7 +32,7 @@ _AUTHORING_WORKFLOWS = frozenset(
         "dimensional",
         "mapping",
         "code_generation",
-        "qa",
+        "validation",
     }
 )
 
@@ -97,7 +97,7 @@ class AuthoringNoOpRequest(BaseModel):
     def validate_authoring_workflow(self) -> Self:
         if self.expected_workflow not in _AUTHORING_WORKFLOWS:
             raise ValueError("Only an authoring Workflow can complete with a no-op receipt")
-        if (self.expected_workflow in {"code_generation", "qa"}) != (
+        if (self.expected_workflow in {"code_generation", "validation"}) != (
             self.expected_execution_mode is None
         ):
             raise ValueError("The authoring Workflow execution mode is invalid")

@@ -245,6 +245,12 @@ _EXACT_GUIDANCE = {
         "selected Process Type.",
         ("/Shared/etl",),
     ),
+    "source_tenant_code": ColumnGuidance(
+        "Tenant whose data the Object contains.",
+        "Use the actual source Tenant. For Bronze, Silver, and Gold this differs from "
+        "tenant_code, system_code, and connection_code, which identify the GDS placement.",
+        ("ACME",),
+    ),
     "tenant_catalog": ColumnGuidance(
         "Primary data catalog assigned to the Tenant.",
         "Provide the exact accessible catalog name used for the Tenant's governed data.",
@@ -368,6 +374,21 @@ def metadata_population_rules(definition: DatasetDefinition) -> tuple[str, ...]:
         rules.append(
             "gds_connection_tenant_code, gds_connection_system_code, and "
             "gds_connection_code must be populated together or all set to null."
+        )
+    if definition.record_type == "object":
+        rules.append(
+            "source_tenant_code identifies whose data the Object contains. tenant_code, "
+            "system_code, and connection_code identify its physical Connection."
+        )
+    if definition.name in {"bronze_object", "silver_object", "gold_object"}:
+        rules.append(
+            "Use the applicable GDS Tenant/System/Connection for physical placement; do "
+            "not replace it with the source Tenant."
+        )
+    if definition.name == "source_object":
+        rules.append(
+            "Source profiling requires the Connection foreign catalog plus fc_object_schema, "
+            "fc_object_name, and each fc_attribute_name; no direct source connection is allowed."
         )
     return tuple(rules)
 

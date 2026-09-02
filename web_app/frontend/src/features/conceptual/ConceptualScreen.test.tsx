@@ -16,12 +16,12 @@ describe("Model Conceptual", () => {
     expect(within(ledger).getByText("customer")).toBeVisible();
 
     await user.type(screen.getByLabelText("Object name prefix"), " Customer ");
-    await user.selectOptions(screen.getByLabelText("Object status"), "needs_review");
+    await user.selectOptions(screen.getByLabelText("Object status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Object lock"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Object filters" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/conceptual/objects?status=needs_review&locked=true&name_prefix=customer&page_size=200",
+      "/api/v1/tenants/7/models/18/conceptual/objects?status=inactive&locked=true&name_prefix=customer&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -288,7 +288,7 @@ function conceptualFetchStub(options: {
     if (url === "/api/v1/tenants/7/models/18/conceptual/relationships/51") {
       return jsonResponse(conceptualRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
       return jsonResponse({
         model_id: 18,
         model_revision: 18,
@@ -363,7 +363,7 @@ const modelPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -385,7 +385,7 @@ const conceptualObjectPayload = {
   conceptual_object_name: "customer",
   conceptual_object_type: "business_entity",
   conceptual_object_confidence: "high",
-  conceptual_object_status: "needs_review",
+  conceptual_object_status: "active",
   conceptual_object_is_locked: true,
   updated_at: "2026-08-24T14:30:00Z",
 };
@@ -420,7 +420,7 @@ const assertionSupport = {
   support_reason: "A reviewed assertion confirms identity semantics.",
   support_reason_detail: null,
   support_confidence: "high",
-  support_status: "needs_review",
+  support_status: "active",
   support_is_locked: false,
   created_at: "2026-08-24T14:05:00Z",
   updated_at: "2026-08-24T14:35:00Z",
@@ -431,7 +431,7 @@ const assertionSupport = {
     modeling_assertion_record_type: "identity_rule",
     modeling_assertion_text: "Customer identity remains stable across CRM and ERP.",
     modeling_assertion_confidence: "high",
-    modeling_assertion_record_status: "needs_review",
+    modeling_assertion_record_status: "active",
   },
 };
 
@@ -470,7 +470,7 @@ const conceptualRelationshipDetailPayload = {
 };
 
 const conceptualScopeObjectPayload = {
-  model_scope_id: 201,
+  model_input_scope_id: 201,
   object_id: 501,
   connection_id: 301,
   system_id: 401,
@@ -484,7 +484,7 @@ const conceptualScopeObjectPayload = {
   zone_code: "bronze",
   batch_attribute_name: "batch_id",
   attribute_count: 14,
-  is_bronze_source_eligible: true,
+  is_model_input_eligible: true,
   is_dimensional_source_eligible: false,
   is_logical_mapping_target_eligible: false,
   is_dimensional_mapping_target_eligible: false,

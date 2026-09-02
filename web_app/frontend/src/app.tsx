@@ -51,8 +51,8 @@ import {
 import { CodeGenerationModels } from "./features/code_generation/CodeGenerationModels";
 import { CodeGenerationScreen } from "./features/code_generation/CodeGenerationScreen";
 import { GeneratedSqlDetailPage } from "./features/code_generation/GeneratedSqlDetail";
-import { QAModels } from "./features/qa/QAModels";
-import { QAScreen } from "./features/qa/QAScreen";
+import { ValidationModels } from "./features/validation/ValidationModels";
+import { ValidationScreen } from "./features/validation/ValidationScreen";
 import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
 import { PromptTemplateDetailPage } from "./features/prompts/PromptTemplateDetail";
@@ -62,7 +62,7 @@ import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
 import { ModelsLedgerScreen } from "./features/models/ModelsLedgerScreen";
 import { ModelOverviewScreen } from "./features/models/ModelOverviewScreen";
 import { ModelRouteFrame } from "./features/models/ModelRouteFrame";
-import { ModelScopeScreen } from "./features/model_scope/ModelScopeScreen";
+import { ModelInputScopeScreen } from "./features/model_input_scope/ModelInputScopeScreen";
 import { TenantRouteFrame } from "./app/TenantRouteFrame";
 import { WorkspaceModelRouteFrame } from "./app/WorkspaceModelRouteFrame";
 import { canAuthorModels } from "./features/tenants/presentation";
@@ -163,16 +163,16 @@ const tenantGeneratedSqlArtifactRoute = createRoute({
   component: TenantGeneratedSqlArtifact,
 });
 
-const tenantQARoute = createRoute({
+const tenantValidationRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/qa",
-  component: TenantQA,
+  path: "/tenants/$tenantId/validation",
+  component: TenantValidation,
 });
 
-const tenantQAModelRoute = createRoute({
+const tenantValidationModelRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/qa/models/$modelId",
-  component: TenantQAModel,
+  path: "/tenants/$tenantId/validation/models/$modelId",
+  component: TenantValidationModel,
 });
 
 const tenantPromptsRoute = createRoute({
@@ -199,10 +199,10 @@ const tenantModelRoute = createRoute({
   component: ModelOverview,
 });
 
-const tenantModelScopeRoute = createRoute({
+const tenantModelInputScopeRoute = createRoute({
   getParentRoute: () => rootRoute,
-  path: "/tenants/$tenantId/models/$modelId/scope",
-  component: ModelScope,
+  path: "/tenants/$tenantId/models/$modelId/input-scope",
+  component: ModelInputScope,
 });
 
 const tenantModelProfilingRoute = createRoute({
@@ -333,13 +333,13 @@ const routeTree = rootRoute.addChildren([
   tenantCodeGenerationRoute,
   tenantCodeGenerationModelRoute,
   tenantGeneratedSqlArtifactRoute,
-  tenantQARoute,
-  tenantQAModelRoute,
+  tenantValidationRoute,
+  tenantValidationModelRoute,
   tenantPromptsRoute,
   tenantPromptTemplateRoute,
   tenantModelPromptSettingsRoute,
   tenantModelRoute,
-  tenantModelScopeRoute,
+  tenantModelInputScopeRoute,
   tenantModelProfilingRoute,
   tenantModelProfilingDetailRoute,
   tenantModelAnalysisRoute,
@@ -639,29 +639,29 @@ function TenantGeneratedSqlArtifact() {
   );
 }
 
-function TenantQA() {
+function TenantValidation() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId } = tenantQARoute.useParams();
+  const { tenantId } = tenantValidationRoute.useParams();
   const numericTenantId = Number(tenantId);
   return (
     <TenantRouteFrame
       api={api}
       tenantId={numericTenantId}
-      activeNav="qa"
-      loadingLabel="Loading QA"
+      activeNav="validation"
+      loadingLabel="Loading Validation"
     >
       {() => (
         <main className="workspace workspace-ledger">
-          <QAModels api={api} tenantId={numericTenantId} />
+          <ValidationModels api={api} tenantId={numericTenantId} />
         </main>
       )}
     </TenantRouteFrame>
   );
 }
 
-function TenantQAModel() {
+function TenantValidationModel() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantQAModelRoute.useParams();
+  const { tenantId, modelId } = tenantValidationModelRoute.useParams();
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
@@ -669,11 +669,11 @@ function TenantQAModel() {
       api={api}
       tenantId={numericTenantId}
       modelId={numericModelId}
-      activeNav="qa"
-      loadingLabel="Loading QA"
+      activeNav="validation"
+      loadingLabel="Loading Validation"
     >
       {({ home, model }) => (
-        <QAScreen
+        <ValidationScreen
           api={api}
           tenantId={numericTenantId}
           model={model}
@@ -771,10 +771,10 @@ function ModelOverview() {
   return <ModelOverviewScreen api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} />;
 }
 
-function ModelScope() {
+function ModelInputScope() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantModelScopeRoute.useParams();
-  return <ModelScopeScreen api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} />;
+  const { tenantId, modelId } = tenantModelInputScopeRoute.useParams();
+  return <ModelInputScopeScreen api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} />;
 }
 
 function ModelProfiling() {

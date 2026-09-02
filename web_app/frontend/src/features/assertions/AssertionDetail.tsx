@@ -43,7 +43,6 @@ export function AssertionDocumentDetailPage({
           <Fact label="Source Tenant" value={document.source_tenant?.tenant_name ?? "Not assigned"} />
           <Fact label="Source System" value={document.source_system?.system_name ?? "Not assigned"} />
           <Fact label="Records" value={String(document.record_count)} />
-          <Fact label="Needs review" value={String(document.needs_review_record_count)} />
           <Fact label="Locked" value={String(document.locked_record_count)} />
           <Fact label="Updated" value={formatDateTime(document.updated_at)} />
         </dl>

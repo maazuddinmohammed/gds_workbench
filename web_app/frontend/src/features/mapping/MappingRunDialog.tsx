@@ -19,7 +19,8 @@ import {
 } from "../workflows/presentation";
 import {
   loadActiveMappingOutputTemplates,
-  loadAllMappingScope,
+  loadAllMappingDependencies,
+  loadAllMappingTargets,
   mappingQueryKeys,
   type MappingApi,
   type MappingEntityType,
@@ -50,10 +51,6 @@ export function MappingRunDialog({
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
   const [pendingStart, setPendingStart] = useState<PendingMappingStart | null>(null);
-  const scopeQuery = useQuery({
-    queryKey: mappingQueryKeys.runScope(tenantId, model.model_id),
-    queryFn: () => loadAllMappingScope(api, tenantId, model.model_id),
-  });
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -68,7 +65,6 @@ export function MappingRunDialog({
       targetObjectId: "",
       sourceSystemId: "",
       operation: "build" as "build" | "extend",
-      artifactType: "sql_file" as "sql_file" | "python_file" | "python_notebook",
       executionMode: "tool_assisted" as ExecutionMode,
       objectOutputTemplateId: "",
       attributeOutputTemplateId: "",
@@ -119,7 +115,6 @@ export function MappingRunDialog({
           prompt_overrides: {},
           mapping_operation: value.operation,
           mapping_coverage_mode: "selected_targets",
-          mapping_artifact_type: value.artifactType,
           mapping_source_system_id: sourceSystemId,
           mapping_object_output_template_id: objectOutputTemplateId,
           mapping_attribute_output_template_id: attributeOutputTemplateId,
@@ -128,22 +123,27 @@ export function MappingRunDialog({
     },
   });
   const values = useStore(form.store, (state) => state.values);
-  const targets = useMemo(() => (
-    (scopeQuery.data?.items ?? []).filter((item) => values.entityType === "logical_entity"
-      ? item.is_logical_mapping_target_eligible
-      : item.is_dimensional_mapping_target_eligible)
-  ), [scopeQuery.data?.items, values.entityType]);
+  const targetsQuery = useQuery({
+    queryKey: mappingQueryKeys.runTargets(tenantId, model.model_id, values.entityType),
+    queryFn: () => loadAllMappingTargets(api, tenantId, model.model_id, values.entityType),
+  });
+  const dependenciesQuery = useQuery({
+    queryKey: mappingQueryKeys.runSystems(tenantId, model.model_id, values.entityType),
+    queryFn: () => loadAllMappingDependencies(api, tenantId, model.model_id, values.entityType),
+  });
+  const targets = useMemo(() => targetsQuery.data?.items ?? [], [targetsQuery.data?.items]);
   const sourceSystems = useMemo(() => {
     const byId = new Map<number, { system_id: number; system_code: string; system_name: string }>();
-    for (const item of scopeQuery.data?.items ?? []) {
-      byId.set(item.system_id, {
-        system_id: item.system_id,
-        system_code: item.system_code,
-        system_name: item.system_name,
+    for (const item of dependenciesQuery.data?.items ?? []) {
+      if (item.status !== "active") continue;
+      byId.set(item.source_system.system_id, {
+        system_id: item.source_system.system_id,
+        system_code: item.source_system.system_code,
+        system_name: item.source_system.system_name,
       });
     }
     return [...byId.values()].sort((left, right) => left.system_code.localeCompare(right.system_code));
-  }, [scopeQuery.data?.items]);
+  }, [dependenciesQuery.data?.items]);
   const capabilities = capabilitiesQuery.data;
   const compatibleSdks = capabilities?.sdks.filter((sdk) => (
     capabilities.models.some((candidate) => (
@@ -201,8 +201,13 @@ export function MappingRunDialog({
     && Number.isInteger(parsedRetries)
     && parsedRetries >= capabilities.validation_retries.minimum
     && parsedRetries <= capabilities.validation_retries.maximum;
-  const revisionChanged = scopeQuery.data !== undefined
-    && scopeQuery.data.modelRevision !== model.model_revision;
+  const revisionChanged = (
+    targetsQuery.data !== undefined
+    && targetsQuery.data.modelRevision !== model.model_revision
+  ) || (
+    dependenciesQuery.data !== undefined
+    && dependenciesQuery.data.modelRevision !== model.model_revision
+  );
   const runMutation = useMutation({
     mutationFn: async (submission: MappingRunSubmission) => {
       if (submission.kind === "retry") {
@@ -371,18 +376,6 @@ export function MappingRunDialog({
                   onChange={(value) => field.handleChange(value as "build" | "extend")}
                 />}
               </form.Field>
-              <form.Field name="artifactType">
-                {(field) => <SelectField
-                  label="Artifact type"
-                  value={field.state.value}
-                  options={[
-                    ["sql_file", "SQL file"],
-                    ["python_file", "Python file"],
-                    ["python_notebook", "Python notebook"],
-                  ]}
-                  onChange={(value) => field.handleChange(value as typeof field.state.value)}
-                />}
-              </form.Field>
               <form.Field name="executionMode">
                 {(field) => <SelectField
                   label="Execution mode"
@@ -475,13 +468,13 @@ export function MappingRunDialog({
             </div>
           </section>
 
-          {scopeQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Scope…</p> : null}
-          {scopeQuery.isError ? <p className="inline-error" role="alert">Active Scope could not be loaded.</p> : null}
+          {targetsQuery.isPending || dependenciesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading Mapping bindings…</p> : null}
+          {targetsQuery.isError || dependenciesQuery.isError ? <p className="inline-error" role="alert">Mapping bindings could not be loaded.</p> : null}
           {outputTemplatesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Output Templates…</p> : null}
           {outputTemplatesQuery.isError ? <p className="inline-error" role="alert">Active Output Templates could not be loaded. Free-form remains available.</p> : null}
           {capabilitiesQuery.isError ? <p className="inline-error" role="alert">Agent options could not be loaded.</p> : null}
           {capabilities && !agentSelectionValid ? <p className="inline-error" role="alert">No compatible agent configuration is available.</p> : null}
-          {scopeQuery.data && targets.length === 0 ? <p className="inline-error" role="alert">No eligible target Objects are available for this Entity type.</p> : null}
+          {targetsQuery.data && targets.length === 0 ? <p className="inline-error" role="alert">No eligible target Objects are available for this Entity type.</p> : null}
           {revisionChanged ? <p className="inline-error" role="alert">The Model changed. Close this dialog and refresh before creating the run.</p> : null}
           {runMutation.isError ? (
             <p className="inline-error" role="alert">
@@ -506,8 +499,10 @@ export function MappingRunDialog({
                 disabled={
                   runMutation.isPending
                   || (pendingStart === null && (
-                    scopeQuery.isPending
-                    || scopeQuery.isError
+                    targetsQuery.isPending
+                    || targetsQuery.isError
+                    || dependenciesQuery.isPending
+                    || dependenciesQuery.isError
                     || capabilitiesQuery.isPending
                     || capabilitiesQuery.isError
                     || outputTemplatesQuery.isPending

@@ -10,8 +10,8 @@
   "plugins": [
     {
       "name": "gds",
-      "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
-      "version": "0.3.3",
+      "description": "Governed GDS metadata, modeling, mapping, code, and validation workflows.",
+      "version": "0.4.2",
       "source": "./plugins/v2/gds",
       "strict": true
     }

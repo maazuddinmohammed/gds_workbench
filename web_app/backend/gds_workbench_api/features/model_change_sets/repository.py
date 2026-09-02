@@ -71,9 +71,6 @@ SELECT locked.workflow_run_id,
        locked.actor_principal_id,
        locked.workflow_run_state,
        locked.correlation_id,
-       run.mapping_profile_key,
-       run.mapping_profile_version,
-       run.mapping_profile_schema_digest,
        run.mapping_object_output_template_id,
        run.mapping_attribute_output_template_id
   FROM application.lock_authoring_workflow_run(%s, %s) AS locked
@@ -182,7 +179,7 @@ UPDATE mcp.model_change_set
        dimensional_document = %s,
        mapping_document = %s,
        code_generation_document = %s,
-       qa_document = %s,
+       validation_document = %s,
        model_change_set_status = 'active',
        draft_revision = draft_revision + 1,
        candidate_digest = NULL,
@@ -537,7 +534,7 @@ class PostgresModelChangeSetRepository:
                         "dimensional",
                         "mapping",
                         "code_generation",
-                        "qa",
+                        "validation",
                     )
                 ),
                 change_set_id,

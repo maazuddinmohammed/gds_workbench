@@ -20,7 +20,7 @@ from psycopg.types.json import Jsonb
 
 from gds_workbench_api.capabilities import (
     CODE_GENERATION_AGENT_EXECUTION_MODE,
-    QA_AGENT_EXECUTION_MODE,
+    VALIDATION_AGENT_EXECUTION_MODE,
     AgentCapabilityRegistry,
     AgentRunSelection,
 )
@@ -61,7 +61,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -105,8 +105,8 @@ class DatabaseWorkflowCommandService:
     ) -> WorkflowRunCommandResult:
         if command.model_workflow == "code_generation":
             agent_execution_mode = CODE_GENERATION_AGENT_EXECUTION_MODE
-        elif command.model_workflow == "qa":
-            agent_execution_mode = QA_AGENT_EXECUTION_MODE
+        elif command.model_workflow == "validation":
+            agent_execution_mode = VALIDATION_AGENT_EXECUTION_MODE
         else:
             agent_execution_mode = command.workflow_execution_mode
         if command.agent is not None:
@@ -175,7 +175,6 @@ class DatabaseWorkflowCommandService:
                         Jsonb(command.prompt_overrides),
                         command.mapping_operation,
                         command.mapping_coverage_mode,
-                        command.mapping_artifact_type,
                         command.mapping_source_system_id,
                         command.mapping_object_output_template_id,
                         command.mapping_attribute_output_template_id,
@@ -217,11 +216,11 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
         "Selected Scope Object IDs must be unique",
         "Selected Scope contains an unavailable or ineligible Object",
         "Selected Scope is required",
-        "QA requires between 1 and 1000 Systems and no Object selection",
-        "System selection is available only for QA",
+        "Validation requires between 1 and 1000 Systems and no Object selection",
+        "System selection is available only for Validation",
         "Selected System Codes must be nonblank",
         "Selected System Codes must be unique",
-        "Selected QA System lacks complete applied Mapping",
+        "Selected Validation System lacks complete applied Mapping",
         "Agent configuration is required for this Workflow Run",
         "Agent configuration override must be complete",
         "Deterministic Workflow Run cannot use agent configuration",

@@ -22,11 +22,23 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     WriteTransaction,
 )
+from gds_etl_workbench.domain.modeling_records import (
+    ConceptualObjectRecord,
+    PhysicalObjectKey,
+)
 from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.features.conceptual.detailed import (
+    DetailedConsolidatedEntity,
+    DetailedEntityConsolidation,
+    DetailedEntityProposal,
+    DetailedObjectContribution,
+)
 from gds_workbench_api.features.conceptual.service import (
+    _compact_proposal,  # pyright: ignore[reportPrivateUsage]
+    _merge_consolidations,  # pyright: ignore[reportPrivateUsage]
     ConceptualExecutionFailedError,
     ConceptualFinalizationFailedError,
     DatabaseConceptualExecutor,
@@ -176,6 +188,7 @@ def _context_bundle(*, mode: str = "one_shot") -> AgentContextBundle:
                     "selection_order": 1,
                     "object": {
                         "tenant_code": "NWA",
+                        "source_tenant_code": "NWA",
                         "system_code": "CRM",
                         "connection_code": "SOURCE",
                         "object_schema": "bronze",
@@ -252,6 +265,145 @@ def _candidate_object(*, source_name: str = "customer_raw") -> dict[str, JsonVal
             }
         ],
     }
+
+
+def _conceptual_contribution(
+    *,
+    contribution_ref: str,
+    source_name: str,
+    name: str,
+    definition: str,
+    grain: str,
+    aliases: tuple[str, ...] = (),
+) -> DetailedObjectContribution:
+    raw = _candidate_object(source_name=source_name)
+    raw["conceptual_object_name"] = name
+    raw["conceptual_object_definition"] = definition
+    raw["conceptual_object_grain"] = grain
+    raw["conceptual_object_aliases"] = list(aliases)
+    record = ConceptualObjectRecord.model_validate_json(json.dumps(raw), strict=True)
+    source = PhysicalObjectKey(
+        tenant_code="NWA",
+        system_code="CRM",
+        connection_code="SOURCE",
+        object_schema="bronze",
+        object_name=source_name,
+    )
+    return DetailedObjectContribution(
+        contribution_ref=contribution_ref,
+        source_object=source,
+        disposition="represented",
+        rationale="The source supports this business concept.",
+        proposals=(
+            DetailedEntityProposal(local_entity_ref="candidate", object=record),
+        ),
+    )
+
+
+def _single_entity_consolidation(
+    contribution: DetailedObjectContribution,
+) -> DetailedEntityConsolidation:
+    proposal = contribution.proposals[0]
+    return DetailedEntityConsolidation(
+        entities=(
+            DetailedConsolidatedEntity(
+                canonical_entity_ref=contribution.contribution_ref,
+                contribution_refs=(contribution.proposal_refs[0],),
+                candidate_names=(proposal.object.conceptual_object_name,),
+            ),
+        ),
+        discarded_contribution_refs=(),
+    )
+
+
+def test_compact_conceptual_proposal_preserves_business_semantics() -> None:
+    contribution = _conceptual_contribution(
+        contribution_ref="object_1",
+        source_name="customer_raw",
+        name="Customer",
+        definition="A party that receives products or services.",
+        grain="One recognized customer party.",
+        aliases=("Client", "Account Holder"),
+    )
+
+    compact = cast(
+        dict[str, JsonValue],
+        _compact_proposal(contribution.proposal_refs[0], contribution.proposals[0]),
+    )
+
+    assert compact["candidate_definition"] == (
+        "A party that receives products or services."
+    )
+    assert compact["candidate_grain"] == "One recognized customer party."
+    assert compact["candidate_aliases"] == ["Client", "Account Holder"]
+    assert compact["candidate_alias_count"] == 2
+
+
+def test_cross_page_consolidation_keeps_same_name_with_different_grain_separate() -> (
+    None
+):
+    person = _conceptual_contribution(
+        contribution_ref="object_1",
+        source_name="customer_person_raw",
+        name="Customer",
+        definition="A party that receives products or services.",
+        grain="One individual customer.",
+    )
+    household = _conceptual_contribution(
+        contribution_ref="object_2",
+        source_name="customer_household_raw",
+        name="Customer",
+        definition="A party that receives products or services.",
+        grain="One customer household.",
+    )
+
+    merged = _merge_consolidations(
+        parts=(
+            _single_entity_consolidation(person),
+            _single_entity_consolidation(household),
+        ),
+        contributions=(person, household),
+    )
+
+    assert len(merged.entities) == 2
+    assert {entity.contribution_refs for entity in merged.entities} == {
+        ("object_1.candidate",),
+        ("object_2.candidate",),
+    }
+
+
+def test_cross_page_consolidation_merges_synonyms_with_same_meaning_and_grain() -> None:
+    customer = _conceptual_contribution(
+        contribution_ref="object_1",
+        source_name="customer_raw",
+        name="Customer",
+        definition="A party that receives products or services.",
+        grain="One recognized customer party.",
+        aliases=("Client",),
+    )
+    client = _conceptual_contribution(
+        contribution_ref="object_2",
+        source_name="client_raw",
+        name="Client",
+        definition="  a party that receives products or services.  ",
+        grain="one recognized customer party.",
+        aliases=("Customer",),
+    )
+
+    merged = _merge_consolidations(
+        parts=(
+            _single_entity_consolidation(customer),
+            _single_entity_consolidation(client),
+        ),
+        contributions=(customer, client),
+    )
+
+    assert len(merged.entities) == 1
+    assert merged.entities[0].contribution_refs == (
+        "object_1.candidate",
+        "object_2.candidate",
+    )
+    assert set(merged.entities[0].candidate_names) == {"Customer", "Client"}
 
 
 def _candidate(*, source_name: str = "customer_raw") -> JsonValue:
@@ -799,6 +951,7 @@ async def test_executor_detailed_coverage_runs_each_ledger_then_one_handoff() ->
                             "conceptual_object_name": "Customer",
                         }
                     ],
+                    "reviewed_input_contribution_refs": ["object_1"],
                     "reviewed_relationship_package_refs": [],
                     "reviewed_applied_record_refs": [],
                 },
@@ -837,10 +990,10 @@ async def test_executor_detailed_coverage_runs_each_ledger_then_one_handoff() ->
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("disposition", "expected_status"),
-    [("not_conceptual", "running"), ("needs_review", "warning")],
+    [("context_only", "running"), ("blocked", "warning")],
 )
 async def test_detailed_empty_coverage_completes_with_true_no_op_event(
-    disposition: Literal["not_conceptual", "needs_review"],
+    disposition: Literal["context_only", "blocked"],
     expected_status: Literal["running", "warning"],
 ) -> None:
     source = {
@@ -866,6 +1019,7 @@ async def test_detailed_empty_coverage_completes_with_true_no_op_event(
                     "objects": [],
                     "relationships": [],
                     "entity_coverage": [],
+                    "reviewed_input_contribution_refs": ["object_1"],
                     "reviewed_relationship_package_refs": [],
                     "reviewed_applied_record_refs": [],
                 },
@@ -1130,6 +1284,9 @@ class _PagingAgent:
                     list[str],
                     context["required_relationship_package_refs"],
                 )
+                input_refs = cast(
+                    list[str], context["required_input_contribution_refs"]
+                )
                 applied_refs = cast(list[str], context["required_applied_review_refs"])
             else:
                 details = cast(list[dict[str, JsonValue]], context["entity_details"])
@@ -1152,6 +1309,9 @@ class _PagingAgent:
                         context["relationship_packages"],
                     )
                 ]
+                input_refs = cast(
+                    list[str], context["required_input_contribution_refs"]
+                )
                 applied_refs = cast(list[str], context["required_applied_record_refs"])
             candidate = cast(
                 JsonValue,
@@ -1159,6 +1319,7 @@ class _PagingAgent:
                     "objects": objects,
                     "relationships": [],
                     "entity_coverage": coverage,
+                    "reviewed_input_contribution_refs": input_refs,
                     "reviewed_relationship_package_refs": package_refs,
                     "reviewed_applied_record_refs": applied_refs,
                 },
@@ -1366,7 +1527,7 @@ async def test_detailed_maximal_assertion_and_multiple_objects_are_byte_bounded(
         for request in agent.requests
         if request.stage == "relationship_cardinality_refinement"
     ]
-    assert relationship_requests
+    assert relationship_requests == []
     assert all(
         len(
             cast(

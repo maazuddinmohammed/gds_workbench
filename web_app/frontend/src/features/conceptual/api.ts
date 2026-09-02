@@ -4,7 +4,7 @@ import type {
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelScopeApi } from "../model_scope/api";
+import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export type ConceptualStatus = ReviewStatus;
@@ -158,7 +158,7 @@ export type ConceptualApi = ConceptualTransport
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelScopeApi, "listModelScope">;
+  & Pick<ModelInputScopeApi, "listModelInputScope">;
 
 export function createConceptualApi(request: HttpRequest): ConceptualTransport {
   return {

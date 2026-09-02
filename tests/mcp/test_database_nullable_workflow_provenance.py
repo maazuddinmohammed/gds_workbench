@@ -76,10 +76,10 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
         assert len(bronze["attribute_ids"]) >= 2
         connection.execute(
             """
-            INSERT INTO model.model_scope (model_id, object_id)
-            VALUES (%s, %s), (%s, %s)
+            INSERT INTO model.model_input_scope (model_id, object_id)
+            VALUES (%s, %s)
             """,
-            (model_id, bronze["object_id"], model_id, silver["object_id"]),
+            (model_id, bronze["object_id"]),
         )
 
         analysis_result_id = require_row(
@@ -148,6 +148,18 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 (model_id,),
             ).fetchone()
         )["logical_entity_id"]
+        model_object_binding_id = require_row(
+            connection.execute(
+                """
+            INSERT INTO workflow.model_object_binding (
+                model_id, object_id, modeled_entity_type, logical_entity_id,
+                agent_run_id, workflow_run_id
+            ) VALUES (%s, %s, 'logical_entity', %s, NULL, NULL)
+            RETURNING model_object_binding_id
+            """,
+                (model_id, silver["object_id"], logical_entity_id),
+            ).fetchone()
+        )["model_object_binding_id"]
         dimensional_entity_id = require_row(
             connection.execute(
                 """
@@ -186,19 +198,17 @@ def test_direct_model_writes_do_not_require_workflow_provenance(
                 model_id,
                 agent_run_id,
                 workflow_run_id,
-                object_id,
+                model_object_binding_id,
                 source_system_id,
-                modeled_entity_type,
-                logical_entity_id
+                mapping_transformation_document
             )
-            VALUES (%s, NULL, NULL, %s, %s, 'logical_entity', %s)
+            VALUES (%s, NULL, NULL, %s, %s, '{"kind":"direct"}'::JSONB)
             RETURNING mapping_object_id
             """,
                 (
                     model_id,
-                    silver["object_id"],
+                    model_object_binding_id,
                     silver["system_id"],
-                    logical_entity_id,
                 ),
             ).fetchone()
         )["mapping_object_id"]

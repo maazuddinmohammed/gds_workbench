@@ -127,6 +127,8 @@ INSERT INTO core.connection (
     connection_code,
     connection_name,
     connection_type_id,
+    has_foreign_catalog,
+    foreign_catalog,
     is_global_data_store
 )
 SELECT tenant.tenant_id,
@@ -134,6 +136,8 @@ SELECT tenant.tenant_id,
        'DEMO_SOURCE',
        'Demo Customer Source',
        connection_type.connection_type_id,
+       TRUE,
+       'demo_source_catalog',
        FALSE
   FROM core.tenant AS tenant
  CROSS JOIN core.system AS system
@@ -169,41 +173,27 @@ UPDATE core.tenant AS tenant
  WHERE tenant.tenant_code = 'DEMO_TENANT'
    AND connection.connection_code = 'DEMO_GDS';
 
-INSERT INTO core.tenant_metadata_discovery_scope (
-    tenant_id,
-    gds_connection_id,
-    zone_id,
-    object_schema
-)
-SELECT tenant.tenant_id,
-       connection.connection_id,
-       zone.zone_id,
-       zone_schema.object_schema
-  FROM core.tenant AS tenant
- CROSS JOIN core.connection AS connection
- JOIN (
-        VALUES
-            ('bronze', 'bronze_demo'),
-            ('silver', 'silver_demo'),
-            ('gold', 'gold_demo')
-       ) AS zone_schema(zone_code, object_schema)
-    ON TRUE
- JOIN reference.zone AS zone
-   ON zone.zone_code = zone_schema.zone_code
- WHERE tenant.tenant_code = 'DEMO_TENANT'
-   AND connection.connection_code = 'DEMO_GDS';
-
 INSERT INTO core.object (
     connection_id,
+    source_tenant_id,
     object_schema,
     object_name,
+    fc_object_schema,
+    fc_object_name,
     object_description,
     object_type_id,
     zone_id
 )
 SELECT connection.connection_id,
+       tenant.tenant_id,
        object_seed.object_schema,
        object_seed.object_name,
+       CASE object_seed.zone_code
+           WHEN 'source' THEN 'public'
+       END,
+       CASE object_seed.zone_code
+           WHEN 'source' THEN object_seed.object_name
+       END,
        object_seed.object_description,
        object_type.object_type_id,
        zone.zone_id
@@ -246,14 +236,17 @@ SELECT connection.connection_id,
        )
  JOIN core.connection AS connection
    ON connection.connection_code = object_seed.connection_code
+ CROSS JOIN core.tenant AS tenant
  JOIN reference.zone AS zone
    ON zone.zone_code = object_seed.zone_code
  CROSS JOIN reference.object_type AS object_type
- WHERE object_type.object_type_code = 'TABLE';
+ WHERE object_type.object_type_code = 'TABLE'
+   AND tenant.tenant_code = 'DEMO_TENANT';
 
 INSERT INTO core.attribute (
     object_id,
     attribute_name,
+    fc_attribute_name,
     attribute_ordinal_position,
     attribute_description,
     attribute_data_type,
@@ -263,6 +256,9 @@ INSERT INTO core.attribute (
 )
 SELECT object.object_id,
        attribute_seed.attribute_name,
+       CASE object.object_schema
+           WHEN 'source_demo' THEN attribute_seed.attribute_name
+       END,
        attribute_seed.attribute_ordinal_position,
        attribute_seed.attribute_description,
        attribute_seed.attribute_data_type,
@@ -270,6 +266,8 @@ SELECT object.object_id,
        attribute_seed.is_natural_key,
        TRUE
   FROM core.object AS object
+ JOIN core.tenant AS source_tenant
+   ON source_tenant.tenant_id = object.source_tenant_id
  CROSS JOIN (
         VALUES
             (1, 'customer_id', 'Customer business identifier', 'BIGINT', FALSE, TRUE),
@@ -284,7 +282,8 @@ SELECT object.object_id,
        )
  WHERE object.object_schema IN (
            'source_demo', 'bronze_demo', 'silver_demo', 'gold_demo'
-       );
+       )
+   AND source_tenant.tenant_code = 'DEMO_TENANT';
 
 INSERT INTO core.ingestion_object_mapping (
     source_object_id,
@@ -308,7 +307,11 @@ SELECT source_object.object_id,
   AND source_object.object_name = mapping_seed.source_name
  JOIN core.object AS target_object
    ON target_object.object_schema = mapping_seed.target_schema
-  AND target_object.object_name = mapping_seed.target_name;
+  AND target_object.object_name = mapping_seed.target_name
+ JOIN core.tenant AS source_tenant
+   ON source_tenant.tenant_id = source_object.source_tenant_id
+  AND source_tenant.tenant_id = target_object.source_tenant_id
+ WHERE source_tenant.tenant_code = 'DEMO_TENANT';
 
 INSERT INTO core.ingestion_attribute_mapping (
     ingestion_object_mapping_id,
@@ -323,11 +326,16 @@ SELECT object_mapping.ingestion_object_mapping_id,
        source_attribute.attribute_id,
        target_attribute.attribute_id
   FROM core.ingestion_object_mapping AS object_mapping
+ JOIN core.object AS mapped_source_object
+   ON mapped_source_object.object_id = object_mapping.source_object_id
+ JOIN core.tenant AS source_tenant
+   ON source_tenant.tenant_id = mapped_source_object.source_tenant_id
  JOIN core.attribute AS source_attribute
    ON source_attribute.object_id = object_mapping.source_object_id
  JOIN core.attribute AS target_attribute
    ON target_attribute.object_id = object_mapping.target_object_id
-  AND target_attribute.attribute_name = source_attribute.attribute_name;
+  AND target_attribute.attribute_name = source_attribute.attribute_name
+ WHERE source_tenant.tenant_code = 'DEMO_TENANT';
 
 INSERT INTO core.copy_group (
     tenant_id,
@@ -408,6 +416,8 @@ SELECT copy_group.copy_group_id,
  JOIN core.object AS source_object
    ON source_object.object_schema = 'source_demo'
   AND source_object.object_name = 'customer'
+ JOIN core.tenant AS source_tenant
+   ON source_tenant.tenant_id = source_object.source_tenant_id
  JOIN core.object AS target_object
    ON target_object.object_schema = 'bronze_demo'
   AND target_object.object_name = 'customer'
@@ -418,7 +428,8 @@ SELECT copy_group.copy_group_id,
    AND chunk_type.chunk_type_name = 'Full'
    AND file_type.file_type_name = 'Parquet'
    AND source_operation.data_operation_name = 'Read'
-   AND target_operation.data_operation_name = 'Write';
+   AND target_operation.data_operation_name = 'Write'
+   AND source_tenant.tenant_code = 'DEMO_TENANT';
 
 INSERT INTO core.process_group (
     tenant_id,
@@ -456,10 +467,13 @@ SELECT object.connection_id,
        process_type.process_type_id,
        process_group.process_group_id
   FROM core.object AS object
+ JOIN core.tenant AS source_tenant
+   ON source_tenant.tenant_id = object.source_tenant_id
  CROSS JOIN reference.process_type AS process_type
  CROSS JOIN core.process_group AS process_group
  WHERE object.object_schema = 'silver_demo'
    AND object.object_name = 'customer'
+   AND source_tenant.tenant_code = 'DEMO_TENANT'
    AND process_type.process_type_name = 'Notebook'
    AND process_group.process_group_name = 'Demo Customer Silver Processing';
 

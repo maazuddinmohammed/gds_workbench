@@ -6,8 +6,6 @@ from gds_workbench_api.features.models.command_contracts import (
     JsonObject,
     ModelCommandResult,
     ModelRevisionConflictError,
-    ModelScopeCommandResult,
-    ReplaceModelScopeRequest,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.command_router import create_model_commands_router
@@ -46,11 +44,9 @@ __all__ = [
     "ModelNotFoundError",
     "ModelReadDatabase",
     "ModelRevisionConflictError",
-    "ModelScopeCommandResult",
     "ModelService",
     "ModelStatus",
     "ModelWorkflow",
-    "ReplaceModelScopeRequest",
     "UpdateModelRequest",
     "create_model_commands_router",
     "create_models_router",

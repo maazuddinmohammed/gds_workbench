@@ -1,43 +1,9 @@
-"""Shared query and read-card machinery for Logical and Dimensional layers."""
-
-# Immutable Pydantic read cards intentionally specialize nested write-record fields with IDs.
-# pyright: reportIncompatibleVariableOverride=false
+"""Shared SQL builders for Logical and Dimensional layers."""
 
 from __future__ import annotations
 
-from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import LiteralString, cast
-
-from pydantic import Field
-
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
-    AssertionRecordKey,
-    AttributeAssertionSourceRecord,
-    AttributePhysicalSourceRecord,
-    DimensionalAssertionSourceRecord,
-    DimensionalObjectSourceRecord,
-    LogicalAssertionSourceRecord,
-    LogicalObjectSourceRecord,
-    PhysicalAttributeKey,
-    PhysicalObjectKey,
-    SubmodelMembershipRecord,
-)
-from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
-
-from .common import (
-    MAX_OBJECT_FILTER,
-    ModelReadContext,
-    authorize_model_read,
-    validate_model_object_selection,
-)
-
-MAX_PAGE_SIZE = 200
-MAX_ID_FILTER = MAX_OBJECT_FILTER
 
 
 @dataclass(frozen=True, slots=True)
@@ -193,292 +159,6 @@ DIMENSIONAL = LayerConfig(
 )
 
 
-class ReadPhysicalObjectKey(PhysicalObjectKey):
-    object_id: int = Field(gt=0)
-
-
-class ReadPhysicalAttributeKey(PhysicalAttributeKey):
-    object_id: int = Field(gt=0)
-    attribute_id: int = Field(gt=0)
-
-
-class ReadAssertionRecordKey(AssertionRecordKey):
-    modeling_assertion_record_id: int = Field(gt=0)
-
-
-class SubmodelMembershipResult(SubmodelMembershipRecord):
-    submodel_id: int = Field(gt=0)
-    entity_submodel_id: int = Field(gt=0)
-
-
-class LogicalObjectSourceResult(LogicalObjectSourceRecord):
-    entity_source_mapping_id: int = Field(gt=0)
-    source_object: ReadPhysicalObjectKey
-
-
-class LogicalAssertionSourceResult(LogicalAssertionSourceRecord):
-    entity_source_mapping_id: int = Field(gt=0)
-    assertion_record: ReadAssertionRecordKey
-
-
-class DimensionalObjectSourceResult(DimensionalObjectSourceRecord):
-    entity_source_mapping_id: int = Field(gt=0)
-    source_object: ReadPhysicalObjectKey
-
-
-class DimensionalAssertionSourceResult(DimensionalAssertionSourceRecord):
-    entity_source_mapping_id: int = Field(gt=0)
-    assertion_record: ReadAssertionRecordKey
-
-
-class AttributePhysicalSourceResult(AttributePhysicalSourceRecord):
-    attribute_source_mapping_id: int = Field(gt=0)
-    entity_source_mapping_id: int = Field(gt=0)
-    source_attribute: ReadPhysicalAttributeKey
-
-
-class AttributeAssertionSourceResult(AttributeAssertionSourceRecord):
-    attribute_source_mapping_id: int = Field(gt=0)
-    assertion_record: ReadAssertionRecordKey
-
-
-class LayerToolError(Exception):
-    """A bounded modeled-layer read failure safe for MCP serialization."""
-
-
-@dataclass(frozen=True, slots=True)
-class ReadPage:
-    model: ModelReadContext
-    rows: list[dict[str, object]]
-    next_cursor: str | None
-
-
-async def read_submodels(
-    *,
-    database: Database,
-    authorizer: AuthorizationService,
-    principal: RequestPrincipal,
-    cursors: CursorCodec,
-    config: LayerConfig,
-    model_id: int,
-    page_size: int,
-    cursor: str | None,
-) -> ReadPage:
-    collection = f"get_model_{config.layer}_submodels:{model_id}:{page_size}"
-    offset = cursors.decode(cursor, collection=collection)
-    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
-        model = await authorize_model_read(
-            transaction,
-            authorizer=authorizer,
-            principal=principal,
-            model_id=model_id,
-        )
-        rows = await transaction.fetch_all(
-            submodels_sql(config),
-            (model.model_id, page_size + 1, offset),
-        )
-    return ReadPage(
-        model=model,
-        rows=rows[:page_size],
-        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
-    )
-
-
-async def read_entities(
-    *,
-    database: Database,
-    authorizer: AuthorizationService,
-    principal: RequestPrincipal,
-    cursors: CursorCodec,
-    config: LayerConfig,
-    model_id: int,
-    supporting_object_ids: tuple[int, ...],
-    page_size: int,
-    cursor: str | None,
-) -> ReadPage:
-    validate_ids(supporting_object_ids)
-    collection = _collection(
-        f"get_model_{config.layer}_entities",
-        model_id,
-        supporting_object_ids,
-        page_size,
-    )
-    offset = cursors.decode(cursor, collection=collection)
-    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
-        model = await authorize_model_read(
-            transaction,
-            authorizer=authorizer,
-            principal=principal,
-            model_id=model_id,
-        )
-        await validate_model_object_selection(
-            transaction,
-            model_id=model.model_id,
-            object_ids=supporting_object_ids,
-        )
-        rows = await transaction.fetch_all(
-            entities_sql(config),
-            (
-                model.model_id,
-                list(supporting_object_ids),
-                list(supporting_object_ids),
-                page_size + 1,
-                offset,
-            ),
-        )
-    return ReadPage(
-        model=model,
-        rows=rows[:page_size],
-        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
-    )
-
-
-async def read_attributes(
-    *,
-    database: Database,
-    authorizer: AuthorizationService,
-    principal: RequestPrincipal,
-    cursors: CursorCodec,
-    config: LayerConfig,
-    model_id: int,
-    entity_ids: tuple[int, ...],
-    page_size: int,
-    cursor: str | None,
-) -> ReadPage:
-    validate_ids(entity_ids)
-    collection = _collection(
-        f"get_model_{config.layer}_attributes", model_id, entity_ids, page_size
-    )
-    offset = cursors.decode(cursor, collection=collection)
-    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
-        model = await authorize_model_read(
-            transaction,
-            authorizer=authorizer,
-            principal=principal,
-            model_id=model_id,
-        )
-        await validate_entity_selection(
-            transaction,
-            config=config,
-            model_id=model.model_id,
-            entity_ids=entity_ids,
-        )
-        rows = await transaction.fetch_all(
-            attributes_sql(config),
-            (
-                model.model_id,
-                list(entity_ids),
-                list(entity_ids),
-                page_size + 1,
-                offset,
-            ),
-        )
-    return ReadPage(
-        model=model,
-        rows=rows[:page_size],
-        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
-    )
-
-
-async def read_relationships(
-    *,
-    database: Database,
-    authorizer: AuthorizationService,
-    principal: RequestPrincipal,
-    cursors: CursorCodec,
-    config: LayerConfig,
-    model_id: int,
-    entity_ids: tuple[int, ...],
-    page_size: int,
-    cursor: str | None,
-) -> ReadPage:
-    validate_ids(entity_ids)
-    collection = _collection(
-        f"get_model_{config.layer}_relationships", model_id, entity_ids, page_size
-    )
-    offset = cursors.decode(cursor, collection=collection)
-    async with database.read_transaction(isolation=ReadIsolation.REPEATABLE_READ) as transaction:
-        model = await authorize_model_read(
-            transaction,
-            authorizer=authorizer,
-            principal=principal,
-            model_id=model_id,
-        )
-        await validate_entity_selection(
-            transaction,
-            config=config,
-            model_id=model.model_id,
-            entity_ids=entity_ids,
-        )
-        rows = await transaction.fetch_all(
-            relationships_sql(config),
-            (
-                model.model_id,
-                list(entity_ids),
-                list(entity_ids),
-                list(entity_ids),
-                page_size + 1,
-                offset,
-            ),
-        )
-    return ReadPage(
-        model=model,
-        rows=rows[:page_size],
-        next_cursor=_next_cursor(cursors, collection, offset, page_size, len(rows)),
-    )
-
-
-async def validate_entity_selection(
-    transaction: ReadTransaction,
-    *,
-    config: LayerConfig,
-    model_id: int,
-    entity_ids: tuple[int, ...],
-) -> None:
-    if not entity_ids:
-        return
-    query = cast(
-        LiteralString,
-        f"""
-SELECT count(*) AS entity_count
-  FROM {config.entity_table}
- WHERE model_id = %s
-   AND {config.entity_id} = ANY(%s::BIGINT[])
-""",
-    )
-    row = await transaction.fetch_one(query, (model_id, list(entity_ids)))
-    if row is None or row["entity_count"] != len(entity_ids):
-        raise InvalidRequestError(
-            f"One or more {config.layer.title()} Entities are not in the Model."
-        )
-
-
-def validate_ids(ids: tuple[int, ...]) -> None:
-    if any(identifier <= 0 for identifier in ids) or len(set(ids)) != len(ids):
-        raise InvalidRequestError("IDs must be unique positive integers.")
-
-
-def audit_input(
-    arguments: Mapping[str, object], id_argument: str | None = None
-) -> dict[str, str | int | bool]:
-    model_id = arguments.get("model_id")
-    page_size = arguments.get("page_size", 50)
-    result: dict[str, str | int | bool] = {
-        "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),
-        "model_id": model_id if type(model_id) is int and model_id > 0 else "invalid",
-        "page_size": (
-            page_size if type(page_size) is int and 1 <= page_size <= MAX_PAGE_SIZE else "invalid"
-        ),
-        "cursor_provided": arguments.get("cursor") is not None,
-    }
-    if id_argument is not None:
-        ids = arguments.get(id_argument, [])
-        result["selected_id_count"] = (
-            len(cast(list[object], ids)) if isinstance(ids, list) else "invalid"
-        )
-    return result
-
-
 def submodels_sql(config: LayerConfig) -> LiteralString:
     selected = _select_fields("submodel", config.submodel_fields)
     return cast(
@@ -488,7 +168,7 @@ SELECT submodel.{config.submodel_id},
        {selected},
        count(DISTINCT membership.{config.entity_id}) FILTER (
            WHERE membership.{config.layer}_entity_submodel_status
-               IN ('active', 'needs_review')
+               = 'active'
        ) AS entity_count
   FROM {config.submodel_table} AS submodel
   LEFT JOIN {config.membership_table} AS membership
@@ -505,9 +185,7 @@ SELECT submodel.{config.submodel_id},
 def entities_sql(config: LayerConfig) -> LiteralString:
     selected = _select_fields("entity", config.entity_fields)
     eligibility_field = (
-        "is_bronze_source_eligible"
-        if config.layer == "logical"
-        else "is_dimensional_source_eligible"
+        "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
     )
     role_field = (
         f"'source_role', source.{config.entity_source_role_column},"
@@ -603,7 +281,7 @@ SELECT entity.{config.entity_id},
               AND source_eligibility.model_id = source.model_id
               AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
-               ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+               ON source_tenant.tenant_id = source_connection.tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
              LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -654,9 +332,7 @@ SELECT entity.{config.entity_id},
 def attributes_sql(config: LayerConfig) -> LiteralString:
     selected = _select_fields("attribute", config.attribute_fields)
     eligibility_field = (
-        "is_bronze_source_eligible"
-        if config.layer == "logical"
-        else "is_dimensional_source_eligible"
+        "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
     )
     return cast(
         LiteralString,
@@ -738,7 +414,7 @@ SELECT attribute.{config.attribute_id},
               AND source_eligibility.model_id = source.model_id
               AND source_eligibility.{eligibility_field}
              LEFT JOIN core.tenant AS source_tenant
-               ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+               ON source_tenant.tenant_id = source_connection.tenant_id
              LEFT JOIN core.system AS source_system
                ON source_system.system_id = source_connection.system_id
              LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -834,19 +510,3 @@ SELECT relationship.{config.relationship_id},
 
 def _select_fields(alias: str, fields: tuple[str, ...]) -> str:
     return ",\n       ".join(f"{alias}.{field}" for field in fields)
-
-
-def _collection(tool: str, model_id: int, ids: tuple[int, ...], page_size: int) -> str:
-    return f"{tool}:{model_id}:{','.join(str(identifier) for identifier in ids)}:{page_size}"
-
-
-def _next_cursor(
-    cursors: CursorCodec,
-    collection: str,
-    offset: int,
-    page_size: int,
-    row_count: int,
-) -> str | None:
-    if row_count <= page_size:
-        return None
-    return cursors.encode(collection=collection, offset=offset + page_size)

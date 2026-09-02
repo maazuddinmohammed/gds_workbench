@@ -86,16 +86,6 @@ class ConnectionRecord(MetadataRecord):
     is_active: bool
 
 
-class TenantMetadataDiscoveryScopeRecord(MetadataRecord):
-    scope_tenant_code: Code100
-    connection_tenant_code: Code100
-    connection_system_code: Code100
-    connection_code: Code100
-    zone_code: Annotated[str, StringConstraints(min_length=1, max_length=30)]
-    object_schema: Name400
-    is_active: bool
-
-
 class SystemTypeRecord(MetadataRecord):
     system_type_code: Code100
     system_type_name: Name200
@@ -155,6 +145,7 @@ class ObjectRecord(MetadataRecord):
     tenant_code: Code100
     system_code: Code100
     connection_code: Code100
+    source_tenant_code: Code100
     object_schema: Name400
     object_name: Name400
     fc_object_schema: OptionalText400

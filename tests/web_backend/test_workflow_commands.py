@@ -186,11 +186,11 @@ def test_code_generation_rejects_mismatched_coverage_intent(
         )
 
 
-def test_qa_requires_an_exact_case_insensitive_system_selection() -> None:
+def test_validation_requires_an_exact_case_insensitive_system_selection() -> None:
     command = CreateWorkflowRunRequest.model_validate(
         {
             "expected_model_revision": 4,
-            "model_workflow": "qa",
+            "model_workflow": "validation",
             "workflow_execution_mode": None,
             "selected_object_ids": [],
             "selected_system_codes": [" CRM ", "ERP"],
@@ -212,14 +212,14 @@ def test_qa_requires_an_exact_case_insensitive_system_selection() -> None:
         {"workflow_execution_mode": "one_shot"},
     ),
 )
-def test_qa_rejects_ambiguous_scope_or_execution_mode(
+def test_validation_rejects_ambiguous_scope_or_execution_mode(
     updates: dict[str, object],
 ) -> None:
     with pytest.raises(ValidationError):
         CreateWorkflowRunRequest.model_validate(
             {
                 "expected_model_revision": 4,
-                "model_workflow": "qa",
+                "model_workflow": "validation",
                 "workflow_execution_mode": None,
                 "selected_object_ids": [],
                 "selected_system_codes": ["CRM"],
@@ -239,7 +239,6 @@ def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
             "selected_object_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
-            "mapping_artifact_type": "sql_file",
             "mapping_source_system_id": 77,
             "mapping_object_output_template_id": 501,
             "mapping_attribute_output_template_id": 502,
@@ -251,7 +250,6 @@ def test_mapping_request_selects_one_pair_without_choosing_the_route() -> None:
     assert command.modeled_entity_type is None
     assert command.mapping_operation == "build"
     assert command.mapping_coverage_mode == "selected_targets"
-    assert command.mapping_artifact_type == "sql_file"
     assert command.mapping_source_system_id == 77
     assert command.mapping_object_output_template_id == 501
     assert command.mapping_attribute_output_template_id == 502
@@ -273,7 +271,6 @@ def test_mapping_request_allows_each_output_template_selection_independently(
             "selected_object_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
-            "mapping_artifact_type": "sql_file",
             "mapping_source_system_id": 77,
             "mapping_object_output_template_id": object_template_id,
             "mapping_attribute_output_template_id": attribute_template_id,
@@ -306,7 +303,6 @@ def test_mapping_request_rejects_nonpositive_output_template_id(
         "selected_object_ids": [101],
         "mapping_operation": "build",
         "mapping_coverage_mode": "selected_targets",
-        "mapping_artifact_type": "sql_file",
         "mapping_source_system_id": 77,
         "prompt_overrides": {},
         field_name: field_value,
@@ -355,7 +351,6 @@ def test_mapping_request_rejects_a_caller_route_or_incomplete_pair(
         "selected_object_ids": [101],
         "mapping_operation": "build",
         "mapping_coverage_mode": "selected_targets",
-        "mapping_artifact_type": "sql_file",
         "mapping_source_system_id": 77,
         "prompt_overrides": {},
     }
@@ -401,12 +396,12 @@ class WorkflowCommandTransaction:
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 27
+        assert len(parameters) == 26
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
-        assert parameters[19:] == (None, None, None, None, None, None, None, None)
+        assert parameters[19:] == (None, None, None, None, None, None, None)
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -591,7 +586,7 @@ async def test_database_command_validates_code_generation_against_internal_detai
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_qa_against_internal_detailed_mode() -> None:
+async def test_database_command_validates_validation_against_internal_detailed_mode() -> None:
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -601,7 +596,7 @@ async def test_database_command_validates_qa_against_internal_detailed_mode() ->
     command = CreateWorkflowRunRequest.model_validate(
         {
             "expected_model_revision": 4,
-            "model_workflow": "qa",
+            "model_workflow": "validation",
             "selected_object_ids": [],
             "selected_system_codes": ["CRM", "ERP"],
             "agent": {
@@ -849,14 +844,13 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 27
+        assert len(parameters) == 26
         assert parameters[3:7] == (18, 4, "mapping", "one_shot")
         assert parameters[13] == [101]
         assert parameters[14] == []
         assert parameters[19:] == (
             "build",
             "selected_targets",
-            "sql_file",
             77,
             501,
             502,
@@ -908,7 +902,6 @@ async def test_database_command_forwards_mapping_output_template_ids() -> None:
             "selected_object_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
-            "mapping_artifact_type": "sql_file",
             "mapping_source_system_id": 77,
             "mapping_object_output_template_id": 501,
             "mapping_attribute_output_template_id": 502,

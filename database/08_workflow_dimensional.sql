@@ -25,7 +25,7 @@ CREATE TABLE workflow.dimensional_submodel (
     ),
     CONSTRAINT ck_dimensional_submodel_status CHECK (
         dimensional_submodel_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -34,7 +34,7 @@ CREATE UNIQUE INDEX ux_dimensional_submodel_effective_name
     ON workflow.dimensional_submodel (
         model_id,
         lower(btrim(dimensional_submodel_name))
-    ) WHERE dimensional_submodel_status IN ('active', 'needs_review');
+    ) WHERE dimensional_submodel_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity (
     dimensional_entity_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -99,7 +99,7 @@ CREATE TABLE workflow.dimensional_entity (
     ),
     CONSTRAINT ck_dimensional_entity_status CHECK (
         dimensional_entity_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -108,7 +108,7 @@ CREATE UNIQUE INDEX ux_dimensional_entity_effective_name
     ON workflow.dimensional_entity (
         model_id,
         lower(btrim(dimensional_entity_name))
-    ) WHERE dimensional_entity_status IN ('active', 'needs_review');
+    ) WHERE dimensional_entity_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity_submodel (
     dimensional_entity_submodel_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -137,7 +137,7 @@ CREATE TABLE workflow.dimensional_entity_submodel (
         ON DELETE NO ACTION,
     CONSTRAINT ck_dimensional_entity_submodel_status CHECK (
         dimensional_entity_submodel_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -147,7 +147,7 @@ CREATE UNIQUE INDEX ux_dimensional_entity_submodel_effective
         model_id,
         dimensional_entity_id,
         dimensional_submodel_id
-    ) WHERE dimensional_entity_submodel_status IN ('active', 'needs_review');
+    ) WHERE dimensional_entity_submodel_status = 'active';
 
 CREATE TABLE workflow.dimensional_attribute (
     dimensional_attribute_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -244,7 +244,7 @@ CREATE TABLE workflow.dimensional_attribute (
     ),
     CONSTRAINT ck_dimensional_attribute_status CHECK (
         dimensional_attribute_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -254,7 +254,7 @@ CREATE UNIQUE INDEX ux_dimensional_attribute_effective_name
         model_id,
         dimensional_entity_id,
         lower(btrim(dimensional_attribute_name))
-    ) WHERE dimensional_attribute_status IN ('active', 'needs_review');
+    ) WHERE dimensional_attribute_status = 'active';
 
 CREATE TABLE workflow.dimensional_entity_source_mapping (
     dimensional_entity_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -281,10 +281,6 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
         model_id
     ) REFERENCES workflow.dimensional_entity (dimensional_entity_id, model_id)
         ON DELETE NO ACTION,
-    CONSTRAINT fk_dimensional_entity_source_scope FOREIGN KEY (
-        model_id,
-        source_object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_dimensional_entity_source_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -321,7 +317,7 @@ CREATE TABLE workflow.dimensional_entity_source_mapping (
     ),
     CONSTRAINT ck_dimensional_entity_source_status CHECK (
         dimensional_entity_source_mapping_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -332,14 +328,14 @@ CREATE UNIQUE INDEX ux_dimensional_entity_source_object_effective
         dimensional_entity_id,
         source_object_id
     ) WHERE support_source_type = 'object'
-        AND dimensional_entity_source_mapping_status IN ('active', 'needs_review');
+        AND dimensional_entity_source_mapping_status = 'active';
 CREATE UNIQUE INDEX ux_dimensional_entity_source_assertion_effective
     ON workflow.dimensional_entity_source_mapping (
         model_id,
         dimensional_entity_id,
         modeling_assertion_record_id
     ) WHERE support_source_type = 'assertion'
-        AND dimensional_entity_source_mapping_status IN ('active', 'needs_review');
+        AND dimensional_entity_source_mapping_status = 'active';
 
 CREATE TABLE workflow.dimensional_attribute_source_mapping (
     dimensional_attribute_source_mapping_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -418,7 +414,7 @@ CREATE TABLE workflow.dimensional_attribute_source_mapping (
     ),
     CONSTRAINT ck_dimensional_attribute_source_status CHECK (
         dimensional_attribute_source_mapping_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -430,14 +426,14 @@ CREATE UNIQUE INDEX ux_dimensional_attribute_source_physical_effective
         dimensional_attribute_id,
         source_attribute_id
     ) WHERE support_source_type = 'attribute'
-        AND dimensional_attribute_source_mapping_status IN ('active', 'needs_review');
+        AND dimensional_attribute_source_mapping_status = 'active';
 CREATE UNIQUE INDEX ux_dimensional_attribute_source_assertion_effective
     ON workflow.dimensional_attribute_source_mapping (
         model_id,
         dimensional_attribute_id,
         modeling_assertion_record_id
     ) WHERE support_source_type = 'assertion'
-        AND dimensional_attribute_source_mapping_status IN ('active', 'needs_review');
+        AND dimensional_attribute_source_mapping_status = 'active';
 
 CREATE TABLE workflow.dimensional_relationship (
     dimensional_relationship_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
@@ -529,7 +525,7 @@ CREATE TABLE workflow.dimensional_relationship (
     ),
     CONSTRAINT ck_dimensional_relationship_status CHECK (
         dimensional_relationship_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -543,7 +539,7 @@ CREATE UNIQUE INDEX ux_dimensional_relationship_effective_identity
         dimensional_relationship_to_attribute_id,
         lower(btrim(dimensional_relationship_kind)),
         coalesce(lower(btrim(dimensional_relationship_role_name)), '')
-    ) WHERE dimensional_relationship_status IN ('active', 'needs_review');
+    ) WHERE dimensional_relationship_status = 'active';
 
 -- Every Dimensional mutation participates in the one-revision transaction guard.
 

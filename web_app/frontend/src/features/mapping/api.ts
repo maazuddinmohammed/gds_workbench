@@ -1,7 +1,6 @@
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
 import type { ModelsApi } from "../models/api";
-import type { ModelScopeApi, ModelScopeObject } from "../model_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export type MappingEntityType = "logical_entity" | "dimensional_entity";
@@ -94,6 +93,27 @@ export interface MappingDependencyPage {
   next_cursor: string | null;
 }
 
+export interface MappingTarget {
+  object_id: number;
+  connection_id: number;
+  system_id: number;
+  system_code: string;
+  system_name: string;
+  source_tenant_id: number;
+  source_tenant_code: string;
+  source_tenant_name: string;
+  object_schema: string;
+  object_name: string;
+  zone_code: "silver" | "gold";
+}
+
+export interface MappingTargetPage {
+  model_id: number;
+  model_revision: number;
+  items: MappingTarget[];
+  next_cursor: string | null;
+}
+
 export interface MappingObject {
   mapping_object_id: number;
   workflow_run_id: number | null;
@@ -101,7 +121,6 @@ export interface MappingObject {
   source: MappingModeledEntity;
   source_system: MappingSourceSystem;
   dependency_order: number;
-  artifact_type: "sql_file" | "python_file" | "python_notebook" | null;
   status: MappingStatus;
   is_locked: boolean;
   updated_at: string;
@@ -114,13 +133,6 @@ export interface MappingObjectPage {
   next_cursor: string | null;
 }
 
-export interface MappingProfileProvenance {
-  profile_key: string;
-  profile_version: string;
-  profile_schema_digest: string;
-  package_digest: string;
-}
-
 export interface MappingOutputTemplateProvenance {
   output_template_id: number;
   output_template_code: string;
@@ -131,10 +143,6 @@ export interface MappingOutputTemplateProvenance {
 }
 
 export interface MappingObjectDetail extends MappingObject {
-  artifact_generation_instructions: string | null;
-  mapping_profile: MappingProfileProvenance | null;
-  mapping_package_document: JsonObject | null;
-  mapping_document_format: "free_form" | "structured" | null;
   mapping_document: JsonObject | null;
   output_template: MappingOutputTemplateProvenance | null;
   created_at: string;
@@ -162,21 +170,25 @@ export interface MappingAttributePage {
 export interface MappingParentObjectReference {
   mapping_object_id: number;
   dependency_order: number;
-  artifact_type: "sql_file" | "python_file" | "python_notebook" | null;
-  mapping_profile: MappingProfileProvenance | null;
   status: MappingStatus;
   is_locked: boolean;
 }
 
 export interface MappingAttributeDetail extends MappingAttribute {
   parent_object_mapping: MappingParentObjectReference;
-  mapping_document_format: "free_form" | "structured" | null;
   mapping_document: JsonObject | null;
   output_template: MappingOutputTemplateProvenance | null;
   created_at: string;
 }
 
 export interface MappingTransport {
+  listMappingTargets: (
+    tenantId: number,
+    modelId: number,
+    entityType: MappingEntityType,
+    pageSize?: number,
+    cursor?: string,
+  ) => Promise<MappingTargetPage>;
   listMappingDependencies: (
     tenantId: number,
     modelId: number,
@@ -218,7 +230,6 @@ export interface MappingTransport {
 
 export type MappingApi = MappingTransport
   & Pick<ModelsApi, "listModels">
-  & Pick<ModelScopeApi, "listModelScope">
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"
@@ -233,6 +244,16 @@ export type MappingApi = MappingTransport
 
 export function createMappingApi(request: HttpRequest): MappingTransport {
   return {
+    listMappingTargets: (tenantId, modelId, entityType, pageSize = 200, cursor) => {
+      const query = new URLSearchParams({
+        entity_type: entityType,
+        page_size: String(pageSize),
+      });
+      if (cursor) query.set("cursor", cursor);
+      return request<MappingTargetPage>(
+        `/api/v1/tenants/${tenantId}/models/${modelId}/mapping/targets?${query}`,
+      );
+    },
     listMappingDependencies: (tenantId, modelId, filters = {}, pageSize = 200, cursor) =>
       request<MappingDependencyPage>(
         mappingCollectionPath(tenantId, modelId, "dependencies", filters, pageSize, cursor),
@@ -284,8 +305,11 @@ export const mappingQueryKeys = {
   attribute: (tenantId: number, modelId: number, mappingAttributeId: number) => (
     ["mapping-attribute", tenantId, modelId, mappingAttributeId] as const
   ),
-  runScope: (tenantId: number, modelId: number) => (
-    ["mapping-run-scope", tenantId, modelId] as const
+  runTargets: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
+    ["mapping-run-targets", tenantId, modelId, entityType] as const
+  ),
+  runSystems: (tenantId: number, modelId: number, entityType: MappingEntityType) => (
+    ["mapping-run-systems", tenantId, modelId, entityType] as const
   ),
   outputTemplates: (tenantId: number, modelId: number) => (
     ["mapping-output-templates", tenantId, modelId] as const
@@ -333,31 +357,67 @@ async function loadOutputTemplatesForTargetType(
   throw new Error("Output Template selection exceeds the supported bound");
 }
 
-export async function loadAllMappingScope(
-  api: Pick<ModelScopeApi, "listModelScope">,
+export async function loadAllMappingTargets(
+  api: Pick<MappingTransport, "listMappingTargets">,
   tenantId: number,
   modelId: number,
-): Promise<{ modelRevision: number; items: ModelScopeObject[] }> {
-  const items: ModelScopeObject[] = [];
+  entityType: MappingEntityType,
+): Promise<{ modelRevision: number; items: MappingTarget[] }> {
+  const items: MappingTarget[] = [];
   const seenCursors = new Set<string>();
   let cursor: string | undefined;
   let modelRevision: number | null = null;
 
   for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelScope(tenantId, modelId, {}, 200, cursor);
+    const response = await api.listMappingTargets(tenantId, modelId, entityType, 200, cursor);
     if (modelRevision !== null && response.model_revision !== modelRevision) {
-      throw new Error("Model Scope revision changed while loading");
+      throw new Error("Mapping target revision changed while loading");
     }
     modelRevision = response.model_revision;
     items.push(...response.items);
     if (!response.next_cursor) return { modelRevision, items };
     if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Scope cursor repeated");
+      throw new Error("Mapping target cursor repeated");
     }
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
   }
-  throw new Error("Active Scope exceeds the supported bounded Mapping selection");
+  throw new Error("Mapping targets exceed the supported bound");
+}
+
+export async function loadAllMappingDependencies(
+  api: Pick<MappingTransport, "listMappingDependencies">,
+  tenantId: number,
+  modelId: number,
+  entityType: MappingEntityType,
+): Promise<{ modelRevision: number; items: MappingDependency[] }> {
+  const items: MappingDependency[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let modelRevision: number | null = null;
+
+  for (let page = 0; page < 5; page += 1) {
+    const response = await api.listMappingDependencies(
+      tenantId,
+      modelId,
+      { entityType },
+      200,
+      cursor,
+    );
+    if (modelRevision !== null && response.model_revision !== modelRevision) {
+      throw new Error("Mapping dependency revision changed while loading");
+    }
+    modelRevision = response.model_revision;
+    items.push(...response.items);
+    if (!response.next_cursor) return { modelRevision, items };
+    if (seenCursors.has(response.next_cursor)) {
+      throw new Error("Mapping dependency cursor repeated");
+    }
+    if (page === 4) throw new Error("Mapping dependencies exceed the supported bound");
+    seenCursors.add(response.next_cursor);
+    cursor = response.next_cursor;
+  }
+  throw new Error("Mapping dependencies exceed the supported bound");
 }
 
 function mappingCollectionPath(

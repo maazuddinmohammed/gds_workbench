@@ -68,7 +68,7 @@ class DetailedObjectContribution(BaseModel):
 
     contribution_ref: str = Field(pattern=_REFERENCE_PATTERN)
     source_object: PhysicalObjectKey
-    disposition: Literal["represented", "not_conceptual", "needs_review"]
+    disposition: Literal["represented", "context_only", "excluded", "blocked"]
     rationale: str = Field(min_length=1, max_length=2_000)
     proposals: tuple[DetailedEntityProposal, ...] = Field(max_length=100)
 
@@ -170,6 +170,7 @@ class DetailedReconciliationCandidate(BaseModel):
     objects: tuple[ConceptualObjectRecord, ...] = Field(max_length=20_000)
     relationships: tuple[ConceptualRelationshipRecord, ...] = Field(max_length=20_000)
     entity_coverage: tuple[DetailedEntityCoverage, ...] = Field(max_length=20_000)
+    reviewed_input_contribution_refs: tuple[str, ...] = Field(max_length=50_000)
     reviewed_relationship_package_refs: tuple[str, ...] = Field(max_length=20_000)
     reviewed_applied_record_refs: tuple[str, ...] = Field(max_length=40_000)
 
@@ -411,11 +412,13 @@ class DetailedReconciliationValidator:
         self,
         *,
         entity_details: tuple[DetailedEntityDetail, ...],
+        input_contribution_refs: tuple[str, ...] = (),
         relationship_package_refs: tuple[str, ...],
         applied_record_refs: tuple[str, ...],
         final_validator: AgentCandidateValidator | None = None,
     ) -> None:
         self._entity_refs = tuple(item.canonical_entity_ref for item in entity_details)
+        self._input_contribution_refs = input_contribution_refs
         self._relationship_package_refs = relationship_package_refs
         self._applied_record_refs = applied_record_refs
         self._final_validator = final_validator
@@ -451,12 +454,19 @@ class DetailedReconciliationValidator:
         entity_refs = tuple(item.canonical_entity_ref for item in candidate.entity_coverage)
         if not _exact_unique(entity_refs, self._entity_refs):
             return False
-        if not _exact_unique(
-            candidate.reviewed_relationship_package_refs,
-            self._relationship_package_refs,
-        ) or not _exact_unique(
-            candidate.reviewed_applied_record_refs,
-            self._applied_record_refs,
+        if (
+            not _exact_unique(
+                candidate.reviewed_input_contribution_refs,
+                self._input_contribution_refs,
+            )
+            or not _exact_unique(
+                candidate.reviewed_relationship_package_refs,
+                self._relationship_package_refs,
+            )
+            or not _exact_unique(
+                candidate.reviewed_applied_record_refs,
+                self._applied_record_refs,
+            )
         ):
             return False
         object_names = {
@@ -493,6 +503,10 @@ def derive_relationship_packages(
         tuple[str, str],
         dict[tuple[object, ...], DetailedRelationshipSignal],
     ] = {}
+    matching_signals: dict[
+        tuple[str, str],
+        dict[tuple[object, ...], DetailedRelationshipSignal],
+    ] = {}
     attributes_by_source: dict[_PhysicalObjectIdentity, list[PhysicalAttributeKey]] = {}
     for attribute in attributes:
         attributes_by_source.setdefault(_physical_key(attribute), []).append(attribute)
@@ -513,7 +527,7 @@ def derive_relationship_packages(
                             ) != normalize_model_key_value(right_attribute.attribute_name):
                                 continue
                             _add_signal(
-                                signals,
+                                matching_signals,
                                 pair=(left_ref, right_ref),
                                 signal=DetailedRelationshipSignal(
                                     signal_type="matching_attribute",
@@ -526,7 +540,7 @@ def derive_relationship_packages(
                             )
 
     for relationship in analysis_relationships:
-        if relationship.analysis_result_status not in ("active", "needs_review"):
+        if relationship.analysis_result_status != "active":
             continue
         from_attribute = _analysis_attribute(relationship, endpoint="from")
         to_attribute = _analysis_attribute(relationship, endpoint="to")
@@ -552,6 +566,12 @@ def derive_relationship_packages(
                         validation_result=relationship.validation_result,
                     ),
                 )
+
+    # Matching physical names can strengthen a business relationship already
+    # supported by Analysis. They never create a Conceptual relationship pair.
+    for pair in tuple(signals):
+        for signal in matching_signals.get(pair, {}).values():
+            _add_signal(signals, pair=pair, signal=signal)
 
     if len(signals) > max_packages:
         raise InvalidRequestError(

@@ -379,9 +379,6 @@
       const snapshot = this.areas.get(area);
       const definition = snapshot?.byName.get(datasetName);
       if (!definition) throw new Error(`Unknown ${area} dataset ${datasetName}.`);
-      if (area === "model" && datasetName === "model_scope") {
-        throw new Error(`${datasetName} mutation is not exposed by Workbench.`);
-      }
       await requireChangeSetEligible(snapshot, definition);
       const records = parseJson(draftText, "Editor draft");
       if (!Array.isArray(records)) throw new Error("Editor draft must be a JSON array.");
@@ -421,9 +418,6 @@
           throw new Error("Local Change Set contains an unsupported entry.");
         }
         const datasetName = entry.name.slice(0, -5);
-        if (area === "model" && datasetName === "model_scope") {
-          throw new Error(`${datasetName} mutation is not exposed by Workbench.`);
-        }
         if (!this.area(area).byName.has(datasetName)) {
           throw new Error(`Unknown ${area} Change Set dataset ${datasetName}.`);
         }
@@ -452,66 +446,6 @@
         offset += part.length;
       }
       return sha256Bytes(combined);
-    }
-
-    async accept(area, expectedDigest, validation, reason) {
-      this.requireFresh(area);
-      const actualDigest = await this.changeSetDigest(area);
-      if (actualDigest !== expectedDigest) {
-        throw new Error("Local Change Set external-edit conflict; Validate again.");
-      }
-      const task = this.state.tasks.find((item) => item[0] === this.state.current);
-      if (!task || task[1] !== area || task[3] !== "review") {
-        throw new Error(`Current ${area} task must be in review.`);
-      }
-      if (!validation.valid && (typeof reason !== "string" || !reason.trim())) {
-        throw new Error("An explicit override reason is required.");
-      }
-      if (typeof reason === "string" && reason.trim().length > 300) {
-        throw new Error("Override reason must be at most 300 characters.");
-      }
-      const liveSnapshot = await locateSnapshot(this.handle, area);
-      if (
-        !liveSnapshot ||
-        validation.area !== area ||
-        validation.snapshot_id !== liveSnapshot.manifest.snapshot_id ||
-        validation.snapshot_revision !== (liveSnapshot.manifest.model_revision ?? null) ||
-        validation.snapshot_digest !== liveSnapshot.manifestDigest
-      ) {
-        throw new Error("Snapshot changed after validation; Validate again.");
-      }
-      for (const definition of liveSnapshot.datasets) {
-        await verifiedMember(liveSnapshot, definition.rows_file, `${definition.name} rows`);
-        await verifiedMember(liveSnapshot, definition.schema_file, `${definition.name} schema`);
-      }
-      const sessionFile = await readFile(await this.handle.getFileHandle("session.json"));
-      if (sessionFile.digest !== this.sessionDigest) {
-        throw new Error("session.json external-edit conflict; Refresh before acceptance.");
-      }
-      const tasks = await this.handle.getDirectoryHandle("tasks");
-      const acceptanceHandle = await tasks.getFileHandle(`${task[0]}.accept.json`, {
-        create: true,
-      });
-      const acceptance = validation.valid
-        ? [
-            actualDigest,
-            "valid",
-            liveSnapshot.manifest.snapshot_id,
-            liveSnapshot.manifest.model_revision ?? null,
-          ]
-        : [
-            actualDigest,
-            "override",
-            reason.trim(),
-            liveSnapshot.manifest.snapshot_id,
-            liveSnapshot.manifest.model_revision ?? null,
-          ];
-      await writeText(acceptanceHandle, `${JSON.stringify(acceptance)}\n`);
-      task[3] = validation.valid ? "ready" : "overridden";
-      const nextSessionText = `${JSON.stringify(this.state)}\n`;
-      await writeText(await this.handle.getFileHandle("session.json"), nextSessionText);
-      this.sessionDigest = await sha256Bytes(encoder.encode(nextSessionText));
-      return { state: task[3], digest: actualDigest };
     }
 
     async loadArea(area) {

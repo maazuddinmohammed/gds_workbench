@@ -41,7 +41,6 @@ from .sql import (
     COPY_GROUP_CONTROL_ROWS_SQL,
     COPY_GROUP_ROWS_SQL,
     COPY_ROWS_SQL,
-    DISCOVERY_SCOPE_ROWS_SQL,
     FOUNDATION_CONNECTION_ROWS_SQL,
     FOUNDATION_PROJECT_ROWS_SQL,
     FOUNDATION_SYSTEM_ROWS_SQL,
@@ -77,12 +76,12 @@ class MetadataSnapshotContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class GetMetadataSnapshotRequest(MetadataSnapshotContractModel):
+class CreateMetadataSnapshotRequest(MetadataSnapshotContractModel):
     tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     schema_version: Literal["2.0"] = "2.0"
 
 
-class GetMetadataSnapshotResult(MetadataSnapshotContractModel):
+class CreateMetadataSnapshotResult(MetadataSnapshotContractModel):
     schema_version: Literal["2.0"] = "2.0"
     snapshot_id: UUID
     snapshot_kind: Literal["metadata"] = "metadata"
@@ -99,7 +98,7 @@ class MetadataSnapshotToolError(Exception):
     """A bounded tool failure safe for MCP serialization."""
 
 
-def register_get_metadata_snapshot_tool(
+def register_create_metadata_snapshot_tool(
     server: MCPServer[None],
     *,
     database: Database,
@@ -116,10 +115,11 @@ def register_get_metadata_snapshot_tool(
     current_time = clock or (lambda: datetime.now(UTC))
 
     tool_registration = server.tool(
+        name="create_metadata_snapshot",
         description=(
-            "Create an immutable Metadata Snapshot for one authorized Tenant. Returns "
-            "only a temporary read-only download URL and bounded archive metadata; snapshot rows "
-            "never enter the MCP response."
+            "Create a new complete, immutable Metadata Snapshot ZIP for one authorized "
+            "Tenant and broad local authoring. The response contains bounded archive metadata "
+            "and a temporary client download URL, never Snapshot rows."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -131,13 +131,13 @@ def register_get_metadata_snapshot_tool(
         structured_output=True,
     )
 
-    async def get_metadata_snapshot(
+    async def create_metadata_snapshot_tool(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         schema_version: Literal["2.0"] = "2.0",
-    ) -> GetMetadataSnapshotResult:
+    ) -> CreateMetadataSnapshotResult:
         try:
-            request = GetMetadataSnapshotRequest(
+            request = CreateMetadataSnapshotRequest(
                 tenant_id=tenant_id,
                 schema_version=schema_version,
             )
@@ -164,7 +164,7 @@ def register_get_metadata_snapshot_tool(
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
             )
-            return GetMetadataSnapshotResult(
+            return CreateMetadataSnapshotResult(
                 snapshot_id=ready.snapshot_id,
                 tenant_id=ready.tenant_id,
                 download_url=download.url,
@@ -185,9 +185,9 @@ def register_get_metadata_snapshot_tool(
                 "internal_error: The operation could not be completed."
             ) from None
 
-    tool_registration(get_metadata_snapshot)
+    tool_registration(create_metadata_snapshot_tool)
     audit.register_tool(
-        "get_metadata_snapshot",
+        "create_metadata_snapshot",
         policy=ToolPolicy.TENANT_READ,
         summarize_input=_audit_input_metadata,
         retain_arguments={"tenant_id", "schema_version"},
@@ -215,7 +215,7 @@ async def select_snapshot_datasets(
     request_principal: RequestPrincipal,
     authorizer: AuthorizationService,
 ) -> SelectedMetadataSnapshot:
-    """Authorize Tenant Read and select the complete 29-dataset snapshot closure."""
+    """Authorize Tenant Read and select the complete 28-dataset snapshot closure."""
     if tenant_id <= 0:
         raise SnapshotContractError("tenant_id must be positive")
     await authorizer.authorize_tenant(
@@ -227,9 +227,6 @@ async def select_snapshot_datasets(
     closure_rows = await transaction.fetch_all(OBJECT_CLOSURE_SQL, (tenant_id,))
     if not closure_rows:
         raise TenantNotFoundError()
-    if closure_rows[0]["invalid_discovery_scope"]:
-        raise SnapshotContractError("active Metadata Discovery Scope configuration is invalid")
-
     zone_by_object_id: dict[int, str] = {}
     tenant_by_object_id: dict[int, int] = {}
     for row in closure_rows:
@@ -259,10 +256,12 @@ async def select_snapshot_datasets(
     attribute_rows = await transaction.fetch_all(ATTRIBUTE_ROWS_SQL, (object_ids,))
     if {row["object_id"] for row in selected_object_rows} != set(object_ids):
         raise SnapshotContractError("included Object closure changed during snapshot selection")
-    object_rows = [
-        {**row, "object_tenant_id": tenant_by_object_id[row["object_id"]]}
+    if any(
+        row["source_tenant_id"] != tenant_by_object_id[row["object_id"]]
         for row in selected_object_rows
-    ]
+    ):
+        raise SnapshotContractError("included Object ownership changed during snapshot selection")
+    object_rows = selected_object_rows
 
     rows_by_dataset: dict[str, list[dict[str, Any]]] = {
         f"{zone_code}_object": [] for zone_code in ("source", "bronze", "silver", "gold")
@@ -371,13 +370,8 @@ async def select_snapshot_datasets(
         ):
             raise SnapshotContractError("selected Process has incomplete relational closure")
 
-    discovery_scope_rows = await transaction.fetch_all(
-        DISCOVERY_SCOPE_ROWS_SQL,
-        (tenant_id,),
-    )
     required_connection_ids = {
         *(row["connection_id"] for row in object_rows),
-        *(row["gds_connection_id"] for row in discovery_scope_rows),
     }
     connection_rows = await transaction.fetch_all(
         FOUNDATION_CONNECTION_ROWS_SQL,
@@ -449,19 +443,12 @@ async def select_snapshot_datasets(
         raise SnapshotContractError("foundation System relationship is incomplete")
     if any(
         row["connection_id"] not in connection_by_id
-        or row["object_tenant_id"] not in tenant_by_id
+        or row["source_tenant_id"] not in tenant_by_id
         or row["object_type_id"] not in reference_ids_by_dataset["object_type"]
         or row["zone_id"] not in reference_ids_by_dataset["zone"]
         for row in object_rows
     ):
         raise SnapshotContractError("foundation Object relationship is incomplete")
-    if any(
-        row["tenant_id"] != tenant_id
-        or row["gds_connection_id"] not in connection_by_id
-        or row["zone_id"] not in reference_ids_by_dataset["zone"]
-        for row in discovery_scope_rows
-    ):
-        raise SnapshotContractError("foundation Discovery Scope relationship is incomplete")
     if any(
         (row["chunk_type_id"] is not None)
         and row["chunk_type_id"] not in reference_ids_by_dataset["chunk_type"]
@@ -495,7 +482,6 @@ async def select_snapshot_datasets(
         "tenant": tenant_rows,
         "system": system_rows,
         "connection": connection_rows,
-        "tenant_metadata_discovery_scope": discovery_scope_rows,
         **reference_rows_by_dataset,
     }
     raw_rows_by_dataset = {

@@ -11,7 +11,7 @@ _EXPECTED = {
     "dimensional.py": "dimensional",
     "mapping.py": "mapping",
     "code_generation.py": "code_generation",
-    "qa.py": "qa",
+    "validation.py": "validation",
 }
 
 
@@ -21,7 +21,6 @@ def test_all_workflow_notebooks_are_source_importable_and_thin() -> None:
         *_EXPECTED,
         "00_tenant_lock.py",
         "01_runtime_preflight.py",
-        "90_review_workflow_draft.py",
         "91_apply_workflow_draft.py",
     }
 
@@ -133,18 +132,18 @@ def test_readme_documents_ordered_workflow_and_manual_apply_gates() -> None:
     normalized_readme = " ".join((_ROOT / "README.md").read_text().split())
 
     assert (
-        "profiling -> analysis_inference -> review/apply -> analysis_validation "
-        "-> conceptual -> review/apply -> logical -> review/apply "
-        "-> logical mapping -> review/apply -> optional logical code_generation "
-        "-> review/apply -> optional dimensional -> review/apply -> dimensional mapping "
-        "-> review/apply -> dimensional code_generation -> review/apply "
-        "-> qa -> review/apply"
+        "profiling -> analysis_inference -> apply -> analysis_validation "
+        "-> conceptual -> apply -> logical -> apply "
+        "-> logical mapping -> apply -> optional logical code_generation "
+        "-> apply -> optional dimensional -> apply -> dimensional mapping "
+        "-> apply -> dimensional code_generation -> apply "
+        "-> validation -> apply"
     ) in normalized_readme
     for required_text in (
         "Run `01_runtime_preflight.py`",
         "Run `00_tenant_lock.py` with `Action=check`",
-        "`90_review_workflow_draft.py`",
         "`91_apply_workflow_draft.py`",
+        "No separate review command is required",
         "`ExpectedModelRevision`",
         "`ExpectedDraftRevision`",
         "`ExpectedCandidateDigest`",

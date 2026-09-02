@@ -69,6 +69,15 @@ class NotebookWorkflowExecutionResult:
         ):
             if value is not None:
                 result[key] = str(value) if isinstance(value, UUID) else value
+        if self.model_change_set_id is not None:
+            result["draft_review"] = {
+                "ready": self.model_change_set_status == "validated",
+                "message": (
+                    "Draft is ready to review in the workbench. Apply remains explicit."
+                    if self.model_change_set_status == "validated"
+                    else "Draft is not ready to apply."
+                ),
+            }
         return result
 
 

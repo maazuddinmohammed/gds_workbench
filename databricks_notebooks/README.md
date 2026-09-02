@@ -130,8 +130,7 @@ gds-workbench-notebooks/
     ├── dimensional.py
     ├── mapping.py
     ├── code_generation.py
-    ├── qa.py
-    ├── 90_review_workflow_draft.py
+    ├── validation.py
     └── 91_apply_workflow_draft.py
 ```
 
@@ -239,7 +238,7 @@ security boundary.
 ## Run order
 
 ```text
-01 preflight -> 00 lock check/acquire -> workflow -> 90 review -> 91 apply
+01 preflight -> 00 lock check/acquire -> workflow -> workbench review -> 91 apply
 -> next workflow/review/apply -> 00 lock release
 ```
 
@@ -257,11 +256,9 @@ security boundary.
    Fill the widgets, then run the second cell to execute. Use a new nonzero UUID
    for `IdempotencyKey`; reuse it only when retrying identical inputs. `Run all`
    with blank required widgets is expected to stop validation.
-4. For an authoring workflow that returns a draft, run
-   `90_review_workflow_draft.py` with `TenantID`, `ModelID`, `WorkflowRunID`,
-   and optionally `Dataset`. Blank `Dataset` returns the bounded summary; a
-   selected dataset returns its bounded review records.
-5. When the draft is correct, run `91_apply_workflow_draft.py` with `TenantID`,
+4. Authoring completion prints a bounded draft summary and marks a validated
+   draft ready to review in the workbench. No separate review command is required.
+5. After review, run `91_apply_workflow_draft.py` with `TenantID`,
    `ModelID`, `WorkflowRunID`, `ExpectedModelRevision`,
    `ExpectedDraftRevision`, `ExpectedCandidateDigest`, a new `IdempotencyKey`,
    and `Confirmation=APPLY`. Apply revalidates all fences; it does not trust the
@@ -270,19 +267,19 @@ security boundary.
    normal dependency order:
 
    ```text
-   profiling -> analysis_inference -> review/apply -> analysis_validation
-   -> conceptual -> review/apply -> logical -> review/apply
-   -> logical mapping -> review/apply -> optional logical code_generation
-   -> review/apply -> optional dimensional -> review/apply -> dimensional mapping
-   -> review/apply -> dimensional code_generation -> review/apply
-   -> qa -> review/apply
+   profiling -> analysis_inference -> apply -> analysis_validation
+   -> conceptual -> apply -> logical -> apply
+   -> logical mapping -> apply -> optional logical code_generation
+   -> apply -> optional dimensional -> apply -> dimensional mapping
+   -> apply -> dimensional code_generation -> apply
+   -> validation -> apply
    ```
 
-   Review and Apply are manual gates after each applicable Analysis Inference,
-   Conceptual, Logical, Dimensional, Mapping, Code Generation, or QA authoring
+   Review acknowledgment and explicit Apply are manual gates after each applicable Analysis Inference,
+   Conceptual, Logical, Dimensional, Mapping, Code Generation, or Validation authoring
    run. An applied
    logical Mapping unlocks logical Code Generation and is required before
-   Dimensional inputs become eligible. QA reads applied Mapping plus current
+   Dimensional inputs become eligible. Validation reads applied Mapping plus current
    generated Code when present, then drafts Validation Groups and Checks for
    the exact selected Systems.
 
@@ -311,9 +308,9 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 | `analysis_inference` | Optional `RequestedBatchID`, `ExecutionMode`, and agent widgets. |
 | `analysis_validation` | Optional `RequestedBatchID`. |
 | `conceptual`, `logical`, `dimensional` | `ExecutionMode` plus agent widgets. |
-| `mapping` | `ExecutionMode`, operation, artifact type, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
+| `mapping` | `ExecutionMode`, operation, source System ID, optional output-template IDs, and agent widgets. Exactly one target Object ID is required. |
 | `code_generation` | Modeled entity type, selected/all-eligible coverage, optional SQL Guide Version ID, and agent widgets. |
-| `qa` | `SelectedSystemCodesJSON` plus agent widgets. Object selection must be `[]`; System Codes must be a nonempty JSON array unique ignoring case. |
+| `validation` | `SelectedSystemCodesJSON` plus agent widgets. Object selection must be `[]`; System Codes must be a nonempty JSON array unique ignoring case. |
 
 Agent widget choices come from the packaged shared registry at
 `src/gds_workbench_api/config/agent_capabilities.json`, filtered to Databricks
@@ -342,11 +339,11 @@ Agentic authoring `ExecutionMode` widgets offer `one_shot`, `tool_assisted`, and
 `detailed_coverage`; they default to `tool_assisted` so larger scopes use the
 bounded local context tools instead of embedding the complete context. If the
 registry has no compatible `tool_assisted` profile, the notebook selects the
-first compatible registered mode. Code Generation and QA have no mode widget
+first compatible registered mode. Code Generation and Validation have no mode widget
 and use only registered `detailed_coverage` profiles. Their persisted execution
 mode remains `NULL` because that fixed internal agent mode is not user input.
 
-The Tenant Lock and draft review/apply notebooks use the same two-cell pattern:
+The Tenant Lock and draft apply notebooks use the same two-cell pattern:
 run the first cell to create their own widgets, fill them, then run the second
 cell. Runtime Preflight has no user inputs, so it correctly has no widgets.
 

@@ -101,7 +101,7 @@ async def test_object_contribution_requires_exact_source_and_explicit_dispositio
     parsed = validator.parse_validated(cast(JsonValue, valid))
     assert parsed.proposal_refs == ("object_1.customer",)
 
-    invalid = {**valid, "disposition": "not_conceptual"}
+    invalid = {**valid, "disposition": "context_only"}
     assert (await validator.validate(cast(JsonValue, invalid))).issues[0].code == (
         "detailed.object_contribution_invalid"
     )
@@ -331,6 +331,32 @@ def test_relationship_derivation_is_deterministic_and_never_creates_self_pairs()
     ]
 
 
+def test_matching_physical_attribute_names_do_not_create_a_business_relationship() -> None:
+    customer = DetailedEntityDetail(
+        canonical_entity_ref="customer",
+        object=_parsed_object("Customer", "customer_raw"),
+    )
+    order = DetailedEntityDetail(
+        canonical_entity_ref="order",
+        object=_parsed_object("Order", "order_raw"),
+    )
+    attributes = (
+        PhysicalAttributeKey(
+            **_source("customer_raw").model_dump(), attribute_name="customer_id"
+        ),
+        PhysicalAttributeKey(
+            **_source("order_raw").model_dump(), attribute_name="customer_id"
+        ),
+    )
+
+    assert derive_relationship_packages(
+        entity_details=(customer, order),
+        attributes=attributes,
+        analysis_relationships=(),
+        max_packages=100,
+    ) == ()
+
+
 async def test_reconciliation_requires_exhaustive_run_local_coverage() -> None:
     details = (
         DetailedEntityDetail(
@@ -340,6 +366,7 @@ async def test_reconciliation_requires_exhaustive_run_local_coverage() -> None:
     )
     validator = DetailedReconciliationValidator(
         entity_details=details,
+        input_contribution_refs=("object_1",),
         relationship_package_refs=("relationship_00001",),
         applied_record_refs=("object:account",),
     )
@@ -354,6 +381,7 @@ async def test_reconciliation_requires_exhaustive_run_local_coverage() -> None:
                     "conceptual_object_name": "Customer",
                 }
             ],
+            "reviewed_input_contribution_refs": ["object_1"],
             "reviewed_relationship_package_refs": ["relationship_00001"],
             "reviewed_applied_record_refs": ["object:account"],
         },

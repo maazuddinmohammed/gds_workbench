@@ -31,7 +31,7 @@ in section 7.
 Run every file below in the fixture's lexical order. Each command is atomic:
 
 ```bash
-for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_workflow_code_qa,11_workflow_eligibility,12_application_configuration,13_application_workflow_runs,14_application_workflow_execution,15_mcp_change_sets,16_mcp_metadata_apply,17_mcp_tool_call_log,18_runtime_account,19_runtime_integrity}.sql
+for file in database/{01_reference,02_core,03_security,04_model,05_workflow_analysis,06_workflow_conceptual,07_workflow_logical,08_workflow_dimensional,09_workflow_mapping,10_workflow_code_validation,11_workflow_eligibility,12_application_configuration,13_application_workflow_runs,14_application_workflow_execution,15_mcp_change_sets,16_mcp_metadata_apply,17_mcp_tool_call_log,18_runtime_account,19_runtime_integrity}.sql
 do
   psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
     --single-transaction -f "$file" || exit 1
@@ -53,10 +53,10 @@ access, but none can authenticate until its own password is set.
 
 `application.create_workflow_run` accepts the exact selected Object IDs plus
 bounded workflow-specific inputs. Mapping selected coverage accepts one target
-Object/source System pair, `build|extend`, and an artifact type. The caller does
-not choose its modeled layer or route. PostgreSQL resolves those from active,
-unlocked preregistered Mapping headers and the target Zone, then freezes the
-pair, route, and exact `mapping.standard@1.0.0` schema digest. Code Generation
+Object/source System pair and `build|extend`. The caller does
+not choose its modeled layer or route. PostgreSQL resolves those from the
+active Model Object Binding and target Zone, then freezes the pair and route.
+Code Generation
 is target-first: selected coverage supplies exact target Object IDs, while
 all-eligible coverage supplies an empty selection and lets PostgreSQL derive all
 eligible targets. Each Run freezes its modeled layer, Model revision, canonical
@@ -95,15 +95,11 @@ housekeeping terminalizes it safely. Nullable legacy identity provenance is
 claimable only when the Principal has exactly one active Entra identity.
 
 `workflow.list_code_generation_target_context` returns one canonical row per
-target Object. It aggregates every active, complete SQL Mapping and its ordered
-source Systems into one context plus mapping and source digests by default. QA
-passes a null artifact filter to include any complete Mapping artifact while
-Code Generation keeps the SQL-only default.
-Current Code Generation writes `workflow.generated_code` only through validated
-Model Change Set Apply. The retained
-`application.store_generated_sql_artifact` compatibility boundary writes only
-the legacy `application.generated_sql_artifact` store; the current workflow
-runtime does not call it. Neither path executes generated SQL.
+bound target Object. It aggregates every active, complete Mapping and its
+ordered source Systems, returns the modeled entity name, and derives one
+`code_input_digest` over Mapping plus source context. Current Code Generation
+writes `workflow.generated_code` only through validated Model Change Set Apply.
+Generated SQL is never executed by this database path.
 
 Large Code stays one `generated_code` record. The normal Model Stage Batch may
 switch from complete-record chunks to ordered JSON byte fragments for that
@@ -112,14 +108,16 @@ Commit verifies and concatenates them, parses one canonical record array, and
 stages the reconstructed record atomically. Code content has no separate
 domain-size limit, and fragment bodies never enter MCP audit metadata.
 
-An active Metadata Discovery Scope row is the sole source-Tenant assignment for
-one GDS Connection, Zone, and normalized schema. A partial unique index prevents
-two active Tenants from claiming that physical tuple. GDS Objects without an
-active assignment fail closed; non-GDS Objects retain their Connection Tenant.
+Every Object stores its required source Tenant directly in
+`core.object.source_tenant_id`. Source Objects use their source Tenant's
+non-GDS Connection. Bronze, Silver, and Gold Objects use that source Tenant's
+configured GDS Connection even though the Connection is registered under the
+GDS placement Tenant.
 
 `application.get_profiling_execution_context` returns the complete selected
-Bronze Object/Attribute plan for one authorized running Profiling Run, using the
-assigned Tenant's catalog and exact GDS Connection. The separate
+Source/Bronze Object and Attribute plan for one authorized running Profiling
+Run. Source rows require and return foreign catalog/schema/Object/Attribute
+coordinates. Bronze rows return native GDS coordinates. The separate
 `application.get_profiling_connection_values` returns one complete credential
 tuple per selected Connection for one active Environment, or one fixed safe
 failure with no partial values. Only `gds_web_write` may execute either function.
@@ -127,7 +125,7 @@ failure with no partial values. Only `gds_web_write` may execute either function
 Analysis validation uses the same governed split through
 `application.get_analysis_validation_execution_context` and
 `application.get_analysis_validation_connection_values`. It returns only
-active or needs-review relationships whose two Bronze endpoint Objects were
+active relationships whose two input endpoint Objects were
 explicitly selected, includes locked rows for validation-only refreshes, and
 never exposes partial connection values.
 `application.persist_analysis_validation_results` then atomically updates only
@@ -153,18 +151,16 @@ workflow-specific backend-validation event and completes the Run without
 advancing the Model revision. Only an exact request can replay the stored
 receipt.
 
-Web Model authoring uses only `application.create_model`, `update_model`,
-`archive_model`, and `replace_model_scope`. These fixed-search-path functions
+Web Model authoring uses only `application.create_model`, `update_model`, and
+`archive_model`. These fixed-search-path functions
 derive authorization from the active identity and the Model's owning Tenant,
 require the caller to own the current Tenant Lock, fence updates with
 `model_revision`, and record one revision transaction per actual change. Model
 archive also rejects while any Workflow Run is running for the owning Tenant.
-Scope
-replacement accepts an exact bounded set of active Object IDs from the canonical
-Tenant-visible closure. Empty sets remain valid; cross-Tenant and mixed-Zone
-Objects remain valid when reached by discovery, copy/process references, active
-ingestion mappings, or current active Scope. The web role has no direct Model or
-Model Scope DML.
+Model Input Scope is applied through the governed Model Change Set boundary and
+contains only Source/Bronze inputs. Silver/Gold targets are registered first by
+Metadata Change Set, then tied to modeled entities through Model Object and
+Attribute Bindings. The web role has no direct Application-table DML.
 
 ## 4. Set the runtime passwords securely
 

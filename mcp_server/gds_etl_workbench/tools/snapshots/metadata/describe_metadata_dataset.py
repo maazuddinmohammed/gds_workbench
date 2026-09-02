@@ -69,10 +69,10 @@ def register_describe_metadata_dataset_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Describe one Metadata Snapshot dataset for agent authoring. Compact detail is "
-            "the default and omits duplicated column cards plus validator-owned nested "
-            "schemas. Full detail additionally returns every column card and the exact JSON "
-            "Schema. Neither mode returns physical rows."
+            "Describe one Metadata dataset before authoring it. Compact detail returns its "
+            "natural key, references, dependencies, population rules, and concise authoring "
+            "schema. Full detail additionally returns per-column guidance and the exact JSON "
+            "Schema. Neither mode returns Metadata records."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

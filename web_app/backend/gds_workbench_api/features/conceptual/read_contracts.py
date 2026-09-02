@@ -13,7 +13,7 @@ from pydantic import (
     model_validator,
 )
 
-type ConceptualStatus = Literal["active", "needs_review", "inactive", "deprecated"]
+type ConceptualStatus = Literal["active", "inactive", "deprecated"]
 type Confidence = Literal["low", "medium", "high"]
 type ConceptualCardinality = Literal[
     "one_to_one",

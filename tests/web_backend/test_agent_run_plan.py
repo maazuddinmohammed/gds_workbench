@@ -118,11 +118,11 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
 
 
 @pytest.mark.asyncio
-async def test_repository_loads_exact_qa_system_selection_without_objects() -> None:
+async def test_repository_loads_exact_validation_system_selection_without_objects() -> None:
     row = _stage_row(variable_id=1, variable_name="stage_context")
     row.update(
         {
-            "model_workflow": "qa",
+            "model_workflow": "validation",
             "workflow_execution_mode": None,
             "workflow_stage_code": "validation_generation",
         }
@@ -141,7 +141,7 @@ async def test_repository_loads_exact_qa_system_selection_without_objects() -> N
         workflow_run_id=1048,
     )
 
-    assert plan.model_workflow == "qa"
+    assert plan.model_workflow == "validation"
     assert plan.selected_object_ids == ()
     assert plan.selected_system_codes == ("erp", "crm")
 

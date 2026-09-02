@@ -58,12 +58,12 @@ class ModelSnapshotContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class GetModelSnapshotRequest(ModelSnapshotContractModel):
+class CreateModelSnapshotRequest(ModelSnapshotContractModel):
     model_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     schema_version: Literal["2.0"] = "2.0"
 
 
-class GetModelSnapshotResult(ModelSnapshotContractModel):
+class CreateModelSnapshotResult(ModelSnapshotContractModel):
     schema_version: Literal["2.0"] = "2.0"
     snapshot_id: UUID
     snapshot_kind: Literal["model"] = "model"
@@ -77,7 +77,7 @@ class GetModelSnapshotResult(ModelSnapshotContractModel):
     content_type: Literal["application/zip"] = "application/zip"
 
 
-def register_get_model_snapshot_tool(
+def register_create_model_snapshot_tool(
     server: MCPServer[None],
     *,
     database: Database,
@@ -93,11 +93,12 @@ def register_get_model_snapshot_tool(
     current_time = clock or (lambda: datetime.now(UTC))
 
     @server.tool(
+        name="create_model_snapshot",
         description=(
-            "Create one complete, immutable, ID-free Model Snapshot. Returns only a "
-            "temporary read-only download URL and bounded archive metadata; snapshot "
-            "rows never enter the MCP response. Includes applied Code Generation and QA, "
-            "plus trusted snapshot-only QA authoring contexts."
+            "Create a new complete, immutable, ID-free Model Snapshot ZIP for broad local "
+            "authoring. It includes Input Scope, evidence, models, Bindings, Mapping, Code, "
+            "and Validation. The response contains bounded archive metadata and a temporary "
+            "client download URL, never Snapshot rows."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -108,13 +109,13 @@ def register_get_model_snapshot_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_model_snapshot(
+    async def create_model_snapshot_tool(
         ctx: Context[None],
         model_id: Annotated[int, Field(gt=0)],
         schema_version: Literal["2.0"] = "2.0",
-    ) -> GetModelSnapshotResult:
+    ) -> CreateModelSnapshotResult:
         try:
-            request = GetModelSnapshotRequest(
+            request = CreateModelSnapshotRequest(
                 model_id=model_id,
                 schema_version=schema_version,
             )
@@ -140,7 +141,7 @@ def register_get_model_snapshot_tool(
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
             )
-            return GetModelSnapshotResult(
+            return CreateModelSnapshotResult(
                 snapshot_id=ready.snapshot_id,
                 model_id=ready.model_id,
                 model_revision=ready.model_revision,
@@ -163,7 +164,7 @@ def register_get_model_snapshot_tool(
             ) from None
 
     audit.register_tool(
-        "get_model_snapshot",
+        "create_model_snapshot",
         policy=POLICY,
         summarize_input=_audit_input,
         retain_arguments={"model_id", "schema_version"},

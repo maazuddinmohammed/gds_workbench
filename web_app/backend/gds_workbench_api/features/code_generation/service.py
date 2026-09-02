@@ -12,7 +12,10 @@ from uuid import UUID
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.modeling_records import GeneratedCodeRecord
+from gds_etl_workbench.domain.modeling_records import (
+    GeneratedCodeRecord,
+    GeneratedCodeSourceSystemRecord,
+)
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
@@ -53,6 +56,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 
+from .artifact_context import CodeGenerationArtifactContext, ModeledEntityType
 from .candidate import (
     CodeGenerationCandidateValidator,
     CodeGenerationTargetReference,
@@ -61,10 +65,6 @@ from .candidate import (
 from .context import (
     CodeGenerationExecutionContext,
     PostgresCodeGenerationContextRepository,
-)
-from .storage import (
-    CodeGenerationArtifactContext,
-    ModeledEntityType,
 )
 
 _logger = logging.getLogger(__name__)
@@ -353,6 +353,7 @@ class DatabaseCodeGenerationExecutor:
                         CodeGenerationTargetReference(
                             target_ref=target.target_ref,
                             object_id=target.object_id,
+                            source_system_codes=target.source_system_codes,
                         ),
                     )
                 )
@@ -526,32 +527,120 @@ def _generated_code_changes(
     ):
         raise InvalidRequestError("Code Generation candidate and context coverage differ.")
 
-    changed: list[dict[str, object]] = []
+    code_records: list[GeneratedCodeRecord] = []
+    system_records: list[GeneratedCodeSourceSystemRecord] = []
     for artifact in artifacts:
         context = by_ref[artifact.target_ref]
-        applied = context.applied_generated_code
-        record = GeneratedCodeRecord(
-            tenant_code=context.tenant_code,
-            system_code=context.system_code,
-            connection_code=context.connection_code,
-            object_schema=context.object_schema,
-            object_name=context.object_name,
-            modeled_entity_type=modeled_entity_type,
-            artifact_type="sql_file",
-            generated_code_content=artifact.generated_sql,
-            mapping_context_digest=context.mapping_context_digest,
-            source_context_digest=context.source_context_digest,
-            generated_code_digest=sha256(artifact.generated_sql.encode("utf-8")).hexdigest(),
-            generated_code_status="active",
-            generated_code_is_locked=(
-                applied.generated_code_is_locked if applied is not None else False
+        code_records.append(
+            GeneratedCodeRecord(
+                modeled_entity_type=modeled_entity_type,
+                modeled_entity_name=context.modeled_entity_name,
+                artifact_name=artifact.artifact_name,
+                artifact_type="sql_file",
+                generated_code_content=artifact.generated_sql,
+                generated_code_status="active",
             ),
         )
-        if record != applied:
-            changed.append(record.model_dump(mode="json"))
-    if not changed:
-        return ()
-    return (StageModelChange(dataset="generated_code", records=changed),)
+        system_records.extend(
+            GeneratedCodeSourceSystemRecord(
+                modeled_entity_type=modeled_entity_type,
+                modeled_entity_name=context.modeled_entity_name,
+                artifact_name=artifact.artifact_name,
+                source_system_code=system_code,
+                generated_code_source_system_status="active",
+            )
+            for system_code in artifact.source_system_codes
+        )
+
+    staged_code = _reconcile_generated_code(code_records, contexts)
+    staged_systems = _reconcile_generated_code_source_systems(system_records, contexts)
+    changes: list[StageModelChange] = []
+    if staged_code:
+        changes.append(
+            StageModelChange(
+                dataset="generated_code",
+                records=[record.model_dump(mode="json") for record in staged_code],
+            )
+        )
+    if staged_systems:
+        changes.append(
+            StageModelChange(
+                dataset="generated_code_source_system",
+                records=[record.model_dump(mode="json") for record in staged_systems],
+            )
+        )
+    return tuple(changes)
+
+
+def _reconcile_generated_code(
+    candidates: list[GeneratedCodeRecord],
+    contexts: tuple[CodeGenerationArtifactContext, ...],
+) -> tuple[GeneratedCodeRecord, ...]:
+    applied = {
+        _artifact_key(record): (record, context)
+        for context in contexts
+        for record in context.applied_generated_code
+    }
+    candidate_by_key = {_artifact_key(record): record for record in candidates}
+    if len(candidate_by_key) != len(candidates) or len(applied) != sum(
+        len(context.applied_generated_code) for context in contexts
+    ):
+        raise InvalidRequestError("Generated Code artifact names are ambiguous.")
+
+    changed: list[GeneratedCodeRecord] = []
+    for key, record in candidate_by_key.items():
+        prior = applied.get(key)
+        if prior is None:
+            changed.append(record)
+            continue
+        prior_record, context = prior
+        current_names = {name.strip().casefold() for name in context.current_artifact_names}
+        if record != prior_record or record.artifact_name.strip().casefold() not in current_names:
+            changed.append(record)
+    for key, (record, _) in applied.items():
+        if key not in candidate_by_key and record.generated_code_status == "active":
+            changed.append(record.model_copy(update={"generated_code_status": "inactive"}))
+    return tuple(changed)
+
+
+def _reconcile_generated_code_source_systems(
+    candidates: list[GeneratedCodeSourceSystemRecord],
+    contexts: tuple[CodeGenerationArtifactContext, ...],
+) -> tuple[GeneratedCodeSourceSystemRecord, ...]:
+    applied_records = [
+        record for context in contexts for record in context.applied_generated_code_source_systems
+    ]
+    applied = {_source_system_key(record): record for record in applied_records}
+    candidate_by_key = {_source_system_key(record): record for record in candidates}
+    if len(candidate_by_key) != len(candidates) or len(applied) != len(applied_records):
+        raise InvalidRequestError("Generated Code source System assignments are ambiguous.")
+
+    changed = [record for key, record in candidate_by_key.items() if record != applied.get(key)]
+    changed.extend(
+        record.model_copy(update={"generated_code_source_system_status": "inactive"})
+        for key, record in applied.items()
+        if key not in candidate_by_key and record.generated_code_source_system_status == "active"
+    )
+    return tuple(changed)
+
+
+def _artifact_key(record: GeneratedCodeRecord) -> tuple[str, str, str]:
+    return (
+        record.modeled_entity_type,
+        record.modeled_entity_name.strip().casefold(),
+        record.artifact_name.strip().casefold(),
+    )
+
+
+def _source_system_key(
+    record: GeneratedCodeSourceSystemRecord,
+) -> tuple[str, str, str, str]:
+    return (
+        record.modeled_entity_type,
+        record.modeled_entity_name.strip().casefold(),
+        record.artifact_name.strip().casefold(),
+        record.source_system_code.strip().casefold(),
+    )
 
 
 def _guide_content(context: CodeGenerationExecutionContext) -> str:

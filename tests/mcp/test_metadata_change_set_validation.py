@@ -192,7 +192,7 @@ def test_validation_still_rejects_partially_populated_nullable_connection_key() 
     assert result.phase == "schema"
 
 
-def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
+def test_validation_allows_tenant_object_on_global_connection() -> None:
     current = _foundation()
     current["tenant"].append(
         {
@@ -246,17 +246,6 @@ def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
             "is_active": True,
         }
     ]
-    current["tenant_metadata_discovery_scope"] = [
-        {
-            "scope_tenant_code": "DEMO",
-            "connection_tenant_code": "GLOBAL",
-            "connection_system_code": "CRM",
-            "connection_code": "GDS",
-            "zone_code": "bronze",
-            "object_schema": "demo",
-            "is_active": True,
-        }
-    ]
     record = _object_record(object_schema="demo", tenant_code="DEMO")
 
     result = validate_metadata_documents(
@@ -267,7 +256,7 @@ def test_validation_allows_object_inside_tenant_discovery_scope() -> None:
 
     assert result.valid is True
 
-    record["object_schema"] = "another_tenant"
+    record["tenant_code"] = "GLOBAL"
     denied = validate_metadata_documents(
         tenant_code="DEMO",
         current_rows_by_dataset=current,
@@ -430,6 +419,7 @@ def _object_record(
         "tenant_code": tenant_code,
         "system_code": "CRM",
         "connection_code": "GDS",
+        "source_tenant_code": "DEMO",
         "object_schema": object_schema,
         "object_name": "customers",
         "fc_object_schema": None,

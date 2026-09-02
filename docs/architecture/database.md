@@ -16,21 +16,22 @@ deployment unit:
    and ingestion mappings;
 3. `security` identities, Tenant membership, governed Tenant Locks, and
    centralized authorization functions;
-4. Model, environment targets, Scope, safe event projection, exactly two
+4. Model, Source/Bronze Input Scope, safe event projection, exactly two
    Modeling Assertion tables, and revision machinery;
 5. Attribute Profile and Analysis;
 6. Conceptual Object, Relationship, and typed physical Support;
 7. the exact seven Logical families;
 8. the exact seven Dimensional families;
-9. Mapping Source System Dependency, Object Mapping, and Attribute Mapping;
-10. generated Code and QA Validation Groups/Checks;
+9. Model Object/Attribute Bindings, Mapping Source System Dependency, Object
+   Mapping, and Attribute Mapping;
+10. generated Code and Validation Groups/Checks;
 11. canonical workflow eligibility;
 12–14. Application configuration, Workflow Runs, and governed execution;
 15–17. MCP Change Sets, governed Metadata Apply, and Tool Call Log;
 18. three group roles and the separate passwordless runtime logins;
 19. final runtime privileges.
 
-There are 99 tables across `reference`, `core`, `security`, `model`, `workflow`,
+There are 100 tables across `reference`, `core`, `security`, `model`, `workflow`,
 `application`, and `mcp`. Every table has a primary key. Generated numeric artifact IDs use
 `BIGINT GENERATED ALWAYS AS IDENTITY`; callers cannot persist their own numeric
 identity. UUID workflow identities remain caller/server generated at the
@@ -55,12 +56,9 @@ nullable Object batch-attribute name must still be nonblank when present.
 Connection values store optional literal configuration. General application
 roles cannot select this table.
 
-An active Metadata Discovery Scope row uniquely assigns each GDS Connection,
-Zone, and normalized schema to one source Tenant. Eligibility, operational
-visibility, snapshots, and execution contexts use that assigned Tenant for GDS
-Objects and never fall back to the Connection owner. Non-GDS Objects use their
-Connection Tenant. The active-only unique assignment index enforces this Core
-rule without removing retained inactive scope history.
+Every Object has one required source Tenant. Eligibility, visibility,
+snapshots, and execution contexts use `core.object.source_tenant_id` for every
+Zone and never infer ownership from the Connection, schema, or Object name.
 
 Tenant visibility is `global|private` and defaults to private. An active
 authenticated Principal may read a global Tenant without membership. Private
@@ -77,18 +75,19 @@ and Tenant Admin capability sets.
 Copy Group Control carries Tenant and System witnesses. Composite foreign keys
 require its Copy Group and optional Member Group to belong to that same scope.
 
-A Model belongs to one Tenant but its Scope may intentionally include active
-Bronze Objects from another Tenant. That open source-composition boundary is
-tested. Downstream model-owned references remain Model-scoped. DD-110 is stored
+A Model and every physical Object used by it share one source Tenant. Model
+Input Scope contains only active Source/Bronze Objects for that Tenant. A
+physical target may combine multiple source Systems or Connections for that
+Tenant, never data owned by different Tenants. Downstream model-owned
+references remain Model-scoped. DD-110 is stored
 only in the five canonical JSON policy columns. Structural checks require the
 versioned naming, Silver audit, Gold technical, and Gold audit shapes and keep
 each policy group all-null or complete.
 
 ## Applied modeling graph
 
-The applied lifecycle is `active`, `needs_review`, `inactive`, or `deprecated`;
-the first two states are effective. Candidate-local references and AI/human
-acceptance labels never appear in applied tables.
+The applied lifecycle is `active`, `inactive`, or `deprecated`. Candidate-local
+review state and AI/human acceptance labels never appear in applied tables.
 
 Modeling Assertions consist of one document table and one record table. Analysis
 uses a generated result ID and stable physical Attribute/Object endpoints.
@@ -97,11 +96,11 @@ exactly one typed relational parent: Conceptual Object or Conceptual
 Relationship. Composite foreign keys keep Assertion support in the same Model.
 
 Logical has exactly seven persisted families. Entity source rows contain one
-Bronze Object or Assertion Record; Attribute source rows contain one physical
+Model Input Object or Assertion Record; Attribute source rows contain one physical
 Attribute path or Assertion Record. Its natural identities remain
 reserved across lifecycle. The database enforces orthogonal primary, natural,
 and surrogate key facts; non-null keys; same-Model endpoints; authoritative
-Model Scope; Bronze source eligibility; effective parent closure; unique
+Model Input Scope; Source/Bronze eligibility; effective parent closure; unique
 effective Attribute ordinals; and the rule that effective policy-owned audit
 Attributes have no physical source mapping.
 
@@ -114,23 +113,36 @@ Object/Attribute Mappings for the same Model. Measures, key roles, audit roles,
 and Type 0/1/2 change behavior are constrained relationally; historized
 Attributes require the Model's Gold technical-column policy.
 
-Combined Mapping uses `workflow.mapping_source_system_dependency`,
-`workflow.mapping_object`, and `workflow.mapping_attribute`. Typed
-Logical/Dimensional parent columns are
-exclusive. Composite keys bind children to the same header, target Object, and
-Model. Effective Logical targets must be Silver and Dimensional targets Gold.
-The current allowlisted package profile is `mapping.standard@1.0.0`; the
-database accepts normalized profile keys and SemVer identities so an atomic
-future allowlisted package upgrade is representable. Authored metadata is
-all-null or complete and JSON/digests are bounded. Effective headers in one
-target/System package share package metadata and object dependency order.
-Source System waves are controlled once per Model/layer/System; Object waves
-are consistent per Model/layer/target.
+Physical target identity is established before Mapping. A
+`workflow.model_object_binding` ties one Logical Entity to one Silver Object or
+one Dimensional Entity to one Gold Object. Its child
+`workflow.model_attribute_binding` ties each modeled Attribute to the matching
+registered physical Attribute. Metadata Change Sets register Objects and
+Attributes; Model Change Sets create only the bindings after those IDs exist.
+
+Mapping then uses `workflow.mapping_source_system_dependency`,
+`workflow.mapping_object`, and `workflow.mapping_attribute`. A Mapping Object
+references its target binding plus one source System and stores an optional
+Output Template, dependency order, and bounded transformation document. A
+Mapping Attribute references its parent Mapping and Attribute Binding. Output
+Templates are authoring guidance; PostgreSQL validates JSON shape and size but
+does not hard-enforce template-specific functional content. Source-System and
+target dependency-order indexes exist only for the dependency-ordered reads
+that consume them.
 
 The numbered greenfield DDL enforces its current declarative constraints,
 installed functions, and installed triggers. Any future cross-table graph
 behavior requires new functional requirements and rejecting tests; no disabled
 draft SQL is retained as an implementation source.
+
+## Index policy
+
+Indexes exist for enforced uniqueness or a named read path: active lock/draft
+arbitration, queue claims, expiry scans, normalized identity lookup, graph
+navigation, and Mapping dependency order. The schema does not add an index
+merely because a nullable Workflow Run or other foreign key exists. Those
+write-amplifying provenance and reverse-FK indexes were removed unless a query
+in the installed runtime actually starts from those columns.
 
 ## Installed behavior
 
@@ -140,9 +152,9 @@ expiry. Only behavior present in the numbered DDL is part of the database.
 
 ## Durable MCP state
 
-Model Change Sets store ten object-shaped JSON documents—Model Scope,
-Profiling, Assertion, Analysis, Conceptual, Logical, Dimensional, Mapping, Code
-Generation, and QA—plus queryable
+Model Change Sets store object-shaped JSON documents for Model Input Scope,
+Profiling, Assertions, Analysis, Conceptual, Logical, Dimensional, Model
+Bindings, Mapping, Code Generation, and Validation—plus queryable
 base revision/digests, global `draft_revision`, validation outcome, sealed
 candidate digest, activity/expiry, and terminal timestamps. Their lifecycle is
 `active`, `validated`, `applied`, `expired`, `discarded`, or `superseded`.
@@ -184,8 +196,11 @@ Apply repeats validation, resolves natural keys to IDs, and upserts all 16
 eligible Core datasets atomically. The runtime role has no direct SELECT or DML
 on Metadata Change Set, Stage Batch, chunk, or event tables. Begin and Put retain
 bounded typed chunks without changing the draft; Commit verifies the manifest and
-calls the same atomic complete-list Stage operation once. Object mutation is restricted to the
-locked Tenant's connections or its active global Metadata Discovery Scopes.
+calls the same atomic complete-list Stage operation once. Source Objects are
+placed on the source Tenant's Connection. Bronze/Silver/Gold Objects are placed
+on that source Tenant's configured GDS Connection and use the GDS placement
+Tenant/System/Connection natural key. Every applied Object stores the locked
+Tenant as its mandatory `source_tenant_id`.
 
 Metadata Change Set expiry is enforced lazily by governed PostgreSQL paths, not
 by an application background worker. Every create, stage, begin, put, commit,
@@ -206,17 +221,17 @@ Registered workload identities map directly to active Super Admin Principals.
 
 ## Durable web Workflow Run inputs
 
-The `application` schema has 16 normalized tables. A governed Workflow Run
+The `application` schema has 15 normalized tables. A governed Workflow Run
 stores the exact active Entra identity used to create it, an optional bounded
 Profiling/Analysis batch ID, its immutable Tenant witness, and one immutable
 `workflow_run_object_selection` row per selected Object. Mapping selected
 coverage also stores one normalized
 `workflow_run_mapping_target_selection` target Object/source System pair. The
-caller chooses `build|extend` and an artifact type but not a modeled layer or
+caller chooses `build|extend` but not a modeled layer or
 route. PostgreSQL infers those from active, unlocked preregistered headers and
-the target Zone, then freezes the exact `mapping.standard@1.0.0` profile digest.
+the target Zone, then freezes the bound target and route.
 Code Generation retains its explicit modeled Entity discriminator. The public
-create function validates active Model Scope and workflow eligibility,
+create function validates active Model Input Scope or bound target eligibility,
 canonicalizes Object IDs, and derives the SHA-256 digest and count inside
 PostgreSQL. Caller-supplied digest/count witnesses are not accepted. Profiling
 and Analysis batch requests also require every selected eligible Object to
@@ -226,60 +241,57 @@ index permits at most one `running` Workflow Run per Tenant while allowing
 multiple queued and terminal Runs. `start_workflow_run` maps index contention to
 one stable conflict without disclosing the competing Run.
 
-Model Scope itself remains zone-neutral. Run eligibility selects Bronze inputs
-for Profiling through Logical, applied-Logical Silver inputs for Dimensional,
-and Silver or Gold targets for Logical or Dimensional Mapping/Code Generation.
+Model Input Scope contains only Source/Bronze inputs. Run eligibility uses
+those inputs for Profiling through Logical, mapped/bound Silver inputs for
+Dimensional, and bound Silver/Gold targets for Mapping or Code Generation.
 The web role can read these rows and execute the governed create function, but
 has no direct Application table or sequence mutation privilege.
 
 `application.persist_profiling_results` is the only web Attribute Profile
 write boundary. While the Profiling Run is `running`, it reauthorizes the bound
 actor, requires the owned Tenant Lock and current Model revision, and requires
-one bounded result for every active Bronze Attribute in the immutable selected
+one bounded result for every active Source/Bronze Attribute in the immutable selected
 Objects. It replaces Profiles only in those Objects, advances the Model revision
 once when storage changes, and returns that revision for terminal completion.
 
 Two read-through, web-only `SECURITY DEFINER` functions provide Profiling
 execution inputs. `get_profiling_execution_context` reauthorizes the bound Run
 actor, owned Tenant Lock, running Profiling state, current revision, exact active
-discovery assignments, and at least one active eligible Attribute per selected
-Object before returning relation and batch metadata. It derives each catalog
-from the assigned source Tenant. `get_profiling_connection_values` returns one
+source-Tenant/placement invariants, and at least one active eligible Attribute
+per selected Object before returning relation and batch metadata. Source rows
+must have complete foreign-catalog coordinates; Bronze rows use native GDS
+coordinates. `get_profiling_connection_values` returns one
 credential tuple per exact active GDS Connection for one active Environment. A
 missing Environment or incomplete value set returns one fixed safe failure and
 no partial secrets.
 
 ## Governed web Model authoring
 
-Four `application` functions are the only web Model mutation boundary:
-`create_model`, `update_model`, `archive_model`, and `replace_model_scope`.
+Three `application` functions are the direct web Model mutation boundary:
+`create_model`, `update_model`, and `archive_model`.
 They resolve the active actor, derive the owning Tenant from the target Model,
 apply `tenant_model_write` authorization and current Tenant Lock ownership, and
 fence existing Models with `model_revision`. Each actual change increments the
 revision once and records one `model_revision_transaction`; an equivalent update
-or Scope set is a no-op. Archive rejects while any Workflow Run is running for
+is a no-op. Archive rejects while any Workflow Run is running for
 the Model's Tenant, preventing an active Run from losing its Model context.
 
-Scope replacement stores the exact unique active Object IDs supplied by the
-caller only when every ID is in the canonical Tenant-visible closure. Empty sets
-remain valid. Cross-Tenant and mixed-Zone Objects remain valid when reached by
-discovery, copy/process references, active ingestion mappings, or current active
-Scope. Existing inactive rows are reactivated without changing
-`model_scope_is_locked`; absent rows become inactive rather than being deleted.
-Workflow-specific zone and Mapping eligibility remains a later run-time rule,
-not a Model Scope rule.
+Model Input Scope changes use the governed Model Change Set materializer rather
+than a separate replacement function. The materializer stores Source/Bronze
+membership and advances the Model revision in the same applied change. Target
+Objects remain outside Input Scope and become usable only through Model Object
+and Attribute Bindings after Metadata Change Set registration succeeds.
 
 ## Roles and privileges
 
 The fresh cluster defines three non-login, non-superuser group roles:
 
 - `gds_migration`: schema creation plus all release objects;
-- `gds_app_write`: safe reads, constrained Model/workflow DML,
-  sequence use, the pure `CHECK` validator, centralized authorization,
+- `gds_app_write`: safe reads, governed Model Change Set materialization DML,
+  sequence use, centralized authorization,
   governed Tenant Lock functions, and governed Metadata Change Set functions;
-- `gds_web_write`: web reads plus the exact 32 secure `application` functions
-  used for Models, Scope, preferences, prompts, runs, events, output templates,
-  guides, and stored SQL artifacts.
+- `gds_web_write`: web reads plus governed `application` functions used for
+  Models, preferences, prompts, runs, events, output templates, and guides.
 
 `gds_mcp_runtime` is the LOGIN used by App Service. It has exactly one direct
 membership, `gds_app_write`, and each transaction activates that group with
@@ -300,7 +312,7 @@ continues to derive the fixed Super Admin workload identity.
 explicitly denied `core.connection_value`. Append-only events, revision
 transactions, and audit projections cannot be
 updated/deleted by the write role. The runtime role cannot directly mutate
-Principal, Tenant-access, Tenant Lock, Model Scope, or Tenant Lock event tables,
+Principal, Tenant-access, Tenant Lock, revision-audit, or Tenant Lock event tables,
 and it cannot update web-only Model agent defaults. It can
 insert into `mcp.tool_call_log`, but cannot select, update, delete, or
 truncate that append-only table.

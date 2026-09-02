@@ -8,7 +8,7 @@ from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validat
 
 MAX_DETAIL_ROWS = 2000
 
-type ModeledStatus = Literal["active", "needs_review", "inactive", "deprecated"]
+type ModeledStatus = Literal["active", "inactive", "deprecated"]
 type Confidence = Literal["low", "medium", "high"]
 type Cardinality = Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"]
 

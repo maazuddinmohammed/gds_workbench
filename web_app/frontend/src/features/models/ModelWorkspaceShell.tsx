@@ -68,13 +68,13 @@ export function ModelWorkspaceShell({
               <i>0</i><span><strong>Overview</strong><small>Workflow ledger</small></span>
             </Link>
             <Link
-              aria-label="Scope"
+              aria-label="Model Input Scope"
               className={`model-step${activeStage === "scope" ? " is-active" : ""}`}
-              to="/tenants/$tenantId/models/$modelId/scope"
+              to="/tenants/$tenantId/models/$modelId/input-scope"
               params={{ tenantId, modelId }}
-              title={`Scope — ${model.model_scope_object_count} Objects`}
+              title={`Model Input Scope — ${model.model_input_scope_object_count} Objects`}
             >
-              <i>1</i><span><strong>Scope</strong><small>{model.model_scope_object_count} Objects</small></span>
+              <i>1</i><span><strong>Input Scope</strong><small>{model.model_input_scope_object_count} Objects</small></span>
             </Link>
             <Link
               aria-label="Profiling"

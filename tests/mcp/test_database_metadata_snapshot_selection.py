@@ -37,6 +37,7 @@ if TYPE_CHECKING:
 class SelectionSeed:
     tenant_id: int
     tenant_code: str
+    global_tenant_code: str
     requested_connection_id: int
     global_connection_id: int
     object_type_id: int
@@ -45,7 +46,7 @@ class SelectionSeed:
 
 
 @pytest.mark.asyncio
-async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
+async def test_selection_uses_source_tenant_ownership_and_relational_closure(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -73,7 +74,6 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     }
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
-    assert len(rows_by_dataset["tenant_metadata_discovery_scope"]) == 7
     for dataset_name in (
         "system_type",
         "connection_type",
@@ -92,8 +92,10 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
         assert {row["attribute_name"] for row in attribute_rows} == {
             f"{object_name}_attribute" for object_name in expected_names
         }
-        assert {row["tenant_code"] for row in object_rows} == {seed.tenant_code}
-        assert {row["tenant_code"] for row in attribute_rows} == {seed.tenant_code}
+        assert {row["source_tenant_code"] for row in object_rows} == {seed.tenant_code}
+        assert {row["tenant_code"] for row in attribute_rows} == {
+            row["tenant_code"] for row in object_rows
+        }
         assert all(row["zone_code"] == zone_code for row in object_rows)
         assert all("attributes" not in row for row in object_rows)
 
@@ -112,8 +114,13 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     mapping_rows = rows_by_dataset["ingestion_object_mapping"]
     attribute_mapping_rows = rows_by_dataset["ingestion_attribute_mapping"]
     assert len(mapping_rows) == 4
-    assert {row["source_tenant_code"] for row in mapping_rows} == {seed.tenant_code}
-    assert {row["target_tenant_code"] for row in mapping_rows} == {seed.tenant_code}
+    assert {row["source_tenant_code"] for row in mapping_rows} == {
+        seed.tenant_code,
+        seed.global_tenant_code,
+    }
+    assert {row["target_tenant_code"] for row in mapping_rows} == {
+        seed.global_tenant_code
+    }
     assert [row["is_active"] for row in mapping_rows].count(True) == 2
     assert [row["is_active"] for row in mapping_rows].count(False) == 2
     assert len(attribute_mapping_rows) == 2
@@ -133,53 +140,15 @@ async def test_selection_uses_all_approved_seeds_and_active_mapping_closure(
     assert rows_by_dataset["member_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["member_group"][0]["is_active"] is False
     assert rows_by_dataset["copy_group_control"][0]["tenant_code"] == seed.tenant_code
-    assert rows_by_dataset["copy"][0]["source_tenant_code"] == seed.tenant_code
-    assert rows_by_dataset["copy"][0]["target_tenant_code"] == seed.tenant_code
+    assert rows_by_dataset["copy"][0]["source_tenant_code"] == seed.global_tenant_code
+    assert rows_by_dataset["copy"][0]["target_tenant_code"] == seed.global_tenant_code
     assert rows_by_dataset["copy"][0]["is_active"] is False
     assert rows_by_dataset["process_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process_group"][0]["is_active"] is False
-    assert rows_by_dataset["process"][0]["object_tenant_code"] == seed.tenant_code
+    assert (
+        rows_by_dataset["process"][0]["object_tenant_code"] == seed.global_tenant_code
+    )
     assert rows_by_dataset["process"][0]["is_active"] is False
-
-
-@pytest.mark.asyncio
-async def test_selection_rejects_invalid_active_discovery_configuration(
-    postgres_database: DisposablePostgres,
-) -> None:
-    with postgres_database.connect_owner() as connection:
-        seed = _seed_selection_graph(connection)
-        connection.execute(
-            """
-            UPDATE core.connection
-               SET is_global_data_store = FALSE
-             WHERE connection_id = %s
-            """,
-            (seed.global_connection_id,),
-        )
-
-    with pytest.raises(SnapshotContractError, match="Discovery Scope configuration"):
-        await _select(postgres_database, seed.tenant_id)
-
-
-@pytest.mark.asyncio
-async def test_selection_rejects_source_as_an_active_discovery_zone(
-    postgres_database: DisposablePostgres,
-) -> None:
-    with postgres_database.connect_owner() as connection:
-        seed = _seed_selection_graph(connection)
-        source_zone_id = _ensure_zone(connection, "source")
-        connection.execute(
-            """
-            UPDATE core.tenant_metadata_discovery_scope
-               SET zone_id = %s
-             WHERE tenant_id = %s
-               AND lower(btrim(object_schema)) = 'risk_discovery'
-            """,
-            (source_zone_id, seed.tenant_id),
-        )
-
-    with pytest.raises(SnapshotContractError, match="Discovery Scope configuration"):
-        await _select(postgres_database, seed.tenant_id)
 
 
 @pytest.mark.asyncio
@@ -192,6 +161,7 @@ async def test_selection_rejects_an_included_object_outside_the_four_zones(
         _insert_object(
             connection,
             connection_id=seed.requested_connection_id,
+            source_tenant_id=seed.tenant_id,
             object_type_id=seed.object_type_id,
             zone_id=landing_zone_id,
             object_schema="landing_schema",
@@ -289,8 +259,8 @@ async def test_complete_database_snapshot_builds_uploads_and_cleans_archive(
     with zipfile.ZipFile(BytesIO(store.content)) as archive:
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
     assert manifest["tenant_code"] == f"{prefix}_TENANT"
-    assert manifest["counts"]["logical_dataset_count"] == 29
-    assert manifest["counts"]["file_count"] == 70
+    assert manifest["counts"]["logical_dataset_count"] == 28
+    assert manifest["counts"]["file_count"] == 68
 
 
 async def _select(
@@ -484,26 +454,71 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             "owned_source",
             "source",
             requested_connection["connection_id"],
+            requested_tenant["tenant_id"],
             "owned",
             False,
         ),
-        ("mapped_bronze", "bronze", global_connection["connection_id"], "mapped", True),
-        ("mapped_silver", "silver", global_connection["connection_id"], "mapped", True),
+        (
+            "mapped_bronze",
+            "bronze",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "mapped",
+            True,
+        ),
+        (
+            "mapped_silver",
+            "silver",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "mapped",
+            True,
+        ),
         (
             "discovered_bronze",
             "bronze",
             global_connection["connection_id"],
+            requested_tenant["tenant_id"],
             " risk_discovery ",
             True,
         ),
-        ("copy_bronze", "bronze", global_connection["connection_id"], "copy", True),
-        ("copy_gold", "gold", global_connection["connection_id"], "copy", True),
-        ("process_gold", "gold", global_connection["connection_id"], "process", True),
-        ("model_silver", "silver", global_connection["connection_id"], "model", True),
+        (
+            "copy_bronze",
+            "bronze",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "copy",
+            True,
+        ),
+        (
+            "copy_gold",
+            "gold",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "copy",
+            True,
+        ),
+        (
+            "process_gold",
+            "gold",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "process",
+            True,
+        ),
+        (
+            "model_silver",
+            "silver",
+            global_connection["connection_id"],
+            requested_tenant["tenant_id"],
+            "model",
+            True,
+        ),
         (
             "inactive_model_gold",
             "gold",
             global_connection["connection_id"],
+            requested_tenant["tenant_id"],
             "inactive_model",
             True,
         ),
@@ -511,17 +526,26 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             "unrelated_bronze",
             "bronze",
             global_connection["connection_id"],
+            global_tenant["tenant_id"],
             "unrelated",
             True,
         ),
     )
     object_ids: dict[str, int] = {}
     object_names: dict[str, str] = {}
-    for short_name, zone_code, connection_id, object_schema, is_active in object_specs:
+    for (
+        short_name,
+        zone_code,
+        connection_id,
+        source_tenant_id,
+        object_schema,
+        is_active,
+    ) in object_specs:
         object_name = f"{prefix}_{short_name.upper()}"
         object_ids[short_name] = _insert_object(
             connection,
             connection_id=connection_id,
+            source_tenant_id=source_tenant_id,
             object_type_id=object_type["object_type_id"],
             zone_id=zone_ids[zone_code],
             object_schema=object_schema,
@@ -662,47 +686,6 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         ),
     )
 
-    connection.execute(
-        """
-        INSERT INTO core.tenant_metadata_discovery_scope (
-            tenant_id,
-            gds_connection_id,
-            zone_id,
-            object_schema
-        )
-        VALUES
-            (%s, %s, %s, 'RISK_DISCOVERY'),
-            (%s, %s, %s, 'MAPPED'),
-            (%s, %s, %s, 'MAPPED'),
-            (%s, %s, %s, 'COPY'),
-            (%s, %s, %s, 'COPY'),
-            (%s, %s, %s, 'PROCESS'),
-            (%s, %s, %s, 'MODEL')
-        """,
-        (
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["bronze"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["bronze"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["silver"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["bronze"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["gold"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["gold"],
-            requested_tenant["tenant_id"],
-            global_connection["connection_id"],
-            zone_ids["silver"],
-        ),
-    )
     copy_group = connection.execute(
         """
         INSERT INTO core.copy_group (
@@ -942,20 +925,21 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
     assert active_model is not None and inactive_model is not None
     connection.execute(
         """
-        INSERT INTO model.model_scope (model_id, object_id)
+        INSERT INTO model.model_input_scope (model_id, object_id)
         VALUES (%s, %s), (%s, %s)
         """,
         (
             active_model["model_id"],
-            object_ids["model_silver"],
+            object_ids["mapped_bronze"],
             inactive_model["model_id"],
-            object_ids["inactive_model_gold"],
+            object_ids["discovered_bronze"],
         ),
     )
 
     return SelectionSeed(
         tenant_id=requested_tenant["tenant_id"],
         tenant_code=f"{prefix}_TENANT",
+        global_tenant_code=f"{prefix}_GLOBAL_TENANT",
         requested_connection_id=requested_connection["connection_id"],
         global_connection_id=global_connection["connection_id"],
         object_type_id=object_type["object_type_id"],
@@ -973,10 +957,10 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
             "gold": {
                 object_names["copy_gold"],
                 object_names["process_gold"],
+                object_names["inactive_model_gold"],
             },
         },
         excluded_object_names={
-            object_names["inactive_model_gold"],
             object_names["unrelated_bronze"],
         },
     )
@@ -1007,6 +991,7 @@ def _insert_object(
     connection: Connection[Any],
     *,
     connection_id: int,
+    source_tenant_id: int,
     object_type_id: int,
     zone_id: int,
     object_schema: str,
@@ -1017,17 +1002,19 @@ def _insert_object(
         """
         INSERT INTO core.object (
             connection_id,
+            source_tenant_id,
             object_schema,
             object_name,
             object_type_id,
             zone_id,
             is_active
         )
-        VALUES (%s, %s, %s, %s, %s, %s)
+        VALUES (%s, %s, %s, %s, %s, %s, %s)
         RETURNING object_id
         """,
         (
             connection_id,
+            source_tenant_id,
             object_schema,
             object_name,
             object_type_id,

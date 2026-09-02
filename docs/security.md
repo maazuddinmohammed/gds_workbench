@@ -11,7 +11,7 @@ disagree.
 - `/.well-known/oauth-protected-resource` and its `/mcp` path variant are
   anonymous, cacheable, non-secret OAuth discovery documents.
 - `/mcp` uses stateless Streamable HTTP.
-- `get_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
+- `create_metadata_snapshot` authorizes Tenant Read before returning a 15-minute,
   read-only SAS for the exact private Blob.
 - Metadata discovery and Snapshot tools are read-only.
 - `execute_databricks_sql` is the sole SQL exception. It derives an authorized
@@ -130,23 +130,23 @@ Governed lock functions are:
 Every runtime transaction locally activates the `NOINHERIT` role
 `gds_app_write`. It cannot run
 DDL, delete product state, modify Principal/Tenant-access rows, or directly
-mutate Tenant Lock or Model Scope tables. Web-only Model agent defaults and the
+mutate Tenant Lock or Model Input Scope tables. Web-only Model agent defaults and the
 entire `application` schema are outside its write surface. It receives only
 explicit function execution and allowlisted table/column privileges. `PUBLIC`
 receives no release-schema rights.
 
-The web runtime also has no direct Model, Model Scope, or revision-transaction
-DML. Its Model authoring path is limited to the four fixed-search-path
-`application` functions for create, update, archive, and exact Scope
-replacement. Those functions derive Model ownership, require the active actor's
-Tenant Lock, enforce revision fencing, and keep Model Scope zone-neutral. MCP
-cannot execute them and retains no Model Scope mutation path.
+The web runtime also has no direct Model, Model Input Scope, or
+revision-transaction DML. Model creation, header changes, and archival use
+fixed-search-path `application` functions. Model Input Scope and all authored
+Model sections change only through the governed Model Change Set path. Those
+operations derive Model ownership, require the active actor's Tenant Lock, and
+enforce revision fencing.
 
 Web Profiling execution uses two additional fixed-search-path,
 `SECURITY DEFINER` functions. Both reauthorize the immutable identity triple,
 bound running Profiling Run, owning Tenant, active Model revision, and
-caller-owned Tenant Lock. Execution metadata resolves GDS Object ownership and
-catalog only through the unique active Metadata Discovery Scope assignment.
+caller-owned Tenant Lock. Execution metadata resolves Object ownership and
+catalog only through the Object's required `source_tenant_id`.
 Credential reads require the exact active selected GDS Connection and active
 Environment. Any incomplete credential set returns one fixed safe failure with
 all values null. The browser, MCP role, audit logs, and direct web table grants
@@ -187,7 +187,7 @@ registers its server-owned Tool Policy, exact safe argument names to retain, and
 a summarizer for prohibited payloads beside its handler. Unregistered and
 secret-bearing fields are dropped. `list_tenants` retains schema version and page
 size and records only whether a cursor was supplied; it never records the cursor.
-`get_metadata_snapshot` retains schema version and requested Tenant ID. The
+`create_metadata_snapshot` retains schema version and requested Tenant ID. The
 middleware checks only MCP's `isError` flag and never reads or stores tool output.
 Tenant Lock tools record only Tenant ID, schema version, bounded duration, and
 whether optional purpose or required override reason was supplied. Purpose and

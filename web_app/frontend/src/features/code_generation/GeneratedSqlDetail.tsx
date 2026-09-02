@@ -119,7 +119,8 @@ function GeneratedSqlDetailView({
             ← Back to Code Generation
           </Link>
           <p className="eyebrow">Stored SQL artifact {detail.generated_sql_artifact_id}</p>
-          <h1 ref={heading} tabIndex={-1}>{title}</h1>
+          <h1 ref={heading} tabIndex={-1}>{detail.artifact_name}</h1>
+          <p>{title}</p>
         </div>
         <div className="code-generation-detail-actions">
           <div className="detail-badge-stack">
@@ -157,6 +158,7 @@ function GeneratedSqlDetailView({
           <Fact label="Target System" value={`${detail.target.system_name} (${detail.target.system_code})`} />
           <Fact label="Zone" value={detail.target.zone_code} />
           <Fact label="Modeled layer" value={layerLabel(detail.entity_type)} />
+          <Fact label="Artifact status" value={humanize(detail.generated_code_status)} />
         </dl>
       </section>
 
@@ -257,9 +259,6 @@ function GeneratedSqlDetailView({
           />
           <Fact label="Generated" value={formatDateTime(detail.generated_at)} />
           <Fact label="SQL size" value={`${detail.generated_sql_byte_count.toLocaleString()} bytes`} />
-          <DigestFact label="Mapping context digest" value={detail.mapping_context_digest} />
-          <DigestFact label="Source context digest" value={detail.source_context_digest} />
-          <DigestFact label="Generated SQL digest" value={detail.generated_sql_digest} />
         </dl>
       </section>
 
@@ -316,14 +315,15 @@ function targetFromArtifact(detail: GeneratedSqlArtifactDetail): CodeGenerationT
     mapping_supports_truncated: detail.mapping_supports_truncated,
     source_systems: detail.source_systems,
     source_system_count: detail.source_system_count,
-    mapping_context_digest: detail.mapping_context_digest,
-    source_context_digest: detail.source_context_digest,
-    latest_artifact: {
+    artifacts: [{
       generated_sql_artifact_id: detail.generated_sql_artifact_id,
+      artifact_name: detail.artifact_name,
       workflow_run_id: detail.workflow_run_id,
       generated_at: detail.generated_at,
-      generated_sql_digest: detail.generated_sql_digest,
+      generated_code_status: detail.generated_code_status,
+      source_system_codes: detail.source_systems.map((system) => system.system_code),
       artifact_is_current: detail.artifact_is_current,
-    },
+    }],
+    artifact_count: 1,
   };
 }

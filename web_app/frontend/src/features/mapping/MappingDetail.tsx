@@ -91,17 +91,14 @@ function MappingObjectDetailView({
           <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code}) · ID ${detail.source_system.system_id}`} />
         </dl>
       </section>
-      <section className="detail-section" aria-labelledby="mapping-delivery-contract">
-        <header><h2 id="mapping-delivery-contract">Delivery contract</h2></header>
+      <section className="detail-section" aria-labelledby="mapping-output-template">
+        <header><h2 id="mapping-output-template">Output template</h2></header>
         <dl className="detail-fact-grid">
-          <Fact label="Artifact" value={humanize(detail.artifact_type ?? "not_authored")} />
-          <Fact label="Document format" value={humanize(detail.mapping_document_format ?? "not_authored")} />
-          <Fact label="Instructions" value={detail.artifact_generation_instructions ?? "Not authored"} />
           <Fact label="Output template" value={detail.output_template?.output_template_name ?? "Free form"} />
+          <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
         </dl>
       </section>
       <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
-      <MappingDocumentView title="Mapping package" document={detail.mapping_package_document} />
       <MappingProvenance detail={detail} />
     </article>
   );
@@ -160,25 +157,17 @@ function MappingAttributeDetailView({
         <dl className="detail-fact-grid">
           <Fact label="Object Mapping ID" value={String(detail.parent_object_mapping.mapping_object_id)} />
           <Fact label="Dependency order" value={String(detail.parent_object_mapping.dependency_order)} />
-          <Fact label="Artifact" value={humanize(detail.parent_object_mapping.artifact_type ?? "not_authored")} />
           <Fact label="Status" value={humanize(detail.parent_object_mapping.status)} />
           <Fact label="Lock" value={detail.parent_object_mapping.is_locked ? "Locked" : "Open"} />
-          <Fact label="Mapping profile" value={detail.parent_object_mapping.mapping_profile === null
-            ? "Not authored"
-            : `${detail.parent_object_mapping.mapping_profile.profile_key}@${detail.parent_object_mapping.mapping_profile.profile_version}`} />
-          <Fact label="Profile schema digest" value={detail.parent_object_mapping.mapping_profile?.profile_schema_digest ?? "Not authored"} />
-          <Fact label="Package digest" value={detail.parent_object_mapping.mapping_profile?.package_digest ?? "Not authored"} />
         </dl>
       </section>
       <section className="detail-section" aria-labelledby="mapping-attribute-delivery">
         <header><h2 id="mapping-attribute-delivery">Delivery contract</h2></header>
         <dl className="detail-fact-grid">
-          <Fact label="Document format" value={humanize(detail.mapping_document_format ?? "not_authored")} />
           <Fact label="Output template" value={detail.output_template?.output_template_name ?? "Free form"} />
           <Fact label="Template ID" value={detail.output_template ? String(detail.output_template.output_template_id) : "Free form"} />
           <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
           <Fact label="Template target" value={detail.output_template ? humanize(detail.output_template.output_template_target_type) : "Free form"} />
-          <Fact label="Template schema digest" value={detail.output_template?.output_template_schema_digest ?? "Free form"} />
           <Fact label="Template state" value={detail.output_template ? detail.output_template.is_active ? "Active" : "Inactive" : "Free form"} />
         </dl>
       </section>
@@ -243,13 +232,9 @@ function MappingProvenance({ detail }: { detail: MappingObjectDetail }) {
       <header><h2 id="mapping-provenance">Provenance</h2></header>
       <dl className="detail-fact-grid">
         <Fact label="Workflow" value={detail.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${detail.workflow_run_id}`} />
-        <Fact label="Profile" value={detail.mapping_profile === null ? "Not authored" : `${detail.mapping_profile.profile_key}@${detail.mapping_profile.profile_version}`} />
-        <Fact label="Profile schema digest" value={detail.mapping_profile?.profile_schema_digest ?? "Not authored"} />
-        <Fact label="Package digest" value={detail.mapping_profile?.package_digest ?? "Not authored"} />
         <Fact label="Template ID" value={detail.output_template ? String(detail.output_template.output_template_id) : "Free form"} />
         <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
         <Fact label="Template target" value={detail.output_template ? humanize(detail.output_template.output_template_target_type) : "Free form"} />
-        <Fact label="Template schema digest" value={detail.output_template?.output_template_schema_digest ?? "Free form"} />
         <Fact label="Template state" value={detail.output_template ? detail.output_template.is_active ? "Active" : "Inactive" : "Free form"} />
         <Fact label="Created" value={formatDateTime(detail.created_at)} />
         <Fact label="Updated" value={formatDateTime(detail.updated_at)} />
@@ -278,6 +263,5 @@ function humanize(value: string): string {
 
 function statusTone(status: string): string {
   if (status === "active") return "is-success";
-  if (status === "needs_review") return "is-warning";
   return "is-neutral";
 }

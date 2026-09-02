@@ -71,7 +71,7 @@ class StaticLogicalService:
                     logical_entity_type="core",
                     logical_entity_dependency_order=0,
                     logical_entity_confidence="high",
-                    logical_entity_status="needs_review",
+                    logical_entity_status="active",
                     logical_entity_is_locked=False,
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 ),
@@ -99,7 +99,7 @@ class StaticLogicalService:
             logical_entity_grain="One row per customer.",
             logical_entity_dependency_order=0,
             logical_entity_confidence="high",
-            logical_entity_status="needs_review",
+            logical_entity_status="active",
             logical_entity_is_locked=False,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -266,7 +266,7 @@ class StaticLogicalService:
     ) -> LogicalRelationshipPage:
         assert principal.actor_kind is ActorKind.HUMAN
         assert filters == LogicalRelationshipFilters(
-            status="needs_review",
+            status="inactive",
             locked=True,
             logical_entity_id=102,
         )
@@ -312,7 +312,7 @@ class StaticLogicalService:
             logical_relationship_name="Order references Customer",
             logical_relationship_cardinality="many_to_one",
             logical_relationship_confidence="high",
-            logical_relationship_status="needs_review",
+            logical_relationship_status="active",
             logical_relationship_is_locked=True,
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
         )
@@ -373,7 +373,7 @@ class StaticLogicalService:
                     logical_entity_id=101,
                     logical_entity_name="Customer",
                     logical_entity_type="core",
-                    logical_entity_status="needs_review",
+                    logical_entity_status="active",
                     membership_status="active",
                     membership_is_locked=False,
                     created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
@@ -405,7 +405,7 @@ def test_logical_entity_collection_normalizes_review_filters() -> None:
         response = client.get(
             "/api/v1/tenants/7/models/18/logical/entities",
             params={
-                "status": "NEEDS_REVIEW",
+                "status": "INACTIVE",
                 "locked": "false",
                 "name_prefix": "  Cust  ",
                 "logical_submodel_id": "301",
@@ -417,7 +417,7 @@ def test_logical_entity_collection_normalizes_review_filters() -> None:
     assert response.json()["items"][0]["workflow_run_id"] is None
     assert response.json()["items"][0]["logical_entity_name"] == "Customer"
     assert service.filters == LogicalEntityFilters(
-        status="needs_review",
+        status="inactive",
         locked=False,
         name_prefix="cust",
         logical_submodel_id=301,
@@ -491,7 +491,7 @@ def test_logical_relationship_collection_and_detail_return_named_endpoints() -> 
         collection = client.get(
             "/api/v1/tenants/7/models/18/logical/relationships",
             params={
-                "status": "NEEDS_REVIEW",
+                "status": "INACTIVE",
                 "locked": "true",
                 "logical_entity_id": "102",
             },
@@ -569,8 +569,8 @@ class LogicalCollectionTransaction:
         assert parameters[:11] == (
             7,
             18,
-            "needs_review",
-            "needs_review",
+            "active",
+            "active",
             False,
             False,
             None,
@@ -591,7 +591,7 @@ class LogicalCollectionTransaction:
                 "logical_entity_type": "core",
                 "logical_entity_dependency_order": 0,
                 "logical_entity_confidence": "high",
-                "logical_entity_status": "needs_review",
+                "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             },
@@ -602,7 +602,7 @@ class LogicalCollectionTransaction:
                 "logical_entity_type": "association",
                 "logical_entity_dependency_order": 1,
                 "logical_entity_confidence": "medium",
-                "logical_entity_status": "needs_review",
+                "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 1, tzinfo=UTC),
             },
@@ -640,7 +640,7 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
     filters = LogicalEntityFilters(
-        status="needs_review",
+        status="active",
         locked=False,
         name_prefix="cust",
         logical_submodel_id=301,

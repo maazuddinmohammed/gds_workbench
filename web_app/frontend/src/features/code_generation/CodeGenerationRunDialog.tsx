@@ -460,7 +460,9 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function selectedRunTitle(targets: CodeGenerationTarget[]): string {
   if (targets.length === 1) {
-    return targets[0]?.latest_artifact ? "Regenerate stored SQL" : "Generate SQL";
+    return targets[0]?.artifacts.some(
+      (artifact) => artifact.generated_code_status === "active",
+    ) ? "Regenerate stored SQL" : "Generate SQL";
   }
   return "Generate selected SQL";
 }

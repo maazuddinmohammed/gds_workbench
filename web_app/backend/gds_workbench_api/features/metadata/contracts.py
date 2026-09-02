@@ -71,7 +71,6 @@ FOUNDATIONAL_DATASETS: tuple[MetadataDataset, ...] = (
     "tenant",
     "system",
     "connection",
-    "tenant_metadata_discovery_scope",
 )
 
 REFERENCE_DATASETS: tuple[MetadataDataset, ...] = (

@@ -132,17 +132,18 @@ export function CodeGenerationLedger({
     },
     {
       id: "artifact",
-      header: "Latest artifact",
+      header: "Artifacts",
       cell: ({ row }) => {
-        const artifact = row.original.latest_artifact;
+        const activeArtifacts = row.original.artifacts.filter(
+          (artifact) => artifact.generated_code_status === "active",
+        );
+        const newest = activeArtifacts.at(-1);
         return (
           <span className="code-artifact-cell">
             <ArtifactBadge target={row.original} />
-            {artifact ? (
+            {newest ? (
               <small>
-                {formatDateTime(artifact.generated_at)} · <code title={artifact.generated_sql_digest}>
-                  {artifact.generated_sql_digest.slice(0, 10)}…
-                </code>
+                {activeArtifacts.length} file{activeArtifacts.length === 1 ? "" : "s"} · {formatDateTime(newest.generated_at)}
               </small>
             ) : <small>No stored SQL</small>}
           </span>
@@ -152,20 +153,31 @@ export function CodeGenerationLedger({
     {
       id: "review",
       header: "Review",
-      cell: ({ row }) => row.original.latest_artifact ? (
-        <Link
-          className="text-action"
-          aria-label={`Show generated SQL for ${targetName(row.original)}`}
-          to="/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId"
-          params={{
-            tenantId: String(tenantId),
-            modelId: String(modelId),
-            artifactId: String(row.original.latest_artifact.generated_sql_artifact_id),
-          }}
-        >
-          Show generated SQL
-        </Link>
-      ) : <span className="unavailable-action">Not generated</span>,
+      cell: ({ row }) => {
+        const artifacts = row.original.artifacts.filter(
+          (artifact) => artifact.generated_code_status === "active",
+        );
+        return artifacts.length ? (
+          <span className="code-artifact-links">
+            {artifacts.slice(0, 3).map((artifact) => (
+              <Link
+                key={artifact.generated_sql_artifact_id}
+                className="text-action"
+                aria-label={`Show ${artifact.artifact_name} for ${targetName(row.original)}`}
+                to="/tenants/$tenantId/code-generation/models/$modelId/artifacts/$artifactId"
+                params={{
+                  tenantId: String(tenantId),
+                  modelId: String(modelId),
+                  artifactId: String(artifact.generated_sql_artifact_id),
+                }}
+              >
+                {artifact.artifact_name}
+              </Link>
+            ))}
+            {artifacts.length > 3 ? <small>+{artifacts.length - 3} more</small> : null}
+          </span>
+        ) : <span className="unavailable-action">Not generated</span>;
+      },
     },
     {
       id: "generate",
@@ -178,7 +190,9 @@ export function CodeGenerationLedger({
           title={permissionLabel}
           onClick={() => onGenerateTarget(row.original)}
         >
-          {row.original.latest_artifact ? "Regenerate" : "Generate"}
+          {row.original.artifacts.some(
+            (artifact) => artifact.generated_code_status === "active",
+          ) ? "Regenerate" : "Generate"}
         </button>
       ),
     },
@@ -413,8 +427,11 @@ function artifactStatusMatches(
 }
 
 function artifactState(target: CodeGenerationTarget): Exclude<ArtifactStatusFilter, ""> {
-  if (!target.latest_artifact) return "not_generated";
-  return target.latest_artifact.artifact_is_current ? "current" : "stale";
+  const active = target.artifacts.filter(
+    (artifact) => artifact.generated_code_status === "active",
+  );
+  if (!active.length) return "not_generated";
+  return active.every((artifact) => artifact.artifact_is_current) ? "current" : "stale";
 }
 
 function targetName(target: CodeGenerationTarget): string {

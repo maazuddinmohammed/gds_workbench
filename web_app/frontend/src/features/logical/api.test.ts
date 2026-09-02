@@ -9,7 +9,7 @@ describe("Logical HTTP adapter", () => {
     const api = createLogicalApi(createHttpRequest(fetcher));
 
     await api.listLogicalEntities(7, 18, {
-      status: "needs_review",
+      status: "inactive",
       locked: false,
       nameExact: " Customer Account ",
       namePrefix: " Customer ",
@@ -24,7 +24,7 @@ describe("Logical HTTP adapter", () => {
     }, 50, "attributes+/=");
     await api.readLogicalAttribute(7, 18, 81);
     await api.listLogicalRelationships(7, 18, {
-      status: "needs_review",
+      status: "inactive",
       locked: false,
       namePrefix: " Customer ",
       logicalEntityId: 71,
@@ -34,11 +34,11 @@ describe("Logical HTTP adapter", () => {
     await api.readLogicalSubmodel(7, 18, 91);
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/logical/entities?status=needs_review&locked=false&name_exact=customer+account&name_prefix=customer&logical_submodel_id=91&page_size=25&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/logical/entities?status=inactive&locked=false&name_exact=customer+account&name_prefix=customer&logical_submodel_id=91&page_size=25&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/logical/entities/71",
       "/api/v1/tenants/7/models/18/logical/attributes?status=active&locked=true&name_exact=customer+id&logical_entity_id=71&page_size=50&cursor=attributes%2B%2F%3D",
       "/api/v1/tenants/7/models/18/logical/attributes/81",
-      "/api/v1/tenants/7/models/18/logical/relationships?status=needs_review&locked=false&name_prefix=customer&logical_entity_id=71&page_size=75&cursor=relationships%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/logical/relationships?status=inactive&locked=false&name_prefix=customer&logical_entity_id=71&page_size=75&cursor=relationships%2B%2F%3D",
       "/api/v1/tenants/7/models/18/logical/relationships/101",
       "/api/v1/tenants/7/models/18/logical/submodels?page_size=200",
       "/api/v1/tenants/7/models/18/logical/submodels/91",

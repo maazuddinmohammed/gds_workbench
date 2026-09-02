@@ -58,10 +58,10 @@ SELECT profile.object_id,
   FROM target_model
   JOIN workflow.attribute_profile AS profile
     ON profile.model_id = target_model.model_id
-  JOIN model.model_scope AS model_scope
-    ON model_scope.model_id = target_model.model_id
-   AND model_scope.object_id = profile.object_id
-   AND model_scope.is_active
+  JOIN model.model_input_scope AS model_input_scope
+    ON model_input_scope.model_id = target_model.model_id
+   AND model_input_scope.object_id = profile.object_id
+   AND model_input_scope.is_active
   JOIN visible_objects AS visible_object
     ON visible_object.object_id = profile.object_id
   JOIN core.object AS object_record
@@ -126,10 +126,10 @@ SELECT profile.object_id,
   FROM target_model
   JOIN workflow.attribute_profile AS profile
     ON profile.model_id = target_model.model_id
-  JOIN model.model_scope AS model_scope
-    ON model_scope.model_id = target_model.model_id
-   AND model_scope.object_id = profile.object_id
-   AND model_scope.is_active
+  JOIN model.model_input_scope AS model_input_scope
+    ON model_input_scope.model_id = target_model.model_id
+   AND model_input_scope.object_id = profile.object_id
+   AND model_input_scope.is_active
   JOIN visible_objects AS visible_object
     ON visible_object.object_id = profile.object_id
   JOIN core.object AS object_record
@@ -192,10 +192,10 @@ SELECT profile.attribute_id,
   FROM target_model
   JOIN workflow.attribute_profile AS profile
     ON profile.model_id = target_model.model_id
-  JOIN model.model_scope AS model_scope
-    ON model_scope.model_id = target_model.model_id
-   AND model_scope.object_id = profile.object_id
-   AND model_scope.is_active
+  JOIN model.model_input_scope AS model_input_scope
+    ON model_input_scope.model_id = target_model.model_id
+   AND model_input_scope.object_id = profile.object_id
+   AND model_input_scope.is_active
   JOIN core.object AS object_record
     ON object_record.object_id = profile.object_id
    AND object_record.is_active

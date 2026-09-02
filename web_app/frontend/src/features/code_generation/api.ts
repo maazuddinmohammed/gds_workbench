@@ -18,9 +18,11 @@ export interface CodeGenerationTargetFilters {
 
 export interface StoredSqlArtifactSummary {
   generated_sql_artifact_id: number;
+  artifact_name: string;
   workflow_run_id: number | null;
   generated_at: string;
-  generated_sql_digest: string;
+  generated_code_status: "active" | "inactive" | "deprecated";
+  source_system_codes: string[];
   artifact_is_current: boolean;
 }
 
@@ -39,9 +41,8 @@ export interface CodeGenerationTarget {
   mapping_supports_truncated: boolean;
   source_systems: MappingSourceSystem[];
   source_system_count: number;
-  mapping_context_digest: string;
-  source_context_digest: string;
-  latest_artifact: StoredSqlArtifactSummary | null;
+  artifacts: StoredSqlArtifactSummary[];
+  artifact_count: number;
 }
 
 export interface CodeGenerationTargetPage {
@@ -70,6 +71,7 @@ export interface SqlGeneratorProvenance {
 
 export interface GeneratedSqlArtifactDetail {
   generated_sql_artifact_id: number;
+  artifact_name: string;
   model_id: number;
   target: MappingPhysicalObject;
   entity_type: MappingEntityType;
@@ -79,14 +81,12 @@ export interface GeneratedSqlArtifactDetail {
   mapping_support_count: number;
   mapping_supports_truncated: boolean;
   artifact_is_current: boolean;
-  mapping_context_digest: string;
-  source_context_digest: string;
+  generated_code_status: "active" | "inactive" | "deprecated";
   guide: SqlGenerationGuideProvenance | null;
   workflow_run_id: number | null;
   generator: SqlGeneratorProvenance | null;
   generated_at: string;
   generated_sql: string;
-  generated_sql_digest: string;
   generated_sql_byte_count: number;
 }
 

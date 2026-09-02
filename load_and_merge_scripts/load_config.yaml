@@ -1124,76 +1124,6 @@ loads:
         );
 
   - workbook: operational.xlsx
-    sheet: TenantMetadataDiscoveryScope
-    schema: core
-    table: tenant_metadata_discovery_scope
-    dependency_order: 270
-    columns:
-      - scope_tenant_code
-      - connection_tenant_code
-      - connection_system_code
-      - connection_code
-      - zone_code
-      - object_schema
-      - is_active
-    required_columns:
-      - scope_tenant_code
-      - connection_tenant_code
-      - connection_system_code
-      - connection_code
-      - zone_code
-      - object_schema
-    source_key:
-      - scope_tenant_code
-      - connection_tenant_code
-      - connection_system_code
-      - connection_code
-      - zone_code
-      - object_schema
-    merge_statements:
-      - |
-        MERGE INTO core.tenant_metadata_discovery_scope AS target
-        USING (
-          SELECT
-            scope_tenant.tenant_id,
-            connection.connection_id AS gds_connection_id,
-            zone.zone_id,
-            btrim(staged.object_schema::text) AS object_schema,
-            COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
-          FROM {staging_table} AS staged
-          JOIN core.tenant AS scope_tenant
-            ON lower(btrim(scope_tenant.tenant_code)) =
-               lower(btrim(staged.scope_tenant_code::text))
-          JOIN core.tenant AS connection_tenant
-            ON lower(btrim(connection_tenant.tenant_code)) =
-               lower(btrim(staged.connection_tenant_code::text))
-          JOIN core.system AS connection_system
-            ON lower(btrim(connection_system.system_code)) =
-               lower(btrim(staged.connection_system_code::text))
-          JOIN core.connection AS connection
-            ON connection.tenant_id = connection_tenant.tenant_id
-           AND connection.system_id = connection_system.system_id
-           AND lower(btrim(connection.connection_code)) =
-               lower(btrim(staged.connection_code::text))
-          JOIN reference.zone AS zone
-            ON lower(btrim(zone.zone_code)) = lower(btrim(staged.zone_code::text))
-        ) AS source
-        ON target.tenant_id = source.tenant_id
-        AND target.gds_connection_id = source.gds_connection_id
-        AND target.zone_id = source.zone_id
-        AND lower(btrim(target.object_schema)) = lower(source.object_schema)
-        WHEN MATCHED THEN UPDATE SET
-          is_active = source.is_active,
-          updated_time = CURRENT_TIMESTAMP,
-          updated_by = CURRENT_USER
-        WHEN NOT MATCHED THEN INSERT (
-          tenant_id, gds_connection_id, zone_id, object_schema, is_active
-        ) VALUES (
-          source.tenant_id, source.gds_connection_id, source.zone_id,
-          source.object_schema, source.is_active
-        );
-
-  - workbook: operational.xlsx
     sheet: ConnectionLocation
     schema: core
     table: connection_location
@@ -1346,6 +1276,7 @@ loads:
     dependency_order: 300
     columns:
       - tenant_code
+      - source_tenant_code
       - system_code
       - connection_code
       - object_schema
@@ -1360,6 +1291,7 @@ loads:
       - is_active
     required_columns:
       - tenant_code
+      - source_tenant_code
       - system_code
       - connection_code
       - object_schema
@@ -1378,6 +1310,7 @@ loads:
         USING (
           SELECT
             connection.connection_id,
+            source_tenant.tenant_id AS source_tenant_id,
             btrim(staged.object_schema::text) AS object_schema,
             btrim(staged.object_name::text) AS object_name,
             NULLIF(btrim(staged.fc_object_schema::text), '') AS fc_object_schema,
@@ -1389,13 +1322,17 @@ loads:
             zone.zone_id,
             COALESCE(NULLIF(btrim(staged.is_active::text), '')::boolean, TRUE) AS is_active
           FROM {staging_table} AS staged
-          JOIN core.tenant AS tenant
-            ON lower(btrim(tenant.tenant_code)) = lower(btrim(staged.tenant_code::text))
+          JOIN core.tenant AS placement_tenant
+            ON lower(btrim(placement_tenant.tenant_code)) =
+               lower(btrim(staged.tenant_code::text))
+          JOIN core.tenant AS source_tenant
+            ON lower(btrim(source_tenant.tenant_code)) =
+               lower(btrim(staged.source_tenant_code::text))
           JOIN core.system AS system_record
             ON lower(btrim(system_record.system_code)) = lower(btrim(staged.system_code::text))
           JOIN core.connection AS connection
-            ON connection.tenant_id = tenant.tenant_id
-           AND connection.system_id = system_record.system_id
+            ON connection.system_id = system_record.system_id
+           AND connection.tenant_id = placement_tenant.tenant_id
            AND lower(btrim(connection.connection_code)) =
                lower(btrim(staged.connection_code::text))
           JOIN reference.object_type AS object_type
@@ -1410,10 +1347,26 @@ loads:
            AND lower(btrim(existing_object.object_name)) =
                lower(btrim(staged.object_name::text))
           WHERE NOT COALESCE(existing_object.is_locked, FALSE)
+            AND CASE lower(btrim(zone.zone_code))
+                    WHEN 'source' THEN
+                      NOT connection.is_global_data_store
+                      AND placement_tenant.tenant_id = source_tenant.tenant_id
+                    WHEN 'bronze' THEN
+                      connection.is_global_data_store
+                      AND connection.connection_id = source_tenant.gds_connection_id
+                    WHEN 'silver' THEN
+                      connection.is_global_data_store
+                      AND connection.connection_id = source_tenant.gds_connection_id
+                    WHEN 'gold' THEN
+                      connection.is_global_data_store
+                      AND connection.connection_id = source_tenant.gds_connection_id
+                    ELSE FALSE
+                END
         ) AS source
         ON target.connection_id = source.connection_id
         AND lower(btrim(target.object_schema)) = lower(source.object_schema)
         AND lower(btrim(target.object_name)) = lower(source.object_name)
+        AND target.source_tenant_id = source.source_tenant_id
         WHEN MATCHED THEN UPDATE SET
           fc_object_schema = source.fc_object_schema,
           fc_object_name = source.fc_object_name,
@@ -1426,11 +1379,12 @@ loads:
           updated_time = CURRENT_TIMESTAMP,
           updated_by = CURRENT_USER
         WHEN NOT MATCHED THEN INSERT (
-          connection_id, object_schema, object_name, fc_object_schema,
+          connection_id, source_tenant_id, object_schema, object_name, fc_object_schema,
           fc_object_name, object_transformation, object_description,
           batch_attribute_name, object_type_id, zone_id, is_active
         ) VALUES (
-          source.connection_id, source.object_schema, source.object_name,
+          source.connection_id, source.source_tenant_id,
+          source.object_schema, source.object_name,
           source.fc_object_schema, source.fc_object_name,
           source.object_transformation, source.object_description,
           source.batch_attribute_name, source.object_type_id,
@@ -2363,9 +2317,9 @@ loads:
         );
 
   - workbook: model.xlsx
-    sheet: ModelScope
+    sheet: ModelInputScope
     schema: model
-    table: model_scope
+    table: model_input_scope
     dependency_order: 410
     columns:
       - model_tenant_code
@@ -2393,7 +2347,7 @@ loads:
       - object_name
     merge_statements:
       - |
-        MERGE INTO model.model_scope AS target
+        MERGE INTO model.model_input_scope AS target
         USING (
           SELECT
             model_record.model_id,
@@ -2428,7 +2382,11 @@ loads:
                lower(btrim(staged.object_schema::text))
            AND lower(btrim(object_record.object_name)) =
                lower(btrim(staged.object_name::text))
+           AND object_record.source_tenant_id = model_tenant.tenant_id
            AND object_record.is_active
+          JOIN reference.zone AS object_zone
+            ON object_zone.zone_id = object_record.zone_id
+           AND lower(btrim(object_zone.zone_code)) IN ('source', 'bronze')
         ) AS source
         ON target.model_id = source.model_id
         AND target.object_id = source.object_id

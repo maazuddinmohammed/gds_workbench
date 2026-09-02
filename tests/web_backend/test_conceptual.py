@@ -58,7 +58,7 @@ class StaticConceptualService:
                     conceptual_object_name="Customer",
                     conceptual_object_type="business_entity",
                     conceptual_object_confidence="high",
-                    conceptual_object_status="needs_review",
+                    conceptual_object_status="active",
                     conceptual_object_is_locked=False,
                     updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 ),
@@ -85,7 +85,7 @@ class StaticConceptualService:
             conceptual_object_grain="One governed party",
             conceptual_object_aliases=("Client",),
             conceptual_object_confidence="high",
-            conceptual_object_status="needs_review",
+            conceptual_object_status="active",
             conceptual_object_is_locked=False,
             created_at=datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
             updated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
@@ -253,7 +253,7 @@ def test_conceptual_object_ledger_normalizes_review_filters() -> None:
         response = client.get(
             "/api/v1/tenants/7/models/18/conceptual/objects",
             params={
-                "status": "NEEDS_REVIEW",
+                "status": "INACTIVE",
                 "locked": "false",
                 "name_prefix": "  Cust  ",
                 "page_size": "25",
@@ -271,7 +271,7 @@ def test_conceptual_object_ledger_normalizes_review_filters() -> None:
                 "conceptual_object_name": "Customer",
                 "conceptual_object_type": "business_entity",
                 "conceptual_object_confidence": "high",
-                "conceptual_object_status": "needs_review",
+                "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "updated_at": "2026-08-24T14:00:00Z",
             }
@@ -279,7 +279,7 @@ def test_conceptual_object_ledger_normalizes_review_filters() -> None:
         "next_cursor": None,
     }
     assert service.object_filters == ConceptualFilters(
-        status="needs_review",
+        status="inactive",
         locked=False,
         name_prefix="cust",
     )
@@ -423,8 +423,8 @@ class ConceptualTransaction:
         assert parameters[:10] == (
             7,
             18,
-            "needs_review",
-            "needs_review",
+            "active",
+            "active",
             False,
             False,
             None,
@@ -442,7 +442,7 @@ class ConceptualTransaction:
                 "conceptual_object_name": "Customer",
                 "conceptual_object_type": "business_entity",
                 "conceptual_object_confidence": "high",
-                "conceptual_object_status": "needs_review",
+                "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             },
@@ -452,7 +452,7 @@ class ConceptualTransaction:
                 "conceptual_object_name": "Customer Account",
                 "conceptual_object_type": "business_entity",
                 "conceptual_object_confidence": "medium",
-                "conceptual_object_status": "needs_review",
+                "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "updated_at": datetime(2026, 8, 24, 14, 1, tzinfo=UTC),
             },
@@ -488,7 +488,7 @@ async def test_database_conceptual_objects_are_authorized_and_cursor_bound() -> 
         entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
     )
     filters = ConceptualFilters(
-        status="needs_review",
+        status="active",
         locked=False,
         name_prefix="cust",
     )
@@ -551,7 +551,7 @@ class ConceptualDetailTransaction:
                 "conceptual_object_grain": "One governed party",
                 "conceptual_object_aliases": ["Client"],
                 "conceptual_object_confidence": "high",
-                "conceptual_object_status": "needs_review",
+                "conceptual_object_status": "active",
                 "conceptual_object_is_locked": False,
                 "created_at": datetime(2026, 8, 24, 13, 0, tzinfo=UTC),
                 "updated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),

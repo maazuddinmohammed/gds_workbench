@@ -34,12 +34,12 @@ describe("Mapping journey", () => {
 
     await user.selectOptions(screen.getByLabelText("Entity type"), "logical_entity");
     await user.type(screen.getByLabelText("Source System code"), " CRM ");
-    await user.selectOptions(screen.getByLabelText("Mapping status"), "needs_review");
+    await user.selectOptions(screen.getByLabelText("Mapping status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Mapping lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Mapping filters" }));
 
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_code=crm&status=needs_review&locked=false&page_size=200",
+      "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_code=crm&status=inactive&locked=false&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
   });
@@ -63,8 +63,7 @@ describe("Mapping journey", () => {
     expect(screen.getByRole("heading", { name: "Transformation document" })).toBeVisible();
     expect(screen.getByText("Join strategy")).toBeVisible();
     expect(screen.getByRole("article", { name: "Joins 1" })).toHaveTextContent("customer_address_raw");
-    expect(screen.getByRole("heading", { name: "Mapping package" })).toBeVisible();
-    expect(screen.getByText("customer_id")).toBeVisible();
+    expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.queryByText(JSON.stringify(mappingObjectDetail.mapping_document))).not.toBeInTheDocument();
 
     await user.click(screen.getByRole("link", { name: "Back to Mapping" }));
@@ -212,7 +211,6 @@ describe("Mapping journey", () => {
       prompt_overrides: {},
       mapping_operation: "build",
       mapping_coverage_mode: "selected_targets",
-      mapping_artifact_type: "sql_file",
       mapping_source_system_id: 2,
       mapping_object_output_template_id: 801,
       mapping_attribute_output_template_id: 802,
@@ -356,6 +354,14 @@ function mappingFetchStub(options: {
         next_cursor: null,
       });
     }
+    if (url.startsWith("/api/v1/tenants/7/models/18/mapping/targets?")) {
+      return jsonResponse({
+        model_id: 18,
+        model_revision: options.modelRevision ?? 18,
+        items: options.empty ? [] : [mappingTarget],
+        next_cursor: null,
+      });
+    }
     if (url.startsWith("/api/v1/tenants/7/models/18/mapping/objects?")) {
       const nextPage = url.includes("cursor=objects-next");
       return jsonResponse({
@@ -373,9 +379,6 @@ function mappingFetchStub(options: {
       return jsonResponse({ model_id: 18, model_revision: 18, items: [mappingAttribute], next_cursor: null });
     }
     if (url === "/api/v1/tenants/7/models/18/mapping/attributes/91") return jsonResponse(mappingAttributeDetail);
-    if (url === "/api/v1/tenants/7/models/18/scope?page_size=200") {
-      return jsonResponse({ model_id: 18, model_revision: 18, items: mappingScope, next_cursor: null });
-    }
     if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=200") {
       return jsonResponse({
         tenant_id: 7,
@@ -449,7 +452,7 @@ const modelLedger = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   latest_workflow: "mapping",
   latest_run_status: "completed",
   updated_at: "2026-08-24T10:00:00Z",
@@ -505,7 +508,6 @@ const mappingObject = {
   source: { entity_type: "logical_entity", entity_id: 41, entity_name: "Customer" },
   source_system: { system_id: 2, system_code: "CRM", system_name: "Customer CRM" },
   dependency_order: 10,
-  artifact_type: "sql_file",
   status: "active",
   is_locked: true,
   updated_at: "2026-08-24T10:00:00Z",
@@ -513,18 +515,6 @@ const mappingObject = {
 
 const mappingObjectDetail = {
   ...mappingObject,
-  artifact_generation_instructions: "Generate idempotent SQL.",
-  mapping_profile: {
-    profile_key: "mapping.standard",
-    profile_version: "1.0.0",
-    profile_schema_digest: "a".repeat(64),
-    package_digest: "b".repeat(64),
-  },
-  mapping_package_document: {
-    source_objects: [{ schema: "bronze_crm", name: "customer_raw" }],
-    business_keys: ["customer_id"],
-  },
-  mapping_document_format: "structured",
   mapping_document: {
     transformation_kind: "derived",
     join_strategy: {
@@ -561,7 +551,7 @@ const mappingAttribute = {
     attribute_name: "customer_name",
   },
   source_system: { system_id: 2, system_code: "CRM", system_name: "Customer CRM" },
-  status: "needs_review",
+  status: "active",
   is_locked: false,
   updated_at: "2026-08-24T10:00:00Z",
 };
@@ -571,12 +561,9 @@ const mappingAttributeDetail = {
   parent_object_mapping: {
     mapping_object_id: 81,
     dependency_order: 10,
-    artifact_type: "sql_file",
-    mapping_profile: mappingObjectDetail.mapping_profile,
     status: "active",
     is_locked: true,
   },
-  mapping_document_format: "structured",
   mapping_document: {
     source_attributes: ["crm_customer.customer_name"],
     transformation_steps: [{ step: 1, instruction: "Normalize whitespace" }],
@@ -590,53 +577,6 @@ const mappingAttributeDetail = {
   },
   created_at: "2026-08-24T09:05:00Z",
 };
-
-const mappingScope = [
-  {
-    model_scope_id: 201,
-    object_id: 701,
-    connection_id: 8,
-    system_id: 4,
-    system_code: "GDS",
-    system_name: "Global Data Store",
-    source_tenant_id: 7,
-    source_tenant_code: "NWA",
-    source_tenant_name: "Northwind Analytics",
-    object_schema: "silver_nwa",
-    object_name: "customer",
-    zone_code: "silver",
-    batch_attribute_name: null,
-    attribute_count: 14,
-    is_bronze_source_eligible: false,
-    is_dimensional_source_eligible: true,
-    is_logical_mapping_target_eligible: true,
-    is_dimensional_mapping_target_eligible: false,
-    created_at: "2026-08-24T09:00:00Z",
-    updated_at: "2026-08-24T10:00:00Z",
-  },
-  {
-    model_scope_id: 202,
-    object_id: 501,
-    connection_id: 6,
-    system_id: 2,
-    system_code: "CRM",
-    system_name: "Customer CRM",
-    source_tenant_id: 9,
-    source_tenant_code: "GRDM",
-    source_tenant_name: "Global Reference Data",
-    object_schema: "bronze_crm",
-    object_name: "customer_raw",
-    zone_code: "bronze",
-    batch_attribute_name: "batch_id",
-    attribute_count: 12,
-    is_bronze_source_eligible: true,
-    is_dimensional_source_eligible: false,
-    is_logical_mapping_target_eligible: false,
-    is_dimensional_mapping_target_eligible: false,
-    created_at: "2026-08-24T09:00:00Z",
-    updated_at: "2026-08-24T10:00:00Z",
-  },
-];
 
 const agentCapabilities = {
   schema_version: "3.0",

@@ -88,25 +88,33 @@ connection closes, so no `DROP`, `TRUNCATE`, or cleanup helper is needed.
 - `foundational.xlsx`: Project, System, notebook paths, Tenant, Connection.
 - `users_security.xlsx`: Principal, Entra identity, Tenant access.
 - `operational.xlsx`: Durable tenant/Core configuration.
-- `model.xlsx`: Model and Model Scope.
+- `model.xlsx`: Model and Model Input Scope.
 - `locks.xlsx`: allowlisted lock columns only.
 
-Workflow/MCP tables, workflow Mapping, Tenant Lock leases/events, Model event
-logs, Modeling Assertion load sheets, and revision transactions are intentionally
-omitted. Core ingestion mappings remain because Copy configuration depends on
-them. `LockControl` can still change the lock flag on an existing Modeling
-Assertion Record.
+Workflow/MCP load sheets, Tenant Lock leases/events, Model event logs, Modeling
+Assertion load sheets, and revision transactions are intentionally omitted.
+Core ingestion mappings remain because Copy configuration depends on them.
+`LockControl` can still change an allowlisted lock flag on an existing record.
 
 `LockControl` supports:
 
 - `core.object.object_id` -> `is_locked`
-- `model.model_scope.model_scope_id` -> `model_scope_is_locked`
+- `model.model_input_scope.model_input_scope_id` -> `model_input_scope_is_locked`
 - `model.modeling_assertion_record.modeling_assertion_record_id` ->
   `modeling_assertion_record_is_locked`
+- `workflow.model_object_binding.model_object_binding_id` ->
+  `model_object_binding_is_locked`
+- `workflow.model_attribute_binding.model_attribute_binding_id` ->
+  `model_attribute_binding_is_locked`
 
 `security.tenant_lock` is not a Boolean lock and cannot be changed here.
-Leave `expected_model_revision` blank for `core.object`; supply it for both
-`model.*` targets. A stale value rolls back the whole workbook.
+
+On the `Object` sheet, `tenant_code` identifies the Tenant that owns the
+physical Connection. `source_tenant_code` identifies the Tenant whose data the
+Object contains. For Bronze, Silver, and Gold, the first is normally the GDS
+Tenant and the second is the business Tenant. Both are required.
+Leave `expected_model_revision` blank for `core.object`; supply it for every
+`model.*` or `workflow.*` target. A stale value rolls back the whole workbook.
 
 ## Legacy samples
 

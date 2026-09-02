@@ -6,19 +6,8 @@ import subprocess
 import sys
 import zipfile
 from pathlib import Path
-from typing import cast
 
 import pytest
-from mcp import Client
-
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
-from gds_etl_workbench.adapters.mcp.server import (
-    MCP_SERVER_VERSION,
-    create_mcp_server,
-    tool_contract_sha256,
-)
-from gds_etl_workbench.configuration import RuntimeSettings
-from gds_etl_workbench.infrastructure.postgres import Database
 
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -89,60 +78,6 @@ def write_builder_fixture(
     return builder
 
 
-class SchemaDatabase:
-    async def open(self) -> None:
-        pass
-
-    async def close(self) -> None:
-        pass
-
-    async def expire_tenant_locks(self) -> int:
-        return 0
-
-
-def runtime_settings() -> RuntimeSettings:
-    return RuntimeSettings.from_environment(
-        {
-            "GDS_ENVIRONMENT": "local",
-            "GDS_DATABASE_DSN": "postgresql://unused@invalid.example.invalid/unused",
-            "GDS_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
-            "GDS_ENTRA_API_CLIENT_ID": "22222222-2222-2222-2222-222222222222",
-            "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
-            "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
-            "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
-                "https://snapshot.blob.core.windows.net"
-            ),
-            "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
-        }
-    )
-
-
-@pytest.mark.asyncio
-async def test_packaged_tool_contract_matches_the_runtime(tmp_path: Path) -> None:
-    output = tmp_path / "contract.zip"
-    result = run_builder("--output", str(output))
-    assert result.returncode == 0, result.stderr
-
-    settings = runtime_settings()
-    server = create_mcp_server(
-        settings,
-        cast(Database, SchemaDatabase()),
-        IdentityProvider(settings.auth_mode),
-    )
-    async with Client(server) as client:
-        tools = (await client.list_tools()).tools
-
-    with zipfile.ZipFile(output) as archive:
-        contract = json.loads(archive.read("gds/tool-contract.json"))
-    assert contract == {
-        "schema_version": "1.0",
-        "mcp_server_version": MCP_SERVER_VERSION,
-        "tool_count": len(tools),
-        "tool_contract_sha256": tool_contract_sha256(tools),
-    }
-
-
 def test_builder_creates_deterministic_complete_archive(tmp_path: Path) -> None:
     outputs = [tmp_path / "one.zip", tmp_path / "two.zip"]
     for output in outputs:
@@ -163,7 +98,7 @@ def test_builder_creates_deterministic_complete_archive(tmp_path: Path) -> None:
         assert "gds/skills/gds/SKILL.md" in names
         assert "gds/skills/gds/scripts/gds-local.js" in names
         assert "gds/skills/gds/scripts/gds-local.ps1" in names
-        assert "gds/tool-contract.json" in names
+        assert "gds/tool-contract.json" not in names
         assert "gds/skills/gds/workbench/index.html" in names
         assert "gds/.codex-plugin/plugin.json" not in names
         assert "gds/.mcp.json" not in names
@@ -188,7 +123,7 @@ def test_checked_in_archive_is_the_current_deterministic_build(tmp_path: Path) -
     assert sorted(DIST_ARCHIVE.parent.glob("*.zip")) == [DIST_ARCHIVE]
     assert DIST_ARCHIVE.read_bytes() == expected.read_bytes()
     with zipfile.ZipFile(DIST_ARCHIVE) as archive:
-        assert "gds/tool-contract.json" in archive.namelist()
+        assert "gds/tool-contract.json" not in archive.namelist()
         assert "gds/docs/USER_GUIDE.md" in archive.namelist()
 
 

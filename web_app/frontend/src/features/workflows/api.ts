@@ -8,7 +8,7 @@ export type ModelWorkflow =
   | "dimensional"
   | "mapping"
   | "code_generation"
-  | "qa";
+  | "validation";
 
 export type WorkflowExecutionMode =
   | "one_shot"
@@ -87,7 +87,6 @@ export interface CreateWorkflowRunCommand {
   modeled_entity_type?: "logical_entity" | "dimensional_entity" | null;
   mapping_operation?: "build" | "extend" | null;
   mapping_coverage_mode?: "selected_targets" | null;
-  mapping_artifact_type?: "sql_file" | "python_file" | "python_notebook" | null;
   mapping_source_system_id?: number | null;
   mapping_object_output_template_id?: number | null;
   mapping_attribute_output_template_id?: number | null;
@@ -316,7 +315,7 @@ export interface WorkflowsApi {
     workflowRunId: number,
     expectedModelRevision: number,
   ) => Promise<WorkflowRunStart>;
-  executeQARun: (
+  executeValidationRun: (
     tenantId: number,
     modelId: number,
     workflowRunId: number,
@@ -515,13 +514,13 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
         body: JSON.stringify({ expected_model_revision: expectedModelRevision }),
       },
     ),
-    executeQARun: (
+    executeValidationRun: (
       tenantId,
       modelId,
       workflowRunId,
       expectedModelRevision,
     ) => request<WorkflowRunStart>(
-      `/api/v1/tenants/${tenantId}/models/${modelId}/qa/runs/${workflowRunId}/execute`,
+      `/api/v1/tenants/${tenantId}/models/${modelId}/validation/runs/${workflowRunId}/execute`,
       {
         method: "POST",
         headers: { "content-type": "application/json" },
@@ -547,7 +546,7 @@ interface WorkflowScopePage<TScope extends WorkflowScopeObject> {
 }
 
 interface WorkflowScopeReader<TScope extends WorkflowScopeObject = WorkflowScopeObject> {
-  listModelScope: (
+  listModelInputScope: (
     tenantId: number,
     modelId: number,
     filters: { zone: "bronze" | "silver" },
@@ -606,7 +605,7 @@ export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
   let modelRevision: number | null = null;
 
   for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelScope(
+    const response = await api.listModelInputScope(
       tenantId,
       modelId,
       { zone: "bronze" },
@@ -614,13 +613,13 @@ export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
       cursor,
     );
     if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Scope revision changed while loading");
+      throw new Error("Model Input Scope revision changed while loading");
     }
     modelRevision = response.model_revision;
     items.push(...response.items);
     if (!response.next_cursor) return { modelRevision, items };
     if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Scope cursor repeated");
+      throw new Error("Model Input Scope cursor repeated");
     }
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;
@@ -639,7 +638,7 @@ export async function loadAllDimensionalScope<TScope extends WorkflowScopeObject
   let modelRevision: number | null = null;
 
   for (let page = 0; page < 250; page += 1) {
-    const response = await api.listModelScope(
+    const response = await api.listModelInputScope(
       tenantId,
       modelId,
       { zone: "silver" },
@@ -647,13 +646,13 @@ export async function loadAllDimensionalScope<TScope extends WorkflowScopeObject
       cursor,
     );
     if (modelRevision !== null && modelRevision !== response.model_revision) {
-      throw new Error("Model Scope revision changed while loading");
+      throw new Error("Model Input Scope revision changed while loading");
     }
     modelRevision = response.model_revision;
     items.push(...response.items.filter((item) => item.is_dimensional_source_eligible));
     if (!response.next_cursor) return { modelRevision, items };
     if (seenCursors.has(response.next_cursor)) {
-      throw new Error("Model Scope cursor repeated");
+      throw new Error("Model Input Scope cursor repeated");
     }
     seenCursors.add(response.next_cursor);
     cursor = response.next_cursor;

@@ -80,7 +80,7 @@ SELECT system.system_id,
   LEFT JOIN core.object AS object
     ON object.connection_id = connection.connection_id
    AND object.is_active
-  LEFT JOIN model.model_scope AS scope
+  LEFT JOIN model.model_input_scope AS scope
     ON scope.object_id = object.object_id
    AND scope.is_active
   LEFT JOIN model.model AS model

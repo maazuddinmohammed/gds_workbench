@@ -73,7 +73,7 @@ def _relationship(
         relationship_kind="reference",
         relationship_confidence="high",
         relationship_basis="Registered metadata and aggregate value evidence.",
-        analysis_result_status="needs_review",
+        analysis_result_status="active",
         analysis_result_is_locked=True,
         gds_connection_id=91,
         from_endpoint=_endpoint(
@@ -184,7 +184,7 @@ def test_query_accepts_maximum_registered_identifier_sizes() -> None:
         relationship_kind="reference",
         relationship_confidence="high",
         relationship_basis="Registered metadata and aggregate value evidence.",
-        analysis_result_status="needs_review",
+        analysis_result_status="active",
         analysis_result_is_locked=True,
         gds_connection_id=91,
         from_endpoint=_endpoint(

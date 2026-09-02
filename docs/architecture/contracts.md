@@ -43,7 +43,7 @@ Tenants require active, unexpired Viewer-or-higher access. Active registered
 workloads must be Super Admin Principals and see all active Tenants. Local dev
 mode sees all active Tenants with effective role `development`.
 
-## `get_metadata_snapshot`
+## `create_metadata_snapshot`
 
 Policy: `tenant_read`
 

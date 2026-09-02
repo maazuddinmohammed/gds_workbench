@@ -18,9 +18,6 @@ from gds_etl_workbench.domain.errors import (
     ModelChangeSetNotFoundError,
     ModelChangeSetNotValidatedError,
 )
-from gds_etl_workbench.domain.mapping_profiles import (
-    resolve_mapping_profile_schema_digest,
-)
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_etl_workbench.tools.change_sets.model import validate_locked_model_change_set
 from gds_etl_workbench.tools.change_sets.model_apply import ModelMaterializer
@@ -42,10 +39,10 @@ _EXPLICIT_APPLY_WORKFLOWS = frozenset(
         "dimensional",
         "mapping",
         "code_generation",
-        "qa",
+        "validation",
     }
 )
-_MODELESS_APPLY_WORKFLOWS = frozenset({"code_generation", "qa"})
+_MODELESS_APPLY_WORKFLOWS = frozenset({"code_generation", "validation"})
 
 
 class ApplyWorkflowDraftRequest(BaseModel):
@@ -131,7 +128,7 @@ class DatabaseWorkflowDraftApplyService:
             ):
                 raise InvalidRequestError(
                     "Only a completed Analysis, Conceptual, Logical, Dimensional, "
-                    "Mapping, Code Generation, or QA authoring run with its expected "
+                    "Mapping, Code Generation, or Validation authoring run with its expected "
                     "execution-mode shape can use this apply path."
                 )
             if run["workflow_run_state"] not in {
@@ -152,29 +149,6 @@ class DatabaseWorkflowDraftApplyService:
                 and not isinstance(attribute_output_template_id, int)
             ):
                 raise DependencyUnavailableError()
-            if model_workflow == "mapping":
-                profile_key = run["mapping_profile_key"]
-                profile_version = run["mapping_profile_version"]
-                profile_schema_digest = run["mapping_profile_schema_digest"]
-                if not all(
-                    isinstance(value, str)
-                    for value in (
-                        profile_key,
-                        profile_version,
-                        profile_schema_digest,
-                    )
-                ):
-                    raise DependencyUnavailableError()
-                try:
-                    resolved_profile_digest = resolve_mapping_profile_schema_digest(
-                        profile_key,
-                        profile_version,
-                    )
-                except ValueError:
-                    raise DependencyUnavailableError() from None
-                if resolved_profile_digest != profile_schema_digest:
-                    raise DependencyUnavailableError()
-
             row = await repository.get_by_workflow_run(
                 workflow_run_id=workflow_run_id,
                 model_id=model_id,

@@ -9,7 +9,6 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, 
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     DependencyUnavailableError,
-    InvalidRequestError,
     TenantLockedError,
     TenantLockRequiredError,
     TenantNotFoundError,
@@ -25,8 +24,6 @@ from gds_workbench_api.features.models.command_contracts import (
     JsonObject,
     ModelCommandResult,
     ModelRevisionConflictError,
-    ModelScopeCommandResult,
-    ReplaceModelScopeRequest,
     UpdateModelRequest,
 )
 from gds_workbench_api.features.models.contracts import ModelNotFoundError
@@ -72,15 +69,6 @@ SELECT archived.model_id,
   FROM application.archive_model(%s, %s, %s, %s, %s) AS archived
 """
 
-_REPLACE_MODEL_SCOPE_SQL = """
-SELECT replaced.changed,
-       replaced.model_id,
-       replaced.model_revision,
-       replaced.active_scope_count,
-       replaced.updated_time AS updated_at
-  FROM application.replace_model_scope(%s, %s, %s, %s, %s, %s) AS replaced
-"""
-
 
 class ModelCommandService(Protocol):
     async def create_model(
@@ -108,15 +96,6 @@ class ModelCommandService(Protocol):
         model_id: int,
         request: ArchiveModelRequest,
     ) -> ModelCommandResult: ...
-
-    async def replace_model_scope(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        request: ReplaceModelScopeRequest,
-    ) -> ModelScopeCommandResult: ...
 
 
 class ModelCommandDatabase(Protocol):
@@ -231,37 +210,6 @@ class DatabaseModelCommandService:
             raise DependencyUnavailableError()
         return ModelCommandResult.model_validate(row, strict=True)
 
-    async def replace_model_scope(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        request: ReplaceModelScopeRequest,
-    ) -> ModelScopeCommandResult:
-        try:
-            async with self._database.write_transaction() as transaction:
-                identity = await self._authorize_owned_model(
-                    transaction,
-                    principal,
-                    tenant_id=tenant_id,
-                    model_id=model_id,
-                )
-                row = await transaction.fetch_one(
-                    _REPLACE_MODEL_SCOPE_SQL,
-                    identity
-                    + (
-                        model_id,
-                        request.expected_model_revision,
-                        request.object_ids,
-                    ),
-                )
-        except Exception as error:
-            _raise_safe_command_error(error)
-        if row is None:
-            raise DependencyUnavailableError()
-        return ModelScopeCommandResult.model_validate(row, strict=True)
-
     async def _authorize_owned_model(
         self,
         transaction: WriteTransaction,
@@ -320,14 +268,6 @@ def _raise_safe_command_error(error: Exception) -> Never:
         raise ModelRevisionConflictError() from error
     if message == "Model is unavailable":
         raise ModelNotFoundError() from error
-    if message in {
-        "Model Scope must contain between 0 and 50000 Objects",
-        "Model Scope Object IDs must be positive",
-        "Model Scope Object IDs must be unique",
-        "Model Scope contains an unavailable Object",
-    }:
-        raise InvalidRequestError("The requested Model Scope is invalid.") from error
-
     denial_code = _controlled_denial_code(message)
     if denial_code == "tenant_not_found":
         raise TenantNotFoundError() from error
@@ -359,7 +299,6 @@ def _controlled_denial_code(message: str) -> str | None:
         "Model creation denied: ",
         "Model update denied: ",
         "Model archive denied: ",
-        "Model Scope replacement denied: ",
     )
     for prefix in prefixes:
         if message.startswith(prefix):

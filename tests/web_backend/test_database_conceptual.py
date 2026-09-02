@@ -173,7 +173,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                     conceptual_object_status
                 ) VALUES (%s, 'Customer', 'A governed party.',
                           'business_entity', 'One governed party',
-                          ARRAY['Client'], 'needs_review')
+                          ARRAY['Client'], 'active')
                 RETURNING conceptual_object_id
                 """,
                 (model_id,),
@@ -215,7 +215,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
                           'association', 'A Customer may place Orders.',
                           'one_to_many', 'Governed business rule.',
                           'One Customer key appears on many Orders.',
-                          'needs_review')
+                          'active')
                 RETURNING conceptual_relationship_id
                 """,
                 (model_id, customer_id, order_id),
@@ -277,7 +277,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
             tenant_id=tenant_id,
             model_id=model_id,
             filters=ConceptualFilters(
-                status="needs_review",
+                status="active",
                 name_prefix="cust",
             ),
             page_size=50,
@@ -294,7 +294,7 @@ async def test_conceptual_review_reads_round_trip_through_the_web_role(
             tenant_id=tenant_id,
             model_id=model_id,
             filters=ConceptualFilters(
-                status="needs_review",
+                status="active",
                 name_exact="customer places order",
             ),
             page_size=50,

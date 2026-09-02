@@ -4,7 +4,7 @@ import type {
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelScopeApi } from "../model_scope/api";
+import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export interface LogicalFilters {
@@ -301,7 +301,7 @@ export type LogicalApi = LogicalTransport
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelScopeApi, "listModelScope">;
+  & Pick<ModelInputScopeApi, "listModelInputScope">;
 
 export function createLogicalApi(request: HttpRequest): LogicalTransport {
   return {

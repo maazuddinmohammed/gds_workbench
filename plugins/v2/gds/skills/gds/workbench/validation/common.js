@@ -197,6 +197,17 @@
         });
       }
       const seen = new Set();
+      const baseline = new Map();
+      for (const record of value.baseline || []) {
+        try {
+          baseline.set(
+            core.stableStringify(core.key(area, value.definition, record)),
+            record,
+          );
+        } catch (_error) {
+          // Canonical-key issues are reported on pending records below.
+        }
+      }
       value.pending.forEach((record, index) => {
         for (const message of validateSchema(record, value.schema)) {
           issues.push({ code: "schema", dataset: datasetName, record: index + 1, message });
@@ -213,6 +224,19 @@
             });
           }
           seen.add(key);
+          const original = baseline.get(key);
+          const locked = original && Object.entries(original).some(
+            ([field, fieldValue]) =>
+              fieldValue === true && (field === "is_locked" || field.endsWith("_is_locked")),
+          );
+          if (locked && core.stableStringify(original) !== core.stableStringify(record)) {
+            issues.push({
+              code: "locked_record",
+              dataset: datasetName,
+              record: index + 1,
+              message: "Locked records cannot be changed locally.",
+            });
+          }
         } catch (error) {
           issues.push({
             code: "canonical_key",

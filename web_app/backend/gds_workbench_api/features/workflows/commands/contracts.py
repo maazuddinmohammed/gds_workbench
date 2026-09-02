@@ -34,14 +34,6 @@ class CreateWorkflowRunRequest(BaseModel):
     requested_batch_id: str | None = Field(default=None, min_length=1, max_length=500)
     mapping_operation: Literal["build", "extend"] | None = None
     mapping_coverage_mode: Literal["selected_targets"] | None = None
-    mapping_artifact_type: (
-        Literal[
-            "sql_file",
-            "python_file",
-            "python_notebook",
-        ]
-        | None
-    ) = None
     mapping_source_system_id: int | None = Field(default=None, gt=0)
     mapping_object_output_template_id: int | None = Field(default=None, gt=0)
     mapping_attribute_output_template_id: int | None = Field(default=None, gt=0)
@@ -99,16 +91,16 @@ class CreateWorkflowRunRequest(BaseModel):
         normalized_system_codes = [value.casefold() for value in self.selected_system_codes]
         if len(normalized_system_codes) != len(set(normalized_system_codes)):
             raise ValueError("Selected System Codes must be unique")
-        if self.model_workflow == "qa":
+        if self.model_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
-                raise ValueError("QA requires only an explicit System selection")
+                raise ValueError("Validation requires only an explicit System selection")
             if (
                 self.code_generation_coverage_mode is not None
                 or self.sql_generation_guide_version_id is not None
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
         elif self.selected_system_codes:
-            raise ValueError("System selection is available only for QA")
+            raise ValueError("System selection is available only for Validation")
         elif self.model_workflow == "code_generation":
             if (
                 (
@@ -131,7 +123,7 @@ class CreateWorkflowRunRequest(BaseModel):
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
 
-        agentic = self.model_workflow in {"code_generation", "qa"} or (
+        agentic = self.model_workflow in {"code_generation", "validation"} or (
             self.workflow_execution_mode is not None
         )
         requires_mode = self.model_workflow in {
@@ -142,7 +134,7 @@ class CreateWorkflowRunRequest(BaseModel):
         }
         if requires_mode and self.workflow_execution_mode is None:
             raise ValueError("This workflow requires an explicit execution mode")
-        if self.model_workflow in {"profiling", "code_generation", "qa"} and (
+        if self.model_workflow in {"profiling", "code_generation", "validation"} and (
             self.workflow_execution_mode is not None
         ):
             raise ValueError("This workflow does not accept an execution mode")
@@ -157,7 +149,6 @@ class CreateWorkflowRunRequest(BaseModel):
         required_mapping_inputs = (
             self.mapping_operation,
             self.mapping_coverage_mode,
-            self.mapping_artifact_type,
             self.mapping_source_system_id,
         )
         mapping_inputs = required_mapping_inputs + (

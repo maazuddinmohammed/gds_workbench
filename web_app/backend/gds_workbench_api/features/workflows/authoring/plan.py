@@ -22,7 +22,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",
@@ -146,7 +146,7 @@ SELECT selection.system_code,
    AND target_model.is_active
  WHERE selection.model_id = %s
    AND selection.workflow_run_id = %s
-   AND run.model_workflow = 'qa'
+   AND run.model_workflow = 'validation'
    AND run.workflow_run_state = 'running'
  ORDER BY selection.selection_order,
           selection.workflow_run_system_selection_id
@@ -230,11 +230,11 @@ class AgentRunPlan(BaseModel):
             normalized_system_codes
         ) != len(set(normalized_system_codes)):
             raise ValueError("Selected Systems must be nonblank and unique")
-        if self.model_workflow == "qa":
+        if self.model_workflow == "validation":
             if self.selected_object_ids or not self.selected_system_codes:
-                raise ValueError("QA requires only an explicit System selection")
+                raise ValueError("Validation requires only an explicit System selection")
         elif self.selected_system_codes or not self.selected_object_ids:
-            raise ValueError("Only QA may use a System selection")
+            raise ValueError("Only Validation may use a System selection")
         stage_ids = [stage.workflow_stage_id for stage in self.stages]
         stage_orders = [stage.stage_order for stage in self.stages]
         if len(stage_ids) != len(set(stage_ids)) or len(stage_orders) != len(set(stage_orders)):
@@ -258,7 +258,7 @@ class PostgresAgentRunPlanRepository:
         selection_rows = await transaction.fetch_all(_RUN_SELECTION_SQL, parameters)
         system_selection_rows = (
             await transaction.fetch_all(_RUN_SYSTEM_SELECTION_SQL, parameters)
-            if rows and rows[0].get("model_workflow") == "qa"
+            if rows and rows[0].get("model_workflow") == "validation"
             else []
         )
         try:
@@ -284,9 +284,9 @@ def _assemble_plan(
 
     first = rows[0]
     model_workflow = _required_str(first, "model_workflow")
-    if (model_workflow == "qa") == bool(selection_rows):
+    if (model_workflow == "validation") == bool(selection_rows):
         raise AgentRunPlanUnavailableError()
-    if model_workflow != "qa" and system_selection_rows:
+    if model_workflow != "validation" and system_selection_rows:
         raise AgentRunPlanUnavailableError()
     expected_stage_count = _required_int(first, "expected_stage_count")
     selected_scope_count = _required_int(first, "selected_scope_count")
@@ -298,7 +298,7 @@ def _assemble_plan(
         if _required_int(row, "selection_order") != expected_order:
             raise AgentRunPlanUnavailableError()
         selected_object_ids.append(_required_int(row, "object_id"))
-    if model_workflow != "qa" and (
+    if model_workflow != "validation" and (
         len(selected_object_ids) != selected_scope_count
         or len(selected_object_ids) != len(set(selected_object_ids))
     ):
@@ -309,7 +309,7 @@ def _assemble_plan(
             raise AgentRunPlanUnavailableError()
         selected_system_codes.append(_required_str(row, "system_code"))
     normalized_system_codes = [value.strip().casefold() for value in selected_system_codes]
-    if model_workflow == "qa" and (
+    if model_workflow == "validation" and (
         len(selected_system_codes) != selected_scope_count
         or not selected_system_codes
         or len(normalized_system_codes) != len(set(normalized_system_codes))

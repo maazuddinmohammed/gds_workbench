@@ -109,11 +109,6 @@ visible_connection_ids AS (
       JOIN core.object AS object
         ON object.object_id = visible_objects.object_id
     UNION
-    SELECT scope.gds_connection_id
-      FROM requested_tenant
-      JOIN core.tenant_metadata_discovery_scope AS scope
-        ON scope.tenant_id = requested_tenant.tenant_id
-    UNION
     SELECT requested_tenant.gds_connection_id
       FROM requested_tenant
      WHERE requested_tenant.gds_connection_id IS NOT NULL
@@ -236,36 +231,12 @@ SELECT tenant.tenant_code,
  WHERE TRUE
 """
 
-_DISCOVERY_SCOPE_ROWS_SQL: LiteralString = f"""
-{_FOUNDATIONAL_CLOSURE_CTE}
-SELECT scope_tenant.tenant_code AS scope_tenant_code,
-       connection_tenant.tenant_code AS connection_tenant_code,
-       system.system_code AS connection_system_code,
-       connection.connection_code,
-       zone.zone_code,
-       scope.object_schema,
-       scope.is_active
-  FROM requested_tenant
-  JOIN core.tenant_metadata_discovery_scope AS scope
-    ON scope.tenant_id = requested_tenant.tenant_id
-  JOIN core.tenant AS scope_tenant
-    ON scope_tenant.tenant_id = scope.tenant_id
-  JOIN core.connection AS connection
-    ON connection.connection_id = scope.gds_connection_id
-  JOIN core.tenant AS connection_tenant
-    ON connection_tenant.tenant_id = connection.tenant_id
-  JOIN core.system AS system
-    ON system.system_id = connection.system_id
-  JOIN reference.zone AS zone
-    ON zone.zone_id = scope.zone_id
- WHERE TRUE
-"""
-
 _OBJECT_ROWS_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
-SELECT tenant.tenant_code,
+SELECT placement_tenant.tenant_code,
        system.system_code,
        connection.connection_code,
+       source_tenant.tenant_code AS source_tenant_code,
        object.object_schema,
        object.object_name,
        object.fc_object_schema,
@@ -282,8 +253,10 @@ SELECT tenant.tenant_code,
     ON object.object_id = visible_objects.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = visible_objects.object_tenant_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+  JOIN core.tenant AS source_tenant
+    ON source_tenant.tenant_id = object.source_tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
   JOIN reference.object_type AS object_type
@@ -295,7 +268,7 @@ SELECT tenant.tenant_code,
 
 _ATTRIBUTE_ROWS_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
-SELECT tenant.tenant_code,
+SELECT placement_tenant.tenant_code,
        system.system_code,
        connection.connection_code,
        object.object_schema,
@@ -321,8 +294,8 @@ SELECT tenant.tenant_code,
     ON visible_objects.object_id = object.object_id
   JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = visible_objects.object_tenant_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
   JOIN reference.zone AS zone
@@ -353,7 +326,7 @@ SELECT source_tenant.tenant_code AS source_tenant_code,
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_visible.object_tenant_id
+    ON source_tenant.tenant_id = source_connection.tenant_id
   JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   JOIN core.object AS target_object
@@ -361,7 +334,7 @@ SELECT source_tenant.tenant_code AS source_tenant_code,
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_visible.object_tenant_id
+    ON target_tenant.tenant_id = target_connection.tenant_id
   JOIN core.system AS target_system
     ON target_system.system_id = target_connection.system_id
  WHERE TRUE
@@ -392,7 +365,7 @@ SELECT source_tenant.tenant_code AS source_tenant_code,
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_visible.object_tenant_id
+    ON source_tenant.tenant_id = source_connection.tenant_id
   JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   JOIN core.attribute AS source_attribute
@@ -403,7 +376,7 @@ SELECT source_tenant.tenant_code AS source_tenant_code,
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_visible.object_tenant_id
+    ON target_tenant.tenant_id = target_connection.tenant_id
   JOIN core.system AS target_system
     ON target_system.system_id = target_connection.system_id
   JOIN core.attribute AS target_attribute
@@ -512,7 +485,7 @@ SELECT tenant.tenant_code,
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_visible.object_tenant_id
+    ON source_tenant.tenant_id = source_connection.tenant_id
   JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   JOIN core.object AS target_object
@@ -520,7 +493,7 @@ SELECT tenant.tenant_code,
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = target_visible.object_tenant_id
+    ON target_tenant.tenant_id = target_connection.tenant_id
   JOIN core.system AS target_system
     ON target_system.system_id = target_connection.system_id
   LEFT JOIN reference.chunk_type AS chunk_type
@@ -589,7 +562,7 @@ SELECT tenant.tenant_code,
   JOIN core.connection AS object_connection
     ON object_connection.connection_id = object.connection_id
   JOIN core.tenant AS object_tenant
-    ON object_tenant.tenant_id = visible_objects.object_tenant_id
+    ON object_tenant.tenant_id = object_connection.tenant_id
   JOIN core.system AS object_system
     ON object_system.system_id = object_connection.system_id
   JOIN reference.process_type AS process_type
@@ -707,18 +680,19 @@ SELECT attribute.attribute_id,
 """
 
 _OBJECT_FILTER_EXPRESSIONS: dict[str, LiteralString] = {
-    "tenant_code": "lower(btrim(tenant.tenant_code))",
+    "tenant_code": "lower(btrim(placement_tenant.tenant_code))",
     "system_code": "lower(btrim(system.system_code))",
     "connection_code": "lower(btrim(connection.connection_code))",
     "object_schema": "lower(btrim(object.object_schema))",
     "object_name": "lower(btrim(object.object_name))",
     "object_type_code": "lower(btrim(object_type.object_type_code))",
     "zone_code": "lower(btrim(zone.zone_code))",
+    "source_tenant_code": "lower(btrim(source_tenant.tenant_code))",
     "is_locked": "object.is_locked",
     "is_active": "object.is_active",
 }
 _ATTRIBUTE_FILTER_EXPRESSIONS: dict[str, LiteralString] = {
-    "tenant_code": "lower(btrim(tenant.tenant_code))",
+    "tenant_code": "lower(btrim(placement_tenant.tenant_code))",
     "system_code": "lower(btrim(system.system_code))",
     "connection_code": "lower(btrim(connection.connection_code))",
     "object_schema": "lower(btrim(object.object_schema))",
@@ -816,18 +790,6 @@ _DATASET_QUERIES: Mapping[MetadataDataset, _DatasetQuery] = MappingProxyType(
                 "connection_code": "lower(btrim(connection.connection_code))",
             },
             "connection.connection_id",
-        ),
-        "tenant_metadata_discovery_scope": _DatasetQuery(
-            _DISCOVERY_SCOPE_ROWS_SQL,
-            {
-                "scope_tenant_code": "lower(btrim(scope_tenant.tenant_code))",
-                "connection_tenant_code": ("lower(btrim(connection_tenant.tenant_code))"),
-                "connection_system_code": "lower(btrim(system.system_code))",
-                "connection_code": "lower(btrim(connection.connection_code))",
-                "zone_code": "lower(btrim(zone.zone_code))",
-                "object_schema": "lower(btrim(scope.object_schema))",
-            },
-            "scope.tenant_metadata_discovery_scope_id",
         ),
         "system_type": _DatasetQuery(
             _SYSTEM_TYPE_ROWS_SQL,
@@ -973,7 +935,7 @@ if tuple(_DATASET_QUERIES) != METADATA_DATASETS:
 
 
 class PostgresMetadataRepository:
-    """Read only from the closed 29-dataset Metadata query registry."""
+    """Read only from the closed 28-dataset Metadata query registry."""
 
     async def list_rows(
         self,

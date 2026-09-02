@@ -30,7 +30,7 @@ def run_helper(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
-def test_helper_exposes_bounded_command_and_server_contracts() -> None:
+def test_helper_exposes_a_bounded_local_command_contract() -> None:
     described = run_helper("command-contract", "--command", "describe")
     assert described.returncode == 0, described.stderr
     command = json.loads(described.stdout)
@@ -42,28 +42,16 @@ def test_helper_exposes_bounded_command_and_server_contracts() -> None:
         "mutates": False,
     }
 
-    expected_path = (
-        REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "tool-contract.json"
-    )
-    expected = json.loads(expected_path.read_text())
-    compatible = run_helper(
+    all_commands = run_helper("command-contract")
+    assert all_commands.returncode == 0, all_commands.stderr
+    commands = json.loads(all_commands.stdout)["commands"]
+    for removed in (
         "contract-check",
-        "--actual",
-        json.dumps(expected, separators=(",", ":")),
-    )
-    assert compatible.returncode == 0, compatible.stderr
-    assert json.loads(compatible.stdout)["compatible"] is True
-
-    incompatible_document = {**expected, "tool_count": expected["tool_count"] + 1}
-    incompatible = run_helper(
-        "contract-check",
-        "--actual",
-        json.dumps(incompatible_document, separators=(",", ":")),
-    )
-    assert incompatible.returncode == 0, incompatible.stderr
-    output = json.loads(incompatible.stdout)
-    assert output["compatible"] is False
-    assert output["mismatches"] == ["tool_count"]
+        "mapping-proof",
+        "generator-proof",
+        "approve-reviewed",
+    ):
+        assert removed not in commands
 
 
 def write_snapshot_manifest(
@@ -607,102 +595,6 @@ def test_model_details_is_change_set_eligible_for_local_edits(tmp_path: Path) ->
     assert json.loads(
         (session / "model-change-set" / "model_details.json").read_text()
     ) == [{"model_purpose": "Updated purpose"}]
-
-
-def test_approve_reviewed_promotes_only_pending_model_status_fields(
-    tmp_path: Path,
-) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
-    session = Path(json.loads(initialized.stdout)["path"])
-    write_model_snapshot(session)
-    added = run_helper(
-        "task-add",
-        "--session",
-        str(session),
-        "--area",
-        "model",
-        "--title",
-        "Approve reviewed model records",
-        "--plan",
-        '["Author","Review","Approve","Validate"]',
-    )
-    assert added.returncode == 0, added.stderr
-    record = {
-        "logical_entity_name": "Customer",
-        "logical_entity_status": "needs_review",
-        "sources": [{"status": "needs_review", "note": "needs_review"}],
-        "payload": {"status": "needs_review", "custom_status": "needs_review"},
-        "is_active": False,
-    }
-    written = run_helper(
-        "upsert",
-        "--session",
-        str(session),
-        "--area",
-        "model",
-        "--dataset",
-        "logical_entity",
-        "--record",
-        json.dumps(record, separators=(",", ":")),
-        "--expected-digest",
-        "empty",
-    )
-    assert written.returncode == 0, written.stderr
-    original_digest = json.loads(written.stdout)["digest"]
-
-    missing_confirmation = run_helper(
-        "approve-reviewed",
-        "--session",
-        str(session),
-        "--area",
-        "model",
-        "--expected-digest",
-        original_digest,
-    )
-    assert missing_confirmation.returncode != 0
-    assert "explicit user confirmation" in missing_confirmation.stderr
-
-    approved = run_helper(
-        "approve-reviewed",
-        "--session",
-        str(session),
-        "--area",
-        "model",
-        "--reviewed",
-        "true",
-        "--expected-digest",
-        original_digest,
-    )
-    assert approved.returncode == 0, approved.stderr
-    output = json.loads(approved.stdout)
-    assert output["promoted"] == 2
-    assert output["datasets"] == [["logical_entity", 2]]
-    assert output["fields"] == [
-        ["logical_entity_status", 1],
-        ["status", 1],
-    ]
-    assert output["digest"] != original_digest
-    assert output["task_state"] == "review"
-    assert output["next_action"] == "validate_then_accept_promoted_digest"
-    assert output["human_review_required"] is False
-
-    pending = json.loads(
-        (session / "model-change-set" / "logical_entity.json").read_text()
-    )
-    assert pending[0]["logical_entity_status"] == "active"
-    assert pending[0]["sources"][0] == {
-        "status": "active",
-        "note": "needs_review",
-    }
-    assert pending[0]["payload"] == {
-        "status": "needs_review",
-        "custom_status": "needs_review",
-    }
-    assert pending[0]["is_active"] is False
-    state = json.loads((session / "session.json").read_text())
-    assert state["tasks"][0][3] == "review"
 
 
 def test_status_resumes_the_next_queued_automatic_journey_task(tmp_path: Path) -> None:
@@ -1935,7 +1827,7 @@ def test_upsert_batch_rejects_duplicate_keys_before_writing(tmp_path: Path) -> N
     assert list((session / "metadata-change-set").iterdir()) == []
 
 
-def test_helper_validation_uses_model_graph_and_record_policies(tmp_path: Path) -> None:
+def test_helper_model_validation_is_schema_driven(tmp_path: Path) -> None:
     initialized = run_helper(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
     )
@@ -1973,8 +1865,8 @@ def test_helper_validation_uses_model_graph_and_record_policies(tmp_path: Path) 
 
     assert result.returncode == 0, result.stderr
     output = json.loads(result.stdout)
-    assert output["valid"] is False
-    assert "record_policy_invalid" in json.dumps(output["issues"])
+    assert output["valid"] is True
+    assert output["issues"] == []
 
 
 def test_upsert_rejects_incomplete_record_and_digest_conflict(tmp_path: Path) -> None:

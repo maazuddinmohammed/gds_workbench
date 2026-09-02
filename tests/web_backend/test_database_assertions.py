@@ -213,7 +213,7 @@ async def test_assertion_review_reads_round_trip_through_the_web_role(
                     modeling_assertion_record_is_locked
                 ) VALUES (%s, %s, %s, 'grain_rule', %s, %s, %s,
                           ARRAY['conceptual', 'logical'], 'high',
-                          'needs_review', TRUE)
+                          'active', TRUE)
                 RETURNING modeling_assertion_record_id
                 """,
                 (
@@ -266,7 +266,7 @@ async def test_assertion_review_reads_round_trip_through_the_web_role(
             filters=AssertionRecordFilters(
                 document_id=document_id,
                 source_system_id=system_id,
-                status="needs_review",
+                status="active",
                 locked=True,
                 applicable_layer="conceptual",
                 key_prefix="customer.",

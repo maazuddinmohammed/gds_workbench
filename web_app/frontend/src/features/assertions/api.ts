@@ -39,7 +39,6 @@ export interface AssertionDocument {
   is_active: boolean;
   record_count: number;
   active_record_count: number;
-  needs_review_record_count: number;
   locked_record_count: number;
   updated_at: string;
 }

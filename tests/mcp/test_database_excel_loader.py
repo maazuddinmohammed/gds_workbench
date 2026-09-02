@@ -68,12 +68,12 @@ def _configured_definitions() -> tuple[loader.LoadDefinition, ...]:
         definitions.append(definition)
 
     definitions.sort(key=lambda value: value.dependency_order)
-    assert len(definitions) == 41
-    assert len({definition.selection for definition in definitions}) == 41
+    assert len(definitions) == 40
+    assert len({definition.selection for definition in definitions}) == 40
     assert {definition.selection for definition in definitions} == set(
         loader.ALLOWED_LOAD_TARGETS
     )
-    assert sum(len(definition.merge_statements) for definition in definitions) == 41
+    assert sum(len(definition.merge_statements) for definition in definitions) == 40
     assert sum(len(definition.deferred_statements) for definition in definitions) == 2
     return tuple(definitions)
 
@@ -522,9 +522,9 @@ def test_lock_control_uses_database_role_owned_lock_and_revision_cas(
                         ),
                         (
                             "model",
-                            "model_scope",
-                            "model_scope_id",
-                            seeded["model_scope_id"],
+                            "model_input_scope",
+                            "model_input_scope_id",
+                            seeded["model_input_scope_id"],
                             True,
                             1,
                         ),
@@ -534,16 +534,16 @@ def test_lock_control_uses_database_role_owned_lock_and_revision_cas(
         )
 
         changed = connection.execute(
-            "SELECT object.is_locked, scope.model_scope_is_locked, model.model_revision, "
+            "SELECT object.is_locked, scope.model_input_scope_is_locked, model.model_revision, "
             "revision.change_kind, revision.changed_by, object.updated_by AS object_updated_by, "
             "scope.updated_by AS scope_updated_by "
             "FROM core.object AS object "
-            "JOIN model.model_scope AS scope ON scope.object_id = object.object_id "
+            "JOIN model.model_input_scope AS scope ON scope.object_id = object.object_id "
             "JOIN model.model AS model ON model.model_id = scope.model_id "
             "JOIN model.model_revision_transaction AS revision "
             "ON revision.model_id = model.model_id "
-            "WHERE object.object_id = %s AND scope.model_scope_id = %s",
-            (seeded["object_id"], seeded["model_scope_id"]),
+            "WHERE object.object_id = %s AND scope.model_input_scope_id = %s",
+            (seeded["object_id"], seeded["model_input_scope_id"]),
         ).fetchone()
         actor_label = f"principal:{seeded['principal_id']}"
         assert changed == (
@@ -622,9 +622,11 @@ def _seed_lock_target(
     object_id = _returned_int(
         connection.execute(
             "INSERT INTO core.object "
-            "(connection_id, object_schema, object_name, object_type_id, zone_id) "
-            "VALUES (%s, 'loader_test', 'loader_test', %s, %s) RETURNING object_id",
-            (connection_id, object_type_id, zone_id),
+            "(connection_id, source_tenant_id, object_schema, object_name, "
+            "object_type_id, zone_id) "
+            "VALUES (%s, %s, 'loader_test', 'loader_test', %s, %s) "
+            "RETURNING object_id",
+            (connection_id, tenant_id, object_type_id, zone_id),
         ).fetchone()
     )
     model_id = _returned_int(
@@ -634,10 +636,10 @@ def _seed_lock_target(
             (tenant_id,),
         ).fetchone()
     )
-    model_scope_id = _returned_int(
+    model_input_scope_id = _returned_int(
         connection.execute(
-            "INSERT INTO model.model_scope (model_id, object_id) "
-            "VALUES (%s, %s) RETURNING model_scope_id",
+            "INSERT INTO model.model_input_scope (model_id, object_id) "
+            "VALUES (%s, %s) RETURNING model_input_scope_id",
             (model_id, object_id),
         ).fetchone()
     )
@@ -674,6 +676,6 @@ def _seed_lock_target(
     assert acquired == (True,)
     return {
         "object_id": object_id,
-        "model_scope_id": model_scope_id,
+        "model_input_scope_id": model_input_scope_id,
         "principal_id": principal_id,
     }

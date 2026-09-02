@@ -46,12 +46,26 @@ LOCK_COLUMNS = (
 )
 LOCK_TARGETS = {
     ("core", "object", "object_id"): "is_locked",
-    ("model", "model_scope", "model_scope_id"): "model_scope_is_locked",
+    (
+        "model",
+        "model_input_scope",
+        "model_input_scope_id",
+    ): "model_input_scope_is_locked",
     (
         "model",
         "modeling_assertion_record",
         "modeling_assertion_record_id",
     ): "modeling_assertion_record_is_locked",
+    (
+        "workflow",
+        "model_object_binding",
+        "model_object_binding_id",
+    ): "model_object_binding_is_locked",
+    (
+        "workflow",
+        "model_attribute_binding",
+        "model_attribute_binding_id",
+    ): "model_attribute_binding_is_locked",
 }
 BOOTSTRAP_ACTIVITY_TABLES = (
     ("security", "tenant_lock"),
@@ -77,9 +91,15 @@ BOOTSTRAP_ACTIVITY_TABLES = (
     ("workflow", "dimensional_entity_source_mapping"),
     ("workflow", "dimensional_attribute_source_mapping"),
     ("workflow", "dimensional_relationship"),
+    ("workflow", "model_object_binding"),
+    ("workflow", "model_attribute_binding"),
     ("workflow", "mapping_source_system_dependency"),
     ("workflow", "mapping_object"),
     ("workflow", "mapping_attribute"),
+    ("workflow", "generated_code"),
+    ("workflow", "generated_code_source_system"),
+    ("workflow", "validation_group"),
+    ("workflow", "validation_check"),
     ("application", "workflow_run"),
     ("mcp", "model_change_set"),
     ("mcp", "model_change_set_event"),
@@ -116,7 +136,6 @@ MANUAL_LOAD_SELECTIONS: list[tuple[str, str]] = [
     # ("users_security.xlsx", "Principal"),
     # ("users_security.xlsx", "EntraPrincipalIdentity"),
     # ("users_security.xlsx", "TenantPrincipalAccess"),
-    # ("operational.xlsx", "TenantMetadataDiscoveryScope"),
     # ("operational.xlsx", "ConnectionLocation"),
     # ("operational.xlsx", "ConnectionValue"),
     # ("operational.xlsx", "Object"),
@@ -130,7 +149,7 @@ MANUAL_LOAD_SELECTIONS: list[tuple[str, str]] = [
     # ("operational.xlsx", "ProcessGroup"),
     # ("operational.xlsx", "Process"),
     # ("model.xlsx", "Model"),
-    # ("model.xlsx", "ModelScope"),
+    # ("model.xlsx", "ModelInputScope"),
     # ("locks.xlsx", "LockControl"),
 ]
 
@@ -184,10 +203,6 @@ ALLOWED_LOAD_TARGETS = {
     ),
     ("foundational.xlsx", "Tenant"): ("core", "tenant"),
     ("foundational.xlsx", "Connection"): ("core", "connection"),
-    ("operational.xlsx", "TenantMetadataDiscoveryScope"): (
-        "core",
-        "tenant_metadata_discovery_scope",
-    ),
     ("operational.xlsx", "ConnectionLocation"): (
         "core",
         "connection_location",
@@ -213,7 +228,7 @@ ALLOWED_LOAD_TARGETS = {
     ("operational.xlsx", "ProcessGroup"): ("core", "process_group"),
     ("operational.xlsx", "Process"): ("core", "process"),
     ("model.xlsx", "Model"): ("model", "model"),
-    ("model.xlsx", "ModelScope"): ("model", "model_scope"),
+    ("model.xlsx", "ModelInputScope"): ("model", "model_input_scope"),
 }
 
 
@@ -569,13 +584,15 @@ def _read_lock_rows(
         is_locked = _parse_lock_boolean(raw[4])
         expected_revision_text = (raw[5] or "").strip()
         expected_revision: int | None = None
-        if schema == "model":
+        if schema in {"model", "workflow"}:
             try:
                 expected_revision = int(expected_revision_text)
             except ValueError as exc:
-                raise LoaderError("LockControl model rows require expected_model_revision") from exc
+                raise LoaderError(
+                    "LockControl Modeling rows require expected_model_revision"
+                ) from exc
             if expected_revision < 1:
-                raise LoaderError("LockControl model rows require expected_model_revision")
+                raise LoaderError("LockControl Modeling rows require expected_model_revision")
         elif expected_revision_text:
             raise LoaderError("LockControl Object rows must leave expected_model_revision blank")
         row_key = (*target, id_value)
@@ -784,6 +801,24 @@ def _execute_lock_load(cursor: Any, load: PreparedLockLoad) -> None:
                 "ON connection.connection_id = target.connection_id "
                 "WHERE source.schema_name = %s AND source.table_name = %s "
                 "AND source.id_column_name = %s FOR UPDATE OF target",
+                (schema, table, id_column),
+            )
+        elif (schema, table) == ("workflow", "model_attribute_binding"):
+            cursor.execute(
+                f'SELECT target."{id_column}", model_record.tenant_id, '
+                f'target."{lock_column}" IS DISTINCT FROM source.is_locked::BOOLEAN AS is_changed, '
+                "object_binding.model_id, model_record.model_revision, "
+                "source.expected_model_revision::BIGINT "
+                'FROM pg_temp."staging_lock_control" AS source '
+                f'JOIN "{schema}"."{table}" AS target '
+                f'ON target."{id_column}" = source.id_value::BIGINT '
+                'JOIN "workflow"."model_object_binding" AS object_binding '
+                "ON object_binding.model_object_binding_id = "
+                "target.model_object_binding_id "
+                'JOIN "model"."model" AS model_record '
+                "ON model_record.model_id = object_binding.model_id "
+                "WHERE source.schema_name = %s AND source.table_name = %s "
+                "AND source.id_column_name = %s FOR UPDATE OF target, model_record",
                 (schema, table, id_column),
             )
         else:

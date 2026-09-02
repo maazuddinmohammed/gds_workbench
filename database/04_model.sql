@@ -1,4 +1,4 @@
--- GDS ETL Workbench Release 1: Model, Scope, policy, Assertions, and revision state.
+-- GDS ETL Workbench Release 1: Model, Input Scope, policy, Assertions, and revision state.
 
 CREATE SCHEMA model;
 
@@ -85,22 +85,21 @@ CREATE TABLE model.model (
     )
 );
 
-CREATE TABLE model.model_scope (
-    model_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+CREATE TABLE model.model_input_scope (
+    model_input_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
     model_id BIGINT NOT NULL,
     object_id BIGINT NOT NULL,
-    model_scope_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
+    model_input_scope_is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_model_scope_model FOREIGN KEY (model_id)
+    CONSTRAINT fk_model_input_scope_model FOREIGN KEY (model_id)
         REFERENCES model.model (model_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_model_scope_object FOREIGN KEY (object_id)
+    CONSTRAINT fk_model_input_scope_object FOREIGN KEY (object_id)
         REFERENCES core.object (object_id) ON DELETE NO ACTION,
-    CONSTRAINT uq_model_scope UNIQUE (model_id, object_id),
-    CONSTRAINT uq_model_scope_witness UNIQUE (model_scope_id, model_id, object_id)
+    CONSTRAINT uq_model_input_scope UNIQUE (model_id, object_id)
 );
 
 CREATE TABLE model.model_event_log (
@@ -127,7 +126,7 @@ CREATE TABLE model.model_event_log (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping',
-            'code_generation', 'qa', 'dbml'
+            'code_generation', 'validation', 'dbml'
         )
     ),
     CONSTRAINT ck_model_event_log_order CHECK (
@@ -288,7 +287,7 @@ CREATE TABLE model.modeling_assertion_record (
     ),
     CONSTRAINT ck_assertion_record_status CHECK (
         modeling_assertion_record_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -321,7 +320,6 @@ CREATE UNIQUE INDEX ux_assertion_record_model_key_ci
     );
 
 CREATE INDEX ix_model_tenant_active ON model.model (tenant_id, is_active);
-CREATE INDEX ix_model_scope_object ON model.model_scope (object_id, model_id);
 CREATE INDEX ix_model_event_log_model_created
     ON model.model_event_log (model_id, created_time);
 CREATE INDEX ix_assertion_document_model_active

@@ -13,7 +13,6 @@ if TYPE_CHECKING:
 
 
 APPLICATION_TABLES = (
-    "generated_sql_artifact",
     "output_template",
     "output_template_field",
     "principal_preference",
@@ -76,7 +75,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "character varying, bigint, bigint, bigint, character varying, bigint",
+        "bigint, bigint, bigint, character varying, bigint",
     ),
     (
         "fail_workflow_run",
@@ -119,10 +118,6 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid, integer",
     ),
     (
-        "replace_model_scope",
-        "uuid, uuid, character varying, bigint, bigint, bigint[]",
-    ),
-    (
         "save_prompt_template",
         "uuid, uuid, character varying, bigint, bigint, character varying, bigint, "
         "character varying, character varying, text, boolean, timestamp with time zone",
@@ -151,12 +146,6 @@ APPLICATION_WEB_FUNCTIONS = (
     (
         "start_workflow_run",
         "uuid, uuid, character varying, bigint, bigint",
-    ),
-    (
-        "store_generated_sql_artifact",
-        "uuid, uuid, character varying, bigint, bigint, character varying, bigint, "
-        "character, character, bigint, bigint, character varying, character varying, text, "
-        "character",
     ),
     (
         "transition_prompt_template_version",
@@ -212,7 +201,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 32
+    assert len(APPLICATION_WEB_FUNCTIONS) == 30
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )
@@ -239,7 +228,7 @@ def test_application_web_function_allowlist_is_exact_and_verified(
         )
 
 
-def test_verify_install_rejects_direct_web_model_scope_mutation(
+def test_verify_install_rejects_direct_web_revision_audit_mutation(
     postgres_database: DisposablePostgres,
 ) -> None:
     with (
@@ -248,7 +237,8 @@ def test_verify_install_rejects_direct_web_model_scope_mutation(
         connection.transaction(),
     ):
         connection.execute(
-            "GRANT UPDATE (is_active) ON model.model_scope TO gds_web_write"
+            "GRANT INSERT (model_id, transaction_id) "
+            "ON model.model_revision_transaction TO gds_web_write"
         )
         connection.execute(
             cast(LiteralString, VERIFY_INSTALL_SQL.read_text(encoding="utf-8"))
@@ -271,18 +261,18 @@ def test_verify_install_rejects_direct_web_profile_mutation(
         )
 
 
-def test_verify_install_requires_unique_active_discovery_assignment(
+def test_verify_install_requires_object_source_tenant_index(
     postgres_database: DisposablePostgres,
 ) -> None:
     with (
         postgres_database.connect_owner() as connection,
-        pytest.raises(RaiseException, match="Discovery Scope assignment index"),
+        pytest.raises(RaiseException, match="Object Source Tenant lookup index"),
         connection.transaction(),
     ):
         connection.execute(
             """
-            ALTER INDEX core.ux_active_metadata_discovery_scope_assignment
-            RENAME TO invalid_discovery_assignment_index
+            ALTER INDEX core.ix_object_source_tenant_zone_active
+            RENAME TO invalid_object_source_tenant_index
             """
         )
         connection.execute(
@@ -567,11 +557,13 @@ def test_application_tables_are_read_only_and_sequences_are_unavailable_to_runti
     assert [row["table_name"] for row in table_rows] == sorted(APPLICATION_TABLES)
     assert all(row["web_can_select"] for row in table_rows)
     assert not any(row["web_can_mutate"] for row in table_rows)
-    assert not any(row["mcp_can_access"] for row in table_rows)
+    assert [row["table_name"] for row in table_rows if row["mcp_can_access"]] == [
+        "output_template"
+    ]
     assert sequence_rows
     assert not any(row["web_can_use"] or row["mcp_can_use"] for row in sequence_rows)
     assert posture == {
-        "mcp_schema_usage": False,
+        "mcp_schema_usage": True,
         "web_can_snapshot_directly": False,
         "mcp_can_snapshot": False,
     }

@@ -95,7 +95,7 @@ def project_logical_audit_policy(
 
     projected: list[LogicalAttributeRecord] = []
     for entity_key, entity in sorted(entities.items()):
-        if entity.logical_entity_status not in ("active", "needs_review"):
+        if entity.logical_entity_status != "active":
             continue
         entity_attributes = [record for key, record in attributes.items() if key[0] == entity_key]
         next_ordinal = 1 + max(

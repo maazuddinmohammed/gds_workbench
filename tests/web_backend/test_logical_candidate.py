@@ -243,7 +243,7 @@ def test_candidate_schema_includes_shared_logical_population_rules() -> None:
     attribute_schema = cast(dict[str, object], definitions["LogicalAttributeRecord"])
 
     assert any(
-        "Natural and surrogate key flags are mutually exclusive" in rule
+        "Use PascalCase; identifier Attributes end in ID" in rule
         for rule in cast(list[str], attribute_schema["x-gds-population-rules"])
     )
 

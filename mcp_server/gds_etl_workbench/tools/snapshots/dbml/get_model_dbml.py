@@ -64,14 +64,14 @@ class ModelDbmlContractModel(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
 
-class GetModelDbmlRequest(ModelDbmlContractModel):
+class ExportModelDbmlRequest(ModelDbmlContractModel):
     model_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
     model_type: DbmlModelType
     include_submodels: bool = True
     schema_version: Literal["2.0"] = "2.0"
 
 
-class GetModelDbmlResult(ModelDbmlContractModel):
+class ExportModelDbmlResult(ModelDbmlContractModel):
     schema_version: Literal["2.0"] = "2.0"
     snapshot_id: UUID
     snapshot_kind: Literal["dbml"] = "dbml"
@@ -88,7 +88,7 @@ class GetModelDbmlResult(ModelDbmlContractModel):
     content_type: Literal["application/zip"] = "application/zip"
 
 
-def register_get_model_dbml_tool(
+def register_export_model_dbml_tool(
     server: MCPServer[None],
     *,
     database: Database,
@@ -105,11 +105,12 @@ def register_get_model_dbml_tool(
     current_time = clock or (lambda: datetime.now(UTC))
 
     @server.tool(
+        name="export_model_dbml",
         description=(
-            "Render conceptual, logical, dimensional, or full DBML for one authorized "
-            "Model. The ZIP always includes each selected layer's complete model and "
-            "optionally includes logical and dimensional files by active Submodel. "
-            "Returns only a temporary read-only download URL and bounded archive metadata."
+            "Export conceptual, logical, dimensional, or full DBML for one authorized Model. "
+            "The ZIP contains each selected complete layer and, when requested, Logical and "
+            "Dimensional files by active Submodel. Returns archive metadata and a temporary "
+            "client download URL."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -120,15 +121,15 @@ def register_get_model_dbml_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_model_dbml(
+    async def export_model_dbml(
         ctx: Context[None],
         model_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         model_type: DbmlModelType,
         include_submodels: bool = True,
         schema_version: Literal["2.0"] = "2.0",
-    ) -> GetModelDbmlResult:
+    ) -> ExportModelDbmlResult:
         try:
-            request = GetModelDbmlRequest(
+            request = ExportModelDbmlRequest(
                 model_id=model_id,
                 model_type=model_type,
                 include_submodels=include_submodels,
@@ -158,7 +159,7 @@ def register_get_model_dbml_tool(
                 now=download_created_at,
                 ttl_seconds=download_ttl_seconds,
             )
-            return GetModelDbmlResult(
+            return ExportModelDbmlResult(
                 snapshot_id=ready.snapshot_id,
                 model_id=ready.model_id,
                 model_revision=ready.model_revision,
@@ -184,7 +185,7 @@ def register_get_model_dbml_tool(
             ) from None
 
     audit.register_tool(
-        "get_model_dbml",
+        "export_model_dbml",
         policy=POLICY,
         summarize_input=_audit_input,
         retain_arguments={

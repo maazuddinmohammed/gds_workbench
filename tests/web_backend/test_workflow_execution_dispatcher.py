@@ -79,7 +79,7 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
             "dimensional",
             "mapping",
             "code_generation",
-            "qa",
+            "validation",
         )
     }
     return WorkflowExecutionServices(**executors), executors
@@ -96,7 +96,7 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
         ("dimensional", "one_shot", "dimensional"),
         ("mapping", "tool_assisted", "mapping"),
         ("code_generation", None, "code_generation"),
-        ("qa", None, "qa"),
+        ("validation", None, "validation"),
     ],
 )
 @pytest.mark.asyncio

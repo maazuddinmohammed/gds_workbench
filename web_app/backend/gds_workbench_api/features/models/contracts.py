@@ -15,7 +15,7 @@ type ModelWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 ]
 
 
@@ -26,7 +26,7 @@ class ModelLedgerRecord(BaseModel):
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
-    model_scope_object_count: int = Field(ge=0)
+    model_input_scope_object_count: int = Field(ge=0)
     latest_workflow: ModelWorkflow | None = None
     latest_run_status: str | None = Field(default=None, min_length=1, max_length=30)
     updated_at: datetime
@@ -47,7 +47,7 @@ class ModelDetail(BaseModel):
     model_name: str = Field(min_length=1, max_length=255)
     model_description: str | None = Field(default=None, max_length=2000)
     model_revision: int = Field(gt=0)
-    model_scope_object_count: int = Field(ge=0)
+    model_input_scope_object_count: int = Field(ge=0)
     silver_model_naming_instructions: str | None = None
     silver_model_audit_columns_template: JsonValue | None = None
     gold_model_naming_instructions: str | None = None

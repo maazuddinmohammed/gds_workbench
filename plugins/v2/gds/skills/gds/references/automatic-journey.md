@@ -1,36 +1,16 @@
 # Automatic journey
 
-Load only for a multi-target Automatic request. Load `platform-lifecycle.md` once; safety gates stay
-per target.
+Ask one compact intake for missing directory, Tenant Code, Model, desired endpoints, Full/Selected scope, optional phases, destination pattern, artifact layout, and SQL policy. Infer supplied answers.
 
-## Intake and queue
+Queue only requested targets in dependency order. Work one target at a time. Inside a target, make evidence-supported decisions, batch complete records, and update coverage without optional pauses.
 
-Ask one compact intake for missing decisions only: directory, Tenant Code, Model, Full/Selected
-scope, Logical sections, destination Object Tenant/System/Connection/schema/type, Process metadata,
-Dimensional branch, Code type, QA System codes, and SQL policy. Infer supplied answers.
+When a target is complete:
 
-After intake, queue the requested targets with plans. The first `task-add` returns `doing`; start it immediately
-with readiness and its scope loop. Later tasks stay queued; never run their readiness early.
-Do not create separate tasks for Profiling, Analysis, Conceptual, or external scope activation: the first
-three are Logical phases, and external scope activation is a prerequisite on the Mapping task.
-Normal route:
+1. Run local review and validation internally.
+2. Notify the user to Refresh the already-open Workbench.
+3. Treat a clear positive acknowledgement as acceptance of the exact digest.
+4. Check current revision, reconcile, Stage, and validate the Change Set on the server.
+5. Ask separately before Apply.
+6. Apply once and stop at the target boundary. Leave later requested targets queued until the required fresh Snapshot is in place and the user resumes.
 
-```text
-Profiling evidence → Analysis → Conceptual → Logical
-→ Silver Target Registration → external Model Scope activation
-→ Logical Mapping → Code Generation and/or QA
-```
-
-Profiling checks existing coverage and may collect bounded evidence under the SQL policy; it never
-creates authoritative Profile records. Analysis/Conceptual are optional; Logical is required.
-Dimensional, Gold Registration/Mapping/Code, Code Generation, and QA are queued only when requested.
-
-## Progress
-
-Loop eligible scope units in compact batches. Persist the loop line defined by `session.md`.
-Coverage checks are internal; ask no review question before the complete target digest. Pause only
-for a blocker or the target boundary.
-
-After fresh Apply approval and Apply, call `status`. For a returned waiting/queued task, state its prerequisite and ask one continue question;
-on yes start it and reuse intake. When `status.resume` is null, report the journey complete;
-do not ask to continue. Never ask the user to restate the journey.
+Never cross Model Input Scope into Profiling or modeling until Scope Apply succeeds and a fresh Model Snapshot confirms it. Never cross Metadata registration into Model Binding until Metadata Apply succeeds and a fresh Metadata Snapshot confirms the targets. Never cross Model Binding into Mapping until Binding Apply succeeds and a fresh Model Snapshot confirms it.

@@ -166,7 +166,7 @@ def _source_context_digests(
                    AS eligible
                 ON eligible.model_id = selection.model_id
                AND eligible.object_id = selection.object_id
-               AND eligible.is_bronze_source_eligible
+               AND eligible.is_model_input_eligible
               JOIN core.attribute AS attribute
                 ON attribute.attribute_id = eligible.attribute_id
                AND attribute.object_id = eligible.object_id
@@ -174,23 +174,8 @@ def _source_context_digests(
               JOIN core.object AS object_record
                 ON object_record.object_id = selection.object_id
                AND object_record.is_active
-              JOIN core.connection AS gds_connection
-                ON gds_connection.connection_id = object_record.connection_id
-               AND gds_connection.is_active
-              LEFT JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-                ON gds_connection.is_global_data_store
-               AND discovery_scope.gds_connection_id =
-                   gds_connection.connection_id
-               AND discovery_scope.zone_id = object_record.zone_id
-               AND lower(btrim(discovery_scope.object_schema)) =
-                   lower(btrim(object_record.object_schema))
-               AND discovery_scope.is_active
               JOIN core.tenant AS source_tenant
-                ON source_tenant.tenant_id = CASE
-                       WHEN gds_connection.is_global_data_store
-                           THEN discovery_scope.tenant_id
-                       ELSE gds_connection.tenant_id
-                   END
+                ON source_tenant.tenant_id = object_record.source_tenant_id
                AND source_tenant.is_active
              WHERE run.workflow_run_id = %s
              ORDER BY attribute.attribute_id
@@ -468,19 +453,6 @@ def test_gds_persistence_uses_discovery_assigned_tenant_not_connection_owner(
              WHERE connection_id = %s
             """,
             (physical_owner_id, location["connection_id"]),
-        )
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, gds_connection_id, zone_id, object_schema
-            ) VALUES (%s, %s, %s, %s)
-            """,
-            (
-                context.tenant_id,
-                location["connection_id"],
-                location["zone_id"],
-                location["object_schema"],
-            ),
         )
         connection.execute(
             "UPDATE core.tenant SET is_active = FALSE WHERE tenant_id = %s",

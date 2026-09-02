@@ -210,7 +210,7 @@ def _merge_record(
     for field_name in ANALYSIS_VALIDATION_FIELDS:
         merged[field_name] = None if existing is None else getattr(existing, field_name)
     merged["analysis_result_status"] = (
-        "needs_review" if existing is None else existing.analysis_result_status
+        "active" if existing is None else existing.analysis_result_status
     )
     merged["analysis_result_is_locked"] = (
         False if existing is None else existing.analysis_result_is_locked

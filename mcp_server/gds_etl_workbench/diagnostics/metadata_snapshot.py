@@ -40,7 +40,6 @@ from gds_etl_workbench.tools.snapshots.metadata.sql import (
     COPY_GROUP_CONTROL_ROWS_SQL,
     COPY_GROUP_ROWS_SQL,
     COPY_ROWS_SQL,
-    DISCOVERY_SCOPE_ROWS_SQL,
     FOUNDATION_CONNECTION_ROWS_SQL,
     FOUNDATION_PROJECT_ROWS_SQL,
     FOUNDATION_SYSTEM_ROWS_SQL,
@@ -76,7 +75,6 @@ _SNAPSHOT_RELATIONS = (
     "core.tenant",
     "core.system",
     "core.connection",
-    "core.tenant_metadata_discovery_scope",
     "core.object",
     "core.attribute",
     "core.ingestion_object_mapping",
@@ -91,7 +89,7 @@ _SNAPSHOT_RELATIONS = (
     "security.entra_principal_identity",
     "security.tenant_principal_access",
     "model.model",
-    "model.model_scope",
+    "model.model_input_scope",
 )
 
 _LOGIN_POSTURE_SQL: LiteralString = """
@@ -188,7 +186,6 @@ _SELECTION_STAGE_BY_QUERY = {
     COPY_ROWS_SQL: "copy",
     PROCESS_GROUP_ROWS_SQL: "process_group",
     PROCESS_ROWS_SQL: "process",
-    DISCOVERY_SCOPE_ROWS_SQL: "discovery_scope",
     FOUNDATION_CONNECTION_ROWS_SQL: "foundation_connection",
     FOUNDATION_TENANT_ROWS_SQL: "foundation_tenant",
     FOUNDATION_PROJECT_ROWS_SQL: "foundation_project",

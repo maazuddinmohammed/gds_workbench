@@ -134,9 +134,10 @@ WITH selected AS (
 )
 SELECT selected.selection_order,
        eligibility.object_id,
-       tenant.tenant_code,
+       placement_tenant.tenant_code AS tenant_code,
        system.system_code,
        connection.connection_code,
+       source_tenant.tenant_code AS source_tenant_code,
        object_record.object_schema,
        object_record.object_name,
        object_record.fc_object_schema,
@@ -157,8 +158,10 @@ SELECT selected.selection_order,
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
    AND connection.system_id = eligibility.system_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = eligibility.object_tenant_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+  JOIN core.tenant AS source_tenant
+    ON source_tenant.tenant_id = object_record.source_tenant_id
   JOIN core.system AS system
     ON system.system_id = eligibility.system_id
   JOIN reference.object_type AS object_type
@@ -180,7 +183,7 @@ WITH selected AS (
 SELECT selected.selection_order,
        eligibility.object_id,
        eligibility.attribute_id,
-       tenant.tenant_code,
+       placement_tenant.tenant_code AS tenant_code,
        system.system_code,
        connection.connection_code,
        object_record.object_schema,
@@ -211,8 +214,8 @@ SELECT selected.selection_order,
   JOIN core.connection AS connection
     ON connection.connection_id = eligibility.connection_id
    AND connection.system_id = eligibility.system_id
-  JOIN core.tenant AS tenant
-    ON tenant.tenant_id = eligibility.object_tenant_id
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
   JOIN core.system AS system
     ON system.system_id = eligibility.system_id
  WHERE %s <> 'dimensional'
@@ -758,8 +761,40 @@ def _assemble_context(
     selected_keys = {_physical_key(item.object) for item in selected}
     if len(selected_keys) != len(selected):
         raise AgentContextUnavailableError()
-    scope_keys = {_physical_key(item) for item in snapshot.model_scope.objects}
-    if not selected_keys <= scope_keys:
+    scope_keys = {_physical_key(item) for item in snapshot.model_input_scope.objects}
+    if plan.model_workflow == "dimensional":
+        active_dependencies = {
+            (
+                dependency.modeled_entity_type,
+                normalize_model_key_value(dependency.source_system_code),
+            )
+            for dependency in snapshot.mapping.dependencies
+            if dependency.mapping_source_system_dependency_status == "active"
+        }
+        mapped_logical_entities = {
+            normalize_model_key_value(mapping.modeled_entity_name)
+            for mapping in snapshot.mapping.objects
+            if mapping.modeled_entity_type == "logical_entity"
+            and mapping.object_mapping_status == "active"
+            and mapping.mapping_transformation_document is not None
+            and (
+                mapping.modeled_entity_type,
+                normalize_model_key_value(mapping.source_system_code),
+            )
+            in active_dependencies
+        }
+        eligible_keys = {
+            _physical_key(binding)
+            for binding in snapshot.model_binding.objects
+            if binding.modeled_entity_type == "logical_entity"
+            and binding.model_object_binding_status == "active"
+            and normalize_model_key_value(binding.modeled_entity_name) in mapped_logical_entities
+        }
+        if not selected_keys <= eligible_keys or any(
+            item.object.zone_code != "silver" for item in selected
+        ):
+            raise AgentContextUnavailableError()
+    elif not selected_keys <= scope_keys:
         raise AgentContextUnavailableError()
 
     profiles = tuple(
@@ -801,7 +836,7 @@ def _assemble_context(
         workflow_execution_mode=plan.workflow_execution_mode,
         modeled_entity_type=plan.modeled_entity_type,
         selected_scope_digest=plan.selected_scope_digest,
-        model_details=snapshot.model_scope.details,
+        model_details=snapshot.model_input_scope.details,
         selected_objects=selected,
         profiles=profiles,
         analysis_relationships=analysis_relationships,

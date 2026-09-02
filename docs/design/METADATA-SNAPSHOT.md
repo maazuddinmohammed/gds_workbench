@@ -1,12 +1,12 @@
 # Metadata Snapshot design
 
-**Status:** accepted for implementation  
+**Status:** implemented
 **Date:** 2026-08-11  
 **Contract version:** 2.0
 
 ## Purpose
 
-`get_metadata_snapshot` gives an authorized agent a complete, bounded view of
+`create_metadata_snapshot` gives an authorized agent a complete, bounded view of
 one Tenant's relevant Core metadata without returning the metadata through the
 MCP result. The App Service builds an immutable ZIP, uploads it to a private
 Azure Blob container, and returns only a small descriptor.
@@ -20,18 +20,18 @@ structured files support selective agent reads and a separate HTML viewer.
 - No raw physical data is read or exported.
 - No foundational CRUD, direct table mutation, arbitrary SQL, or reference-data
   mutation is exposed.
-- Metadata Discovery Scope does not establish lineage; it is the sole
-  source-Tenant assignment for GDS Object visibility and attribution.
+- `core.object.source_tenant_id` is the sole source-Tenant assignment for
+  Object visibility and attribution. It does not establish lineage.
 - The snapshot tool does not create, validate, or apply a Metadata Change Set.
 - The App Service never writes to a user's local filesystem.
 
 ## Public tool contract
 
-The MCP tool is registered as `get_metadata_snapshot` under the existing
+The MCP tool is registered as `create_metadata_snapshot` under the existing
 Tenant Read Tool Policy.
 
 ```python
-get_metadata_snapshot(
+create_metadata_snapshot(
     tenant_id: int,
     schema_version: Literal["2.0"] = "2.0",
 )
@@ -105,73 +105,16 @@ deletion for the code-owned `metadata/` prefix at or after the configured
 availability window. The App Service does not implement a broad Blob cleanup
 command.
 
-## Metadata Discovery Scope
+## Object source Tenant
 
-Add this admin-controlled Core table:
+Every `core.object` row has a required `source_tenant_id` foreign key to
+`core.tenant`. This applies to Source, Bronze, Silver, and Gold Objects. The
+Connection says where the Object exists. `source_tenant_id` says whose data the
+Object represents.
 
-```sql
-CREATE TABLE core.tenant_metadata_discovery_scope (
-    tenant_metadata_discovery_scope_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
-    tenant_id BIGINT NOT NULL,
-    gds_connection_id BIGINT NOT NULL,
-    zone_id BIGINT NOT NULL,
-    object_schema VARCHAR(400) NOT NULL,
-    is_active BOOLEAN NOT NULL DEFAULT TRUE,
-    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
-    updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
-    CONSTRAINT fk_metadata_discovery_scope_tenant FOREIGN KEY (tenant_id)
-        REFERENCES core.tenant (tenant_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_connection FOREIGN KEY (gds_connection_id)
-        REFERENCES core.connection (connection_id) ON DELETE NO ACTION,
-    CONSTRAINT fk_metadata_discovery_scope_zone FOREIGN KEY (zone_id)
-        REFERENCES reference.zone (zone_id) ON DELETE NO ACTION,
-    CONSTRAINT ck_metadata_discovery_scope_schema CHECK (
-        reference.is_nonblank(object_schema)
-    )
-);
-
-CREATE UNIQUE INDEX ux_metadata_discovery_scope
-    ON core.tenant_metadata_discovery_scope (
-        tenant_id,
-        gds_connection_id,
-        zone_id,
-        lower(btrim(object_schema))
-    );
-
-CREATE UNIQUE INDEX ux_active_metadata_discovery_scope_assignment
-    ON core.tenant_metadata_discovery_scope (
-        gds_connection_id,
-        zone_id,
-        lower(btrim(object_schema))
-    )
-    WHERE is_active;
-
-CREATE INDEX ix_metadata_discovery_scope_tenant_active
-    ON core.tenant_metadata_discovery_scope (
-        tenant_id,
-        is_active,
-        gds_connection_id,
-        zone_id
-    );
-```
-
-The table is populated only through approved administration/bootstrap, not an
-MCP CRUD tool or Metadata Change Set. An active row is a discovery seed only
-when its Connection is an active global data store and its Zone is Bronze,
-Silver, or Gold. Invalid active scope configuration fails snapshot generation
-safely rather than widening discovery.
-
-All scope rows for the requested Tenant, including inactive rows, are exported
-under `foundational` for explanation. Only active valid rows expand discovery.
-The active-only unique index enforces one source Tenant for each GDS Connection,
-Zone, and normalized schema while retaining inactive history. A GDS Object
-without an active assignment cannot seed or extend the selected graph. Non-GDS
-Objects continue to derive their Tenant from Connection ownership. This rule
-attributes Objects and closes visibility; it does not create lineage edges.
-The table's four database audit columns remain operational in PostgreSQL but
-are not selected into the snapshot.
+Objects on one global GDS Connection can belong to different source Tenants
+without schema-based discovery rules. A single Object cannot represent multiple
+Tenants. Metadata Apply derives this value from the locked Tenant.
 
 ## Consistent SQL selection
 
@@ -180,29 +123,14 @@ are selected through fixed, parameterized SQL declared in the tool module. The
 tool never accepts SQL, table names, schemas, paths, filters, or policies from
 the caller.
 
-The included Object set is the union of:
-
-1. every non-GDS Object owned by a Connection of the requested Tenant;
-2. Objects matched by an active valid Metadata Discovery Scope row on exact
-   Connection, Zone, and case-insensitive trimmed schema;
-3. endpoints of active ingestion mappings connected to the selected graph,
-   including mappings referenced by a Copy in a requested-Tenant Copy Group;
-4. Objects referenced by Processes whose Process Group belongs to the requested
-   Tenant; and
-5. Objects in Model Scope for every active Model owned by the requested Tenant.
-
-Active ingestion mappings expand the connected lineage only through Objects
-whose Tenant can be resolved by the rule above. An unassigned GDS endpoint is
-excluded and stops recursive expansion. Inactive mappings do not grant
-cross-Tenant expansion, but are exported when both endpoints are already
-included. Ingestion Attribute Mappings are exported when their parent mapping
-and both Attributes are included.
+The included Object set is every active or inactive Object whose
+`source_tenant_id` equals the requested Tenant. Ingestion Object Mappings are
+exported when both endpoints are included, including inactive mappings.
+Ingestion Attribute Mappings are exported when their parent mapping and both
+Attributes are included.
 
 Projected Object, Attribute, Mapping, Copy, and Process natural keys use the
-discovery-assigned source Tenant for GDS Objects. Connection rows retain their
-physical owner. Object contracts therefore reference Tenant and System
-directly; governed change-set validation and apply resolve the physical GDS
-Connection through the exact active Discovery Scope assignment.
+Object's source Tenant. Connection rows retain their physical owner.
 
 Every Attribute of an included Object is exported, including inactive
 Attributes. Objects and Attributes are partitioned by the exact active
@@ -246,7 +174,7 @@ reference, or unrelated Core/reference table is selected.
 
 The SQL validates ownership and relational closure. It fails safely if a
 selected configuration row has an unresolved parent, mismatched Tenant/System
-witness, unsupported Zone, invalid discovery scope, or other incomplete
+  witness, unsupported Zone, source-Tenant mismatch, or other incomplete
 foreign-key context. It never silently drops such a row and never widens access
 merely to make the snapshot complete.
 
@@ -267,7 +195,7 @@ metadata-snapshot/
         └── <dataset>/{rows.jsonl,lookup.jsonl}
 ```
 
-There are 23 physical source tables and 29 logical snapshot datasets. The
+There are 22 physical source tables and 28 logical snapshot datasets. The
 physical `core.object` and `core.attribute` tables become eight Zone-specific
 datasets. Objects and Attributes remain separate; Object rows never contain a
 nested or duplicate Attribute array.
@@ -278,9 +206,9 @@ reports the staged records; Apply locks and rechecks the physical Object rows
 before its first write. Apply remains one PostgreSQL transaction, so any later
 failure rolls back all earlier dataset writes.
 
-The five Foundational datasets are Project, Tenant, System, Connection, and
-Tenant Metadata Discovery Scope. The eight allowlisted `reference.*` datasets
-are Reference. The remaining 16 change-set-eligible datasets are Operational.
+The four Foundational datasets are Project, Tenant, System, and Connection.
+The eight allowlisted `reference.*` datasets are Reference. The remaining 16
+change-set-eligible datasets are Operational.
 
 Every dataset has one `rows.jsonl` and one JSON Schema. Only these ten wide
 datasets have `lookup.jsonl`: the four Object datasets, the four Attribute
@@ -353,8 +281,8 @@ own final digest.
 ### `schemas/<dataset>.schema.json`
 
 Each file is standard JSON Schema Draft 2020-12 generated from the same shared
-Pydantic model used to validate snapshot rows. The future Metadata Change Set
-can import these Pydantic models instead of copying field definitions.
+Pydantic model used to validate snapshot rows. Metadata Change Sets import these
+models instead of copying field definitions.
 
 GDS extensions describe relational meaning that JSON Schema cannot express:
 
@@ -397,7 +325,7 @@ Foundational and Reference datasets declare `change_set_eligible: false`. The
 The catalog is the small agent navigation guide. It:
 
 - instructs the agent never to recursively load the snapshot;
-- lists all three sections and all 29 datasets;
+- lists all three sections and all 28 datasets;
 - groups the four Object and four Attribute datasets for cross-Zone search;
 - gives each dataset's row count, canonical key, search fields, schema file,
   search file, rows file, and `search_result_complete`; and
@@ -544,24 +472,25 @@ stable responsibilities:
 mcp_server/gds_etl_workbench/domain/
 └── metadata_records.py
 
-mcp_server/gds_etl_workbench/tools/snapshots/metadata/
-├── contracts.py
-├── sql.py
-├── projection.py
-├── archive.py
+mcp_server/gds_etl_workbench/tools/snapshots/
 ├── storage.py
-└── get_metadata_snapshot.py
+└── metadata/
+    ├── contracts.py
+    ├── sql.py
+    ├── projection.py
+    ├── archive.py
+    └── get_metadata_snapshot.py
 ```
 
-`domain/metadata_records.py` owns the ID-free record shapes so Snapshot and
-future Metadata Change Set code use one field/type contract. Snapshot-specific
-dataset paths, keys, references, and lookup choices remain in `contracts.py`.
+`domain/metadata_records.py` owns the ID-free record shapes so Snapshots and
+Metadata Change Sets use one field/type contract. Snapshot-specific dataset
+paths, keys, references, and lookup choices remain in `contracts.py`.
 
-Small integration edits are still required in existing boundaries:
+Integration stays at these existing boundaries:
 
 - `configuration.py` for validated environment settings;
 - `adapters/mcp/server.py` for registration;
-- numbered SQL for Discovery Scope, Change Set alignment, indexes, and runtime
+- numbered SQL for Object source Tenant, Change Set alignment, indexes, and runtime
   privileges;
 - the MCP dependency lock/export for Azure Identity and Blob Storage;
 - App Service packaging checks; and
@@ -570,22 +499,22 @@ Small integration edits are still required in existing boundaries:
 No repository, manager, factory, service hierarchy, or generic export framework
 is introduced for one feature.
 
-## Required tests
+## Verification coverage
 
 Database tests use only the fixture-created disposable PostgreSQL container.
 Azure tests use fakes/mocks and never contact a real account.
 
-The slice must prove:
+The test suite covers:
 
 - Tenant Read authorization and non-disclosing denials;
-- exact owned, discovery, ingestion, Process, and active-Model-Scope selection;
-- discovery neither proves nor restricts lineage;
+- exact source-Tenant Object selection and relational closure;
+- Object ownership neither proves nor restricts lineage;
 - active and inactive row inclusion;
 - exact four-Zone partitioning and rejection of unsupported Zones;
 - complete ID-free columns, natural-key references, unique groups, and
   deterministic row order;
 - all eight allowlisted reference tables and no other reference/Core tables;
-- 29 row files, 29 schemas, exactly ten selective lookup files, and no unsafe
+- 28 row files, 28 schemas, exactly ten selective lookup files, and no unsafe
   ZIP members;
 - exact non-ID BIGINT string encoding and browser-safe round trips;
 - lookup, schema, catalog, manifest, member digest, ZIP digest, count, and size
@@ -598,20 +527,5 @@ The slice must prove:
 - Tenant authorization happens before a blob-specific, read-only, 15-minute SAS
   enters the MCP result;
 - SAS values and snapshot contents never reach logs; and
-- package/configuration checks include the new source and dependencies without
+- package/configuration checks include the source and dependencies without
   including tests, local snapshots, or secrets.
-
-## Implementation order
-
-Implement and verify one change at a time:
-
-1. Discovery Scope DDL and database tests.
-2. Metadata Change Set 16-document alignment and database tests.
-3. Azure configuration/dependency validation.
-4. Pure snapshot contracts, JSONL, schema, index, manifest, and ZIP tests.
-5. Fixed SQL selection and disposable-PostgreSQL tests.
-6. Blob upload with Azure fakes.
-7. Direct SAS result with identity/Azure fakes.
-8. MCP registration, audit, response-isolation, and package tests.
-
-No later step begins while the preceding step's focused tests fail.

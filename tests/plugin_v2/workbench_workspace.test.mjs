@@ -280,7 +280,7 @@ test("Save accepts a JSON draft, marks review, and detects external edits", asyn
   );
 });
 
-test("stale Snapshots reject save, validation digest, and acceptance", async () => {
+test("stale Snapshots reject save and validation digest", async () => {
   const { session } = buildSession();
   const state = JSON.parse(session.entries.get("session.json").text);
   state.stale = ["metadata"];
@@ -293,10 +293,6 @@ test("stale Snapshots reject save, validation digest, and acceptance", async () 
     /metadata Snapshot is stale/,
   );
   await assert.rejects(workspace.changeSetDigest("metadata"), /metadata Snapshot is stale/);
-  await assert.rejects(
-    workspace.accept("metadata", "unused", { valid: true }, null),
-    /metadata Snapshot is stale/,
-  );
 });
 
 test("schemas not explicitly Change Set eligible cannot be saved or inventoried", async () => {
@@ -341,11 +337,11 @@ test("Change Set inventory rejects unknown and prohibited dataset files", async 
   const prohibitedWorkspace = await workspaceModule.connect(prohibited.session);
   await assert.rejects(
     prohibitedWorkspace.changeSetDigest("model"),
-    /model_scope mutation is not exposed by Workbench/,
+    /Unknown model Change Set dataset model_scope/,
   );
 });
 
-test("Model Details remains Change Set eligible while Model Scope is read-only", async () => {
+test("Model Details follows its signed Change Set eligibility", async () => {
   const { session } = buildSession();
   const state = JSON.parse(session.entries.get("session.json").text);
   state.tasks = [["01", "model", "Edit Model Details", "doing"]];
@@ -393,36 +389,6 @@ test("failed Refresh preserves the previously loaded workspace", async () => {
 
   await assert.rejects(workspace.refresh(), /model Snapshot manifest has no member inventory/);
   assert.equal(workspace.area("metadata").datasets[0].row_count, 1);
-});
-
-test("acceptance rejects a Snapshot replaced after validation", async () => {
-  const { session, metadata, catalog } = buildSession();
-  const workspace = await workspaceModule.connect(session);
-  const saved = await workspace.saveDataset(
-    "metadata",
-    "source_object",
-    '[{"object_name":"Customer"}]',
-    null,
-  );
-  const snapshot = workspace.area("metadata");
-  const validation = {
-    area: "metadata",
-    digest: await workspace.changeSetDigest("metadata"),
-    snapshot_id: snapshot.manifest.snapshot_id,
-    snapshot_revision: snapshot.manifest.model_revision ?? null,
-    snapshot_digest: snapshot.manifestDigest,
-    valid: true,
-    issues: [],
-  };
-
-  catalog.sections[0].datasets[0].row_count = 2;
-  signSnapshot(metadata, catalog);
-
-  await assert.rejects(
-    workspace.accept("metadata", validation.digest, validation, null),
-    /Snapshot changed after validation/,
-  );
-  assert.equal(saved.records.length, 1);
 });
 
 test("Workbench binds one Model per session and preserves it on mismatch", async () => {

@@ -23,7 +23,7 @@ _WORKFLOWS = (
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 )
 _COMMON_NAMES = (
     "TenantID",
@@ -56,7 +56,7 @@ def _values(workflow: str) -> dict[str, str]:
     )
     if workflow == "mapping":
         values.update({"SelectedObjectIDsJSON": "[11]", "MappingSourceSystemID": "20"})
-    elif workflow == "qa":
+    elif workflow == "validation":
         values.update(
             {
                 "SelectedObjectIDsJSON": "[]",
@@ -166,7 +166,6 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "requested_batch_id",
         "mapping_operation",
         "mapping_coverage_mode",
-        "mapping_artifact_type",
         "mapping_source_system_id",
         "mapping_object_output_template_id",
         "mapping_attribute_output_template_id",
@@ -175,7 +174,7 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "agent",
         "prompt_overrides",
     }
-    if workflow in {"profiling", "analysis_validation", "qa"}:
+    if workflow in {"profiling", "analysis_validation", "validation"}:
         assert command.create_payload["workflow_execution_mode"] is None
     if workflow in {"profiling", "analysis_validation"}:
         assert command.create_payload["agent"] is None
@@ -190,7 +189,7 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "dimensional",
         "mapping",
         "code_generation",
-        "qa",
+        "validation",
     }:
         assert command.create_payload["agent"] == {
             "sdk_code": "langchain_create_agent",
@@ -223,7 +222,6 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
         "mapping": (
             "ExecutionMode",
             "MappingOperation",
-            "MappingArtifactType",
             "MappingSourceSystemID",
             "MappingObjectOutputTemplateID",
             "MappingAttributeOutputTemplateID",
@@ -235,7 +233,7 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
             "SqlGenerationGuideVersionID",
             *_AGENT_NAMES,
         ),
-        "qa": ("SelectedSystemCodesJSON", *_AGENT_NAMES),
+        "validation": ("SelectedSystemCodesJSON", *_AGENT_NAMES),
     }
     for workflow in _WORKFLOWS:
         names = tuple(spec.name for spec in widget_specs(workflow))
@@ -384,7 +382,7 @@ def test_build_notebook_request_rejects_a_union_choice_outside_an_exact_profile(
         build_notebook_request("analysis_inference", values)
 
 
-@pytest.mark.parametrize("workflow", ("code_generation", "qa"))
+@pytest.mark.parametrize("workflow", ("code_generation", "validation"))
 def test_fixed_mode_widgets_and_validation_use_the_internal_detailed_profile(
     workflow: str,
     monkeypatch,
@@ -406,40 +404,40 @@ def test_fixed_mode_widgets_and_validation_use_the_internal_detailed_profile(
     assert command.create_payload["agent"]["reasoning_effort_code"] == "default"
 
 
-def test_qa_requires_exact_system_selection_and_empty_object_selection() -> None:
-    command = build_notebook_request("qa", _values("qa"))
+def test_validation_requires_exact_system_selection_and_empty_object_selection() -> None:
+    command = build_notebook_request("validation", _values("validation"))
 
-    assert command.workflow == "qa"
+    assert command.workflow == "validation"
     assert command.create_payload["selected_object_ids"] == []
     assert command.create_payload["selected_system_codes"] == ["ERP", "CRM"]
     assert command.create_payload["workflow_execution_mode"] is None
 
-    values = _values("qa")
+    values = _values("validation")
     values["SelectedObjectIDsJSON"] = "[11]"
     with pytest.raises(NotebookConfigurationError, match=r"must be \[\]"):
-        build_notebook_request("qa", values)
+        build_notebook_request("validation", values)
 
 
 @pytest.mark.parametrize(
     "selected_system_codes",
     ("[]", '["ERP","erp"]', '["ERP",""]', "[11]"),
 )
-def test_qa_rejects_missing_or_invalid_system_selection(
+def test_validation_rejects_missing_or_invalid_system_selection(
     selected_system_codes: str,
 ) -> None:
-    values = _values("qa")
+    values = _values("validation")
     values["SelectedSystemCodesJSON"] = selected_system_codes
 
     with pytest.raises(NotebookConfigurationError, match="SelectedSystemCodesJSON"):
-        build_notebook_request("qa", values)
+        build_notebook_request("validation", values)
 
 
-def test_qa_rejects_more_than_1000_systems() -> None:
-    values = _values("qa")
+def test_validation_rejects_more_than_1000_systems() -> None:
+    values = _values("validation")
     values["SelectedSystemCodesJSON"] = json.dumps([f"SYSTEM_{index}" for index in range(1_001)])
 
     with pytest.raises(NotebookConfigurationError, match="at most 1000"):
-        build_notebook_request("qa", values)
+        build_notebook_request("validation", values)
 
 
 @pytest.mark.parametrize(

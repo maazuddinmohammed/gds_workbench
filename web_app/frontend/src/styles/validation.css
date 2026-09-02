@@ -1,0 +1,415 @@
+/* Validation: System-scoped authoring and grouped applied validation evidence. */
+.validation-workspace {
+  min-width: 0;
+}
+
+.validation-commandbar {
+  border-bottom-color: var(--ink);
+}
+
+.validation-command-context {
+  gap: 1.15rem;
+}
+
+.validation-context-line {
+  border-bottom-color: var(--line-strong);
+}
+
+.validation-system-error {
+  margin: 0;
+  padding: 0.75rem 0;
+  border-bottom: 1px solid var(--line);
+}
+
+.validation-surface {
+  padding-bottom: 1.5rem;
+}
+
+.validation-ledger-heading {
+  display: flex;
+  min-height: 4.9rem;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  padding: 0 0 0.85rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.validation-ledger-heading .eyebrow {
+  margin: 0 0 0.3rem;
+}
+
+.validation-ledger-heading h2 {
+  margin: 0;
+  font-size: 1.22rem;
+  letter-spacing: -0.03em;
+}
+
+.validation-ledger-heading > span {
+  color: var(--muted);
+  font-size: 0.66rem;
+}
+
+.validation-group-ledger {
+  display: grid;
+}
+
+.validation-group {
+  border-bottom: 1px solid var(--line-strong);
+}
+
+.validation-group-summary {
+  display: grid;
+  grid-template-columns: minmax(16rem, 1fr) auto;
+  align-items: center;
+  gap: 1rem;
+  padding: 0.85rem 0;
+}
+
+.validation-group-summary > button {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  gap: 0.7rem;
+  padding: 0;
+  border: 0;
+  color: var(--ink);
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.validation-group-summary > button > span:first-child {
+  display: grid;
+  width: 1.55rem;
+  height: 1.55rem;
+  flex: 0 0 auto;
+  place-items: center;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-small);
+  color: var(--orange-dark);
+  font-size: 1rem;
+  line-height: 1;
+}
+
+.validation-group-summary > button > span:last-child,
+.validation-check-name {
+  display: grid;
+  min-width: 0;
+  gap: 0.2rem;
+}
+
+.validation-group-summary strong {
+  font-size: 0.8rem;
+}
+
+.validation-group-summary small,
+.validation-check-name span {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.validation-group-statuses {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 0.35rem;
+}
+
+.validation-group-description {
+  display: grid;
+  grid-template-columns: minmax(12rem, 0.7fr) minmax(28rem, 1.3fr);
+  gap: 1.5rem;
+  padding: 0 0 0.9rem 2.25rem;
+}
+
+.validation-group-description > p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.68rem;
+}
+
+.validation-digest-ledger {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.45rem 1rem;
+  margin: 0;
+}
+
+.validation-digest-ledger > div {
+  display: grid;
+  min-width: 0;
+  grid-template-columns: 6.8rem minmax(0, 1fr);
+  gap: 0.5rem;
+}
+
+.validation-digest-ledger dt,
+.validation-check-facts dt {
+  color: var(--faint);
+  font-size: 0.56rem;
+  font-weight: 800;
+  letter-spacing: 0.05em;
+  text-transform: uppercase;
+}
+
+.validation-digest-ledger dd,
+.validation-check-facts dd {
+  min-width: 0;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.validation-digest-ledger code {
+  font-size: 0.6rem;
+}
+
+.validation-check-panel {
+  margin-left: 2.25rem;
+  padding: 0 0 1rem;
+}
+
+.validation-check-table-scroll {
+  border-top: 1px solid var(--line-strong);
+}
+
+.validation-check-table-scroll table {
+  min-width: 64rem;
+}
+
+.validation-check-table-scroll th:last-child,
+.validation-check-table-scroll td:last-child {
+  width: 7rem;
+  text-align: right;
+}
+
+.validation-check-table-scroll code {
+  font-size: 0.62rem;
+}
+
+.validation-check-detail {
+  margin-top: 0.75rem;
+  padding: 1rem;
+  border: 1px solid var(--line-strong);
+  border-radius: var(--radius-medium);
+  background: var(--soft);
+}
+
+.validation-check-detail > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.85rem;
+}
+
+.validation-check-detail > header small,
+.validation-check-detail > header > span {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.validation-check-detail h4 {
+  margin: 0.15rem 0 0;
+  font-size: 0.86rem;
+}
+
+.validation-query-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 0.75rem;
+}
+
+.validation-query-grid > div {
+  min-width: 0;
+}
+
+.validation-query-grid strong {
+  display: block;
+  margin-bottom: 0.35rem;
+  font-size: 0.64rem;
+}
+
+.validation-query-grid pre {
+  max-height: 18rem;
+  margin: 0;
+  padding: 0.8rem;
+  overflow: auto;
+  border: 1px solid var(--ink-2);
+  border-radius: var(--radius-small);
+  color: var(--paper);
+  background: var(--ink);
+  font-size: 0.68rem;
+  line-height: 1.55;
+  white-space: pre;
+}
+
+.validation-check-facts {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1rem;
+  margin: 0.85rem 0 0;
+}
+
+.validation-check-facts > div {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.validation-check-facts code {
+  overflow-wrap: anywhere;
+}
+
+.validation-run-dialog {
+  width: min(56rem, 100%);
+}
+
+.validation-run-systems {
+  margin-bottom: 1rem;
+  padding-bottom: 1rem;
+  border-bottom: 1px solid var(--line);
+}
+
+.validation-run-systems > header {
+  display: flex;
+  align-items: end;
+  justify-content: space-between;
+  gap: 1rem;
+  margin-bottom: 0.65rem;
+}
+
+.validation-run-systems > header > div:first-child {
+  display: grid;
+  gap: 0.2rem;
+}
+
+.validation-run-systems > header strong {
+  font-size: 0.75rem;
+}
+
+.validation-run-systems > header span {
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.validation-run-systems > header > div:last-child {
+  display: flex;
+  gap: 0.75rem;
+}
+
+.validation-run-systems > header .text-action {
+  padding: 0;
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+
+.validation-run-systems fieldset {
+  margin: 0;
+  padding: 0;
+  border: 0;
+}
+
+.validation-system-selection-list {
+  display: grid;
+  max-height: 20rem;
+  margin: 0;
+  padding: 0;
+  overflow: auto;
+  border-top: 1px solid var(--line-strong);
+  list-style: none;
+}
+
+.validation-system-selection-list li {
+  border-bottom: 1px solid var(--line);
+}
+
+.validation-system-selection-list label {
+  display: grid;
+  grid-template-columns: auto minmax(10rem, 1fr) minmax(12rem, 1fr) auto;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.7rem 0.25rem;
+  cursor: pointer;
+}
+
+.validation-system-selection-list label > span:nth-of-type(1) {
+  display: flex;
+  min-width: 0;
+  align-items: baseline;
+  gap: 0.5rem;
+}
+
+.validation-system-selection-list strong {
+  font-size: 0.7rem;
+}
+
+.validation-system-selection-list code,
+.validation-system-selection-list small {
+  color: var(--muted);
+  font-size: 0.62rem;
+}
+
+.validation-selection-summary {
+  margin: 0.55rem 0 0;
+  color: var(--muted);
+  font-size: 0.64rem;
+}
+
+.validation-agent-profile .detail-fact-grid {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+@media (max-width: 58rem) {
+  .validation-group-summary,
+  .validation-group-description {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-group-statuses {
+    justify-content: flex-start;
+    padding-left: 2.25rem;
+  }
+
+  .validation-query-grid,
+  .validation-agent-profile .detail-fact-grid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 42rem) {
+  .validation-ledger-heading,
+  .validation-run-systems > header,
+  .validation-check-detail > header {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .validation-group-description,
+  .validation-check-panel {
+    margin-left: 0;
+    padding-left: 0;
+  }
+
+  .validation-digest-ledger,
+  .validation-check-facts {
+    grid-template-columns: 1fr;
+  }
+
+  .validation-system-selection-list label {
+    grid-template-columns: auto 1fr;
+  }
+
+  .validation-system-selection-list label > small,
+  .validation-system-selection-list label > .status-badge {
+    grid-column: 2;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .validation-dialog-scrim,
+  .validation-run-dialog {
+    animation: none;
+    transition: none;
+  }
+}

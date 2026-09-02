@@ -151,7 +151,7 @@ def _seed_analysis_validation(
             """
             SELECT object_record.object_id,
                    attribute.attribute_id,
-                   discovery_tenant.tenant_catalog AS relation_catalog,
+                   source_tenant.tenant_catalog AS relation_catalog,
                    object_record.object_schema AS relation_schema,
                    object_record.object_name AS relation_object,
                    attribute.attribute_name,
@@ -162,17 +162,9 @@ def _seed_analysis_validation(
               JOIN core.attribute AS attribute
                 ON attribute.object_id = object_record.object_id
                AND attribute.is_active
-              JOIN core.connection AS gds_connection
-                ON gds_connection.connection_id = object_record.connection_id
-              JOIN core.tenant_metadata_discovery_scope AS discovery_scope
-                ON discovery_scope.gds_connection_id = gds_connection.connection_id
-               AND discovery_scope.zone_id = object_record.zone_id
-               AND lower(btrim(discovery_scope.object_schema)) =
-                   lower(btrim(object_record.object_schema))
-               AND discovery_scope.is_active
-              JOIN core.tenant AS discovery_tenant
-                ON discovery_tenant.tenant_id = discovery_scope.tenant_id
-               AND discovery_tenant.is_active
+              JOIN core.tenant AS source_tenant
+                ON source_tenant.tenant_id = object_record.source_tenant_id
+               AND source_tenant.is_active
               JOIN core.attribute AS batch_attribute
                 ON batch_attribute.object_id = object_record.object_id
                AND lower(btrim(batch_attribute.attribute_name)) =
@@ -202,7 +194,7 @@ def _seed_analysis_validation(
         result_ids: list[int] = []
         relationships = (
             (endpoints[0], endpoints[1], "reference", "active", False),
-            (endpoints[1], endpoints[2], "lookup", "needs_review", True),
+            (endpoints[1], endpoints[2], "lookup", "active", True),
             (endpoints[0], endpoints[2], "inactive_test", "inactive", False),
         )
         for position, (source, target, kind, status, is_locked) in enumerate(
@@ -387,7 +379,7 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
         (
             seed.locked_result_id,
             "lookup",
-            "needs_review",
+            "active",
             True,
             seed.endpoints[1],
             seed.endpoints[2],
@@ -661,22 +653,6 @@ def test_analysis_validation_context_rejects_cross_connection_relationship(
             "UPDATE core.object SET connection_id = %s WHERE object_id = %s",
             (second_connection_id, moved.object_id),
         )
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id,
-                gds_connection_id,
-                zone_id,
-                object_schema
-            ) VALUES (%s, %s, %s, %s)
-            """,
-            (
-                physical["tenant_id"],
-                second_connection_id,
-                physical["zone_id"],
-                physical["object_schema"],
-            ),
-        )
 
     with (
         psycopg.connect(
@@ -696,29 +672,28 @@ def test_analysis_validation_context_rejects_cross_connection_relationship(
         ).fetchall()
 
 
-def test_analysis_validation_context_rejects_blank_discovery_tenant_catalog(
+def test_analysis_validation_context_rejects_blank_source_tenant_catalog(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_analysis_validation(postgres_database)
     with postgres_database.connect_owner() as connection:
-        discovery_tenant_id = require_row(
+        source_tenant_id = require_row(
             connection.execute(
                 """
-                SELECT DISTINCT discovery_scope.tenant_id
-                  FROM core.tenant_metadata_discovery_scope AS discovery_scope
-                 WHERE discovery_scope.gds_connection_id = %s
-                   AND discovery_scope.is_active
+                SELECT DISTINCT object_record.source_tenant_id
+                  FROM core.object AS object_record
+                 WHERE object_record.object_id = ANY(%s::BIGINT[])
                 """,
-                (seed.execution.connection_id,),
+                (list(seed.execution.context.selected_object_ids),),
             ).fetchone()
-        )["tenant_id"]
+        )["source_tenant_id"]
         connection.execute(
             """
             UPDATE core.tenant
                SET tenant_catalog = '   '
              WHERE tenant_id = %s
             """,
-            (discovery_tenant_id,),
+            (source_tenant_id,),
         )
 
     with (
@@ -982,7 +957,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
     locked = stored_by_id[seed.locked_result_id]
     assert locked["relationship_kind"] == "lookup"
     assert locked["relationship_basis"] == "Analysis validation relationship 2."
-    assert locked["analysis_result_status"] == "needs_review"
+    assert locked["analysis_result_status"] == "active"
     assert locked["analysis_result_is_locked"] is True
 
     inactive = stored_by_id[seed.inactive_result_id]

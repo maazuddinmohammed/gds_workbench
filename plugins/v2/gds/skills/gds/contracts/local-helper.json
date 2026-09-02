@@ -4,9 +4,7 @@
     "session-init": {"usage": "session-init --root <working-directory> --tenant <TENANT_CODE>", "session_required": false, "mutates": true},
     "status": {"usage": "status --session <session>", "session_required": true, "mutates": false},
     "sql-policy": {"usage": "sql-policy --session <session> --policy never|essential|as_needed", "session_required": true, "mutates": true},
-    "readiness": {"usage": "readiness --session <session> --target <workflow-target> [--proof-units <JSON-array>] [--system-codes <JSON-array>]", "session_required": true, "mutates": false},
-    "mapping-proof": {"usage": "mapping-proof --session <session> --target logical-mapping|dimensional-mapping --proof <JSON-object>", "session_required": true, "mutates": true},
-    "generator-proof": {"usage": "generator-proof --session <session> --target logical-code|dimensional-code --proof <JSON-object>", "session_required": true, "mutates": true},
+    "readiness": {"usage": "readiness --session <session> --target <workflow-target> [--system-codes <JSON-array>]", "session_required": true, "mutates": false},
     "draft-cache": {"usage": "draft-cache --session <session> --area metadata|model (--id <UUID> --revision <n> --status active|validated | --clear true --expected-id <UUID> --expected-revision <n>)", "session_required": true, "mutates": true},
     "snapshot-refresh": {"usage": "snapshot-refresh --session <session> --area metadata|model", "session_required": true, "mutates": true},
     "task-add": {"usage": "task-add --session <session> --area <area> --title <short-title> --plan <JSON-array>", "session_required": true, "mutates": true},
@@ -22,11 +20,9 @@
     "upsert-batch": {"usage": "upsert-batch --session <session> --area metadata|model --changes <dataset-to-record-array-JSON> --expected-digest <digest|empty>", "session_required": true, "mutates": true},
     "discard": {"usage": "discard --session <session> --area metadata|model --dataset <name> --key <canonical-key-JSON> --expected-digest <digest>", "session_required": true, "mutates": true},
     "review": {"usage": "review --session <session> --area metadata|model", "session_required": true, "mutates": false},
-    "approve-reviewed": {"usage": "approve-reviewed --session <session> --area model --reviewed true --expected-digest <digest>", "session_required": true, "mutates": true},
     "validate": {"usage": "validate --session <session> --area metadata|model", "session_required": true, "mutates": false},
     "accept": {"usage": "accept --session <session> --area metadata|model --digest <digest> [--override true --reason <reason>]", "session_required": true, "mutates": true},
     "reconcile": {"usage": "reconcile --session <session> --area metadata|model --server <server-pending-JSON-object>", "session_required": true, "mutates": false},
-    "command-contract": {"usage": "command-contract [--command <name>]", "session_required": false, "mutates": false},
-    "contract-check": {"usage": "contract-check --actual <get_server_contract-result-JSON>", "session_required": false, "mutates": false}
+    "command-contract": {"usage": "command-contract [--command <name>]", "session_required": false, "mutates": false}
   }
 }

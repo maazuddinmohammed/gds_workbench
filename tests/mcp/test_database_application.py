@@ -18,7 +18,6 @@ if TYPE_CHECKING:
 
 
 APPLICATION_TABLES = {
-    "generated_sql_artifact",
     "output_template",
     "output_template_field",
     "principal_preference",
@@ -44,6 +43,9 @@ WEB_PROVENANCE_COLUMNS = {
     ("workflow", "analysis_result", "inference_workflow_run_id"),
     ("workflow", "analysis_result", "validation_workflow_run_id"),
     ("workflow", "generated_code", "workflow_run_id"),
+    ("workflow", "generated_code_source_system", "workflow_run_id"),
+    ("workflow", "model_object_binding", "workflow_run_id"),
+    ("workflow", "model_attribute_binding", "workflow_run_id"),
     ("workflow", "conceptual_object", "workflow_run_id"),
     ("workflow", "conceptual_relationship", "workflow_run_id"),
     ("workflow", "conceptual_support", "workflow_run_id"),
@@ -337,6 +339,9 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
                              ('workflow', 'analysis_result', 'inference_workflow_run_id'),
                              ('workflow', 'analysis_result', 'validation_workflow_run_id'),
                              ('workflow', 'generated_code', 'workflow_run_id'),
+                             ('workflow', 'generated_code_source_system', 'workflow_run_id'),
+                             ('workflow', 'model_object_binding', 'workflow_run_id'),
+                             ('workflow', 'model_attribute_binding', 'workflow_run_id'),
                              ('workflow', 'conceptual_object', 'workflow_run_id'),
                              ('workflow', 'conceptual_relationship', 'workflow_run_id'),
                              ('workflow', 'conceptual_support', 'workflow_run_id'),
@@ -369,7 +374,7 @@ def test_web_workflow_provenance_is_nullable_on_every_common_artifact(
     assert all(row["is_nullable"] == "YES" for row in rows)
 
 
-def test_web_workflow_provenance_is_fenced_to_the_same_model(
+def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -422,8 +427,22 @@ def test_web_workflow_provenance_is_fenced_to_the_same_model(
         )
         for row in rows
     }
+    parent_derived_model = {
+        "generated_code",
+        "generated_code_source_system",
+        "mapping_attribute",
+        "model_attribute_binding",
+    }
     expected = {
-        (table_schema, table_name, (column_name, "model_id"))
+        (
+            table_schema,
+            table_name,
+            (
+                (column_name,)
+                if table_name in parent_derived_model
+                else (column_name, "model_id")
+            ),
+        )
         for table_schema, table_name, column_name in WEB_PROVENANCE_COLUMNS
     }
 
@@ -431,7 +450,13 @@ def test_web_workflow_provenance_is_fenced_to_the_same_model(
     assert all(row["parent_schema"] == "application" for row in rows)
     assert all(row["parent_table"] == "workflow_run" for row in rows)
     assert all(
-        tuple(row["parent_columns"]) == ("workflow_run_id", "model_id") for row in rows
+        tuple(row["parent_columns"])
+        == (
+            ("workflow_run_id",)
+            if row["table_name"] in parent_derived_model
+            else ("workflow_run_id", "model_id")
+        )
+        for row in rows
     )
     assert all(row["confdeltype"] == "a" for row in rows)
 
@@ -813,7 +838,7 @@ def test_application_schema_is_available_only_to_the_web_runtime(
     assert posture == {
         "public_schema_usage": False,
         "public_table_access": False,
-        "mcp_schema_usage": False,
+        "mcp_schema_usage": True,
         "mcp_table_access": False,
         "web_schema_usage": True,
         "web_table_select": True,
@@ -1130,9 +1155,9 @@ def test_published_prompt_versions_are_immutable_and_can_only_be_retired(
                 workflow_stage_name,
                 workflow_stage_order,
                 workflow_stage_is_agentic
-            ) VALUES (
-                'analysis', 'one_shot', 'relationship_inference',
-                'Relationship inference', 10, TRUE
+                ) VALUES (
+                    'analysis', 'one_shot', 'prompt_immutability_test',
+                    'Prompt immutability test', 910, TRUE
             )
             RETURNING workflow_stage_id
             """

@@ -63,9 +63,8 @@ from .common import (
 )
 from .model_apply import ModelMaterializer
 from .model_validation import (
-    CodeGenerationTargetContext,
     ModelValidationIssue,
-    PhysicalModelScope,
+    PhysicalModelCatalog,
     ValidatedModelChangeSet,
     validate_future_graph,
     validate_staged_records,
@@ -83,18 +82,19 @@ _annotations = change_set_annotations
 ModelStagePayloadMode = Literal["records", "json_fragments"]
 
 READ_SECTION_COLUMNS = (
-    "model_scope_document",
+    "model_input_scope_document",
     "profiling_document",
     "analysis_document",
     "assertion_document",
     "conceptual_document",
     "logical_document",
     "dimensional_document",
+    "model_binding_document",
     "mapping_document",
     "code_generation_document",
-    "qa_document",
+    "validation_document",
 )
-WRITE_SECTION_COLUMNS = READ_SECTION_COLUMNS[1:]
+WRITE_SECTION_COLUMNS = READ_SECTION_COLUMNS
 
 _MODEL_CONTEXT_FOR_UPDATE_SQL: LiteralString = """
 SELECT model_id,
@@ -111,7 +111,7 @@ _MODEL_PHYSICAL_SCOPE_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT model_tenant.tenant_code AS model_tenant_code,
        object.object_id,
-       scoped_tenant.tenant_code,
+       placement_tenant.tenant_code,
        system.system_code,
        connection.connection_code,
        object.object_schema,
@@ -130,9 +130,9 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
   LEFT JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
    AND connection.is_active
-  LEFT JOIN core.tenant AS scoped_tenant
-    ON scoped_tenant.tenant_id = visible_objects.object_tenant_id
-   AND scoped_tenant.is_active
+  LEFT JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+   AND placement_tenant.is_active
   LEFT JOIN core.system AS system
     ON system.system_id = connection.system_id
    AND system.is_active
@@ -143,7 +143,7 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
 
 _MODEL_OBJECT_ELIGIBILITY_SQL: LiteralString = """
 SELECT object_id,
-       is_bronze_source_eligible,
+       is_model_input_eligible,
        is_dimensional_source_eligible,
        is_logical_mapping_target_eligible,
        is_dimensional_mapping_target_eligible
@@ -152,35 +152,11 @@ SELECT object_id,
 
 _MODEL_ATTRIBUTE_ELIGIBILITY_SQL: LiteralString = """
 SELECT attribute_id,
-       is_bronze_source_eligible,
+       is_model_input_eligible,
        is_dimensional_source_eligible,
        is_logical_mapping_target_eligible,
        is_dimensional_mapping_target_eligible
   FROM workflow.list_model_attribute_eligibility(%s)
-"""
-
-_CODE_GENERATION_CONTEXT_SQL: LiteralString = """
-SELECT modeled_entity_type,
-       object_id,
-       mapping_context_digest,
-       source_context_digest,
-       source_context
-  FROM workflow.list_code_generation_target_context(
-           %s,
-           'logical_entity',
-           %s
-       )
-UNION ALL
-SELECT modeled_entity_type,
-       object_id,
-       mapping_context_digest,
-       source_context_digest,
-       source_context
-  FROM workflow.list_code_generation_target_context(
-           %s,
-           'dimensional_entity',
-           %s
-       )
 """
 
 _OTHER_MODEL_NAMES_SQL: LiteralString = """
@@ -409,15 +385,17 @@ WITH operation_time AS MATERIALIZED (
     SELECT clock_timestamp() AS current_time
 )
 UPDATE mcp.model_change_set AS change_set
-   SET profiling_document = %s,
+   SET model_input_scope_document = %s,
+       profiling_document = %s,
        analysis_document = %s,
        assertion_document = %s,
        conceptual_document = %s,
        logical_document = %s,
        dimensional_document = %s,
+       model_binding_document = %s,
        mapping_document = %s,
        code_generation_document = %s,
-       qa_document = %s,
+       validation_document = %s,
        model_change_set_status = 'active',
        draft_revision = draft_revision + 1,
        candidate_digest = NULL,
@@ -761,8 +739,19 @@ RETURNING change_set.draft_revision, change_set.terminal_time
 
 
 class StageModelChange(ContractModel):
-    dataset: ModelChangeSetDataset
-    records: Annotated[list[dict[str, object]], Field(max_length=20_000)]
+    dataset: ModelChangeSetDataset = Field(
+        description="Model dataset whose complete pending replacement is supplied."
+    )
+    records: Annotated[
+        list[dict[str, object]],
+        Field(
+            max_length=20_000,
+            description=(
+                "Complete pending record list for this dataset; an empty list clears only "
+                "this pending dataset and omitted datasets remain unchanged."
+            ),
+        ),
+    ]
 
 
 class ModelDatasetCount(ContractModel):
@@ -817,7 +806,7 @@ class StageModelChangeSetResult(ContractModel):
     staged: Literal[True] = True
     datasets: tuple[ModelChangeSetDatasetCount, ...] = Field(
         min_length=1,
-        max_length=21,
+        max_length=25,
     )
     draft_revision: int = Field(gt=0)
     status: Literal["active"] = "active"
@@ -1078,9 +1067,9 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Replace one or more complete pending Model datasets. Records use the exact "
-            "ID-free schemas returned by describe_model_dataset. Mapping, generated_code, "
-            "and QA dependencies require successive applied Change Sets."
+            "Replace one or more complete pending Model datasets in one transaction. Omitted "
+            "datasets remain unchanged. Records must use describe_model_dataset's ID-free "
+            "schemas; related replacements are checked against the complete future Model graph."
         ),
         annotations=_annotations(read_only=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1091,7 +1080,14 @@ def register_model_change_set_tools(
         model_id: Annotated[int, Field(gt=0)],
         model_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        changes: Annotated[list[StageModelChange], Field(min_length=1, max_length=21)],
+        changes: Annotated[
+            list[StageModelChange],
+            Field(
+                min_length=1,
+                max_length=25,
+                description="One complete pending replacement per affected Model dataset.",
+            ),
+        ],
         schema_version: Literal["1.0"] = "1.0",
     ) -> StageModelChangeSetResult:
         del schema_version
@@ -1199,9 +1195,9 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Begin or resume an idempotent bounded upload for one complete Model "
-            "Change Set dataset. Record mode keeps records whole; generated_code may use "
-            "ordered JSON fragments. This does not change the draft revision."
+            "Begin or resume an oversized upload for one complete Model dataset replacement. "
+            "Use records mode normally; only generated_code may use json_fragments. Beginning "
+            "a batch is idempotent and does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1212,14 +1208,46 @@ def register_model_change_set_tools(
         model_id: Annotated[int, Field(gt=0)],
         model_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        dataset: ModelChangeSetDataset,
-        total_record_count: Annotated[int, Field(gt=0, le=20_000)],
-        total_chunk_count: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
-        batch_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
-        payload_mode: ModelStagePayloadMode = "records",
+        dataset: Annotated[
+            ModelChangeSetDataset,
+            Field(description="Single dataset replaced when this batch is committed."),
+        ],
+        total_record_count: Annotated[
+            int,
+            Field(gt=0, le=20_000, description="Records in the complete replacement list."),
+        ],
+        total_chunk_count: Annotated[
+            int,
+            Field(gt=0, le=MAX_STAGE_CHUNKS, description="Ordered chunks numbered from 1."),
+        ],
+        batch_sha256: Annotated[
+            str,
+            Field(
+                pattern=SHA256_PATTERN,
+                description=(
+                    "SHA-256 of the lowercase chunk SHA-256 strings concatenated in chunk order."
+                ),
+            ),
+        ],
+        payload_mode: Annotated[
+            ModelStagePayloadMode,
+            Field(
+                description=(
+                    "Use records for whole records. json_fragments is allowed only for "
+                    "generated_code and requires total_payload_bytes."
+                )
+            ),
+        ] = "records",
         total_payload_bytes: Annotated[
             int | None,
-            Field(gt=0, le=MAX_MODEL_STAGE_PAYLOAD_BYTES),
+            Field(
+                gt=0,
+                le=MAX_MODEL_STAGE_PAYLOAD_BYTES,
+                description=(
+                    "Required decoded JSON byte count for generated_code json_fragments; "
+                    "omit in records mode."
+                ),
+            ),
         ] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> BeginModelStageBatchResult:
@@ -1364,8 +1392,9 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Idempotently store one ordered records chunk or generated_code JSON fragment "
-            "for an active Model Stage Batch. This does not change the Change Set."
+            "Store one ordered chunk for an active Model Stage Batch. Supply records in records "
+            "mode, or a base64 JSON fragment only for generated_code json_fragments mode. "
+            "Repeated identical chunks are safe and do not change the Change Set."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1376,17 +1405,44 @@ def register_model_change_set_tools(
         model_id: Annotated[int, Field(gt=0)],
         model_change_set_id: UUID,
         stage_batch_id: UUID,
-        dataset: ModelChangeSetDataset,
-        chunk_index: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
-        chunk_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        dataset: Annotated[
+            ModelChangeSetDataset,
+            Field(description="Must match the dataset declared by the Stage Batch."),
+        ],
+        chunk_index: Annotated[
+            int,
+            Field(gt=0, le=MAX_STAGE_CHUNKS, description="One-based chunk position."),
+        ],
+        chunk_sha256: Annotated[
+            str,
+            Field(
+                pattern=SHA256_PATTERN,
+                description=(
+                    "SHA-256 of normalized records, or decoded fragment bytes in "
+                    "json_fragments mode."
+                ),
+            ),
+        ],
         records: Annotated[
             list[dict[str, object]] | None,
-            Field(max_length=MAX_STAGE_CHUNK_RECORDS),
+            Field(
+                max_length=MAX_STAGE_CHUNK_RECORDS,
+                description="Required nonempty record list in records mode; otherwise omit.",
+            ),
         ] = None,
-        payload_mode: ModelStagePayloadMode = "records",
+        payload_mode: Annotated[
+            ModelStagePayloadMode,
+            Field(description="Must match the Stage Batch manifest."),
+        ] = "records",
         payload_fragment_base64: Annotated[
             str | None,
-            Field(max_length=MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS),
+            Field(
+                max_length=MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS,
+                description=(
+                    "Required canonical base64 fragment in generated_code json_fragments "
+                    "mode; otherwise omit."
+                ),
+            ),
         ] = None,
         schema_version: Literal["1.0"] = "1.0",
     ) -> PutModelStageChunkResult:
@@ -1610,8 +1666,9 @@ def register_model_change_set_tools(
 
     @server.tool(
         description=(
-            "Verify and atomically commit one complete Model Stage Batch as the "
-            "dataset's replacement list, incrementing the draft revision once."
+            "Verify and atomically commit one complete Model Stage Batch as that dataset's "
+            "pending replacement. The response returns the new draft_revision; use it for "
+            "the next batch or validation."
         ),
         annotations=_annotations(read_only=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1839,7 +1896,11 @@ def register_model_change_set_tools(
     )
 
     @server.tool(
-        description=("Get Model Change Set counts, or one selected pending ID-free dataset."),
+        description=(
+            "Read the caller's Model Change Set without requiring a current Tenant Lock. "
+            "Omit dataset for counts only; provide dataset to return only that pending "
+            "ID-free dataset."
+        ),
         annotations=_annotations(read_only=True, idempotent=True),
         meta={"gds/toolPolicy": READ_POLICY.value},
         structured_output=True,
@@ -1916,7 +1977,10 @@ def register_model_change_set_tools(
     )
 
     @server.tool(
-        description=("Validate one exact Model Change Set draft against the applied future graph."),
+        description=(
+            "Validate one exact Model Change Set revision against the complete future graph "
+            "and seal it for Apply. This does not execute generated Code or Validation Checks."
+        ),
         annotations=_annotations(read_only=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
@@ -2272,36 +2336,6 @@ def register_model_change_set_tools(
         },
     )
 
-    @server.prompt(
-        name="work_with_model_change_set",
-        title="Work with a GDS Model",
-        description="Intent-bounded workflow for one complete Model Change Set.",
-    )
-    def work_with_model_change_set(model_id: int) -> str:
-        return (
-            f"Work with Model ID {model_id} only to the user's requested boundary. "
-            "Never advance beyond it. Read-only inspection: use get_model, focused "
-            "layer/evidence reads, or get_model_change_set and stop without a lock. "
-            "Local drafting: keep the Model Snapshot immutable, author only affected "
-            "datasets and direct dependencies, and do not call MCP mutation tools. "
-            "Model Scope is read-only through MCP and must never be staged or batched. "
-            "Before Create, Stage, Validate, or Apply, call check_tenant_lock and ask "
-            "before acquire_tenant_lock. Call create_model_change_set only for explicit "
-            "create/resume or when an approved Stage has no draft. If resumed, fetch "
-            "the summary and every dataset with a nonzero count before replacing "
-            "anything. Use describe_model_dataset only for datasets being authored. "
-            "For Code/QA, Apply Mapping→generated_code→QA successively; omit Code when "
-            "absent. Copy Code target digests from "
-            "get_model_code_generation_document result. "
-            "Show complete affected lists and ask before stage_model_change_set or "
-            "begin_model_stage_batch. For a large dataset, Put every approved chunk and "
-            "Commit once. "
-            "Validate the latest revision and repair only the first failed phase. Show "
-            "the authoritative action_review, then obtain fresh approval immediately "
-            "before apply_model_change_set. Archive only when requested; archive needs "
-            "no current lock. Release any lock this workflow acquired when it stops."
-        )
-
 
 async def _authorize_model(
     transaction: WriteTransaction,
@@ -2538,16 +2572,8 @@ async def _validate_locked_change_set(
         dict[ModelChangeSetDataset, list[dict[str, object]]],
         _pending_datasets(row),
     )
-    qa_is_staged = bool(
-        staged_documents.get("validation_group") or staged_documents.get("validation_check")
-    )
-    code_is_staged = bool(staged_documents.get("generated_code"))
     snapshot = await build_model_snapshot(transaction, model)
-    physical_scope = await _load_physical_scope(
-        transaction,
-        model,
-        required_artifact_type=(None if qa_is_staged and not code_is_staged else "sql_file"),
-    )
+    physical_scope = await _load_physical_scope(transaction, model)
     return validate_future_graph(
         snapshot=snapshot,
         staged_documents=staged_documents,
@@ -2558,9 +2584,7 @@ async def _validate_locked_change_set(
 async def _load_physical_scope(
     transaction: WriteTransaction,
     model: ModelReadContext,
-    *,
-    required_artifact_type: Literal["sql_file"] | None = "sql_file",
-) -> PhysicalModelScope:
+) -> PhysicalModelCatalog:
     rows = await transaction.fetch_all(_MODEL_PHYSICAL_SCOPE_SQL, (model.tenant_id,))
     if not rows:
         raise InvalidRequestError("Model physical Scope could not be resolved.")
@@ -2576,15 +2600,6 @@ async def _load_physical_scope(
     attribute_eligibility_rows = await transaction.fetch_all(
         _MODEL_ATTRIBUTE_ELIGIBILITY_SQL,
         (model.model_id,),
-    )
-    code_generation_context_rows = await transaction.fetch_all(
-        _CODE_GENERATION_CONTEXT_SQL,
-        (
-            model.model_id,
-            required_artifact_type,
-            model.model_id,
-            required_artifact_type,
-        ),
     )
     objects: set[tuple[str, str, str, str, str]] = set()
     attributes: set[tuple[str, str, str, str, str, str]] = set()
@@ -2619,7 +2634,7 @@ async def _load_physical_scope(
                     attribute_keys_by_id[attribute_id] = attribute_key
 
     eligibility_flags = (
-        "is_bronze_source_eligible",
+        "is_model_input_eligible",
         "is_dimensional_source_eligible",
         "is_logical_mapping_target_eligible",
         "is_dimensional_mapping_target_eligible",
@@ -2642,56 +2657,15 @@ async def _load_physical_scope(
             for flag in eligibility_flags:
                 if eligibility[flag] is True:
                     eligible_attributes[flag].add(key)
-    code_generation_contexts: list[CodeGenerationTargetContext] = []
-    for context in code_generation_context_rows:
-        object_key = object_keys_by_id.get(context["object_id"])
-        source_context = context["source_context"]
-        raw_source_systems: object = (
-            cast(Mapping[str, object], source_context).get("source_systems", ())
-            if isinstance(source_context, Mapping)
-            else ()
-        )
-        source_system_codes: frozenset[str] = frozenset(
-            normalize_model_key_value(system_code)
-            for source_system in (
-                cast(list[object], raw_source_systems)
-                if isinstance(raw_source_systems, list)
-                else ()
-            )
-            if isinstance(source_system, Mapping)
-            and isinstance(
-                system_code := cast(Mapping[str, object], source_system).get("system_code"),
-                str,
-            )
-        )
-        modeled_entity_type = context["modeled_entity_type"]
-        mapping_context_digest = context["mapping_context_digest"]
-        source_context_digest = context["source_context_digest"]
-        if (
-            object_key is not None
-            and modeled_entity_type in {"logical_entity", "dimensional_entity"}
-            and isinstance(mapping_context_digest, str)
-            and isinstance(source_context_digest, str)
-            and source_system_codes
-        ):
-            code_generation_contexts.append(
-                CodeGenerationTargetContext(
-                    object_key=object_key,
-                    modeled_entity_type=modeled_entity_type,
-                    source_system_codes=source_system_codes,
-                    mapping_context_digest=mapping_context_digest.strip().lower(),
-                    source_context_digest=source_context_digest.strip().lower(),
-                )
-            )
-    return PhysicalModelScope(
+    return PhysicalModelCatalog(
         model_tenant_code=rows[0]["model_tenant_code"],
         active_system_codes=frozenset(
             normalize_model_key_value(system["system_code"]) for system in system_rows
         ),
         objects=frozenset(objects),
         attributes=frozenset(attributes),
-        bronze_source_objects=frozenset(eligible_objects["is_bronze_source_eligible"]),
-        bronze_source_attributes=frozenset(eligible_attributes["is_bronze_source_eligible"]),
+        model_input_objects=frozenset(eligible_objects["is_model_input_eligible"]),
+        model_input_attributes=frozenset(eligible_attributes["is_model_input_eligible"]),
         dimensional_source_objects=frozenset(eligible_objects["is_dimensional_source_eligible"]),
         dimensional_source_attributes=frozenset(
             eligible_attributes["is_dimensional_source_eligible"]
@@ -2711,7 +2685,6 @@ async def _load_physical_scope(
         other_model_names=frozenset(
             normalize_model_key_value(other_model["model_name"]) for other_model in other_model_rows
         ),
-        code_generation_contexts=tuple(code_generation_contexts),
     )
 
 

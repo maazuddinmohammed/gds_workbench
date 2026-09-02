@@ -49,37 +49,33 @@ def test_workbench_is_classic_modular_and_network_blocked() -> None:
     assert "EventSource" not in source
 
 
-def test_workbench_exposes_explicit_refresh_validate_and_override() -> None:
+def test_workbench_exposes_refresh_and_optional_validation_without_review_buttons() -> None:
     html = (WORKBENCH / "index.html").read_text()
 
     assert 'id="refresh-button"' in html
     assert 'id="validate-button"' in html
-    assert 'id="override-button"' in html
+    assert 'id="override-button"' not in html
+    assert 'id="accept-button"' not in html
     assert 'id="all-groups"' in html
     assert 'data-area="metadata"' in html
     assert 'data-area="model"' in html
     assert "Save writes local JSON only." in html
+    assert "Tell the agent to proceed in chat" in html
 
 
-def test_workbench_validates_governed_code_and_qa_records() -> None:
+def test_workbench_validation_is_schema_driven() -> None:
     source = (WORKBENCH / "validation" / "model.js").read_text()
+    common = (WORKBENCH / "validation" / "common.js").read_text()
     powershell = (SKILL_ROOT / "scripts" / "gds-local.ps1").read_text()
 
-    for text in (
-        "Generated Code contains an unsupported control character.",
-        "Generated Code digest does not match its content.",
-        "Validation assertion shape is invalid.",
-        "Validation comparison value does not match its result type.",
-        "An active Validation Check requires an active Validation Group.",
-        "Validation Group Mapping context digest is stale or invalid.",
-        "Validation Group Code context digest is stale or invalid.",
-        "Generated Code must be authored after its Mapping Change Set is applied.",
-        "QA must be authored after its Mapping and Code Change Sets are applied.",
-        "A locked applied record cannot be changed.",
-    ):
-        assert text in source
-        assert text in powershell
-    assert "409600" not in source
+    assert '"x-gds-record-type"' in source
+    assert '"x-gds-references"' in source
+    assert "broken_reference" in source
+    assert "partial_null_reference" in source
+    assert '"x-gds-change-set-eligible"' in common
+    assert '"x-gds-unique-constraints"' in common
+    assert "Locked records cannot be changed locally." in common
+    assert "Add-DeclaredReferenceIssues" in powershell
 
 
 def test_workbench_exposes_results_table_and_json_fallback() -> None:
@@ -98,6 +94,9 @@ def test_workbench_results_use_visible_spreadsheet_grid_lines() -> None:
     assert "border-right: 1px solid var(--grid-line);" in styles
     assert "border-bottom: 1px solid var(--grid-line);" in styles
     assert "border: 1px solid var(--grid-line-strong);" in styles
+    assert "padding: 6px 8px;" in styles
+    assert "#results-table th {" in styles and "font-size: 9px;" in styles
+    assert "#results-table td { font-size: 10px; }" in styles
 
 
 def test_add_row_form_covers_every_snapshot_dataset_schema(tmp_path: Path) -> None:
@@ -149,7 +148,7 @@ def test_workbench_labels_dynamic_state_and_supports_narrow_screens() -> None:
     assert 'aria-selected="true"' in html
     assert 'aria-label="Local Change Set JSON draft"' in html
     assert 'id="status-message" role="status" aria-live="polite"' in html
-    assert 'aria-labelledby="override-title"' in html
+    assert 'aria-labelledby="override-title"' not in html
     assert "@media (max-width: 720px)" in styles
     assert ".validation-rail { position: static;" in styles
 

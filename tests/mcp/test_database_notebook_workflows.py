@@ -83,7 +83,6 @@ SELECT *
       %s::JSONB,
       %s::VARCHAR,
       %s::VARCHAR,
-      %s::VARCHAR,
       %s::BIGINT,
       %s::BIGINT,
       %s::BIGINT,
@@ -136,7 +135,7 @@ NOTEBOOK_WORKFLOW_SHAPES = (
     NotebookWorkflowShape(
         "code_generation", "code_generation", None, "mapped_silver", True
     ),
-    NotebookWorkflowShape("qa", "qa", None, "mapped_system", True),
+    NotebookWorkflowShape("validation", "validation", None, "mapped_system", True),
 )
 
 ONE_SHOT_STAGE_CODES = {
@@ -144,7 +143,7 @@ ONE_SHOT_STAGE_CODES = {
     "logical": "candidate_authoring",
     "dimensional": "candidate_authoring",
     "mapping": "mapping_authoring",
-    "qa": "validation_generation",
+    "validation": "validation_generation",
 }
 
 
@@ -889,7 +888,6 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
     )
     mapping_operation = None
     mapping_coverage_mode = None
-    mapping_artifact_type = None
     mapping_source_system_id = None
     code_generation_coverage_mode = None
     sql_generation_guide_version_id = None
@@ -914,7 +912,6 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
                 )["system_id"]
             mapping_operation = "build"
             mapping_coverage_mode = "selected_targets"
-            mapping_artifact_type = "sql_file"
         elif shape.workflow == "code_generation":
             modeled_entity_type = "logical_entity"
             code_generation_coverage_mode = "selected_targets"
@@ -937,10 +934,13 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
                         """
                         SELECT source_system.system_code
                           FROM workflow.mapping_object AS mapping
+                          JOIN workflow.model_object_binding AS binding
+                            ON binding.model_object_binding_id =
+                               mapping.model_object_binding_id
                           JOIN core.system AS source_system
                             ON source_system.system_id = mapping.source_system_id
                          WHERE mapping.model_id = %s
-                           AND mapping.object_id = %s
+                           AND binding.object_id = %s
                         """,
                         (context.model_id, target_id),
                     ).fetchone()
@@ -986,7 +986,6 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
                     "{}",
                     mapping_operation,
                     mapping_coverage_mode,
-                    mapping_artifact_type,
                     mapping_source_system_id,
                     None,
                     None,
@@ -1013,7 +1012,7 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
     assert created["correlation_id"] == correlation_id
     expected_scope_count = (
         len(selected_system_codes)
-        if shape.workflow == "qa"
+        if shape.workflow == "validation"
         else len(selected_object_ids)
     )
     assert created["selected_scope_count"] == expected_scope_count
@@ -1046,7 +1045,6 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
                        modeled_entity_type,
                        mapping_operation,
                        mapping_coverage_mode,
-                       mapping_artifact_type,
                        code_generation_coverage_mode,
                        sql_generation_guide_version_id,
                        ARRAY(
@@ -1083,7 +1081,6 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
     assert stored["modeled_entity_type"] == expected_modeled_entity_type
     assert stored["mapping_operation"] == mapping_operation
     assert stored["mapping_coverage_mode"] == mapping_coverage_mode
-    assert stored["mapping_artifact_type"] == mapping_artifact_type
     assert stored["code_generation_coverage_mode"] == code_generation_coverage_mode
     assert stored["sql_generation_guide_version_id"] == sql_generation_guide_version_id
     assert stored["selected_object_ids"] == selected_object_ids
@@ -1099,7 +1096,7 @@ def test_notebook_workflow_acl_is_wrapper_only_and_verified(
         "character varying,character varying,character varying,integer,integer,bigint[],"
         "character varying[],character varying,character varying,uuid,jsonb,"
         "character varying,character varying,"
-        "character varying,bigint,bigint,bigint,character varying,bigint)",
+        "bigint,bigint,bigint,character varying,bigint)",
         "application.start_and_claim_notebook_workflow_run("
         "bigint,bigint,bigint,bigint,character varying,integer)",
         "application.renew_notebook_workflow_run_claim(bigint,uuid,integer)",
@@ -1111,7 +1108,7 @@ def test_notebook_workflow_acl_is_wrapper_only_and_verified(
         "character varying,character varying,character varying,character varying,integer,"
         "integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,"
         "character varying,"
-        "character varying,character varying,bigint,bigint,bigint,character varying,bigint)",
+        "character varying,bigint,bigint,bigint,character varying,bigint)",
         "application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)",
         "application.claim_next_workflow_run(integer)",
         "application.claim_workflow_run_exact(bigint,character varying,integer)",

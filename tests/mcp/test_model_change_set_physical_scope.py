@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from types import SimpleNamespace
 from typing import Any, LiteralString, cast
 
 import pytest
@@ -13,6 +14,8 @@ from gds_etl_workbench.tools.change_sets.model import (
 )
 from gds_etl_workbench.tools.change_sets.model_validation import (
     CodeGenerationTargetContext,
+    validation_code_context_digest,
+    validation_mapping_context_digest,
 )
 from gds_etl_workbench.tools.modeling.common import ModelReadContext
 
@@ -34,9 +37,9 @@ class PhysicalScopeTransaction:
                     "model_tenant_code": "TENANT-A",
                     "object_id": 101,
                     "tenant_code": " Tenant-A ",
-                    "system_code": " GDS ",
-                    "connection_code": " LakeHouse ",
-                    "object_schema": " Silver ",
+                    "system_code": " ERP ",
+                    "connection_code": " Foreign-Catalog ",
+                    "object_schema": " Source ",
                     "object_name": " Orders ",
                     "attribute_id": 1001,
                     "attribute_name": " Order_ID ",
@@ -44,35 +47,49 @@ class PhysicalScopeTransaction:
                 {
                     "model_tenant_code": "TENANT-A",
                     "object_id": 202,
-                    "tenant_code": " Tenant-A ",
+                    "tenant_code": " GDS ",
+                    "system_code": " GDS ",
+                    "connection_code": " LakeHouse ",
+                    "object_schema": " Silver ",
+                    "object_name": " Orders ",
+                    "attribute_id": 2002,
+                    "attribute_name": " OrderID ",
+                },
+                {
+                    "model_tenant_code": "TENANT-A",
+                    "object_id": 303,
+                    "tenant_code": " GDS ",
                     "system_code": " GDS ",
                     "connection_code": " LakeHouse ",
                     "object_schema": " Gold ",
                     "object_name": " Sales ",
-                    "attribute_id": 2002,
-                    "attribute_name": " Sales_Key ",
+                    "attribute_id": 3003,
+                    "attribute_name": " SalesKey ",
                 },
             ]
         if normalized.startswith("SELECT system_code FROM core.system"):
-            return [
-                {"system_code": " ERP "},
-                {"system_code": "CRM"},
-                {"system_code": " Finance "},
-            ]
+            return [{"system_code": " ERP "}, {"system_code": "CRM"}]
         if normalized.startswith("SELECT model_name FROM model.model"):
-            return []
+            return [{"model_name": " ExistingModel "}]
         if "list_model_object_eligibility" in normalized:
             return [
                 {
                     "object_id": 101,
-                    "is_bronze_source_eligible": False,
+                    "is_model_input_eligible": True,
+                    "is_dimensional_source_eligible": False,
+                    "is_logical_mapping_target_eligible": False,
+                    "is_dimensional_mapping_target_eligible": False,
+                },
+                {
+                    "object_id": 202,
+                    "is_model_input_eligible": True,
                     "is_dimensional_source_eligible": True,
                     "is_logical_mapping_target_eligible": True,
                     "is_dimensional_mapping_target_eligible": False,
                 },
                 {
-                    "object_id": 202,
-                    "is_bronze_source_eligible": False,
+                    "object_id": 303,
+                    "is_model_input_eligible": False,
                     "is_dimensional_source_eligible": False,
                     "is_logical_mapping_target_eligible": False,
                     "is_dimensional_mapping_target_eligible": True,
@@ -82,48 +99,33 @@ class PhysicalScopeTransaction:
             return [
                 {
                     "attribute_id": 1001,
-                    "is_bronze_source_eligible": False,
+                    "is_model_input_eligible": True,
+                    "is_dimensional_source_eligible": False,
+                    "is_logical_mapping_target_eligible": False,
+                    "is_dimensional_mapping_target_eligible": False,
+                },
+                {
+                    "attribute_id": 2002,
+                    "is_model_input_eligible": True,
                     "is_dimensional_source_eligible": True,
                     "is_logical_mapping_target_eligible": True,
                     "is_dimensional_mapping_target_eligible": False,
                 },
                 {
-                    "attribute_id": 2002,
-                    "is_bronze_source_eligible": False,
+                    "attribute_id": 3003,
+                    "is_model_input_eligible": False,
                     "is_dimensional_source_eligible": False,
                     "is_logical_mapping_target_eligible": False,
                     "is_dimensional_mapping_target_eligible": True,
-                },
-            ]
-        if "list_code_generation_target_context" in normalized:
-            return [
-                {
-                    "modeled_entity_type": "logical_entity",
-                    "object_id": 101,
-                    "mapping_context_digest": f"  {'A' * 64}  ",
-                    "source_context_digest": f"  {'B' * 64}  ",
-                    "source_context": {
-                        "source_systems": [
-                            {"system_code": " ERP "},
-                            {"system_code": "cRm"},
-                        ]
-                    },
-                },
-                {
-                    "modeled_entity_type": "dimensional_entity",
-                    "object_id": 202,
-                    "mapping_context_digest": f"  {'C' * 64}  ",
-                    "source_context_digest": f"  {'D' * 64}  ",
-                    "source_context": {
-                        "source_systems": [{"system_code": " Finance "}]
-                    },
                 },
             ]
         raise AssertionError(f"Unexpected physical Scope query: {normalized}")
 
 
 @pytest.mark.asyncio
-async def test_load_physical_scope_builds_both_code_generation_context_layers() -> None:
+async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags() -> (
+    None
+):
     transaction = PhysicalScopeTransaction()
     model = ModelReadContext(
         model_id=77,
@@ -132,79 +134,30 @@ async def test_load_physical_scope_builds_both_code_generation_context_layers() 
         model_revision=4,
     )
 
-    scope = await _load_physical_scope(
-        cast(WriteTransaction, transaction),
-        model,
-    )
+    scope = await _load_physical_scope(cast(WriteTransaction, transaction), model)
 
-    context_query, context_parameters = next(
-        (query, parameters)
-        for query, parameters in transaction.calls
-        if "list_code_generation_target_context" in query
+    source = ("tenant-a", "erp", "foreign-catalog", "source", "orders")
+    silver = ("gds", "gds", "lakehouse", "silver", "orders")
+    gold = ("gds", "gds", "lakehouse", "gold", "sales")
+    assert scope.model_tenant_code == "TENANT-A"
+    assert scope.model_input_objects == frozenset({source, silver})
+    assert scope.dimensional_source_objects == frozenset({silver})
+    assert scope.logical_mapping_target_objects == frozenset({silver})
+    assert scope.dimensional_mapping_target_objects == frozenset({gold})
+    assert scope.model_input_attributes == frozenset(
+        {(*source, "order_id"), (*silver, "orderid")}
     )
-    assert "'logical_entity'," in context_query
-    assert "'dimensional_entity'," in context_query
-    assert context_parameters == (77, "sql_file", 77, "sql_file")
-    assert scope.code_generation_contexts == (
-        CodeGenerationTargetContext(
-            object_key=("tenant-a", "gds", "lakehouse", "silver", "orders"),
-            modeled_entity_type="logical_entity",
-            source_system_codes=frozenset({"erp", "crm"}),
-            mapping_context_digest="a" * 64,
-            source_context_digest="b" * 64,
-        ),
-        CodeGenerationTargetContext(
-            object_key=("tenant-a", "gds", "lakehouse", "gold", "sales"),
-            modeled_entity_type="dimensional_entity",
-            source_system_codes=frozenset({"finance"}),
-            mapping_context_digest="c" * 64,
-            source_context_digest="d" * 64,
-        ),
+    assert scope.other_model_names == frozenset({"existingmodel"})
+    assert scope.active_system_codes == frozenset({"erp", "crm"})
+    assert all(
+        "list_code_generation_target_context" not in query
+        for query, _ in transaction.calls
     )
 
 
 @pytest.mark.asyncio
-async def test_load_physical_scope_can_include_any_mapping_artifact_for_qa() -> None:
-    transaction = PhysicalScopeTransaction()
-    model = ModelReadContext(
-        model_id=77,
-        tenant_id=7,
-        model_name="Sales",
-        model_revision=4,
-    )
-
-    await _load_physical_scope(
-        cast(WriteTransaction, transaction),
-        model,
-        required_artifact_type=None,
-    )
-
-    _, context_parameters = next(
-        (query, parameters)
-        for query, parameters in transaction.calls
-        if "list_code_generation_target_context" in query
-    )
-    assert context_parameters == (77, None, 77, None)
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("qa_records", "code_records", "expected_artifact_type"),
-    [
-        ([{"validation_group_name": "QA"}], [], None),
-        (
-            [{"validation_group_name": "QA"}],
-            [{"artifact_type": "sql_file"}],
-            "sql_file",
-        ),
-        ([], [{"artifact_type": "sql_file"}], "sql_file"),
-    ],
-)
-async def test_locked_change_set_uses_neutral_context_only_for_qa_without_code(
+async def test_locked_change_set_loads_one_neutral_physical_scope(
     monkeypatch: pytest.MonkeyPatch,
-    qa_records: list[dict[str, object]],
-    code_records: list[dict[str, object]],
-    expected_artifact_type: str | None,
 ) -> None:
     model = ModelReadContext(
         model_id=77,
@@ -216,20 +169,15 @@ async def test_locked_change_set_uses_neutral_context_only_for_qa_without_code(
         "base_model_revision": 4,
         **{column: {} for column in model_change_sets.READ_SECTION_COLUMNS},
     }
-    row["qa_document"] = {"validation_group": qa_records}
-    row["code_generation_document"] = {"generated_code": code_records}
     observed: dict[str, object] = {}
     result = object()
 
     async def build_snapshot(*args: object, **kwargs: object) -> object:
         return object()
 
-    async def load_scope(
-        *args: object,
-        required_artifact_type: str | None,
-        **kwargs: object,
-    ) -> object:
-        observed["required_artifact_type"] = required_artifact_type
+    async def load_scope(*args: object, **kwargs: object) -> object:
+        observed["scope_args"] = args
+        observed["scope_kwargs"] = kwargs
         return object()
 
     def validate_graph(*args: object, **kwargs: object) -> object:
@@ -246,4 +194,31 @@ async def test_locked_change_set_uses_neutral_context_only_for_qa_without_code(
     )
 
     assert actual is result
-    assert observed["required_artifact_type"] == expected_artifact_type
+    assert observed["scope_kwargs"] == {}
+    assert len(cast(tuple[object, ...], observed["scope_args"])) == 2
+
+
+def test_code_generation_target_context_uses_one_server_derived_digest() -> None:
+    context = CodeGenerationTargetContext(
+        object_key=("gds", "gds", "lakehouse", "silver", "orders"),
+        modeled_entity_type="logical_entity",
+        modeled_entity_name="Orders",
+        source_system_codes=frozenset({"erp"}),
+        code_input_digest="a" * 64,
+    )
+    generated = SimpleNamespace(
+        modeled_entity_type="logical_entity",
+        modeled_entity_name="Orders",
+        source_system_codes=("ERP",),
+        artifact_name="Orders.sql",
+        artifact_type="sql_file",
+        generated_code_content="SELECT 1",
+        generated_code_status="active",
+    )
+
+    mapping_digest = validation_mapping_context_digest((context,), "ERP")
+    code_digest = validation_code_context_digest((context,), (generated,), "ERP")
+
+    assert mapping_digest is not None and len(mapping_digest) == 64
+    assert code_digest is not None and len(code_digest) == 64
+    assert mapping_digest != code_digest

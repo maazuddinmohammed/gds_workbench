@@ -2,7 +2,7 @@
 
 import json
 from datetime import datetime
-from typing import Annotated, Self
+from typing import Self
 
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import (
@@ -159,19 +159,6 @@ class ArchiveModelRequest(BaseModel):
     expected_model_revision: int = Field(gt=0)
 
 
-class ReplaceModelScopeRequest(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    expected_model_revision: int = Field(gt=0)
-    object_ids: list[Annotated[int, Field(gt=0, strict=True)]] = Field(max_length=50_000)
-
-    @model_validator(mode="after")
-    def validate_unique_object_ids(self) -> Self:
-        if len(self.object_ids) != len(set(self.object_ids)):
-            raise ValueError("Model Scope Object IDs must be unique")
-        return self
-
-
 class ModelCommandResult(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -179,16 +166,6 @@ class ModelCommandResult(BaseModel):
     tenant_id: int = Field(gt=0)
     model_revision: int = Field(gt=0)
     is_active: bool
-    updated_at: datetime
-
-
-class ModelScopeCommandResult(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    changed: bool
-    model_id: int = Field(gt=0)
-    model_revision: int = Field(gt=0)
-    active_scope_count: int = Field(ge=0, le=50_000)
     updated_at: datetime
 
 

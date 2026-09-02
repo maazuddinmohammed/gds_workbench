@@ -225,7 +225,6 @@ function DimensionalFilterBar({
             >
               <option value="">All statuses</option>
               <option value="active">Active</option>
-              <option value="needs_review">Needs review</option>
               <option value="inactive">Inactive</option>
               <option value="deprecated">Deprecated</option>
             </select>
@@ -525,7 +524,6 @@ function DimensionalCollectionFilterBar<T extends DimensionalAttributeFilters>({
             >
               <option value="">All statuses</option>
               <option value="active">Active</option>
-              <option value="needs_review">Needs review</option>
               <option value="inactive">Inactive</option>
               <option value="deprecated">Deprecated</option>
             </select>

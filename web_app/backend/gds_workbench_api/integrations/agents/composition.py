@@ -43,11 +43,8 @@ from gds_workbench_api.integrations.agents.fake_logical import (
 )
 from gds_workbench_api.integrations.agents.fake_mapping import (
     fake_detailed_mapping_candidate,
-    fake_mapping_attribute_batch,
-    fake_mapping_batch_plans,
+    fake_mapping_candidate,
     fake_mapping_context_from_tools,
-    fake_mapping_header_candidate,
-    mapping_dict,
 )
 from gds_workbench_api.integrations.agents.fake_shared import (
     analysis_selected_attributes,
@@ -81,41 +78,19 @@ class LocalFakeAgentAdapter:
         ):
             raise InvalidRequestError("The local fake does not support this agent execution path.")
         tool_call_count = 0
-        if request.workflow == "mapping" and request.execution_mode == "detailed_coverage":
-            candidate = fake_detailed_mapping_candidate(request)
-        elif request.workflow == "mapping" and request.stage == "mapping_authoring":
+        if request.workflow == "mapping" and request.stage == "mapping_authoring":
             if request.execution_mode == "tool_assisted":
                 mapping_context, tool_call_count = fake_mapping_context_from_tools(request)
+                candidate = fake_mapping_candidate(mapping_context)
+            elif request.execution_mode == "detailed_coverage":
+                candidate = fake_detailed_mapping_candidate(request)
             elif request.execution_mode == "one_shot":
                 mapping_context = detailed_original_context(request.context)
+                candidate = fake_mapping_candidate(mapping_context)
             else:
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
                 )
-            header = fake_mapping_header_candidate(
-                context=mapping_context,
-                output_schema=request.output_schema,
-            )
-            package = mapping_dict(header.get("package"))
-            candidate = cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "header": header,
-                    "attribute_batches": [
-                        fake_mapping_attribute_batch(
-                            context=mapping_context,
-                            package=package,
-                            batch_plan=batch_plan,
-                            output_schema=request.output_schema,
-                        )
-                        for batch_plan in fake_mapping_batch_plans(
-                            context=mapping_context,
-                            package=package,
-                        )
-                    ],
-                },
-            )
         elif request.workflow == "code_generation" and request.stage == "sql_generation":
             target_refs = code_generation_target_refs(request.context)
             candidate = cast(
@@ -130,9 +105,9 @@ class LocalFakeAgentAdapter:
                     ]
                 },
             )
-        elif request.workflow == "qa" and request.stage == "validation_generation":
-            qa_context = detailed_original_context(request.context)
-            system_ref = qa_context.get("system_ref")
+        elif request.workflow == "validation" and request.stage == "validation_generation":
+            validation_context = detailed_original_context(request.context)
+            system_ref = validation_context.get("system_ref")
             if not isinstance(system_ref, str):
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
@@ -246,15 +221,18 @@ class LocalFakeAgentAdapter:
                 {
                     "objects": [
                         {
-                            "conceptual_object_name": f"Conceptual Entity {position}",
+                            "conceptual_object_name": "BusinessConcept",
                             "conceptual_object_definition": (
-                                "A locally generated Conceptual entity candidate."
+                                "A compact locally generated business concept supported "
+                                "by the selected scope."
                             ),
-                            "conceptual_object_type": "entity",
-                            "conceptual_object_grain": "One governed business entity.",
+                            "conceptual_object_type": "business_concept",
+                            "conceptual_object_grain": (
+                                "A stable business subject represented across the selected scope."
+                            ),
                             "conceptual_object_aliases": [],
                             "conceptual_object_confidence": "medium",
-                            "conceptual_object_status": "needs_review",
+                            "conceptual_object_status": "active",
                             "conceptual_object_is_locked": False,
                             "supports": [
                                 {
@@ -267,12 +245,9 @@ class LocalFakeAgentAdapter:
                                     "support_status": "active",
                                     "support_is_locked": False,
                                 }
+                                for source_object in source_objects
                             ],
                         }
-                        for position, source_object in enumerate(
-                            source_objects,
-                            start=1,
-                        )
                     ],
                     "relationships": [],
                 },

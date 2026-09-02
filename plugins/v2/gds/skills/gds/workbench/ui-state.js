@@ -12,7 +12,6 @@
     return Boolean(
       loaded &&
         !stale &&
-        !(area === "model" && dataset === "model_scope") &&
         Array.isArray(task) &&
         task[1] === area &&
         EDIT_STATES.has(task[3]),

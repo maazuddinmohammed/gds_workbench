@@ -62,7 +62,7 @@ def fake_logical_candidate(
                 "logical_entity_grain": "One governed Logical entity record.",
                 "logical_entity_dependency_order": position - 1,
                 "logical_entity_confidence": "medium",
-                "logical_entity_status": "needs_review",
+                "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": [],
                 "sources": [
@@ -95,7 +95,7 @@ def fake_logical_candidate(
                     "logical_attribute_is_surrogate_key": False,
                     "logical_attribute_ordinal_position": ordinal,
                     "logical_attribute_is_audit_column": False,
-                    "logical_attribute_status": "needs_review",
+                    "logical_attribute_status": "active",
                     "logical_attribute_is_locked": False,
                     "sources": [
                         {
@@ -264,7 +264,7 @@ def _fake_logical_topology_reconciliation(context: dict[str, JsonValue]) -> Json
                         "logical_submodel_definition": (
                             "A locally generated Logical submodel boundary."
                         ),
-                        "logical_submodel_status": "needs_review",
+                        "logical_submodel_status": "active",
                         "logical_submodel_is_locked": False,
                     },
                 }
@@ -342,7 +342,7 @@ def _fake_logical_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
         memberships.append(
             {
                 "submodel_name": submodel_names_by_ref[reference],
-                "membership_status": "needs_review",
+                "membership_status": "active",
                 "membership_is_locked": False,
             }
         )
@@ -435,7 +435,7 @@ def _fake_logical_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
                 "logical_entity_grain": "One governed Logical entity record.",
                 "logical_entity_dependency_order": 0,
                 "logical_entity_confidence": "medium",
-                "logical_entity_status": "needs_review",
+                "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": memberships,
                 "sources": [
@@ -464,7 +464,7 @@ def _fake_logical_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
                     "logical_attribute_is_surrogate_key": False,
                     "logical_attribute_ordinal_position": position,
                     "logical_attribute_is_audit_column": False,
-                    "logical_attribute_status": "needs_review",
+                    "logical_attribute_status": "active",
                     "logical_attribute_is_locked": False,
                     "sources": [
                         {
@@ -529,7 +529,7 @@ def _fake_logical_whole_model_reconciliation(
             {
                 "logical_submodel_name": name,
                 "logical_submodel_definition": ("A locally reconciled Logical submodel boundary."),
-                "logical_submodel_status": "needs_review",
+                "logical_submodel_status": "active",
                 "logical_submodel_is_locked": False,
             }
         )
@@ -583,7 +583,7 @@ def _fake_logical_whole_model_reconciliation(
             memberships.append(
                 {
                     "submodel_name": name,
-                    "membership_status": "needs_review",
+                    "membership_status": "active",
                     "membership_is_locked": False,
                 }
             )
@@ -630,7 +630,7 @@ def _fake_logical_whole_model_reconciliation(
                 "logical_entity_grain": "One governed Logical entity record.",
                 "logical_entity_dependency_order": detail_position,
                 "logical_entity_confidence": "medium",
-                "logical_entity_status": "needs_review",
+                "logical_entity_status": "active",
                 "logical_entity_is_locked": False,
                 "submodels": memberships,
                 "sources": entity_sources,
@@ -705,7 +705,7 @@ def _fake_logical_whole_model_reconciliation(
                     "logical_attribute_is_surrogate_key": False,
                     "logical_attribute_ordinal_position": attribute_ordinal,
                     "logical_attribute_is_audit_column": False,
-                    "logical_attribute_status": "needs_review",
+                    "logical_attribute_status": "active",
                     "logical_attribute_is_locked": False,
                     "sources": attribute_sources,
                 }

@@ -21,7 +21,6 @@ WEB_APP_WORKFLOW = ROOT / ".github" / "workflows" / "web-app.yml"
 PLUGIN_WINDOWS_WORKFLOW = ROOT / ".github" / "workflows" / "plugin-windows.yml"
 DATABASE_ARCHITECTURE = ROOT / "docs" / "architecture" / "database.md"
 MCP_ARCHITECTURE = ROOT / "docs" / "architecture" / "overview.md"
-MCP_TOOL_CONTRACT = ROOT / "plugins" / "v2" / "gds" / "tool-contract.json"
 
 
 def test_local_compose_is_loopback_only_and_uses_one_combined_app() -> None:
@@ -288,13 +287,12 @@ def test_windows_plugin_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
 def test_current_architecture_counts_match_checked_in_contracts() -> None:
     database_architecture = DATABASE_ARCHITECTURE.read_text(encoding="utf-8")
     mcp_architecture = MCP_ARCHITECTURE.read_text(encoding="utf-8")
-    tool_contract = json.loads(MCP_TOOL_CONTRACT.read_text(encoding="utf-8"))
 
-    assert "There are 99 tables" in database_architecture
+    assert "There are 100 tables" in database_architecture
     assert "defines three non-login, non-superuser group roles" in database_architecture
-    assert "exact 32 secure `application` functions" in database_architecture
     assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture
     assert "post-lock PostgreSQL wall-clock" in database_architecture
-    assert f"{tool_contract['tool_count']} governed MCP tools" in mcp_architecture
+    assert "exactly 35 governed MCP tools" in mcp_architecture
+    assert "tool-contract" not in mcp_architecture
     assert "Ten read-only MCP tools" not in mcp_architecture
     assert "No write or Tenant Lock MCP tool is registered" not in mcp_architecture

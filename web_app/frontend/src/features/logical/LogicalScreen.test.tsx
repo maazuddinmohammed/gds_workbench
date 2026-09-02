@@ -65,11 +65,11 @@ describe("Model Logical", () => {
 
     await user.type(screen.getByLabelText("Entity name prefix"), " Customer ");
     await user.selectOptions(screen.getByLabelText("Entity Submodel"), "91");
-    await user.selectOptions(screen.getByLabelText("Entity status"), "needs_review");
+    await user.selectOptions(screen.getByLabelText("Entity status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Entity lock"), "true");
     await user.click(screen.getByRole("button", { name: "Apply Entity filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/logical/entities?status=needs_review&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
+      "/api/v1/tenants/7/models/18/logical/entities?status=inactive&locked=true&name_prefix=customer&logical_submodel_id=91&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     filtered.unmount();
@@ -202,7 +202,7 @@ function logicalFetchStub(options: {
     if (url === "/api/v1/tenants/7/models/18/logical/relationships/101") {
       return jsonResponse(logicalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
       return jsonResponse({
         model_id: 18,
         model_revision: 18,
@@ -275,7 +275,7 @@ const modelPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -298,7 +298,7 @@ const logicalEntityPayload = {
   logical_entity_type: "core",
   logical_entity_dependency_order: 1,
   logical_entity_confidence: "high",
-  logical_entity_status: "needs_review",
+  logical_entity_status: "active",
   logical_entity_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -347,7 +347,7 @@ const logicalEntityDetailPayload = {
       support_source_type: "assertion",
       source_order: 2,
       rationale: "The assertion confirms cross-system semantics.",
-      status: "needs_review",
+      status: "active",
       is_locked: true,
       created_at: "2026-08-24T14:46:00Z",
       updated_at: "2026-08-24T15:00:00Z",
@@ -358,7 +358,7 @@ const logicalEntityDetailPayload = {
         modeling_assertion_record_type: "identity_rule",
         modeling_assertion_text: "Customer identity is governed across systems.",
         modeling_assertion_confidence: "high",
-        modeling_assertion_record_status: "needs_review",
+        modeling_assertion_record_status: "active",
       },
     },
   ],
@@ -385,7 +385,7 @@ const logicalSubmodelDetailPayload = {
       logical_entity_id: 71,
       logical_entity_name: "customer_account",
       logical_entity_type: "core",
-      logical_entity_status: "needs_review",
+      logical_entity_status: "active",
       membership_status: "active",
       membership_is_locked: false,
       created_at: "2026-08-24T14:45:00Z",
@@ -456,7 +456,7 @@ const logicalRelationshipPayload = {
   logical_relationship_name: "customer places order",
   logical_relationship_cardinality: "one_to_many",
   logical_relationship_confidence: "high",
-  logical_relationship_status: "needs_review",
+  logical_relationship_status: "active",
   logical_relationship_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -470,7 +470,7 @@ const logicalRelationshipDetailPayload = {
 };
 
 const scopeObjectPayload = {
-  model_scope_id: 201,
+  model_input_scope_id: 201,
   object_id: 501,
   connection_id: 301,
   system_id: 401,
@@ -484,7 +484,7 @@ const scopeObjectPayload = {
   zone_code: "bronze",
   batch_attribute_name: "batch_id",
   attribute_count: 12,
-  is_bronze_source_eligible: true,
+  is_model_input_eligible: true,
   is_dimensional_source_eligible: false,
   is_logical_mapping_target_eligible: false,
   is_dimensional_mapping_target_eligible: false,

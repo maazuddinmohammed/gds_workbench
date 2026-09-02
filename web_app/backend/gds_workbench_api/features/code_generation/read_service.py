@@ -61,36 +61,18 @@ SELECT context.source_context -> 'target' AS target,
        context.modeled_entity_type AS entity_type,
        mapping_support.mapping_supports,
        mapping_support.mapping_support_count,
-       mapping_support.mapping_support_count > 200
-           AS mapping_supports_truncated,
+       mapping_support.mapping_support_count > 200 AS mapping_supports_truncated,
        source_system.source_systems,
        context.source_system_count,
-       context.mapping_context_digest,
-       context.source_context_digest,
-       CASE
-           WHEN artifact.generated_code_id IS NULL THEN NULL
-           ELSE jsonb_build_object(
-               'generated_sql_artifact_id', artifact.generated_code_id,
-               'workflow_run_id', artifact.workflow_run_id,
-               'generated_at', artifact.updated_time,
-               'generated_sql_digest', artifact.generated_code_digest,
-               'artifact_is_current',
-                   artifact.generated_code_status = 'active'
-                   AND artifact.mapping_context_digest =
-                       context.mapping_context_digest
-                   AND artifact.source_context_digest =
-                       context.source_context_digest
-           )
-       END AS latest_artifact
+       artifact.artifacts,
+       artifact.artifact_count
   FROM target_model
   JOIN current_context AS context
     ON context.model_id = target_model.model_id
   CROSS JOIN LATERAL (
       SELECT coalesce(
-                 jsonb_agg(
-                     support.document
-                     ORDER BY support.position
-                 ) FILTER (WHERE support.position <= 200),
+                 jsonb_agg(support.document ORDER BY support.position)
+                     FILTER (WHERE support.position <= 200),
                  '[]'::JSONB
              ) AS mapping_supports,
              count(*)::INTEGER AS mapping_support_count
@@ -105,19 +87,12 @@ SELECT context.source_context -> 'target' AS target,
                                (mapping_entry.document -> 'entity' ->>
                                 'entity_id')::BIGINT,
                            'entity_name',
-                               mapping_entry.document -> 'entity' ->>
-                               'entity_name'
+                               mapping_entry.document -> 'entity' ->> 'entity_name'
                        ),
                        'source_system', jsonb_build_object(
-                           'system_id',
-                               (mapping_entry.document -> 'source_system' ->>
-                                'source_system_id')::BIGINT,
-                           'system_code',
-                               mapping_entry.document -> 'source_system' ->>
-                               'system_code',
-                           'system_name',
-                               mapping_entry.document -> 'source_system' ->>
-                               'system_name'
+                           'system_id', source.system_id,
+                           'system_code', source.system_code,
+                           'system_name', source.system_name
                        ),
                        'dependency_order',
                            (mapping_entry.document ->>
@@ -126,6 +101,17 @@ SELECT context.source_context -> 'target' AS target,
               FROM jsonb_array_elements(
                        context.source_context -> 'object_mappings'
                    ) WITH ORDINALITY AS mapping_entry(document, position)
+              JOIN LATERAL (
+                  SELECT (entry.document ->> 'source_system_id')::BIGINT AS system_id,
+                         entry.document ->> 'system_code' AS system_code,
+                         entry.document ->> 'system_name' AS system_name
+                    FROM jsonb_array_elements(
+                             context.source_context -> 'source_systems'
+                         ) AS entry(document)
+                   WHERE (entry.document ->> 'source_system_id')::BIGINT =
+                         (mapping_entry.document ->> 'source_system_id')::BIGINT
+                   LIMIT 1
+              ) AS source ON TRUE
         ) AS support
   ) AS mapping_support
   CROSS JOIN LATERAL (
@@ -133,25 +119,58 @@ SELECT context.source_context -> 'target' AS target,
                  jsonb_agg(
                      jsonb_build_object(
                          'system_id',
-                             (system_entry.document ->>
-                              'source_system_id')::BIGINT,
-                         'system_code',
-                             system_entry.document ->> 'system_code',
-                         'system_name',
-                             system_entry.document ->> 'system_name'
-                     ) ORDER BY system_entry.position
+                             (entry.document ->> 'source_system_id')::BIGINT,
+                         'system_code', entry.document ->> 'system_code',
+                         'system_name', entry.document ->> 'system_name'
+                     ) ORDER BY entry.position
                  ),
                  '[]'::JSONB
              ) AS source_systems
         FROM jsonb_array_elements(
                  context.source_context -> 'source_systems'
-             ) WITH ORDINALITY AS system_entry(document, position)
+             ) WITH ORDINALITY AS entry(document, position)
   ) AS source_system
-  LEFT JOIN workflow.generated_code AS artifact
-    ON artifact.model_id = context.model_id
-   AND artifact.modeled_entity_type = context.modeled_entity_type
-   AND artifact.object_id = context.object_id
-   AND artifact.artifact_type = 'sql_file'
+  CROSS JOIN LATERAL (
+      SELECT coalesce(
+                 jsonb_agg(
+                     jsonb_build_object(
+                         'generated_sql_artifact_id', generated.generated_code_id,
+                         'artifact_name', generated.artifact_name,
+                         'workflow_run_id', generated.workflow_run_id,
+                         'generated_at', generated.updated_time,
+                         'generated_code_status', generated.generated_code_status,
+                         'source_system_codes', association.source_system_codes,
+                         'artifact_is_current',
+                             generated.generated_code_status = 'active'
+                             AND generated.code_input_digest = context.code_input_digest
+                     ) ORDER BY lower(btrim(generated.artifact_name)),
+                                generated.generated_code_id
+                 ),
+                 '[]'::JSONB
+             ) AS artifacts,
+             count(*)::INTEGER AS artifact_count
+        FROM workflow.generated_code AS generated
+       CROSS JOIN LATERAL (
+           SELECT coalesce(
+                      jsonb_agg(
+                          system.system_code
+                          ORDER BY lower(btrim(system.system_code)), system.system_id
+                      ) FILTER (
+                          WHERE assignment.generated_code_source_system_status = 'active'
+                      ),
+                      '[]'::JSONB
+                  ) AS source_system_codes
+             FROM workflow.generated_code_source_system AS assignment
+             JOIN core.system AS system
+               ON system.system_id = assignment.source_system_id
+            WHERE assignment.generated_code_id = generated.generated_code_id
+       ) AS association
+       WHERE generated.model_object_binding_id = (
+                 context.source_context -> 'object_mappings' -> 0
+                 ->> 'model_object_binding_id'
+             )::BIGINT
+         AND generated.artifact_type = 'sql_file'
+  ) AS artifact
  WHERE (%s::BIGINT IS NULL
         OR (context.source_context -> 'target' ->> 'system_id')::BIGINT = %s)
    AND (
@@ -164,8 +183,8 @@ SELECT context.source_context -> 'target' AS target,
            SELECT 1
              FROM jsonb_array_elements(
                       context.source_context -> 'source_systems'
-                  ) AS system_entry(document)
-            WHERE (system_entry.document ->> 'source_system_id')::BIGINT = %s
+                  ) AS entry(document)
+            WHERE (entry.document ->> 'source_system_id')::BIGINT = %s
        )
    )
    AND (
@@ -174,8 +193,8 @@ SELECT context.source_context -> 'target' AS target,
            SELECT 1
              FROM jsonb_array_elements(
                       context.source_context -> 'source_systems'
-                  ) AS system_entry(document)
-            WHERE lower(btrim(system_entry.document ->> 'system_code')) = %s
+                  ) AS entry(document)
+            WHERE lower(btrim(entry.document ->> 'system_code')) = %s
        )
    )
  ORDER BY lower(btrim(context.source_context -> 'target' ->> 'tenant_code')),
@@ -189,11 +208,15 @@ SELECT context.source_context -> 'target' AS target,
 
 _GENERATED_SQL_ARTIFACT_DETAIL_SQL: LiteralString = """
 SELECT artifact.generated_code_id AS generated_sql_artifact_id,
-       artifact.model_id,
+       artifact.artifact_name,
+       target_model.model_id,
        coalesce(
            current_context.source_context -> 'target',
            jsonb_build_object(
                'object_id', target_object.object_id,
+               'source_tenant_id', target_source_tenant.tenant_id,
+               'source_tenant_code', target_source_tenant.tenant_code,
+               'source_tenant_name', target_source_tenant.tenant_name,
                'tenant_id', target_tenant.tenant_id,
                'tenant_code', target_tenant.tenant_code,
                'tenant_name', target_tenant.tenant_name,
@@ -207,24 +230,18 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
                'zone_code', lower(btrim(target_zone.zone_code))
            )
        ) AS target,
-       artifact.modeled_entity_type AS entity_type,
+       binding.modeled_entity_type AS entity_type,
        source_system.source_systems,
-       coalesce(current_context.source_system_count, 0)::INTEGER
-           AS source_system_count,
+       source_system.source_system_count,
        mapping_support.mapping_supports,
        mapping_support.mapping_support_count,
-       mapping_support.mapping_support_count > 200
-           AS mapping_supports_truncated,
+       mapping_support.mapping_support_count > 200 AS mapping_supports_truncated,
        coalesce(
            artifact.generated_code_status = 'active'
-           AND current_context.mapping_context_digest =
-               artifact.mapping_context_digest
-           AND current_context.source_context_digest =
-               artifact.source_context_digest,
+           AND current_context.code_input_digest = artifact.code_input_digest,
            FALSE
        ) AS artifact_is_current,
-       artifact.mapping_context_digest,
-       artifact.source_context_digest,
+       artifact.generated_code_status,
        CASE
            WHEN guide_version.sql_generation_guide_version_id IS NULL THEN NULL
            ELSE jsonb_build_object(
@@ -253,58 +270,48 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        END AS generator,
        artifact.updated_time AS generated_at,
        artifact.generated_code_content AS generated_sql,
-       artifact.generated_code_digest AS generated_sql_digest,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
+  JOIN workflow.model_object_binding AS binding
+    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
+    ON target_model.model_id = binding.model_id
   JOIN core.object AS target_object
-    ON target_object.object_id = artifact.object_id
+    ON target_object.object_id = binding.object_id
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.system AS target_system
     ON target_system.system_id = target_connection.system_id
   JOIN reference.zone AS target_zone
     ON target_zone.zone_id = target_object.zone_id
-  LEFT JOIN LATERAL (
-      SELECT eligibility.object_tenant_id
-        FROM workflow.list_model_object_eligibility(artifact.model_id)
-             AS eligibility
-       WHERE eligibility.object_id = artifact.object_id
-       LIMIT 1
-  ) AS target_eligibility ON TRUE
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = coalesce(
-           target_eligibility.object_tenant_id,
-           target_connection.tenant_id
-       )
+    ON target_tenant.tenant_id = target_connection.tenant_id
+  JOIN core.tenant AS target_source_tenant
+    ON target_source_tenant.tenant_id = target_object.source_tenant_id
   LEFT JOIN LATERAL workflow.list_code_generation_target_context(
-      artifact.model_id,
-      artifact.modeled_entity_type
+      binding.model_id,
+      binding.modeled_entity_type
   ) AS current_context
-    ON current_context.object_id = artifact.object_id
+    ON current_context.object_id = binding.object_id
   LEFT JOIN application.workflow_run AS generating_run
     ON generating_run.workflow_run_id = artifact.workflow_run_id
-   AND generating_run.model_id = artifact.model_id
+   AND generating_run.model_id = binding.model_id
    AND generating_run.model_workflow = 'code_generation'
   LEFT JOIN application.sql_generation_guide AS guide
     ON guide.sql_generation_guide_id = generating_run.sql_generation_guide_id
   LEFT JOIN application.sql_generation_guide_version AS guide_version
     ON guide_version.sql_generation_guide_version_id =
        generating_run.sql_generation_guide_version_id
-   AND guide_version.sql_generation_guide_id =
-       generating_run.sql_generation_guide_id
+   AND guide_version.sql_generation_guide_id = generating_run.sql_generation_guide_id
    AND guide_version.sql_generation_guide_digest =
        generating_run.sql_generation_guide_digest
   LEFT JOIN security.principal AS generator
     ON generator.principal_id = generating_run.actor_principal_id
   CROSS JOIN LATERAL (
       SELECT coalesce(
-                 jsonb_agg(
-                     support.document
-                     ORDER BY support.position
-                 ) FILTER (WHERE support.position <= 200),
+                 jsonb_agg(support.document ORDER BY support.position)
+                     FILTER (WHERE support.position <= 200),
                  '[]'::JSONB
              ) AS mapping_supports,
              count(*)::INTEGER AS mapping_support_count
@@ -312,55 +319,63 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
             SELECT mapping_entry.position,
                    jsonb_build_object(
                        'mapping_object_id',
-                           (mapping_entry.document ->>
-                            'mapping_object_id')::BIGINT,
+                           (mapping_entry.document ->> 'mapping_object_id')::BIGINT,
                        'source', jsonb_build_object(
-                           'entity_type', artifact.modeled_entity_type,
+                           'entity_type', binding.modeled_entity_type,
                            'entity_id',
                                (mapping_entry.document -> 'entity' ->>
                                 'entity_id')::BIGINT,
                            'entity_name',
-                               mapping_entry.document -> 'entity' ->>
-                               'entity_name'
+                               mapping_entry.document -> 'entity' ->> 'entity_name'
                        ),
                        'source_system', jsonb_build_object(
-                           'system_id',
-                               (mapping_entry.document -> 'source_system' ->>
-                                'source_system_id')::BIGINT,
-                           'system_code',
-                               mapping_entry.document -> 'source_system' ->>
-                               'system_code',
-                           'system_name',
-                               mapping_entry.document -> 'source_system' ->>
-                               'system_name'
+                           'system_id', source.system_id,
+                           'system_code', source.system_code,
+                           'system_name', source.system_name
                        ),
                        'dependency_order',
                            (mapping_entry.document ->>
                             'object_dependency_order')::INTEGER
                    ) AS document
               FROM jsonb_array_elements(
-                       current_context.source_context -> 'object_mappings'
+                       coalesce(
+                           current_context.source_context -> 'object_mappings',
+                           '[]'::JSONB
+                       )
                    ) WITH ORDINALITY AS mapping_entry(document, position)
+              JOIN LATERAL (
+                  SELECT (entry.document ->> 'source_system_id')::BIGINT AS system_id,
+                         entry.document ->> 'system_code' AS system_code,
+                         entry.document ->> 'system_name' AS system_name
+                    FROM jsonb_array_elements(
+                             current_context.source_context -> 'source_systems'
+                         ) AS entry(document)
+                   WHERE (entry.document ->> 'source_system_id')::BIGINT =
+                         (mapping_entry.document ->> 'source_system_id')::BIGINT
+                   LIMIT 1
+              ) AS source ON TRUE
         ) AS support
   ) AS mapping_support
   CROSS JOIN LATERAL (
       SELECT coalesce(
                  jsonb_agg(
                      jsonb_build_object(
-                         'system_id',
-                             (system_entry.document ->>
-                              'source_system_id')::BIGINT,
-                         'system_code',
-                             system_entry.document ->> 'system_code',
-                         'system_name',
-                             system_entry.document ->> 'system_name'
-                     ) ORDER BY system_entry.position
+                         'system_id', system.system_id,
+                         'system_code', system.system_code,
+                         'system_name', system.system_name
+                     ) ORDER BY lower(btrim(system.system_code)), system.system_id
+                 ) FILTER (
+                     WHERE assignment.generated_code_source_system_status = 'active'
                  ),
                  '[]'::JSONB
-             ) AS source_systems
-        FROM jsonb_array_elements(
-                 current_context.source_context -> 'source_systems'
-             ) WITH ORDINALITY AS system_entry(document, position)
+             ) AS source_systems,
+             count(*) FILTER (
+                 WHERE assignment.generated_code_source_system_status = 'active'
+             )::INTEGER AS source_system_count
+        FROM workflow.generated_code_source_system AS assignment
+        JOIN core.system AS system
+          ON system.system_id = assignment.source_system_id
+       WHERE assignment.generated_code_id = artifact.generated_code_id
   ) AS source_system
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
@@ -373,8 +388,10 @@ SELECT count(*)::INTEGER AS artifact_count,
        coalesce(sum(octet_length(artifact.generated_code_content)), 0)::BIGINT
            AS total_sql_bytes
   FROM workflow.generated_code AS artifact
+  JOIN workflow.model_object_binding AS binding
+    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
+    ON target_model.model_id = binding.model_id
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
@@ -383,8 +400,12 @@ SELECT count(*)::INTEGER AS artifact_count,
 
 _GENERATED_SQL_DOWNLOAD_SQL: LiteralString = """
 SELECT artifact.generated_code_id AS generated_sql_artifact_id,
+       artifact.artifact_name,
        jsonb_build_object(
            'object_id', target_object.object_id,
+           'source_tenant_id', target_source_tenant.tenant_id,
+           'source_tenant_code', target_source_tenant.tenant_code,
+           'source_tenant_name', target_source_tenant.tenant_name,
            'tenant_id', target_tenant.tenant_id,
            'tenant_code', target_tenant.tenant_code,
            'tenant_name', target_tenant.tenant_name,
@@ -397,34 +418,27 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
            'object_name', target_object.object_name,
            'zone_code', lower(btrim(target_zone.zone_code))
        ) AS target,
-       artifact.modeled_entity_type AS entity_type,
+       binding.modeled_entity_type AS entity_type,
        artifact.generated_code_content AS generated_sql,
-       artifact.generated_code_digest AS generated_sql_digest,
        octet_length(artifact.generated_code_content)::INTEGER
            AS generated_sql_byte_count
   FROM workflow.generated_code AS artifact
+  JOIN workflow.model_object_binding AS binding
+    ON binding.model_object_binding_id = artifact.model_object_binding_id
   JOIN model.model AS target_model
-    ON target_model.model_id = artifact.model_id
+    ON target_model.model_id = binding.model_id
   JOIN core.object AS target_object
-    ON target_object.object_id = artifact.object_id
+    ON target_object.object_id = binding.object_id
   JOIN core.connection AS target_connection
     ON target_connection.connection_id = target_object.connection_id
   JOIN core.system AS target_system
     ON target_system.system_id = target_connection.system_id
   JOIN reference.zone AS target_zone
     ON target_zone.zone_id = target_object.zone_id
-  LEFT JOIN LATERAL (
-      SELECT eligibility.object_tenant_id
-        FROM workflow.list_model_object_eligibility(artifact.model_id)
-             AS eligibility
-       WHERE eligibility.object_id = artifact.object_id
-       LIMIT 1
-  ) AS target_eligibility ON TRUE
   JOIN core.tenant AS target_tenant
-    ON target_tenant.tenant_id = coalesce(
-           target_eligibility.object_tenant_id,
-           target_connection.tenant_id
-       )
+    ON target_tenant.tenant_id = target_connection.tenant_id
+  JOIN core.tenant AS target_source_tenant
+    ON target_source_tenant.tenant_id = target_object.source_tenant_id
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
    AND artifact.generated_code_id = ANY(%s::BIGINT[])
@@ -508,10 +522,7 @@ class DatabaseCodeGenerationService:
                 tenant_id=tenant_id,
                 policy=ToolPolicy.TENANT_READ,
             )
-            header = await transaction.fetch_one(
-                _MODEL_HEADER_SQL,
-                (tenant_id, model_id),
-            )
+            header = await transaction.fetch_one(_MODEL_HEADER_SQL, (tenant_id, model_id))
             if header is None:
                 raise ModelNotFoundError()
             rows = await transaction.fetch_all(

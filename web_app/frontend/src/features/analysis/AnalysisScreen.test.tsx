@@ -215,7 +215,7 @@ function analysisFetchStub(options: {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
-    if (url === "/api/v1/tenants/7/models/18/scope?zone=bronze&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
       return jsonResponse(scopePayload);
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/analysis?") && init?.method !== "POST") {
@@ -330,7 +330,7 @@ const modelPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 2,
+  model_input_scope_object_count: 2,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -358,7 +358,7 @@ const scopePayload = {
 
 function scopeObject(objectId: number, objectName: string, systemCode: string) {
   return {
-    model_scope_id: objectId + 1000,
+    model_input_scope_id: objectId + 1000,
     object_id: objectId,
     connection_id: objectId + 2000,
     system_id: objectId + 3000,
@@ -372,7 +372,7 @@ function scopeObject(objectId: number, objectName: string, systemCode: string) {
     zone_code: "bronze",
     attribute_count: 12,
     batch_attribute_name: "batch_id",
-    is_bronze_source_eligible: true,
+    is_model_input_eligible: true,
     is_dimensional_source_eligible: false,
     is_logical_mapping_target_eligible: false,
     is_dimensional_mapping_target_eligible: false,
@@ -418,7 +418,7 @@ const analysisFindingPayload = {
   relationship_confidence: "high",
   validation_state: "unvalidated",
   validation_result: null,
-  status: "needs_review",
+  status: "active",
   is_locked: false,
   updated_at: "2026-08-24T14:20:00Z",
 };

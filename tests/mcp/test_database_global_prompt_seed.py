@@ -67,7 +67,7 @@ EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
         ("mapping", "detailed_coverage", "attribute_mapper"),
         ("mapping", "detailed_coverage", "target_validator"),
         ("code_generation", None, "sql_generation"),
-        ("qa", None, "validation_generation"),
+        ("validation", None, "validation_generation"),
     }
 )
 TOOL_ASSISTED_STAGES: frozenset[StageIdentity] = frozenset(
@@ -90,7 +90,7 @@ CODE_GENERATION_STAGE: StageIdentity = (
     None,
     "sql_generation",
 )
-QA_STAGE: StageIdentity = ("qa", None, "validation_generation")
+VALIDATION_STAGE: StageIdentity = ("validation", None, "validation_generation")
 
 
 def _prompt_parts(row: TestRow) -> tuple[str, ...]:
@@ -377,7 +377,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
                 True,
             ),
             "validation_context": (
-                "workflow.qa.common.validation_context",
+                "workflow.validation.common.validation_context",
                 "json",
                 True,
             ),
@@ -443,7 +443,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
                 assert output_term in normalized
             assert "raw sql response" not in normalized
 
-        if identity == QA_STAGE:
+        if identity == VALIDATION_STAGE:
             for scalar_contract_term in (
                 "exactly one row and one column",
                 "query-contract execution error, not an assertion failure",
@@ -460,6 +460,12 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
             assert "relationship basis" in normalized
             assert "cardinality basis" in normalized
             assert "optionality" not in normalized
+
+        if identity == ("conceptual", "detailed_coverage", "object_contribution"):
+            for disposition in ("represented", "context_only", "excluded", "blocked"):
+                assert disposition in normalized
+            assert "not_conceptual" not in normalized
+            assert "needs_review" not in normalized
 
         if identity == ("analysis", "detailed_coverage", "candidate_finder"):
             for finder_term in (

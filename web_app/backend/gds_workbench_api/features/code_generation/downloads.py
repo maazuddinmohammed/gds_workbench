@@ -37,23 +37,11 @@ def _safe_filename_component(value: str, *, fallback: str) -> str:
 def sql_artifact_filename(
     artifact: GeneratedSqlArtifactDetail | SqlArtifactDownload,
 ) -> str:
-    target = "_".join(
-        (
-            _safe_filename_component(
-                artifact.target.object_schema,
-                fallback="schema",
-            ),
-            _safe_filename_component(
-                artifact.target.object_name,
-                fallback="object",
-            ),
-        )
+    filename = _safe_filename_component(
+        artifact.artifact_name,
+        fallback=f"artifact_{artifact.generated_sql_artifact_id}",
     )
-    entity_type = _safe_filename_component(
-        artifact.entity_type,
-        fallback="entity",
-    )
-    return f"{target}__{entity_type}__{artifact.generated_sql_artifact_id}.sql"
+    return filename if filename.endswith(".sql") else f"{filename}.sql"
 
 
 def build_selected_sql_zip(artifacts: tuple[SqlArtifactDownload, ...]) -> bytes:
@@ -72,9 +60,15 @@ def build_selected_sql_zip(artifacts: tuple[SqlArtifactDownload, ...]) -> bytes:
         compression=ZIP_STORED,
         allowZip64=False,
     ) as archive:
+        used_names: set[str] = set()
         for artifact in artifacts:
+            filename = sql_artifact_filename(artifact)
+            if filename.casefold() in used_names:
+                stem = filename[:-4] if filename.endswith(".sql") else filename
+                filename = f"{stem}__{artifact.generated_sql_artifact_id}.sql"
+            used_names.add(filename.casefold())
             member = ZipInfo(
-                sql_artifact_filename(artifact),
+                filename,
                 date_time=(1980, 1, 1, 0, 0, 0),
             )
             member.compress_type = ZIP_STORED

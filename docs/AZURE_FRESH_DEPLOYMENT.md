@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.3.0.zip
+   plugins/v2/dist/gds-agent-plugin-0.4.2.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -134,7 +134,7 @@ for file in \
   database/07_workflow_logical.sql \
   database/08_workflow_dimensional.sql \
   database/09_workflow_mapping.sql \
-  database/10_workflow_code_qa.sql \
+  database/10_workflow_code_validation.sql \
   database/11_workflow_eligibility.sql \
   database/12_application_configuration.sql \
   database/13_application_workflow_runs.sql \

@@ -102,7 +102,6 @@ def create_code_generation_router(
                 "Cache-Control": "no-store",
                 "Content-Disposition": f'attachment; filename="{filename}"',
                 "X-Content-Type-Options": "nosniff",
-                "X-GDS-SHA256": artifact.generated_sql_digest,
             },
         )
 

@@ -13,9 +13,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from pydantic import JsonValue, SecretStr
-from test_mapping_attribute_candidate import (
-    _preparation as _mapping_preparation,  # pyright: ignore[reportPrivateUsage]
-)
+from mapping_fixtures import mapping_preparation as _mapping_preparation
 
 from gds_workbench_api.capabilities import (
     AgentModelExecutionProfile,
@@ -55,29 +53,11 @@ from gds_workbench_api.features.logical.detailed import (
     DetailedLogicalValidationWorkerValidator,
     build_logical_relationship_signal_ledger,
 )
-from gds_workbench_api.features.mapping.attribute_candidate import (
-    MappingAttributeCandidateValidator,
-    build_mapping_attribute_batch_plans,
-)
-from gds_workbench_api.features.mapping.candidate import (
-    MappingHeaderCandidateValidator,
-)
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
-from gds_workbench_api.features.mapping.detailed import (
-    MappingDetailedTargetReviewValidator,
-    build_mapping_attribute_stage_context,
-    build_mapping_detailed_review_manifest,
-    build_mapping_header_stage_context,
-    build_mapping_target_review_context,
-    merge_mapping_detailed_candidate,
-)
 from gds_workbench_api.features.mapping.execution_context import (
     build_mapping_execution_context,
-)
-from gds_workbench_api.features.mapping.preparation_contracts import (
-    ExistingMappingAttribute,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -224,19 +204,7 @@ def _tool_assisted_mapping_request(
     CompleteMappingCandidateValidator,
     _RecordingMappingCatalog,
 ]:
-    preparation = _mapping_preparation(
-        existing=ExistingMappingAttribute(
-            mapping_attribute_id=990,
-            modeled_attribute_id=701,
-            target_attribute_id=901,
-            transformation_document=None,
-            status="active",
-            is_locked=False,
-            agent_run_id=None,
-            workflow_run_id=None,
-            output_template_id=None,
-        )
-    )
+    preparation = _mapping_preparation(execution_mode="tool_assisted")
     context = build_mapping_execution_context(
         preparation=preparation,
         execution_mode="tool_assisted",
@@ -264,27 +232,6 @@ def _tool_assisted_mapping_request(
         ),
         validator,
         recording_catalog,
-    )
-
-
-def _detailed_mapping_request(
-    *,
-    sdk_code: str,
-    stage: str,
-    context: JsonValue,
-    output_schema: dict[str, JsonValue],
-) -> AgentExecutionRequest:
-    return AgentExecutionRequest(
-        workflow_run_id=1048,
-        workflow="mapping",
-        stage=stage,
-        execution_mode="detailed_coverage",
-        selection=_selection(sdk_code=sdk_code),
-        system_prompt="private system prompt",
-        instruction_prompt="private instruction prompt",
-        context={"original_context": context, "repair": None},
-        output_schema=output_schema,
-        allowed_tool_names=(),
     )
 
 
@@ -940,88 +887,30 @@ async def test_local_fake_supports_complete_detailed_mapping_sequence(
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    preparation = _mapping_preparation()
-    header_context = build_mapping_header_stage_context(
+    preparation = _mapping_preparation(execution_mode="detailed_coverage")
+    context = build_mapping_execution_context(
         preparation=preparation,
-        maximum_bytes=512 * 1024,
+        execution_mode="detailed_coverage",
     )
-    header_validator = MappingHeaderCandidateValidator(preparation=preparation)
-
-    header_result = await router.execute(
-        _detailed_mapping_request(
-            sdk_code=sdk_code,
-            stage="header_mapper",
-            context=header_context,
-            output_schema=header_validator.output_schema(),
-        )
-    )
-    assert (await header_validator.validate(header_result.candidate)).issues == ()
-    header = header_validator.parse_validated(header_result.candidate)
-
-    raw_batches: list[JsonValue] = []
-    stage_results = [header_result]
-    for batch_plan in build_mapping_attribute_batch_plans(
-        preparation=preparation,
-        package=header.package,
-    ):
-        batch_validator = MappingAttributeCandidateValidator(
-            preparation=preparation,
-            package=header.package,
-            batch_plan=batch_plan,
-        )
-        batch_context = build_mapping_attribute_stage_context(
-            preparation=preparation,
-            header=header,
-            batch_plan=batch_plan,
-            maximum_bytes=512 * 1024,
-        )
-        batch_result = await router.execute(
-            _detailed_mapping_request(
-                sdk_code=sdk_code,
-                stage="attribute_mapper",
-                context=batch_context,
-                output_schema=batch_validator.output_schema(),
-            )
-        )
-        assert (await batch_validator.validate(batch_result.candidate)).issues == ()
-        raw_batches.append(batch_result.candidate)
-        stage_results.append(batch_result)
-
-    batch_plans = build_mapping_attribute_batch_plans(
-        preparation=preparation,
-        package=header.package,
-    )
-    manifest = build_mapping_detailed_review_manifest(
-        header_candidate=header_result.candidate,
-        header=header,
-        batch_plans=batch_plans,
-        raw_batches=raw_batches,
-    )
-    target_validator = MappingDetailedTargetReviewValidator(manifest=manifest)
-    target_result = await router.execute(
-        _detailed_mapping_request(
-            sdk_code=sdk_code,
-            stage="target_validator",
-            context=build_mapping_target_review_context(
-                manifest=manifest,
-                maximum_bytes=512 * 1024,
-            ),
-            output_schema=target_validator.output_schema(),
+    validator = CompleteMappingCandidateValidator(preparation=preparation)
+    result = await router.execute(
+        AgentExecutionRequest(
+            workflow_run_id=1048,
+            workflow="mapping",
+            stage="mapping_authoring",
+            execution_mode="detailed_coverage",
+            selection=_selection(sdk_code=sdk_code),
+            system_prompt="private system prompt",
+            instruction_prompt="private instruction prompt",
+            context={"original_context": context.embedded_context, "repair": None},
+            output_schema=validator.output_schema(),
+            allowed_tool_names=(),
         )
     )
 
-    assert (await target_validator.validate(target_result.candidate)).issues == ()
-    assert target_result.candidate == manifest.model_dump(mode="json")
-    merged = merge_mapping_detailed_candidate(
-        header_candidate=header_result.candidate,
-        batch_plans=batch_plans,
-        raw_batches=raw_batches,
-    )
-    complete_validator = CompleteMappingCandidateValidator(preparation=preparation)
-    assert (await complete_validator.validate(merged)).issues == ()
-    stage_results.append(target_result)
-    assert all(result.tool_call_count == 0 for result in stage_results)
-    assert "private system prompt" not in repr(target_result.candidate)
+    assert (await validator.validate(result.candidate)).issues == ()
+    assert result.tool_call_count == 0
+    assert "private system prompt" not in repr(result.candidate)
 
 
 @pytest.mark.parametrize(
@@ -1073,6 +962,7 @@ async def test_local_fake_supports_detailed_conceptual_stage_contracts(
         "selection_order": 1,
         "object": {
             "tenant_code": "NWA",
+            "source_tenant_code": "NWA",
             "system_code": "CRM",
             "connection_code": "SOURCE",
             "object_schema": "bronze",
@@ -1161,6 +1051,7 @@ async def test_local_fake_supports_detailed_conceptual_stage_contracts(
                     "relationship_refinements": [],
                     "applied_conceptual": None,
                     "required_applied_record_refs": [],
+                    "required_input_contribution_refs": ["object_1"],
                 },
             ),
         )
@@ -1171,7 +1062,7 @@ async def test_local_fake_supports_detailed_conceptual_stage_contracts(
     )
     assert len(consolidated_entities) == 1
     assert cast(dict[str, JsonValue], detail.candidate)["canonical_entity_ref"] == (
-        "customer"
+        "business_concept"
     )
     assert (
         cast(dict[str, JsonValue], reconciled.candidate)[

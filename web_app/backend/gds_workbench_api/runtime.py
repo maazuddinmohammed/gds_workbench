@@ -62,9 +62,9 @@ from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
     ModelChangeSetDatabase,
 )
-from gds_workbench_api.features.model_scope import (
-    DatabaseModelScopeService,
-    ModelScopeReadDatabase,
+from gds_workbench_api.features.model_input_scope import (
+    DatabaseModelInputScopeService,
+    ModelInputScopeReadDatabase,
 )
 from gds_workbench_api.features.models import (
     DatabaseModelCommandService,
@@ -81,7 +81,6 @@ from gds_workbench_api.features.profiling import (
     ProfilingReviewDatabase,
 )
 from gds_workbench_api.features.prompts import DatabasePromptService, PromptDatabase
-from gds_workbench_api.features.qa import DatabaseQAReadService, QAReadDatabase
 from gds_workbench_api.features.session import (
     DatabaseSessionService,
     SessionReadDatabase,
@@ -95,6 +94,10 @@ from gds_workbench_api.features.tenant_locks import (
     TenantLockDatabase,
 )
 from gds_workbench_api.features.tenants import DatabaseTenantService, TenantDatabase
+from gds_workbench_api.features.validation import (
+    DatabaseValidationReadService,
+    ValidationReadDatabase,
+)
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     DatabaseWorkflowDraftApplyService,
     WorkflowDraftApplyDatabase,
@@ -132,7 +135,7 @@ class RuntimeDatabase(
     ModelCommandDatabase,
     ModelChangeSetDatabase,
     WorkflowDraftApplyDatabase,
-    ModelScopeReadDatabase,
+    ModelInputScopeReadDatabase,
     TenantLockDatabase,
     MetadataDatabase,
     MetadataChangeSetDatabase,
@@ -146,7 +149,7 @@ class RuntimeDatabase(
     DimensionalReadDatabase,
     MappingReadDatabase,
     CodeGenerationReadDatabase,
-    QAReadDatabase,
+    ValidationReadDatabase,
     WorkflowOverviewDatabase,
     WorkflowRunDatabase,
     WorkflowCommandDatabase,
@@ -258,7 +261,7 @@ def create_runtime_app(
             database=runtime_database,
             authorizer=authorizer,
         ),
-        model_scope_service=DatabaseModelScopeService(
+        model_input_scope_service=DatabaseModelInputScopeService(
             database=runtime_database,
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
@@ -342,11 +345,11 @@ def create_runtime_app(
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
         code_generation_workflow_service=workflow_services.code_generation,
-        qa_read_service=DatabaseQAReadService(
+        validation_read_service=DatabaseValidationReadService(
             database=runtime_database,
             authorizer=authorizer,
         ),
-        qa_workflow_service=workflow_services.qa,
+        validation_workflow_service=workflow_services.validation,
         workflow_overview_service=DatabaseWorkflowOverviewService(
             database=runtime_database,
             authorizer=authorizer,

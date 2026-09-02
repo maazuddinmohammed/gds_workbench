@@ -128,8 +128,7 @@ from an expanded folder if any level was flattened.
         ├── dimensional.py
         ├── mapping.py
         ├── code_generation.py
-        ├── qa.py
-        ├── 90_review_workflow_draft.py
+        ├── validation.py
         └── 91_apply_workflow_draft.py
 ```
 
@@ -182,9 +181,9 @@ binding and `.env` shape.
    full runtime is broken.
 10. Open a workflow notebook. Run its first cell to create that workflow's own
     widgets, fill them, then run its second cell to execute. For an authoring
-    draft, use the same two-cell pattern in `90_review_workflow_draft.py`, then
+    draft, review the bounded completion output in the workbench, then use
     `91_apply_workflow_draft.py` with exact current revision/digest fences and
-    `Confirmation=APPLY`. Preflight alone has no widgets.
+    `Confirmation=APPLY`. No separate review command is required. Preflight alone has no widgets.
 11. Renew a long-running lock when required, and release it after the last
     workflow.
 

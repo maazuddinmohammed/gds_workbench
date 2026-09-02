@@ -39,8 +39,8 @@ def test_generic_mcp_mutations_reject_workflow_bound_change_sets(
         "dimensional_document": {},
         "mapping_document": {},
         "code_generation_document": {},
-        "qa_document": {},
-        "model_scope_document": {},
+        "validation_document": {},
+        "model_input_scope_document": {},
     }
 
     with pytest.raises(InvalidRequestError, match="Workflow-bound"):

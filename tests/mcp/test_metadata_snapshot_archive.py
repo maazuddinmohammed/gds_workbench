@@ -68,7 +68,7 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         infos = archive.infolist()
         names = archive.namelist()
         manifest = json.loads(archive.read("metadata-snapshot/manifest.json"))
-        assert len(names) == 70
+        assert len(names) == 68
         assert names[0] == "metadata-snapshot/manifest.json"
         assert all(name.startswith("metadata-snapshot/") for name in names)
         assert all(".." not in name.split("/") and "\\" not in name for name in names)
@@ -86,19 +86,19 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         assert "created_time" not in manifest
         assert manifest["available_until"] == "2026-08-12T16:00:00Z"
         assert manifest["counts"] == {
-            "physical_table_count": 23,
-            "logical_dataset_count": 29,
+            "physical_table_count": 22,
+            "logical_dataset_count": 28,
             "lookup_file_count": 10,
             "row_count": 1,
-            "file_count": 70,
+            "file_count": 68,
             "expanded_bytes": sum(info.file_size for info in infos),
         }
         assert manifest["sections"] == {
-            "foundational": {"dataset_count": 5, "row_count": 1},
+            "foundational": {"dataset_count": 4, "row_count": 1},
             "reference": {"dataset_count": 8, "row_count": 0},
             "operational": {"dataset_count": 16, "row_count": 0},
         }
-        assert len(manifest["members"]) == 69
+        assert len(manifest["members"]) == 67
         for member in manifest["members"]:
             content = archive.read(f"metadata-snapshot/{member['path']}")
             assert member["size_bytes"] == len(content)
@@ -111,7 +111,7 @@ def test_snapshot_archive_manifest_hashes_counts_and_safe_members(
         }
         assert manifest["schemas"] == {
             "directory": "schemas",
-            "dataset_count": 29,
+            "dataset_count": 28,
         }
     assert result.expanded_bytes == manifest["counts"]["expanded_bytes"]
 

@@ -26,7 +26,7 @@ type AgenticWorkflow = Literal[
     "dimensional",
     "mapping",
     "code_generation",
-    "qa",
+    "validation",
 ]
 type AgentExecutionMode = Literal[
     "one_shot",

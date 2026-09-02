@@ -1,35 +1,12 @@
 # Focus areas
 
-Allow multiple selections; execute one current task.
+Execute one current task even when the request spans several areas.
 
-## Metadata
+- **Metadata**: inspect with `inspect_metadata`; register complete Source, Bronze, Silver, Gold, ingestion, Copy, and Process records through Metadata Change Sets.
+- **Model**: inspect a focused section with `read_model_section`; author Input Scope, evidence, models, Binding, Mapping, Code, and Validation through Model Change Sets.
+- **Code**: generate complete artifacts from applied Binding and Mapping. Never deploy or run orchestration.
+- **Validation Authoring**: create Validation Groups and Checks. SQL Preflight is separate and local.
+- **Local Validation**: run schema and graph checks in memory. It does not replace Change Set validation on the server or prove runtime data correctness.
+- **Ad Hoc**: bounded read-only inspection or explanation. If a mutation emerges, create a normal task.
 
-Inspect or author Change Set-eligible Metadata from a fresh Snapshot. Use canonical keys and complete
-records; preserve unsupported fields. Deactivation is explicit. Registration has its own target.
-
-## Model
-
-Use one Model and `workflow-targets.md`. Prefer Snapshot evidence. SQL policy `essential` or
-`as_needed` permits bounded governed evidence; `never` proceeds without it. Assertions are optional.
-Never expose Model Scope mutation.
-
-## Code
-
-Generate local Registration DDL or complete `generated_code` Model records from applied Mapping.
-Default SQL is Databricks. Never execute, upload, or deploy transformations.
-
-## QA
-
-Author `validation_group`/`validation_check` from applied Mapping, current relevant Code, and user
-rules for exact source System codes. Apply stores definitions; orchestration executes them later.
-
-## Validation
-
-Validate local Metadata, Model, DDL/code, or readiness against the effective graph. Return bounded
-in-memory issues; do not mutate or create reports. It cannot prove runtime/data correctness or
-replace server Validate. Validation-only ends `done`.
-
-## Ad Hoc
-
-Use bounded read-only inspection/explanation. If mutation emerges, create a normal task/plan and
-enter all gates.
+Use `get_model_input_scope` for a focused Input Scope read. Never expose direct Model Input Scope mutation outside a Model Change Set.

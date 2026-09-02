@@ -14,28 +14,44 @@
 })(typeof globalThis === "object" ? globalThis : this, function (common, modelValidation, core) {
   "use strict";
 
-  const MAPPING_DATASETS = new Set(["mapping_object", "mapping_attribute"]);
-  const TARGET_FIELDS = [
-    "tenant_code",
-    "system_code",
-    "connection_code",
-    "object_schema",
-    "object_name",
-    "source_system_code",
-  ];
+  const GROUP_FIELDS = new Map([
+    ["model_object_binding", ["modeled_entity_type", "modeled_entity_name"]],
+    ["model_attribute_binding", ["modeled_entity_type", "modeled_entity_name"]],
+    [
+      "mapping_object",
+      ["modeled_entity_type", "modeled_entity_name", "source_system_code"],
+    ],
+    [
+      "mapping_attribute",
+      ["modeled_entity_type", "modeled_entity_name", "source_system_code"],
+    ],
+  ]);
+
+  function entityTypeLabel(value) {
+    return String(value ?? "unspecified")
+      .split("_")
+      .filter(Boolean)
+      .map((part) => `${part.charAt(0).toUpperCase()}${part.slice(1)}`)
+      .join(" ");
+  }
 
   function reviewGroups(definition, records) {
-    if (!MAPPING_DATASETS.has(definition?.name) || !Array.isArray(records)) return [];
+    const fields = GROUP_FIELDS.get(definition?.name);
+    if (!fields || !Array.isArray(records)) return [];
     const groups = new Map();
     for (const record of records) {
-      const values = TARGET_FIELDS.map((field) => record[field] ?? null);
+      const values = fields.map((field) => record[field] ?? null);
       const normalized = values.map((value, index) =>
-        core.normalize("model", TARGET_FIELDS[index], value),
+        core.normalize("model", fields[index], value),
       );
       const key = core.stableStringify(normalized);
       if (!groups.has(key)) {
+        const entity = `${entityTypeLabel(values[0])} ${values[1] ?? "unspecified"}`;
+        const suffix = fields.includes("source_system_code")
+          ? `source System ${values[2] ?? "unspecified"}`
+          : "Model Binding";
         groups.set(key, {
-          label: `${values[1]} · ${values[3]}.${values[4]} · from ${values[5]}`,
+          label: `${entity} · ${suffix}`,
           records: [],
         });
       }
@@ -51,6 +67,7 @@
     for (const [name, value] of loaded) {
       effective.set(name, {
         definition: value.definition,
+        schema: value.schema,
         records: value.effective,
         baseline: value.baseline,
         pending: value.pending,
@@ -60,7 +77,11 @@
       ? new Map(
         [...metadataLoaded].map(([name, value]) => [
           name,
-          { records: value.baseline ?? value.records ?? [] },
+          {
+            definition: value.definition,
+            schema: value.schema,
+            records: value.effective ?? value.baseline ?? value.records ?? [],
+          },
         ]),
       )
       : null;

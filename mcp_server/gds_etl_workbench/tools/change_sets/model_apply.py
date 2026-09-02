@@ -10,10 +10,6 @@ from typing import Any, LiteralString, cast
 from psycopg.types.json import Jsonb
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.mapping_profiles import (
-    mapping_package_digest,
-    resolve_mapping_profile_schema_digest,
-)
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     ConceptualObjectRecord,
@@ -23,6 +19,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalRelationshipRecord,
     DimensionalSubmodelRecord,
     GeneratedCodeRecord,
+    GeneratedCodeSourceSystemRecord,
     LogicalAttributeRecord,
     LogicalEntityRecord,
     LogicalRelationshipRecord,
@@ -30,10 +27,13 @@ from gds_etl_workbench.domain.modeling_records import (
     MappingAttributeRecord,
     MappingDependencyRecord,
     MappingObjectRecord,
+    ModelAttributeBindingRecord,
     ModelDetailsRecord,
     ModelingAssertionDocumentRecord,
     ModelingAssertionRecordRecord,
     ModelingRecord,
+    ModelInputScopeRecord,
+    ModelObjectBindingRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
     ProfilingProfileRecord,
@@ -64,6 +64,22 @@ UPDATE model.model
 RETURNING model_id
 """
 
+_UPSERT_MODEL_INPUT_SCOPE_SQL: LiteralString = """
+INSERT INTO model.model_input_scope (
+    model_id,
+    object_id,
+    model_input_scope_is_locked,
+    is_active
+)
+VALUES (%s, %s, %s, %s)
+ON CONFLICT (model_id, object_id) DO UPDATE
+   SET model_input_scope_is_locked = EXCLUDED.model_input_scope_is_locked,
+       is_active = EXCLUDED.is_active,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+RETURNING model_input_scope_id
+"""
+
 _RESOLVE_OBJECT_SQL: LiteralString = """
 SELECT object.object_id,
        connection.system_id
@@ -72,33 +88,21 @@ SELECT object.object_id,
     ON connection.connection_id = object.connection_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
-  JOIN core.tenant AS tenant
-    ON lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
-   AND tenant.is_active
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+   AND lower(btrim(placement_tenant.tenant_code)) = lower(btrim(%s))
+   AND placement_tenant.is_active
+  JOIN model.model AS target_model
+    ON target_model.model_id = %s
+   AND target_model.is_active
  WHERE lower(btrim(system.system_code)) = lower(btrim(%s))
    AND lower(btrim(connection.connection_code)) = lower(btrim(%s))
    AND lower(btrim(object.object_schema)) = lower(btrim(%s))
    AND lower(btrim(object.object_name)) = lower(btrim(%s))
    AND connection.is_active
    AND object.is_active
-   AND (
-       (
-           NOT connection.is_global_data_store
-           AND connection.tenant_id = tenant.tenant_id
-       ) OR (
-           connection.is_global_data_store
-           AND EXISTS (
-               SELECT 1
-                 FROM core.tenant_metadata_discovery_scope AS scope
-                WHERE scope.tenant_id = tenant.tenant_id
-                  AND scope.gds_connection_id = connection.connection_id
-                  AND scope.zone_id = object.zone_id
-                  AND lower(btrim(scope.object_schema)) =
-                      lower(btrim(object.object_schema))
-                  AND scope.is_active
-           )
-       )
-   )
+   AND system.is_active
+   AND object.source_tenant_id = target_model.tenant_id
 """
 
 _RESOLVE_ATTRIBUTE_SQL: LiteralString = """
@@ -112,9 +116,13 @@ SELECT object.object_id,
     ON connection.connection_id = object.connection_id
   JOIN core.system AS system
     ON system.system_id = connection.system_id
-  JOIN core.tenant AS tenant
-    ON lower(btrim(tenant.tenant_code)) = lower(btrim(%s))
-   AND tenant.is_active
+  JOIN core.tenant AS placement_tenant
+    ON placement_tenant.tenant_id = connection.tenant_id
+   AND lower(btrim(placement_tenant.tenant_code)) = lower(btrim(%s))
+   AND placement_tenant.is_active
+  JOIN model.model AS target_model
+    ON target_model.model_id = %s
+   AND target_model.is_active
  WHERE lower(btrim(system.system_code)) = lower(btrim(%s))
    AND lower(btrim(connection.connection_code)) = lower(btrim(%s))
    AND lower(btrim(object.object_schema)) = lower(btrim(%s))
@@ -123,24 +131,8 @@ SELECT object.object_id,
    AND connection.is_active
    AND object.is_active
    AND attribute.is_active
-   AND (
-       (
-           NOT connection.is_global_data_store
-           AND connection.tenant_id = tenant.tenant_id
-       ) OR (
-           connection.is_global_data_store
-           AND EXISTS (
-               SELECT 1
-                 FROM core.tenant_metadata_discovery_scope AS scope
-                WHERE scope.tenant_id = tenant.tenant_id
-                  AND scope.gds_connection_id = connection.connection_id
-                  AND scope.zone_id = object.zone_id
-                  AND lower(btrim(scope.object_schema)) =
-                      lower(btrim(object.object_schema))
-                  AND scope.is_active
-           )
-       )
-   )
+   AND system.is_active
+   AND object.source_tenant_id = target_model.tenant_id
 """
 
 _RESOLVE_SYSTEM_SQL: LiteralString = """
@@ -531,24 +523,145 @@ UPDATE workflow.conceptual_support
 RETURNING conceptual_support_id
 """
 
+_UPSERT_MODEL_OBJECT_BINDING_SQL: LiteralString = """
+INSERT INTO workflow.model_object_binding (
+    model_id,
+    object_id,
+    modeled_entity_type,
+    logical_entity_id,
+    dimensional_entity_id,
+    agent_run_id,
+    workflow_run_id,
+    model_object_binding_status,
+    model_object_binding_is_locked
+)
+VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s)
+ON CONFLICT ON CONSTRAINT uq_model_object_binding_model_object DO UPDATE
+   SET modeled_entity_type = EXCLUDED.modeled_entity_type,
+       logical_entity_id = EXCLUDED.logical_entity_id,
+       dimensional_entity_id = EXCLUDED.dimensional_entity_id,
+       agent_run_id = NULL,
+       workflow_run_id = EXCLUDED.workflow_run_id,
+       model_object_binding_status = EXCLUDED.model_object_binding_status,
+       model_object_binding_is_locked = EXCLUDED.model_object_binding_is_locked,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+RETURNING model_object_binding_id,
+          object_id
+"""
+
+_FIND_MODEL_OBJECT_BINDING_SQL: LiteralString = """
+SELECT binding.model_object_binding_id,
+       binding.object_id
+  FROM workflow.model_object_binding AS binding
+  LEFT JOIN workflow.logical_entity AS logical_entity
+    ON logical_entity.logical_entity_id = binding.logical_entity_id
+   AND logical_entity.model_id = binding.model_id
+  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
+    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
+   AND dimensional_entity.model_id = binding.model_id
+ WHERE binding.model_id = %s
+   AND binding.modeled_entity_type = %s
+   AND lower(btrim(
+       CASE binding.modeled_entity_type
+           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
+           ELSE dimensional_entity.dimensional_entity_name
+       END
+   )) = lower(btrim(%s))
+ ORDER BY binding.model_object_binding_id
+ LIMIT 1
+ FOR UPDATE OF binding
+"""
+
+_RESOLVE_BOUND_ATTRIBUTE_SQL: LiteralString = """
+SELECT attribute.attribute_id
+  FROM workflow.model_object_binding AS binding
+  JOIN core.attribute AS attribute
+    ON attribute.object_id = binding.object_id
+   AND lower(btrim(attribute.attribute_name)) = lower(btrim(%s))
+   AND attribute.is_active
+ WHERE binding.model_object_binding_id = %s
+   AND binding.model_id = %s
+"""
+
+_UPSERT_MODEL_ATTRIBUTE_BINDING_SQL: LiteralString = """
+INSERT INTO workflow.model_attribute_binding (
+    model_object_binding_id,
+    logical_attribute_id,
+    dimensional_attribute_id,
+    attribute_id,
+    agent_run_id,
+    workflow_run_id,
+    model_attribute_binding_status,
+    model_attribute_binding_is_locked
+)
+VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
+ON CONFLICT ON CONSTRAINT uq_model_attribute_binding_target DO UPDATE
+   SET logical_attribute_id = EXCLUDED.logical_attribute_id,
+       dimensional_attribute_id = EXCLUDED.dimensional_attribute_id,
+       agent_run_id = NULL,
+       workflow_run_id = EXCLUDED.workflow_run_id,
+       model_attribute_binding_status = EXCLUDED.model_attribute_binding_status,
+       model_attribute_binding_is_locked = EXCLUDED.model_attribute_binding_is_locked,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+RETURNING model_attribute_binding_id
+"""
+
+_FIND_MODEL_ATTRIBUTE_BINDING_SQL: LiteralString = """
+SELECT attribute_binding.model_attribute_binding_id
+  FROM workflow.model_attribute_binding AS attribute_binding
+  JOIN workflow.model_object_binding AS object_binding
+    ON object_binding.model_object_binding_id =
+       attribute_binding.model_object_binding_id
+  LEFT JOIN workflow.logical_attribute AS logical_attribute
+    ON logical_attribute.logical_attribute_id =
+       attribute_binding.logical_attribute_id
+  LEFT JOIN workflow.dimensional_attribute AS dimensional_attribute
+    ON dimensional_attribute.dimensional_attribute_id =
+       attribute_binding.dimensional_attribute_id
+ WHERE object_binding.model_id = %s
+   AND object_binding.modeled_entity_type = %s
+   AND object_binding.model_object_binding_id = %s
+   AND lower(btrim(
+       CASE object_binding.modeled_entity_type
+           WHEN 'logical_entity' THEN logical_attribute.logical_attribute_name
+           ELSE dimensional_attribute.dimensional_attribute_name
+       END
+   )) = lower(btrim(%s))
+ ORDER BY attribute_binding.model_attribute_binding_id
+ LIMIT 1
+ FOR UPDATE OF attribute_binding
+"""
+
+_RESOLVE_OUTPUT_TEMPLATE_SQL: LiteralString = """
+SELECT output_template_id
+  FROM application.output_template
+ WHERE lower(btrim(output_template_code)) = lower(btrim(%s))
+   AND output_template_target_type = %s
+   AND is_active
+"""
+
 _UPSERT_MAPPING_DEPENDENCY_SQL: LiteralString = """
 INSERT INTO workflow.mapping_source_system_dependency (
     model_id,
-    workflow_run_id,
     modeled_entity_type,
     source_system_id,
     source_system_dependency_order,
+    agent_run_id,
+    workflow_run_id,
     mapping_source_system_dependency_status,
     mapping_source_system_dependency_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
 ON CONFLICT ON CONSTRAINT uq_mapping_source_dependency_binding DO UPDATE
-   SET workflow_run_id = EXCLUDED.workflow_run_id,
-       source_system_dependency_order = EXCLUDED.source_system_dependency_order,
-       mapping_source_system_dependency_status
-           = EXCLUDED.mapping_source_system_dependency_status,
-       mapping_source_system_dependency_is_locked
-           = EXCLUDED.mapping_source_system_dependency_is_locked,
+   SET source_system_dependency_order = EXCLUDED.source_system_dependency_order,
+       agent_run_id = NULL,
+       workflow_run_id = EXCLUDED.workflow_run_id,
+       mapping_source_system_dependency_status =
+           EXCLUDED.mapping_source_system_dependency_status,
+       mapping_source_system_dependency_is_locked =
+           EXCLUDED.mapping_source_system_dependency_is_locked,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
 RETURNING mapping_source_system_dependency_id
@@ -558,60 +671,35 @@ _FIND_MAPPING_OBJECT_SQL: LiteralString = """
 SELECT mapping_object_id
   FROM workflow.mapping_object
  WHERE model_id = %s
-   AND modeled_entity_type = %s
-   AND object_id = %s
+   AND model_object_binding_id = %s
    AND source_system_id = %s
-   AND (
-       (%s = 'logical_entity' AND logical_entity_id = %s)
-       OR (%s = 'dimensional_entity' AND dimensional_entity_id = %s)
-   )
- ORDER BY mapping_object_id
- LIMIT 1
  FOR UPDATE
 """
 
 _INSERT_MAPPING_OBJECT_SQL: LiteralString = """
 INSERT INTO workflow.mapping_object (
     model_id,
-    workflow_run_id,
-    output_template_id,
-    object_id,
+    model_object_binding_id,
     source_system_id,
-    modeled_entity_type,
-    logical_entity_id,
-    dimensional_entity_id,
+    output_template_id,
     object_dependency_order,
-    artifact_type,
-    artifact_generation_instructions,
-    mapping_profile_key,
-    mapping_profile_version,
-    mapping_profile_schema_digest,
-    mapping_package_document,
-    mapping_package_digest,
-    object_mapping_transformation_document,
+    mapping_transformation_document,
+    agent_run_id,
+    workflow_run_id,
     object_mapping_status,
     object_mapping_is_locked
 )
-VALUES (
-    %s, %s, %s, %s, %s, %s, %s, %s, %s,
-    %s, %s, %s, %s, %s, %s, %s, %s, %s, %s
-)
+VALUES (%s, %s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING mapping_object_id
 """
 
 _UPDATE_MAPPING_OBJECT_SQL: LiteralString = """
 UPDATE workflow.mapping_object
-   SET workflow_run_id = %s,
-       output_template_id = CASE WHEN %s THEN %s ELSE output_template_id END,
+   SET output_template_id = %s,
        object_dependency_order = %s,
-       artifact_type = %s,
-       artifact_generation_instructions = %s,
-       mapping_profile_key = %s,
-       mapping_profile_version = %s,
-       mapping_profile_schema_digest = %s,
-       mapping_package_document = %s,
-       mapping_package_digest = %s,
-       object_mapping_transformation_document = %s,
+       mapping_transformation_document = %s,
+       agent_run_id = NULL,
+       workflow_run_id = %s,
        object_mapping_status = %s,
        object_mapping_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -623,43 +711,32 @@ RETURNING mapping_object_id
 _FIND_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 SELECT mapping_attribute_id
   FROM workflow.mapping_attribute
- WHERE model_id = %s
-   AND mapping_object_id = %s
-   AND modeled_entity_type = %s
-   AND attribute_id = %s
-   AND (
-       (%s = 'logical_entity' AND logical_attribute_id = %s)
-       OR (%s = 'dimensional_entity' AND dimensional_attribute_id = %s)
-   )
- ORDER BY mapping_attribute_id
- LIMIT 1
+ WHERE mapping_object_id = %s
+   AND model_attribute_binding_id = %s
  FOR UPDATE
 """
 
 _INSERT_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 INSERT INTO workflow.mapping_attribute (
-    model_id,
-    workflow_run_id,
-    output_template_id,
-    object_id,
-    attribute_id,
     mapping_object_id,
-    modeled_entity_type,
-    logical_attribute_id,
-    dimensional_attribute_id,
+    model_attribute_binding_id,
+    output_template_id,
     attribute_mapping_transformation_document,
+    agent_run_id,
+    workflow_run_id,
     attribute_mapping_status,
     attribute_mapping_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING mapping_attribute_id
 """
 
 _UPDATE_MAPPING_ATTRIBUTE_SQL: LiteralString = """
 UPDATE workflow.mapping_attribute
-   SET workflow_run_id = %s,
-       output_template_id = CASE WHEN %s THEN %s ELSE output_template_id END,
+   SET output_template_id = %s,
        attribute_mapping_transformation_document = %s,
+       agent_run_id = NULL,
+       workflow_run_id = %s,
        attribute_mapping_status = %s,
        attribute_mapping_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
@@ -668,49 +745,140 @@ UPDATE workflow.mapping_attribute
 RETURNING mapping_attribute_id
 """
 
+_RESOLVE_CODE_INPUT_SQL: LiteralString = """
+SELECT btrim(context.code_input_digest::TEXT) AS code_input_digest
+  FROM workflow.list_code_generation_target_context(%s, %s, %s) AS context
+ WHERE context.object_id = %s
+   AND lower(btrim(context.modeled_entity_name)) = lower(btrim(%s))
+"""
+
 _FIND_GENERATED_CODE_SQL: LiteralString = """
 SELECT generated_code_id
   FROM workflow.generated_code
- WHERE model_id = %s
-   AND object_id = %s
+ WHERE model_object_binding_id = %s
+   AND lower(btrim(artifact_name)) = lower(btrim(%s))
  FOR UPDATE
 """
 
 _INSERT_GENERATED_CODE_SQL: LiteralString = """
 INSERT INTO workflow.generated_code (
-    model_id,
-    agent_run_id,
-    workflow_run_id,
-    object_id,
-    modeled_entity_type,
+    model_object_binding_id,
+    artifact_name,
     artifact_type,
     generated_code_content,
-    mapping_context_digest,
-    source_context_digest,
-    generated_code_digest,
-    generated_code_status,
-    generated_code_is_locked
+    code_input_digest,
+    agent_run_id,
+    workflow_run_id,
+    generated_code_status
 )
-VALUES (%s, NULL, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, NULL, %s, %s)
 RETURNING generated_code_id
 """
 
 _UPDATE_GENERATED_CODE_SQL: LiteralString = """
 UPDATE workflow.generated_code
-   SET agent_run_id = NULL,
-       workflow_run_id = %s,
-       modeled_entity_type = %s,
+   SET artifact_name = %s,
        artifact_type = %s,
        generated_code_content = %s,
-       mapping_context_digest = %s,
-       source_context_digest = %s,
-       generated_code_digest = %s,
+       code_input_digest = %s,
+       agent_run_id = NULL,
+       workflow_run_id = %s,
        generated_code_status = %s,
-       generated_code_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE generated_code_id = %s
 RETURNING generated_code_id
+"""
+
+_FIND_GENERATED_CODE_SOURCE_SYSTEM_SQL: LiteralString = """
+SELECT generated_code_source_system_id
+  FROM workflow.generated_code_source_system
+ WHERE generated_code_id = %s
+   AND source_system_id = %s
+ FOR UPDATE
+"""
+
+_INSERT_GENERATED_CODE_SOURCE_SYSTEM_SQL: LiteralString = """
+INSERT INTO workflow.generated_code_source_system (
+    generated_code_id,
+    source_system_id,
+    agent_run_id,
+    workflow_run_id,
+    generated_code_source_system_status
+)
+VALUES (%s, %s, NULL, %s, %s)
+RETURNING generated_code_source_system_id
+"""
+
+_UPDATE_GENERATED_CODE_SOURCE_SYSTEM_SQL: LiteralString = """
+UPDATE workflow.generated_code_source_system
+   SET agent_run_id = NULL,
+       workflow_run_id = %s,
+       generated_code_source_system_status = %s,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = CURRENT_USER
+ WHERE generated_code_source_system_id = %s
+RETURNING generated_code_source_system_id
+"""
+
+_VALIDATION_TARGET_CONTEXT_SQL: LiteralString = """
+SELECT context.modeled_entity_type,
+       context.modeled_entity_name,
+       btrim(context.code_input_digest::TEXT) AS code_input_digest,
+       context.source_context
+  FROM workflow.list_code_generation_target_context(
+       %s,
+       'logical_entity',
+       NULL
+  ) AS context
+UNION ALL
+SELECT context.modeled_entity_type,
+       context.modeled_entity_name,
+       btrim(context.code_input_digest::TEXT) AS code_input_digest,
+       context.source_context
+  FROM workflow.list_code_generation_target_context(
+       %s,
+       'dimensional_entity',
+       NULL
+  ) AS context
+"""
+
+_VALIDATION_GENERATED_CODE_SQL: LiteralString = """
+SELECT binding.modeled_entity_type,
+       CASE binding.modeled_entity_type
+           WHEN 'logical_entity' THEN logical_entity.logical_entity_name
+           ELSE dimensional_entity.dimensional_entity_name
+       END AS modeled_entity_name,
+       generated.artifact_name,
+       generated.artifact_type,
+       generated.generated_code_digest,
+       generated.generated_code_status,
+       coalesce(
+           array_agg(system.system_code ORDER BY lower(system.system_code))
+               FILTER (
+                   WHERE assignment.generated_code_source_system_status = 'active'
+                     AND system.is_active
+               ),
+           ARRAY[]::VARCHAR[]
+       ) AS source_system_codes
+  FROM workflow.generated_code AS generated
+  JOIN workflow.model_object_binding AS binding
+    ON binding.model_object_binding_id = generated.model_object_binding_id
+   AND binding.model_id = %s
+  LEFT JOIN workflow.logical_entity AS logical_entity
+    ON logical_entity.logical_entity_id = binding.logical_entity_id
+   AND logical_entity.model_id = binding.model_id
+  LEFT JOIN workflow.dimensional_entity AS dimensional_entity
+    ON dimensional_entity.dimensional_entity_id = binding.dimensional_entity_id
+   AND dimensional_entity.model_id = binding.model_id
+  LEFT JOIN workflow.generated_code_source_system AS assignment
+    ON assignment.generated_code_id = generated.generated_code_id
+  LEFT JOIN core.system AS system
+    ON system.system_id = assignment.source_system_id
+ GROUP BY binding.modeled_entity_type,
+          logical_entity.logical_entity_name,
+          dimensional_entity.dimensional_entity_name,
+          generated.generated_code_id
 """
 
 _FIND_VALIDATION_GROUP_SQL: LiteralString = """
@@ -838,9 +1006,26 @@ class ModelMaterializer:
     _dimensional_attribute_ids: dict[tuple[str, str], int] = field(
         default_factory=dict[tuple[str, str], int]
     )
-    _mapping_object_ids: dict[tuple[str, ...], int] = field(
-        default_factory=dict[tuple[str, ...], int]
+    _model_object_bindings: dict[tuple[str, str], tuple[int, int]] = field(
+        default_factory=dict[tuple[str, str], tuple[int, int]]
     )
+    _model_attribute_bindings: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
+    )
+    _mapping_object_ids: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
+    )
+    _generated_code_ids: dict[tuple[str, str, str], int] = field(
+        default_factory=dict[tuple[str, str, str], int]
+    )
+    _output_template_ids: dict[tuple[str, str], int] = field(
+        default_factory=dict[tuple[str, str], int]
+    )
+    _validation_context_digests: dict[str, tuple[str, str | None]] = field(
+        default_factory=dict[str, tuple[str, str | None]]
+    )
+    _validation_target_context_rows: tuple[dict[str, Any], ...] | None = None
+    _validation_generated_code_rows: tuple[dict[str, Any], ...] | None = None
     _validation_group_ids: dict[tuple[str, str, str], int] = field(
         default_factory=dict[tuple[str, str, str], int]
     )
@@ -895,6 +1080,7 @@ class ModelMaterializer:
         """Materialize in dependency order inside the caller's transaction."""
         action_count = 0
         action_count += await self._apply_model_details(records.get("model_details", ()))
+        action_count += await self._apply_model_input_scope(records.get("model_input_scope", ()))
         action_count += await self._apply_assertion_documents(
             records.get("modeling_assertion_document", ())
         )
@@ -909,8 +1095,17 @@ class ModelMaterializer:
         )
         action_count += await self._apply_logical(records)
         action_count += await self._apply_dimensional(records)
+        action_count += await self._apply_model_object_bindings(
+            records.get("model_object_binding", ())
+        )
+        action_count += await self._apply_model_attribute_bindings(
+            records.get("model_attribute_binding", ())
+        )
         action_count += await self._apply_mapping(records)
         action_count += await self._apply_generated_code(records.get("generated_code", ()))
+        action_count += await self._apply_generated_code_source_systems(
+            records.get("generated_code_source_system", ())
+        )
         action_count += await self._apply_validation_groups(records.get("validation_group", ()))
         action_count += await self._apply_validation_checks(records.get("validation_check", ()))
         return action_count
@@ -945,6 +1140,26 @@ class ModelMaterializer:
             )
             if row is None:
                 raise InvalidRequestError("Model details could not be updated.")
+        return len(records)
+
+    async def _apply_model_input_scope(
+        self,
+        records: tuple[ModelingRecord, ...],
+    ) -> int:
+        for raw in records:
+            record = _as(raw, ModelInputScopeRecord)
+            object_id, _ = await self.resolve_object(record)
+            row = await self.transaction.fetch_one(
+                _UPSERT_MODEL_INPUT_SCOPE_SQL,
+                (
+                    self.model_id,
+                    object_id,
+                    record.model_input_scope_is_locked,
+                    record.is_active,
+                ),
+            )
+            if row is None:
+                raise InvalidRequestError("Model Input Scope could not be materialized.")
         return len(records)
 
     async def _apply_profiles(self, records: tuple[ModelingRecord, ...]) -> int:
@@ -1121,7 +1336,8 @@ class ModelMaterializer:
         cached = self._object_ids.get(natural_key)
         if cached is not None:
             return cached
-        row = await self.transaction.fetch_one(_RESOLVE_OBJECT_SQL, tuple(natural_key))
+        parameters = (natural_key[0], self.model_id, *natural_key[1:])
+        row = await self.transaction.fetch_one(_RESOLVE_OBJECT_SQL, parameters)
         if row is None:
             raise InvalidRequestError("A referenced physical Object was not found.")
         resolved = (row["object_id"], row["system_id"])
@@ -1140,7 +1356,8 @@ class ModelMaterializer:
         cached = self._attribute_ids.get(natural_key)
         if cached is not None:
             return cached
-        row = await self.transaction.fetch_one(_RESOLVE_ATTRIBUTE_SQL, tuple(natural_key))
+        parameters = (natural_key[0], self.model_id, *natural_key[1:])
+        row = await self.transaction.fetch_one(_RESOLVE_ATTRIBUTE_SQL, parameters)
         if row is None:
             raise InvalidRequestError("A referenced physical Attribute was not found.")
         resolved = (row["object_id"], row["attribute_id"], row["system_id"])
@@ -2129,6 +2346,146 @@ SELECT attribute.{config.attribute_id}
             else self._dimensional_attribute_ids
         )
 
+    async def _apply_model_object_bindings(
+        self,
+        records: tuple[ModelingRecord, ...],
+    ) -> int:
+        for raw in records:
+            record = _as(raw, ModelObjectBindingRecord)
+            object_id, _ = await self.resolve_object(record)
+            config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+            modeled_entity_id = await self.resolve_entity(config, record.modeled_entity_name)
+            logical_entity_id = (
+                modeled_entity_id if record.modeled_entity_type == "logical_entity" else None
+            )
+            dimensional_entity_id = (
+                modeled_entity_id if record.modeled_entity_type == "dimensional_entity" else None
+            )
+            row = await self.transaction.fetch_one(
+                _UPSERT_MODEL_OBJECT_BINDING_SQL,
+                (
+                    self.model_id,
+                    object_id,
+                    record.modeled_entity_type,
+                    logical_entity_id,
+                    dimensional_entity_id,
+                    self.workflow_run_id,
+                    record.model_object_binding_status,
+                    record.model_object_binding_is_locked,
+                ),
+            )
+            if row is None:
+                raise InvalidRequestError("Model Object Binding could not be materialized.")
+            self._model_object_bindings[_entity_binding_key(record)] = (
+                row["model_object_binding_id"],
+                row["object_id"],
+            )
+        return len(records)
+
+    async def _apply_model_attribute_bindings(
+        self,
+        records: tuple[ModelingRecord, ...],
+    ) -> int:
+        for raw in records:
+            record = _as(raw, ModelAttributeBindingRecord)
+            model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+            config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
+            modeled_attribute_id = await self.resolve_modeled_attribute(
+                config,
+                record.modeled_entity_name,
+                record.modeled_attribute_name,
+            )
+            attribute_row = await self.transaction.fetch_one(
+                _RESOLVE_BOUND_ATTRIBUTE_SQL,
+                (record.attribute_name, model_object_binding_id, self.model_id),
+            )
+            if attribute_row is None:
+                raise InvalidRequestError(
+                    "A target Attribute for the Model Attribute Binding was not found."
+                )
+            logical_attribute_id = (
+                modeled_attribute_id if record.modeled_entity_type == "logical_entity" else None
+            )
+            dimensional_attribute_id = (
+                modeled_attribute_id if record.modeled_entity_type == "dimensional_entity" else None
+            )
+            row = await self.transaction.fetch_one(
+                _UPSERT_MODEL_ATTRIBUTE_BINDING_SQL,
+                (
+                    model_object_binding_id,
+                    logical_attribute_id,
+                    dimensional_attribute_id,
+                    attribute_row["attribute_id"],
+                    self.workflow_run_id,
+                    record.model_attribute_binding_status,
+                    record.model_attribute_binding_is_locked,
+                ),
+            )
+            if row is None:
+                raise InvalidRequestError("Model Attribute Binding could not be materialized.")
+            self._model_attribute_bindings[_attribute_binding_key(record)] = row[
+                "model_attribute_binding_id"
+            ]
+        return len(records)
+
+    async def resolve_model_object_binding(self, record: Any) -> tuple[int, int]:
+        key = _entity_binding_key(record)
+        cached = self._model_object_bindings.get(key)
+        if cached is not None:
+            return cached
+        row = await self.transaction.fetch_one(
+            _FIND_MODEL_OBJECT_BINDING_SQL,
+            (self.model_id, record.modeled_entity_type, record.modeled_entity_name),
+        )
+        if row is None:
+            raise InvalidRequestError("A referenced Model Object Binding was not found.")
+        resolved = (row["model_object_binding_id"], row["object_id"])
+        self._model_object_bindings[key] = resolved
+        return resolved
+
+    async def resolve_model_attribute_binding(
+        self,
+        record: MappingAttributeRecord,
+    ) -> int:
+        key = _attribute_binding_key(record)
+        cached = self._model_attribute_bindings.get(key)
+        if cached is not None:
+            return cached
+        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+        row = await self.transaction.fetch_one(
+            _FIND_MODEL_ATTRIBUTE_BINDING_SQL,
+            (
+                self.model_id,
+                record.modeled_entity_type,
+                model_object_binding_id,
+                record.modeled_attribute_name,
+            ),
+        )
+        if row is None:
+            raise InvalidRequestError("A referenced Model Attribute Binding was not found.")
+        self._model_attribute_bindings[key] = row["model_attribute_binding_id"]
+        return row["model_attribute_binding_id"]
+
+    async def resolve_output_template(
+        self,
+        code: str | None,
+        target_type: str,
+    ) -> int | None:
+        if code is None:
+            return None
+        key = (target_type, normalize_model_key_value(code))
+        cached = self._output_template_ids.get(key)
+        if cached is not None:
+            return cached
+        row = await self.transaction.fetch_one(
+            _RESOLVE_OUTPUT_TEMPLATE_SQL,
+            (code, target_type),
+        )
+        if row is None:
+            raise InvalidRequestError("A referenced Output Template was not found.")
+        self._output_template_ids[key] = row["output_template_id"]
+        return row["output_template_id"]
+
     async def _apply_mapping(self, records: dict[str, tuple[ModelingRecord, ...]]) -> int:
         action_count = 0
         mapping_workflow_run_id = (
@@ -2141,10 +2498,10 @@ SELECT attribute.{config.attribute_id}
                 _UPSERT_MAPPING_DEPENDENCY_SQL,
                 (
                     self.model_id,
-                    mapping_workflow_run_id,
                     record.modeled_entity_type,
                     source_system_id,
                     record.source_system_dependency_order,
+                    mapping_workflow_run_id,
                     record.mapping_source_system_dependency_status,
                     record.mapping_source_system_dependency_is_locked,
                 ),
@@ -2166,41 +2523,206 @@ SELECT attribute.{config.attribute_id}
         )
         for raw in records:
             record = _as(raw, GeneratedCodeRecord)
-            object_id, _ = await self.resolve_object(record)
+            model_object_binding_id, object_id = await self.resolve_model_object_binding(record)
+            context = await self.transaction.fetch_one(
+                _RESOLVE_CODE_INPUT_SQL,
+                (
+                    self.model_id,
+                    record.modeled_entity_type,
+                    record.artifact_type,
+                    object_id,
+                    record.modeled_entity_name,
+                ),
+            )
+            if context is None:
+                raise InvalidRequestError(
+                    "Generated Code requires complete active Mapping for its Binding."
+                )
             existing = await self.transaction.fetch_one(
                 _FIND_GENERATED_CODE_SQL,
-                (self.model_id, object_id),
+                (model_object_binding_id, record.artifact_name),
             )
             values = (
-                code_workflow_run_id,
-                record.modeled_entity_type,
+                record.artifact_name,
                 record.artifact_type,
                 record.generated_code_content,
-                record.mapping_context_digest,
-                record.source_context_digest,
-                record.generated_code_digest,
+                str(context["code_input_digest"]).strip(),
+                code_workflow_run_id,
                 record.generated_code_status,
-                record.generated_code_is_locked,
             )
             if existing is None:
                 row = await self.transaction.fetch_one(
                     _INSERT_GENERATED_CODE_SQL,
-                    (self.model_id, code_workflow_run_id, object_id, *values[1:]),
+                    (model_object_binding_id, *values),
                 )
             else:
                 row = await self.transaction.fetch_one(
                     _UPDATE_GENERATED_CODE_SQL,
                     (*values, existing["generated_code_id"]),
                 )
-            assert row is not None
+            if row is None:
+                raise InvalidRequestError("Generated Code could not be materialized.")
+            self._generated_code_ids[_artifact_key(record)] = row["generated_code_id"]
         return len(records)
 
+    async def _apply_generated_code_source_systems(
+        self,
+        records: tuple[ModelingRecord, ...],
+    ) -> int:
+        code_workflow_run_id = (
+            self.workflow_run_id if self._model_workflow == "code_generation" else None
+        )
+        for raw in records:
+            record = _as(raw, GeneratedCodeSourceSystemRecord)
+            generated_code_id = await self.resolve_generated_code(record)
+            source_system_id = await self.resolve_system(record.source_system_code)
+            existing = await self.transaction.fetch_one(
+                _FIND_GENERATED_CODE_SOURCE_SYSTEM_SQL,
+                (generated_code_id, source_system_id),
+            )
+            if existing is None:
+                row = await self.transaction.fetch_one(
+                    _INSERT_GENERATED_CODE_SOURCE_SYSTEM_SQL,
+                    (
+                        generated_code_id,
+                        source_system_id,
+                        code_workflow_run_id,
+                        record.generated_code_source_system_status,
+                    ),
+                )
+            else:
+                row = await self.transaction.fetch_one(
+                    _UPDATE_GENERATED_CODE_SOURCE_SYSTEM_SQL,
+                    (
+                        code_workflow_run_id,
+                        record.generated_code_source_system_status,
+                        existing["generated_code_source_system_id"],
+                    ),
+                )
+            if row is None:
+                raise InvalidRequestError("Generated Code source System could not be materialized.")
+        return len(records)
+
+    async def resolve_generated_code(
+        self,
+        record: GeneratedCodeSourceSystemRecord,
+    ) -> int:
+        key = _artifact_key(record)
+        cached = self._generated_code_ids.get(key)
+        if cached is not None:
+            return cached
+        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
+        row = await self.transaction.fetch_one(
+            _FIND_GENERATED_CODE_SQL,
+            (model_object_binding_id, record.artifact_name),
+        )
+        if row is None:
+            raise InvalidRequestError("A referenced Generated Code artifact was not found.")
+        self._generated_code_ids[key] = row["generated_code_id"]
+        return row["generated_code_id"]
+
+    async def resolve_validation_context_digests(
+        self,
+        source_system_code: str,
+    ) -> tuple[str, str | None]:
+        normalized_system = normalize_model_key_value(source_system_code)
+        cached = self._validation_context_digests.get(normalized_system)
+        if cached is not None:
+            return cached
+        if self._validation_target_context_rows is None:
+            rows = await self.transaction.fetch_all(
+                _VALIDATION_TARGET_CONTEXT_SQL,
+                (self.model_id, self.model_id),
+            )
+            self._validation_target_context_rows = tuple(rows)
+        if self._validation_generated_code_rows is None:
+            rows = await self.transaction.fetch_all(
+                _VALIDATION_GENERATED_CODE_SQL,
+                (self.model_id,),
+            )
+            self._validation_generated_code_rows = tuple(rows)
+
+        contexts: dict[tuple[str, str], dict[str, object]] = {}
+        mapping_entries: list[dict[str, object]] = []
+        for row in self._validation_target_context_rows:
+            source_context = row.get("source_context")
+            if not isinstance(source_context, dict):
+                raise InvalidRequestError("The server-derived Mapping context is invalid.")
+            typed_source_context = cast(dict[str, object], source_context)
+            raw_systems = typed_source_context.get("source_systems")
+            if not isinstance(raw_systems, list):
+                raise InvalidRequestError("The server-derived Mapping context is incomplete.")
+            system_codes: set[str] = set()
+            for item in cast(list[object], raw_systems):
+                if not isinstance(item, dict):
+                    continue
+                typed_item = cast(dict[str, object], item)
+                system_code = typed_item.get("system_code")
+                if system_code is not None:
+                    system_codes.add(normalize_model_key_value(str(system_code)))
+            if normalized_system not in system_codes:
+                continue
+            entity_type = str(row["modeled_entity_type"])
+            entity_name = normalize_model_key_value(str(row["modeled_entity_name"]))
+            target = _normalized_target_document(typed_source_context.get("target"))
+            code_input_digest = str(row["code_input_digest"]).strip()
+            entry: dict[str, object] = {
+                "modeled_entity_type": entity_type,
+                "modeled_entity_name": entity_name,
+                "target": target,
+                "code_input_digest": code_input_digest,
+            }
+            contexts[(entity_type, entity_name)] = entry
+            mapping_entries.append(entry)
+        mapping_context_digest = _context_entries_digest(mapping_entries)
+        if mapping_context_digest is None:
+            raise InvalidRequestError(
+                "Validation requires complete active Mapping for its source System."
+            )
+
+        code_entries: list[dict[str, object]] = []
+        for row in self._validation_generated_code_rows:
+            if row.get("generated_code_status") != "active":
+                continue
+            source_codes = {
+                normalize_model_key_value(str(code)) for code in row.get("source_system_codes", ())
+            }
+            if normalized_system not in source_codes:
+                continue
+            entity_key = (
+                str(row["modeled_entity_type"]),
+                normalize_model_key_value(str(row["modeled_entity_name"])),
+            )
+            context = contexts.get(entity_key)
+            if context is None:
+                continue
+            code_entries.append(
+                {
+                    **context,
+                    "artifact_name": str(row["artifact_name"]),
+                    "artifact_type": str(row["artifact_type"]),
+                    "generated_code_digest": str(row["generated_code_digest"]).strip(),
+                }
+            )
+        resolved = (
+            mapping_context_digest,
+            _context_entries_digest(code_entries),
+        )
+        self._validation_context_digests[normalized_system] = resolved
+        return resolved
+
     async def _apply_validation_groups(self, records: tuple[ModelingRecord, ...]) -> int:
-        qa_workflow_run_id = self.workflow_run_id if self._model_workflow == "qa" else None
+        validation_workflow_run_id = (
+            self.workflow_run_id if self._model_workflow == "validation" else None
+        )
         for raw in records:
             record = _as(raw, ValidationGroupRecord)
             tenant_id = await self.resolve_tenant(record.tenant_code)
             system_id = await self.resolve_system(record.system_code)
+            (
+                mapping_context_digest,
+                code_context_digest,
+            ) = await self.resolve_validation_context_digests(record.system_code)
             existing = await self.transaction.fetch_one(
                 _FIND_VALIDATION_GROUP_SQL,
                 (
@@ -2213,8 +2735,8 @@ SELECT attribute.{config.attribute_id}
             mutable_values = (
                 record.validation_group_name,
                 record.validation_group_description,
-                record.mapping_context_digest,
-                record.code_context_digest,
+                mapping_context_digest,
+                code_context_digest,
                 record.is_active,
             )
             if existing is None:
@@ -2224,7 +2746,7 @@ SELECT attribute.{config.attribute_id}
                         self.model_id,
                         tenant_id,
                         system_id,
-                        qa_workflow_run_id,
+                        validation_workflow_run_id,
                         *mutable_values,
                     ),
                 )
@@ -2232,7 +2754,7 @@ SELECT attribute.{config.attribute_id}
                 row = await self.transaction.fetch_one(
                     _UPDATE_VALIDATION_GROUP_SQL,
                     (
-                        qa_workflow_run_id,
+                        validation_workflow_run_id,
                         *mutable_values,
                         existing["validation_group_id"],
                     ),
@@ -2302,193 +2824,108 @@ SELECT attribute.{config.attribute_id}
         return row["validation_group_id"]
 
     async def _upsert_mapping_object(self, record: MappingObjectRecord) -> int:
-        object_id, _ = await self.resolve_object(record)
+        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
         source_system_id = await self.resolve_system(record.source_system_code)
-        if record.modeled_entity_type == "logical_entity":
-            logical_entity_id = await self.resolve_entity(LOGICAL, record.modeled_entity_name)
-            dimensional_entity_id = None
-        else:
-            logical_entity_id = None
-            dimensional_entity_id = await self.resolve_entity(
-                DIMENSIONAL, record.modeled_entity_name
+        if self._mapping_policy is None:
+            output_template_id = await self.resolve_output_template(
+                record.output_template_code,
+                "mapping_object",
             )
+            mapping_workflow_run_id = None
+        else:
+            output_template_id = self._mapping_policy.object_output_template_id
+            mapping_workflow_run_id = self._mapping_policy.workflow_run_id
         existing = await self.transaction.fetch_one(
             _FIND_MAPPING_OBJECT_SQL,
-            (
-                self.model_id,
-                record.modeled_entity_type,
-                object_id,
-                source_system_id,
-                record.modeled_entity_type,
-                logical_entity_id,
-                record.modeled_entity_type,
-                dimensional_entity_id,
-            ),
+            (self.model_id, model_object_binding_id, source_system_id),
         )
-        authored = record.mapping_package_document is not None
-        if authored:
-            assert record.mapping_profile_key is not None
-            assert record.mapping_profile_version is not None
-            assert record.mapping_package_document is not None
-            profile_digest = resolve_mapping_profile_schema_digest(
-                record.mapping_profile_key,
-                record.mapping_profile_version,
-            )
-            package_digest = mapping_package_digest(record.mapping_package_document)
-        else:
-            profile_digest = None
-            package_digest = None
-        mutable_values = (
-            record.object_dependency_order,
-            record.artifact_type,
-            record.artifact_generation_instructions,
-            record.mapping_profile_key,
-            record.mapping_profile_version,
-            profile_digest,
-            (
-                None
-                if record.mapping_package_document is None
-                else Jsonb(record.mapping_package_document)
-            ),
-            package_digest,
-            (
-                None
-                if record.object_mapping_transformation_document is None
-                else Jsonb(record.object_mapping_transformation_document)
-            ),
-            record.object_mapping_status,
-            record.object_mapping_is_locked,
+        transformation = (
+            None
+            if record.mapping_transformation_document is None
+            else Jsonb(record.mapping_transformation_document)
         )
         if existing is None:
-            mapping_workflow_run_id = (
-                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
-            )
-            output_template_id = (
-                None
-                if self._mapping_policy is None
-                else self._mapping_policy.object_output_template_id
-            )
             row = await self.transaction.fetch_one(
                 _INSERT_MAPPING_OBJECT_SQL,
                 (
                     self.model_id,
-                    mapping_workflow_run_id,
-                    output_template_id,
-                    object_id,
+                    model_object_binding_id,
                     source_system_id,
-                    record.modeled_entity_type,
-                    logical_entity_id,
-                    dimensional_entity_id,
-                    *mutable_values,
+                    output_template_id,
+                    record.object_dependency_order,
+                    transformation,
+                    mapping_workflow_run_id,
+                    record.object_mapping_status,
+                    record.object_mapping_is_locked,
                 ),
             )
         else:
-            mapping_workflow_run_id = (
-                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
-            )
-            output_template_id = (
-                None
-                if self._mapping_policy is None
-                else self._mapping_policy.object_output_template_id
-            )
             row = await self.transaction.fetch_one(
                 _UPDATE_MAPPING_OBJECT_SQL,
                 (
-                    mapping_workflow_run_id,
-                    self._mapping_policy is not None,
                     output_template_id,
-                    *mutable_values,
+                    record.object_dependency_order,
+                    transformation,
+                    mapping_workflow_run_id,
+                    record.object_mapping_status,
+                    record.object_mapping_is_locked,
                     existing["mapping_object_id"],
                 ),
             )
-        assert row is not None
+        if row is None:
+            raise InvalidRequestError("Mapping Object could not be materialized.")
         key = _mapping_key(record)
         self._mapping_object_ids[key] = row["mapping_object_id"]
         return row["mapping_object_id"]
 
     async def _upsert_mapping_attribute(self, record: MappingAttributeRecord) -> int:
-        object_id, attribute_id, _ = await self.resolve_attribute(record)
         mapping_object_id = await self.resolve_mapping_object(record)
-        if record.modeled_entity_type == "logical_entity":
-            logical_attribute_id = await self.resolve_modeled_attribute(
-                LOGICAL,
-                record.modeled_entity_name,
-                record.modeled_attribute_name,
+        model_attribute_binding_id = await self.resolve_model_attribute_binding(record)
+        if self._mapping_policy is None:
+            output_template_id = await self.resolve_output_template(
+                record.output_template_code,
+                "mapping_attribute",
             )
-            dimensional_attribute_id = None
+            mapping_workflow_run_id = None
         else:
-            logical_attribute_id = None
-            dimensional_attribute_id = await self.resolve_modeled_attribute(
-                DIMENSIONAL,
-                record.modeled_entity_name,
-                record.modeled_attribute_name,
-            )
+            output_template_id = self._mapping_policy.attribute_output_template_id
+            mapping_workflow_run_id = self._mapping_policy.workflow_run_id
         existing = await self.transaction.fetch_one(
             _FIND_MAPPING_ATTRIBUTE_SQL,
-            (
-                self.model_id,
-                mapping_object_id,
-                record.modeled_entity_type,
-                attribute_id,
-                record.modeled_entity_type,
-                logical_attribute_id,
-                record.modeled_entity_type,
-                dimensional_attribute_id,
-            ),
+            (mapping_object_id, model_attribute_binding_id),
         )
-        mutable_values = (
-            (
-                None
-                if record.attribute_mapping_transformation_document is None
-                else Jsonb(record.attribute_mapping_transformation_document)
-            ),
-            record.attribute_mapping_status,
-            record.attribute_mapping_is_locked,
+        transformation = (
+            None
+            if record.attribute_mapping_transformation_document is None
+            else Jsonb(record.attribute_mapping_transformation_document)
         )
         if existing is None:
-            mapping_workflow_run_id = (
-                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
-            )
-            output_template_id = (
-                None
-                if self._mapping_policy is None
-                else self._mapping_policy.attribute_output_template_id
-            )
             row = await self.transaction.fetch_one(
                 _INSERT_MAPPING_ATTRIBUTE_SQL,
                 (
-                    self.model_id,
-                    mapping_workflow_run_id,
-                    output_template_id,
-                    object_id,
-                    attribute_id,
                     mapping_object_id,
-                    record.modeled_entity_type,
-                    logical_attribute_id,
-                    dimensional_attribute_id,
-                    *mutable_values,
+                    model_attribute_binding_id,
+                    output_template_id,
+                    transformation,
+                    mapping_workflow_run_id,
+                    record.attribute_mapping_status,
+                    record.attribute_mapping_is_locked,
                 ),
             )
         else:
-            mapping_workflow_run_id = (
-                None if self._mapping_policy is None else self._mapping_policy.workflow_run_id
-            )
-            output_template_id = (
-                None
-                if self._mapping_policy is None
-                else self._mapping_policy.attribute_output_template_id
-            )
             row = await self.transaction.fetch_one(
                 _UPDATE_MAPPING_ATTRIBUTE_SQL,
                 (
-                    mapping_workflow_run_id,
-                    self._mapping_policy is not None,
                     output_template_id,
-                    *mutable_values,
+                    transformation,
+                    mapping_workflow_run_id,
+                    record.attribute_mapping_status,
+                    record.attribute_mapping_is_locked,
                     existing["mapping_attribute_id"],
                 ),
             )
-        assert row is not None
+        if row is None:
+            raise InvalidRequestError("Mapping Attribute could not be materialized.")
         return row["mapping_attribute_id"]
 
     async def resolve_mapping_object(self, record: MappingAttributeRecord) -> int:
@@ -2496,21 +2933,14 @@ SELECT attribute.{config.attribute_id}
         cached = self._mapping_object_ids.get(key)
         if cached is not None:
             return cached
-        object_id, _ = await self.resolve_object(record)
+        model_object_binding_id, _ = await self.resolve_model_object_binding(record)
         source_system_id = await self.resolve_system(record.source_system_code)
-        config = LOGICAL if record.modeled_entity_type == "logical_entity" else DIMENSIONAL
-        modeled_entity_id = await self.resolve_entity(config, record.modeled_entity_name)
         row = await self.transaction.fetch_one(
             _FIND_MAPPING_OBJECT_SQL,
             (
                 self.model_id,
-                record.modeled_entity_type,
-                object_id,
+                model_object_binding_id,
                 source_system_id,
-                record.modeled_entity_type,
-                (modeled_entity_id if record.modeled_entity_type == "logical_entity" else None),
-                record.modeled_entity_type,
-                (modeled_entity_id if record.modeled_entity_type == "dimensional_entity" else None),
             ),
         )
         if row is None:
@@ -2542,17 +2972,62 @@ def _digest(value: object) -> str:
     ).hexdigest()
 
 
-def _mapping_key(record: MappingObjectRecord | MappingAttributeRecord) -> tuple[str, ...]:
+def _entity_binding_key(record: Any) -> tuple[str, str]:
     return (
-        normalize_model_key_value(record.tenant_code),
-        normalize_model_key_value(record.system_code),
-        normalize_model_key_value(record.connection_code),
-        normalize_model_key_value(record.object_schema),
-        normalize_model_key_value(record.object_name),
-        normalize_model_key_value(record.source_system_code),
         record.modeled_entity_type,
         normalize_model_key_value(record.modeled_entity_name),
     )
+
+
+def _attribute_binding_key(record: Any) -> tuple[str, str, str]:
+    return (
+        record.modeled_entity_type,
+        normalize_model_key_value(record.modeled_entity_name),
+        normalize_model_key_value(record.modeled_attribute_name),
+    )
+
+
+def _mapping_key(
+    record: MappingObjectRecord | MappingAttributeRecord,
+) -> tuple[str, str, str]:
+    return (
+        record.modeled_entity_type,
+        normalize_model_key_value(record.modeled_entity_name),
+        normalize_model_key_value(record.source_system_code),
+    )
+
+
+def _artifact_key(
+    record: GeneratedCodeRecord | GeneratedCodeSourceSystemRecord,
+) -> tuple[str, str, str]:
+    return (
+        record.modeled_entity_type,
+        normalize_model_key_value(record.modeled_entity_name),
+        normalize_model_key_value(record.artifact_name),
+    )
+
+
+def _normalized_target_document(raw: object) -> dict[str, str]:
+    if not isinstance(raw, dict):
+        raise InvalidRequestError("The server-derived Mapping target is invalid.")
+    document = cast(dict[str, object], raw)
+    fields = (
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+    )
+    if any(not isinstance(document.get(field), str) for field in fields):
+        raise InvalidRequestError("The server-derived Mapping target is incomplete.")
+    return {field: normalize_model_key_value(cast(str, document[field])) for field in fields}
+
+
+def _context_entries_digest(entries: list[dict[str, object]]) -> str | None:
+    if not entries:
+        return None
+    entries.sort(key=lambda value: json.dumps(value, sort_keys=True, separators=(",", ":")))
+    return _digest(entries)
 
 
 def _validation_group_key(

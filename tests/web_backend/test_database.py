@@ -117,7 +117,8 @@ async def test_readiness_checks_the_web_schema_and_role(
     assert Pool.last_instance is not None
     readiness_sql = "\n".join(Pool.last_instance.connection_instance.queries)
     assert "application.workflow_run_object_selection" in readiness_sql
-    assert "application.generated_sql_artifact" in readiness_sql
+    assert "workflow.generated_code" in readiness_sql
+    assert "application.generated_sql_artifact" not in readiness_sql
     assert "application.create_model" in readiness_sql
     assert "workflow.list_tenant_visible_objects" in readiness_sql
     assert "workflow.list_model_object_eligibility" in readiness_sql

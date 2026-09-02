@@ -95,7 +95,7 @@ def _seed_profiling_execution(
               JOIN core.connection AS gds_connection
                 ON gds_connection.connection_id = object_record.connection_id
               JOIN core.tenant AS source_tenant
-                ON source_tenant.tenant_id = gds_connection.tenant_id
+                ON source_tenant.tenant_id = object_record.source_tenant_id
              WHERE object_record.object_id = ANY(%s::BIGINT[])
              ORDER BY object_record.object_id, attribute.attribute_id
             """,
@@ -115,19 +115,11 @@ def _seed_profiling_execution(
         )
         connection.execute(
             """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id,
-                gds_connection_id,
-                zone_id,
-                object_schema
-            ) VALUES (%s, %s, %s, %s)
+            UPDATE core.tenant
+               SET gds_connection_id = %s
+             WHERE tenant_id = %s
             """,
-            (
-                context.tenant_id,
-                connection_id,
-                object_rows[0]["zone_id"],
-                relation_schema,
-            ),
+            (connection_id, context.tenant_id),
         )
         for row in object_rows:
             connection.execute(
@@ -291,18 +283,113 @@ def test_running_profiling_context_returns_scope_metadata_and_one_secret_row(
     assert _digest(connection_row["databricks_token"]) == _digest(seed.access_token)
 
 
-def test_profiling_context_requires_active_discovery_assignment(
+def test_source_profiling_uses_only_foreign_catalog_coordinates(
+    postgres_database: DisposablePostgres,
+) -> None:
+    seed = _seed_profiling_execution(postgres_database)
+    foreign_catalog = f"foreign_{uuid4().hex}"
+    foreign_schema = f"source_{uuid4().hex}"
+    with postgres_database.connect_owner() as connection:
+        source_zone = connection.execute(
+            "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = 'source'"
+        ).fetchone()
+        if source_zone is None:
+            source_zone = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO reference.zone (zone_code, zone_name)
+                    VALUES ('source', 'Source')
+                    RETURNING zone_id
+                    """
+                ).fetchone()
+            )
+        connection.execute(
+            """
+            UPDATE core.connection
+               SET has_foreign_catalog = TRUE,
+                   foreign_catalog = %s
+             WHERE connection_id = %s
+            """,
+            (foreign_catalog, seed.connection_id),
+        )
+        connection.execute(
+            """
+            UPDATE core.object
+               SET zone_id = %s,
+                   fc_object_schema = %s,
+                   fc_object_name = 'fc_' || object_name
+             WHERE object_id = ANY(%s::BIGINT[])
+            """,
+            (
+                source_zone["zone_id"],
+                foreign_schema,
+                [row[0] for row in seed.attributes],
+            ),
+        )
+        connection.execute(
+            """
+            UPDATE core.attribute
+               SET fc_attribute_name = 'fc_' || attribute_name
+             WHERE object_id = ANY(%s::BIGINT[])
+            """,
+            ([row[0] for row in seed.attributes],),
+        )
+
+    with psycopg.connect(
+        postgres_database.web_runtime_dsn(),
+        row_factory=dict_row,
+    ) as connection:
+        connection.execute("SET ROLE gds_web_write")
+        rows = connection.execute(
+            GET_PROFILING_EXECUTION_CONTEXT_SQL,
+            _execution_parameters(seed),
+        ).fetchall()
+
+    assert rows
+    assert all(row["zone_code"] == "source" for row in rows)
+    assert all(row["relation_catalog"] == foreign_catalog for row in rows)
+    assert all(row["relation_schema"] == foreign_schema for row in rows)
+    assert all(row["relation_object"] == row["fc_object_name"] for row in rows)
+    assert all(row["relation_attribute"] == row["fc_attribute_name"] for row in rows)
+    assert all(row["relation_object"] != row["object_name"] for row in rows)
+
+
+def test_source_profiling_rejects_missing_foreign_catalog_metadata(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_profiling_execution(postgres_database)
     with postgres_database.connect_owner() as connection:
+        source_zone = connection.execute(
+            "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = 'source'"
+        ).fetchone()
+        if source_zone is None:
+            source_zone = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO reference.zone (zone_code, zone_name)
+                    VALUES ('source', 'Source')
+                    RETURNING zone_id
+                    """
+                ).fetchone()
+            )
         connection.execute(
             """
-            UPDATE core.tenant_metadata_discovery_scope
-               SET is_active = FALSE
-             WHERE gds_connection_id = %s
+            UPDATE core.connection
+               SET has_foreign_catalog = TRUE,
+                   foreign_catalog = 'foreign_catalog'
+             WHERE connection_id = %s
             """,
             (seed.connection_id,),
+        )
+        connection.execute(
+            """
+            UPDATE core.object
+               SET zone_id = %s,
+                   fc_object_schema = NULL,
+                   fc_object_name = 'foreign_object'
+             WHERE object_id = ANY(%s::BIGINT[])
+            """,
+            (source_zone["zone_id"], [row[0] for row in seed.attributes]),
         )
 
     with (
@@ -310,7 +397,42 @@ def test_profiling_context_requires_active_discovery_assignment(
             postgres_database.web_runtime_dsn(),
             row_factory=dict_row,
         ) as connection,
-        pytest.raises(RaiseException, match="profiling_discovery_scope_missing"),
+        pytest.raises(RaiseException, match="profiling_relation_unavailable"),
+        connection.transaction(),
+    ):
+        connection.execute("SET ROLE gds_web_write")
+        connection.execute(
+            GET_PROFILING_EXECUTION_CONTEXT_SQL,
+            _execution_parameters(seed),
+        ).fetchall()
+
+
+def test_profiling_context_requires_objects_to_belong_to_model_tenant(
+    postgres_database: DisposablePostgres,
+) -> None:
+    seed = _seed_profiling_execution(postgres_database)
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            """
+            UPDATE core.object
+               SET source_tenant_id = (
+                       SELECT tenant_id
+                         FROM core.tenant
+                        WHERE tenant_id <> %s
+                        ORDER BY tenant_id
+                        LIMIT 1
+                   )
+             WHERE object_id = %s
+            """,
+            (seed.context.tenant_id, seed.attributes[0][0]),
+        )
+
+    with (
+        psycopg.connect(
+            postgres_database.web_runtime_dsn(),
+            row_factory=dict_row,
+        ) as connection,
+        pytest.raises(RaiseException, match="profiling_relation_unavailable"),
         connection.transaction(),
     ):
         connection.execute("SET ROLE gds_web_write")
@@ -522,7 +644,7 @@ def test_profiling_connection_gaps_return_fixed_failures_without_secrets(
         assert failure["databricks_token"] is None
 
 
-def test_no_batch_context_supports_multiple_source_tenants_and_connections(
+def test_no_batch_context_rejects_multiple_source_tenants(
     postgres_database: DisposablePostgres,
 ) -> None:
     seed = _seed_profiling_execution(postgres_database)
@@ -545,7 +667,7 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
                   JOIN core.connection AS source_connection
                     ON source_connection.connection_id = object_record.connection_id
                   JOIN core.tenant AS source_tenant
-                    ON source_tenant.tenant_id = source_connection.tenant_id
+                    ON source_tenant.tenant_id = object_record.source_tenant_id
                   JOIN core.system AS source_system
                     ON source_system.system_id = source_connection.system_id
                  WHERE object_record.object_id = %s
@@ -617,26 +739,11 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
             """
             UPDATE core.object
                SET connection_id = %s,
+                   source_tenant_id = %s,
                    object_schema = %s
              WHERE object_id = %s
             """,
-            (second_connection_id, second_schema, moved_object_id),
-        )
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id,
-                gds_connection_id,
-                zone_id,
-                object_schema
-            ) VALUES (%s, %s, %s, %s)
-            """,
-            (
-                second_tenant_id,
-                second_connection_id,
-                physical["zone_id"],
-                second_schema,
-            ),
+            (second_connection_id, second_tenant_id, second_schema, moved_object_id),
         )
         environment_id = require_row(
             connection.execute(
@@ -692,50 +799,19 @@ def test_no_batch_context_supports_multiple_source_tenants_and_connections(
             ),
         )
 
-    multi_seed = seed
-    with psycopg.connect(
-        postgres_database.web_runtime_dsn(),
-        row_factory=dict_row,
-    ) as connection:
+    with (
+        psycopg.connect(
+            postgres_database.web_runtime_dsn(),
+            row_factory=dict_row,
+        ) as connection,
+        pytest.raises(RaiseException, match="profiling_relation_unavailable"),
+        connection.transaction(),
+    ):
         connection.execute("SET ROLE gds_web_write")
-        context_rows = connection.execute(
+        connection.execute(
             GET_PROFILING_EXECUTION_CONTEXT_SQL,
-            _execution_parameters(multi_seed),
+            _execution_parameters(seed),
         ).fetchall()
-        connection_rows = connection.execute(
-            GET_PROFILING_CONNECTION_VALUES_SQL,
-            (*_execution_parameters(multi_seed), seed.environment_code),
-        ).fetchall()
-
-    rows_by_object = {row["object_id"]: row for row in context_rows}
-    assert rows_by_object[moved_object_id]["source_tenant_id"] == second_tenant_id
-    assert rows_by_object[moved_object_id]["relation_catalog"] == second_catalog
-    assert rows_by_object[moved_object_id]["relation_schema"] == second_schema
-    assert rows_by_object[moved_object_id]["gds_connection_id"] == (
-        second_connection_id
-    )
-    assert {row["relation_catalog"] for row in context_rows} == {
-        seed.relation_catalog,
-        second_catalog,
-    }
-    assert {row["gds_connection_id"] for row in connection_rows} == {
-        seed.connection_id,
-        second_connection_id,
-    }
-    assert len(connection_rows) == 2
-    assert all(row["failure_code"] is None for row in connection_rows)
-    second_connection_row = next(
-        row
-        for row in connection_rows
-        if row["gds_connection_id"] == second_connection_id
-    )
-    assert _digest(second_connection_row["databricks_host_name"]) == _digest(
-        second_host
-    )
-    assert _digest(second_connection_row["databricks_http_path"]) == _digest(
-        second_path
-    )
-    assert _digest(second_connection_row["databricks_token"]) == _digest(second_token)
 
 
 def test_web_role_has_function_only_profiling_credential_surface(

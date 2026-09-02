@@ -1,6 +1,6 @@
 import type { HttpRequest } from "../../core/http";
 import type { ReviewStatus } from "../../shared/contracts";
-import type { ModelScopeApi } from "../model_scope/api";
+import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export type AnalysisValidationState = "validated" | "unvalidated";
@@ -104,7 +104,7 @@ export type AnalysisApi = AnalysisTransport
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelScopeApi, "listModelScope">;
+  & Pick<ModelInputScopeApi, "listModelInputScope">;
 
 export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
   return {

@@ -1,7 +1,6 @@
 """Mapping review and authoring feature boundary."""
 
 from .preparation_contracts import (
-    ArtifactType,
     CommonAgentPlanRepository,
     ExistingMappingAttribute,
     ExistingMappingHeader,
@@ -27,8 +26,6 @@ from .preparation_contracts import (
     MappingPhysicalObject,
     MappingPreparation,
     MappingPreparationDatabase,
-    MappingProfileIdentity,
-    MappingProfileResolver,
     MappingReadiness,
     MappingReadinessIssue,
     MappingRoute,
@@ -50,7 +47,6 @@ from .preparation_repository import (
     PostgresMappingRunContextRepository,
     PostgresMappingRunPlanRepository,
 )
-from .profile_registry import MappingProfileRegistration
 from .read_contracts import (
     ContractModel,
     JsonObject,
@@ -67,8 +63,9 @@ from .read_contracts import (
     MappingObjectNotFoundError,
     MappingObjectPage,
     MappingObjectSummary,
-    MappingProfileProvenance,
     MappingStatus,
+    MappingTargetPage,
+    MappingTargetSummary,
     ModeledAttributeReference,
     ModeledEntityReference,
     OutputTemplateProvenance,
@@ -96,7 +93,6 @@ from .service import (
 )
 
 __all__ = [
-    "ArtifactType",
     "CommonAgentPlanRepository",
     "ContractModel",
     "DatabaseMappingExecutor",
@@ -144,10 +140,6 @@ __all__ = [
     "MappingPhysicalObject",
     "MappingPreparation",
     "MappingPreparationDatabase",
-    "MappingProfileIdentity",
-    "MappingProfileProvenance",
-    "MappingProfileRegistration",
-    "MappingProfileResolver",
     "MappingReadiness",
     "MappingReadinessIssue",
     "MappingReadinessService",
@@ -163,6 +155,8 @@ __all__ = [
     "MappingSource",
     "MappingSourceSystem",
     "MappingStatus",
+    "MappingTargetPage",
+    "MappingTargetSummary",
     "MappingTargetDependencyEdge",
     "MappingTargetDependencyGraph",
     "MappingTargetDependencyNode",

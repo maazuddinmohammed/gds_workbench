@@ -79,7 +79,7 @@ describe("Code Generation journey", () => {
       }),
     })} />);
 
-    const heading = await screen.findByRole("heading", { name: "silver_nwa.customer" });
+    const heading = await screen.findByRole("heading", { name: "customer.sql" });
     expect(heading).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
     expect(screen.getByText("Customer CRM")).toBeVisible();
@@ -106,7 +106,7 @@ describe("Code Generation journey", () => {
       }),
     })} />);
 
-    await screen.findByRole("heading", { name: "silver_nwa.customer" });
+    await screen.findByRole("heading", { name: "customer.sql" });
     expect(screen.getByText("No legacy guide provenance")).toBeVisible();
     expect(screen.getByText("No legacy generator provenance")).toBeVisible();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toHaveTextContent(
@@ -400,7 +400,7 @@ const modelLedger = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   latest_workflow: "code_generation",
   latest_run_status: "completed",
   updated_at: "2026-08-24T10:00:00Z",
@@ -472,20 +472,22 @@ function codeGenerationTarget(
     mapping_supports_truncated: false,
     source_systems: [mappingSupport.source_system],
     source_system_count: 1,
-    mapping_context_digest: "b".repeat(64),
-    source_context_digest: "c".repeat(64),
-    latest_artifact: artifactId === null ? null : {
+    artifacts: artifactId === null ? [] : [{
       generated_sql_artifact_id: artifactId,
+      artifact_name: `${target.object_name}.sql`,
       workflow_run_id: 1100,
       generated_at: "2026-08-24T10:30:00Z",
-      generated_sql_digest: "d".repeat(64),
+      generated_code_status: "active",
+      source_system_codes: ["CRM"],
       artifact_is_current: current,
-    },
+    }],
+    artifact_count: artifactId === null ? 0 : 1,
   };
 }
 
 const generatedSqlDetail = {
   generated_sql_artifact_id: 501,
+  artifact_name: "customer.sql",
   model_id: 18,
   target: targetObject,
   entity_type: "logical_entity",
@@ -495,8 +497,7 @@ const generatedSqlDetail = {
   mapping_support_count: 1,
   mapping_supports_truncated: false,
   artifact_is_current: true,
-  mapping_context_digest: "b".repeat(64),
-  source_context_digest: "c".repeat(64),
+  generated_code_status: "active",
   guide: {
     sql_generation_guide_id: 3,
     sql_generation_guide_code: "databricks.standard",
@@ -515,7 +516,6 @@ const generatedSqlDetail = {
   },
   generated_at: "2026-08-24T10:30:00Z",
   generated_sql: "SELECT '<script>not executable</script>' AS literal;",
-  generated_sql_digest: "d".repeat(64),
   generated_sql_byte_count: 51,
 };
 

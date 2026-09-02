@@ -46,6 +46,9 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
     AgentWorkflowTerminalResult,
 )
+from gds_workbench_api.features.workflows.authoring.naming import (
+    effective_naming_instructions,
+)
 from gds_workbench_api.features.workflows.authoring.no_op import (
     AuthoringNoOpReceipt,
     AuthoringNoOpRequest,
@@ -438,9 +441,10 @@ class DatabaseLogicalExecutor:
                     ): context.embedded_context,
                     "workflow.validation_failures": [],
                 }
-                naming = context.context.model_details.silver_model_naming_instructions
-                if naming is not None:
-                    resolver_values["model.naming_instructions"] = naming
+                resolver_values["model.naming_instructions"] = effective_naming_instructions(
+                    "logical",
+                    context.context.model_details.silver_model_naming_instructions,
+                )
                 outcome = await self._stage_runner.run(
                     plan=plan,
                     stage_code="candidate_authoring",
@@ -2107,9 +2111,10 @@ def _detailed_resolver_values(
         "entity_detail_builder",
         "whole_model_reconciliation",
     }:
-        naming = context.context.model_details.silver_model_naming_instructions
-        if naming is not None:
-            values["model.naming_instructions"] = naming
+        values["model.naming_instructions"] = effective_naming_instructions(
+            "logical",
+            context.context.model_details.silver_model_naming_instructions,
+        )
     if stage_code == "whole_model_reconciliation":
         values["workflow.validation_failures"] = validation_failures or []
     return values

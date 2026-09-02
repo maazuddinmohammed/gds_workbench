@@ -26,7 +26,7 @@ def test_root_documents_are_complete_deterministic_and_row_free() -> None:
 
     assert first == second
     assert first.catalog_json.endswith(b"\n")
-    assert len(first.schemas) == 29
+    assert len(first.schemas) == 28
     assert all(content.endswith(b"\n") for _path, content in first.schemas)
     catalog = json.loads(first.catalog_json)
     assert [section["name"] for section in catalog["sections"]] == [
@@ -34,7 +34,7 @@ def test_root_documents_are_complete_deterministic_and_row_free() -> None:
         "reference",
         "operational",
     ]
-    assert [len(section["datasets"]) for section in catalog["sections"]] == [5, 8, 16]
+    assert [len(section["datasets"]) for section in catalog["sections"]] == [4, 8, 16]
     assert all(
         dataset["row_count"] == 0
         for section in catalog["sections"]
@@ -79,6 +79,7 @@ def test_catalog_contains_agent_navigation_without_duplicate_rows() -> None:
             "connection_code",
             "object_schema",
             "object_name",
+            "source_tenant_code",
             "object_type_code",
             "zone_code",
             "is_locked",

@@ -1,113 +1,77 @@
-# Current MCP scaffold architecture
+# GDS Workbench architecture
 
-The deployed unit is one stateless Python 3.14 MCP application on Azure App
-Service backed by PostgreSQL 18.
-
-```text
-human MCP client -------- delegated Entra token ---+
-                                                    +--> Easy Auth --> /mcp
-registered workflow app -- application Entra token +                    |
-                                                                         v
-                                                                  PostgreSQL 18
-```
-
-Azure Easy Auth validates tokens. Middleware parses one bounded claim envelope
-and attaches a server-derived human or workload request Principal. PostgreSQL
-maps the Entra Tenant/Object pair to the active internal Principal and owns
-Tenant visibility, Tenant Role, Super Admin, Tenant Lock, and audit truth.
-
-The Streamable HTTP MCP transport is explicitly `stateless_http=True`. No MCP
-session stores authentication or authorization state. Every sensitive request
-re-resolves current database facts.
-
-## Code shape
+GDS Workbench has three workflow entry points over one governed PostgreSQL
+model:
 
 ```text
-mcp_server/
-    app.py
-    startup.sh
-    gds_etl_workbench/
-        runtime.py
-        configuration.py
-        adapters/auth/          Easy Auth parsing and request middleware
-        adapters/mcp/          server composition, health, tool-call audit
-        application/            shared authorization and cursor boundaries
-        domain/                 policy vocabulary and safe errors
-        infrastructure/         PostgreSQL pool, readiness, expiry worker call
-        tools/tenants/          Tenant list and Connection-grain detail reads
-        tools/catalog/          Object visibility, detail, and ingestion lineage
-        tools/ingestion/        Copy Group summary and detail reads
-        tools/processing/       Process Group summary and detail reads
-        tools/snapshots/metadata/
-                                complete Metadata Snapshot vertical slice
-tests/mcp/                     all MCP and disposable-database tests
+VS Code Agent Plugin ----+
+                         +--> MCP server ------+
+Web application --------+                     |
+                                               +--> PostgreSQL
+Databricks workflows --------------------------+
 ```
 
-Each tool keeps its MCP binding, strict request/result contracts, declared
-`ToolPolicy`, pagination, and tool-specific SQL in one module. Shared
-authentication, authorization interpretation, PostgreSQL transaction mechanics,
-central tool-call audit, safe errors, and cursor signing remain architectural
-boundaries. Each tool also declares its retained safe inputs and audit summary beside its
-handler; the shared middleware appends the result without storing raw inputs or
-outputs.
+The Agent Plugin is the primary developer experience. The web application runs
+equivalent workflows for users who do not use the plugin. Databricks notebooks
+may use different models through Microsoft Foundry or Databricks; they share the
+database workflow contracts, not an agent runtime.
 
-## Current surface
+## Plugin
 
-- Anonymous `GET /health/live`
-- Anonymous `GET /health/ready`
-- Anonymous OAuth protected-resource metadata at both RFC 9728 well-known paths
-- Protected stateless `/mcp`
-- 61 governed MCP tools spanning Tenant/catalog reads, Metadata and Model
-  Snapshots, model graph reads, Mapping and code-generation authoring context,
-  governed Databricks SQL, Tenant Locks, and Metadata/Model Change Sets.
+`plugins/v2/gds/` is an Agent Plugins 1.0 bundle with root `plugin.json`,
+`mcp.json`, and `skills/`. It provides Quick, Guided, Automatic, and Custom
+interaction modes. Grill With Docs is loaded only when requested.
 
-The checked-in [tool contract](../../plugins/v2/gds/tool-contract.json) binds the
-exact registered input/output schemas by count, MCP server version, and digest.
-Packaging tests regenerate that contract from the runtime before accepting the
-plugin archive.
+The plugin keeps a local Snapshot session and one Workbench tab. The user
+refreshes the Workbench to inspect changed files. A positive acknowledgement
+means local review is complete and authorizes an ordinary free Tenant Lock,
+reconciliation, Stage, and Change Set validation. Lock override and Apply still
+require separate explicit approval. A revision mismatch stops for a fresh
+manually downloaded Snapshot and reassessment.
 
-`list_tenants` returns active global Tenants plus private Tenants for which the
-human has active, unexpired Viewer-or-higher access. Registered workload
-Principals must be active Super Admins and therefore see all active Tenants.
-Local dev mode lists all active Tenants.
+## MCP server
 
-The web Tenant chooser applies that authorization policy, then omits any Tenant
-that owns a retained `core.connection` with `is_global_data_store = TRUE` before
-paging. This includes an inactive marked Connection: activity controls Connection
-availability, while the retained marker identifies its owner as infrastructure
-rather than a selectable Workbench Tenant. The MCP `list_tenants` contract keeps
-its broader authorized-Tenant behavior.
+The deployed unit is one stateless Python 3.14 application on Azure App Service.
+Azure Easy Auth validates tokens. PostgreSQL resolves the Principal, Tenant
+access, Tenant Lock, Model ownership, revision, and permissions for every
+sensitive operation.
 
-`get_metadata_snapshot` authorizes one Tenant, selects a fixed 29-dataset
-closure in a repeatable-read read-only transaction, creates a deterministic ZIP
-in temporary storage, uploads it create-only to private Blob Storage, and
-returns a bounded descriptor containing a 15-minute read-only SAS for the exact
-ZIP. Tenant authorization happens before the SAS is minted.
+The public surface is intentionally narrow: exactly 35 governed MCP tools and
+no MCP prompts or resources. The plugin owns interaction behavior; the server
+instructions contain only shared safety and dependency rules.
 
-The interactive reads use the same server-owned Object closure as the Metadata
-Snapshot. `list_objects` reports why each Object is included and whether an
-ingestion mapping exists. Copy Groups are Tenant-owned. Process Groups are
-resolved through Copy Groups belonging to the requested Tenant. Detail tools
-return bounded safe projections and omit scripts, raw checkpoint values,
-connection values, secret references, transformations, and executable paths.
+- Tenant, Model, Metadata, and Model-section reads;
+- complete Metadata and Model Snapshots;
+- Metadata and Model Change Set lifecycles;
+- five governed Tenant Lock operations;
+- deterministic DBML projection; and
+- bounded Databricks SQL preflight.
 
-Mutation is available only through governed Tenant Lock and Change Set lifecycle
-tools. The MCP surface exposes no foundational CRUD, direct lock-table toggle,
-arbitrary PostgreSQL, file upload, or code-execution tool. Databricks SQL is the
-single governed arbitrary-SQL exception and remains bounded to reads plus
-unqualified temporary objects.
+It exposes no foundational CRUD, individual model-graph mutation, direct lock
+toggle, arbitrary PostgreSQL, secret-returning, file-upload, or code-execution
+tool.
 
-## Deployment boundary
+## Change Set boundary
 
-The App Service ZIP root contains `app.py`, `startup.sh`, `requirements.txt`,
-`BUILD_MANIFEST.json`, and the runtime package. It excludes SQL, tests, `.env`,
-documentation, caches, and nested archives. Database DDL is installed separately
-and never at application startup.
+Metadata Change Sets register every physical Object and Attribute. A Model
+Change Set can then bind logical or dimensional records to those existing
+physical records. Mapping consumes Bindings; Code consumes Mapping; Validation
+consumes the current Mapping and Code context.
 
-The server opens one bounded PostgreSQL pool. Each transaction activates the
-`NOINHERIT` `gds_app_write` role locally. Readiness checks PostgreSQL 18, required
-schema functions, and the runtime role posture. The only background write is a
-bounded Tenant Lock expiry pass at startup and every 60 seconds.
+Snapshots are the handoff boundary. If the Model revision changes, work stops
+until a fresh Snapshot is downloaded and reassessed. The server derives
+technical digests and provenance; agent-authored documents do not carry
+server-internal integrity fields.
 
-See [the security contract](../security.md) and
+## Database and deployment
+
+Numbered SQL files define a greenfield PostgreSQL 18 installation. Startup does
+not apply DDL. No migration, backfill, destructive cleanup, or populated-database
+reset path exists.
+
+The runtime ZIP contains only the application entry points, dependency list,
+build manifest, and Python package. SQL, tests, docs, local environments, and
+secrets are excluded.
+
+See [security](../security.md), [database architecture](database.md), and
 [ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).

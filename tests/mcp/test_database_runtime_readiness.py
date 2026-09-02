@@ -26,8 +26,8 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             """
             GRANT UPDATE (default_agent_sdk_code)
                 ON model.model TO gds_app_write;
-            GRANT INSERT (model_id, object_id)
-                ON model.model_scope TO gds_app_write
+            GRANT INSERT
+                ON model.model_revision_transaction TO gds_app_write
             """
         )
         connection.execute(
@@ -49,9 +49,13 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
                        'default_agent_sdk_code', 'UPDATE'
                    ) AS web_agent_default_update,
                    has_column_privilege(
-                       'gds_app_write', 'model.model_scope',
+                       'gds_app_write', 'model.model_input_scope',
                        'model_id', 'INSERT'
-                   ) AS model_scope_insert
+                   ) AS model_input_scope_insert,
+                   has_table_privilege(
+                       'gds_app_write', 'model.model_revision_transaction',
+                       'INSERT'
+                   ) AS revision_transaction_insert
               FROM pg_auth_members AS membership
               JOIN pg_roles AS member_role
                 ON member_role.oid = membership.member
@@ -67,7 +71,8 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             "inherit_option": True,
             "set_option": False,
             "web_agent_default_update": True,
-            "model_scope_insert": True,
+            "model_input_scope_insert": True,
+            "revision_transaction_insert": True,
         }
 
         connection.execute(
@@ -86,9 +91,13 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
                        'default_agent_sdk_code', 'UPDATE'
                    ) AS web_agent_default_update,
                    has_column_privilege(
-                       'gds_app_write', 'model.model_scope',
+                       'gds_app_write', 'model.model_input_scope',
                        'model_id', 'INSERT'
-                   ) AS model_scope_insert
+                   ) AS model_input_scope_insert,
+                   has_table_privilege(
+                       'gds_app_write', 'model.model_revision_transaction',
+                       'INSERT'
+                   ) AS revision_transaction_insert
               FROM pg_auth_members AS membership
               JOIN pg_roles AS member_role
                 ON member_role.oid = membership.member
@@ -105,7 +114,8 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
         "inherit_option": False,
         "set_option": True,
         "web_agent_default_update": False,
-        "model_scope_insert": False,
+        "model_input_scope_insert": True,
+        "revision_transaction_insert": False,
     }
 
     with postgres_database.connect_runtime() as connection:
@@ -241,7 +251,7 @@ def test_runtime_integrity_revokes_an_unlisted_web_mcp_function(
     assert web_execute == {"allowed": False}
 
 
-def test_mcp_role_cannot_mutate_model_scope_or_web_agent_defaults(
+def test_mcp_role_can_materialize_model_input_scope_but_not_revision_audit(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -273,31 +283,38 @@ def test_mcp_role_cannot_mutate_model_scope_or_web_agent_defaults(
                    EXISTS (
                        SELECT 1
                          FROM pg_attribute AS attribute
-                        WHERE attribute.attrelid = 'model.model_scope'::REGCLASS
+                        WHERE attribute.attrelid =
+                              'model.model_input_scope'::REGCLASS
                           AND attribute.attnum > 0
                           AND NOT attribute.attisdropped
                           AND (
                               has_column_privilege(
                                   'gds_app_write',
-                                  'model.model_scope',
+                                  'model.model_input_scope',
                                   attribute.attname,
                                   'INSERT'
                               )
                               OR has_column_privilege(
                                   'gds_app_write',
-                                  'model.model_scope',
+                                  'model.model_input_scope',
                                   attribute.attname,
                                   'UPDATE'
                               )
                           )
-                   ) AS model_scope_mutation
+                   ) AS model_input_scope_mutation,
+                   has_table_privilege(
+                       'gds_app_write',
+                       'model.model_revision_transaction',
+                       'INSERT,UPDATE,DELETE,TRUNCATE'
+                   ) AS revision_audit_mutation
             """
         ).fetchone()
 
     assert posture == {
         "model_policy_update": True,
         "web_agent_default_update": False,
-        "model_scope_mutation": False,
+        "model_input_scope_mutation": True,
+        "revision_audit_mutation": False,
     }
 
 
@@ -331,14 +348,14 @@ async def test_runtime_readiness_checks_the_complete_mcp_database_contract(
 
 
 @pytest.mark.asyncio
-async def test_runtime_readiness_rejects_the_old_discovery_connection_column(
+async def test_runtime_readiness_rejects_a_missing_object_source_tenant_column(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
         connection.execute(
             """
-            ALTER TABLE core.tenant_metadata_discovery_scope
-            RENAME COLUMN gds_connection_id TO connection_id
+            ALTER TABLE core.object
+            RENAME COLUMN source_tenant_id TO missing_source_tenant_id
             """
         )
 
@@ -353,8 +370,8 @@ async def test_runtime_readiness_rejects_the_old_discovery_connection_column(
         with postgres_database.connect_owner() as connection:
             connection.execute(
                 """
-                ALTER TABLE core.tenant_metadata_discovery_scope
-                RENAME COLUMN connection_id TO gds_connection_id
+                ALTER TABLE core.object
+                RENAME COLUMN missing_source_tenant_id TO source_tenant_id
                 """
             )
 
@@ -633,7 +650,7 @@ def test_verify_install_rejects_missing_runtime_schema_usage(
         )
 
 
-def test_verify_install_rejects_mcp_model_scope_column_mutation(
+def test_verify_install_rejects_mcp_revision_audit_column_mutation(
     postgres_database: DisposablePostgres,
 ) -> None:
     with (
@@ -643,8 +660,8 @@ def test_verify_install_rejects_mcp_model_scope_column_mutation(
     ):
         connection.execute(
             """
-            GRANT INSERT (model_id, object_id)
-                ON model.model_scope TO gds_app_write
+            GRANT INSERT (model_id, transaction_id)
+                ON model.model_revision_transaction TO gds_app_write
             """
         )
         connection.execute(

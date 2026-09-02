@@ -279,7 +279,7 @@ def _fake_dimensional_topology_reconciliation(
                         "dimensional_submodel_definition": (
                             "A locally generated Dimensional submodel boundary."
                         ),
-                        "dimensional_submodel_status": "needs_review",
+                        "dimensional_submodel_status": "active",
                         "dimensional_submodel_is_locked": False,
                     },
                 }
@@ -364,7 +364,7 @@ def _fake_dimensional_entity_detail(context: dict[str, JsonValue]) -> JsonValue:
         memberships.append(
             {
                 "submodel_name": submodel_names_by_ref[reference],
-                "membership_status": "needs_review",
+                "membership_status": "active",
                 "membership_is_locked": False,
             }
         )
@@ -572,7 +572,7 @@ def _fake_dimensional_reconciliation_receipt(
                 "dimensional_relationship_cardinality_basis": (
                     "The local fake requires review of relationship cardinality."
                 ),
-                "dimensional_relationship_status": "needs_review",
+                "dimensional_relationship_status": "active",
                 "dimensional_relationship_is_locked": False,
             }
         )
@@ -639,7 +639,7 @@ def _fake_dimensional_whole_model_reconciliation(
                 "dimensional_submodel_definition": (
                     "A locally reconciled Dimensional submodel boundary."
                 ),
-                "dimensional_submodel_status": "needs_review",
+                "dimensional_submodel_status": "active",
                 "dimensional_submodel_is_locked": False,
             }
         )
@@ -721,7 +721,7 @@ def _fake_dimensional_whole_model_reconciliation(
             memberships.append(
                 {
                     "submodel_name": name,
-                    "membership_status": "needs_review",
+                    "membership_status": "active",
                     "membership_is_locked": False,
                 }
             )
@@ -856,7 +856,7 @@ def _fake_dimensional_whole_model_reconciliation(
                 "dimensional_relationship_cardinality_basis": (
                     "The local fake requires review of relationship cardinality."
                 ),
-                "dimensional_relationship_status": "needs_review",
+                "dimensional_relationship_status": "active",
                 "dimensional_relationship_is_locked": False,
             }
         )
@@ -1019,7 +1019,7 @@ def _fake_dimensional_entity_record(
         "dimensional_entity_grain_definition": grain_definition,
         "dimensional_entity_dependency_order": dependency_order,
         "dimensional_entity_confidence": "medium",
-        "dimensional_entity_status": "needs_review",
+        "dimensional_entity_status": "active",
         "dimensional_entity_is_locked": False,
         "submodels": list(memberships),
         "sources": list(sources),
@@ -1051,7 +1051,7 @@ def _fake_dimensional_attribute_record(
         "dimensional_attribute_change_behavior": "overwrite",
         "dimensional_attribute_is_audit_column": False,
         "dimensional_attribute_confidence": "medium",
-        "dimensional_attribute_status": "needs_review",
+        "dimensional_attribute_status": "active",
         "dimensional_attribute_is_locked": False,
         "sources": list(sources),
     }

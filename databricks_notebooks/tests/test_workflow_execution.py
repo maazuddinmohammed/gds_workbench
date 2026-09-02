@@ -119,6 +119,10 @@ def test_execution_result_is_bounded_and_omits_empty_fields() -> None:
         "model_change_set_status": "validated",
         "draft_revision": 3,
         "candidate_digest": "a" * 64,
+        "draft_review": {
+            "ready": True,
+            "message": "Draft is ready to review in the workbench. Apply remains explicit.",
+        },
     }
     assert str(_CLAIM_TOKEN) not in repr(result)
 

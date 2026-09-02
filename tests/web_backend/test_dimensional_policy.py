@@ -255,7 +255,7 @@ def test_projection_adds_type_2_columns_only_when_dimension_historizes() -> None
     ]
 
 
-def test_projection_covers_applied_active_and_new_needs_review_entities() -> None:
+def test_projection_covers_applied_active_and_new_active_entities() -> None:
     applied_entity = _entity("Account Dimension")
     inactive_entity = _entity("Inactive Dimension").model_copy(
         update={"dimensional_entity_status": "inactive"}
@@ -268,7 +268,7 @@ def test_projection_covers_applied_active_and_new_needs_review_entities() -> Non
         dimensional_entity_grain_definition="One row per sale.",
         dimensional_entity_dependency_order=1,
         dimensional_entity_confidence="high",
-        dimensional_entity_status="needs_review",
+        dimensional_entity_status="active",
         dimensional_entity_is_locked=False,
         submodels=(),
         sources=(),

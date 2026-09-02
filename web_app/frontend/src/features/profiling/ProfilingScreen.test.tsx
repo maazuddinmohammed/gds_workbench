@@ -255,8 +255,8 @@ function profilingFetchStub(options: {
     const url = String(input);
     if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
     if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelDetailPayload);
-    if (url === "/api/v1/tenants/7/models/18/scope?zone=bronze&page_size=200") {
-      return jsonResponse(modelScopePayload);
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
+      return jsonResponse(modelInputScopePayload);
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/profiling?") && init?.method !== "POST") {
       if (options.resultsError) {
@@ -380,7 +380,7 @@ const modelDetailPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -396,11 +396,11 @@ const modelDetailPayload = {
   updated_at: "2026-08-24T14:00:00Z",
 };
 
-const modelScopePayload = {
+const modelInputScopePayload = {
   model_id: 18,
   model_revision: 18,
   items: [{
-    model_scope_id: 101,
+    model_input_scope_id: 101,
     object_id: 501,
     connection_id: 21,
     system_id: 31,
@@ -414,7 +414,7 @@ const modelScopePayload = {
     zone_code: "bronze",
     batch_attribute_name: "batch_id",
     attribute_count: 12,
-    is_bronze_source_eligible: true,
+    is_model_input_eligible: true,
     is_dimensional_source_eligible: false,
     is_logical_mapping_target_eligible: false,
     is_dimensional_mapping_target_eligible: false,

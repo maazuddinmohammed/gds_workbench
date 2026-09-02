@@ -15,6 +15,7 @@ from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (
     DatabricksStatementFailedError,
     DependencyUnavailableError,
+    InvalidRequestError,
     TenantWorkflowConflictError,
 )
 from gds_etl_workbench.infrastructure.postgres import (
@@ -486,6 +487,8 @@ class _DatabaseTransaction:
     calls: list[tuple[str, tuple[Any, ...]]] = field(default_factory=lambda: [])
     claim_assertion_fails: bool = False
     start_error: str | None = None
+    context_error: str | None = None
+    profiling_context_rows: list[dict[str, Any]] | None = None
 
     async def fetch_one(
         self,
@@ -553,41 +556,68 @@ class _DatabaseTransaction:
                 }
             ]
         assert "application.get_profiling_execution_context" in query
-        base = {
-            "workflow_run_id": 1048,
-            "model_id": 18,
-            "model_revision": 4,
-            "requested_batch_id": "10428",
-            "selection_order": 1,
-            "source_tenant_id": 7,
-            "source_tenant_code": "NWA",
-            "gds_connection_id": 91,
-            "relation_catalog": "northwind",
-            "relation_schema": "bronze_crm",
-            "relation_object": "customer_raw",
-            "system_id": 31,
-            "system_code": "CRM",
-            "object_id": 101,
-            "batch_attribute_name": "batch_id",
-        }
-        return [
-            {
-                **base,
-                "attribute_id": 1001,
-                "attribute_name": "customer_id",
-                "attribute_data_type": "BIGINT",
-                "attribute_ordinal_position": 1,
-                "is_batch_attribute": False,
-            },
-            {
-                **base,
-                "attribute_id": 1002,
-                "attribute_name": "batch_id",
-                "attribute_data_type": "BIGINT",
-                "attribute_ordinal_position": 2,
-                "is_batch_attribute": True,
-            },
-        ]
+        if self.context_error is not None:
+            raise RuntimeError(self.context_error)
+        if self.profiling_context_rows is not None:
+            return self.profiling_context_rows
+        return _profiling_context_rows()
+
+
+def _profiling_context_rows(*, zone_code: str = "bronze") -> list[dict[str, Any]]:
+    base = {
+        "workflow_run_id": 1048,
+        "model_id": 18,
+        "model_revision": 4,
+        "requested_batch_id": "10428",
+        "selection_order": 1,
+        "source_tenant_id": 7,
+        "source_tenant_code": "NWA",
+        "gds_connection_id": 91,
+        "source_connection_id": 82,
+        "zone_code": zone_code,
+        "has_foreign_catalog": zone_code == "source",
+        "foreign_catalog": "foreign_crm" if zone_code == "source" else None,
+        "object_schema": "bronze_crm",
+        "object_name": "customer_raw",
+        "fc_object_schema": "dbo" if zone_code == "source" else None,
+        "fc_object_name": "Customer" if zone_code == "source" else None,
+        "relation_catalog": "northwind",
+        "relation_schema": "bronze_crm",
+        "relation_object": "customer_raw",
+        "system_id": 31,
+        "system_code": "CRM",
+        "object_id": 101,
+        "batch_attribute_name": "batch_id",
+    }
+    rows = [
+        {
+            **base,
+            "attribute_id": 1001,
+            "attribute_name": "customer_id",
+            "fc_attribute_name": "CustomerID" if zone_code == "source" else None,
+            "relation_attribute": "customer_id",
+            "attribute_data_type": "BIGINT",
+            "attribute_ordinal_position": 1,
+            "is_batch_attribute": False,
+        },
+        {
+            **base,
+            "attribute_id": 1002,
+            "attribute_name": "batch_id",
+            "fc_attribute_name": "BatchID" if zone_code == "source" else None,
+            "relation_attribute": "batch_id",
+            "attribute_data_type": "BIGINT",
+            "attribute_ordinal_position": 2,
+            "is_batch_attribute": True,
+        },
+    ]
+    if zone_code == "source":
+        for row in rows:
+            row["relation_catalog"] = "foreign_crm"
+            row["relation_schema"] = "dbo"
+            row["relation_object"] = "Customer"
+            row["relation_attribute"] = row["fc_attribute_name"]
+    return rows
 
 
 @dataclass
@@ -679,11 +709,121 @@ async def test_database_repository_groups_context_without_exposing_credentials()
     target = context.targets[0]
     assert target.object.catalog == "northwind"
     assert target.object.schema_name == "bronze_crm"
+    assert target.object.table == "customer_raw"
+    assert target.object.batch_attribute_name == "batch_id"
+    assert [item.name for item in target.object.attributes] == [
+        "customer_id",
+        "batch_id",
+    ]
     assert [item.attribute_id for item in target.object.attributes] == [1001, 1002]
     assert "sensitive-host" not in repr(context)
     assert "sensitive-path" not in repr(context)
     assert "sensitive-token" not in repr(context)
     assert database.write_transactions == 1
+
+
+@pytest.mark.asyncio
+async def test_database_repository_profiles_source_only_through_foreign_catalog() -> None:
+    database = _Database()
+    database.transaction.profiling_context_rows = _profiling_context_rows(
+        zone_code="source"
+    )
+    repository = DatabaseProfilingWorkflowRepository(
+        database=database,
+        environment_code="DEV",
+    )
+
+    context = await repository.load_context(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=4,
+    )
+
+    target = context.targets[0].object
+    assert (target.catalog, target.schema_name, target.table) == (
+        "foreign_crm",
+        "dbo",
+        "Customer",
+    )
+    assert target.batch_attribute_name == "BatchID"
+    assert [item.name for item in target.attributes] == ["CustomerID", "BatchID"]
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("missing_field", "row_index"),
+    [
+        ("foreign_catalog", 0),
+        ("fc_object_schema", 0),
+        ("fc_object_name", 0),
+        ("fc_attribute_name", 1),
+    ],
+)
+async def test_database_repository_rejects_incomplete_source_foreign_catalog(
+    missing_field: str,
+    row_index: int,
+) -> None:
+    rows = _profiling_context_rows(zone_code="source")
+    rows[row_index][missing_field] = None
+    database = _Database()
+    database.transaction.profiling_context_rows = rows
+    repository = DatabaseProfilingWorkflowRepository(
+        database=database,
+        environment_code="DEV",
+    )
+
+    with pytest.raises(InvalidRequestError):
+        await repository.load_context(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=4,
+        )
+
+
+@pytest.mark.asyncio
+async def test_database_repository_rejects_source_without_foreign_catalog() -> None:
+    rows = _profiling_context_rows(zone_code="source")
+    rows[0]["has_foreign_catalog"] = False
+    database = _Database()
+    database.transaction.profiling_context_rows = rows
+    repository = DatabaseProfilingWorkflowRepository(
+        database=database,
+        environment_code="DEV",
+    )
+
+    with pytest.raises(InvalidRequestError):
+        await repository.load_context(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=4,
+        )
+
+
+@pytest.mark.asyncio
+async def test_database_repository_maps_unavailable_source_relation_safely() -> None:
+    database = _Database()
+    database.transaction.context_error = (
+        "profiling_relation_unavailable: incomplete foreign-catalog relation"
+    )
+    repository = DatabaseProfilingWorkflowRepository(
+        database=database,
+        environment_code="DEV",
+    )
+
+    with pytest.raises(InvalidRequestError, match="Source foreign-catalog or Bronze"):
+        await repository.load_context(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=4,
+        )
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,7 @@ import { createHttpRequest } from "../../core/http";
 import {
   createMappingApi,
   loadActiveMappingOutputTemplates,
-  loadAllMappingScope,
+  loadAllMappingTargets,
   type MappingApi,
   type OutputTemplateTargetType,
 } from "./api";
@@ -14,11 +14,12 @@ describe("Mapping HTTP adapter", () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
     const api = createMappingApi(createHttpRequest(fetcher));
 
+    await api.listMappingTargets(7, 18, "logical_entity", 50, "target+/=");
     await api.listMappingDependencies(7, 18, {
       entityType: "logical_entity",
       sourceSystemId: 2,
       sourceSystemCode: " CRM ",
-      status: "needs_review",
+      status: "inactive",
       locked: false,
     }, 50, "opaque+/=");
     await api.listMappingObjects(7, 18);
@@ -33,7 +34,8 @@ describe("Mapping HTTP adapter", () => {
     await api.listOutputTemplates(7, "mapping_attribute");
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=needs_review&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/mapping/targets?entity_type=logical_entity&page_size=50&cursor=target%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/mapping/dependencies?entity_type=logical_entity&source_system_id=2&source_system_code=crm&status=inactive&locked=false&page_size=50&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/mapping/objects?page_size=200",
       "/api/v1/tenants/7/models/18/mapping/objects/81",
       "/api/v1/tenants/7/models/18/mapping/attributes?source_system_id=4&source_system_code=erp&locked=true&page_size=25&cursor=attributes%2B%2F%3D",
@@ -144,9 +146,9 @@ describe("Mapping Output Template catalog", () => {
   });
 });
 
-describe("Mapping Scope loader", () => {
+describe("Mapping target loader", () => {
   it("keeps revision consistency and repeated-cursor protection", async () => {
-    const listModelScope = vi.fn<MappingApi["listModelScope"]>()
+    const listMappingTargets = vi.fn<MappingApi["listMappingTargets"]>()
       .mockResolvedValueOnce({
         model_id: 18,
         model_revision: 4,
@@ -160,23 +162,33 @@ describe("Mapping Scope loader", () => {
         next_cursor: null,
       });
 
-    await expect(loadAllMappingScope({ listModelScope }, 7, 18)).resolves.toEqual({
+    await expect(loadAllMappingTargets(
+      { listMappingTargets },
+      7,
+      18,
+      "logical_entity",
+    )).resolves.toEqual({
       modelRevision: 4,
       items: [],
     });
-    expect(listModelScope.mock.calls).toEqual([
-      [7, 18, {}, 200, undefined],
-      [7, 18, {}, 200, "next"],
+    expect(listMappingTargets.mock.calls).toEqual([
+      [7, 18, "logical_entity", 200, undefined],
+      [7, 18, "logical_entity", 200, "next"],
     ]);
 
-    const repeatedCursor = vi.fn<MappingApi["listModelScope"]>().mockResolvedValue({
+    const repeatedCursor = vi.fn<MappingApi["listMappingTargets"]>().mockResolvedValue({
       model_id: 18,
       model_revision: 4,
       items: [],
       next_cursor: "same",
     });
-    await expect(loadAllMappingScope({ listModelScope: repeatedCursor }, 7, 18)).rejects.toThrow(
-      "Model Scope cursor repeated",
+    await expect(loadAllMappingTargets(
+      { listMappingTargets: repeatedCursor },
+      7,
+      18,
+      "logical_entity",
+    )).rejects.toThrow(
+      "Mapping target cursor repeated",
     );
   });
 });

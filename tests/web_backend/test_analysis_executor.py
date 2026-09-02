@@ -229,6 +229,7 @@ def _selected_object(name: str, order: int) -> dict[str, object]:
         "selection_order": order,
         "object": {
             "tenant_code": "NWA",
+            "source_tenant_code": "NWA",
             "system_code": "CRM",
             "connection_code": "SOURCE",
             "object_schema": "bronze",
@@ -918,7 +919,7 @@ async def test_analysis_inference_hands_off_one_validated_draft(
         assert request.local_tool_catalog is None
     assert len(handoff.calls) == 1
     assert handoff.calls[0][0].dataset == "analysis_result"
-    assert handoff.calls[0][0].records[0]["analysis_result_status"] == "needs_review"
+    assert handoff.calls[0][0].records[0]["analysis_result_status"] == "active"
     assert handoff.final_events[-1].finding_count == 1
     assert lifecycle.failed is None
     assert [
@@ -1157,7 +1158,7 @@ async def test_detailed_analysis_preserves_maximal_multibyte_evidence_with_bound
         relationship_kind="reference",
         relationship_confidence="high",
         relationship_basis="é" * 262_144,
-        analysis_result_status="needs_review",
+        analysis_result_status="active",
         analysis_result_is_locked=False,
     )
     raw_context = _context_bundle(mode="detailed_coverage").context.model_dump(
@@ -1454,7 +1455,7 @@ def test_detailed_analysis_fragments_matching_applied_record_without_loss() -> N
             "validation_source_missing_target_count": None,
             "validation_unused_target_count": None,
             "validation_duplicate_target_key_count": None,
-            "analysis_result_status": "needs_review",
+            "analysis_result_status": "active",
             "analysis_result_is_locked": False,
         },
         strict=False,

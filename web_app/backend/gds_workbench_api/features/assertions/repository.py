@@ -52,9 +52,6 @@ SELECT document.modeling_assertion_document_id,
            WHERE record.modeling_assertion_record_status = 'active'
        )::INTEGER AS active_record_count,
        count(record.modeling_assertion_record_id) FILTER (
-           WHERE record.modeling_assertion_record_status = 'needs_review'
-       )::INTEGER AS needs_review_record_count,
-       count(record.modeling_assertion_record_id) FILTER (
            WHERE record.modeling_assertion_record_is_locked
        )::INTEGER AS locked_record_count,
        document.updated_time AS updated_at
@@ -125,7 +122,6 @@ SELECT document.modeling_assertion_document_id,
        document.is_active,
        counts.record_count,
        counts.active_record_count,
-       counts.needs_review_record_count,
        counts.locked_record_count,
        document.agent_run_id,
        document.created_time AS created_at,
@@ -143,9 +139,6 @@ SELECT document.modeling_assertion_document_id,
              count(record.modeling_assertion_record_id) FILTER (
                  WHERE record.modeling_assertion_record_status = 'active'
              )::INTEGER AS active_record_count,
-             count(record.modeling_assertion_record_id) FILTER (
-                 WHERE record.modeling_assertion_record_status = 'needs_review'
-             )::INTEGER AS needs_review_record_count,
              count(record.modeling_assertion_record_id) FILTER (
                  WHERE record.modeling_assertion_record_is_locked
              )::INTEGER AS locked_record_count

@@ -56,10 +56,10 @@ def register_describe_model_dataset_tool(
 ) -> None:
     @server.tool(
         description=(
-            "Describe one Model dataset for agent authoring. Compact detail is the default "
-            "and omits duplicated column cards plus validator-owned nested schemas. Full "
-            "detail additionally returns every column card and the exact ID-free JSON "
-            "Schema. Both include canonical key and GDS population, digest, and assertion rules."
+            "Describe one Model dataset before authoring it. Compact detail returns its "
+            "canonical key, population and validation rules, and concise ID-free authoring "
+            "schema. Full detail additionally returns per-column guidance and the exact JSON "
+            "Schema. Neither mode returns Model records."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

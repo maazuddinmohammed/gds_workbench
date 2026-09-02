@@ -84,7 +84,8 @@ def register_execute_databricks_sql_tool(
         description=(
             "Execute up to 25 governed Databricks SQL statements using an active source "
             "Connection, its Tenant's Global Data Store Connection, and one requested "
-            "Environment. Physical relations must use catalog.schema.table. Allows reads "
+            "Environment; environment_code defaults to dev. Physical relations must use "
+            "catalog.schema.table. Allows reads "
             "and unqualified temporary views/tables only. "
             "Returns the configured row limit, never more than 50, from the final "
             "statement. The audit log retains only a digest and bounded metadata, "
@@ -101,9 +102,35 @@ def register_execute_databricks_sql_tool(
     )
     async def execute_databricks_sql(
         ctx: Context[None],
-        connection_id: Annotated[int, Field(gt=0)],
-        environment_code: Annotated[str, Field(min_length=1, max_length=100)],
-        sql: Annotated[str, Field(min_length=1, max_length=_MAX_SQL_CHARACTERS)],
+        connection_id: Annotated[
+            int,
+            Field(
+                gt=0,
+                description=(
+                    "Active non-GDS source Connection. The server resolves that Tenant's "
+                    "Global Data Store Connection and the requested Environment."
+                ),
+            ),
+        ],
+        sql: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=_MAX_SQL_CHARACTERS,
+                description=(
+                    "One to 25 Databricks SQL statements containing reads and unqualified "
+                    "temporary views or tables only; persistent relations must be fully qualified."
+                ),
+            ),
+        ],
+        environment_code: Annotated[
+            str,
+            Field(
+                min_length=1,
+                max_length=100,
+                description="Registered Environment code; defaults to lowercase dev.",
+            ),
+        ] = "dev",
         schema_version: Literal["1.0"] = "1.0",
     ) -> ExecuteDatabricksSqlResult:
         try:
@@ -215,7 +242,7 @@ def _validated_connection(
 
 def _audit_input_metadata(arguments: Mapping[str, Any]) -> dict[str, str | int]:
     connection_id = arguments.get("connection_id")
-    environment_code = arguments.get("environment_code")
+    environment_code = arguments.get("environment_code", "dev")
     sql = arguments.get("sql")
     return {
         "schema_version": ("1.0" if arguments.get("schema_version", "1.0") == "1.0" else "invalid"),

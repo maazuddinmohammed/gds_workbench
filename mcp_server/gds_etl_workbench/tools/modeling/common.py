@@ -27,11 +27,19 @@ SELECT model_id,
 """
 
 _MODEL_OBJECT_COUNT_SQL: LiteralString = """
-SELECT count(*) AS object_count
- FROM model.model_scope
- WHERE model_id = %s
-   AND object_id = ANY(%s::BIGINT[])
-   AND is_active
+SELECT count(DISTINCT candidate.object_id) AS object_count
+  FROM (
+      SELECT scope.object_id
+        FROM model.model_input_scope AS scope
+       WHERE scope.model_id = %s
+         AND scope.is_active
+      UNION
+      SELECT binding.object_id
+        FROM workflow.model_object_binding AS binding
+       WHERE binding.model_id = %s
+         AND binding.model_object_binding_status = 'active'
+  ) AS candidate
+ WHERE candidate.object_id = ANY(%s::BIGINT[])
 """
 
 
@@ -93,10 +101,10 @@ async def validate_model_object_selection(
         return
     row = await transaction.fetch_one(
         _MODEL_OBJECT_COUNT_SQL,
-        (model_id, list(object_ids)),
+        (model_id, model_id, list(object_ids)),
     )
     if row is None or row["object_count"] != len(object_ids):
-        raise InvalidRequestError("One or more Objects are not in the Model Scope.")
+        raise InvalidRequestError("One or more Objects are not in the Model context.")
 
 
 def summarize_model_object_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:

@@ -20,7 +20,7 @@ from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 
-_TOOL_NAME = "get_model"
+_TOOL_NAME = "list_models"
 _MAX_MODELS = 200
 POLICY = ToolPolicy.TENANT_READ
 
@@ -34,12 +34,12 @@ SELECT model.model_id,
        model.gold_model_naming_instructions,
        model.gold_model_technical_columns_template,
        model.gold_model_audit_columns_template,
-       count(model_scope.object_id) AS model_scope_object_count,
+       count(model_input_scope.object_id) AS model_input_scope_object_count,
        count(*) OVER () AS total_model_count
   FROM model.model AS model
-  LEFT JOIN model.model_scope AS model_scope
-    ON model_scope.model_id = model.model_id
-   AND model_scope.is_active
+  LEFT JOIN model.model_input_scope AS model_input_scope
+    ON model_input_scope.model_id = model.model_id
+   AND model_input_scope.is_active
  WHERE model.tenant_id = %s
    AND model.is_active
  GROUP BY model.model_id
@@ -62,10 +62,10 @@ class ModelDetails(ContractModel):
     gold_model_naming_instructions: str | None = Field(default=None, max_length=32768)
     gold_model_technical_columns_template: dict[str, JsonValue] | None
     gold_model_audit_columns_template: dict[str, JsonValue] | None
-    model_scope_object_count: int = Field(ge=0)
+    model_input_scope_object_count: int = Field(ge=0)
 
 
-class GetModelResult(ContractModel):
+class ListModelsResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     tenant_id: int = Field(gt=0)
     model_count: int = Field(ge=0)
@@ -78,7 +78,7 @@ class SafeToolError(Exception):
     """A tool failure whose text is safe for the MCP SDK to serialize."""
 
 
-def register_get_model_tool(
+def register_list_models_tool(
     server: MCPServer[None],
     *,
     database: Database,
@@ -90,9 +90,11 @@ def register_get_model_tool(
     cursors = CursorCodec(cursor_signing_key)
 
     @server.tool(
+        name=_TOOL_NAME,
         description=(
-            "Get active Model details for one authorized Tenant, including revision, "
-            "naming instructions, policy templates, and current Model Scope Object count."
+            "List active Models for one authorized Tenant. Returns paginated Model IDs, "
+            "names, revisions, naming policies, column templates, and active Input Scope "
+            "counts; use the returned model_id with Model-scoped tools."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -103,13 +105,13 @@ def register_get_model_tool(
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
-    async def get_model(
+    async def list_models(
         ctx: Context[None],
         tenant_id: Annotated[int, Field(gt=0)],
         page_size: Annotated[int, Field(ge=1, le=_MAX_MODELS)] = _MAX_MODELS,
         cursor: Annotated[str | None, Field(max_length=2048)] = None,
         schema_version: Literal["1.0"] = "1.0",
-    ) -> GetModelResult:
+    ) -> ListModelsResult:
         del schema_version
         try:
             principal = identity_provider.request_principal(ctx.request_context.request)
@@ -134,7 +136,7 @@ def register_get_model_tool(
                 if len(rows) > page_size
                 else None
             )
-            return GetModelResult(
+            return ListModelsResult(
                 tenant_id=tenant_id,
                 model_count=model_count,
                 models=tuple(

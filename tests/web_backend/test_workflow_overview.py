@@ -37,7 +37,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="scope",
                     result_count=25,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -48,7 +47,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="profiling",
                     result_count=18,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=1048,
                     latest_run_state="completed",
@@ -59,7 +57,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="analysis",
                     result_count=0,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -70,7 +67,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="assertions",
                     result_count=0,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -81,7 +77,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="conceptual",
                     result_count=0,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -92,7 +87,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="logical",
                     result_count=0,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -103,7 +97,6 @@ class StaticWorkflowOverviewService:
                 WorkflowLedgerEntry(
                     workflow="dimensional",
                     result_count=0,
-                    needs_review_count=0,
                     locked_count=0,
                     latest_run_id=None,
                     latest_run_state=None,
@@ -133,7 +126,6 @@ def test_model_overview_route_returns_authoritative_workflow_ledger() -> None:
         {
             "workflow": "scope",
             "result_count": 25,
-            "needs_review_count": 0,
             "locked_count": 0,
             "latest_run_id": None,
             "latest_run_state": None,
@@ -144,7 +136,6 @@ def test_model_overview_route_returns_authoritative_workflow_ledger() -> None:
         {
             "workflow": "profiling",
             "result_count": 18,
-            "needs_review_count": 0,
             "locked_count": 0,
             "latest_run_id": 1048,
             "latest_run_state": "completed",
@@ -190,7 +181,6 @@ class OverviewTransaction:
         base = {
             "model_id": 18,
             "model_revision": 4,
-            "needs_review_count": 0,
             "locked_count": 0,
             "latest_run_id": None,
             "latest_run_state": None,
@@ -210,7 +200,6 @@ class OverviewTransaction:
                 **base,
                 "workflow": "analysis",
                 "result_count": 37,
-                "needs_review_count": 15,
                 "locked_count": 2,
                 "latest_run_id": 1049,
                 "latest_run_state": "completed_with_repair",
@@ -257,7 +246,7 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
         "logical",
         "dimensional",
     )
-    assert overview.items[2].state == "needs_review"
+    assert overview.items[2].state == "results_available"
     assert overview.items[4].state == "not_started"
     assert overview.items[4].quality_warning_codes == ()
     assert overview.items[5].quality_warning_codes == (

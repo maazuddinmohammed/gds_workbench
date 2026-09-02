@@ -19,7 +19,7 @@ DECLARE
         'security.acquire_notebook_tenant_lock(bigint,integer,character varying)',
         'security.renew_notebook_tenant_lock(bigint,integer)',
         'security.release_notebook_tenant_lock(bigint)',
-        'application.create_notebook_workflow_run(bigint,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
+        'application.create_notebook_workflow_run(bigint,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
         'application.start_and_claim_notebook_workflow_run(bigint,bigint,bigint,bigint,character varying,integer)',
         'application.renew_notebook_workflow_run_claim(bigint,uuid,integer)',
         'application.release_notebook_workflow_run_claim(bigint,uuid)'
@@ -29,7 +29,6 @@ DECLARE
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
         'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
         'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
-        'application.replace_model_scope(uuid,uuid,character varying,bigint,bigint,bigint[])',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
         'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone)',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
@@ -39,7 +38,7 @@ DECLARE
         'application.save_sql_generation_guide(uuid,uuid,character varying,bigint,character varying,character varying,character varying,boolean,boolean,timestamp with time zone)',
         'application.save_sql_generation_guide_draft(uuid,uuid,character varying,bigint,bigint,text,timestamp with time zone)',
         'application.transition_sql_generation_guide_version(uuid,uuid,character varying,bigint,character varying,character varying)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',
@@ -55,8 +54,7 @@ DECLARE
         'application.get_analysis_validation_connection_values(uuid,uuid,character varying,bigint,bigint,character varying)',
         'application.persist_analysis_validation_results(uuid,uuid,character varying,bigint,bigint,character varying,jsonb)',
         'application.lock_authoring_workflow_run(bigint,bigint)',
-        'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)',
-        'application.store_generated_sql_artifact(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character,character,bigint,bigint,character varying,character varying,text,character)'
+        'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)'
     ];
 BEGIN
     IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
@@ -240,11 +238,10 @@ BEGIN
                'workflow_run_object_selection',
                'workflow_run_system_selection',
                'workflow_run_mapping_target_selection',
-               'workflow_run_prompt_snapshot',
-               'generated_sql_artifact'
+               'workflow_run_prompt_snapshot'
            );
 
-    IF v_application_table_count <> 16 OR EXISTS (
+    IF v_application_table_count <> 15 OR EXISTS (
         SELECT 1
           FROM information_schema.tables AS table_record
          WHERE table_record.table_schema = 'application'
@@ -264,8 +261,7 @@ BEGIN
                    'workflow_run_object_selection',
                    'workflow_run_system_selection',
                    'workflow_run_mapping_target_selection',
-                   'workflow_run_prompt_snapshot',
-                   'generated_sql_artifact'
+                   'workflow_run_prompt_snapshot'
                )
     ) THEN
         RAISE EXCEPTION 'application table contract is invalid';
@@ -322,65 +318,6 @@ BEGIN
                    'sql_generation_guide_digest'
                ]::name[]
            AND constraint_record.confdeltype = 'a'
-    ) OR (
-        SELECT count(*)
-          FROM information_schema.columns AS column_record
-         WHERE column_record.table_schema = 'application'
-           AND column_record.table_name = 'generated_sql_artifact'
-    ) <> 21 OR (
-        SELECT count(*)
-          FROM information_schema.columns AS column_record
-         WHERE column_record.table_schema = 'application'
-           AND column_record.table_name = 'generated_sql_artifact'
-           AND column_record.column_name IN (
-                   'generated_sql_artifact_id',
-                   'model_id',
-                   'model_revision',
-                   'modeled_entity_type',
-                   'object_id',
-                   'mapping_context_digest',
-                   'source_context_digest',
-                   'sql_generation_guide_id',
-                   'sql_generation_guide_version_id',
-                   'sql_generation_guide_digest',
-                   'workflow_run_id',
-                   'generator_code',
-                   'generator_version',
-                   'generated_by_principal_id',
-                   'generated_time',
-                   'generated_sql',
-                   'generated_sql_digest',
-                   'created_time',
-                   'created_by',
-                   'updated_time',
-                   'updated_by'
-               )
-    ) <> 21 OR EXISTS (
-        SELECT 1
-          FROM information_schema.columns AS column_record
-         WHERE column_record.table_schema = 'application'
-           AND column_record.table_name = 'generated_sql_artifact'
-           AND column_record.column_name = 'source_system_id'
-    ) OR NOT EXISTS (
-        SELECT 1
-          FROM pg_catalog.pg_constraint AS constraint_record
-         WHERE constraint_record.contype = 'u'
-           AND constraint_record.conname =
-               'uq_generated_sql_artifact_identity'
-           AND constraint_record.conrelid =
-               'application.generated_sql_artifact'::regclass
-           AND (
-               SELECT array_agg(attribute.attname ORDER BY key.position)
-                 FROM unnest(constraint_record.conkey) WITH ORDINALITY
-                      AS key(attnum, position)
-                 JOIN pg_catalog.pg_attribute AS attribute
-                   ON attribute.attrelid = constraint_record.conrelid
-                  AND attribute.attnum = key.attnum
-           ) = ARRAY[
-                   'model_id',
-                   'modeled_entity_type',
-                   'object_id'
-               ]::name[]
     ) OR NOT EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc AS function_record
@@ -411,17 +348,13 @@ BEGIN
                    'requested_batch_id',
                    'mapping_operation',
                    'mapping_coverage_mode',
-                   'mapping_artifact_type',
                    'mapping_route',
-                   'mapping_profile_key',
-                   'mapping_profile_version',
-                   'mapping_profile_schema_digest',
                    'authoring_no_op_base_model_revision',
                    'authoring_no_op_candidate_digest',
                    'authoring_no_op_model_event_log_id'
                )
            AND column_record.is_nullable = 'YES'
-    ) <> 13 OR NOT EXISTS (
+    ) <> 9 OR NOT EXISTS (
         SELECT 1
           FROM pg_catalog.pg_constraint AS constraint_record
          WHERE constraint_record.contype = 'f'
@@ -716,8 +649,7 @@ BEGIN
         RAISE EXCEPTION 'gds_notebook_runtime cannot connect to this database';
     END IF;
 
-    IF to_regclass('core.tenant_metadata_discovery_scope') IS NULL
-       OR to_regclass('workflow.mapping_object') IS NULL
+    IF to_regclass('workflow.mapping_object') IS NULL
        OR to_regclass('workflow.mapping_attribute') IS NULL
        OR to_regclass('workflow.generated_code') IS NULL
        OR to_regclass('workflow.validation_group') IS NULL
@@ -812,10 +744,22 @@ BEGIN
          WHERE constraint_record.conrelid =
                'workflow.generated_code'::REGCLASS
            AND constraint_record.conname IN (
-                   'fk_generated_code_scope',
+                   'fk_generated_code_binding',
                    'fk_generated_code_workflow_run',
-                   'uq_generated_code_model_object',
-                   'ck_generated_code_digests'
+                   'ck_generated_code_artifact_name',
+                   'ck_generated_code_input_digest'
+               )
+           AND constraint_record.convalidated
+    ) <> 4 OR (
+        SELECT count(*)
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid =
+               'workflow.generated_code_source_system'::REGCLASS
+           AND constraint_record.conname IN (
+                   'fk_generated_code_source_system_code',
+                   'fk_generated_code_source_system_system',
+                   'fk_generated_code_source_system_workflow_run',
+                   'uq_generated_code_source_system'
                )
            AND constraint_record.convalidated
     ) <> 4 OR (
@@ -853,13 +797,13 @@ BEGIN
          WHERE column_record.table_schema = 'mcp'
            AND column_record.table_name = 'model_change_set'
            AND column_record.column_name IN (
-                   'code_generation_document', 'qa_document'
+                   'code_generation_document', 'validation_document'
                )
            AND column_record.data_type = 'jsonb'
            AND column_record.is_nullable = 'NO'
            AND column_record.column_default = '''{}''::jsonb'
     ) <> 2 THEN
-        RAISE EXCEPTION 'Code and QA table contracts are invalid';
+        RAISE EXCEPTION 'Code and Validation table contracts are invalid';
     END IF;
 
     IF NOT EXISTS (
@@ -913,37 +857,38 @@ BEGIN
         SELECT 1
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'core'
-           AND column_record.table_name = 'tenant_metadata_discovery_scope'
-           AND column_record.column_name = 'gds_connection_id'
-    ) OR EXISTS (
+           AND column_record.table_name = 'object'
+           AND column_record.column_name = 'source_tenant_id'
+           AND column_record.data_type = 'bigint'
+           AND column_record.is_nullable = 'NO'
+    ) OR NOT EXISTS (
         SELECT 1
-          FROM information_schema.columns AS column_record
-         WHERE column_record.table_schema = 'core'
-           AND column_record.table_name = 'tenant_metadata_discovery_scope'
-           AND column_record.column_name = 'connection_id'
+          FROM pg_catalog.pg_constraint AS constraint_record
+         WHERE constraint_record.conrelid = 'core.object'::REGCLASS
+           AND constraint_record.conname = 'fk_object_source_tenant'
+           AND constraint_record.contype = 'f'
     ) THEN
-        RAISE EXCEPTION 'Metadata Discovery Scope Connection identifier is invalid';
+        RAISE EXCEPTION 'Object Source Tenant ownership is invalid';
     END IF;
 
     IF NOT EXISTS (
         SELECT 1
-          FROM pg_catalog.pg_index AS assignment_index
+          FROM pg_catalog.pg_index AS ownership_index
           JOIN pg_catalog.pg_class AS index_record
-            ON index_record.oid = assignment_index.indexrelid
+            ON index_record.oid = ownership_index.indexrelid
           JOIN pg_catalog.pg_namespace AS namespace_record
             ON namespace_record.oid = index_record.relnamespace
          WHERE namespace_record.nspname = 'core'
-           AND index_record.relname =
-               'ux_active_metadata_discovery_scope_assignment'
-           AND assignment_index.indisunique
+           AND index_record.relname = 'ix_object_source_tenant_zone_active'
+           AND NOT ownership_index.indisunique
            AND pg_catalog.pg_get_expr(
-                   assignment_index.indpred,
-                   assignment_index.indrelid
+                   ownership_index.indpred,
+                   ownership_index.indrelid
                ) = 'is_active'
-           AND pg_catalog.pg_get_indexdef(assignment_index.indexrelid) LIKE
-               '%(gds_connection_id, zone_id, lower(btrim((object_schema)::text)))%'
+           AND pg_catalog.pg_get_indexdef(ownership_index.indexrelid) LIKE
+               '%(source_tenant_id, zone_id)%'
     ) THEN
-        RAISE EXCEPTION 'Metadata Discovery Scope assignment index is invalid';
+        RAISE EXCEPTION 'Object Source Tenant lookup index is invalid';
     END IF;
 
     IF NOT EXISTS (
@@ -1191,11 +1136,6 @@ BEGIN
        OR NOT has_table_privilege('gds_app_write', 'core.tenant', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'core.object', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'core.attribute', 'SELECT')
-       OR NOT has_table_privilege(
-           'gds_app_write',
-           'core.tenant_metadata_discovery_scope',
-           'SELECT'
-       )
        OR has_table_privilege('gds_app_write', 'core.connection_value', 'SELECT')
        OR NOT has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'INSERT')
        OR has_table_privilege('gds_app_write', 'mcp.tool_call_log', 'SELECT')
@@ -1223,21 +1163,6 @@ BEGIN
                       'model.model',
                       web_only_model_column.name,
                       'UPDATE'
-                  )
-       )
-       OR EXISTS (
-           SELECT 1
-             FROM pg_catalog.pg_attribute AS attribute
-            CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE'])
-                       AS privilege_name(value)
-            WHERE attribute.attrelid = 'model.model_scope'::REGCLASS
-              AND attribute.attnum > 0
-              AND NOT attribute.attisdropped
-              AND has_column_privilege(
-                      'gds_app_write',
-                      'model.model_scope',
-                      attribute.attname,
-                      privilege_name.value
                   )
        )
        OR EXISTS (
@@ -1397,13 +1322,13 @@ BEGIN
              FROM pg_catalog.pg_class AS relation
              JOIN pg_catalog.pg_namespace AS namespace_record
                ON namespace_record.oid = relation.relnamespace
+            CROSS JOIN unnest(ARRAY[
+                'gds_app_write', 'gds_web_write'
+            ]) AS materializer_role(name)
             WHERE namespace_record.nspname = 'model'
-              AND relation.relname IN (
-                      'model_scope',
-                      'model_revision_transaction'
-                  )
+              AND relation.relname = 'model_revision_transaction'
               AND has_table_privilege(
-                      'gds_web_write',
+                      materializer_role.name,
                       relation.oid,
                       'INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
                   )
@@ -1417,15 +1342,15 @@ BEGIN
                ON namespace_record.oid = relation.relnamespace
             CROSS JOIN unnest(ARRAY['INSERT', 'UPDATE'])
                        AS privilege_name(value)
+            CROSS JOIN unnest(ARRAY[
+                'gds_app_write', 'gds_web_write'
+            ]) AS materializer_role(name)
             WHERE namespace_record.nspname = 'model'
-              AND relation.relname IN (
-                      'model_scope',
-                      'model_revision_transaction'
-                  )
+              AND relation.relname = 'model_revision_transaction'
               AND attribute.attnum > 0
               AND NOT attribute.attisdropped
               AND has_column_privilege(
-                      'gds_web_write',
+                      materializer_role.name,
                       relation.oid,
                       attribute.attname,
                       privilege_name.value
@@ -1468,13 +1393,15 @@ BEGIN
         RAISE EXCEPTION 'runtime table privileges are invalid';
     END IF;
 
-    IF has_schema_privilege('gds_app_write', 'application', 'USAGE')
+    IF NOT has_schema_privilege('gds_app_write', 'application', 'USAGE')
        OR has_schema_privilege('gds_app_write', 'application', 'CREATE')
-       OR has_schema_privilege('gds_mcp_runtime', 'application', 'USAGE')
        OR has_schema_privilege('gds_mcp_runtime', 'application', 'CREATE')
        OR NOT has_schema_privilege('gds_web_write', 'application', 'USAGE')
-       OR has_schema_privilege('gds_web_write', 'application', 'CREATE')
-       OR EXISTS (
+       OR has_schema_privilege('gds_web_write', 'application', 'CREATE') THEN
+        RAISE EXCEPTION 'application runtime schema privileges are invalid';
+    END IF;
+
+    IF EXISTS (
            SELECT 1
              FROM pg_catalog.pg_class AS application_table
              JOIN pg_catalog.pg_namespace AS namespace_record
@@ -1497,21 +1424,41 @@ BEGIN
                                  privilege_name.value
                              )
                   )
-                  OR EXISTS (
-                      SELECT 1
-                        FROM unnest(ARRAY[
-                                 'gds_app_write', 'gds_mcp_runtime'
-                             ]) AS runtime_role(value)
-                        CROSS JOIN unnest(ARRAY[
-                                 'SELECT', 'INSERT', 'UPDATE', 'DELETE',
-                                 'TRUNCATE', 'REFERENCES', 'TRIGGER',
-                                 'MAINTAIN'
-                             ]) AS privilege_name(value)
-                       WHERE has_table_privilege(
-                                 runtime_role.value,
-                                 application_table.oid,
-                                 privilege_name.value
-                             )
+                  OR (
+                      application_table.relname = 'output_template'
+                      AND (
+                          NOT has_table_privilege(
+                              'gds_app_write', application_table.oid, 'SELECT'
+                          )
+                          OR EXISTS (
+                              SELECT 1
+                                FROM unnest(ARRAY[
+                                         'INSERT', 'UPDATE', 'DELETE', 'TRUNCATE',
+                                         'REFERENCES', 'TRIGGER', 'MAINTAIN'
+                                     ]) AS privilege_name(value)
+                               WHERE has_table_privilege(
+                                         'gds_app_write',
+                                         application_table.oid,
+                                         privilege_name.value
+                                     )
+                          )
+                      )
+                  )
+                  OR (
+                      application_table.relname <> 'output_template'
+                      AND EXISTS (
+                          SELECT 1
+                            FROM unnest(ARRAY[
+                                     'SELECT', 'INSERT', 'UPDATE', 'DELETE',
+                                     'TRUNCATE', 'REFERENCES', 'TRIGGER',
+                                     'MAINTAIN'
+                                 ]) AS privilege_name(value)
+                           WHERE has_table_privilege(
+                                     'gds_app_write',
+                                     application_table.oid,
+                                     privilege_name.value
+                                 )
+                      )
                   )
               )
        ) THEN
@@ -1584,7 +1531,8 @@ BEGIN
                'public', application_function.oid, 'EXECUTE'
            );
 
-    IF v_application_web_function_count <> 32 OR EXISTS (
+    IF v_application_web_function_count <>
+       cardinality(v_application_web_function_signatures) OR EXISTS (
         SELECT 1
           FROM pg_catalog.pg_proc AS application_function
           JOIN pg_catalog.pg_namespace AS namespace_record

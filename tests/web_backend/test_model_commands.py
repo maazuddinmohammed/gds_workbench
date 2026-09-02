@@ -15,17 +15,15 @@ from psycopg.types.json import Jsonb
 
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.configuration import RuntimeSettings
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.models import (
     ArchiveModelRequest,
     CompleteModelRequest,
     DatabaseModelCommandService,
     ModelCommandResult,
-    ModelScopeCommandResult,
-    ReplaceModelScopeRequest,
+    ModelNotFoundError,
     UpdateModelRequest,
 )
-from gds_workbench_api.features.models import ModelNotFoundError
+from gds_workbench_api.main import create_app
 from gds_workbench_api.runtime import RuntimeDatabase, create_runtime_app
 
 
@@ -87,25 +85,6 @@ class StaticModelCommandService:
             model_revision=6,
             is_active=False,
             updated_at=datetime(2026, 8, 24, 14, 10, tzinfo=UTC),
-        )
-
-    async def replace_model_scope(
-        self,
-        principal: RequestPrincipal,
-        *,
-        tenant_id: int,
-        model_id: int,
-        request: ReplaceModelScopeRequest,
-    ) -> ModelScopeCommandResult:
-        assert principal.actor_kind is ActorKind.HUMAN
-        assert (tenant_id, model_id, request.expected_model_revision) == (7, 18, 6)
-        assert request.object_ids == [501, 900]
-        return ModelScopeCommandResult(
-            changed=True,
-            model_id=18,
-            model_revision=7,
-            active_scope_count=2,
-            updated_at=datetime(2026, 8, 24, 14, 15, tzinfo=UTC),
         )
 
 
@@ -193,28 +172,6 @@ def test_archive_model_route_is_explicit_and_revision_fenced() -> None:
     assert response.json()["is_active"] is False
 
 
-def test_replace_scope_route_accepts_one_exact_object_id_set() -> None:
-    app = create_app(
-        identity_provider=_identity_provider(),
-        model_command_service=StaticModelCommandService(),
-    )
-
-    with TestClient(app) as client:
-        response = client.put(
-            "/api/v1/tenants/7/models/18/scope",
-            json={"expected_model_revision": 6, "object_ids": [501, 900]},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {
-        "changed": True,
-        "model_id": 18,
-        "model_revision": 7,
-        "active_scope_count": 2,
-        "updated_at": "2026-08-24T14:15:00Z",
-    }
-
-
 class CreateModelTransaction:
     def __init__(self) -> None:
         self.create_parameters: tuple[Any, ...] | None = None
@@ -270,9 +227,7 @@ class CreateModelDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_create_model_authorizes_lock_and_passes_full_identity_command() -> (
-    None
-):
+async def test_database_create_model_authorizes_lock_and_passes_full_identity_command() -> None:
     database = CreateModelDatabase()
     service = DatabaseModelCommandService(
         database=database,
@@ -358,15 +313,7 @@ class RevisionCommandTransaction:
                 "is_active": False,
                 "updated_at": datetime(2026, 8, 24, 14, 10, tzinfo=UTC),
             }
-        assert "application.replace_model_scope" in query
-        self.function_calls.append(("scope", parameters))
-        return {
-            "changed": True,
-            "model_id": 18,
-            "model_revision": 7,
-            "active_scope_count": 2,
-            "updated_at": datetime(2026, 8, 24, 14, 15, tzinfo=UTC),
-        }
+        raise AssertionError((query, parameters))
 
     async def fetch_all(
         self,
@@ -386,9 +333,7 @@ class RevisionCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_revision_commands_precheck_path_tenant_and_call_only_governed_functions() -> (
-    None
-):
+async def test_revision_commands_precheck_path_tenant_and_call_only_governed_functions() -> None:
     database = RevisionCommandDatabase()
     service = DatabaseModelCommandService(
         database=database,
@@ -415,32 +360,14 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         model_id=18,
         request=ArchiveModelRequest(expected_model_revision=5),
     )
-    replaced = await service.replace_model_scope(
-        principal,
-        tenant_id=7,
-        model_id=18,
-        request=ReplaceModelScopeRequest(
-            expected_model_revision=6,
-            object_ids=[501, 900],
-        ),
-    )
-
-    assert (
-        updated.model_revision,
-        archived.model_revision,
-        replaced.model_revision,
-    ) == (
-        5,
-        6,
-        7,
-    )
-    assert database.transaction.owner_checks == [(7, 18), (7, 18), (7, 18)]
+    assert (updated.model_revision, archived.model_revision) == (5, 6)
+    assert database.transaction.owner_checks == [(7, 18), (7, 18)]
     identity = (
         principal.entra_tenant_id,
         principal.entra_object_id,
         "user",
     )
-    update_call, archive_call, scope_call = database.transaction.function_calls
+    update_call, archive_call = database.transaction.function_calls
     assert update_call[0] == "update"
     assert update_call[1][:5] == identity + (18, 4)
     assert update_call[1][5:11] == (
@@ -463,7 +390,6 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
         2,
     )
     assert archive_call == ("archive", identity + (18, 5))
-    assert scope_call == ("scope", identity + (18, 6, [501, 900]))
 
 
 @pytest.mark.parametrize(
@@ -499,21 +425,6 @@ def test_model_commands_reject_identity_injection_and_partial_agent_defaults(
     assert response.status_code == 422
 
 
-def test_scope_replacement_rejects_duplicate_object_ids_before_service_call() -> None:
-    app = create_app(
-        identity_provider=_identity_provider(),
-        model_command_service=StaticModelCommandService(),
-    )
-
-    with TestClient(app) as client:
-        response = client.put(
-            "/api/v1/tenants/7/models/18/scope",
-            json={"expected_model_revision": 6, "object_ids": [501, 501]},
-        )
-
-    assert response.status_code == 422
-
-
 class NoWriteDatabase:
     def __init__(self) -> None:
         self.entered = False
@@ -525,18 +436,14 @@ class NoWriteDatabase:
 
 
 @pytest.mark.asyncio
-async def test_agent_registry_rejects_incompatible_defaults_before_database_access() -> (
-    None
-):
+async def test_agent_registry_rejects_incompatible_defaults_before_database_access() -> None:
     database = NoWriteDatabase()
     service = DatabaseModelCommandService(
         database=database,
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
-    incompatible = _complete_model_payload() | {
-        "default_agent_model_code": "unavailable-model"
-    }
+    incompatible = _complete_model_payload() | {"default_agent_model_code": "unavailable-model"}
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
         entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
@@ -629,28 +536,6 @@ def test_database_model_failures_are_mapped_without_raw_message_disclosure(
     assert response.status_code == expected_status
     assert response.json()["error"]["code"] == expected_code
     assert database_message not in response.text
-
-
-def test_invalid_scope_failure_is_a_stable_validation_response() -> None:
-    service = DatabaseModelCommandService(
-        database=FailingFunctionDatabase("Model Scope contains an unavailable Object"),
-        authorizer=AuthorizationService(),
-        agent_capability_registry=load_default_agent_capabilities(),
-    )
-    app = create_app(
-        identity_provider=_identity_provider(),
-        model_command_service=service,
-    )
-
-    with TestClient(app, raise_server_exceptions=False) as client:
-        response = client.put(
-            "/api/v1/tenants/7/models/18/scope",
-            json={"expected_model_revision": 4, "object_ids": [501]},
-        )
-
-    assert response.status_code == 422
-    assert response.json()["error"]["code"] == "invalid_request"
-    assert "unavailable Object" not in response.text
 
 
 class RejectedPrecheckTransaction:
@@ -757,9 +642,7 @@ def test_runtime_wires_all_complete_model_command_routes() -> None:
             "GDS_WEB_CURSOR_SIGNING_KEY": "development-only-key-32-bytes-long",
             "GDS_WEB_DATABRICKS_ENVIRONMENT_CODE": "TEST",
             "GDS_WEB_LOCAL_ENTRA_TENANT_ID": ("11111111-1111-1111-1111-111111111111"),
-            "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": (
-                "22222222-2222-2222-2222-222222222222"
-            ),
+            "GDS_WEB_LOCAL_PRINCIPAL_OBJECT_ID": ("22222222-2222-2222-2222-222222222222"),
         }
     )
     app = create_runtime_app(
@@ -771,4 +654,4 @@ def test_runtime_wires_all_complete_model_command_routes() -> None:
     assert "post" in paths["/api/v1/tenants/{tenant_id}/models"]
     assert "put" in paths["/api/v1/tenants/{tenant_id}/models/{model_id}"]
     assert "post" in paths["/api/v1/tenants/{tenant_id}/models/{model_id}/archive"]
-    assert "put" in paths["/api/v1/tenants/{tenant_id}/models/{model_id}/scope"]
+    assert "put" not in paths["/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope"]

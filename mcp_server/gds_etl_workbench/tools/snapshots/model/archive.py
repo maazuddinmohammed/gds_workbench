@@ -33,31 +33,32 @@ from .contracts import (
 )
 
 _SECTION_DESCRIPTIONS = {
-    "model_scope": "Model header and read-only physical Object scope.",
+    "model_input_scope": "Model header and selected Source or Bronze input Objects.",
     "profiling": "Applied Attribute profiles.",
     "analysis": "Applied relationship analysis evidence.",
     "assertion": "Applied source assertion documents and records.",
     "conceptual": "Applied conceptual Objects and Relationships.",
     "logical": "Applied logical Submodels, Entities, Attributes, and Relationships.",
     "dimensional": "Applied dimensional Submodels, Entities, Attributes, and Relationships.",
+    "model_binding": "Applied Entity-to-Object and Attribute-to-Attribute Bindings.",
     "mapping": "Applied source-to-target Mapping and dependency records.",
-    "code_generation": "Applied complete Code Artifacts; Apply never executes or deploys them.",
-    "qa": (
-        "Trusted read-only QA authoring contexts plus applied Validation Groups and "
-        "deterministic Validation Checks; execution is separate."
+    "code_generation": (
+        "Applied complete Code Artifacts and their contributing source Systems; Apply "
+        "never executes or deploys them."
     ),
+    "validation": "Applied Validation Groups and Checks; execution results stay local.",
 }
 
 _SECTION_AUTHORING_PREREQUISITES: dict[str, dict[str, object]] = {
     "code_generation": {
         "required_applied_sections": ["mapping"],
         "optional_applied_sections": [],
-        "successive_change_set_required": True,
+        "successive_change_set_required": False,
     },
-    "qa": {
+    "validation": {
         "required_applied_sections": ["mapping"],
         "optional_applied_sections": ["code_generation"],
-        "successive_change_set_required": True,
+        "successive_change_set_required": False,
     },
 }
 

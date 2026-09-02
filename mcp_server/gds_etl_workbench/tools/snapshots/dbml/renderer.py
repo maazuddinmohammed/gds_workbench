@@ -22,7 +22,7 @@ MAX_DBML_FILE_COUNT = 1_002
 MAX_DBML_FILE_BYTES = 12 * 1024 * 1024
 MAX_DBML_TOTAL_BYTES = 16 * 1024 * 1024
 
-_EFFECTIVE_STATUSES = frozenset({"active", "needs_review"})
+_EFFECTIVE_STATUSES = frozenset({"active"})
 _CARDINALITY_OPERATORS = {
     "one_to_one": "-",
     "one_to_many": "<",

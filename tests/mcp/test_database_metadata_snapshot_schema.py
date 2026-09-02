@@ -13,12 +13,6 @@ PHYSICAL_NATURAL_KEYS = {
     "core.tenant": ("tenant_code",),
     "core.system": ("system_code",),
     "core.connection": ("tenant_id", "system_id", "connection_code"),
-    "core.tenant_metadata_discovery_scope": (
-        "tenant_id",
-        "gds_connection_id",
-        "zone_id",
-        "object_schema",
-    ),
     "reference.system_type": ("system_type_code",),
     "reference.connection_type": ("connection_type_code",),
     "reference.object_type": ("object_type_code",),

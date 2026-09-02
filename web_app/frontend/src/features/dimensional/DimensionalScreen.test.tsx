@@ -59,16 +59,16 @@ describe("Model Dimensional", () => {
     await screen.findByRole("table", { name: "Dimensional Objects" });
 
     await user.type(screen.getByLabelText("Object name prefix"), " Sales ");
-    await user.selectOptions(screen.getByLabelText("Object status"), "needs_review");
+    await user.selectOptions(screen.getByLabelText("Object status"), "inactive");
     await user.selectOptions(screen.getByLabelText("Object lock"), "false");
     await user.click(screen.getByRole("button", { name: "Apply Object filters" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/objects?status=needs_review&locked=false&name_prefix=sales&page_size=200",
+      "/api/v1/tenants/7/models/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200",
       expect.objectContaining({ credentials: "same-origin" }),
     );
     await user.click(await screen.findByRole("button", { name: "Load more Dimensional Objects" }));
     expect(fetcher).toHaveBeenCalledWith(
-      "/api/v1/tenants/7/models/18/dimensional/objects?status=needs_review&locked=false&name_prefix=sales&page_size=200&cursor=objects-next",
+      "/api/v1/tenants/7/models/18/dimensional/objects?status=inactive&locked=false&name_prefix=sales&page_size=200&cursor=objects-next",
       expect.objectContaining({ credentials: "same-origin" }),
     );
 
@@ -228,7 +228,7 @@ function dimensionalFetchStub(options: {
     if (url === "/api/v1/tenants/7/models/18/dimensional/relationships/501") {
       return jsonResponse(dimensionalRelationshipDetailPayload);
     }
-    if (url === "/api/v1/tenants/7/models/18/scope?zone=silver&page_size=200") {
+    if (url === "/api/v1/tenants/7/models/18/input-scope?zone=silver&page_size=200") {
       return jsonResponse({
         model_id: 18,
         model_revision: 18,
@@ -299,7 +299,7 @@ const modelPayload = {
   model_name: "Customer 360",
   model_description: "Cross-system customer domain",
   model_revision: 18,
-  model_scope_object_count: 25,
+  model_input_scope_object_count: 25,
   silver_model_naming_instructions: null,
   silver_model_audit_columns_template: null,
   gold_model_naming_instructions: null,
@@ -323,7 +323,7 @@ const dimensionalObjectPayload = {
   dimensional_fact_type: "transaction",
   dimensional_entity_dependency_order: 1,
   dimensional_entity_confidence: "high",
-  dimensional_entity_status: "needs_review",
+  dimensional_entity_status: "active",
   dimensional_entity_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -405,7 +405,7 @@ const dimensionalAttributePayload = {
   dimensional_attribute_change_behavior: null,
   dimensional_attribute_is_audit_column: false,
   dimensional_attribute_confidence: "high",
-  dimensional_attribute_status: "needs_review",
+  dimensional_attribute_status: "active",
   dimensional_attribute_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -478,7 +478,7 @@ const dimensionalRelationshipPayload = {
   dimensional_relationship_is_optional: false,
   dimensional_relationship_role_name: "customer",
   dimensional_relationship_confidence: "high",
-  dimensional_relationship_status: "needs_review",
+  dimensional_relationship_status: "active",
   dimensional_relationship_is_locked: false,
   updated_at: "2026-08-24T15:00:00Z",
 };
@@ -492,7 +492,7 @@ const dimensionalRelationshipDetailPayload = {
 };
 
 const dimensionalScopeObjectPayload = {
-  model_scope_id: 211,
+  model_input_scope_id: 211,
   object_id: 511,
   connection_id: 311,
   system_id: 411,
@@ -506,7 +506,7 @@ const dimensionalScopeObjectPayload = {
   zone_code: "silver",
   batch_attribute_name: "batch_id",
   attribute_count: 14,
-  is_bronze_source_eligible: false,
+  is_model_input_eligible: false,
   is_dimensional_source_eligible: true,
   is_logical_mapping_target_eligible: true,
   is_dimensional_mapping_target_eligible: false,

@@ -77,7 +77,6 @@ export function AssertionDocumentsLedger({
       cell: ({ row }) => row.original.source_tenant?.tenant_code ?? "Not assigned",
     },
     { accessorKey: "record_count", header: "Records" },
-    { accessorKey: "needs_review_record_count", header: "Needs review" },
     { accessorKey: "locked_record_count", header: "Locked" },
     {
       accessorKey: "is_active",
@@ -317,7 +316,6 @@ export function AssertionRecordsLedger({
                 <select aria-label="Record status" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
                   <option value="">All statuses</option>
                   <option value="active">Active</option>
-                  <option value="needs_review">Needs review</option>
                   <option value="inactive">Inactive</option>
                   <option value="deprecated">Deprecated</option>
                 </select>

@@ -165,7 +165,7 @@ async def test_foundational_connection_rows_use_only_the_tenant_visible_closure(
 
 
 @pytest.mark.asyncio
-async def test_all_five_foundational_datasets_use_the_selected_tenant_closure() -> None:
+async def test_all_four_foundational_datasets_use_the_selected_tenant_closure() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -179,20 +179,11 @@ async def test_all_five_foundational_datasets_use_the_selected_tenant_closure() 
             offset=3,
         )
 
-    assert len(transaction.queries) == 5
+    assert len(transaction.queries) == 4
     for query, parameters in transaction.queries:
         assert "WITH RECURSIVE requested_tenant AS" in query
         assert "connection_value" not in query
         assert parameters == (7, 2, 3)
-
-    discovery_query = transaction.queries[4][0]
-    assert "FROM requested_tenant" in discovery_query
-    assert "JOIN core.tenant_metadata_discovery_scope AS scope" in discovery_query
-    assert "scope.tenant_id = requested_tenant.tenant_id" in discovery_query
-    assert "scope.gds_connection_id" in discovery_query
-    assert "scope.zone_id" in discovery_query
-    assert "scope.object_schema" in discovery_query
-
 
 @pytest.mark.asyncio
 async def test_each_object_dataset_uses_its_backend_selected_zone() -> None:
@@ -620,124 +611,6 @@ async def test_object_detail_rechecks_visibility_and_bounds_attributes() -> None
 
 
 @pytest.mark.asyncio
-async def test_discovery_scope_rows_do_not_cross_selected_tenant(
-    web_postgres_database: DisposablePostgres,
-) -> None:
-    suffix = uuid4().hex[:12]
-    selected_schema = f"selected_{suffix}"
-    other_schema = f"other_{suffix}"
-    other_tenant_code = f"SCOPE_OTHER_{suffix}"
-    with web_postgres_database.connect_owner() as connection:
-        existing = connection.execute(
-            "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
-        ).fetchone()
-        if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
-        selected_tenant = connection.execute(
-            """
-            SELECT tenant_id, project_id
-              FROM core.tenant
-             WHERE tenant_code = 'DEMO_TENANT'
-            """
-        ).fetchone()
-        scope_parent = connection.execute(
-            """
-            SELECT connection.connection_id, zone.zone_id
-              FROM core.connection AS connection
-              JOIN core.tenant AS connection_tenant
-                ON connection_tenant.tenant_id = connection.tenant_id
-             CROSS JOIN reference.zone AS zone
-             WHERE connection.connection_code = 'DEMO_GDS'
-               AND connection_tenant.tenant_code = 'DEMO_GDS_TENANT'
-               AND zone.zone_code = 'bronze'
-            """
-        ).fetchone()
-        assert selected_tenant is not None
-        assert scope_parent is not None
-        other_tenant = connection.execute(
-            """
-            INSERT INTO core.tenant (
-                project_id,
-                tenant_code,
-                tenant_name,
-                tenant_catalog,
-                gds_admin_catalog
-            )
-            VALUES (%s, %s, %s, %s, %s)
-            RETURNING tenant_id
-            """,
-            (
-                selected_tenant["project_id"],
-                other_tenant_code,
-                f"Scope Other Tenant {suffix}",
-                f"scope_other_{suffix}",
-                f"scope_other_admin_{suffix}",
-            ),
-        ).fetchone()
-        assert other_tenant is not None
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id,
-                gds_connection_id,
-                zone_id,
-                object_schema
-            )
-            VALUES (%s, %s, %s, %s),
-                   (%s, %s, %s, %s)
-            """,
-            (
-                selected_tenant["tenant_id"],
-                scope_parent["connection_id"],
-                scope_parent["zone_id"],
-                selected_schema,
-                other_tenant["tenant_id"],
-                scope_parent["connection_id"],
-                scope_parent["zone_id"],
-                other_schema,
-            ),
-        )
-
-    database = WebPostgresDatabase(
-        dsn=web_postgres_database.web_runtime_dsn(),
-        pool_min=1,
-        pool_max=1,
-        pool_timeout_seconds=5,
-    )
-    repository = PostgresMetadataRepository()
-    await database.open()
-    try:
-        async with database.read_transaction() as transaction:
-            selected_rows = await repository.list_rows(
-                transaction,
-                tenant_id=selected_tenant["tenant_id"],
-                dataset="tenant_metadata_discovery_scope",
-                filters=(),
-                limit=200,
-                offset=0,
-            )
-            other_rows = await repository.list_rows(
-                transaction,
-                tenant_id=other_tenant["tenant_id"],
-                dataset="tenant_metadata_discovery_scope",
-                filters=(),
-                limit=200,
-                offset=0,
-            )
-    finally:
-        await database.close()
-
-    assert selected_schema in {row["object_schema"] for row in selected_rows}
-    assert other_schema not in {row["object_schema"] for row in selected_rows}
-    assert {row["scope_tenant_code"] for row in selected_rows} == {"DEMO_TENANT"}
-    assert {row["object_schema"] for row in other_rows} == {other_schema}
-    assert {row["scope_tenant_code"] for row in other_rows} == {other_tenant_code}
-    assert {row["connection_tenant_code"] for row in other_rows} == {"DEMO_GDS_TENANT"}
-
-
-@pytest.mark.asyncio
 async def test_all_repository_queries_execute_with_the_web_role(
     web_postgres_database: DisposablePostgres,
 ) -> None:
@@ -823,7 +696,7 @@ async def test_all_repository_queries_execute_with_the_web_role(
 
 
 @pytest.mark.asyncio
-async def test_gds_object_tenant_comes_only_from_active_discovery_scope(
+async def test_gds_object_tenant_comes_only_from_source_tenant_id(
     web_postgres_database: DisposablePostgres,
 ) -> None:
     suffix = uuid4().hex[:12]
@@ -854,12 +727,14 @@ async def test_gds_object_tenant_comes_only_from_active_discovery_scope(
             """
             INSERT INTO core.object (
                 connection_id,
+                source_tenant_id,
                 object_schema,
                 object_name,
                 object_type_id,
                 zone_id
             )
             SELECT connection.connection_id,
+                   connection.tenant_id,
                    %s,
                    %s,
                    object_type.object_type_id,
@@ -959,13 +834,22 @@ async def test_gds_object_tenant_comes_only_from_active_discovery_scope(
         assert processes
         assert objects
         assert detail is not None
-        assert {row["tenant_code"] for row in bronze_objects} == {"DEMO_TENANT"}
-        assert {row["tenant_code"] for row in bronze_attributes} == {"DEMO_TENANT"}
-        assert {row["source_tenant_code"] for row in object_mappings} == {"DEMO_TENANT"}
-        assert {row["target_tenant_code"] for row in object_mappings} == {"DEMO_TENANT"}
+        assert {row["tenant_code"] for row in bronze_objects} == {"DEMO_GDS_TENANT"}
+        assert {row["tenant_code"] for row in bronze_attributes} == {
+            "DEMO_GDS_TENANT"
+        }
+        assert {row["source_tenant_code"] for row in object_mappings} == {
+            "DEMO_TENANT",
+            "DEMO_GDS_TENANT",
+        }
+        assert {row["target_tenant_code"] for row in object_mappings} == {
+            "DEMO_GDS_TENANT"
+        }
         assert {row["source_tenant_code"] for row in copies} == {"DEMO_TENANT"}
-        assert {row["target_tenant_code"] for row in copies} == {"DEMO_TENANT"}
-        assert {row["object_tenant_code"] for row in processes} == {"DEMO_TENANT"}
+        assert {row["target_tenant_code"] for row in copies} == {"DEMO_GDS_TENANT"}
+        assert {row["object_tenant_code"] for row in processes} == {
+            "DEMO_GDS_TENANT"
+        }
         assert {row.source_tenant_code for row in objects} == {"DEMO_TENANT"}
         assert detail.source_tenant_code == "DEMO_TENANT"
         assert unassigned_object_name not in {
@@ -1050,12 +934,14 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
             """
             INSERT INTO core.object (
                 connection_id,
+                source_tenant_id,
                 object_schema,
                 object_name,
                 object_type_id,
                 zone_id
             )
             SELECT %s,
+                   %s,
                    'hidden',
                    %s,
                    object_type.object_type_id,
@@ -1065,7 +951,11 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
              WHERE object_type.object_type_code = 'TABLE'
                AND zone.zone_code = 'source'
             """,
-            (hidden_connection["connection_id"], hidden_object_name),
+            (
+                hidden_connection["connection_id"],
+                hidden_tenant["tenant_id"],
+                hidden_object_name,
+            ),
         )
 
     database = WebPostgresDatabase(

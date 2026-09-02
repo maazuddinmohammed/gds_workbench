@@ -90,7 +90,7 @@ SELECT entity.logical_entity_id,
               AND membership.logical_entity_id = entity.logical_entity_id
               AND membership.logical_submodel_id = %s
               AND membership.logical_entity_submodel_status
-                  IN ('active', 'needs_review')
+                  = 'active'
        )
    )
  ORDER BY entity.logical_entity_dependency_order,
@@ -160,7 +160,7 @@ SELECT source.logical_entity_source_mapping_id,
        source.created_time AS created_at,
        source.updated_time AS updated_at,
        source_object.object_id AS source_object_id,
-       source_tenant.tenant_code AS source_tenant_code,
+       source_placement_tenant.tenant_code AS source_tenant_code,
        source_system.system_code AS source_system_code,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
@@ -186,9 +186,9 @@ SELECT source.logical_entity_source_mapping_id,
       source.model_id
   ) AS source_eligibility
     ON source_eligibility.object_id = source.source_object_id
-   AND source_eligibility.is_bronze_source_eligible
-  LEFT JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+   AND source_eligibility.is_model_input_eligible
+  LEFT JOIN core.tenant AS source_placement_tenant
+    ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -299,7 +299,7 @@ SELECT source.logical_attribute_source_mapping_id,
        source.updated_time AS updated_at,
        source_object.object_id AS source_object_id,
        source_attribute.attribute_id AS source_attribute_id,
-       source_tenant.tenant_code AS source_tenant_code,
+       source_placement_tenant.tenant_code AS source_tenant_code,
        source_system.system_code AS source_system_code,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
@@ -331,9 +331,9 @@ SELECT source.logical_attribute_source_mapping_id,
   ) AS source_eligibility
     ON source_eligibility.object_id = source.source_object_id
    AND source_eligibility.attribute_id = source.source_attribute_id
-   AND source_eligibility.is_bronze_source_eligible
-  LEFT JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+   AND source_eligibility.is_model_input_eligible
+  LEFT JOIN core.tenant AS source_placement_tenant
+    ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -488,7 +488,7 @@ SELECT submodel.logical_submodel_id,
        submodel.logical_submodel_is_locked,
        count(DISTINCT membership.logical_entity_id) FILTER (
            WHERE membership.logical_entity_submodel_status
-               IN ('active', 'needs_review')
+               = 'active'
        )::INTEGER AS entity_count,
        submodel.updated_time AS updated_at
   FROM workflow.logical_submodel AS submodel
@@ -532,7 +532,7 @@ SELECT submodel.logical_submodel_id,
             WHERE membership.model_id = submodel.model_id
               AND membership.logical_submodel_id = submodel.logical_submodel_id
               AND membership.logical_entity_submodel_status
-                  IN ('active', 'needs_review')
+                  = 'active'
        ) AS entity_count,
        submodel.created_time AS created_at,
        submodel.updated_time AS updated_at

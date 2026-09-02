@@ -21,7 +21,7 @@ describe("governed Metadata experience", () => {
 
     expect(await screen.findByRole("heading", { name: "Metadata" })).toBeVisible();
     expect(screen.getByRole("button", { name: /Reference 8 sheets/ })).toHaveAttribute("aria-current", "page");
-    expect(screen.getByRole("button", { name: /Foundational 5 sheets/ })).toBeVisible();
+    expect(screen.getByRole("button", { name: /Foundational 4 sheets/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /Operational 16 sheets/ })).toBeVisible();
     const table = await screen.findByRole("table", { name: "System Types normalized Metadata" });
     expect(within(table).getByRole("columnheader", { name: "System Type Code" })).toBeVisible();
@@ -52,25 +52,15 @@ describe("governed Metadata experience", () => {
     expect(screen.queryByRole("dialog", { name: "Row details" })).not.toBeInTheDocument();
   });
 
-  it("distinguishes the assigned Tenant from the shared GDS Connection owner", async () => {
+  it("does not expose the removed Metadata Discovery Scope dataset", async () => {
     const fetcher = metadataFetchStub();
     const user = userEvent.setup();
     renderMetadata(fetcher);
 
     await screen.findByRole("table", { name: "System Types normalized Metadata" });
-    await user.click(screen.getByRole("button", { name: /Foundational 5 sheets/ }));
-    await user.click(screen.getByRole("button", { name: "Tenant Metadata Discovery Scopes" }));
-
-    const table = await screen.findByRole("table", {
-      name: "Tenant Metadata Discovery Scopes normalized Metadata",
-    });
-    expect(within(table).getByRole("columnheader", { name: "Assigned Tenant" })).toBeVisible();
-    expect(within(table).getByRole("columnheader", { name: "GDS Connection Owner" })).toBeVisible();
-    expect(screen.getByText(
-      "Each scope belongs to the Assigned Tenant. GDS Connection Owner identifies the Tenant that owns the shared global-data-store connection.",
-    )).toBeVisible();
-    expect(within(table).getByText("NWA")).toBeVisible();
-    expect(within(table).getByText("GDS")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: /Foundational 4 sheets/ }));
+    expect(screen.getByRole("button", { name: "Connection" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Tenant Metadata Discovery Scopes" })).not.toBeInTheDocument();
   });
 
   it("stages a typed complete Operational row, validates review, and explicitly applies it", async () => {
@@ -251,16 +241,6 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
         dataset,
         items: dataset === "system_type"
           ? [{ system_type_code: "CRM", system_type_name: "Customer system", is_active: true }]
-          : dataset === "tenant_metadata_discovery_scope"
-            ? [{
-                scope_tenant_code: "NWA",
-                connection_tenant_code: "GDS",
-                connection_system_code: "DATABRICKS",
-                connection_code: "SHARED",
-                zone_code: "silver",
-                object_schema: "shared_reference",
-                is_active: true,
-              }]
           : dataset === "source_object" && !options.emptySource
             ? [{ tenant_code: "NWA", object_name: "Customer", is_active: true }]
             : [],
@@ -330,21 +310,6 @@ function descriptor(dataset: string, label: string, section: MetadataDatasetDesc
 
 const registry: MetadataDatasetDescription[] = [
   ...["project", "tenant", "system", "connection"].map((name) => descriptor(name, title(name), "foundational", [`${name}_code`, `${name}_name`])),
-  descriptor(
-    "tenant_metadata_discovery_scope",
-    "Tenant Metadata Discovery Scopes",
-    "foundational",
-    [
-      "scope_tenant_code",
-      "connection_tenant_code",
-      "connection_system_code",
-      "connection_code",
-      "zone_code",
-      "object_schema",
-      "is_active",
-    ],
-    ["scope_tenant_code", "connection_tenant_code", "connection_code", "zone_code", "object_schema"],
-  ),
   descriptor("system_type", "System Types", "reference", ["system_type_code", "system_type_name", "is_active"], ["system_type_code"]),
   ...["connection_type", "object_type", "zone", "chunk_type", "file_type", "data_operation", "process_type"].map((name) => descriptor(name, title(name), "reference", [`${name}_code`, `${name}_name`])),
   descriptor("source_object", "Source Objects", "operational", ["tenant_code", "object_name", "is_active"], ["tenant_code", "object_name"]),

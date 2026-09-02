@@ -18,6 +18,7 @@ from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 
 from gds_workbench_api.features.code_generation import (
     CodeGenerationTargetFilters,
+    CodeGenerationTargetObjectReference,
     CodeGenerationTargetPage,
     CodeGenerationTargetSummary,
     CodeMappingSupport,
@@ -32,7 +33,6 @@ from gds_workbench_api.features.code_generation import (
 )
 from gds_workbench_api.features.mapping import (
     ModeledEntityReference,
-    PhysicalObjectReference,
     SourceSystemReference,
 )
 
@@ -58,8 +58,11 @@ class StaticCodeGenerationService:
             model_revision=4,
             items=(
                 CodeGenerationTargetSummary(
-                    target=PhysicalObjectReference(
+                    target=CodeGenerationTargetObjectReference(
                         object_id=501,
+                        source_tenant_id=7,
+                        source_tenant_code="ACME",
+                        source_tenant_name="Acme",
                         tenant_id=7,
                         tenant_code="ACME",
                         tenant_name="Acme",
@@ -104,15 +107,18 @@ class StaticCodeGenerationService:
                         ),
                     ),
                     source_system_count=2,
-                    mapping_context_digest="a" * 64,
-                    source_context_digest="c" * 64,
-                    latest_artifact=StoredSqlArtifactSummary(
-                        generated_sql_artifact_id=901,
-                        workflow_run_id=None,
-                        generated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-                        generated_sql_digest="b" * 64,
-                        artifact_is_current=True,
+                    artifacts=(
+                        StoredSqlArtifactSummary(
+                            generated_sql_artifact_id=901,
+                            artifact_name="customer.sql",
+                            workflow_run_id=None,
+                            generated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
+                            generated_code_status="active",
+                            source_system_codes=("CRM", "ERP"),
+                            artifact_is_current=True,
+                        ),
                     ),
+                    artifact_count=1,
                 ),
             ),
             next_cursor=None,
@@ -141,6 +147,7 @@ class StaticCodeGenerationService:
         sql = "SELECT customer_id\nFROM silver_crm.customer;\n"
         return GeneratedSqlArtifactDetail(
             generated_sql_artifact_id=901,
+            artifact_name="customer.sql",
             model_id=18,
             target=target.target,
             entity_type=target.entity_type,
@@ -150,8 +157,7 @@ class StaticCodeGenerationService:
             mapping_support_count=target.mapping_support_count,
             mapping_supports_truncated=target.mapping_supports_truncated,
             artifact_is_current=True,
-            mapping_context_digest="a" * 64,
-            source_context_digest="c" * 64,
+            generated_code_status="active",
             guide=SqlGenerationGuideProvenance(
                 sql_generation_guide_id=1001,
                 sql_generation_guide_code="default_sql",
@@ -170,7 +176,6 @@ class StaticCodeGenerationService:
             ),
             generated_at=datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
             generated_sql=sql,
-            generated_sql_digest="b" * 64,
             generated_sql_byte_count=len(sql.encode()),
         )
 
@@ -201,18 +206,18 @@ class StaticCodeGenerationService:
         return (
             SqlArtifactDownload(
                 generated_sql_artifact_id=901,
+                artifact_name=detail.artifact_name,
                 target=detail.target,
                 entity_type=detail.entity_type,
                 generated_sql=detail.generated_sql,
-                generated_sql_digest=detail.generated_sql_digest,
                 generated_sql_byte_count=detail.generated_sql_byte_count,
             ),
             SqlArtifactDownload(
                 generated_sql_artifact_id=902,
+                artifact_name="order.sql",
                 target=second_target,
                 entity_type="logical_entity",
                 generated_sql=second_sql,
-                generated_sql_digest="e" * 64,
                 generated_sql_byte_count=len(second_sql.encode()),
             ),
         )
@@ -282,9 +287,13 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
         "ERP",
     ]
     assert item["source_system_count"] == 2
-    assert item["latest_artifact"]["generated_sql_artifact_id"] == 901
-    assert item["latest_artifact"]["artifact_is_current"] is True
-    assert item["latest_artifact"]["workflow_run_id"] is None
+    assert item["target"]["tenant_code"] == "ACME"
+    assert item["target"]["system_code"] == "GDS"
+    assert item["target"]["source_tenant_code"] == "ACME"
+    assert item["artifacts"][0]["generated_sql_artifact_id"] == 901
+    assert item["artifacts"][0]["artifact_name"] == "customer.sql"
+    assert item["artifacts"][0]["artifact_is_current"] is True
+    assert item["artifact_count"] == 1
 
 
 def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenance() -> (
@@ -390,13 +399,13 @@ def test_individual_sql_download_has_safe_filename_and_content_headers() -> None
     assert response.content == b"SELECT customer_id\nFROM silver_crm.customer;\n"
     assert response.headers["content-type"] == "application/sql"
     assert response.headers["content-disposition"] == (
-        'attachment; filename="silver_crm_customer__logical_entity__901.sql"'
+        'attachment; filename="customer.sql"'
     )
     assert "\r" not in response.headers["content-disposition"]
     assert "\n" not in response.headers["content-disposition"]
     assert response.headers["cache-control"] == "no-store"
     assert response.headers["x-content-type-options"] == "nosniff"
-    assert response.headers["x-gds-sha256"] == "b" * 64
+    assert "x-gds-sha256" not in response.headers
     assert response.headers["content-length"] == str(len(response.content))
 
 
@@ -426,8 +435,8 @@ def test_selected_sql_zip_is_stored_bounded_and_path_safe() -> None:
     with ZipFile(BytesIO(response.content)) as archive:
         members = archive.infolist()
         assert [member.filename for member in members] == [
-            "silver_crm_customer__logical_entity__901.sql",
-            "silver_crm_order__logical_entity__902.sql",
+            "customer.sql",
+            "order.sql",
         ]
         assert all(member.compress_type == ZIP_STORED for member in members)
         assert all(
@@ -489,7 +498,7 @@ def test_selected_sql_zip_sanitizes_hostile_target_names() -> None:
     assert response.status_code == 200
     with ZipFile(BytesIO(response.content)) as archive:
         names = archive.namelist()
-    assert names[0].endswith("__logical_entity__901.sql")
+    assert names[0] == "customer.sql"
     assert all(
         separator not in name
         for name in names
@@ -574,8 +583,8 @@ class CodeTargetTransaction:
         assert "workflow.list_model_object_eligibility" not in query
         assert "workflow.generated_code" in query
         assert "application.generated_sql_artifact" not in query
-        assert "artifact.artifact_type = 'sql_file'" in query
-        assert "artifact.generated_code_status = 'active'" in query
+        assert "generated.artifact_type = 'sql_file'" in query
+        assert "generated.code_input_digest = context.code_input_digest" in query
         assert "artifact.model_revision" not in query
         assert "artifact.source_system_id" not in query
         assert "jsonb_array_elements" in query
@@ -600,6 +609,9 @@ class CodeTargetTransaction:
             {
                 "target": {
                     "object_id": 501,
+                    "source_tenant_id": 7,
+                    "source_tenant_code": "ACME",
+                    "source_tenant_name": "Acme",
                     "tenant_id": 7,
                     "tenant_code": "ACME",
                     "tenant_name": "Acme",
@@ -644,15 +656,18 @@ class CodeTargetTransaction:
                     },
                 ],
                 "source_system_count": 2,
-                "mapping_context_digest": "a" * 64,
-                "source_context_digest": "c" * 64,
-                "latest_artifact": {
-                    "generated_sql_artifact_id": 901,
-                    "workflow_run_id": None,
-                    "generated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
-                    "generated_sql_digest": "b" * 64,
-                    "artifact_is_current": True,
-                },
+                "artifacts": [
+                    {
+                        "generated_sql_artifact_id": 901,
+                        "artifact_name": "customer.sql",
+                        "workflow_run_id": None,
+                        "generated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
+                        "generated_code_status": "active",
+                        "source_system_codes": ["CRM", "ERP"],
+                        "artifact_is_current": True,
+                    }
+                ],
+                "artifact_count": 1,
             }
         ]
 
@@ -698,13 +713,15 @@ async def test_database_code_targets_require_complete_active_sql_mapping() -> No
 
     assert page.model_revision == 4
     assert page.items[0].target.object_id == 501
+    assert page.items[0].target.tenant_code == "ACME"
+    assert page.items[0].target.system_code == "GDS"
+    assert page.items[0].target.source_tenant_code == "ACME"
     assert [system.system_code for system in page.items[0].source_systems] == [
         "CRM",
         "ERP",
     ]
-    assert page.items[0].latest_artifact is not None
-    assert page.items[0].latest_artifact.workflow_run_id is None
-    assert page.items[0].latest_artifact.artifact_is_current is True
+    assert page.items[0].artifacts[0].workflow_run_id is None
+    assert page.items[0].artifacts[0].artifact_is_current is True
 
 
 class SqlArtifactTransaction:
@@ -725,27 +742,24 @@ class SqlArtifactTransaction:
             assert "AND guide.is_active" not in query
             assert "sql_generation_guide_version_status = 'published'" not in query
             assert "artifact.model_revision" not in query
-            assert "current_context.mapping_context_digest" in query
-            assert "current_context.source_context_digest" in query
+            assert "current_context.code_input_digest" in query
+            assert "artifact.code_input_digest" in query
             assert "artifact.generated_code_content AS generated_sql" in query
-            assert "artifact.generated_code_digest AS generated_sql_digest" in query
+            assert "generated_code_digest" not in query
             assert "artifact.artifact_type = 'sql_file'" in query
-            assert "artifact.generated_code_status = 'active'" in query
-            assert (
-                "generated_code_status"
-                not in query.rsplit(
-                    " WHERE target_model.tenant_id",
-                    maxsplit=1,
-                )[1]
-            )
+            assert "artifact.generated_code_status" in query
             assert "artifact.source_system_id" not in query
             assert parameters == (7, 18, 901)
             sql = "SELECT customer_id\nFROM silver_crm.customer;\n"
             return {
                 "generated_sql_artifact_id": 901,
+                "artifact_name": "customer.sql",
                 "model_id": 18,
                 "target": {
                     "object_id": 501,
+                    "source_tenant_id": 7,
+                    "source_tenant_code": "ACME",
+                    "source_tenant_name": "Acme",
                     "tenant_id": 7,
                     "tenant_code": "ACME",
                     "tenant_name": "Acme",
@@ -791,8 +805,7 @@ class SqlArtifactTransaction:
                 "mapping_support_count": 1,
                 "mapping_supports_truncated": False,
                 "artifact_is_current": True,
-                "mapping_context_digest": "a" * 64,
-                "source_context_digest": "c" * 64,
+                "generated_code_status": "active",
                 "guide": {
                     "sql_generation_guide_id": 1001,
                     "sql_generation_guide_code": "default_sql",
@@ -811,7 +824,6 @@ class SqlArtifactTransaction:
                 },
                 "generated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                 "generated_sql": sql,
-                "generated_sql_digest": "b" * 64,
                 "generated_sql_byte_count": len(sql.encode()),
             }
         assert "security.entra_principal_identity" in query
@@ -1090,7 +1102,7 @@ class SqlDownloadTransaction:
         assert "application.store_generated_sql_artifact" not in query
         assert "artifact.generated_code_id = ANY" in query
         assert "artifact.generated_code_content AS generated_sql" in query
-        assert "artifact.generated_code_digest AS generated_sql_digest" in query
+        assert "generated_code_digest" not in query
         assert "artifact.artifact_type = 'sql_file'" in query
         assert "generated_code_status" not in query
         assert "artifact.source_system_id" not in query
@@ -1104,8 +1116,12 @@ class SqlDownloadTransaction:
             rows.append(
                 {
                     "generated_sql_artifact_id": artifact_id,
+                    "artifact_name": f"{object_name}.sql",
                     "target": {
                         "object_id": object_id,
+                        "source_tenant_id": 7,
+                        "source_tenant_code": "ACME",
+                        "source_tenant_name": "Acme",
                         "tenant_id": 7,
                         "tenant_code": "ACME",
                         "tenant_name": "Acme",
@@ -1120,7 +1136,6 @@ class SqlDownloadTransaction:
                     },
                     "entity_type": "logical_entity",
                     "generated_sql": sql,
-                    "generated_sql_digest": "b" * 64,
                     "generated_sql_byte_count": len(sql.encode()),
                 }
             )

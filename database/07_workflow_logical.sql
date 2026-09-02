@@ -21,7 +21,7 @@ CREATE TABLE workflow.logical_submodel (
         reference.is_nonblank(logical_submodel_definition)
     ),
     CONSTRAINT ck_logical_submodel_status CHECK (
-        logical_submodel_status IN ('active', 'needs_review', 'inactive', 'deprecated')
+        logical_submodel_status IN ('active', 'inactive', 'deprecated')
     )
 );
 
@@ -71,7 +71,7 @@ CREATE TABLE workflow.logical_entity (
         logical_entity_confidence IN ('low', 'medium', 'high')
     ),
     CONSTRAINT ck_logical_entity_status CHECK (
-        logical_entity_status IN ('active', 'needs_review', 'inactive', 'deprecated')
+        logical_entity_status IN ('active', 'inactive', 'deprecated')
     )
 );
 
@@ -107,7 +107,7 @@ CREATE TABLE workflow.logical_entity_submodel (
         UNIQUE (model_id, logical_entity_id, logical_submodel_id),
     CONSTRAINT ck_logical_entity_submodel_status CHECK (
         logical_entity_submodel_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -169,7 +169,7 @@ CREATE TABLE workflow.logical_attribute (
         logical_attribute_ordinal_position > 0
     ),
     CONSTRAINT ck_logical_attribute_status CHECK (
-        logical_attribute_status IN ('active', 'needs_review', 'inactive', 'deprecated')
+        logical_attribute_status IN ('active', 'inactive', 'deprecated')
     )
 );
 
@@ -207,7 +207,7 @@ CREATE TABLE workflow.logical_entity_source_mapping (
     CONSTRAINT fk_logical_entity_source_scope FOREIGN KEY (
         model_id,
         source_object_id
-    ) REFERENCES model.model_scope (model_id, object_id) ON DELETE NO ACTION,
+    ) REFERENCES model.model_input_scope (model_id, object_id) ON DELETE NO ACTION,
     CONSTRAINT fk_logical_entity_source_assertion_record FOREIGN KEY (
         modeling_assertion_record_id,
         model_id
@@ -241,7 +241,7 @@ CREATE TABLE workflow.logical_entity_source_mapping (
     ),
     CONSTRAINT ck_logical_entity_source_status CHECK (
         logical_entity_source_mapping_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -336,7 +336,7 @@ CREATE TABLE workflow.logical_attribute_source_mapping (
     ),
     CONSTRAINT ck_logical_attribute_source_status CHECK (
         logical_attribute_source_mapping_status IN (
-            'active', 'needs_review', 'inactive', 'deprecated'
+            'active', 'inactive', 'deprecated'
         )
     )
 );
@@ -429,7 +429,7 @@ CREATE TABLE workflow.logical_relationship (
         AND reference.is_nonblank(logical_relationship_cardinality_basis)
     ),
     CONSTRAINT ck_logical_relationship_status CHECK (
-        logical_relationship_status IN ('active', 'needs_review', 'inactive', 'deprecated')
+        logical_relationship_status IN ('active', 'inactive', 'deprecated')
     )
 );
 

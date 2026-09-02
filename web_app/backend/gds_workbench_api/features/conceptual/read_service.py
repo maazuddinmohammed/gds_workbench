@@ -154,7 +154,7 @@ SELECT support.conceptual_support_id,
        support.created_time AS created_at,
        support.updated_time AS updated_at,
        source_object.object_id AS source_object_id,
-       source_tenant.tenant_code AS source_tenant_code,
+       source_placement_tenant.tenant_code AS source_tenant_code,
        source_system.system_code AS source_system_code,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
@@ -180,9 +180,9 @@ SELECT support.conceptual_support_id,
       support.model_id
   ) AS source_eligibility
     ON source_eligibility.object_id = support.source_object_id
-   AND source_eligibility.is_bronze_source_eligible
-  LEFT JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+   AND source_eligibility.is_model_input_eligible
+  LEFT JOIN core.tenant AS source_placement_tenant
+    ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record
@@ -253,7 +253,7 @@ SELECT support.conceptual_support_id,
        support.created_time AS created_at,
        support.updated_time AS updated_at,
        source_object.object_id AS source_object_id,
-       source_tenant.tenant_code AS source_tenant_code,
+       source_placement_tenant.tenant_code AS source_tenant_code,
        source_system.system_code AS source_system_code,
        source_connection.connection_code AS source_connection_code,
        source_object.object_schema AS source_object_schema,
@@ -280,9 +280,9 @@ SELECT support.conceptual_support_id,
       support.model_id
   ) AS source_eligibility
     ON source_eligibility.object_id = support.source_object_id
-   AND source_eligibility.is_bronze_source_eligible
-  LEFT JOIN core.tenant AS source_tenant
-    ON source_tenant.tenant_id = source_eligibility.object_tenant_id
+   AND source_eligibility.is_model_input_eligible
+  LEFT JOIN core.tenant AS source_placement_tenant
+    ON source_placement_tenant.tenant_id = source_connection.tenant_id
   LEFT JOIN core.system AS source_system
     ON source_system.system_id = source_connection.system_id
   LEFT JOIN model.modeling_assertion_record AS assertion_record

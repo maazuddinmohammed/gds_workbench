@@ -110,7 +110,6 @@ export function MappingObjectsLedger({
     },
     { id: "source_system", header: "Source System", cell: ({ row }) => row.original.source_system.system_code },
     { accessorKey: "dependency_order", header: "Order" },
-    { accessorKey: "artifact_type", header: "Artifact", cell: ({ getValue }) => humanize(getValue<string | null>() ?? "not_authored") },
     { accessorKey: "status", header: "Status", cell: ({ getValue }) => humanize(getValue<string>()) },
     { accessorKey: "is_locked", header: "Lock", cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open" },
     {
@@ -267,7 +266,6 @@ function MappingFilterBar({
             <select aria-label="Mapping status" value={field.state.value} onChange={(event) => field.handleChange(event.target.value)}>
               <option value="">All statuses</option>
               <option value="active">Active</option>
-              <option value="needs_review">Needs review</option>
               <option value="inactive">Inactive</option>
               <option value="deprecated">Deprecated</option>
             </select>

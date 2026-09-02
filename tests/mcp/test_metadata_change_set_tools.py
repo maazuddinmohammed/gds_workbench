@@ -1099,27 +1099,8 @@ async def test_archive_metadata_change_set_returns_retained_terminal_state() -> 
 
 
 @pytest.mark.asyncio
-async def test_metadata_change_set_prompt_teaches_context_bounded_workflow() -> None:
+async def test_metadata_change_set_tools_register_no_prompts() -> None:
     async with Client(_server(FakeDatabase())) as client:
         prompts = await client.list_prompts()
-        result = await client.get_prompt(
-            "work_with_metadata_change_set",
-            {"tenant_id": "123"},
-        )
 
-    assert [prompt.name for prompt in prompts.prompts] == [
-        "work_with_metadata_change_set"
-    ]
-    content = result.messages[0].content
-    assert content.type == "text"
-    assert "requested boundary" in content.text
-    assert "Read-only inspection" in content.text
-    assert "without a Snapshot or lock" in content.text
-    assert "Reuse a validated local Snapshot" in content.text
-    assert "describe_metadata_dataset only for datasets you will edit" in content.text
-    assert "stage_metadata_change_set" in content.text
-    assert "authoritative action_review" in content.text
-    assert "every dataset with a nonzero count" in content.text
-    assert "fresh approval immediately before apply_metadata_change_set" in content.text
-    assert "Never advance beyond it" in content.text
-    assert len(content.text.split()) <= 190
+    assert prompts.prompts == []

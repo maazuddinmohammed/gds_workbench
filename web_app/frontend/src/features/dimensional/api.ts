@@ -4,7 +4,7 @@ import type {
   ModelingConfidence,
   ReviewStatus,
 } from "../../shared/contracts";
-import type { ModelScopeApi } from "../model_scope/api";
+import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
 
 export interface DimensionalFilters {
@@ -270,7 +270,7 @@ export type DimensionalApi = DimensionalTransport
     | "readWorkflowDraftReview"
     | "readWorkflowRun"
   >
-  & Pick<ModelScopeApi, "listModelScope">;
+  & Pick<ModelInputScopeApi, "listModelInputScope">;
 
 export function createDimensionalApi(request: HttpRequest): DimensionalTransport {
   return {

@@ -41,12 +41,8 @@ from gds_workbench_api.features.mapping import (
     PostgresMappingRunContextRepository,
     PostgresMappingRunPlanRepository,
 )
-from gds_workbench_api.features.mapping.profile_registry import (
-    MappingProfileRegistration,
-    load_mapping_profile_registry,
-)
 from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
-from gds_workbench_api.features.qa import DatabaseQAExecutor, QAWorkflow
+from gds_workbench_api.features.validation import DatabaseValidationExecutor, ValidationWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRouter,
 )
@@ -87,29 +83,6 @@ class WorkflowRuntimeDatabase(Protocol):
     ) -> AbstractAsyncContextManager[WriteTransaction]: ...
 
 
-class RegisteredMappingProfileResolver:
-    """Resolve only the verified Mapping profile deployed with this process."""
-
-    def __init__(self, registration: MappingProfileRegistration) -> None:
-        self._registration = registration
-
-    def resolve(
-        self,
-        *,
-        key: str,
-        version: str,
-        schema_digest: str,
-    ) -> MappingProfileRegistration | None:
-        registration = self._registration
-        if (key, version, schema_digest) != (
-            registration.key,
-            registration.version,
-            registration.schema_digest,
-        ):
-            return None
-        return registration
-
-
 @dataclass(frozen=True, slots=True)
 class WorkflowRuntimeServices:
     agent_executor: AgentExecutionRouter
@@ -121,7 +94,7 @@ class WorkflowRuntimeServices:
     dimensional: DimensionalWorkflow
     mapping: MappingWorkflow
     code_generation: CodeGenerationWorkflow
-    qa: QAWorkflow
+    validation: ValidationWorkflow
 
     async def close(self) -> None:
         await self.agent_executor.close()
@@ -136,7 +109,7 @@ class WorkflowRuntimeServices:
             dimensional=self.dimensional,
             mapping=self.mapping,
             code_generation=self.code_generation,
-            qa=self.qa,
+            validation=self.validation,
         )
 
 
@@ -200,7 +173,6 @@ def create_workflow_runtime_services(
             authorizer=authorizer,
             plan_repository=PostgresMappingRunPlanRepository(),
             context_repository=PostgresMappingRunContextRepository(),
-            profile_resolver=RegisteredMappingProfileResolver(load_mapping_profile_registry()),
         ),
         agent_executor=agent_executor,
         handoff=handoff,
@@ -215,7 +187,7 @@ def create_workflow_runtime_services(
         no_op=no_op,
         lifecycle=lifecycle,
     )
-    qa_executor = DatabaseQAExecutor(
+    validation_executor = DatabaseValidationExecutor(
         database=database,
         authorizer=authorizer,
         agent_executor=agent_executor,
@@ -253,12 +225,11 @@ def create_workflow_runtime_services(
             lifecycle=lifecycle,
             executor=code_generation_executor,
         ),
-        qa=QAWorkflow(lifecycle=lifecycle, executor=qa_executor),
+        validation=ValidationWorkflow(lifecycle=lifecycle, executor=validation_executor),
     )
 
 
 __all__ = [
-    "RegisteredMappingProfileResolver",
     "WorkflowRuntimeDatabase",
     "WorkflowRuntimeServices",
     "create_workflow_runtime_services",

@@ -1,5 +1,6 @@
 """Code Generation review, download, and SQL-only execution behavior."""
 
+from .artifact_context import CodeGenerationArtifactContext
 from .candidate import (
     CodeGenerationCandidateValidator,
     CodeGenerationTargetReference,
@@ -11,6 +12,7 @@ from .context import (
 )
 from .contracts import (
     CodeGenerationTargetFilters,
+    CodeGenerationTargetObjectReference,
     CodeGenerationTargetPage,
     CodeGenerationTargetSummary,
     CodeMappingSupport,
@@ -38,12 +40,6 @@ from .service import (
     CodeGenerationWorkflow,
     DatabaseCodeGenerationExecutor,
 )
-from .storage import (
-    CodeGenerationArtifactContext,
-    DatabaseGeneratedSqlStorage,
-    GeneratedSqlStorageResult,
-    SqlGeneratorIdentity,
-)
 
 __all__ = [
     "CodeGenerationCandidateValidator",
@@ -53,25 +49,23 @@ __all__ = [
     "CodeGenerationReadDatabase",
     "CodeGenerationService",
     "CodeGenerationTargetFilters",
+    "CodeGenerationTargetObjectReference",
     "CodeGenerationTargetPage",
     "CodeGenerationWorkflow",
     "CodeGenerationWorkflowService",
     "CodeGenerationTargetReference",
     "CodeGenerationTargetSummary",
     "CodeMappingSupport",
-    "DatabaseGeneratedSqlStorage",
     "DatabaseCodeGenerationExecutor",
     "DatabaseCodeGenerationService",
     "GeneratedSqlArtifact",
     "GeneratedSqlArtifactDetail",
     "GeneratedSqlArtifactNotFoundError",
-    "GeneratedSqlStorageResult",
     "ExecuteCodeGenerationRunRequest",
     "PostgresCodeGenerationContextRepository",
     "SqlArtifactBundleLimitExceededError",
     "SqlArtifactDownload",
     "SqlGenerationGuideProvenance",
-    "SqlGeneratorIdentity",
     "SqlGeneratorProvenance",
     "StoredSqlArtifactSummary",
     "create_code_generation_router",

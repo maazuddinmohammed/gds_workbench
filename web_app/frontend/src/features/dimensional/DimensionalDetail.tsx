@@ -455,6 +455,5 @@ function humanize(value: string): string {
 
 function statusTone(status: string): string {
   if (status === "active") return "is-success";
-  if (status === "needs_review") return "is-warning";
   return "is-neutral";
 }

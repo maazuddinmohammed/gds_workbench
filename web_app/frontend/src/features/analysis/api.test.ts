@@ -11,7 +11,7 @@ describe("Analysis HTTP adapter", () => {
     await api.listAnalysisFindings(7, 18, {
       objectId: 501,
       validationState: "unvalidated",
-      status: "needs_review",
+      status: "inactive",
       locked: false,
       showInactive: true,
     }, 25, "opaque+/=");
@@ -19,7 +19,7 @@ describe("Analysis HTTP adapter", () => {
     await api.readAnalysisFinding(7, 18, 81);
 
     expect(fetcher.mock.calls.map(([input]) => String(input))).toEqual([
-      "/api/v1/tenants/7/models/18/analysis?object_id=501&validation_state=unvalidated&status=needs_review&locked=false&show_inactive=true&page_size=25&cursor=opaque%2B%2F%3D",
+      "/api/v1/tenants/7/models/18/analysis?object_id=501&validation_state=unvalidated&status=inactive&locked=false&show_inactive=true&page_size=25&cursor=opaque%2B%2F%3D",
       "/api/v1/tenants/7/models/18/analysis?page_size=200",
       "/api/v1/tenants/7/models/18/analysis/81",
     ]);

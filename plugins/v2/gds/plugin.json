@@ -1,8 +1,8 @@
 {
   "$schema": "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json",
   "name": "gds",
-  "version": "0.3.3",
-  "description": "Strict, snapshot-first GDS planning and governed delivery workflows.",
+  "version": "0.4.2",
+  "description": "Governed GDS metadata, modeling, mapping, code, and validation workflows.",
   "author": {
     "name": "GDS Workbench"
   },

@@ -3,14 +3,11 @@
 from __future__ import annotations
 
 import asyncio
-import hashlib
-import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager, suppress
 from typing import cast
 
 from mcp.server.mcpserver import MCPServer
-from mcp.types import Tool
 from starlette.requests import Request
 from starlette.responses import JSONResponse, Response
 
@@ -24,11 +21,9 @@ from gds_etl_workbench.infrastructure.postgres import (
     DatabricksConnectionDatabase,
     WriteDatabase,
 )
-from gds_etl_workbench.tools.catalog.get_object_lineage import (
-    register_get_object_lineage_tool,
+from gds_etl_workbench.tools.catalog.inspect_metadata import (
+    register_inspect_metadata_tool,
 )
-from gds_etl_workbench.tools.catalog.get_objects import register_get_objects_tool
-from gds_etl_workbench.tools.catalog.list_objects import register_list_objects_tool
 from gds_etl_workbench.tools.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
@@ -40,41 +35,27 @@ from gds_etl_workbench.tools.databricks.executor import (
     ConnectorDatabricksSqlExecutor,
     DatabricksSqlExecutor,
 )
-from gds_etl_workbench.tools.ingestion.copy_groups import register_copy_group_tools
-from gds_etl_workbench.tools.modeling.assertions import (
-    register_modeling_assertion_tools,
+from gds_etl_workbench.tools.modeling.model_details import register_list_models_tool
+from gds_etl_workbench.tools.modeling.model_input_scope import (
+    register_get_model_input_scope_tool,
 )
-from gds_etl_workbench.tools.modeling.code_generation_authoring import (
-    register_code_generation_authoring_tools,
+from gds_etl_workbench.tools.modeling.read_model_section import (
+    register_read_model_section_tool,
 )
-from gds_etl_workbench.tools.modeling.conceptual import register_conceptual_tools
-from gds_etl_workbench.tools.modeling.dimensional import register_dimensional_tools
-from gds_etl_workbench.tools.modeling.logical import register_logical_tools
-from gds_etl_workbench.tools.modeling.mapping import register_mapping_tools
-from gds_etl_workbench.tools.modeling.mapping_authoring import (
-    register_mapping_authoring_tools,
-)
-from gds_etl_workbench.tools.modeling.model_details import register_get_model_tool
-from gds_etl_workbench.tools.modeling.model_scope import register_get_model_scope_tool
-from gds_etl_workbench.tools.modeling.profiling_analysis import (
-    register_profiling_analysis_tools,
-)
-from gds_etl_workbench.tools.processing.process_groups import register_process_group_tools
-from gds_etl_workbench.tools.server_contract import register_server_contract_tool
 from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
-    register_get_model_dbml_tool,
+    register_export_model_dbml_tool,
 )
 from gds_etl_workbench.tools.snapshots.metadata.describe_metadata_dataset import (
     register_describe_metadata_dataset_tool,
 )
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
-    register_get_metadata_snapshot_tool,
+    register_create_metadata_snapshot_tool,
 )
 from gds_etl_workbench.tools.snapshots.model.describe_model_dataset import (
     register_describe_model_dataset_tool,
 )
 from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
-    register_get_model_snapshot_tool,
+    register_create_model_snapshot_tool,
 )
 from gds_etl_workbench.tools.snapshots.storage import AzureSnapshotStore, SnapshotStore
 from gds_etl_workbench.tools.tenants.get_tenant_details import (
@@ -123,30 +104,23 @@ def create_mcp_server(
         name="gds-etl-workbench",
         title="GDS ETL Workbench",
         version=MCP_SERVER_VERSION,
-        description="Governed metadata access for GDS ETL Workbench.",
+        description="Governed GDS context, Snapshot, and Change Set workflows.",
         instructions=(
-            "Use the least-committed boundary. Prefer Tenant, "
-            "catalog, ingestion, and focused Model reads; follow next_cursor only until "
-            "the requested scope is complete. Use a Snapshot or DBML only for a broad "
-            "baseline or export. Reads and local drafts require no lock. Read-only Change "
-            "Set inspection uses get_metadata_change_set or get_model_change_set without "
-            "a lock and stops. Before Create, Stage, Validate, or Apply, call "
-            "check_tenant_lock and ask before acquire_tenant_lock. Create a Change Set "
-            "only for explicit create, "
-            "resume, or an approved Stage with no draft. If resumed, inspect every "
-            "nonempty pending dataset before replacing anything. Describe only datasets "
-            "being authored. Apply Mapping→Code→QA successively. Show "
-            "lists and obtain Stage approval "
-            "before staging; "
-            "Commit a Stage Batch once. Validate the "
-            "latest revision. Show the authoritative action_review "
-            "and require fresh Apply approval before Apply. Archive only when "
-            "requested; archive needs no current lock. Release any lock this workflow "
-            "acquired whenever it stops. "
-            "Server derives identity and authorization. Never expose "
-            "credentials, temporary URLs, rows, prompts, or tool output. "
-            "execute_databricks_sql requires source Connection, Environment, qualified "
-            "relations, and read/temporary-object SQL."
+            "Use focused reads for bounded questions and Snapshots for broad authoring or "
+            "applied Code and Validation context. Reads and local drafts require no lock. "
+            "A clear user acknowledgement of the exact local result authorizes acquiring an "
+            "ordinary free Tenant Lock, reconciliation, Stage, and Change Set validation; do "
+            "not ask again before those actions. Lock override and Apply require separate "
+            "explicit approval. Model Input Scope must Apply before Profiling or model "
+            "development. Metadata registration must Apply before Model Binding; Binding must "
+            "Apply before Mapping; Mapping must Apply before Code or Validation. Refresh the "
+            "affected Snapshot after Apply. On revision mismatch, stop and reassess against a "
+            "fresh Snapshot without auto-merge. Release any lock acquired here when work stops. "
+            "The server derives identity and authorization. Summarize safe results; never copy "
+            "credentials, signed URLs, raw rows, prompts, SQL, or raw tool output into chat. "
+            "The user may manually download a Snapshot from its client tool result. "
+            "execute_databricks_sql defaults to environment_code=dev, requires qualified "
+            "persistent relations, and permits only reads or unqualified temporary objects."
         ),
         lifespan=lifespan,
         middleware=[audit],
@@ -167,7 +141,7 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
     )
-    register_get_model_tool(
+    register_list_models_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -175,7 +149,7 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
-    register_get_model_scope_tool(
+    register_get_model_input_scope_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -203,7 +177,7 @@ def create_mcp_server(
         authorizer=authorizer,
         audit=audit,
     )
-    register_list_objects_tool(
+    register_inspect_metadata_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -211,97 +185,13 @@ def create_mcp_server(
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
     )
-    register_get_objects_tool(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-    )
-    register_get_object_lineage_tool(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-    )
-    register_copy_group_tools(
+    register_read_model_section_tool(
         server,
         database=database,
         identity_provider=identity_provider,
         authorizer=authorizer,
         audit=audit,
         cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_process_group_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_profiling_analysis_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_modeling_assertion_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_conceptual_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_logical_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_dimensional_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_mapping_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-        cursor_signing_key=settings.cursor_signing_key,
-    )
-    register_mapping_authoring_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
-    )
-    register_code_generation_authoring_tools(
-        server,
-        database=database,
-        identity_provider=identity_provider,
-        authorizer=authorizer,
-        audit=audit,
     )
     register_execute_databricks_sql_tool(
         server,
@@ -318,7 +208,7 @@ def create_mcp_server(
         identity_provider=identity_provider,
         audit=audit,
     )
-    register_get_model_snapshot_tool(
+    register_create_model_snapshot_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -329,7 +219,7 @@ def create_mcp_server(
         retention_hours=settings.metadata_snapshot_retention_hours,
         max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
     )
-    register_get_model_dbml_tool(
+    register_export_model_dbml_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -345,7 +235,7 @@ def create_mcp_server(
         identity_provider=identity_provider,
         audit=audit,
     )
-    register_get_metadata_snapshot_tool(
+    register_create_metadata_snapshot_tool(
         server,
         database=database,
         identity_provider=identity_provider,
@@ -355,13 +245,6 @@ def create_mcp_server(
         download_ttl_seconds=settings.metadata_snapshot_download_ttl_seconds,
         retention_hours=settings.metadata_snapshot_retention_hours,
         max_archive_bytes=settings.metadata_snapshot_max_archive_bytes,
-    )
-    register_server_contract_tool(
-        server,
-        identity_provider=identity_provider,
-        audit=audit,
-        mcp_server_version=MCP_SERVER_VERSION,
-        contract_digest=tool_contract_sha256,
     )
 
     async def live(_request: Request) -> Response:
@@ -380,7 +263,6 @@ def create_mcp_server(
                 "schema_version": settings.schema_version,
                 "mcp_server_version": MCP_SERVER_VERSION,
                 "tool_count": len(tools),
-                "tool_contract_sha256": tool_contract_sha256(tools),
             },
             status_code=200 if readiness.ready else 503,
             headers={"Cache-Control": "no-store"},
@@ -417,29 +299,3 @@ async def _expire_tenant_locks(database: Database) -> None:
             await database.expire_tenant_locks()
         except DependencyUnavailableError:
             continue
-
-
-def tool_contract_sha256(tools: list[Tool]) -> str:
-    document = [
-        {
-            "name": tool.name,
-            "title": tool.title,
-            "description": tool.description,
-            "input_schema": tool.input_schema,
-            "output_schema": tool.output_schema,
-            "annotations": (
-                None
-                if tool.annotations is None
-                else tool.annotations.model_dump(mode="json", by_alias=True, exclude_none=True)
-            ),
-            "meta": tool.meta,
-        }
-        for tool in tools
-    ]
-    encoded = json.dumps(
-        document,
-        ensure_ascii=True,
-        separators=(",", ":"),
-        sort_keys=True,
-    ).encode("utf-8")
-    return hashlib.sha256(encoded).hexdigest()

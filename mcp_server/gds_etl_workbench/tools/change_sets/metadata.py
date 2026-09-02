@@ -222,8 +222,19 @@ class CreateMetadataChangeSetResult(ContractModel):
 
 
 class StageChange(ContractModel):
-    dataset: ChangeSetDataset
-    records: Annotated[list[dict[str, object]], Field(max_length=50_000)]
+    dataset: ChangeSetDataset = Field(
+        description="Metadata dataset whose complete pending replacement is supplied."
+    )
+    records: Annotated[
+        list[dict[str, object]],
+        Field(
+            max_length=50_000,
+            description=(
+                "Complete pending record list for this dataset; an empty list clears only "
+                "this pending dataset and omitted datasets remain unchanged."
+            ),
+        ),
+    ]
 
 
 class StagedMetadataChangeSetDataset(ContractModel):
@@ -443,9 +454,9 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Replace one or more complete pending Metadata Change Set datasets in one "
-            "transaction and increment the draft revision once. Use "
-            "describe_metadata_dataset for each full ID-free record schema."
+            "Replace one or more complete pending Metadata datasets in one transaction. "
+            "Omitted datasets remain unchanged. Records must use describe_metadata_dataset's "
+            "ID-free schemas; the draft revision increments once."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
@@ -456,7 +467,14 @@ def register_metadata_change_set_tools(
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         metadata_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        changes: Annotated[list[StageChange], Field(min_length=1, max_length=16)],
+        changes: Annotated[
+            list[StageChange],
+            Field(
+                min_length=1,
+                max_length=16,
+                description="One complete pending replacement per affected Metadata dataset.",
+            ),
+        ],
         schema_version: Literal["1.0"] = "1.0",
     ) -> StageMetadataChangeSetResult:
         del schema_version
@@ -519,8 +537,8 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Begin or resume an idempotent bounded upload for one complete Metadata "
-            "Change Set dataset. This does not change the draft revision."
+            "Begin or resume an oversized upload for one complete Metadata dataset "
+            "replacement. Beginning a batch is idempotent and does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -531,10 +549,27 @@ def register_metadata_change_set_tools(
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         metadata_change_set_id: UUID,
         expected_draft_revision: Annotated[int, Field(gt=0)],
-        dataset: ChangeSetDataset,
-        total_record_count: Annotated[int, Field(gt=0, le=50_000)],
-        total_chunk_count: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
-        batch_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        dataset: Annotated[
+            ChangeSetDataset,
+            Field(description="Single dataset replaced when this batch is committed."),
+        ],
+        total_record_count: Annotated[
+            int,
+            Field(gt=0, le=50_000, description="Records in the complete replacement list."),
+        ],
+        total_chunk_count: Annotated[
+            int,
+            Field(gt=0, le=MAX_STAGE_CHUNKS, description="Ordered chunks numbered from 1."),
+        ],
+        batch_sha256: Annotated[
+            str,
+            Field(
+                pattern=SHA256_PATTERN,
+                description=(
+                    "SHA-256 of the lowercase chunk SHA-256 strings concatenated in chunk order."
+                ),
+            ),
+        ],
         schema_version: Literal["1.0"] = "1.0",
     ) -> BeginMetadataStageBatchResult:
         del schema_version
@@ -597,8 +632,8 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Idempotently store one ordered, schema-valid chunk for an active Metadata "
-            "Stage Batch. This does not change or validate the Change Set."
+            "Store one ordered, schema-valid records chunk for an active Metadata Stage Batch. "
+            "Repeated identical chunks are safe and do not change or validate the Change Set."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -609,13 +644,25 @@ def register_metadata_change_set_tools(
         tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
         metadata_change_set_id: UUID,
         stage_batch_id: UUID,
-        dataset: ChangeSetDataset,
-        chunk_index: Annotated[int, Field(gt=0, le=MAX_STAGE_CHUNKS)],
+        dataset: Annotated[
+            ChangeSetDataset,
+            Field(description="Must match the dataset declared by the Stage Batch."),
+        ],
+        chunk_index: Annotated[
+            int,
+            Field(gt=0, le=MAX_STAGE_CHUNKS, description="One-based chunk position."),
+        ],
         records: Annotated[
             list[dict[str, object]],
             Field(min_length=1, max_length=MAX_STAGE_CHUNK_RECORDS),
         ],
-        chunk_sha256: Annotated[str, Field(pattern=SHA256_PATTERN)],
+        chunk_sha256: Annotated[
+            str,
+            Field(
+                pattern=SHA256_PATTERN,
+                description="SHA-256 of this chunk's normalized record list.",
+            ),
+        ],
         schema_version: Literal["1.0"] = "1.0",
     ) -> PutMetadataStageChunkResult:
         del schema_version
@@ -688,8 +735,9 @@ def register_metadata_change_set_tools(
 
     @server.tool(
         description=(
-            "Verify and atomically commit one complete Metadata Stage Batch as the "
-            "dataset's replacement list, incrementing the draft revision once."
+            "Verify and atomically commit one complete Metadata Stage Batch as that dataset's "
+            "pending replacement. The response returns the new draft_revision; use it for "
+            "the next batch or validation."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
@@ -1059,34 +1107,6 @@ def register_metadata_change_set_tools(
         },
         tenant_argument="tenant_id",
     )
-
-    @server.prompt(
-        name="work_with_metadata_change_set",
-        title="Work with Tenant metadata",
-        description="Safe, context-bounded workflow for one Tenant Metadata Change Set.",
-    )
-    def work_with_metadata_change_set(tenant_id: int) -> str:
-        return (
-            f"Work with Tenant ID {tenant_id} only to the user's requested boundary. "
-            "Never advance beyond it. Read-only inspection: call "
-            "get_metadata_change_set, answer, and stop without a Snapshot or lock. Local "
-            "drafting: Reuse a validated local Snapshot when available; call "
-            "get_metadata_snapshot only for a requested broad or fresh baseline, inspect "
-            "only affected rows, and keep the Snapshot immutable. Before Create, Stage, "
-            "Validate, or Apply, call check_tenant_lock and ask before "
-            "acquire_tenant_lock. Call "
-            "create_metadata_change_set only for explicit create/resume or when an approved "
-            "Stage has no draft. If resumed, fetch the summary and every dataset with a "
-            "nonzero count before replacing anything. Use describe_metadata_dataset only "
-            "for datasets you will edit. Show the exact complete affected lists and ask "
-            "before stage_metadata_change_set or begin_metadata_stage_batch. For a large "
-            "dataset, Put every approved chunk then Commit once. Validate the latest "
-            "revision and repair only "
-            "the first failed phase. Show the authoritative action_review, then obtain fresh "
-            "approval immediately before apply_metadata_change_set. Archive only when "
-            "requested; archive needs no current lock. Release any lock this workflow "
-            "acquired when it stops."
-        )
 
 
 def _identity_arguments(principal: RequestPrincipal) -> tuple[UUID, UUID, str]:

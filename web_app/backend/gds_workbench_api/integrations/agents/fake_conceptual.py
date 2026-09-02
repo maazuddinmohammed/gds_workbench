@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import re
 from typing import cast
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -47,11 +46,8 @@ def _fake_object_contribution(context: dict[str, JsonValue]) -> JsonValue:
     if not isinstance(source, dict):
         raise InvalidRequestError("The local fake agent context is invalid.")
     source_object = fake_source_object(source)
-    object_name = source_object["object_name"]
-    if not isinstance(object_name, str):
-        raise InvalidRequestError("The local fake agent context is invalid.")
-    local_ref = _fake_entity_ref(object_name)
-    conceptual_name = " ".join(part.capitalize() for part in local_ref.split("_"))
+    local_ref = "business_concept"
+    conceptual_name = "BusinessConcept"
     return cast(
         JsonValue,
         {
@@ -67,11 +63,13 @@ def _fake_object_contribution(context: dict[str, JsonValue]) -> JsonValue:
                         "conceptual_object_definition": (
                             f"A locally generated {conceptual_name} concept."
                         ),
-                        "conceptual_object_type": "entity",
-                        "conceptual_object_grain": (f"One governed {conceptual_name} instance."),
+                        "conceptual_object_type": "business_concept",
+                        "conceptual_object_grain": (
+                            "A stable business subject represented across the selected scope."
+                        ),
                         "conceptual_object_aliases": [],
                         "conceptual_object_confidence": "medium",
-                        "conceptual_object_status": "needs_review",
+                        "conceptual_object_status": "active",
                         "conceptual_object_is_locked": False,
                         "supports": [_fake_object_support(source_object)],
                     },
@@ -197,13 +195,34 @@ def _fake_whole_model_reconciliation(context: dict[str, JsonValue]) -> JsonValue
     details = context.get("entity_details")
     packages = context.get("relationship_packages")
     refinements = context.get("relationship_refinements")
-    applied_refs = context.get("required_applied_record_refs")
+    work_items = context.get("reconciliation_work_items")
+    if isinstance(work_items, list):
+        details = [
+            item["entity_detail"]
+            for item in work_items
+            if isinstance(item, dict)
+            and item.get("work_item_type") == "entity_detail"
+            and isinstance(item.get("entity_detail"), dict)
+        ]
+        packages = [
+            item
+            for item in work_items
+            if isinstance(item, dict) and item.get("work_item_type") == "relationship_refinement"
+        ]
+        refinements = [
+            item["refinement"] for item in packages if isinstance(item.get("refinement"), dict)
+        ]
+    applied_refs = context.get(
+        "required_applied_record_refs",
+        context.get("required_applied_review_refs"),
+    )
+    input_refs = context.get("required_input_contribution_refs")
     if (
         not isinstance(details, list)
-        or not details
         or not isinstance(packages, list)
         or not isinstance(refinements, list)
         or not isinstance(applied_refs, list)
+        or not isinstance(input_refs, list)
     ):
         raise InvalidRequestError("The local fake agent context is invalid.")
     objects: list[JsonValue] = []
@@ -213,12 +232,38 @@ def _fake_whole_model_reconciliation(context: dict[str, JsonValue]) -> JsonValue
             raise InvalidRequestError("The local fake agent context is invalid.")
         entity_ref = detail.get("canonical_entity_ref")
         object_record = detail.get("object")
+        if object_record is None and isinstance(entity_ref, str):
+            object_record = {
+                "conceptual_object_name": detail.get("conceptual_object_name"),
+                "conceptual_object_definition": detail.get("conceptual_object_definition"),
+                "conceptual_object_type": detail.get("conceptual_object_type"),
+                "conceptual_object_grain": detail.get("conceptual_object_grain"),
+                "conceptual_object_aliases": detail.get("conceptual_object_aliases", []),
+                "conceptual_object_confidence": detail.get("conceptual_object_confidence"),
+                "conceptual_object_status": detail.get("conceptual_object_status"),
+                "conceptual_object_is_locked": False,
+                "supports": [
+                    {
+                        **support,
+                        "support_role": "source",
+                        "support_reason": "Selected evidence supports this business concept.",
+                        "support_reason_detail": None,
+                        "support_confidence": "medium",
+                        "support_status": "active",
+                        "support_is_locked": False,
+                    }
+                    for support in cast(
+                        list[dict[str, JsonValue]],
+                        detail.get("support_sources", []),
+                    )
+                ],
+            }
         if not isinstance(entity_ref, str) or not isinstance(object_record, dict):
             raise InvalidRequestError("The local fake agent context is invalid.")
         name = object_record.get("conceptual_object_name")
         if not isinstance(name, str):
             raise InvalidRequestError("The local fake agent context is invalid.")
-        objects.append(object_record)
+        objects.append(cast(JsonValue, object_record))
         entity_coverage.append(
             {
                 "canonical_entity_ref": entity_ref,
@@ -247,21 +292,11 @@ def _fake_whole_model_reconciliation(context: dict[str, JsonValue]) -> JsonValue
             "objects": objects,
             "relationships": relationships,
             "entity_coverage": entity_coverage,
+            "reviewed_input_contribution_refs": input_refs,
             "reviewed_relationship_package_refs": package_refs,
             "reviewed_applied_record_refs": applied_refs,
         },
     )
-
-
-def _fake_entity_ref(object_name: str) -> str:
-    normalized = re.sub(r"[^a-z0-9]+", "_", object_name.strip().casefold()).strip("_")
-    for suffix in ("_raw", "_source", "_bronze"):
-        if normalized.endswith(suffix):
-            normalized = normalized[: -len(suffix)]
-            break
-    if not normalized or TARGET_REFERENCE.fullmatch(normalized[:100]) is None:
-        raise InvalidRequestError("The local fake agent context is invalid.")
-    return normalized[:100]
 
 
 def _fake_object_support(source_object: dict[str, JsonValue]) -> dict[str, JsonValue]:

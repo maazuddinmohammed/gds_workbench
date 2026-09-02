@@ -185,47 +185,38 @@ def catalog_seed(postgres_database: DisposablePostgres) -> CatalogSeed:
             "UPDATE core.tenant SET gds_connection_id = %s WHERE tenant_id = %s",
             (gds_connection["connection_id"], tenant["tenant_id"]),
         )
-        connection.execute(
-            """
-            INSERT INTO core.tenant_metadata_discovery_scope (
-                tenant_id, gds_connection_id, zone_id, object_schema
-            )
-            VALUES (%s, %s, %s, %s)
-            """,
-            (
-                tenant["tenant_id"],
-                gds_connection["connection_id"],
-                bronze_zone_id,
-                f"{prefix.lower()}_bronze",
-            ),
-        )
         objects = connection.execute(
             """
             INSERT INTO core.object (
-                connection_id, object_schema, object_name, object_description,
+                connection_id, source_tenant_id,
+                object_schema, object_name, object_description,
                 object_type_id, zone_id
             )
             VALUES
-                (%s, %s, 'customer', 'Source customer', %s, %s),
-                (%s, %s, 'customer', 'Bronze customer', %s, %s),
-                (%s, %s, 'unmapped_customer', 'Unmapped Bronze customer', %s, %s),
-                (%s, %s, 'private_other', 'Unrelated Bronze object', %s, %s)
+                (%s, %s, %s, 'customer', 'Source customer', %s, %s),
+                (%s, %s, %s, 'customer', 'Bronze customer', %s, %s),
+                (%s, %s, %s, 'unmapped_customer', 'Unmapped Bronze customer', %s, %s),
+                (%s, %s, %s, 'private_other', 'Unrelated Bronze object', %s, %s)
             RETURNING object_id, zone_id, object_name
             """,
             (
                 source_connection["connection_id"],
+                tenant["tenant_id"],
                 f"{prefix.lower()}_source",
                 object_type_id,
                 source_zone_id,
                 gds_connection["connection_id"],
+                tenant["tenant_id"],
                 f"{prefix.lower()}_bronze",
                 object_type_id,
                 bronze_zone_id,
                 gds_connection["connection_id"],
+                tenant["tenant_id"],
                 f"{prefix.lower()}_bronze",
                 object_type_id,
                 bronze_zone_id,
                 gds_connection["connection_id"],
+                gds_tenant["tenant_id"],
                 f"{prefix.lower()}_other_bronze",
                 object_type_id,
                 bronze_zone_id,
@@ -535,12 +526,12 @@ async def test_get_tenant_details_returns_connection_grain_zone_counts(
         connections[catalog_seed.gds_connection_id]["is_tenant_gds_connection"] is True
     )
     assert (
-        connections[catalog_seed.gds_connection_id]["is_discovery_connection"] is True
+        connections[catalog_seed.gds_connection_id]["contains_tenant_objects"] is True
     )
 
 
 @pytest.mark.asyncio
-async def test_list_objects_includes_unmapped_discovery_scope_object(
+async def test_list_objects_includes_unmapped_tenant_object(
     postgres_database: DisposablePostgres,
     catalog_seed: CatalogSeed,
 ) -> None:
@@ -550,8 +541,12 @@ async def test_list_objects_includes_unmapped_discovery_scope_object(
 
     async with Client(server) as client:
         result = await client.call_tool(
-            "list_objects",
-            {"tenant_id": catalog_seed.tenant_id, "zone": "bronze"},
+            "inspect_metadata",
+            {
+                "tenant_id": catalog_seed.tenant_id,
+                "view": "objects",
+                "zone": "bronze",
+            },
         )
 
     assert result.is_error is False
@@ -559,7 +554,7 @@ async def test_list_objects_includes_unmapped_discovery_scope_object(
     assert result.structured_content["next_cursor"] is None
     unmapped = next(
         item
-        for item in result.structured_content["objects"]
+        for item in result.structured_content["payload"]["objects"]
         if item["object_id"] == catalog_seed.unmapped_bronze_object_id
     )
     assert unmapped["object_name"] == "unmapped_customer"
@@ -567,8 +562,8 @@ async def test_list_objects_includes_unmapped_discovery_scope_object(
     assert unmapped["connection_id"] == catalog_seed.gds_connection_id
     assert unmapped["attribute_count"] == 0
     assert unmapped["has_ingestion_mapping"] is False
-    assert unmapped["is_owned_by_tenant"] is False
-    assert unmapped["is_discovered_by_scope"] is True
+    assert unmapped["is_owned_by_tenant"] is True
+    assert unmapped["is_on_global_connection"] is True
     assert unmapped["is_copy_referenced"] is False
     assert unmapped["is_process_referenced"] is False
 
@@ -584,9 +579,10 @@ async def test_get_objects_returns_batched_objects_and_attributes(
 
     async with Client(server) as client:
         result = await client.call_tool(
-            "get_objects",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id,
+                "view": "object_details",
                 "object_ids": [
                     catalog_seed.bronze_object_id,
                     catalog_seed.source_object_id,
@@ -594,9 +590,10 @@ async def test_get_objects_returns_batched_objects_and_attributes(
             },
         )
         rejected = await client.call_tool(
-            "get_objects",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id,
+                "view": "object_details",
                 "object_ids": [
                     catalog_seed.source_object_id,
                     catalog_seed.unrelated_bronze_object_id,
@@ -606,7 +603,7 @@ async def test_get_objects_returns_batched_objects_and_attributes(
 
     assert result.is_error is False
     assert result.structured_content is not None
-    objects = result.structured_content["objects"]
+    objects = result.structured_content["payload"]["objects"]
     assert [item["object_id"] for item in objects] == [
         catalog_seed.bronze_object_id,
         catalog_seed.source_object_id,
@@ -638,9 +635,10 @@ async def test_get_object_lineage_returns_direct_ingestion_mapping(
 
     async with Client(server) as client:
         result = await client.call_tool(
-            "get_object_lineage",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id,
+                "view": "object_lineage",
                 "object_id": catalog_seed.bronze_object_id,
                 "direction": "upstream",
             },
@@ -648,7 +646,7 @@ async def test_get_object_lineage_returns_direct_ingestion_mapping(
 
     assert result.is_error is False
     assert result.structured_content is not None
-    mappings = result.structured_content["mappings"]
+    mappings = result.structured_content["payload"]["mappings"]
     assert len(mappings) == 1
     assert (
         mappings[0]["ingestion_object_mapping_id"] == catalog_seed.ingestion_mapping_id
@@ -656,8 +654,8 @@ async def test_get_object_lineage_returns_direct_ingestion_mapping(
     assert mappings[0]["direction"] == "upstream"
     assert mappings[0]["source_object"]["object_id"] == catalog_seed.source_object_id
     assert mappings[0]["target_object"]["object_id"] == catalog_seed.bronze_object_id
-    assert mappings[0]["source_object"]["owning_tenant_id"] == catalog_seed.tenant_id
-    assert mappings[0]["target_object"]["owning_tenant_id"] == catalog_seed.tenant_id
+    assert mappings[0]["source_object"]["source_tenant_id"] == catalog_seed.tenant_id
+    assert mappings[0]["target_object"]["source_tenant_id"] == catalog_seed.tenant_id
     assert mappings[0]["attribute_mapping_count"] == 1
     assert mappings[0]["copy_count"] == 1
 
@@ -673,13 +671,14 @@ async def test_copy_group_tools_resolve_tenant_owned_ingestion_configuration(
 
     async with Client(server) as client:
         listed = await client.call_tool(
-            "list_copy_groups",
-            {"tenant_id": catalog_seed.tenant_id},
+            "inspect_metadata",
+            {"tenant_id": catalog_seed.tenant_id, "view": "copy_groups"},
         )
         detailed = await client.call_tool(
-            "get_copy_group",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id,
+                "view": "copy_group_details",
                 "copy_group_id": catalog_seed.copy_group_id,
             },
         )
@@ -688,7 +687,7 @@ async def test_copy_group_tools_resolve_tenant_owned_ingestion_configuration(
     assert listed.structured_content is not None
     group = next(
         item
-        for item in listed.structured_content["copy_groups"]
+        for item in listed.structured_content["payload"]["copy_groups"]
         if item["copy_group_id"] == catalog_seed.copy_group_id
     )
     assert group["system_id"] == catalog_seed.system_id
@@ -698,25 +697,17 @@ async def test_copy_group_tools_resolve_tenant_owned_ingestion_configuration(
 
     assert detailed.is_error is False
     assert detailed.structured_content is not None
-    assert detailed.structured_content["copy_group"]["copy_group_id"] == (
-        catalog_seed.copy_group_id
-    )
-    assert detailed.structured_content["copy_group"]["process_group_count"] == 1
-    assert detailed.structured_content["copies"][0]["copy_id"] == catalog_seed.copy_id
-    assert detailed.structured_content["copies"][0]["has_initial_sql"] is True
-    assert detailed.structured_content["copies"][0]["source_object"]["object_id"] == (
+    details = detailed.structured_content["payload"]
+    assert details["copy_group"]["copy_group_id"] == (catalog_seed.copy_group_id)
+    assert details["copy_group"]["process_group_count"] == 1
+    assert details["copies"][0]["copy_id"] == catalog_seed.copy_id
+    assert details["copies"][0]["has_initial_sql"] is True
+    assert details["copies"][0]["source_object"]["object_id"] == (
         catalog_seed.source_object_id
     )
-    assert detailed.structured_content["controls"][0]["member_group_name"].endswith(
-        "Member Group"
-    )
-    assert (
-        "copy_source_initial_sql_script" not in detailed.structured_content["copies"][0]
-    )
-    assert (
-        "copy_group_control_last_run_value"
-        not in detailed.structured_content["controls"][0]
-    )
+    assert details["controls"][0]["member_group_name"].endswith("Member Group")
+    assert "copy_source_initial_sql_script" not in details["copies"][0]
+    assert "copy_group_control_last_run_value" not in details["controls"][0]
 
 
 @pytest.mark.asyncio
@@ -730,13 +721,14 @@ async def test_process_group_tools_resolve_through_tenant_copy_groups(
 
     async with Client(server) as client:
         listed = await client.call_tool(
-            "list_process_groups",
-            {"tenant_id": catalog_seed.tenant_id},
+            "inspect_metadata",
+            {"tenant_id": catalog_seed.tenant_id, "view": "process_groups"},
         )
         detailed = await client.call_tool(
-            "get_process_group",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id,
+                "view": "process_group_details",
                 "process_group_id": catalog_seed.process_group_id,
             },
         )
@@ -745,7 +737,7 @@ async def test_process_group_tools_resolve_through_tenant_copy_groups(
     assert listed.structured_content is not None
     group = next(
         item
-        for item in listed.structured_content["process_groups"]
+        for item in listed.structured_content["payload"]["process_groups"]
         if item["process_group_id"] == catalog_seed.process_group_id
     )
     assert group["copy_group_id"] == catalog_seed.copy_group_id
@@ -754,11 +746,11 @@ async def test_process_group_tools_resolve_through_tenant_copy_groups(
 
     assert detailed.is_error is False
     assert detailed.structured_content is not None
-    process = detailed.structured_content["processes"][0]
+    process = detailed.structured_content["payload"]["processes"][0]
     assert process["process_id"] == catalog_seed.process_id
     assert process["object"]["object_id"] == catalog_seed.bronze_object_id
     assert process["object"]["zone"] == "bronze"
-    assert process["object"]["owning_tenant_id"] == catalog_seed.tenant_id
+    assert process["object"]["source_tenant_id"] == catalog_seed.tenant_id
     assert process["connection_id"] == catalog_seed.gds_connection_id
     assert "process_location" not in process
     assert "process_executable" not in process
@@ -775,16 +767,18 @@ async def test_copy_and_process_group_ids_are_scoped_to_the_requested_tenant(
 
     async with Client(server) as client:
         wrong_copy_tenant = await client.call_tool(
-            "get_copy_group",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id + 1,
+                "view": "copy_group_details",
                 "copy_group_id": catalog_seed.copy_group_id,
             },
         )
         wrong_process_tenant = await client.call_tool(
-            "get_process_group",
+            "inspect_metadata",
             {
                 "tenant_id": catalog_seed.tenant_id + 1,
+                "view": "process_group_details",
                 "process_group_id": catalog_seed.process_group_id,
             },
         )

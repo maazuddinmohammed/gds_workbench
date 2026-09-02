@@ -44,12 +44,6 @@ relevant_connection_ids AS (
       FROM requested_tenant
      WHERE requested_tenant.gds_connection_id IS NOT NULL
     UNION
-    SELECT scope.gds_connection_id
-      FROM requested_tenant
-      JOIN core.tenant_metadata_discovery_scope AS scope
-        ON scope.tenant_id = requested_tenant.tenant_id
-       AND scope.is_active
-    UNION
     SELECT object.connection_id
       FROM visible_objects
       JOIN core.object AS object ON object.object_id = visible_objects.object_id
@@ -71,11 +65,10 @@ connection_rows AS (
                AS is_tenant_gds_connection,
            EXISTS (
                SELECT 1
-                 FROM core.tenant_metadata_discovery_scope AS scope
-                WHERE scope.tenant_id = requested_tenant.tenant_id
-                  AND scope.gds_connection_id = connection.connection_id
-                  AND scope.is_active
-           ) AS is_discovery_connection,
+                 FROM core.object AS tenant_object
+                WHERE tenant_object.source_tenant_id = requested_tenant.tenant_id
+                  AND tenant_object.connection_id = connection.connection_id
+           ) AS contains_tenant_objects,
            count(object.object_id) FILTER (
                WHERE object.is_active AND zone.zone_code = 'source'
            ) AS source_object_count,
@@ -151,9 +144,15 @@ class TenantConnectionSummary(ContractModel):
     system_name: str = Field(min_length=1, max_length=200)
     system_type_code: str = Field(min_length=1, max_length=100)
     system_type_name: str = Field(min_length=1, max_length=200)
-    is_global_data_store: bool
-    is_tenant_gds_connection: bool
-    is_discovery_connection: bool
+    is_global_data_store: bool = Field(
+        description="True when this Connection is designated as a Global Data Store."
+    )
+    is_tenant_gds_connection: bool = Field(
+        description="True only for this Tenant's exact Bronze/Silver/Gold placement Connection."
+    )
+    contains_tenant_objects: bool = Field(
+        description="True when the Connection contains Objects owned by the requested Tenant."
+    )
     is_active: bool
     active_object_counts: ObjectZoneCounts
 
@@ -181,8 +180,10 @@ def register_get_tenant_details_tool(
     @server.tool(
         name=_TOOL_NAME,
         description=(
-            "Get one authorized Tenant and its Connection-grain System, Connection Type, "
-            "System Type, and active Source/Bronze/Silver/Gold Object counts."
+            "Get one authorized Tenant and every relevant Connection with System and type "
+            "details plus active Object counts by zone. For Bronze, Silver, or Gold placement, "
+            "use the active row where is_tenant_gds_connection=true and verify "
+            "is_global_data_store=true."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,
@@ -255,7 +256,7 @@ def _connection(row: Mapping[str, Any]) -> TenantConnectionSummary:
         system_type_name=row["system_type_name"],
         is_global_data_store=row["is_global_data_store"],
         is_tenant_gds_connection=row["is_tenant_gds_connection"],
-        is_discovery_connection=row["is_discovery_connection"],
+        contains_tenant_objects=row["contains_tenant_objects"],
         is_active=row["is_active"],
         active_object_counts=ObjectZoneCounts(
             source=row["source_object_count"],

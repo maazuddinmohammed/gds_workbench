@@ -1,76 +1,48 @@
 ---
 name: gds
-description: Run strict GDS Workbench workflows for metadata, models, mappings, code, QA, Snapshots, and Change Sets. Use to initialize GDS Workbench, resume work, or request governed changes.
+description: Build and deliver governed GDS metadata, models, bindings, mappings, code, and validations from signed Snapshots and Change Sets. Use to initialize or resume GDS Workbench, inspect GDS context, run a GDS workflow, or start a Grill With Docs discussion for deep collaborative GDS design.
 ---
 
 # GDS router
 
+Answer explanations and one-off reads directly. Any workflow that writes local artifacts or may change server state requires a session.
+
 ## Start or resume
 
-Pure explanations must answer directly; do not create a session.
+1. Read `references/session.md`. Create or resume one Tenant-bound session and, when relevant, one Model.
+2. Open Workbench only when the session is first created or the user asks. Keep that window open; later results need only Refresh.
+3. Infer mode, target, and Full/Selected scope. Ask only for a decision that changes the result. For an Automatic journey, read `references/automatic-journey.md`; otherwise read `references/workflow-targets.md` and only the active guide.
+4. Run local `readiness` once for a known target without first running the local helper's `inspect` command. For an ad hoc read, use focused MCP `inspect_metadata` or `read_model_section`; never load a complete Snapshot into context.
+5. Before the first local write, read `references/change-sets.md` and `references/local-helper.md`, then request the compact dataset schema with `describe_metadata_dataset` or `describe_model_dataset`.
 
-1. For session work, establish directory, Tenant Code, and state through `references/session.md`.
-   On resume run `status` once and continue its current/resume task.
-2. Infer focus, target, mode, and scope; ask only for a blocker.
-   Every mutating mode creates its target task before work and starts the first task immediately.
-   For an end-to-end Automatic request, load `references/automatic-journey.md`, ask one compact
-   intake, and queue the requested targets. Otherwise select one target from
-   `references/workflow-targets.md`.
-3. For predefined Model work, select its target; run `readiness` once for a known target without `inspect`,
-   unless resume proof is reusable. Mapping/Code collect proof then run final readiness. For
-   generic Metadata mutation or assertion preparation, use one `inspect` per area.
-4. Before a dataset's first write, load `references/change-sets.md` and `references/local-helper.md`,
-   then its compact contract. Load contracts lazily, never for future datasets.
-5. Before server mutation, call `get_server_contract` once; pass its exact result to local
-   `contract-check`. Incompatibility stops.
-6. Load only the active-target reference. Never preload every workflow. Load platform lifecycle
-   detail only for an Automatic journey, Target Registration, Code, or QA.
+Trust MCP tool schemas dynamically. There is no packaged server-contract hash preflight. Never use removed specialized Mapping or Code context tools.
 
-`Open Workbench` is local after the session folder is known.
+For every `execute_databricks_sql` call, default `environment_code` to lowercase `dev` unless the user explicitly requests another registered Environment.
 
-Do not load an entire Snapshot. Use bounded reads. Local authority remains unchanged.
-`Application Prompt` and `Workflow Run` surfaces are out of scope; never discover, call, or depend on them.
-Session Tenant Code is never a physical Object key default. Model ownership does not own or rewrite physical Object identity.
-Copy physical keys from authoritative records; never synthesize them.
+## Interaction modes
 
-## Modes
+- **Quick**: bounded explanation, inspection, or small well-defined change. Small changes still use the normal session, acknowledgement, lock, validation, and Apply boundaries.
+- **Guided**: pause at useful user decisions.
+- **Automatic**: make supportable decisions and finish the current target without optional pauses. Required Snapshot, acknowledgement, lock-conflict, and Apply gates remain.
+- **Custom**: follow an explicitly requested exception while preserving governance.
+- **Grill With Docs**: deep collaborative exploration, not a Workflow Target. Read `references/grill-with-docs.md` only when requested.
 
-- **Quick / Ad Hoc**: bounded read/explanation; mutation creates a task.
-- **Guided Build**: selected human checkpoints.
-- **Automatic Build**: complete coverage, internal checkpoints without human pauses, one final local review.
-- **Custom Build**: bounded exception path; all gates still apply.
+Full covers every eligible input within the task boundary. Selected covers only explicitly named eligible inputs. A requested count is never an output quota.
 
-Infer Custom + Selected for a specific bounded ask. Keep one Model per session.
+## User-visible lifecycle
 
-Before live-data use, ask once for `never`, `essential`, or `as_needed`; persist `sql-policy`.
-Only use `execute_databricks_sql`; combine reads and never run generated transformations. Declining
-SQL never blocks Snapshot-based authoring.
+1. Author complete local records with internal coverage loops; keep supported applied records `active`.
+2. Run local review and validation internally. When complete, tell the user the result is ready and ask them to Refresh Workbench.
+3. Any unambiguous positive acknowledgement—such as “proceed”, “OK”, or “looks good”—accepts the exact current digest and authorizes an ordinary free Tenant Lock, reconciliation, Stage, and server Change Set validation. Do not ask again before those actions.
+4. Before reconciliation, confirm the authoritative revision still matches. If it changed, stop, request a fresh Snapshot, and reassess. Keep the acknowledgement only when local content is byte-identical; otherwise notify the user again.
+5. If another Principal owns the lock, stop. Lock override always requires separate explicit authorization and a reason. After server validation, show the authoritative actions and ask separately for Apply approval.
+6. Apply once, mark that Snapshot area stale, release a lock acquired here, and stop at the target boundary.
 
-## Review meanings
-
-Task `review` is not record `needs_review`; it means local bytes await acceptance. Write supported
-records `active`. Use `needs_review` only for a complete, supportable
-proposal with one unresolved semantic decision; missing grain, lineage, keys, or conflicts are
-blockers instead. Never blanket-mark agent-generated records `needs_review`.
-
-## One target boundary
-
-1. Complete all selected scope/sections. Automatic checkpoints update coverage and continue.
-2. Run one final local review and validation. Show digest, actions, blockers, and `needs_review`.
-3. Ask once whether to approve that digest, promote reviewed statuses, acquire an unowned Tenant Lock,
-   and proceed through Stage plus server Validate. On approval call `approve-reviewed` at most once, use its
-   promoted digest, then `validate` and `accept`; do not ask for the same review again. Re-ask only
-   if non-status content changes.
-4. Check/acquire the Tenant Lock, reconcile, and Stage. Review changed actions/content; never duplicate approval.
-5. Server Validate, show authoritative `action_review`, and obtain fresh Apply approval.
-6. Apply once, mark that area stale, release a lock acquired here, and stop. Show the exact next
-   queued/eligible target and ask one continue question; if none, report completion. Never cross an Apply boundary automatically.
-
-Workbench never calls MCP, Stages, Applies, archives, deploys, or executes generated code.
+Workbench is a local viewer/editor. It never calls MCP, stages, applies, deploys, or executes generated code.
 
 ## References
 
-- Lifecycle/session/targets: `references/automatic-journey.md`, `references/session.md`, `references/workflow-targets.md`
+- Session and lifecycle: `references/session.md`, `references/workbench.md`, `references/server-handoff.md`
+- Targets and platform: `references/workflow-targets.md`, `references/platform-lifecycle.md`
 - Local records: `references/change-sets.md`, `references/local-helper.md`
-- Server handoff: `references/server-handoff.md`
-- Other rules: `references/focus-areas.md`, `references/workbench.md`, `references/workflows/`
+- Active authoring guide: `references/workflows/`

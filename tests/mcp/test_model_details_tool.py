@@ -20,8 +20,8 @@ from gds_etl_workbench.infrastructure.postgres import (
     ToolCallLogRecord,
 )
 from gds_etl_workbench.tools.modeling.model_details import (
-    GetModelResult,
-    register_get_model_tool,
+    ListModelsResult,
+    register_list_models_tool,
 )
 
 
@@ -92,7 +92,7 @@ def _server(database: FakeDatabase) -> MCPServer[None]:
         authorizer=authorizer,
     )
     server = MCPServer[None](name="model-details-test", middleware=[audit])
-    register_get_model_tool(
+    register_list_models_tool(
         server,
         database=database,
         identity_provider=identity,
@@ -114,19 +114,19 @@ def _model(model_id: int = 7) -> dict[str, Any]:
         "gold_model_naming_instructions": "Prefix Gold objects with gld_.",
         "gold_model_technical_columns_template": {"columns": ["row_hash"]},
         "gold_model_audit_columns_template": {"columns": ["loaded_at"]},
-        "model_scope_object_count": 12,
+        "model_input_scope_object_count": 12,
         "total_model_count": 1,
     }
 
 
 @pytest.mark.asyncio
-async def test_get_model_returns_headers_and_policy_without_audit_columns() -> None:
+async def test_list_models_returns_headers_and_policy_without_audit_columns() -> None:
     database = FakeDatabase(models=[_model()])
 
     async with Client(_server(database)) as client:
-        call = await client.call_tool("get_model", {"tenant_id": 3})
+        call = await client.call_tool("list_models", {"tenant_id": 3})
 
-    result = GetModelResult.model_validate(call.structured_content)
+    result = ListModelsResult.model_validate(call.structured_content)
     assert result.tenant_id == 3
     assert result.model_count == 1
     assert result.models[0].model_name == "Northwind"
@@ -138,7 +138,7 @@ async def test_get_model_returns_headers_and_policy_without_audit_columns() -> N
     assert result.models[0].silver_model_audit_columns_template == {
         "columns": ["loaded_at"]
     }
-    assert result.models[0].model_scope_object_count == 12
+    assert result.models[0].model_input_scope_object_count == 12
     rendered = repr(call.structured_content)
     for forbidden in ("created_time", "created_by", "updated_time", "updated_by"):
         assert forbidden not in rendered
@@ -152,23 +152,23 @@ async def test_get_model_returns_headers_and_policy_without_audit_columns() -> N
 
 
 @pytest.mark.asyncio
-async def test_get_model_reports_bounded_truncation() -> None:
+async def test_list_models_reports_bounded_truncation() -> None:
     models = [_model(model_id) for model_id in range(1, 202)]
     for row in models:
         row["total_model_count"] = 201
     database = FakeDatabase(models=models)
 
     async with Client(_server(database)) as client:
-        call = await client.call_tool("get_model", {"tenant_id": 3})
+        call = await client.call_tool("list_models", {"tenant_id": 3})
 
-    result = GetModelResult.model_validate(call.structured_content)
+    result = ListModelsResult.model_validate(call.structured_content)
     assert len(result.models) == 200
     assert result.model_count == 201
     assert result.models_truncated is True
 
 
 @pytest.mark.asyncio
-async def test_get_model_recovers_every_model_across_pages() -> None:
+async def test_list_models_recovers_every_model_across_pages() -> None:
     models = [_model(model_id) for model_id in range(1, 4)]
     for row in models:
         row["total_model_count"] = 3
@@ -176,22 +176,22 @@ async def test_get_model_recovers_every_model_across_pages() -> None:
 
     async with Client(_server(database)) as client:
         first_call = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 1},
         )
-        first = GetModelResult.model_validate(first_call.structured_content)
+        first = ListModelsResult.model_validate(first_call.structured_content)
         assert first.next_cursor is not None
         second_call = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 1, "cursor": first.next_cursor},
         )
-        second = GetModelResult.model_validate(second_call.structured_content)
+        second = ListModelsResult.model_validate(second_call.structured_content)
         assert second.next_cursor is not None
         third_call = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 1, "cursor": second.next_cursor},
         )
-        third = GetModelResult.model_validate(third_call.structured_content)
+        third = ListModelsResult.model_validate(third_call.structured_content)
 
     assert [model.model_id for model in first.models] == [1]
     assert [model.model_id for model in second.models] == [2]
@@ -201,7 +201,7 @@ async def test_get_model_recovers_every_model_across_pages() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_model_rejects_a_tampered_cursor_before_querying_models() -> None:
+async def test_list_models_rejects_a_tampered_cursor_before_querying_models() -> None:
     models = [_model(model_id) for model_id in range(1, 3)]
     for row in models:
         row["total_model_count"] = 2
@@ -209,14 +209,14 @@ async def test_get_model_rejects_a_tampered_cursor_before_querying_models() -> N
 
     async with Client(_server(database)) as client:
         first_call = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 1},
         )
-        first = GetModelResult.model_validate(first_call.structured_content)
+        first = ListModelsResult.model_validate(first_call.structured_content)
         assert first.next_cursor is not None
         replacement = "A" if first.next_cursor[0] != "A" else "B"
         rejected = await client.call_tool(
-            "get_model",
+            "list_models",
             {
                 "tenant_id": 3,
                 "page_size": 1,
@@ -229,7 +229,7 @@ async def test_get_model_rejects_a_tampered_cursor_before_querying_models() -> N
 
 
 @pytest.mark.asyncio
-async def test_get_model_cursor_is_bound_to_tenant_and_page_size() -> None:
+async def test_list_models_cursor_is_bound_to_tenant_and_page_size() -> None:
     models = [_model(model_id) for model_id in range(1, 3)]
     for row in models:
         row["total_model_count"] = 2
@@ -237,17 +237,17 @@ async def test_get_model_cursor_is_bound_to_tenant_and_page_size() -> None:
 
     async with Client(_server(database)) as client:
         first_call = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 1},
         )
-        first = GetModelResult.model_validate(first_call.structured_content)
+        first = ListModelsResult.model_validate(first_call.structured_content)
         assert first.next_cursor is not None
         wrong_tenant = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 4, "page_size": 1, "cursor": first.next_cursor},
         )
         wrong_page_size = await client.call_tool(
-            "get_model",
+            "list_models",
             {"tenant_id": 3, "page_size": 2, "cursor": first.next_cursor},
         )
 
@@ -257,11 +257,13 @@ async def test_get_model_cursor_is_bound_to_tenant_and_page_size() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_model_advertises_bounded_pagination_inputs() -> None:
+async def test_list_models_advertises_bounded_pagination_inputs() -> None:
     async with Client(_server(FakeDatabase(models=[]))) as client:
         tools = await client.list_tools()
 
-    schema = next(tool.input_schema for tool in tools.tools if tool.name == "get_model")
+    schema = next(
+        tool.input_schema for tool in tools.tools if tool.name == "list_models"
+    )
     assert schema["properties"]["page_size"] == {
         "default": 200,
         "maximum": 200,

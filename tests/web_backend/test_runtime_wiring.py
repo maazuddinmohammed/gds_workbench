@@ -71,7 +71,7 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
 
     app = create_runtime_app(settings=settings, database=database)
     assert (
-        "/api/v1/tenants/{tenant_id}/models/{model_id}/scope" in app.openapi()["paths"]
+        "/api/v1/tenants/{tenant_id}/models/{model_id}/input-scope" in app.openapi()["paths"]
     )
     assert "/api/v1/tenants/{tenant_id}/lock/acquire" in app.openapi()["paths"]
     assert "/api/v1/tenants/{tenant_id}/metadata/datasets" in app.openapi()["paths"]
@@ -129,6 +129,10 @@ def test_runtime_factory_owns_the_database_lifecycle() -> None:
     )
     assert (
         "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/dependencies"
+        in app.openapi()["paths"]
+    )
+    assert (
+        "/api/v1/tenants/{tenant_id}/models/{model_id}/mapping/targets"
         in app.openapi()["paths"]
     )
     assert (

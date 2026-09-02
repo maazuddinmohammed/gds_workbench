@@ -28,20 +28,18 @@ WITH target_model AS (
 ), metrics AS (
     SELECT 1 AS workflow_order,
            'scope'::TEXT AS workflow,
-           count(scope.model_scope_id)::INTEGER AS result_count,
-           0::INTEGER AS needs_review_count,
-           count(scope.model_scope_id) FILTER (
-               WHERE scope.model_scope_is_locked
+           count(scope.model_input_scope_id)::INTEGER AS result_count,
+           count(scope.model_input_scope_id) FILTER (
+               WHERE scope.model_input_scope_is_locked
            )::INTEGER AS locked_count
       FROM target_model
-      LEFT JOIN model.model_scope AS scope
+      LEFT JOIN model.model_input_scope AS scope
         ON scope.model_id = target_model.model_id
        AND scope.is_active
     UNION ALL
     SELECT 2,
            'profiling',
            count(DISTINCT profile.object_id)::INTEGER,
-           0::INTEGER,
            0::INTEGER
       FROM target_model
       LEFT JOIN workflow.attribute_profile AS profile
@@ -50,13 +48,10 @@ WITH target_model AS (
     SELECT 3,
            'analysis',
            count(result.analysis_result_id) FILTER (
-               WHERE result.analysis_result_status IN ('active', 'needs_review')
+               WHERE result.analysis_result_status = 'active'
            )::INTEGER,
            count(result.analysis_result_id) FILTER (
-               WHERE result.analysis_result_status = 'needs_review'
-           )::INTEGER,
-           count(result.analysis_result_id) FILTER (
-               WHERE result.analysis_result_status IN ('active', 'needs_review')
+               WHERE result.analysis_result_status = 'active'
                  AND result.analysis_result_is_locked
            )::INTEGER
       FROM target_model
@@ -67,14 +62,11 @@ WITH target_model AS (
            'assertions',
            count(assertion.modeling_assertion_record_id) FILTER (
                WHERE assertion.modeling_assertion_record_status
-                     IN ('active', 'needs_review')
-           )::INTEGER,
-           count(assertion.modeling_assertion_record_id) FILTER (
-               WHERE assertion.modeling_assertion_record_status = 'needs_review'
+                     = 'active'
            )::INTEGER,
            count(assertion.modeling_assertion_record_id) FILTER (
                WHERE assertion.modeling_assertion_record_status
-                     IN ('active', 'needs_review')
+                     = 'active'
                  AND assertion.modeling_assertion_record_is_locked
            )::INTEGER
       FROM target_model
@@ -84,13 +76,10 @@ WITH target_model AS (
     SELECT 5,
            'conceptual',
            count(conceptual.conceptual_object_id) FILTER (
-               WHERE conceptual.conceptual_object_status IN ('active', 'needs_review')
+               WHERE conceptual.conceptual_object_status = 'active'
            )::INTEGER,
            count(conceptual.conceptual_object_id) FILTER (
-               WHERE conceptual.conceptual_object_status = 'needs_review'
-           )::INTEGER,
-           count(conceptual.conceptual_object_id) FILTER (
-               WHERE conceptual.conceptual_object_status IN ('active', 'needs_review')
+               WHERE conceptual.conceptual_object_status = 'active'
                  AND conceptual.conceptual_object_is_locked
            )::INTEGER
       FROM target_model
@@ -100,13 +89,10 @@ WITH target_model AS (
     SELECT 6,
            'logical',
            count(logical.logical_entity_id) FILTER (
-               WHERE logical.logical_entity_status IN ('active', 'needs_review')
+               WHERE logical.logical_entity_status = 'active'
            )::INTEGER,
            count(logical.logical_entity_id) FILTER (
-               WHERE logical.logical_entity_status = 'needs_review'
-           )::INTEGER,
-           count(logical.logical_entity_id) FILTER (
-               WHERE logical.logical_entity_status IN ('active', 'needs_review')
+               WHERE logical.logical_entity_status = 'active'
                  AND logical.logical_entity_is_locked
            )::INTEGER
       FROM target_model
@@ -116,13 +102,10 @@ WITH target_model AS (
     SELECT 7,
            'dimensional',
            count(dimensional.dimensional_entity_id) FILTER (
-               WHERE dimensional.dimensional_entity_status IN ('active', 'needs_review')
+               WHERE dimensional.dimensional_entity_status = 'active'
            )::INTEGER,
            count(dimensional.dimensional_entity_id) FILTER (
-               WHERE dimensional.dimensional_entity_status = 'needs_review'
-           )::INTEGER,
-           count(dimensional.dimensional_entity_id) FILTER (
-               WHERE dimensional.dimensional_entity_status IN ('active', 'needs_review')
+               WHERE dimensional.dimensional_entity_status = 'active'
                  AND dimensional.dimensional_entity_is_locked
            )::INTEGER
       FROM target_model
@@ -152,7 +135,6 @@ SELECT target_model.model_id,
        target_model.model_revision,
        metrics.workflow,
        metrics.result_count,
-       metrics.needs_review_count,
        metrics.locked_count,
        latest_run.workflow_run_id AS latest_run_id,
        latest_run.workflow_run_state AS latest_run_state,
@@ -188,8 +170,6 @@ def _ledger_state(metric: WorkflowMetric) -> WorkflowLedgerState:
         return "ready" if metric.result_count else "empty"
     if metric.latest_run_state in ("queued", "running", "failed"):
         return metric.latest_run_state
-    if metric.needs_review_count:
-        return "needs_review"
     if metric.result_count:
         return "results_available"
     if metric.latest_run_state in ("completed", "completed_with_repair"):
@@ -253,7 +233,6 @@ class DatabaseWorkflowOverviewService:
             WorkflowLedgerEntry(
                 workflow=metric.workflow,
                 result_count=metric.result_count,
-                needs_review_count=metric.needs_review_count,
                 locked_count=metric.locked_count,
                 latest_run_id=metric.latest_run_id,
                 latest_run_state=metric.latest_run_state,

@@ -204,6 +204,7 @@ def _selected_object() -> dict[str, object]:
         "selection_order": 1,
         "object": {
             "tenant_code": "NWA",
+            "source_tenant_code": "NWA",
             "system_code": "GDS",
             "connection_code": "PRIMARY",
             "object_schema": "silver_nwa",

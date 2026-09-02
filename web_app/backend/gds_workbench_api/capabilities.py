@@ -21,7 +21,7 @@ type AgentExecutionModeCode = Literal[
 ]
 
 CODE_GENERATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "detailed_coverage"
-QA_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "detailed_coverage"
+VALIDATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "detailed_coverage"
 
 
 class CapabilityModel(BaseModel):

@@ -210,8 +210,9 @@ def register_tenant_lock_tools(
 
     @server.tool(
         description=(
-            "Acquire an unlocked Tenant for the current Principal. Fails when any "
-            "active lock exists; use renew_tenant_lock for a lock you already own."
+            "Acquire a Tenant Lock for the current Principal when the Tenant is unlocked. "
+            "Fails for any active lock, including one already owned by the caller; use "
+            "renew_tenant_lock to extend an owned lock."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},

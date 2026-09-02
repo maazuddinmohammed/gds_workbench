@@ -61,13 +61,15 @@ def _row(object_id: int) -> dict[str, Any]:
     return {
         "object_id": object_id,
         "source_system_count": 2,
-        "mapping_context_digest": "c" * 64,
-        "source_context_digest": "d" * 64,
+        "code_input_digest": "c" * 64,
         "sql_generation_guide_version_id": 91,
         "mapping_count": 1,
         "attribute_mapping_count": 1,
         "source_context": {
             "target": {
+                "source_tenant_id": 7,
+                "source_tenant_code": "ACME",
+                "source_tenant_name": "Acme",
                 "tenant_code": "NWA",
                 "system_code": "GDS",
                 "connection_code": "WAREHOUSE",
@@ -80,7 +82,13 @@ def _row(object_id: int) -> dict[str, Any]:
             ],
             "object_mappings": [
                 {
-                    "source_system": {"system_code": "CRM"},
+                    "model_object_binding_id": object_id + 1000,
+                    "source_system_id": 11,
+                    "entity": {
+                        "entity_type": "logical_entity",
+                        "entity_id": object_id + 2000,
+                        "entity_name": f"Target{object_id}",
+                    },
                     "transformation": {"kind": "direct"},
                 }
             ],
@@ -97,12 +105,7 @@ def _row(object_id: int) -> dict[str, Any]:
             "version_number": 1,
             "content": "Use MERGE when appropriate.",
         },
-        "tenant_code": "NWA",
-        "system_code": "GDS",
-        "connection_code": "WAREHOUSE",
-        "object_schema": "silver_crm",
-        "object_name": f"target_{object_id}",
-        "applied_generated_code_content": None,
+        "applied_artifacts": [],
     }
 
 
@@ -131,7 +134,9 @@ async def test_context_uses_opaque_refs_and_exact_selected_target_coverage() -> 
     )
 
     assert [target.target_ref for target in context.targets] == ["target_1", "target_2"]
-    assert context.targets[0].source_context_digest == "d" * 64
+    assert context.targets[0].code_input_digest == "c" * 64
+    assert context.targets[0].modeled_entity_name == "Target501"
+    assert context.targets[0].source_system_codes == ("CRM", "ERP")
     assert isinstance(context.agent_context, dict)
     targets = context.agent_context["targets"]
     assert isinstance(targets, list)
@@ -142,7 +147,14 @@ async def test_context_uses_opaque_refs_and_exact_selected_target_coverage() -> 
     source_systems = target_context.get("source_systems")
     assert isinstance(source_systems, list)
     assert len(source_systems) == 2
-    assert "object_id" not in str(context.agent_context)
+    artifact_authoring = target_context.get("artifact_authoring")
+    assert isinstance(artifact_authoring, dict)
+    assert artifact_authoring.get("source_system_codes") == ["CRM", "ERP"]
+    target = target_context.get("target")
+    assert isinstance(target, dict)
+    assert target["tenant_code"] == "NWA"
+    assert target["system_code"] == "GDS"
+    assert target["source_tenant_code"] == "ACME"
     assert "Use MERGE" not in repr(context)
 
 

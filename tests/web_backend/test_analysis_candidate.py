@@ -71,7 +71,7 @@ def _applied(
             "validation_source_missing_target_count": 0,
             "validation_unused_target_count": 0,
             "validation_duplicate_target_key_count": 0,
-            "analysis_result_status": "needs_review",
+            "analysis_result_status": "active",
             "analysis_result_is_locked": locked,
         },
         strict=True,
@@ -102,7 +102,7 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
     assert len(changes) == 1
     assert changes[0].dataset == "analysis_result"
     stored = changes[0].records[0]
-    assert stored["analysis_result_status"] == "needs_review"
+    assert stored["analysis_result_status"] == "active"
     assert stored["analysis_result_is_locked"] is False
     assert stored["validation_result"] is None
 
@@ -136,7 +136,7 @@ async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> Non
     assert stored["relationship_basis"] == "Updated inference evidence."
     assert stored["validation_result"] == "supported"
     assert stored["validation_source_non_null_count"] == 10
-    assert stored["analysis_result_status"] == "needs_review"
+    assert stored["analysis_result_status"] == "active"
     assert stored["analysis_result_is_locked"] is False
 
 

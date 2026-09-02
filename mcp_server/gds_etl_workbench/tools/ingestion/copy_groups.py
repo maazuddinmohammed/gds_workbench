@@ -1,31 +1,19 @@
-"""Tenant-owned Copy Group summary and bounded detail tools."""
+"""Tenant-owned Copy Group query contracts and row mapping."""
+
+# The focused metadata reader reuses the private row mapper.
+# pyright: reportUnusedFunction=false
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from datetime import date, datetime
-from typing import Annotated, Any, Literal, LiteralString
+from typing import Any, Literal, LiteralString
 
-from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
-from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.domain.authorization import ToolPolicy
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
 from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
 
-type ActiveState = Literal["active", "inactive", "all"]
 type ZoneCode = Literal["source", "bronze", "silver", "gold"]
-
-_LIST_TOOL = "list_copy_groups"
-_GET_TOOL = "get_copy_group"
-_MAX_DETAILS = 200
-POLICY = ToolPolicy.TENANT_READ
 
 _LIST_SQL: LiteralString = """
 SELECT copy_group.copy_group_id,
@@ -172,13 +160,6 @@ class CopyGroupSummary(ContractModel):
     is_active: bool
 
 
-class ListCopyGroupsResult(ContractModel):
-    schema_version: Literal["1.0"] = "1.0"
-    tenant_id: int = Field(gt=0)
-    copy_groups: tuple[CopyGroupSummary, ...] = Field(max_length=200)
-    next_cursor: str | None = Field(default=None, max_length=2048)
-
-
 class CopyObjectReference(ContractModel):
     object_id: int = Field(gt=0)
     object_schema: str = Field(min_length=1, max_length=400)
@@ -216,174 +197,6 @@ class CopyGroupControlDetails(ContractModel):
     has_last_run_value: bool
 
 
-class GetCopyGroupResult(ContractModel):
-    schema_version: Literal["1.0"] = "1.0"
-    tenant_id: int = Field(gt=0)
-    copy_group: CopyGroupSummary
-    copies: tuple[CopyDetails, ...] = Field(max_length=_MAX_DETAILS)
-    copies_truncated: bool
-    controls: tuple[CopyGroupControlDetails, ...] = Field(max_length=_MAX_DETAILS)
-    controls_truncated: bool
-
-
-class SafeToolError(Exception):
-    """A tool failure whose text is safe for the MCP SDK to serialize."""
-
-
-def register_copy_group_tools(
-    server: MCPServer[None],
-    *,
-    database: Database,
-    identity_provider: IdentityProvider,
-    authorizer: AuthorizationService,
-    audit: ToolCallAuditMiddleware,
-    cursor_signing_key: bytes,
-) -> None:
-    cursors = CursorCodec(cursor_signing_key)
-
-    @server.tool(
-        name=_LIST_TOOL,
-        description="List Copy Groups owned by one authorized Tenant.",
-        annotations=_annotations(),
-        meta={"gds/toolPolicy": POLICY.value},
-        structured_output=True,
-    )
-    async def _list_copy_groups(
-        ctx: Context[None],
-        tenant_id: Annotated[int, Field(gt=0)],
-        system_id: Annotated[int | None, Field(gt=0)] = None,
-        active_state: ActiveState = "active",
-        page_size: Annotated[int, Field(ge=1, le=200)] = 50,
-        cursor: Annotated[str | None, Field(max_length=2048)] = None,
-        schema_version: Literal["1.0"] = "1.0",
-    ) -> ListCopyGroupsResult:
-        try:
-            principal = identity_provider.request_principal(ctx.request_context.request)
-            collection = f"{_LIST_TOOL}:{tenant_id}:{system_id or 0}:{active_state}"
-            offset = cursors.decode(cursor, collection=collection)
-            async with database.read_transaction(
-                isolation=ReadIsolation.REPEATABLE_READ
-            ) as transaction:
-                await authorizer.authorize_tenant(
-                    transaction, principal, tenant_id=tenant_id, policy=POLICY
-                )
-                rows = await transaction.fetch_all(
-                    _LIST_SQL,
-                    (
-                        tenant_id,
-                        system_id,
-                        system_id,
-                        active_state,
-                        active_state,
-                        active_state,
-                        page_size + 1,
-                        offset,
-                    ),
-                )
-            next_cursor = (
-                cursors.encode(collection=collection, offset=offset + page_size)
-                if len(rows) > page_size
-                else None
-            )
-            return ListCopyGroupsResult(
-                tenant_id=tenant_id,
-                copy_groups=tuple(CopyGroupSummary(**row) for row in rows[:page_size]),
-                next_cursor=next_cursor,
-            )
-        except AuthenticationError as error:
-            raise SafeToolError(f"{error.public_code}: {error.message}") from None
-        except WorkbenchError as error:
-            raise SafeToolError(f"{error.code}: {error.message}") from None
-        except Exception:
-            raise SafeToolError("internal_error: The operation could not be completed.") from None
-
-    @server.tool(
-        name=_GET_TOOL,
-        description=(
-            "Get one Tenant-owned Copy Group with bounded Copies and Controls. "
-            "SQL scripts and raw checkpoint values are never returned."
-        ),
-        annotations=_annotations(),
-        meta={"gds/toolPolicy": POLICY.value},
-        structured_output=True,
-    )
-    async def _get_copy_group(
-        ctx: Context[None],
-        tenant_id: Annotated[int, Field(gt=0)],
-        copy_group_id: Annotated[int, Field(gt=0)],
-        schema_version: Literal["1.0"] = "1.0",
-    ) -> GetCopyGroupResult:
-        try:
-            principal = identity_provider.request_principal(ctx.request_context.request)
-            async with database.read_transaction(
-                isolation=ReadIsolation.REPEATABLE_READ
-            ) as transaction:
-                await authorizer.authorize_tenant(
-                    transaction, principal, tenant_id=tenant_id, policy=POLICY
-                )
-                group = await transaction.fetch_one(
-                    _GROUP_SQL,
-                    (tenant_id, copy_group_id),
-                )
-                if group is None:
-                    raise InvalidRequestError("Copy Group was not found.")
-                copy_rows = await transaction.fetch_all(
-                    _COPIES_SQL,
-                    (tenant_id, tenant_id, copy_group_id),
-                )
-                control_rows = await transaction.fetch_all(
-                    _CONTROLS_SQL,
-                    (tenant_id, copy_group_id),
-                )
-            return GetCopyGroupResult(
-                tenant_id=tenant_id,
-                copy_group=CopyGroupSummary(**group),
-                copies=tuple(_copy(row) for row in copy_rows[:_MAX_DETAILS]),
-                copies_truncated=len(copy_rows) > _MAX_DETAILS,
-                controls=tuple(
-                    CopyGroupControlDetails(**row) for row in control_rows[:_MAX_DETAILS]
-                ),
-                controls_truncated=len(control_rows) > _MAX_DETAILS,
-            )
-        except AuthenticationError as error:
-            raise SafeToolError(f"{error.public_code}: {error.message}") from None
-        except WorkbenchError as error:
-            raise SafeToolError(f"{error.code}: {error.message}") from None
-        except Exception:
-            raise SafeToolError("internal_error: The operation could not be completed.") from None
-
-    del _list_copy_groups, _get_copy_group
-    audit.register_tool(
-        _LIST_TOOL,
-        policy=POLICY,
-        summarize_input=_list_audit,
-        retain_arguments={
-            "tenant_id",
-            "system_id",
-            "active_state",
-            "page_size",
-            "schema_version",
-        },
-        tenant_argument="tenant_id",
-    )
-    audit.register_tool(
-        _GET_TOOL,
-        policy=POLICY,
-        summarize_input=_get_audit,
-        retain_arguments={"tenant_id", "copy_group_id", "schema_version"},
-        tenant_argument="tenant_id",
-    )
-
-
-def _annotations() -> ToolAnnotations:
-    return ToolAnnotations(
-        read_only_hint=True,
-        destructive_hint=False,
-        idempotent_hint=True,
-        open_world_hint=False,
-    )
-
-
 def _copy(row: Mapping[str, Any]) -> CopyDetails:
     return CopyDetails(
         copy_id=row["copy_id"],
@@ -413,31 +226,3 @@ def _copy_object(
         object_name=row[f"{prefix}_object_name"],
         zone=row[f"{prefix}_zone"],
     )
-
-
-def _list_audit(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]:
-    active_state = arguments.get("active_state", "active")
-    return {
-        "tenant_id": _positive_int(arguments.get("tenant_id")),
-        "system_filter_provided": arguments.get("system_id") is not None,
-        "active_state": (
-            active_state if active_state in {"active", "inactive", "all"} else "invalid"
-        ),
-        "page_size": _page_size(arguments.get("page_size", 50)),
-        "cursor_provided": arguments.get("cursor") is not None,
-    }
-
-
-def _get_audit(arguments: Mapping[str, Any]) -> dict[str, str | int]:
-    return {
-        "tenant_id": _positive_int(arguments.get("tenant_id")),
-        "copy_group_id": _positive_int(arguments.get("copy_group_id")),
-    }
-
-
-def _positive_int(value: object) -> int | str:
-    return value if type(value) is int and value > 0 else "invalid"
-
-
-def _page_size(value: object) -> int | str:
-    return value if type(value) is int and 1 <= value <= 200 else "invalid"

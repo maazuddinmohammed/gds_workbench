@@ -24,16 +24,16 @@ SELECT model.model_id,
        model.model_name,
        left(model.model_description, 2000) AS model_description,
        model.model_revision,
-       scope.model_scope_object_count,
+       scope.model_input_scope_object_count,
        latest_run.model_workflow AS latest_workflow,
        latest_run.workflow_run_state AS latest_run_status,
        model.updated_time AS updated_at
   FROM model.model AS model
  CROSS JOIN LATERAL (
-       SELECT count(*)::INTEGER AS model_scope_object_count
-         FROM model.model_scope AS model_scope
-        WHERE model_scope.model_id = model.model_id
-          AND model_scope.is_active
+       SELECT count(*)::INTEGER AS model_input_scope_object_count
+         FROM model.model_input_scope AS model_input_scope
+        WHERE model_input_scope.model_id = model.model_id
+          AND model_input_scope.is_active
   ) AS scope
   LEFT JOIN LATERAL (
        SELECT workflow_run.model_workflow,
@@ -56,7 +56,7 @@ SELECT model.model_id,
        model.model_name,
        model.model_description,
        model.model_revision,
-       scope.model_scope_object_count,
+       scope.model_input_scope_object_count,
        model.silver_model_naming_instructions,
        model.silver_model_audit_columns_template,
        model.gold_model_naming_instructions,
@@ -72,10 +72,10 @@ SELECT model.model_id,
        model.updated_time AS updated_at
   FROM model.model AS model
  CROSS JOIN LATERAL (
-       SELECT count(*)::INTEGER AS model_scope_object_count
-         FROM model.model_scope AS model_scope
-        WHERE model_scope.model_id = model.model_id
-          AND model_scope.is_active
+       SELECT count(*)::INTEGER AS model_input_scope_object_count
+         FROM model.model_input_scope AS model_input_scope
+        WHERE model_input_scope.model_id = model.model_id
+          AND model_input_scope.is_active
   ) AS scope
  WHERE model.tenant_id = %s
    AND model.model_id = %s

@@ -35,25 +35,9 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentExecutor,
     load_default_agent_context_policy,
 )
-from gds_workbench_api.features.workflows.authoring.stage_runner import (
-    AgentStageOutcome,
-    AgentStageRunner,
-)
+from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 
-from .attribute_candidate import (
-    MappingAttributeCandidateValidator,
-    build_mapping_attribute_batch_plans,
-)
-from .candidate import MappingHeaderCandidateValidator
 from .complete_candidate import CompleteMappingCandidateValidator
-from .detailed import (
-    MappingDetailedTargetReviewValidator,
-    build_mapping_attribute_stage_context,
-    build_mapping_detailed_review_manifest,
-    build_mapping_header_stage_context,
-    build_mapping_target_review_context,
-    merge_mapping_detailed_candidate,
-)
 from .execution_context import (
     MappingExecutionContextLimits,
     build_mapping_execution_context,
@@ -293,17 +277,9 @@ class DatabaseMappingExecutor:
                 event=AgentWorkflowEvent(
                     sequence=2,
                     attempt=1,
-                    stage=(
-                        "mapping.header_mapper"
-                        if execution_mode == "detailed_coverage"
-                        else "mapping.mapping_authoring"
-                    ),
+                    stage="mapping.mapping_authoring",
                     status="running",
-                    message=(
-                        "Mapping detailed coverage started."
-                        if execution_mode == "detailed_coverage"
-                        else "Mapping authoring started."
-                    ),
+                    message="Mapping authoring started.",
                     current=0,
                     total=1,
                     finding_count=0,
@@ -332,35 +308,27 @@ class DatabaseMappingExecutor:
                 limits=self._context_limits,
             )
             validator = CompleteMappingCandidateValidator(preparation=preparation)
-            if execution_mode == "detailed_coverage":
-                candidate, outcomes, final_sequence = await self._execute_detailed(
-                    principal,
-                    preparation=preparation,
-                    workflow_run_claim_token=workflow_run_claim_token,
-                    expected_model_revision=expected_model_revision,
-                )
-            else:
-                outcome = await self._stage_runner.run(
-                    plan=plan,
+            outcome = await self._stage_runner.run(
+                plan=plan,
+                stage_code="mapping_authoring",
+                resolver_values=_mapping_resolver_values(
+                    preparation,
                     stage_code="mapping_authoring",
-                    resolver_values=_mapping_resolver_values(
-                        preparation,
-                        stage_code="mapping_authoring",
-                        context=execution_context.embedded_context,
-                    ),
                     context=execution_context.embedded_context,
-                    output_schema=validator.output_schema(),
-                    allowed_tool_names=(
-                        execution_context.tool_catalog.allowed_tool_names
-                        if execution_context.tool_catalog is not None
-                        else ()
-                    ),
-                    local_tool_catalog=execution_context.tool_catalog,
-                    validator=validator,
-                )
-                candidate = outcome.candidate
-                outcomes = (outcome,)
-                final_sequence = 3
+                ),
+                context=execution_context.embedded_context,
+                output_schema=validator.output_schema(),
+                allowed_tool_names=(
+                    execution_context.tool_catalog.allowed_tool_names
+                    if execution_context.tool_catalog is not None
+                    else ()
+                ),
+                local_tool_catalog=execution_context.tool_catalog,
+                validator=validator,
+            )
+            candidate = outcome.candidate
+            outcomes = (outcome,)
+            final_sequence = 3
 
             result = validator.parse_validated(candidate)
             changes = result.changes
@@ -442,182 +410,6 @@ class DatabaseMappingExecutor:
                     )
             raise safe_error from None
 
-    async def _execute_detailed(
-        self,
-        principal: RequestPrincipal,
-        *,
-        preparation: MappingPreparation,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-    ) -> tuple[JsonValue, tuple[AgentStageOutcome, ...], int]:
-        plan = preparation.plan.agent_plan
-        maximum_stage_bytes = max(
-            1,
-            self._context_policy.stage_max_context_bytes // 2,
-        )
-        header_context = build_mapping_header_stage_context(
-            preparation=preparation,
-            maximum_bytes=maximum_stage_bytes,
-        )
-        header_validator = MappingHeaderCandidateValidator(preparation=preparation)
-        header_outcome = await self._stage_runner.run(
-            plan=plan,
-            stage_code="header_mapper",
-            resolver_values=_mapping_resolver_values(
-                preparation,
-                stage_code="header_mapper",
-                context=header_context,
-            ),
-            context=header_context,
-            output_schema=header_validator.output_schema(),
-            allowed_tool_names=(),
-            validator=header_validator,
-        )
-        header = header_validator.parse_validated(header_outcome.candidate)
-        outcomes: list[AgentStageOutcome] = [header_outcome]
-        await self._append_detailed_event(
-            principal,
-            preparation=preparation,
-            workflow_run_claim_token=workflow_run_claim_token,
-            expected_model_revision=expected_model_revision,
-            sequence=3,
-            stage="mapping.header_mapper",
-            outcome=header_outcome,
-            message="Mapping headers completed.",
-            current=1,
-            total=1,
-        )
-
-        raw_batches: list[JsonValue] = []
-        batch_plans = build_mapping_attribute_batch_plans(
-            preparation=preparation,
-            package=header.package,
-        )
-        for index, batch_plan in enumerate(batch_plans, 1):
-            batch_context = build_mapping_attribute_stage_context(
-                preparation=preparation,
-                header=header,
-                batch_plan=batch_plan,
-                maximum_bytes=maximum_stage_bytes,
-            )
-            batch_validator = MappingAttributeCandidateValidator(
-                preparation=preparation,
-                package=header.package,
-                batch_plan=batch_plan,
-            )
-            outcome = await self._stage_runner.run(
-                plan=plan,
-                stage_code="attribute_mapper",
-                resolver_values=_mapping_resolver_values(
-                    preparation,
-                    stage_code="attribute_mapper",
-                    context=batch_context,
-                ),
-                context=batch_context,
-                output_schema=batch_validator.output_schema(),
-                allowed_tool_names=(),
-                validator=batch_validator,
-            )
-            batch_validator.parse_validated(outcome.candidate)
-            raw_batches.append(outcome.candidate)
-            outcomes.append(outcome)
-            await self._append_detailed_event(
-                principal,
-                preparation=preparation,
-                workflow_run_claim_token=workflow_run_claim_token,
-                expected_model_revision=expected_model_revision,
-                sequence=3 + index,
-                stage="mapping.attribute_mapper",
-                outcome=outcome,
-                message="Mapping Attribute coverage completed.",
-                current=index,
-                total=len(batch_plans),
-            )
-
-        review_manifest = build_mapping_detailed_review_manifest(
-            header_candidate=header_outcome.candidate,
-            header=header,
-            batch_plans=batch_plans,
-            raw_batches=raw_batches,
-        )
-        target_context = build_mapping_target_review_context(
-            manifest=review_manifest,
-            maximum_bytes=maximum_stage_bytes,
-        )
-        target_validator = MappingDetailedTargetReviewValidator(
-            manifest=review_manifest,
-        )
-        target_outcome = await self._stage_runner.run(
-            plan=plan,
-            stage_code="target_validator",
-            resolver_values=_mapping_resolver_values(
-                preparation,
-                stage_code="target_validator",
-                context=target_context,
-            ),
-            context=target_context,
-            output_schema=target_validator.output_schema(),
-            allowed_tool_names=(),
-            validator=target_validator,
-        )
-        target_validator.parse_validated(target_outcome.candidate)
-        candidate = merge_mapping_detailed_candidate(
-            header_candidate=header_outcome.candidate,
-            batch_plans=batch_plans,
-            raw_batches=raw_batches,
-        )
-        complete_validator = CompleteMappingCandidateValidator(preparation=preparation)
-        final_validation = await complete_validator.validate(candidate)
-        if final_validation.issues:
-            raise InvalidRequestError("The merged Mapping candidate is invalid.")
-        complete_validator.parse_validated(candidate)
-        outcomes.append(target_outcome)
-        target_sequence = 4 + len(batch_plans)
-        await self._append_detailed_event(
-            principal,
-            preparation=preparation,
-            workflow_run_claim_token=workflow_run_claim_token,
-            expected_model_revision=expected_model_revision,
-            sequence=target_sequence,
-            stage="mapping.target_validator",
-            outcome=target_outcome,
-            message="Mapping target validation completed.",
-            current=1,
-            total=1,
-        )
-        return candidate, tuple(outcomes), target_sequence + 1
-
-    async def _append_detailed_event(
-        self,
-        principal: RequestPrincipal,
-        *,
-        preparation: MappingPreparation,
-        workflow_run_claim_token: UUID,
-        expected_model_revision: int,
-        sequence: int,
-        stage: str,
-        outcome: AgentStageOutcome,
-        message: str,
-        current: int,
-        total: int,
-    ) -> None:
-        await self._lifecycle.append_event(
-            principal,
-            workflow_run_id=preparation.plan.workflow_run_id,
-            workflow_run_claim_token=workflow_run_claim_token,
-            expected_model_revision=expected_model_revision,
-            event=AgentWorkflowEvent(
-                sequence=sequence,
-                attempt=outcome.attempt_count,
-                stage=stage,
-                status=("warning" if outcome.was_repaired or outcome.warning_codes else "running"),
-                message=message,
-                current=current,
-                total=total,
-                finding_count=0,
-            ),
-        )
-
     async def _complete_no_op(
         self,
         principal: RequestPrincipal,
@@ -673,11 +465,7 @@ def _validate_plan(
     mapping_plan = preparation.plan
     plan = mapping_plan.agent_plan
     mode = plan.workflow_execution_mode
-    expected_stages = (
-        ("header_mapper", "attribute_mapper", "target_validator")
-        if mode == "detailed_coverage"
-        else ("mapping_authoring",)
-    )
+    expected_stages = ("mapping_authoring",)
     if (
         plan.model_workflow != "mapping"
         or mode not in ("one_shot", "tool_assisted", "detailed_coverage")
@@ -696,8 +484,6 @@ def _validate_plan(
 
 
 def _has_actionable_authoring(preparation: MappingPreparation) -> bool:
-    if preparation.readiness.package_action in {"author", "extend"}:
-        return True
     return any(
         header.action in {"author", "extend"}
         or any(child.action in {"author", "extend"} for child in header.attribute_actions)

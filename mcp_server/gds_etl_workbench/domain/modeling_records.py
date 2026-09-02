@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import hashlib
 import json
 import math
 from collections.abc import Iterable
@@ -26,10 +25,6 @@ from gds_etl_workbench.domain.assertion_safety import (
     ASSERTION_RECORD_TEXT_MAX_CHARACTERS,
     validate_assertion_json,
 )
-from gds_etl_workbench.domain.mapping_contracts import (
-    validate_mapping_package_document,
-)
-from gds_etl_workbench.domain.mapping_profiles import validate_mapping_package_profile
 
 Code100 = Annotated[
     str,
@@ -51,17 +46,13 @@ StableKey = Annotated[
         pattern=r"^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
     ),
 ]
-Sha256Digest = Annotated[
-    str,
-    StringConstraints(min_length=64, max_length=64, pattern=r"^[0-9a-f]{64}$"),
-]
 NonblankText = Annotated[str, StringConstraints(min_length=1, pattern=r"\S")]
 NamingInstructions = Annotated[
     str,
     StringConstraints(min_length=1, max_length=32_768, pattern=r"\S"),
 ]
 Percentage = Annotated[Decimal, Field(ge=0, le=100, max_digits=7, decimal_places=4)]
-Status = Literal["active", "needs_review", "inactive", "deprecated"]
+Status = Literal["active", "inactive", "deprecated"]
 Confidence = Literal["low", "medium", "high"]
 Cardinality = Literal[
     "one_to_one",
@@ -147,13 +138,8 @@ class ModelDetailsRecord(ModelingRecord):
         return self
 
 
-class ModelScopeRecord(PhysicalObjectKey):
-    zone_code: Code100
-    is_bronze_source_eligible: bool
-    is_dimensional_source_eligible: bool
-    is_logical_mapping_target_eligible: bool
-    is_dimensional_mapping_target_eligible: bool
-    model_scope_is_locked: bool
+class ModelInputScopeRecord(PhysicalObjectKey):
+    model_input_scope_is_locked: bool
     is_active: bool
 
 
@@ -223,12 +209,7 @@ class AnalysisResultRecord(ModelingRecord):
     validation_source_missing_target_count: int | None = Field(default=None, ge=0)
     validation_unused_target_count: int | None = Field(default=None, ge=0)
     validation_duplicate_target_key_count: int | None = Field(default=None, ge=0)
-    analysis_result_status: Literal[
-        "active",
-        "needs_review",
-        "inactive",
-        "deprecated",
-    ]
+    analysis_result_status: Status
     analysis_result_is_locked: bool
 
     @model_validator(mode="after")
@@ -833,78 +814,17 @@ class MappingDependencyRecord(ModelingRecord):
     mapping_source_system_dependency_is_locked: bool
 
 
-class MappingObjectRecord(PhysicalObjectKey):
-    source_system_code: Code100
+class ModelObjectBindingRecord(PhysicalObjectKey):
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
-    object_dependency_order: int = Field(ge=0)
-    artifact_type: Literal["sql_file", "python_file", "python_notebook"] | None
-    artifact_generation_instructions: (
-        Annotated[
-            str,
-            StringConstraints(min_length=1, max_length=32768, pattern=r"\S"),
-        ]
-        | None
-    )
-    mapping_profile_key: (
-        Annotated[
-            str,
-            StringConstraints(pattern=r"^[a-z][a-z0-9_.-]{0,99}$"),
-        ]
-        | None
-    )
-    mapping_profile_version: DigestVersion | None
-    mapping_package_document: JsonObject | None
-    object_mapping_transformation_document: JsonObject | None
-    object_mapping_status: Status
-    object_mapping_is_locked: bool
-
-    @field_validator("mapping_package_document")
-    @classmethod
-    def validate_and_normalize_package(cls, value: JsonObject | None) -> JsonObject | None:
-        if value is None:
-            return None
-        package = validate_mapping_package_document(value)
-        return cast(JsonObject, package.model_dump(mode="json"))
-
-    @model_validator(mode="after")
-    def validate_authored_group(self) -> MappingObjectRecord:
-        authored = (
-            self.artifact_type,
-            self.artifact_generation_instructions,
-            self.mapping_profile_key,
-            self.mapping_profile_version,
-            self.mapping_package_document,
-            self.object_mapping_transformation_document,
-        )
-        if any(value is None for value in authored) and any(
-            value is not None for value in authored
-        ):
-            raise ValueError("Mapping authored fields must be entirely present or absent.")
-        package = self.mapping_package_document
-        if package is not None:
-            assert self.mapping_profile_key is not None
-            assert self.mapping_profile_version is not None
-            validate_mapping_package_profile(
-                package,
-                self.mapping_profile_key,
-                self.mapping_profile_version,
-            )
-        transformation = self.object_mapping_transformation_document
-        if transformation is not None and (
-            transformation.get("schema_version") != "1.0"
-            or transformation.get("transformation_kind") not in ("direct", "derived")
-            or _json_size(transformation) > 262_144
-        ):
-            raise ValueError("Object Mapping transformation contract is invalid.")
-        return self
+    model_object_binding_status: Status
+    model_object_binding_is_locked: bool
 
 
-class MappingAttributeRecord(PhysicalAttributeKey):
-    source_system_code: Code100
+class ModelAttributeBindingRecord(ModelingRecord):
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
     modeled_entity_name: Annotated[
         str,
@@ -914,6 +834,44 @@ class MappingAttributeRecord(PhysicalAttributeKey):
         str,
         StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
     ]
+    attribute_name: Name400
+    model_attribute_binding_status: Status
+    model_attribute_binding_is_locked: bool
+
+
+class MappingObjectRecord(ModelingRecord):
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    modeled_entity_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+    ]
+    source_system_code: Code100
+    output_template_code: Code100 | None
+    object_dependency_order: int = Field(ge=0)
+    mapping_transformation_document: JsonObject | None
+    object_mapping_status: Status
+    object_mapping_is_locked: bool
+
+    @model_validator(mode="after")
+    def validate_transformation_size(self) -> MappingObjectRecord:
+        transformation = self.mapping_transformation_document
+        if transformation is not None and _json_size(transformation) > 524_288:
+            raise ValueError("Mapping transformation document exceeds 524,288 bytes.")
+        return self
+
+
+class MappingAttributeRecord(ModelingRecord):
+    modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    modeled_entity_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+    ]
+    modeled_attribute_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+    ]
+    source_system_code: Code100
+    output_template_code: Code100 | None
     attribute_mapping_transformation_document: JsonObject | None
     attribute_mapping_status: Status
     attribute_mapping_is_locked: bool
@@ -921,85 +879,50 @@ class MappingAttributeRecord(PhysicalAttributeKey):
     @model_validator(mode="after")
     def validate_transformation(self) -> MappingAttributeRecord:
         transformation = self.attribute_mapping_transformation_document
-        if transformation is not None and (
-            transformation.get("schema_version") != "1.0"
-            or transformation.get("transformation_kind") not in ("direct", "expression")
-            or _json_size(transformation) > 65_536
-        ):
-            raise ValueError("Attribute Mapping transformation contract is invalid.")
+        if transformation is not None and _json_size(transformation) > 65_536:
+            raise ValueError("Attribute Mapping document exceeds 65,536 bytes.")
         return self
 
 
 VALIDATION_QUERY_MAX_BYTES = 100_000
 
 
-class GeneratedCodeRecord(PhysicalObjectKey):
+class GeneratedCodeRecord(ModelingRecord):
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+    modeled_entity_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+    ]
+    artifact_name: Name400
     artifact_type: Literal["sql_file", "python_file", "python_notebook"]
     generated_code_content: NonblankText
-    mapping_context_digest: Sha256Digest
-    source_context_digest: Sha256Digest
-    generated_code_digest: Sha256Digest
     generated_code_status: Status
-    generated_code_is_locked: bool
 
     @model_validator(mode="after")
     def validate_content(self) -> GeneratedCodeRecord:
-        encoded = self.generated_code_content.encode("utf-8")
         if any(
             ord(character) < 32 and character not in {"\t", "\n", "\r"}
             for character in self.generated_code_content
         ):
             raise ValueError("Generated Code contains an unsupported control character.")
-        if hashlib.sha256(encoded).hexdigest() != self.generated_code_digest:
-            raise ValueError("Generated Code digest does not match its content.")
+        if self.artifact_name.strip() != self.artifact_name or any(
+            separator in self.artifact_name for separator in ("/", "\\")
+        ):
+            raise ValueError("Artifact name must be a file name, not a path.")
+        if self.artifact_name in {".", ".."}:
+            raise ValueError("Artifact name is invalid.")
         return self
 
 
-class QACurrentCodeReference(PhysicalObjectKey):
-    """One current Code Artifact trusted by a QA authoring context."""
-
+class GeneratedCodeSourceSystemRecord(ModelingRecord):
     modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
-    artifact_type: Literal["sql_file", "python_file", "python_notebook"]
-    generated_code_digest: Sha256Digest
-
-
-class QAAuthoringContextRecord(ModelingRecord):
-    """Server-derived, read-only QA context for one pipeline/source System."""
-
-    tenant_code: Code100
-    system_code: Code100
-    mapping_context_digest: Sha256Digest
-    code_context_digest: Sha256Digest | None
-    mapping_target_count: int = Field(gt=0, le=20_000)
-    current_code_target_count: int = Field(ge=0, le=20_000)
-    current_code_references: tuple[QACurrentCodeReference, ...] = Field(max_length=20_000)
-
-    @model_validator(mode="after")
-    def validate_context(self) -> QAAuthoringContextRecord:
-        if self.current_code_target_count != len(self.current_code_references):
-            raise ValueError("QA current Code count must match its references.")
-        if self.current_code_target_count > self.mapping_target_count:
-            raise ValueError("QA current Code count cannot exceed Mapping target count.")
-        if (self.code_context_digest is None) != (self.current_code_target_count == 0):
-            raise ValueError("QA Code digest and current Code references must agree.")
-        tenant = normalize_model_key_value(self.tenant_code)
-        seen: set[tuple[str, ...]] = set()
-        for reference in self.current_code_references:
-            if normalize_model_key_value(reference.tenant_code) != tenant:
-                raise ValueError("QA current Code reference must use the Model Tenant.")
-            key = (
-                normalize_model_key_value(reference.tenant_code),
-                normalize_model_key_value(reference.system_code),
-                normalize_model_key_value(reference.connection_code),
-                normalize_model_key_value(reference.object_schema),
-                normalize_model_key_value(reference.object_name),
-                reference.modeled_entity_type,
-            )
-            if key in seen:
-                raise ValueError("QA current Code references must be unique by target.")
-            seen.add(key)
-        return self
+    modeled_entity_name: Annotated[
+        str,
+        StringConstraints(min_length=1, max_length=255, pattern=r"\S"),
+    ]
+    artifact_name: Name400
+    source_system_code: Code100
+    generated_code_source_system_status: Status
 
 
 class ValidationGroupRecord(ModelingRecord):
@@ -1010,8 +933,6 @@ class ValidationGroupRecord(ModelingRecord):
         StringConstraints(min_length=1, max_length=200, pattern=r"\S"),
     ]
     validation_group_description: NonblankText | None
-    mapping_context_digest: Sha256Digest
-    code_context_digest: Sha256Digest | None
     is_active: bool
 
     @field_validator("validation_group_description")
@@ -1026,7 +947,7 @@ type ValidationLiteral = bool | int | float | str
 
 
 class ValidationCheckRecord(ModelingRecord):
-    """QA assertion definition with a scalar runtime result except for execution-only checks."""
+    """Validation definition with a scalar result except for execution-only checks."""
 
     tenant_code: Code100
     system_code: Code100

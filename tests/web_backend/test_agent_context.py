@@ -7,7 +7,9 @@ from uuid import UUID
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
-    ModelScopeRecord,
+    MappingDependencyRecord,
+    MappingObjectRecord,
+    ModelObjectBindingRecord,
     ObjectSupportRecord,
 )
 from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
@@ -140,7 +142,7 @@ def _snapshot() -> ModelSnapshot:
             "model_id": 18,
             "model_name": "Customer Model",
             "model_revision": 7,
-            "model_scope": {
+            "model_input_scope": {
                 "details": {
                     "model_name": "Customer Model",
                     "model_description": None,
@@ -153,22 +155,12 @@ def _snapshot() -> ModelSnapshot:
                 "objects": (
                     {
                         **_object_key("customers"),
-                        "zone_code": "bronze",
-                        "is_bronze_source_eligible": True,
-                        "is_dimensional_source_eligible": False,
-                        "is_logical_mapping_target_eligible": False,
-                        "is_dimensional_mapping_target_eligible": False,
-                        "model_scope_is_locked": False,
+                        "model_input_scope_is_locked": False,
                         "is_active": True,
                     },
                     {
                         **_object_key("orders"),
-                        "zone_code": "bronze",
-                        "is_bronze_source_eligible": True,
-                        "is_dimensional_source_eligible": False,
-                        "is_logical_mapping_target_eligible": False,
-                        "is_dimensional_mapping_target_eligible": False,
-                        "model_scope_is_locked": False,
+                        "model_input_scope_is_locked": False,
                         "is_active": True,
                     },
                 ),
@@ -254,6 +246,7 @@ def _snapshot() -> ModelSnapshot:
                 "attributes": (),
                 "relationships": (),
             },
+            "model_binding": {"objects": (), "attributes": ()},
             "mapping": {"dependencies": (), "objects": (), "attributes": ()},
         },
         strict=False,
@@ -274,24 +267,52 @@ def _snapshot_with_large_assertion(text: str) -> ModelSnapshot:
     return snapshot.model_copy(update={"assertion": assertion})
 
 
-def _dimensional_snapshot(*, is_source_eligible: bool = True) -> ModelSnapshot:
+def _dimensional_snapshot() -> ModelSnapshot:
     snapshot = _snapshot()
-    silver_object = ModelScopeRecord.model_validate(
+    silver_binding = ModelObjectBindingRecord.model_validate(
         {
             **_object_key("silver_customers"),
             "object_schema": "silver_sales",
-            "zone_code": "silver",
-            "is_bronze_source_eligible": False,
-            "is_dimensional_source_eligible": is_source_eligible,
-            "is_logical_mapping_target_eligible": True,
-            "is_dimensional_mapping_target_eligible": False,
-            "model_scope_is_locked": False,
-            "is_active": True,
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_name": "Customer",
+            "model_object_binding_status": "active",
+            "model_object_binding_is_locked": False,
         },
         strict=False,
     )
-    model_scope = snapshot.model_scope.model_copy(update={"objects": (silver_object,)})
-    return snapshot.model_copy(update={"model_scope": model_scope})
+    dependency = MappingDependencyRecord.model_validate(
+        {
+            "modeled_entity_type": "logical_entity",
+            "source_system_code": "ERP",
+            "source_system_dependency_order": 0,
+            "mapping_source_system_dependency_status": "active",
+            "mapping_source_system_dependency_is_locked": False,
+        },
+        strict=False,
+    )
+    mapping = MappingObjectRecord.model_validate(
+        {
+            "modeled_entity_type": "logical_entity",
+            "modeled_entity_name": "Customer",
+            "source_system_code": "ERP",
+            "output_template_code": None,
+            "object_dependency_order": 0,
+            "mapping_transformation_document": {},
+            "object_mapping_status": "active",
+            "object_mapping_is_locked": False,
+        },
+        strict=False,
+    )
+    return snapshot.model_copy(
+        update={
+            "model_binding": snapshot.model_binding.model_copy(
+                update={"objects": (silver_binding,)}
+            ),
+            "mapping": snapshot.mapping.model_copy(
+                update={"dependencies": (dependency,), "objects": (mapping,)}
+            ),
+        }
+    )
 
 
 class ContextTransaction:
@@ -321,6 +342,7 @@ class ContextTransaction:
                     "selection_order": 1,
                     "object_id": 501,
                     **_object_key("customers"),
+                    "source_tenant_code": "SOURCE",
                     "fc_object_schema": None,
                     "fc_object_name": None,
                     "object_transformation": None,
@@ -385,6 +407,7 @@ class DimensionalContextTransaction(ContextTransaction):
                     "selection_order": 1,
                     "object_id": 701,
                     **_object_key("silver_customers"),
+                    "source_tenant_code": "SOURCE",
                     "object_schema": "silver_sales",
                     "fc_object_schema": None,
                     "fc_object_name": None,
@@ -448,11 +471,13 @@ async def _load_snapshot(*_: object) -> ModelSnapshot:
 
 def _snapshot_with_policy_json(value: dict[str, object]) -> ModelSnapshot:
     snapshot = _snapshot()
-    details = snapshot.model_scope.details.model_copy(
+    details = snapshot.model_input_scope.details.model_copy(
         update={"silver_model_audit_columns_template": value}
     )
-    model_scope = snapshot.model_scope.model_copy(update={"details": details})
-    return snapshot.model_copy(update={"model_scope": model_scope})
+    model_input_scope = snapshot.model_input_scope.model_copy(
+        update={"details": details}
+    )
+    return snapshot.model_copy(update={"model_input_scope": model_input_scope})
 
 
 def _snapshot_with_nested_supports(count: int) -> ModelSnapshot:
@@ -581,7 +606,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
     transaction = DimensionalContextTransaction(object_is_eligible=False)
 
     async def load_ineligible_dimensional_snapshot(*_: object) -> ModelSnapshot:
-        return _dimensional_snapshot(is_source_eligible=False)
+        return _dimensional_snapshot()
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(

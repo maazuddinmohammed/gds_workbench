@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **99 tables, 82 functions, and 17 installed triggers**.
+Inventory totals: **100 tables, 79 functions, and 15 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -40,17 +40,16 @@ retained rather than cascade-deleted.
 - `reference.job_type` — Shared job/workload type vocabulary.
 - `reference.lane` — Shared lane/routing vocabulary.
 
-### `core` — ownership, physical metadata, ingestion, and processing (18)
+### `core` — ownership, physical metadata, ingestion, and processing (17)
 
 - `core.project` — Administrative parent grouping for Tenants; it is not a governed Model.
 - `core.tenant` — Primary ownership and authorization scope, including catalogs, visibility, and its GDS Connection.
 - `core.system` — Registered source or target System, classified by System Type.
 - `core.system_notebook_path` — One configured notebook path per System and notebook definition.
 - `core.connection` — Tenant/System connection metadata, connection type, GDS flag, foreign catalog, and optional test batch settings.
-- `core.tenant_metadata_discovery_scope` — Active assignment of one GDS Connection/Zone/schema tuple to one source Tenant.
 - `core.connection_location` — Environment-specific storage account, secret reference, container, and path for a Connection.
 - `core.connection_value` — Environment-specific raw connection parameter values; direct runtime reads are restricted.
-- `core.object` — Registered physical relation, its Connection, schema/name, Zone, type, batch field, lock, and lifecycle.
+- `core.object` — Registered physical relation, its source Tenant, Connection, schema/name, Zone, type, batch field, lock, and lifecycle.
 - `core.attribute` — Registered physical column/field, type, ordinal, nullability, key/masking/purge flags, and lifecycle.
 - `core.ingestion_object_mapping` — Active or retained source-Object to target-Object ingestion lineage.
 - `core.ingestion_attribute_mapping` — Source-Attribute to target-Attribute lineage under an Object ingestion mapping.
@@ -73,13 +72,13 @@ retained rather than cascade-deleted.
 ### `model` — governed Model aggregate and audit (6)
 
 - `model.model` — Tenant-owned Model, current revision, naming/audit policies, default agent settings, and active state.
-- `model.model_scope` — Retained membership between a Model and allowed physical Objects, including business lock and lifecycle.
+- `model.model_input_scope` — Retained Source/Bronze input membership for a Model, including business lock and lifecycle.
 - `model.model_event_log` — Append-only safe workflow progress, warning, blocked, completion, and failure events.
 - `model.modeling_assertion_document` — Metadata for an Assertion source document; original bytes are not stored.
 - `model.modeling_assertion_record` — Structured factual Assertion records, applicable layers, confidence, lifecycle, and lock.
 - `model.model_revision_transaction` — One transaction witness for each actual Model revision advance.
 
-### `workflow` — applied modeling graph (25)
+### `workflow` — applied modeling graph (28)
 
 - `workflow.attribute_profile` — Current per-Model/per-Attribute profiling metrics and source-context provenance.
 - `workflow.analysis_result` — Inferred physical relationship plus validation policy, evidence counts, result, provenance, lifecycle, and lock.
@@ -100,14 +99,17 @@ retained rather than cascade-deleted.
 - `workflow.dimensional_entity_source_mapping` — Ordered eligible Silver Object or Assertion support for a Dimensional Entity.
 - `workflow.dimensional_attribute_source_mapping` — Ordered eligible Silver Attribute path or Assertion support for a Dimensional Attribute.
 - `workflow.dimensional_relationship` — Typed, cardinal, optional Attribute-level relationship between Dimensional Entities.
+- `workflow.model_object_binding` — One active Logical-to-Silver or Dimensional-to-Gold binding between a modeled entity and its registered physical Object.
+- `workflow.model_attribute_binding` — Attribute-level binding beneath a Model Object Binding, tying one modeled Attribute to one registered physical Attribute.
 - `workflow.mapping_source_system_dependency` — Per-Model/layer ordering and lifecycle of source Systems used by Mapping.
-- `workflow.mapping_object` — Logical-to-Silver or Dimensional-to-Gold Object mapping header, package/profile, transformation, output template, lifecycle, and lock.
+- `workflow.mapping_object` — One bound target/source-System transformation document, output template, dependency order, lifecycle, and lock.
 - `workflow.mapping_attribute` — Modeled Attribute to physical target Attribute mapping and transformation under a Mapping Object.
-- `workflow.generated_code` — Current Model-owned Code Artifact per in-scope target Object, including artifact type/content, verified content and Mapping/source-context digests, lifecycle, lock, and optional Run provenance.
-- `workflow.validation_group` — Model/Tenant/System-scoped QA group with Mapping digest, optional Code-context digest, lifecycle, and optional Run provenance.
-- `workflow.validation_check` — QA query and assertion definition under one Validation Group, including Query A, optional Query B or literal/list operand, result type, operator, category, severity, and lifecycle.
+- `workflow.generated_code` — Current Model-owned Code Artifact per bound target, including artifact name/type/content, one server-derived input digest, lifecycle, and optional Run provenance.
+- `workflow.generated_code_source_system` — Retained source-System membership for one Generated Code Artifact.
+- `workflow.validation_group` — Model/Tenant/System-scoped Validation group with internal Mapping and optional Code-context digests, lifecycle, and optional Run provenance.
+- `workflow.validation_check` — Validation query and assertion definition under one Validation Group, including Query A, optional Query B or literal/list operand, result type, operator, category, severity, and lifecycle.
 
-### `application` — web preferences, authoring configuration, and run orchestration (16)
+### `application` — web preferences, authoring configuration, and run orchestration (15)
 
 - `application.principal_preference` — One Principal’s last authorized Tenant selection.
 - `application.workflow_stage` — Ordered stage definition for a workflow/execution-mode pair, including whether it is agentic.
@@ -121,14 +123,13 @@ retained rather than cascade-deleted.
 - `application.sql_generation_guide_version` — Draft/published/retired guide content and digest.
 - `application.workflow_run` — Durable immutable Tenant-scoped run request plus state, actor, frozen Model revision, selection digest, agent/mapping/guide inputs, claim lease, and outcome; a partial unique index permits only one running Run per Tenant.
 - `application.workflow_run_object_selection` — Immutable ordered Object selection frozen for one Workflow Run.
-- `application.workflow_run_system_selection` — Immutable ordered System selection frozen for one QA Run.
+- `application.workflow_run_system_selection` — Immutable ordered System selection frozen for one Validation Run.
 - `application.workflow_run_mapping_target_selection` — Immutable ordered target Object/source System pair frozen for a Mapping Run.
 - `application.workflow_run_prompt_snapshot` — Immutable resolved prompt version/digest per agentic stage for one Run.
-- `application.generated_sql_artifact` — Retained legacy generated-SQL compatibility store. Current Code Generation uses the Model-owned `workflow.generated_code` Section instead.
 
 ### `mcp` — governed draft transport and audit (10)
 
-- `mcp.model_change_set` — Model-owned ten-section draft, revision/digest seal, validation, expiry, workflow binding, and terminal state.
+- `mcp.model_change_set` — Model-owned multi-section draft, revision/digest seal, validation, expiry, workflow binding, and terminal state.
 - `mcp.model_stage_batch` — Manifest and lifecycle for a record-chunk or generated-Code JSON-fragment Model Change Set dataset upload.
 - `mcp.model_stage_chunk` — Ordered, hashed JSON record chunk for a Model Stage Batch.
 - `mcp.model_stage_payload_chunk` — Ordered, hashed generated-Code JSON byte fragment for a Model Stage Batch; Commit reassembles one complete record.
@@ -168,10 +169,10 @@ Each entry gives purpose, then execution order.
 
 ### `workflow` (4)
 
-- `workflow.list_tenant_visible_objects` — Canonical Tenant-visible Object closure. Steps: (1) resolve each Object’s owning Tenant, using active discovery assignment for GDS Objects; (2) seed owned, discovered, Copy-referenced, Process-referenced, and current Model Scope Objects; (3) recursively traverse active ingestion mappings; (4) return each reachable Object with reason flags.
-- `workflow.list_model_object_eligibility` — Canonical Object-level workflow eligibility for one active Model. Steps: (1) read active Model Scope and physical metadata; (2) resolve Object Tenant safely; (3) classify Zone; (4) mark Bronze source eligibility; (5) mark Silver dimensional-source eligibility only when effective Logical Mapping exists; (6) mark Silver/Gold Mapping target eligibility and return ordered rows.
-- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per target, SQL-only by default and artifact-neutral when QA passes a null artifact filter. Steps: (1) start from eligible Silver/Gold targets for the requested modeled layer; (2) retain active, complete Mapping headers of the requested artifact type, dependencies, entities, and child mappings; (3) reject targets having incomplete active mappings; (4) aggregate ordered source Systems, Object mappings, Attribute mappings, entity support, target metadata, and transformations; (5) hash Mapping-only and full source contexts; (6) return one row per target.
-- `workflow.list_model_attribute_eligibility` — Attribute-level extension of Object eligibility. Steps: (1) call Object eligibility; (2) join active Attributes; (3) inherit Bronze and target flags; (4) mark Silver dimensional-source eligibility only when an effective Logical Attribute Mapping exists; (5) return deterministically ordered rows.
+- `workflow.list_tenant_visible_objects` — Canonical Tenant-visible Object closure. Steps: (1) resolve every Object through mandatory `source_tenant_id`; (2) seed direct ownership, GDS-placement, Copy, Process, and current Model Input Scope references; (3) recursively traverse active ingestion mappings; (4) return each reachable Object with reason flags.
+- `workflow.list_model_object_eligibility` — Canonical Object-level workflow eligibility for one active Model. Steps: (1) read active Model Input Scope and physical metadata; (2) resolve the source Tenant; (3) mark selected Source/Bronze input eligibility; (4) mark bound Silver dimensional-source eligibility; (5) mark bound Silver/Gold Mapping targets; (6) return ordered rows.
+- `workflow.list_code_generation_target_context` — Canonical complete Mapping context per bound target. Steps: (1) start from eligible Silver/Gold targets for the requested modeled layer; (2) retain active, complete mappings, dependencies, entities, and child mappings; (3) reject incomplete targets; (4) aggregate ordered Mapping/source context; (5) derive one `code_input_digest`; (6) return entity name/type, target, digest, and bounded source context.
+- `workflow.list_model_attribute_eligibility` — Attribute-level extension of Object eligibility. Steps: (1) call Object eligibility; (2) join active Attributes; (3) inherit input and target flags; (4) mark bound Silver dimensional-source eligibility; (5) return deterministically ordered rows.
 
 ### `application` — preference and Model authoring (5)
 
@@ -179,7 +180,6 @@ Each entry gives purpose, then execution order.
 - `application.create_model` — Governed web Model creation. Steps: (1) authorize `tenant_model_write`, including owned lock; (2) insert the Model and policies/default agent settings; (3) record `web_model_create` revision transaction; (4) return the Model.
 - `application.update_model` — Revision-fenced Model update. Steps: (1) lock active Model; (2) authorize against its Tenant; (3) verify expected revision; (4) return unchanged row for an exact no-op; (5) update fields and increment revision; (6) record `web_model_update` and return.
 - `application.archive_model` — Revision-fenced soft archive. Steps: (1) lock active Model; (2) authorize and verify revision; (3) reject while any Workflow Run is running for the owning Tenant; (4) set inactive and increment revision; (5) record `web_model_archive`; (6) return archived Model.
-- `application.replace_model_scope` — Replace the complete active Model Scope. Steps: (1) validate a unique bounded Object ID set; (2) lock Model, authorize, and verify revision; (3) verify every Object is active in the canonical Tenant-visible closure; (4) return no-op if identical; (5) deactivate absent rows and insert/reactivate selected rows; (6) increment Model revision, record the revision transaction, and return counts.
 
 ### `application` — prompts (7)
 
@@ -195,7 +195,6 @@ Each entry gives purpose, then execution order.
 
 - `application.guard_output_template_schema` — Freeze Output Template schema identity. Steps: (1) reject DELETE; (2) reject changes to ID, code, target type, digest, or creator identity; (3) allow only descriptive/active-state updates.
 - `application.guard_output_template_field` — Make fields atomic and immutable. Steps: (1) on INSERT require the parent Template to have been created in the same transaction; (2) allow that insert; (3) reject all field UPDATE and DELETE operations.
-- `application.validate_mapping_output_template` — Validate Mapping transformation JSON against its selected Template. Steps: (1) skip rows without a Template; (2) infer Object/Attribute target type; (3) require active matching Template with fields; (4) validate base schema version and transformation kind; (5) validate every required field, scalar/array type, and array item; (6) reject undeclared fields.
 - `application.create_output_template` — Atomic Super-Admin Template creation. Steps: (1) authenticate active Super Admin and serialize code; (2) validate bounded nonempty field array, allowed keys/types, reserved names, examples, and unique names/orders; (3) normalize fields and compute schema digest; (4) replay an exact existing code or reject conflict; (5) insert parent and all fields in one transaction; (6) return parent.
 - `application.update_output_template` — Update only descriptive/active Template state. Steps: (1) authenticate Super Admin; (2) lock Template; (3) return exact no-op; (4) enforce optimistic timestamp; (5) update name, description, actor, and active flag; (6) return.
 
@@ -211,12 +210,12 @@ Each entry gives purpose, then execution order.
 
 - `application.guard_workflow_run_mapping_target_selection` — Mapping-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve the frozen pair.
 - `application.guard_workflow_run_object_selection` — Object-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve frozen selection.
-- `application.guard_workflow_run_system_selection` — System-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve frozen QA scope.
+- `application.guard_workflow_run_system_selection` — System-selection immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve frozen Validation scope.
 - `application.guard_workflow_run` — Enforce Run immutability and state machine. Steps: (1) reject DELETE; (2) reject changes to frozen identity/request fields; (3) reject changes to terminal Runs; (4) while running, allow only valid lease heartbeat/recovery changes and monotonic recovery count; (5) otherwise allow only queued→running or running→terminal.
 - `application.guard_workflow_run_prompt_snapshot` — Prompt-snapshot immutability trigger function. Steps: (1) receive UPDATE/DELETE; (2) raise; (3) preserve frozen resolution.
 - `application.snapshot_workflow_run_prompts` — Resolve every agentic stage’s prompt once. Steps: (1) validate bounded override object and lock queued Run; (2) reject existing snapshots; (3) iterate active agentic stages in order; (4) resolve override, then Model default, then global default; (5) require published active Tenant-compatible Prompt and insert digest snapshot; (6) reject unknown overrides or no stages and return count.
 - `application.create_workflow_run` — Governed, idempotent Run creation and input freeze. Steps: (1) validate workflow-specific selection, Mapping, batch, guide, prompt, and agent inputs; (2) canonicalize caller selection and compute request digest; (3) lock Model, authorize actor/identity, and replay exact correlation IDs; (4) verify revision, workflow eligibility, Mapping route/header/profile/output templates, batch System rule, and Code Generation context/guide; (5) resolve complete agent configuration; (6) insert queued Run and immutable selection rows; (7) snapshot agentic prompts; (8) return frozen run metadata.
-- `application.lock_authoring_workflow_run` — Internal row-lock helper for agentic authoring. Steps: (1) match Run and Model; (2) require a mode-based authoring workflow with non-null mode, or Code Generation/QA with null mode; (3) lock the Run `FOR UPDATE`; (4) return its core identity/state.
+- `application.lock_authoring_workflow_run` — Internal row-lock helper for agentic authoring. Steps: (1) match Run and Model; (2) require a mode-based authoring workflow with non-null mode, or Code Generation/Validation with null mode; (3) lock the Run `FOR UPDATE`; (4) return its core identity/state.
 - `application.start_workflow_run` — Start a caller-owned queued Run. Steps: (1) lock Run and active Model; (2) authorize and verify actor ownership; (3) require the caller, frozen Run, and current Model revisions to match; (4) replay non-queued state without mutation; (5) reject when another Run is active for the Tenant, with a unique-index race fence; (6) move to `running`; (7) append sequence-1 `started` event and return.
 - `application.claim_next_workflow_run` — Worker lease allocator. Steps: (1) validate 1–300 second lease; (2) atomically fail up to 100 running Runs whose Model, actor, or exact unambiguous actor identity is unavailable, appending one generic safe failure event each; (3) atomically fail up to 100 expired claims already recovered five times and append safe failure events; (4) choose the oldest eligible running Run with active unambiguous actor identity using `SKIP LOCKED`; (5) generate a raw UUID token but store only its SHA-256 digest; (6) set claim/expiry times and increment recovery count when reclaiming; (7) return Run, actor identity, raw token, and lease.
 - `application.claim_workflow_run_exact` — Private exact-Run notebook lease allocator. Steps: (1) resolve the database-bound notebook workload Principal; (2) lock only the requested actor-owned Run and require the expected workflow/running state; (3) terminalize only that Run when its execution context is invalid or recovery is exhausted; (4) refuse a live claim; (5) rotate an expired claim while incrementing recovery once; (6) store only the token digest and return the raw token once.
@@ -234,13 +233,12 @@ Each entry gives purpose, then execution order.
 
 ### `application` — execution context and governed result storage (7)
 
-- `application.get_profiling_execution_context` — Complete physical plan for one running Profiling Run. Steps: (1) validate Run/revision, authorize owner, and require running Profiling; (2) verify immutable selection row count; (3) require every selected Object to remain active GDS Bronze with an active discovery assignment; (4) recheck Object/Attribute eligibility and 50,000-Attribute bound; (5) return ordered catalog/schema/Object/System/batch/Attribute rows using assigned source Tenant catalogs.
+- `application.get_profiling_execution_context` — Complete physical plan for one running Profiling Run. Steps: (1) validate Run/revision, authorize owner, and require running Profiling; (2) verify immutable selection row count; (3) require every selected Object to remain an eligible Source or Bronze input; (4) resolve Source exclusively through complete foreign-catalog coordinates and Bronze through native GDS coordinates; (5) recheck Attribute eligibility and return a bounded ordered plan.
 - `application.get_profiling_connection_values` — All-or-nothing credentials for Profiling. Steps: (1) derive exact GDS Connections by calling the validated execution context; (2) validate and resolve active Environment; (3) snapshot host, HTTP path, and token once per Connection; (4) return one fixed safe error with no secrets if any tuple is incomplete; (5) otherwise return complete ordered tuples.
-- `application.get_analysis_validation_execution_context` — Complete physical plan for deterministic Analysis validation. Steps: (1) validate/lock identity context, authorize exact owner identity, and require running deterministic Analysis/current revision/environment; (2) verify frozen selection count; (3) select active/needs-review relationships and require both endpoints selected; (4) resolve active Bronze endpoint Attributes, discovery-assigned catalogs, batch fields, and connection-value row-version witnesses; (5) compute per-relationship source-context digest; (6) reject partial endpoints, cross-Connection pairs, incomplete metadata, over 50,000 rows, or over 32 MiB; (7) return immutable ordered snapshot.
+- `application.get_analysis_validation_execution_context` — Complete physical plan for deterministic Analysis validation. Steps: (1) validate/lock identity context, authorize exact owner identity, and require running deterministic Analysis/current revision/environment; (2) verify frozen selection count; (3) select active relationships and require both endpoints selected; (4) resolve active endpoint Attributes through source-Tenant metadata, batch fields, and connection-value row-version witnesses; (5) compute per-relationship source-context digest; (6) reject partial endpoints, cross-Connection pairs, incomplete metadata, over 50,000 rows, or over 32 MiB; (7) return immutable ordered snapshot.
 - `application.get_analysis_validation_connection_values` — All-or-nothing Analysis validation credentials. Steps: (1) derive exact Connections through the validated Analysis context; (2) validate/resolve Environment; (3) snapshot required credentials once; (4) return one fixed safe failure with no partial secrets when incomplete; (5) otherwise return complete ordered tuples.
 - `application.persist_analysis_validation_results` — Atomic validation-only Analysis update. Steps: (1) validate bounded exact JSON shape, unique IDs, and internally consistent evidence counts/result; (2) lock/authorize exact running deterministic Analysis Run and current revision; (3) lock Model Analysis rows; (4) recompute expected eligible result IDs/context digests and require exact payload match; (5) update only validation provenance/policy/evidence columns, preserving inference, status, and locks; (6) advance Model revision once and record transaction only when rows changed; (7) return counts/revision.
 - `application.persist_profiling_results` — Atomic replacement of selected Attribute Profiles. Steps: (1) validate bounded exact JSON shape, unique Attribute IDs, reconciled counts, lengths, and exact four-decimal percentages; (2) lock/authorize running Profiling Run and current revision; (3) freeze selected Object/Attribute membership and recheck Bronze eligibility; (4) require payload to exactly cover eligible Attributes; (5) recompute each canonical source-context digest from current metadata and require an exact payload match; (6) delete obsolete Profiles only within selected Objects and upsert submitted metrics; (7) advance Model revision once and record transaction only when changed; (8) return counts/revision.
-- `application.store_generated_sql_artifact` — Retained legacy generated-SQL compatibility boundary; the current runtime does not call it. Steps: (1) require active Model at expected revision and authorize caller-owned lock; (2) resolve exact active actor identity; (3) recompute target Mapping/source contexts and compare both digests; (4) for a Run-bound write, require matching running Code Generation Run/selection/frozen Guide; otherwise require current active published Guide; (5) recompute SQL digest; (6) insert or replace the one legacy Model/layer/target artifact and return it.
 
 ### `mcp` (13)
 
@@ -268,8 +266,6 @@ All are `BEFORE` triggers. “Row” means once per affected row; “statement�
 - `validate_prompt_assignment` on `application.prompt_assignment` — INSERT/UPDATE, row. Steps: (1) resolve version/template/stage; (2) require published active agentic Prompt; (3) enforce global Super Admin or Model Tenant authority/lock; (4) allow valid row.
 - `guard_output_template_schema` on `application.output_template` — UPDATE/DELETE, row. Steps: (1) reject DELETE; (2) compare immutable schema identity/digest; (3) reject schema mutation; (4) allow descriptive/active update.
 - `guard_output_template_field` on `application.output_template_field` — INSERT/UPDATE/DELETE, row. Steps: (1) allow INSERT only in parent’s creation transaction; (2) reject later INSERT; (3) reject every UPDATE/DELETE.
-- `validate_mapping_object_output_template` on `workflow.mapping_object` — INSERT or relevant-column UPDATE, row. Steps: (1) call shared Mapping Template validator; (2) require Object target type and valid transformation document; (3) validate declared field shape/types; (4) accept or abort.
-- `validate_mapping_attribute_output_template` on `workflow.mapping_attribute` — INSERT or relevant-column UPDATE, row. Steps: (1) call shared validator; (2) require Attribute target type and valid transformation document; (3) validate declared field shape/types; (4) accept or abort.
 - `guard_sql_generation_guide` on `application.sql_generation_guide` — UPDATE/DELETE, row. Steps: (1) reject DELETE; (2) reject Guide identity changes; (3) allow mutable descriptive/default/active update.
 - `guard_sql_generation_guide_version` on `application.sql_generation_guide_version` — INSERT/UPDATE/DELETE, row. Steps: (1) verify content digest; (2) reject DELETE/identity change; (3) enforce draft→published→retired; (4) freeze published content and retired rows.
 - `guard_workflow_run_mapping_target_selection` on `application.workflow_run_mapping_target_selection` — UPDATE/DELETE, row. Steps: (1) intercept; (2) raise unconditionally; (3) keep target/System pair immutable.
