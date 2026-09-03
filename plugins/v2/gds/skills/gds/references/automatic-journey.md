@@ -9,7 +9,7 @@ When a target is complete:
 1. Validate the complete effective graph. Run local review only when the user requests an action summary.
 2. Notify the user to Refresh the already-open Workbench.
 3. Treat a clear positive acknowledgement as acceptance of the exact digest.
-4. Check current revision, reconcile, run `prepare-stage` once, execute its ordered operations, and validate the Change Set on the server.
+4. Check the current Model revision for Model work; for Metadata require a non-stale Snapshot and use the Tenant Lock plus server validation. Reconcile, run `prepare-stage` once, execute its ordered operations, and validate the Change Set on the server.
 5. Ask separately before Apply.
 6. Apply once and stop at the target boundary. Automatically create and install the required fresh Snapshot before a dependent target; leave that target queued until the user resumes.
 

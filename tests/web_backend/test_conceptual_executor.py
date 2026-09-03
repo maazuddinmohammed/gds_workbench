@@ -26,7 +26,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ConceptualObjectRecord,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import AgentRunSelection

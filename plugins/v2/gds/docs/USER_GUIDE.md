@@ -35,7 +35,9 @@ Edit in Workbench, ask the agent for changes, or reply “proceed”, “OK”, 
 
 There is no separate user review command. Before presenting work, the agent compiles and validates the complete effective local graph. A positive acknowledgement accepts the exact current content. Any later content edit makes the report stale and requires another look.
 
-Before staging, the agent checks the authoritative revision. If it changed, work stops for a fresh Snapshot and reassessment. An unchanged result keeps the acknowledgement; changed content is shown again. A positive acknowledgement authorizes an ordinary free Tenant Lock, reconciliation, staging, and server Change Set validation. The agent reconciles existing non-overlapping draft records, runs the local Stage planner once, and follows its ordered direct/batch operations. Conflicts stop for resolution. Users never calculate chunks or hashes manually; agents follow the generated operation plan. Lock override and Apply always require separate confirmation.
+Before staging Model work, the agent checks the authoritative Model revision. If it changed, work stops for a fresh Model Snapshot and reassessment. Metadata has no tenant-wide revision; the agent requires a non-stale Metadata Snapshot and relies on the Tenant Lock plus server validation against current database state. An unchanged result keeps the acknowledgement; changed local content is shown again. A positive acknowledgement authorizes an ordinary free Tenant Lock, reconciliation, staging, and server Change Set validation. The agent reconciles existing non-overlapping draft records, runs the local Stage planner once, and follows its ordered direct/batch operations. Conflicts stop for resolution. Users never calculate chunks or hashes manually; agents follow the generated operation plan. Lock override and Apply always require separate confirmation.
+
+If server validation rejects the agent's own staged draft, the agent records that exact failed revision, fixes the local records, validates them again, and asks the user to acknowledge changed content. It may then replace only that same task's unapplied failed draft and rerun server validation. Unrelated or externally changed overlaps remain conflicts.
 
 ## Interaction modes
 
@@ -132,9 +134,13 @@ Bronze profiling uses tenant catalog plus `object_schema`, `object_name`, and `a
 
 Default naming is PascalCase for Conceptual, Logical, and Dimensional. Logical identifiers end in `ID`, such as `CustomerID`. Dimensional keys end in `Key`, such as `CustomerKey`. User instructions or Model policy override defaults.
 
-Logical Build considers every scoped table during Profiling and relationship Analysis, identifies the business concept or concepts it supports, consolidates matching concepts across Systems, and then builds the Logical Model. Conceptual is a required compact business view, with no Attributes, keys, normalization, table design, or one-to-one requirement with physical or Logical records.
+Logical Build profiles every scoped input, then tests grain, keys, functional dependencies, repeating groups, header/detail patterns, history, and relationships. It queries bounded evidence when the session policy permits it. A source table becomes one similarly shaped Logical Entity only when that examination supports the result.
 
-Logical is the normalized operational model. It includes every intended physical Attribute, including audit, technical, and constant-valued Attributes. Dimensional starts with business-process and fact grain.
+Conceptual starts from business processes and state changes. It defines a small reusable business vocabulary and verb-based relationships. It has no Attributes, keys, normalization, table design, or required one-to-one correspondence with physical or Logical records.
+
+Logical is the normalized operational model. It applies 1NF, 2NF, and 3NF where the evidence supports them, separates different grains and lifecycles, and consolidates Systems only when their business meaning and grain agree. It includes every intended physical Attribute, including audit, technical, and constant-valued Attributes.
+
+Dimensional follows the Kimball sequence for each process: choose the business process, declare one fact-row grain, identify Dimensions, then identify Facts. The process-to-dimension matrix is an internal completeness check, not a stored model record.
 
 Every modeling loop accounts for selected inputs as represented, context-only, excluded with reason, or blocked. Coverage does not force one output per input.
 

@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Request, status
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 
 from gds_workbench_api.features.models.command_contracts import (
     ArchiveModelRequest,

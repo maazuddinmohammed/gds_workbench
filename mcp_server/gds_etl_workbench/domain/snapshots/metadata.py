@@ -143,6 +143,14 @@ class DatasetDefinition:
         return tuple(dict.fromkeys((*self.canonical_key, *self.lookup_fields)))
 
 
+@dataclass(frozen=True, slots=True)
+class EncodedDataset:
+    definition: DatasetDefinition
+    rows_jsonl: bytes
+    lookup_jsonl: bytes | None
+    row_count: int
+
+
 PROJECT_KEY = ("project_code",)
 TENANT_KEY = ("tenant_code",)
 SYSTEM_KEY = ("system_code",)

@@ -4,8 +4,8 @@ from datetime import datetime
 from typing import Annotated, Literal
 from uuid import UUID
 
-from gds_etl_workbench.tools.change_sets.common import SHA256_PATTERN
-from gds_etl_workbench.tools.change_sets.metadata import ChangeSetDataset
+from gds_etl_workbench.application.change_sets.contracts import SHA256_PATTERN
+from gds_etl_workbench.application.change_sets.metadata import ChangeSetDataset
 from pydantic import BaseModel, ConfigDict, Field
 
 

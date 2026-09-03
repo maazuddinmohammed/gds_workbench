@@ -17,10 +17,8 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
-from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
-from gds_etl_workbench.tools.snapshots.model.contracts import DATASETS_BY_NAME
-from gds_etl_workbench.tools.snapshots.model.selection import (
+from gds_etl_workbench.application.model_read import POLICY, authorize_model_read
+from gds_etl_workbench.application.model_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_DEPENDENCY_SQL,
     _MAPPING_OBJECT_SQL,
@@ -28,11 +26,12 @@ from gds_etl_workbench.tools.snapshots.model.selection import (
     _MODEL_OBJECT_BINDING_SQL,
     _validate_records,
 )
-
-from .assertions import DOCUMENTS_SQL, RECORDS_SQL
-from .common import POLICY, authorize_model_read
-from .conceptual import CONCEPTUAL_OBJECTS_SQL, CONCEPTUAL_RELATIONSHIPS_SQL
-from .modeled_layer_common import (
+from gds_etl_workbench.application.modeling.assertions import DOCUMENTS_SQL, RECORDS_SQL
+from gds_etl_workbench.application.modeling.conceptual import (
+    CONCEPTUAL_OBJECTS_SQL,
+    CONCEPTUAL_RELATIONSHIPS_SQL,
+)
+from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
     attributes_sql,
@@ -40,7 +39,13 @@ from .modeled_layer_common import (
     relationships_sql,
     submodels_sql,
 )
-from .profiling_analysis import ANALYSIS_SQL, PROFILING_SQL
+from gds_etl_workbench.application.modeling.profiling_analysis import (
+    ANALYSIS_SQL,
+    PROFILING_SQL,
+)
+from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
+from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
+from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
 
 type ReadableModelDataset = Literal[
     "profiling_profile",
@@ -105,9 +110,9 @@ def register_read_model_section_tool(
     @server.tool(
         name=_TOOL_NAME,
         description=(
-            "Read one bounded applied Model dataset from Profiling, evidence, Conceptual, "
-            "Logical, Dimensional, Binding, or Mapping. Generated Code and Validation are "
-            "Snapshot-only; use a Model Snapshot when either is needed."
+            "Read one bounded applied Model dataset from Profiling, Analysis, Assertions, "
+            "Conceptual, Logical, Dimensional, Binding, or Mapping. Generated Code and "
+            "Validation are Snapshot-only; use a Model Snapshot when either is needed."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

@@ -1,4 +1,4 @@
-"""Small primitives shared by governed Metadata and Model Change Sets."""
+"""Transport-neutral primitives shared by Metadata and Model Change Sets."""
 
 from __future__ import annotations
 
@@ -6,12 +6,8 @@ import base64
 import binascii
 import hashlib
 import json
-from typing import TYPE_CHECKING
 
 from pydantic import BaseModel, ConfigDict
-
-if TYPE_CHECKING:
-    from mcp.types import ToolAnnotations
 
 MAX_STAGE_CHUNK_BYTES = 450 * 1024
 MAX_MODEL_STAGE_CHUNK_BYTES = 1024 * 1024
@@ -59,17 +55,17 @@ def stage_batch_sha256(chunk_sha256s: list[str]) -> str:
     return hashlib.sha256("".join(chunk_sha256s).encode("ascii")).hexdigest()
 
 
-def change_set_annotations(
-    *,
-    read_only: bool,
-    idempotent: bool,
-    destructive: bool = False,
-) -> ToolAnnotations:
-    from mcp.types import ToolAnnotations
-
-    return ToolAnnotations(
-        read_only_hint=read_only,
-        destructive_hint=destructive,
-        idempotent_hint=idempotent,
-        open_world_hint=False,
-    )
+__all__ = [
+    "MAX_MODEL_STAGE_CHUNK_BYTES",
+    "MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS",
+    "MAX_MODEL_STAGE_PAYLOAD_BYTES",
+    "MAX_STAGE_CHUNK_BYTES",
+    "MAX_STAGE_CHUNK_RECORDS",
+    "MAX_STAGE_CHUNKS",
+    "SHA256_PATTERN",
+    "ChangeSetContractModel",
+    "canonical_records_bytes",
+    "canonical_records_sha256",
+    "decode_canonical_base64_fragment",
+    "stage_batch_sha256",
+]

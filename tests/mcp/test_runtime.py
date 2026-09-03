@@ -38,18 +38,18 @@ from gds_etl_workbench.runtime import (
 from gds_etl_workbench.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
-from gds_etl_workbench.tools.snapshots.dataset_description import (
+from gds_etl_workbench.domain.snapshots.description import (
     compact_authoring_schema,
 )
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotArchive,
     build_dataset_document,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
 )

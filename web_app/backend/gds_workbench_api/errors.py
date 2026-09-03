@@ -4,8 +4,7 @@ from uuid import uuid4
 
 from fastapi import Request
 from fastapi.responses import JSONResponse
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError
-from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.errors import AuthenticationError, WorkbenchError
 
 
 async def authentication_error_response(

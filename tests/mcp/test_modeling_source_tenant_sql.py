@@ -1,11 +1,11 @@
 from gds_etl_workbench.tools.modeling.model_input_scope import (
     _MODEL_INPUT_SCOPE_SQL as MODEL_INPUT_SCOPE_TOOL_SQL,
 )
-from gds_etl_workbench.tools.modeling.profiling_analysis import (
+from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
     PROFILING_SQL,
 )
-from gds_etl_workbench.tools.snapshots.model.selection import (
+from gds_etl_workbench.application.model_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_OBJECT_SQL,
     _MODEL_ATTRIBUTE_BINDING_SQL,

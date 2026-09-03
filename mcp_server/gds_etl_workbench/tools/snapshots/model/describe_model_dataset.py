@@ -13,20 +13,19 @@ from mcp.types import ToolAnnotations
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
+from gds_etl_workbench.application.model_read import POLICY, ContractModel
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.tools.snapshots.dataset_description import (
+from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnDescription,
     compact_authoring_schema,
 )
-
-from ...modeling.common import POLICY, ContractModel
-from .contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     DATASETS_BY_NAME,
     ModelDataset,
     ModelSection,
     build_model_dataset_schema,
 )
-from .guidance import model_dataset_population_rules
+from gds_etl_workbench.domain.snapshots.model_guidance import model_dataset_population_rules
 
 
 class DescribeModelDatasetResult(ContractModel):

@@ -2,8 +2,8 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.tools.change_sets.model_validation import PhysicalModelCatalog
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
+from gds_etl_workbench.domain.snapshots.model import (
     ModelChangeSetDataset,
     ModelSnapshot,
 )

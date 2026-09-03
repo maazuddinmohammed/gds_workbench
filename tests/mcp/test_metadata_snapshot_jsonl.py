@@ -10,7 +10,7 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotContractError,
     encode_dataset,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS,
     DatasetDefinition,
 )

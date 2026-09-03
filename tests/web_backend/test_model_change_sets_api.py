@@ -12,11 +12,11 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     ModelChangeSetDatasetCount,
     validate_model_stage_changes,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelChangeSetDataset
+from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
 from gds_workbench_api.features.model_change_sets.contracts import (
     ApplyModelChangeSetResult,
     CreateModelChangeSetRequest,

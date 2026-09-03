@@ -10,8 +10,8 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalEntityRecord,
     DimensionalRelationshipRecord,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 
 from gds_workbench_api.features.dimensional.policy import (
     project_dimensional_foreign_key_policy,

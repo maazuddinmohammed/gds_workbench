@@ -9,7 +9,7 @@ from typing import Any, Self
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from pydantic import ValidationError
 
 from gds_workbench_api.features.analysis.validation_execution import (

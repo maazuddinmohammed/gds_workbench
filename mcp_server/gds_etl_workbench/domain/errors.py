@@ -3,6 +3,18 @@
 from dataclasses import dataclass
 
 
+@dataclass(frozen=True, slots=True)
+class AuthenticationError(Exception):
+    """Stable authentication failure shared by deployment adapters."""
+
+    public_code: str
+    message: str
+    http_status: int
+
+    def __str__(self) -> str:
+        return self.message
+
+
 @dataclass(slots=True)
 class WorkbenchError(Exception):
     code: str

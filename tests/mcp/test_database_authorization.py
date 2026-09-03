@@ -21,7 +21,7 @@ from gds_etl_workbench.domain.errors import (
     TenantNotFoundError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.tools.tenants.list_tenants import query_visible_tenants
+from gds_etl_workbench.application.tenants import query_visible_tenants
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres

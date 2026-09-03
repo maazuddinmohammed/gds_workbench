@@ -5,7 +5,7 @@ from datetime import date
 from typing import Any, cast
 
 from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS
 from gds_etl_workbench.tools.snapshots.metadata.projection import project_id_free_rows
 
 

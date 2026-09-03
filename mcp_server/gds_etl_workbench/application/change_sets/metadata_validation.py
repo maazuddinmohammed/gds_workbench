@@ -10,11 +10,11 @@ from typing import cast
 
 from pydantic import ValidationError
 
-from gds_etl_workbench.tools.snapshots.metadata.archive import EncodedDataset
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS,
     OBJECT_KEY,
     DatasetDefinition,
+    EncodedDataset,
     ReferenceDefinition,
     normalize_natural_key_value,
 )

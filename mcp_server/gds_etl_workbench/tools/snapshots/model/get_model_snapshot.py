@@ -19,10 +19,12 @@ from pydantic import BaseModel, ConfigDict, Field
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.model_read import POLICY, authorize_model_read
+from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
-from gds_etl_workbench.tools.modeling.common import POLICY, authorize_model_read
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotPayloadTooLargeError,
@@ -35,8 +37,6 @@ from gds_etl_workbench.tools.snapshots.service import (
 from gds_etl_workbench.tools.snapshots.storage import SnapshotStore
 
 from .archive import build_model_snapshot_archive
-from .contracts import ModelSnapshot
-from .selection import build_model_snapshot
 
 
 class ModelSnapshotToolError(Exception):
@@ -96,8 +96,9 @@ def register_create_model_snapshot_tool(
         name="create_model_snapshot",
         description=(
             "Create a new complete, immutable, ID-free Model Snapshot ZIP for broad local "
-            "authoring. It includes Input Scope, evidence, models, Bindings, Mapping, Code, "
-            "and Validation. The response contains bounded archive metadata and a temporary "
+            "authoring. It includes Input Scope, Profiling, Analysis, Assertions, modeled "
+            "layers, Bindings, Mapping, Code, and Validation. The response contains bounded "
+            "archive metadata and a temporary "
             "client download URL, never Snapshot rows. Download promptly and verify the returned "
             "Snapshot ID, byte size, and SHA-256 before installing it."
         ),

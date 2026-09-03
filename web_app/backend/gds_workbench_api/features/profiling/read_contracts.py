@@ -6,7 +6,7 @@ from datetime import datetime
 from decimal import Decimal
 
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.tools.snapshots.metadata.contracts import normalize_natural_key_value
+from gds_etl_workbench.domain.snapshots.metadata import normalize_natural_key_value
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator, model_validator
 
 

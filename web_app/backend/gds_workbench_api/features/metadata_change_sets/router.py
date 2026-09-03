@@ -4,10 +4,10 @@ from typing import Annotated, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Path, Query, Request, Response, status
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.change_sets.metadata import ChangeSetDataset
+from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.change_sets.metadata import ChangeSetDataset
 
 from gds_workbench_api.features.metadata.workbook import MAX_XLSX_BYTES, XLSX_MEDIA_TYPE
 

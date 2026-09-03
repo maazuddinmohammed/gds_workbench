@@ -11,9 +11,9 @@ from importlib.resources import files
 from itertools import islice
 from typing import Literal, Protocol, cast
 
+from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.tools.change_sets.common import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
     DATASETS_BY_NAME,
     build_model_dataset_schema,

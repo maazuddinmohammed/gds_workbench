@@ -84,10 +84,10 @@ The bundle source boundary excludes tests, database installers, local tooling,
 unrelated documentation, generated artifacts, and the separately deployed MCP
 plugin.
 It includes only the root build manifests, `app.yaml`, this deployment guide,
-the MCP Python package
-needed as an internal dependency, and the web backend/frontend production
-source. This prevents legacy MCP deployment configuration from entering the
-Databricks App while leaving MCP runtime behavior unchanged.
+the shared `gds_etl_workbench` application/domain Python source needed in
+process, and the web backend/frontend production source. The App neither starts
+nor calls the MCP server. This prevents MCP deployment configuration from
+entering the Databricks App while leaving the separate MCP runtime unchanged.
 
 ## 3. Prerequisites
 

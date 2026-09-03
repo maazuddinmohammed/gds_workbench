@@ -18,7 +18,7 @@ from gds_etl_workbench.adapters.auth.identity import AuthMode, IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from openpyxl import load_workbook
 from openpyxl.cell.cell import Cell
 from psycopg import Connection

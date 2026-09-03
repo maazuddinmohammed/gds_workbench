@@ -11,29 +11,14 @@ from gds_etl_workbench.application.authorization import (
     AuthorizationService,
     TenantAuthorization,
 )
-from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
-from gds_etl_workbench.domain.errors import (
-    AuthorizationDeniedError,
-    CandidateDigestConflictError,
-    DraftRevisionConflictError,
-    InvalidRequestError,
-    ModelChangeSetNotActiveError,
-    ModelChangeSetNotFoundError,
-    ModelChangeSetNotValidatedError,
-    StageBatchConflictError,
-    StageBatchIncompleteError,
-    StageBatchNotFoundError,
-    StageChunkConflictError,
-)
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets.common import (
+from gds_etl_workbench.application.change_sets.contracts import (
     MAX_MODEL_STAGE_CHUNK_BYTES,
     canonical_records_bytes,
     canonical_records_sha256,
     decode_canonical_base64_fragment,
     stage_batch_sha256,
 )
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     ModelChangeSetDatasetCount,
     ModelDatasetCount,
     StageModelChange,
@@ -50,13 +35,28 @@ from gds_etl_workbench.tools.change_sets.model import (
     validate_model_change_set_document_bounds,
     validate_model_stage_changes,
 )
-from gds_etl_workbench.tools.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
+from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.errors import (
+    AuthorizationDeniedError,
+    CandidateDigestConflictError,
+    DraftRevisionConflictError,
+    InvalidRequestError,
+    ModelChangeSetNotActiveError,
+    ModelChangeSetNotFoundError,
+    ModelChangeSetNotValidatedError,
+    StageBatchConflictError,
+    StageBatchIncompleteError,
+    StageBatchNotFoundError,
+    StageChunkConflictError,
+)
+from gds_etl_workbench.domain.snapshots.model import (
     DATASETS_BY_NAME,
     ModelChangeSetDataset,
     ModelDataset,
 )
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 

@@ -13,6 +13,14 @@ from gds_etl_workbench.domain.modeling_records import (
     ModelingRecord,
     normalize_model_key_value,
 )
+from gds_etl_workbench.domain.snapshots.model import (
+    DATASETS,
+    MODEL_SECTIONS,
+    ModelingDatasetDefinition,
+    ModelSnapshot,
+    build_model_dataset_schema,
+    model_snapshot_records,
+)
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotContractError,
@@ -21,15 +29,6 @@ from gds_etl_workbench.tools.snapshots.archive import (
     json_line,
     utc_timestamp,
     write_snapshot_archive,
-)
-
-from .contracts import (
-    DATASETS,
-    MODEL_SECTIONS,
-    ModelingDatasetDefinition,
-    ModelSnapshot,
-    build_model_dataset_schema,
-    model_snapshot_records,
 )
 
 _SECTION_DESCRIPTIONS = {

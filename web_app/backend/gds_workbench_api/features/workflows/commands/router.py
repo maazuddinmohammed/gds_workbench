@@ -4,7 +4,7 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Path, Request, Response, status
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 
 from gds_workbench_api.features.workflows.commands.contracts import (
     CreateWorkflowRunRequest,

@@ -12,9 +12,9 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets import metadata as canonical_metadata
-from gds_etl_workbench.tools.change_sets.validation import MetadataChangeSetValidation
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.application.change_sets import metadata as canonical_metadata
+from gds_etl_workbench.application.change_sets.metadata_validation import MetadataChangeSetValidation
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.metadata.workbook import (

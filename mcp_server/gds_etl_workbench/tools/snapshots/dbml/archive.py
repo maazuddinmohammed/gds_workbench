@@ -8,6 +8,7 @@ from datetime import datetime
 from pathlib import Path
 from uuid import UUID
 
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotContractError,
@@ -15,7 +16,6 @@ from gds_etl_workbench.tools.snapshots.archive import (
     utc_timestamp,
     write_snapshot_archive,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
 
 from .renderer import DbmlDocument, DbmlModelType
 

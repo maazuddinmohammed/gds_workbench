@@ -21,7 +21,6 @@ sync:
     - databricks_notebooks/**
     - databricks.yml
     - docs/**
-    - load_and_merge_scripts/**
     - plugins/**
     - tests/**
     - mcp_server/.env.example

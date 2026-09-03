@@ -4,8 +4,8 @@ from typing import Protocol
 
 from fastapi import FastAPI, Response, status
 from fastapi.requests import Request
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.application.identity import IdentityProvider
+from gds_etl_workbench.domain.errors import AuthenticationError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord as ReadinessResult
 from starlette.types import Lifespan
 

@@ -16,6 +16,10 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
+from gds_etl_workbench.infrastructure.databricks_sql import (
+    ConnectorDatabricksSqlExecutor,
+    DatabricksSqlExecutor,
+)
 from gds_etl_workbench.infrastructure.postgres import (
     Database,
     DatabricksConnectionDatabase,
@@ -30,10 +34,6 @@ from gds_etl_workbench.tools.change_sets.metadata import (
 from gds_etl_workbench.tools.change_sets.model import register_model_change_set_tools
 from gds_etl_workbench.tools.databricks.execute_sql import (
     register_execute_databricks_sql_tool,
-)
-from gds_etl_workbench.tools.databricks.executor import (
-    ConnectorDatabricksSqlExecutor,
-    DatabricksSqlExecutor,
 )
 from gds_etl_workbench.tools.modeling.model_details import register_list_models_tool
 from gds_etl_workbench.tools.modeling.model_input_scope import (
@@ -106,19 +106,19 @@ def create_mcp_server(
         version=MCP_SERVER_VERSION,
         description="Governed GDS context, Snapshot, and Change Set workflows.",
         instructions=(
-            "Use focused reads for bounded questions and Snapshots for broad authoring or "
-            "applied Code and Validation context. Reads and local drafts require no lock. "
-            "A clear user acknowledgement of the exact local result authorizes acquiring an "
-            "ordinary free Tenant Lock, reconciliation, Stage, and Change Set validation; do "
-            "not ask again before those actions. Lock override and Apply require separate "
-            "explicit approval. Model Input Scope must Apply before Profiling or model "
+            "This server exposes governed reads, Snapshots, Tenant Locks, Change Sets, and "
+            "bounded Databricks SQL. Clients own interaction and workflow orchestration. "
+            "The server derives identity and authorization and enforces Tenant Lock ownership, "
+            "revision fencing, idempotency, validation, dependency order, and audit. "
+            "Lock override and Apply are separate high-impact operations that require explicit "
+            "approval before invocation. Model Input Scope must Apply before Profiling or model "
             "development. Metadata registration must Apply before Model Binding; Binding must "
-            "Apply before Mapping; Mapping must Apply before Code or Validation. Refresh the "
-            "affected Snapshot after Apply. On revision mismatch, stop and reassess against a "
-            "fresh Snapshot without auto-merge. Release any lock acquired here when work stops. "
-            "The server derives identity and authorization. Summarize safe results; never copy "
-            "credentials, signed URLs, raw rows, prompts, SQL, or raw tool output into chat. "
-            "The user may manually download a Snapshot from its client tool result. "
+            "Apply before Mapping; Mapping must Apply before Code or Validation. For Model work, "
+            "a Model revision mismatch requires a fresh Snapshot and reassessment without "
+            "auto-merge. Metadata has no Tenant-wide revision; current state is protected by the "
+            "Tenant Lock and server validation. Summarize safe results; never copy credentials, "
+            "signed URLs, raw rows, prompts, or raw tool output into chat. Requested generated-"
+            "artifact previews remain allowed. "
             "execute_databricks_sql defaults to environment_code=dev, requires qualified "
             "persistent relations, and permits only reads or unqualified temporary objects."
         ),

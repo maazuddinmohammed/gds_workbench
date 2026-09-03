@@ -4,10 +4,10 @@ from typing import Annotated, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Header, Path, Query, Request, Response, status
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.change_sets.contracts import MAX_STAGE_CHUNKS
+from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
-from gds_etl_workbench.tools.change_sets.common import MAX_STAGE_CHUNKS
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelDataset
+from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
 from .contracts import (
     ApplyModelChangeSetResult,

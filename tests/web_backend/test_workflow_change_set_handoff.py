@@ -14,8 +14,8 @@ from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
     InvalidRequestError,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
     ModelValidationIssue,
     ValidatedModelChangeSet,
 )

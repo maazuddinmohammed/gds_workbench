@@ -4,7 +4,7 @@ import asyncio
 from typing import Annotated
 
 from fastapi import APIRouter, Header, Path, Query, Request
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from starlette.responses import StreamingResponse
 

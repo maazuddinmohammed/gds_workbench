@@ -10,7 +10,7 @@ from tests.mcp.model_test_fixtures import (
 
 from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
 from gds_etl_workbench.tools.snapshots.dbml.renderer import render_dbml_documents
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     ModelChangeSetDataset,
     ModelSnapshot,
 )

@@ -22,8 +22,8 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import AgentRunSelection

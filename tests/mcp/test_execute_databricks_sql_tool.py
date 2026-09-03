@@ -30,11 +30,11 @@ from gds_etl_workbench.infrastructure.postgres import (
 from gds_etl_workbench.tools.databricks.execute_sql import (
     register_execute_databricks_sql_tool,
 )
-from gds_etl_workbench.tools.databricks.executor import (
+from gds_etl_workbench.infrastructure.databricks_sql import (
     DatabricksSqlConnection,
     DatabricksSqlExecutionResult,
 )
-from gds_etl_workbench.tools.databricks.validation import ValidatedDatabricksSql
+from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
 
 
 @dataclass

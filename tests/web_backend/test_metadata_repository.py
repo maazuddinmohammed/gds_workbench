@@ -6,7 +6,7 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     normalize_natural_key_value,
 )

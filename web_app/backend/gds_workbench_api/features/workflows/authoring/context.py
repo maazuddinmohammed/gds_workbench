@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Literal, LiteralString, cast
 
+from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.metadata_records import AttributeRecord, ObjectRecord
 from gds_etl_workbench.domain.modeling_records import (
@@ -17,9 +19,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     normalize_model_key_value,
 )
-from gds_etl_workbench.infrastructure.postgres import ReadTransaction
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     AssertionSection,
     ConceptualSection,
     DimensionalSection,
@@ -27,7 +27,7 @@ from gds_etl_workbench.tools.snapshots.model.contracts import (
     MappingSection,
     ModelSnapshot,
 )
-from gds_etl_workbench.tools.snapshots.model.selection import build_model_snapshot
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_workbench_api.features.assertions.contracts import validate_safe_json

@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from gds_etl_workbench.tools.databricks.executor import (
+from gds_etl_workbench.infrastructure.databricks_sql import (
     DatabricksSqlConnection as LegacyDatabricksSqlConnection,
 )
 from gds_workbench_api.features.profiling.workflow import (

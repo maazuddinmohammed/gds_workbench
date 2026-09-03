@@ -5,8 +5,8 @@ from __future__ import annotations
 from copy import deepcopy
 from dataclasses import dataclass
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.repair import (

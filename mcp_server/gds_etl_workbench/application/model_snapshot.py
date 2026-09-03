@@ -1,23 +1,17 @@
-"""Complete Model record selection shared by Snapshots and Change Set validation."""
+"""Complete Model record selection shared by web workflows and MCP snapshots."""
 
 from __future__ import annotations
 
 from collections.abc import Mapping
 from typing import LiteralString, cast
 
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import (
-    ModelingRecord,
-    normalize_model_key_value,
-)
-from gds_etl_workbench.infrastructure.postgres import ReadTransaction
-from gds_etl_workbench.tools.modeling.assertions import DOCUMENTS_SQL, RECORDS_SQL
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
-from gds_etl_workbench.tools.modeling.conceptual import (
+from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.modeling.assertions import DOCUMENTS_SQL, RECORDS_SQL
+from gds_etl_workbench.application.modeling.conceptual import (
     CONCEPTUAL_OBJECTS_SQL,
     CONCEPTUAL_RELATIONSHIPS_SQL,
 )
-from gds_etl_workbench.tools.modeling.modeled_layer_common import (
+from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
     LOGICAL,
     LayerConfig,
@@ -26,12 +20,21 @@ from gds_etl_workbench.tools.modeling.modeled_layer_common import (
     relationships_sql,
     submodels_sql,
 )
-from gds_etl_workbench.tools.modeling.profiling_analysis import (
+from gds_etl_workbench.application.modeling.profiling_analysis import (
     ANALYSIS_SQL,
     PROFILING_SQL,
 )
-
-from .contracts import DATASETS_BY_NAME, ModelingDatasetDefinition, ModelSnapshot
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import (
+    ModelingRecord,
+    normalize_model_key_value,
+)
+from gds_etl_workbench.domain.snapshots.model import (
+    DATASETS_BY_NAME,
+    ModelingDatasetDefinition,
+    ModelSnapshot,
+)
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 
 _MAX_DATASET_ROWS = 20_000
 _MAX_TOTAL_ROWS = 50_000

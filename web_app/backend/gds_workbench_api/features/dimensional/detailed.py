@@ -9,6 +9,7 @@ from hashlib import sha256
 from importlib.resources import files
 from typing import Literal, cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AttributeAssertionSourceRecord,
@@ -23,8 +24,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
     normalize_model_key_value,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from pydantic import (
     BaseModel,
     ConfigDict,

@@ -4,13 +4,13 @@ from __future__ import annotations
 
 from typing import Literal, cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     MappingAttributeRecord,
     MappingObjectRecord,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.change_sets.model_validation import validate_staged_records
 from pydantic import ValidationError
 
 from .contracts import CompleteMappingCandidateV1

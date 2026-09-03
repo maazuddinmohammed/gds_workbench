@@ -5,6 +5,7 @@ from typing import Protocol
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
+from gds_etl_workbench.application.tenants import query_visible_tenants
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -21,7 +22,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.tenants.list_tenants import query_visible_tenants
 
 from gds_workbench_api.features.tenants.contracts import (
     TenantCollection,

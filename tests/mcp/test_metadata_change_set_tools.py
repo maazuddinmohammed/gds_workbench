@@ -24,15 +24,15 @@ from gds_etl_workbench.infrastructure.postgres import (
     ToolCallLogRecord,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.change_sets.common import (
+from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
 )
-from gds_etl_workbench.tools.change_sets.metadata import (
+from gds_etl_workbench.application.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
 from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     SelectedMetadataSnapshot,
 )
@@ -857,7 +857,7 @@ async def test_validate_metadata_change_set_persists_bounded_result(
         )
 
     monkeypatch.setattr(
-        "gds_etl_workbench.tools.change_sets.metadata.select_snapshot_datasets",
+        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
         select_snapshot,
     )
 
@@ -960,7 +960,7 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
-        "gds_etl_workbench.tools.change_sets.metadata.select_snapshot_datasets",
+        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
         select_empty_snapshot,
     )
 
@@ -1042,7 +1042,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
-        "gds_etl_workbench.tools.change_sets.metadata.select_snapshot_datasets",
+        "gds_etl_workbench.application.change_sets.metadata.select_snapshot_datasets",
         select_empty_snapshot,
     )
 

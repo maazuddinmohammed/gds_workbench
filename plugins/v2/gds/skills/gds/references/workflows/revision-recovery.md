@@ -1,6 +1,6 @@
-# Revision Recovery
+# Model Revision Recovery
 
-If the authoritative revision differs from the Snapshot revision used for the reviewed digest:
+Use this only when the authoritative Model revision differs from the Model Snapshot revision used for the accepted digest. Metadata has no tenant-wide revision and instead uses a non-stale Snapshot, Tenant Lock, and server validation.
 
 1. Stop before reconciliation or Stage.
 2. Create and download the fresh complete Snapshot, then install it into the known session with `snapshot-install`. Ask the user only if the session/download location cannot be resolved. Never repeat its temporary signed URL in chat.

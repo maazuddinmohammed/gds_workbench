@@ -15,7 +15,7 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model_validation import (
     validation_code_context_digest,
     validation_mapping_context_digest,
 )

@@ -13,7 +13,7 @@ def word_count(path: Path) -> int:
 
 
 def test_static_instruction_footprint_proxy_stays_bounded() -> None:
-    """Guard file footprint, not actual model-token usage."""
+    """Guard the lazy-loaded instruction path, not every alternative guide at once."""
     v2_skills = sorted((V2_ROOT / "skills").glob("*/SKILL.md"))
     v2_markdown = sorted((V2_ROOT / "skills").rglob("*.md"))
 
@@ -21,10 +21,26 @@ def test_static_instruction_footprint_proxy_stays_bounded() -> None:
 
     v2_router_words = word_count(v2_skills[0])
     v2_markdown_words = sum(map(word_count, v2_markdown))
+    logical_path = [
+        v2_skills[0],
+        V2_ROOT / "skills/gds/references/session.md",
+        V2_ROOT / "skills/gds/references/workflow-targets.md",
+        V2_ROOT / "skills/gds/references/change-sets.md",
+        V2_ROOT / "skills/gds/references/local-helper.md",
+        V2_ROOT / "skills/gds/references/server-handoff.md",
+        V2_ROOT / "skills/gds/references/staging.md",
+        V2_ROOT / "skills/gds/references/workflows/logical-build.md",
+        V2_ROOT / "skills/gds/references/workflows/model-input-scope.md",
+        V2_ROOT / "skills/gds/references/workflows/profiling.md",
+        V2_ROOT / "skills/gds/references/workflows/analysis.md",
+        V2_ROOT / "skills/gds/references/workflows/conceptual.md",
+        V2_ROOT / "skills/gds/references/workflows/assertions.md",
+    ]
 
     assert v2_router_words <= 600
     assert max(map(word_count, v2_markdown)) <= 700
-    assert v2_markdown_words <= 5_500
+    assert v2_markdown_words <= 6_500
+    assert sum(map(word_count, logical_path)) <= 3_700
 
 
 def test_router_requires_progressive_reference_loading() -> None:

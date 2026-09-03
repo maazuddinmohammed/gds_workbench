@@ -14,12 +14,12 @@ from gds_etl_workbench.domain.errors import (
     DatabricksResultTooLargeError,
     DatabricksStatementFailedError,
 )
-from gds_etl_workbench.tools.databricks.executor import (
+from gds_etl_workbench.infrastructure.databricks_sql import (
     ConnectorDatabricksSqlExecutor,
     DatabricksError,
     DatabricksSqlConnection,
 )
-from gds_etl_workbench.tools.databricks.validation import validate_databricks_sql
+from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 
 
 class FakeCursor:

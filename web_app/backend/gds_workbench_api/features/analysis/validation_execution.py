@@ -17,13 +17,13 @@ from typing import Any, Literal, Protocol, Self, cast
 
 from databricks import sql as databricks_sql
 from databricks.sql.exc import Error as DatabricksError
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (
     DatabricksConnectionFailedError,
     DatabricksStatementFailedError,
     InvalidRequestError,
     WorkbenchError,
 )
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _MAX_RELATIONSHIPS = 50_000

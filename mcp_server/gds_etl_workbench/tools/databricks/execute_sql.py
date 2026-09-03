@@ -18,19 +18,19 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ToolPolicy
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
+from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import (
     DatabricksConnectionConfigurationError,
     DatabricksConnectionNotFoundError,
     WorkbenchError,
 )
+from gds_etl_workbench.infrastructure.databricks_sql import DatabricksSqlExecutor
 from gds_etl_workbench.infrastructure.postgres import (
     DatabricksConnectionDatabase,
     DatabricksConnectionValuesRecord,
     ReadIsolation,
 )
-
-from .executor import DatabricksSqlConnection, DatabricksSqlExecutor
-from .validation import validate_databricks_sql
 
 _TOOL_NAME = "execute_databricks_sql"
 _MAX_SQL_CHARACTERS = 100_000
@@ -85,8 +85,7 @@ def register_execute_databricks_sql_tool(
             "Execute up to 25 governed Databricks SQL statements using an active source "
             "Connection, its Tenant's Global Data Store Connection, and one requested "
             "Environment; environment_code defaults to dev. Physical relations must use "
-            "catalog.schema.table. Allows reads "
-            "and unqualified temporary views/tables only. "
+            "catalog.schema.table. Allows reads and unqualified temporary views/tables only. "
             "Returns the configured row limit, never more than 50, from the final "
             "statement. The audit log retains only a digest and bounded metadata, "
             "never submitted SQL or credentials."

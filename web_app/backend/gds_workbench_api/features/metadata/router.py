@@ -6,9 +6,9 @@ from typing import Annotated, Literal, cast
 
 from fastapi import APIRouter, Path, Query, Response
 from fastapi.requests import Request
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     MetadataDataset,
     normalize_natural_key_value,

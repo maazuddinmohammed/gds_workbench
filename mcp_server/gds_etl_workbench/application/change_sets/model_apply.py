@@ -9,6 +9,11 @@ from typing import Any, LiteralString, cast
 
 from psycopg.types.json import Jsonb
 
+from gds_etl_workbench.application.modeling.modeled_layer import (
+    DIMENSIONAL,
+    LOGICAL,
+    LayerConfig,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
@@ -42,11 +47,6 @@ from gds_etl_workbench.domain.modeling_records import (
     normalize_model_key_value,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.modeling.modeled_layer_common import (
-    DIMENSIONAL,
-    LOGICAL,
-    LayerConfig,
-)
 
 _UPDATE_MODEL_DETAILS_SQL: LiteralString = """
 UPDATE model.model

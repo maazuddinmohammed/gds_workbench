@@ -15,11 +15,11 @@ from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
 from gds_etl_workbench.infrastructure.postgres import Database
-from gds_etl_workbench.tools.change_sets.common import decode_canonical_base64_fragment
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.application.change_sets.contracts import decode_canonical_base64_fragment
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.model.describe_model_dataset import (
     register_describe_model_dataset_tool,
 )
@@ -179,6 +179,12 @@ async def test_tool_descriptions_and_complex_arguments_are_agent_ready() -> None
         "exact Bronze/Silver/Gold placement"
         in connection["is_tenant_gds_connection"]["description"]
     )
+
+    assert "explicitly requests DBML" in tools["export_model_dbml"].description
+    for tool_name in ("stage_metadata_change_set", "stage_model_change_set"):
+        assert "every included dataset fits in one request" in tools[tool_name].description
+    for tool_name in ("validate_metadata_change_set", "validate_model_change_set"):
+        assert "invalid draft remains active" in tools[tool_name].description.lower()
 
 
 @pytest.mark.asyncio
@@ -348,9 +354,14 @@ def test_server_instructions_state_the_simple_authoring_boundary() -> None:
     assert "Metadata registration must Apply before Model Binding" in text
     assert "Binding must Apply before Mapping" in text
     assert "Mapping must Apply before Code or Validation" in text
-    assert "Refresh the affected Snapshot after Apply" in text
-    assert "do not ask again before those actions" in text
-    assert "Lock override and Apply require separate explicit approval" in text
+    assert "Clients own interaction and workflow orchestration" in text
+    assert "Tenant Lock ownership, revision fencing, idempotency" in text
+    assert "Lock override and Apply are separate high-impact operations" in text
     assert "revision mismatch" in text
+    assert "Metadata has no Tenant-wide revision" in text
     assert "environment_code=dev" in text
     assert "execute_databricks_sql" in text
+    assert "acknowledgement" not in text
+    assert "Workbench" not in text
+    assert "Stage plan" not in text
+    assert "capable local client" not in text

@@ -6,6 +6,8 @@ import json
 from string import Formatter
 from typing import Annotated, Literal, cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import validate_staged_records
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     DimensionalAttributeRecord,
@@ -13,9 +15,7 @@ from gds_etl_workbench.domain.modeling_records import (
     DimensionalRelationshipRecord,
     normalize_model_key_value,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.change_sets.model_validation import validate_staged_records
-from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from pydantic import (
     BaseModel,
     ConfigDict,

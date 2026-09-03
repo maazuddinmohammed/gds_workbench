@@ -10,11 +10,13 @@ from typing import Any, Protocol, cast
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.change_sets import metadata as canonical_metadata
+from gds_etl_workbench.application.change_sets.metadata_validation import (
+    MetadataChangeSetValidation,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets import metadata as canonical_metadata
-from gds_etl_workbench.tools.change_sets.validation import MetadataChangeSetValidation
 from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.metadata.workbook import (

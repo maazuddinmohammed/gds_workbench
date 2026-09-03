@@ -15,7 +15,7 @@ from gds_etl_workbench.domain.portable_validation import METADATA_RECORD_VALIDAT
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     build_dataset_document,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS,
     PHYSICAL_TABLE_COUNT,
     SnapshotSection,

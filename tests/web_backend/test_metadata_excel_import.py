@@ -50,7 +50,7 @@ def _workbook() -> bytes:
 
 
 def _canonical_workbook() -> bytes:
-    from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS_BY_NAME
+    from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 
     definition = DATASETS_BY_NAME["copy_group"]
     return build_metadata_workbook(

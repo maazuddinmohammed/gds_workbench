@@ -10,14 +10,14 @@ from typing import Literal, Protocol
 
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS,
     DATASETS_BY_NAME,
     MetadataDataset,
     SnapshotSection,
     normalize_natural_key_value,
 )
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 from pydantic import (
     BaseModel,
     ConfigDict,

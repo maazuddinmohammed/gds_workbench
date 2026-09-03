@@ -4,17 +4,16 @@ GDS Workbench has three workflow entry points over one governed PostgreSQL
 model:
 
 ```text
-VS Code Agent Plugin ----+
-                         +--> MCP server ------+
-Web application --------+                     |
-                                               +--> PostgreSQL
-Databricks workflows --------------------------+
+VS Code Agent Plugin --> Azure App Service MCP --> PostgreSQL
+Databricks web App -----------------------------> PostgreSQL
+Databricks notebooks ----------------------------> PostgreSQL
 ```
 
 The Agent Plugin is the primary developer experience. The web application runs
 equivalent workflows for users who do not use the plugin. Databricks notebooks
 may use different models through Microsoft Foundry or Databricks; they share the
-database workflow contracts, not an agent runtime.
+same in-process workflow implementation with the web App. Neither the web App
+nor notebooks call the MCP server.
 
 ## Plugin
 
@@ -65,13 +64,23 @@ server-internal integrity fields.
 
 ## Database and deployment
 
+There is no shared deployed Python process. Build packaging copies the shared
+`gds_etl_workbench` application/domain source into each independent artifact:
+the Azure App Service MCP ZIP, the Databricks App upload, and the Databricks
+notebook upload. The web App also packages `gds_workbench_api` and
+`gds_workbench_runtime`; notebooks package only their pruned in-process subset.
+Each runtime connects directly to PostgreSQL with its own least-privilege
+database role.
+
 Numbered SQL files define a greenfield PostgreSQL 18 installation. Startup does
 not apply DDL. No migration, backfill, destructive cleanup, or populated-database
 reset path exists.
 
-The runtime ZIP contains only the application entry points, dependency list,
+The MCP runtime ZIP contains only the application entry points, dependency list,
 build manifest, and Python package. SQL, tests, docs, local environments, and
 secrets are excluded.
 
 See [security](../security.md), [database architecture](database.md), and
-[ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md).
+[ADR 001](../adr/001-direct-principal-authorization-and-tenant-locks.md). The
+deployment/source boundary is recorded in
+[ADR 005](../adr/005-independent-deployments-with-shared-source.md).

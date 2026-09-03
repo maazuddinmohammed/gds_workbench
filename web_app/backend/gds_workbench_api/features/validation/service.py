@@ -10,6 +10,7 @@ from typing import Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import (
@@ -17,7 +18,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import VALIDATION_AGENT_EXECUTION_MODE

@@ -20,10 +20,10 @@ from pydantic import BaseModel, ConfigDict, Field
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.model_read import POLICY
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database
-from gds_etl_workbench.tools.modeling.common import POLICY
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotPayloadTooLargeError,
@@ -107,7 +107,8 @@ def register_export_model_dbml_tool(
     @server.tool(
         name="export_model_dbml",
         description=(
-            "Export conceptual, logical, dimensional, or full DBML for one authorized Model. "
+            "Only when the user explicitly requests DBML, export conceptual, logical, "
+            "dimensional, or full DBML for one authorized Model. "
             "The ZIP contains each selected complete layer and, when requested, Logical and "
             "Dimensional files by active Submodel. Returns archive metadata and a temporary "
             "client download URL."

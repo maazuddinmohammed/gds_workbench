@@ -6,18 +6,15 @@ from collections.abc import Callable, Mapping, Sequence
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import TYPE_CHECKING, Annotated, Any, Literal
 from uuid import UUID
 
-from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import TenantNotFoundError, WorkbenchError
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation, ReadTransaction
 from gds_etl_workbench.tools.snapshots.service import (
     build_and_upload_snapshot,
@@ -34,7 +31,6 @@ from .archive import (
     build_snapshot_archive,
     encode_dataset,
 )
-from .contracts import DATASETS
 from .projection import REFERENCE_ID_COLUMNS, project_id_free_rows
 from .sql import (
     ATTRIBUTE_ROWS_SQL,
@@ -54,6 +50,12 @@ from .sql import (
     PROCESS_ROWS_SQL,
     REFERENCE_ROWS_SQL,
 )
+
+if TYPE_CHECKING:
+    from mcp.server.mcpserver import Context, MCPServer
+
+    from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+    from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 
 
 @dataclass(frozen=True, slots=True)
@@ -112,7 +114,13 @@ def register_create_metadata_snapshot_tool(
     clock: Callable[[], datetime] | None = None,
 ) -> None:
     """Register the small descriptor-only Metadata Snapshot MCP tool."""
+    from mcp.server.mcpserver import Context as McpContext
+    from mcp.types import ToolAnnotations
+
+    from gds_etl_workbench.adapters.auth.identity import AuthenticationError
+
     current_time = clock or (lambda: datetime.now(UTC))
+    globals()["Context"] = McpContext
 
     tool_registration = server.tool(
         name="create_metadata_snapshot",

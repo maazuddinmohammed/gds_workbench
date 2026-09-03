@@ -9,15 +9,7 @@ from typing import Any, Protocol
 from uuid import UUID, uuid4
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
-from gds_etl_workbench.domain.errors import (
-    AuthorizationDeniedError,
-    DependencyUnavailableError,
-    InvalidRequestError,
-    WorkbenchError,
-)
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     StageModelChange,
     model_change_set_documents,
     model_validation_outcome,
@@ -26,12 +18,20 @@ from gds_etl_workbench.tools.change_sets.model import (
     validate_model_change_set_document_bounds,
     validate_model_stage_changes,
 )
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model_validation import (
     ModelValidationIssue,
     ValidatedModelChangeSet,
 )
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
-from gds_etl_workbench.tools.snapshots.model.contracts import DATASETS_BY_NAME
+from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.errors import (
+    AuthorizationDeniedError,
+    DependencyUnavailableError,
+    InvalidRequestError,
+    WorkbenchError,
+)
+from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_workbench_api.features.model_change_sets.repository import (

@@ -38,4 +38,3 @@ MODEL_RECORD_VALIDATIONS: Final[dict[str, tuple[str, ...]]] = {
 def record_validation_contract(rules: tuple[str, ...]) -> dict[str, object]:
     """Return the small portable contract consumed by both local helpers."""
     return {"version": CONTRACT_VERSION, "rules": list(rules)}
-

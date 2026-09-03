@@ -6,14 +6,14 @@ import json
 from dataclasses import dataclass
 from typing import Annotated, Literal, cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     ValidationCheckRecord,
     ValidationGroupRecord,
     normalize_model_key_value,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.databricks.validation import validate_databricks_sql
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.repair import (

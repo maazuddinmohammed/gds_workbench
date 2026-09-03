@@ -21,7 +21,7 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotContractError,
     build_root_documents,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     SelectedMetadataSnapshot,
     create_metadata_snapshot,

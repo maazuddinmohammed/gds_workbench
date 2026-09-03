@@ -7,17 +7,17 @@ from typing import Any, LiteralString, cast
 import pytest
 
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets import model as model_change_sets
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets import model as model_change_sets
+from gds_etl_workbench.application.change_sets.model import (
     _load_physical_scope,
     _validate_locked_change_set,
 )
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model_validation import (
     CodeGenerationTargetContext,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
+from gds_etl_workbench.application.model_read import ModelReadContext
 
 
 @dataclass

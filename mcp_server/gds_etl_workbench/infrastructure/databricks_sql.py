@@ -20,13 +20,12 @@ from typing import Any, Protocol, Self, cast
 from pydantic import JsonValue
 
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
+from gds_etl_workbench.domain.databricks_sql import ValidatedDatabricksSql
 from gds_etl_workbench.domain.errors import (
     DatabricksConnectionFailedError,
     DatabricksResultTooLargeError,
     DatabricksStatementFailedError,
 )
-
-from .validation import ValidatedDatabricksSql
 
 # The connector logs host and HTTP path at debug level. Connection values must
 # never enter application logs, regardless of deployment logging configuration.

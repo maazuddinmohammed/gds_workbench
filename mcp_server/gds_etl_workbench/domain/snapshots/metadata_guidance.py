@@ -5,7 +5,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 from typing import cast
 
-from gds_etl_workbench.tools.snapshots.dataset_description import (
+from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnAcceptedValues,
     DatasetColumnDescription,
     DatasetColumnReference,
@@ -13,7 +13,7 @@ from gds_etl_workbench.tools.snapshots.dataset_description import (
     JsonScalar,
 )
 
-from .contracts import DATASETS, DatasetDefinition
+from .metadata import DATASETS, DatasetDefinition
 
 _CONSTRAINT_KEYS = (
     "format",

@@ -11,10 +11,10 @@ from typing import Any, cast
 
 from pydantic import ValidationError
 
+from gds_etl_workbench.domain.databricks_sql import validate_databricks_sql
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import ModelingRecord, normalize_model_key_value
-from gds_etl_workbench.tools.databricks.validation import validate_databricks_sql
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS,
     ModelChangeSetDataset,

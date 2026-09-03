@@ -125,7 +125,8 @@ def test_revision_change_forces_fresh_snapshot_and_reassessment() -> None:
         )
     )
 
-    assert "fresh Snapshot" in documents
+    assert "fresh Model Snapshot" in documents
+    assert "Metadata has no tenant-wide revision" in documents
     assert "reassess" in documents
     assert "byte-identical" in documents
     assert "never auto-merge" in documents or "never merge automatically" in documents
@@ -202,6 +203,9 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     assert "required Logical Build phase" in conceptual
     assert "Conceptual-to-Logical copy" in conceptual
     assert "one-concept-per-Object" in conceptual
+    assert "business-process-first" in conceptual
+    assert "process-to-concept matrix" in conceptual
+    assert "One Object may support several concepts" in conceptual
     for state in ("represented", "context-only", "excluded", "blocked"):
         assert state in conceptual
     assert "PascalCase" in conceptual
@@ -211,6 +215,20 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
         assert policy in router
         assert policy in logical
     assert "never persist raw query output" in logical
+    for decision in (
+        "functional dependencies",
+        "1NF",
+        "2NF",
+        "3NF",
+        "source-projection challenge",
+        "same business concept at the same grain",
+    ):
+        assert decision in logical
+    assert "Do not finalize a metadata-only result when a query can resolve it" in logical
+    assert "do not turn this layer into a star schema" in logical
+    assert "Kimball's four decisions" in dimensional
+    assert "process-to-dimension bus matrix" in dimensional
+    assert "true to the declared grain" in dimensional
 
 
 def test_mapping_is_flexible_but_has_a_standard_default() -> None:

@@ -8,6 +8,8 @@ The builder creates two independent, source-only upload folders:
   workflow worker running as one Databricks App.
 
 The notebooks do not call or require the App. Neither upload requires a wheel.
+Both uploads receive their own source copy of the shared workflow modules; they
+do not call the separately deployed Azure App Service MCP server.
 
 ## 1. Build and verify
 

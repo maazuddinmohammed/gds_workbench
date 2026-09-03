@@ -1,9 +1,18 @@
 # Analysis
 
-Use physical metadata, Profiles, existing Analysis, and Assertions to investigate grain, keys, overlaps, relationships, and data-quality signals.
+Turn physical metadata, Profiles, Assertions, and permitted queries into explicit modeling decisions. Do not treat a source table as an implied target Entity.
 
-First enumerate plausible relationship candidates from names, descriptions, keys, value domains, Profiles, and Assertions across every scoped Object, including cross-System alignments. Then support, reject, or retain each candidate as inference. When SQL policy permits, use bounded join coverage, uniqueness, cardinality, and orphan checks; do not query unrelated pairs without a relationship signal.
+For every scoped Object, determine or state the uncertainty around:
 
-Record evidence-backed findings, confidence, and supporting endpoints. A finding may be inference-only. Populate measured validation fields only from actual deterministic results; never partially populate a measured group or fabricate numbers.
+- the business process or state represented and what one row means;
+- candidate business identifiers and whether their meaning is stable across Systems;
+- repeating or multi-valued groups, header/detail mixtures, and columns at different grains;
+- functional dependencies: which identifier determines each descriptor;
+- coded domains, reference data, lifecycle/status, effective dates, and history behavior; and
+- plausible within- and cross-System relationships or identity overlaps.
 
-Classify each selected input represented, context-only, excluded with reason, or blocked. Analysis advises later models; it does not silently create model structure.
+Start relationship candidates from names, descriptions, keys, value domains, and existing evidence. Under the SQL policy, test only signaled candidates with bounded uniqueness, determinant consistency, join coverage, cardinality, orphan, and cross-System overlap checks. A query result is evidence, not an automatic relationship or merge decision.
+
+Record supported, unsupported, or inconclusive findings with confidence and basis. A finding may remain inference-only. Populate measured fields only from one complete deterministic result; never fabricate or partially populate them. Unresolved identity, grain, or cardinality that changes the structure requires user evidence or blocks that decision.
+
+Classify every input represented, context-only, excluded with reason, or blocked. Analysis informs Conceptual and Logical work; it never copies source structure into them.

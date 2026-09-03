@@ -3,7 +3,7 @@
 from typing import Annotated
 
 from fastapi import APIRouter, Path, Query, Request
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 from pydantic import BaseModel, ConfigDict, Field, ValidationInfo, field_validator
 
 from gds_workbench_api.features.assertions.contracts import (

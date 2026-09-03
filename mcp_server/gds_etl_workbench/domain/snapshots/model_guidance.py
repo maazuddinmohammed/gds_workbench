@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import cast
 
-from gds_etl_workbench.tools.snapshots.dataset_description import (
+from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnAcceptedValues,
     DatasetColumnDescription,
 )
@@ -38,7 +38,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
         "For Bronze, query the physical Object schema, Object name, and Attribute name.",
     ),
     "analysis_result": (
-        "Record evidence-backed relationships; keep unsupported or inconclusive findings explicit.",
+        (
+            "Record tested grain, identity, functional-dependency, and relationship findings; "
+            "keep unsupported or inconclusive findings explicit."
+        ),
     ),
     "modeling_assertion_document": (
         "Describe the local evidence document without storing raw prompts or physical rows.",
@@ -51,7 +54,8 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
             "Model compact business concepts, not one Conceptual Object per physical Object "
             "or Logical Entity."
         ),
-        "Classify coverage through supports; do not duplicate the Logical model.",
+        "Define the business process and what one occurrence of each concept represents.",
+        "Classify coverage through supports; never duplicate the Logical model.",
         "Use PascalCase by default unless user or Model policy says otherwise.",
     ),
     "conceptual_relationship": (
@@ -59,11 +63,23 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "logical_submodel": ("Group the normalized operational model by coherent business area.",),
     "logical_entity": (
-        "Build a normalized operational entity with a clear grain and complete in-scope coverage.",
+        (
+            "Build a normalized operational Entity with a clear grain, supported identity, "
+            "and complete in-scope coverage."
+        ),
+        (
+            "Apply 1NF, 2NF, and 3NF where supported; split different grains, repeating groups, "
+            "partial dependencies, transitive dependencies, and genuine associations."
+        ),
+        (
+            "A physical Object maps one-to-one only after checking grain, dependencies, "
+            "header/detail structure, history, and cross-System consolidation."
+        ),
         "Use PascalCase by default unless user or Model policy says otherwise.",
     ),
     "logical_attribute": (
         "Include every physical target Attribute, including audit and constant-valued Attributes.",
+        "Place each Attribute with the Entity whose whole key determines it.",
         "Use PascalCase; identifier Attributes end in ID unless user or Model policy overrides it.",
     ),
     "logical_relationship": (
@@ -71,7 +87,10 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     ),
     "dimensional_submodel": ("Group Facts and Dimensions around a coherent business process.",),
     "dimensional_entity": (
-        "Define the business process and grain before Facts, Dimensions, and relationships.",
+        (
+            "Follow the Kimball sequence: select the business process, declare fact grain, "
+            "identify Dimensions, then identify Facts."
+        ),
         "Use PascalCase by default unless user or Model policy says otherwise.",
     ),
     "dimensional_attribute": (
@@ -236,12 +255,8 @@ def enrich_model_dataset_schema(dataset: str, schema: dict[str, object]) -> None
                     "properties": {"logical_entity_type": {"const": "other"}},
                     "required": ["logical_entity_type"],
                 },
-                "then": {
-                    "properties": {"logical_entity_type_detail": {"type": "string"}}
-                },
-                "else": {
-                    "properties": {"logical_entity_type_detail": {"type": "null"}}
-                },
+                "then": {"properties": {"logical_entity_type_detail": {"type": "string"}}},
+                "else": {"properties": {"logical_entity_type_detail": {"type": "null"}}},
             }
         ]
     schema["x-gds-population-rules"] = list(rules)

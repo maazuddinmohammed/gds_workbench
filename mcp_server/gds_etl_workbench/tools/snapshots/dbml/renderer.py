@@ -11,8 +11,8 @@ from dataclasses import dataclass
 from typing import Literal, cast
 
 from gds_etl_workbench.domain.modeling_records import ModelingRecord
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
 
 type DbmlModelType = Literal["full", "conceptual", "logical", "dimensional"]
 type DbmlLayer = Literal["conceptual", "logical", "dimensional"]

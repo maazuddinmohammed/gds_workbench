@@ -22,7 +22,7 @@ from gds_etl_workbench.tools.snapshots.model.archive import (
     build_model_snapshot_archive,
     encode_model_snapshot,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
     DATASETS,
     DATASETS_BY_NAME,

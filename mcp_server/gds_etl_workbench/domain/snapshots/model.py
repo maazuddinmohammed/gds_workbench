@@ -40,7 +40,7 @@ from gds_etl_workbench.domain.portable_validation import (
     record_validation_contract,
 )
 
-from .guidance import enrich_model_dataset_schema
+from .model_guidance import enrich_model_dataset_schema
 
 type ModelSection = Literal[
     "model_input_scope",

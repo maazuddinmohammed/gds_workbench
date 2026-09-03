@@ -6,12 +6,12 @@ from types import MappingProxyType
 from typing import LiteralString
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadTransaction
-from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     normalize_natural_key_value,
 )
+from gds_etl_workbench.infrastructure.metadata_visibility import VISIBLE_OBJECTS_CTE
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 
 from gds_workbench_api.features.metadata.contracts import (
     MAX_METADATA_EXPORT_ROWS_PER_SHEET,

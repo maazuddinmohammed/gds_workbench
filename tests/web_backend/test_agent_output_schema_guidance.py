@@ -8,7 +8,7 @@ from copy import deepcopy
 from typing import cast
 
 import pytest
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )

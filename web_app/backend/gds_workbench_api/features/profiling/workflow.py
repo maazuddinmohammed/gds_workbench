@@ -7,7 +7,7 @@ from typing import Annotated, Any, Never, Protocol
 from uuid import UUID
 
 from fastapi import APIRouter, Path, Request, Response, status
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (

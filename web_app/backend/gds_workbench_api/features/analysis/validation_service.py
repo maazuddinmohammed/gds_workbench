@@ -11,6 +11,7 @@ from typing import Any, Literal, LiteralString, Never, Protocol
 from uuid import UUID
 
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
     DatabricksConnectionConfigurationError,
@@ -24,7 +25,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
 from psycopg.types.json import Jsonb
 from pydantic import BaseModel, ConfigDict, Field, ValidationError
 

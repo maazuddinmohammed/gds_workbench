@@ -11,7 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import DimensionalSection
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection
 from pydantic import JsonValue
 
 from gds_workbench_api.features.dimensional.candidate import (

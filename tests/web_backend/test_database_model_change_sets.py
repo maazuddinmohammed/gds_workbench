@@ -14,11 +14,11 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     TenantLockRequiredError,
 )
-from gds_etl_workbench.tools.change_sets.common import (
+from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from psycopg import Connection
 from psycopg.types.json import Jsonb
 

@@ -47,7 +47,6 @@ select = ["E", "F", "I", "N", "UP", "B", "SIM", "ASYNC"]
 
 [tool.pyright]
 include = ["gds_etl_workbench"]
-extraPaths = ["../load_and_merge_scripts"]
 pythonVersion = "3.14"
 typeCheckingMode = "strict"
 

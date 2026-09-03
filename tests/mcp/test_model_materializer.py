@@ -21,7 +21,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationGroupRecord,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets.model_apply import ModelMaterializer
+from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
 
 
 @dataclass(frozen=True)

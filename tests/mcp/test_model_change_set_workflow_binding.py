@@ -10,7 +10,7 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     ModelChangeSetNotActiveError,
 )
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     _EXPIRE_OWNED_SQL,
     _FIND_ONGOING_SQL,
     _require_mcp_writable_pending,

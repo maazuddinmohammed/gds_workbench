@@ -1,6 +1,6 @@
 # Workbench
 
-Workbench edits one local session. It never uses the network, calls MCP, runs SQL, or mutates server Change Sets. Local validation only compiles files.
+Workbench edits one local session. It never uses the network, calls MCP, runs SQL, or mutates server Change Sets. Local validation compiles the effective local graph; it is never server validation.
 
 - Open once at session creation; later ask the user to Refresh.
 - Signed Snapshot catalogs and schemas define sheets, keys, fields, forms, and editability.

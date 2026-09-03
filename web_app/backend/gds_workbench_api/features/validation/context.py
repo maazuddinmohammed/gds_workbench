@@ -9,17 +9,17 @@ from __future__ import annotations
 import json
 from typing import Any, Literal, LiteralString, Protocol, cast
 
+from gds_etl_workbench.application.change_sets.model_validation import (
+    CodeGenerationTargetContext,
+    validation_code_context_digest,
+    validation_mapping_context_digest,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     ValidationCheckRecord,
     ValidationGroupRecord,
     normalize_model_key_value,
-)
-from gds_etl_workbench.tools.change_sets.model_validation import (
-    CodeGenerationTargetContext,
-    validation_code_context_digest,
-    validation_mapping_context_digest,
 )
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 

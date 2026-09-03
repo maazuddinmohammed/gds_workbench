@@ -18,8 +18,8 @@ from gds_etl_workbench.configuration import (
     Environment,
     RuntimeSettings,
 )
+from gds_etl_workbench.infrastructure.databricks_sql import DatabricksSqlExecutor
 from gds_etl_workbench.infrastructure.postgres import Database, PostgresDatabase
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlExecutor
 from gds_etl_workbench.tools.snapshots.storage import SnapshotStore
 
 

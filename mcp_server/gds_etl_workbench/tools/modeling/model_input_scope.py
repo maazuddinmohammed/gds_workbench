@@ -16,10 +16,9 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
+from gds_etl_workbench.application.model_read import POLICY, authorize_model_read
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
-
-from .common import POLICY, authorize_model_read
 
 _TOOL_NAME = "get_model_input_scope"
 _MAX_OBJECTS = 2_000

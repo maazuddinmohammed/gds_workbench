@@ -3,7 +3,7 @@ from __future__ import annotations
 import pytest
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.databricks.validation import (
+from gds_etl_workbench.domain.databricks_sql import (
     DatabricksStatementKind,
     validate_databricks_sql,
 )

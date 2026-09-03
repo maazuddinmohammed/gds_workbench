@@ -7,19 +7,19 @@ from types import SimpleNamespace
 import pytest
 
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     StageModelChange,
     validate_model_change_set_document_bounds,
     validate_model_stage_changes,
 )
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model_validation import (
     CodeGenerationTargetContext,
     validation_code_context_digest,
     validation_mapping_context_digest,
     validate_future_graph,
     validate_staged_records,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS_BY_NAME,
     DATASETS_BY_NAME,
     ModelChangeSetDataset,

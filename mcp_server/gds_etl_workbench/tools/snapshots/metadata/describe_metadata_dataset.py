@@ -16,13 +16,13 @@ from gds_etl_workbench.adapters.auth.identity import AuthenticationError, Identi
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.domain.authorization import ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.tools.snapshots.dataset_description import (
+from gds_etl_workbench.domain.snapshots.description import (
     DatasetColumnDescription,
     compact_authoring_schema,
 )
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS, DATASETS_BY_NAME, MetadataDataset
 
 from .archive import build_dataset_document
-from .contracts import DATASETS, DATASETS_BY_NAME, MetadataDataset
 
 
 class ContractModel(BaseModel):

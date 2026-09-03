@@ -7,6 +7,9 @@ from typing import Any, Literal, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.change_sets.model import validate_locked_model_change_set
+from gds_etl_workbench.application.change_sets.model_apply import ModelMaterializer
+from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
     AuthorizationDeniedError,
@@ -19,9 +22,6 @@ from gds_etl_workbench.domain.errors import (
     ModelChangeSetNotValidatedError,
 )
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.tools.change_sets.model import validate_locked_model_change_set
-from gds_etl_workbench.tools.change_sets.model_apply import ModelMaterializer
-from gds_etl_workbench.tools.modeling.common import ModelReadContext
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_workbench_api.features.model_change_sets.repository import (

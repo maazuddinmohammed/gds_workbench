@@ -9,7 +9,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ConceptualRelationshipRecord,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import ConceptualSection
+from gds_etl_workbench.domain.snapshots.model import ConceptualSection
 from pydantic import JsonValue
 
 from gds_workbench_api.features.conceptual.candidate import (

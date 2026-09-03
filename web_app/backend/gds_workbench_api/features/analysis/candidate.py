@@ -6,6 +6,11 @@ import json
 from copy import deepcopy
 from typing import Annotated, cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_staged_records,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     ANALYSIS_VALIDATION_FIELDS,
@@ -16,11 +21,6 @@ from gds_etl_workbench.domain.modeling_records import (
     NonblankText,
     PhysicalAttributeKey,
     normalize_model_key_value,
-)
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.change_sets.model_validation import (
-    ModelValidationIssue,
-    validate_staged_records,
 )
 from pydantic import (
     BaseModel,

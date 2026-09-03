@@ -780,12 +780,13 @@ function Read-SessionState([string]$Session) {
         }
         foreach ($name in @(Get-PropertyNames $serverDraftCache)) {
             $draft = Get-Property $serverDraftCache $name
-            if ($script:Areas -cnotcontains $name -or $draft.Count -ne 5 -or
+            if ($script:Areas -cnotcontains $name -or @(5, 6) -notcontains $draft.Count -or
                 $draft[0] -isnot [string] -or [string]$draft[0] -notmatch '^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$' -or
                 -not (Test-SafeJsonInteger $draft[1] $true) -or
                 $draft[2] -isnot [string] -or @('active', 'validated') -cnotcontains [string]$draft[2] -or
                 $draft[3] -isnot [string] -or [string]$draft[3] -notmatch '^\d{2,}$' -or
-                $draft[4] -isnot [string] -or [string]$draft[4] -cnotmatch '^[0-9a-f]{64}$') {
+                $draft[4] -isnot [string] -or [string]$draft[4] -cnotmatch '^[0-9a-f]{64}$' -or
+                ($draft.Count -eq 6 -and [string]$draft[5] -cne 'validation_failed')) {
                 Fail 'Session state has an invalid shape.'
             }
             $boundTask = $null
@@ -1335,8 +1336,9 @@ function Set-DraftCache([hashtable]$Options) {
     }
     if ($Options.ContainsKey('clear')) {
         if ($Options['clear'] -ne 'true') { Fail '--clear must be true when supplied.' }
-        if ($Options.ContainsKey('id') -or $Options.ContainsKey('revision') -or $Options.ContainsKey('status')) {
-            Fail '--clear cannot be combined with --id, --revision, or --status.'
+        if ($Options.ContainsKey('id') -or $Options.ContainsKey('revision') -or
+            $Options.ContainsKey('status') -or $Options.ContainsKey('validation-failed')) {
+            Fail '--clear cannot be combined with draft values.'
         }
         if (-not $cache.Contains($area)) { Fail "No cached $area server draft exists." }
         $existing = @($cache[$area])
@@ -1374,6 +1376,16 @@ function Set-DraftCache([hashtable]$Options) {
     }
     $status = Require-Option $Options 'status'
     if (@('active', 'validated') -cnotcontains $status) { Fail '--status must be active or validated.' }
+    $validationFailed = $false
+    if ($Options.ContainsKey('validation-failed')) {
+        if (@('true', 'false') -cnotcontains [string]$Options['validation-failed']) {
+            Fail '--validation-failed must be true or false.'
+        }
+        $validationFailed = [string]$Options['validation-failed'] -ceq 'true'
+    }
+    if ($validationFailed -and $status -cne 'active') {
+        Fail 'A failed server validation must leave the draft active.'
+    }
     $task = $null
     foreach ($candidate in @($state.tasks)) {
         if ([string]$candidate[0] -ceq [string](Get-Property $state 'current')) { $task = $candidate; break }
@@ -1383,6 +1395,7 @@ function Set-DraftCache([hashtable]$Options) {
     }
     $digest = Get-AcceptedWorkspaceDigest $session $task $area
     $draft = @($id.ToLowerInvariant(), $revision, $status, [string]$task[0], $digest)
+    if ($validationFailed) { $draft += 'validation_failed' }
     if ($cache.Contains($area)) {
         $existing = @($cache[$area])
         if ([string]$existing[0] -cne [string]$draft[0] -or
@@ -1393,6 +1406,11 @@ function Set-DraftCache([hashtable]$Options) {
         if ([string]$existing[2] -ceq 'validated' -and $status -ceq 'active' -and
             [long]$revision -eq [long]$existing[1]) {
             Fail 'Cached server draft status cannot regress at the same revision.'
+        }
+        if ($existing.Count -eq 6 -and [string]$existing[5] -ceq 'validation_failed' -and
+            -not $validationFailed -and $status -ceq 'active' -and
+            [long]$revision -eq [long]$existing[1]) {
+            Fail 'A failed validation marker clears only after a newer Stage or successful validation.'
         }
         if ([string]$existing[4] -cne $digest -and
             ($revision -le [long]$existing[1] -or $status -cne 'active')) {
@@ -1771,7 +1789,13 @@ function Test-BoundServerDraftForReconcile($State, $Task, [string]$Area, [string
     if ([string]$draft[3] -cne [string]$Task[0]) {
         Fail "Cached $Area server draft belongs to task $($draft[3]), not task $($Task[0])."
     }
-    return ([string]$draft[4] -ceq $Digest)
+    $exact = [string]$draft[4] -ceq $Digest
+    return [pscustomobject]@{
+        Exact = $exact
+        FailedRetry = -not $exact -and [string]$draft[2] -ceq 'active' -and
+            $draft.Count -eq 6 -and [string]$draft[5] -ceq 'validation_failed' -and
+            @('ready', 'overridden') -ccontains [string]$Task[3]
+    }
 }
 
 function Test-PortablePendingSet([string]$Directory) {
@@ -3200,7 +3224,9 @@ function Assert-Accepted($Context) {
 function Reconcile-Changes([hashtable]$Options) {
     $context = Get-ChangeContext $Options
     $digest = Assert-Accepted $context
-    $cacheBound = Test-BoundServerDraftForReconcile $context.State $context.Current $context.Area $digest
+    $binding = Test-BoundServerDraftForReconcile $context.State $context.Current $context.Area $digest
+    $cacheBound = [bool](Get-Property $binding 'Exact')
+    $failedRetry = [bool](Get-Property $binding 'FailedRetry')
     $pending = Read-Pending $context
     $server = Parse-Object $Options 'server'
     $nameSet = @{}
@@ -3226,8 +3252,11 @@ function Reconcile-Changes([hashtable]$Options) {
             if ($issues.Count -gt 0) { Fail "Server draft $name record is invalid: $($issues[0])" }
         }
         if ($hasLocal -and $localRecords.Count -eq 0 -and $serverRecords.Count -gt 0) {
-            [void]$datasets.Add(@($name, 'conflict', 0, $serverRecords.Count))
-            [void]$conflicts.Add(@($name, [ordered]@{ explicit_clear = $true }))
+            $datasetClassification = if ($failedRetry) { 'own_failed_draft' } else { 'conflict' }
+            [void]$datasets.Add(@($name, $datasetClassification, 0, $serverRecords.Count))
+            if (-not $failedRetry) {
+                [void]$conflicts.Add(@($name, [ordered]@{ explicit_clear = $true }))
+            }
             continue
         }
         $localMap = @{}
@@ -3245,19 +3274,20 @@ function Reconcile-Changes([hashtable]$Options) {
         foreach ($key in $localMap.Keys) {
             if (-not $serverMap.ContainsKey($key)) { $onlyLocal++ }
             elseif ((ConvertTo-StableJson $localMap[$key]) -ceq (ConvertTo-StableJson $serverMap[$key])) { $exactOverlap++ }
-            else {
+            elseif (-not $failedRetry) {
                 $datasetConflict = $true
                 [void]$conflicts.Add(@($name, (Get-CanonicalKeyObject $context.Area $dataset $localMap[$key])))
             }
         }
         foreach ($key in $serverMap.Keys) { if (-not $localMap.ContainsKey($key)) { $onlyServer++ } }
-        if ($datasetConflict) { $classification = 'conflict' }
+        if ($failedRetry) { $classification = 'own_failed_draft' }
+        elseif ($datasetConflict) { $classification = 'conflict' }
         elseif ($onlyLocal -eq 0 -and $onlyServer -eq 0) { $classification = 'exact' }
         elseif ($onlyLocal -eq 0 -and $exactOverlap -eq $localMap.Count) { $classification = 'contained' }
         else { $classification = 'non_overlap' }
         [void]$datasets.Add(@($name, $classification, $localMap.Count, $serverMap.Count))
     }
-    $classification = 'exact'
+    $classification = if ($failedRetry) { 'own_failed_draft' } else { 'exact' }
     if ($conflicts.Count -gt 0) { $classification = 'conflict' }
     elseif (@($datasets | Where-Object { $_[1] -eq 'non_overlap' }).Count -gt 0) { $classification = 'non_overlap' }
     elseif (@($datasets | Where-Object { $_[1] -eq 'contained' }).Count -gt 0) { $classification = 'contained' }
@@ -3268,6 +3298,7 @@ function Reconcile-Changes([hashtable]$Options) {
         conflicts = @($conflicts)
         digest = $digest
         cache_bound = [bool]$cacheBound
+        failed_retry = [bool]$failedRetry
     }
     if ($classification -eq 'conflict') {
         $output['resolution_prompt'] = 'Server draft and local records differ at the listed canonical keys. Choose which complete record is authoritative; never overwrite automatically.'
@@ -3285,13 +3316,15 @@ function Get-ByteDigest([byte[]]$Bytes) {
     finally { $sha.Dispose() }
 }
 
-function Merge-StageDocuments($Context, $Pending, $Server) {
+function Merge-StageDocuments($Context, $Pending, $Server, [bool]$ReplaceServer = $false) {
     $documents = [ordered]@{}
     foreach ($name in @($Pending.Keys | Sort-Object)) {
         $dataset = $Context.ByName[$name]
         $records = @{}
         $serverRecords = @()
-        if (Test-Property $Server $name) { $serverRecords = @((Get-Property $Server $name)) }
+        if (-not $ReplaceServer -and (Test-Property $Server $name)) {
+            $serverRecords = @((Get-Property $Server $name))
+        }
         foreach ($record in @($serverRecords) + @($Pending[$name])) {
             $records[(Get-CanonicalKey $Context.Area $dataset $record)] = $record
         }
@@ -3766,7 +3799,8 @@ function Prepare-Stage([hashtable]$Options) {
     if (-not [bool](Get-Property $reconciliation 'ready')) {
         Fail 'Resolve reconciliation conflicts before preparing Stage.'
     }
-    if (-not [bool](Get-Property $reconciliation 'cache_bound')) {
+    if (-not [bool](Get-Property $reconciliation 'cache_bound') -and
+        -not [bool](Get-Property $reconciliation 'failed_retry')) {
         Fail 'Cached server draft is not bound to the accepted local Change Set digest.'
     }
     $context = Get-ChangeContext $Options
@@ -3778,7 +3812,8 @@ function Prepare-Stage([hashtable]$Options) {
     $pending = Read-Pending $context
     if ($pending.Count -eq 0) { Fail 'Local Change Set has no affected datasets.' }
     $server = Parse-Object $Options 'server'
-    $documents = Merge-StageDocuments $context $pending $server
+    $failedRetry = [bool](Get-Property $reconciliation 'failed_retry')
+    $documents = Merge-StageDocuments $context $pending $server $failedRetry
     $maximumRecords = if ($context.Area -ceq 'metadata') { 50000 } else { 20000 }
     foreach ($name in $documents.Keys) {
         if (@($documents[$name]).Count -gt $maximumRecords) {
@@ -3977,6 +4012,7 @@ function Prepare-Stage([hashtable]$Options) {
         area = $context.Area
         task = $taskId
         digest = [string](Get-Property $reconciliation 'digest')
+        failed_retry = [bool](Get-Property $reconciliation 'failed_retry')
         change_set_id = [string]$draft[0]
         starting_revision = [int64]$draft[1]
         strategy = $strategy

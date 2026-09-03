@@ -1,11 +1,15 @@
 # Conceptual Model
 
-Create a compact business view of important concepts and their relationships. Use PascalCase by default unless the user or Model policy says otherwise.
+Create a compact business view of what the organization manages and what happens to it. Conceptual is a required Logical Build phase and is business-facing, not a simplified table design. Use PascalCase unless the user or Model policy says otherwise.
 
-1. Start with a table-by-table pass. For every scoped Object, state its business purpose and identify the concept or concepts it supports; an Object may be context-only or support several concepts.
-2. Consolidate candidates across Objects and Systems when they describe the same business idea. Several Objects may support one concept; do not create a concept merely because a table exists.
-3. Define each concept in business language. Do not add Attributes, keys, normalization, table design, or dependency order.
-4. Add business relationships using the completed relationship Analysis. Keep high-level cardinality only when supported; otherwise use unknown. Never infer physical keys.
-5. Account for every selected input as represented, context-only, excluded with reason, or blocked.
+Use Kimball's business-process-first discovery as an internal thinking aid:
 
-Conceptual is a required Logical Build phase. Reject a mechanical one-concept-per-Object or Conceptual-to-Logical copy unless independently justified. Conceptual informs Logical vocabulary, business boundaries, and relationships, while grain and normalization remain evidence-driven.
+1. Name the operational activities or state transitions represented, such as placing an order, servicing an account, or assigning a customer to a household.
+2. Run a table-by-table pass. For every Object, state what one row means and which process, event, agreement, party, thing, place, or classification it supports. One Object may support several concepts or be context-only.
+3. Build a small internal process-to-concept matrix: processes as rows, reusable business concepts as columns. Use it to expose shared concepts, duplicates, and missing context; do not persist the matrix as model records.
+4. Consolidate candidates across Objects and Systems only when their business meaning agrees. Names alone never prove identity. Several Objects may support one concept, and one Object never forces one concept.
+5. Define each retained concept in plain business language, including what one occurrence represents. Do not add Attributes, keys, normalization, physical tables, or dependency order.
+6. Add verb-based business relationships from completed Analysis. Record high-level cardinality only when supported; otherwise use `unknown`. Never infer physical keys.
+7. Account for every input as represented, context-only, excluded with reason, or blocked.
+
+Before authoring, challenge the result: remove technical staging concepts, merge synonyms, split concepts that combine different business meanings, and verify that each concept helps explain a process or relationship. Reject one-concept-per-Object, renamed table inventories, and a Conceptual-to-Logical copy. Conceptual supplies shared vocabulary and boundaries; Logical grain and normalization are decided separately.

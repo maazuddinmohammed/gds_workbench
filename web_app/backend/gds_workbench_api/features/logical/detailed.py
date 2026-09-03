@@ -22,7 +22,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
     normalize_model_key_value,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
+from gds_etl_workbench.domain.snapshots.model import LogicalSection
 from pydantic import (
     BaseModel,
     ConfigDict,

@@ -16,4 +16,6 @@ Execute `manifest.json.operations` by `sequence`:
 
 A present dataset replaces server pending; calls never append.
 
+If server validation returns `valid=false`, immediately cache that exact active draft revision with `draft-cache --validation-failed true` before editing locally. After the corrected digest passes local validation and the user acknowledges it, `prepare-stage` may classify the same task-bound draft as `own_failed_draft` and replace it. This exception never applies to another task, Change Set, or ordinary conflict. After replacement Stage, cache the newer active revision without the failure marker, then validate again.
+
 Prefer 64 KiB; enlarge only for the 64-chunk cap. Hard limits: Metadata 450 KiB/5,000 records; Model 1 MiB/5,000. Limits are not quotas.

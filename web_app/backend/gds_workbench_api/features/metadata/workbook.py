@@ -8,7 +8,7 @@ from hashlib import sha256
 from io import BytesIO
 from zipfile import ZIP_DEFLATED, BadZipFile, ZipFile, ZipInfo
 
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     natural_key_normalization_document,
 )

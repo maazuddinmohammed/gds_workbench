@@ -17,6 +17,19 @@ from gds_etl_workbench.domain.portable_validation import (
     METADATA_RECORD_VALIDATIONS,
     record_validation_contract,
 )
+from gds_etl_workbench.domain.snapshots.description import DatasetDescription
+from gds_etl_workbench.domain.snapshots.metadata import (
+    DATASETS,
+    PHYSICAL_TABLE_COUNT,
+    DatasetDefinition,
+    EncodedDataset,
+    SnapshotSection,
+    natural_key_normalization_document,
+    normalize_natural_key_value,
+)
+from gds_etl_workbench.domain.snapshots.metadata_guidance import (
+    build_metadata_dataset_description,
+)
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotContractError,
@@ -33,17 +46,6 @@ from gds_etl_workbench.tools.snapshots.archive import (
 from gds_etl_workbench.tools.snapshots.archive import (
     utc_timestamp as _utc_timestamp,
 )
-from gds_etl_workbench.tools.snapshots.dataset_description import DatasetDescription
-
-from .contracts import (
-    DATASETS,
-    PHYSICAL_TABLE_COUNT,
-    DatasetDefinition,
-    SnapshotSection,
-    natural_key_normalization_document,
-    normalize_natural_key_value,
-)
-from .guidance import build_metadata_dataset_description
 
 __all__ = [
     "EncodedDataset",
@@ -57,14 +59,6 @@ __all__ = [
     "build_snapshot_archive",
     "encode_dataset",
 ]
-
-
-@dataclass(frozen=True, slots=True)
-class EncodedDataset:
-    definition: DatasetDefinition
-    rows_jsonl: bytes
-    lookup_jsonl: bytes | None
-    row_count: int
 
 
 @dataclass(frozen=True, slots=True)

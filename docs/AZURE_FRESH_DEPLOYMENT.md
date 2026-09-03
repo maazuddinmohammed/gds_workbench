@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.4.5.zip
+   plugins/v2/dist/gds-agent-plugin-0.4.9.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -197,9 +197,9 @@ Choose one route:
 
 - Development only: run `database/seed/01_metadata_snapshot_demo.sql`, then
   copy and complete `database/seed/02_human_principal_access.template.sql`.
-- Real environment: load approved workbooks in the order documented in
-  `load_and_merge_scripts/README.md`. This includes the real Tenant and Entra
-  Principal/access records.
+- Real environment: use an independently reviewed operator process to load the
+  approved Tenant, metadata, and Entra Principal/access records. This repository
+  no longer ships an Excel loader.
 
 Do not run demo seed data in production. A successfully authenticated Entra
 user must also have an active matching database Principal and Tenant access.

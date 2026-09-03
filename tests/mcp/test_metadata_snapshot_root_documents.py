@@ -12,7 +12,7 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     build_root_documents,
     encode_dataset,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS
 
 
 def empty_datasets() -> tuple[EncodedDataset, ...]:

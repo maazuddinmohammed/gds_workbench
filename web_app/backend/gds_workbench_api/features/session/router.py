@@ -1,7 +1,7 @@
 """Server-derived Principal Session HTTP route."""
 
 from fastapi import APIRouter, Request
-from gds_etl_workbench.adapters.auth.identity import IdentityProvider
+from gds_etl_workbench.application.identity import IdentityProvider
 
 from gds_workbench_api.features.session.contracts import SessionRecord
 from gds_workbench_api.features.session.service import SessionService

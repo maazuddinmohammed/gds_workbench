@@ -185,11 +185,13 @@ projection from inputs to authored records.
 _Avoid_: Output quota, one record per source
 
 **Logical Model**:
-A normalized representation driven primarily by in-scope physical Objects and
-Attributes. Profiles, Analysis Results, Conceptual records, and Assertions add
-context and improve quality but do not drive its structure. It is also the
-complete modeled contract for its Silver target binding, including audit and
-constant-valued Attributes when those columns exist physically.
+A normalized operational representation of business meaning supported by
+in-scope physical Objects, Attributes, Profiles, Analysis Results, Assertions,
+and confirmed user knowledge. Grain, identifiers, functional dependencies,
+history, and relationships drive its structure. Neither a physical Object nor a
+Conceptual Object implies one Logical Entity. It is also the complete modeled
+contract for its Silver target binding, including audit and constant-valued
+Attributes when those columns exist physically.
 _Avoid_: Conceptual decomposition, physical copy
 
 **Dimensional Model**:
@@ -397,11 +399,13 @@ Review operation, command, or state. An unambiguous positive acknowledgement,
 including `proceed` or `OK`, accepts the current exact contents and permits
 acquiring an ordinary free Tenant Lock, reconciliation, Stage, and Change Set
 validation. Lock override and Apply require separate explicit approval.
-Reconciliation requires the authoritative revision to still match the revision
-used by the local Snapshot. A mismatch stops the workflow: the user downloads
-the fresh Snapshot from the MCP tool result and replaces the affected local
-Snapshot area. The agent reassesses the Candidate without attempting an
-automatic merge. It never repeats a temporary signed URL in chat. If
+For Model work, reconciliation requires the current Model revision to match the
+revision in the installed Model Snapshot. A mismatch stops the workflow: a
+capable client downloads and installs a fresh Model Snapshot, then the agent
+reassesses the Candidate without an automatic merge. Metadata has no Tenant-wide
+revision; it uses a non-stale Metadata Snapshot, the Tenant Lock, and server
+validation against current state. The agent never repeats a temporary signed URL
+in chat. If
 reassessment changes Candidate contents, the agent notifies the user to refresh
 and inspect them again; otherwise the prior instruction to proceed remains
 valid. Internal validation and state tracking may support this behavior but
@@ -472,12 +476,6 @@ _Avoid_: Modeling layer, inferred Connection type
 **Verified Model Graph**:
 The typed and indexed in-memory form of a verified Model Snapshot.
 _Avoid_: Projection input, document map
-
-**Mapping Transformation Document**:
-The flexible JSON Mapping description for one bound target Object and source
-System. An Output Template may guide its shape, but the database does not impose
-a fixed functional schema.
-_Avoid_: Mapping Package, fixed Mapping profile
 
 **Apply Receipt**:
 The immutable result that binds an applied Model Change Set to its revision, digest, and idempotent outcome.

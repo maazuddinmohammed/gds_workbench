@@ -6,7 +6,7 @@ from typing import Literal, LiteralString
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from .visibility import VISIBLE_OBJECTS_CTE
+from gds_etl_workbench.infrastructure.metadata_visibility import VISIBLE_OBJECTS_CTE
 
 type ZoneCode = Literal["source", "bronze", "silver", "gold"]
 

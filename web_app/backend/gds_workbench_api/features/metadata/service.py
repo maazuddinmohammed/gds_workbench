@@ -10,12 +10,12 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.cursor import CursorCodec
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     MetadataDataset,
     normalize_natural_key_value,
 )
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.features.metadata.contracts import (

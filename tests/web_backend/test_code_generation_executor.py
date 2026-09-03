@@ -25,8 +25,8 @@ from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeSourceSystemRecord,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
-from gds_etl_workbench.tools.change_sets.common import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.capabilities import (

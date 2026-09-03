@@ -5,13 +5,13 @@ import subprocess
 from pathlib import Path
 
 from gds_etl_workbench.tools.snapshots.metadata.archive import build_dataset_document
-from gds_etl_workbench.tools.snapshots.metadata.contracts import (
+from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS as METADATA_DATASETS,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     DATASETS as MODEL_DATASETS,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     build_model_dataset_schema,
 )
 

@@ -840,6 +840,55 @@ def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
     return session, digest
 
 
+def prepare_accepted_model_task(tmp_path: Path) -> tuple[Path, str]:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Stage Logical Entity",
+        "--plan",
+        '["Build","Validate"]',
+    )
+    assert added.returncode == 0, added.stderr
+    upserted = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "logical_entity",
+        "--record",
+        '{"logical_entity_name":"Customer"}',
+        "--expected-digest",
+        "empty",
+    )
+    assert upserted.returncode == 0, upserted.stderr
+    validated = run_helper("validate", "--session", str(session), "--area", "model")
+    assert validated.returncode == 0, validated.stderr
+    report = json.loads(validated.stdout)
+    assert report["valid"] is True
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--digest",
+        report["digest"],
+    )
+    assert accepted.returncode == 0, accepted.stderr
+    return session, report["digest"]
+
+
 def test_status_exposes_accepted_digest_for_exact_resume(tmp_path: Path) -> None:
     session, digest = prepare_accepted_metadata_task(tmp_path)
 
@@ -2498,6 +2547,201 @@ def test_reconcile_classifies_exact_non_overlap_and_conflict_without_writing(
     assert conflict_output["classification"] == "conflict"
     assert conflict_output["ready"] is False
     assert conflict_output["conflicts"][0][0] == "source_object"
+
+
+def test_failed_server_validation_allows_safe_same_task_replacement(
+    tmp_path: Path,
+) -> None:
+    session, first_digest = prepare_accepted_metadata_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000123"
+    customer = json.loads(
+        (session / "metadata-change-set" / "source_object.json").read_text()
+    )[0]
+
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        draft_id,
+        "--revision",
+        "3",
+        "--status",
+        "active",
+        "--validation-failed",
+        "true",
+    )
+    assert cached.returncode == 0, cached.stderr
+    assert json.loads(cached.stdout)["draft"] == [
+        draft_id,
+        3,
+        "active",
+        "01",
+        first_digest,
+        "validation_failed",
+    ]
+
+    changed = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--record",
+        json.dumps({**customer, "is_active": False}),
+        "--expected-digest",
+        first_digest,
+    )
+    assert changed.returncode == 0, changed.stderr
+    second_digest = json.loads(changed.stdout)["digest"]
+    assert second_digest != first_digest
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--digest",
+        second_digest,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    removed_from_failed_draft = {
+        **customer,
+        "object_name": "ArchivedCustomer",
+    }
+    server = {"source_object": [customer, removed_from_failed_draft]}
+    reconciled = run_helper(
+        "reconcile",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--server",
+        json.dumps(server),
+    )
+    assert reconciled.returncode == 0, reconciled.stderr
+    outcome = json.loads(reconciled.stdout)
+    assert outcome["classification"] == "own_failed_draft"
+    assert outcome["ready"] is True
+    assert outcome["cache_bound"] is False
+    assert outcome["failed_retry"] is True
+
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--server",
+        json.dumps(server),
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    replacement = json.loads(Path(manifest["direct"]["file"]).read_text())
+    assert replacement[0]["records"] == [{**customer, "is_active": False}]
+
+    advanced = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        draft_id,
+        "--revision",
+        "4",
+        "--status",
+        "active",
+    )
+    assert advanced.returncode == 0, advanced.stderr
+    assert json.loads(advanced.stdout)["draft"] == [
+        draft_id,
+        4,
+        "active",
+        "01",
+        second_digest,
+    ]
+
+
+def test_failed_model_validation_replaces_the_exact_local_dataset(tmp_path: Path) -> None:
+    session, first_digest = prepare_accepted_model_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000124"
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--id",
+        draft_id,
+        "--revision",
+        "7",
+        "--status",
+        "active",
+        "--validation-failed",
+        "true",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    changed = run_helper(
+        "upsert",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--dataset",
+        "logical_entity",
+        "--record",
+        '{"logical_entity_name":"Party"}',
+        "--expected-digest",
+        first_digest,
+    )
+    assert changed.returncode == 0, changed.stderr
+    second_digest = json.loads(changed.stdout)["digest"]
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--digest",
+        second_digest,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    server = {
+        "logical_entity": [
+            {"logical_entity_name": "Customer"},
+            {"logical_entity_name": "RemovedFromFailedDraft"},
+        ]
+    }
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--server",
+        json.dumps(server),
+    )
+    assert prepared.returncode == 0, prepared.stderr
+    manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    replacement = json.loads(Path(manifest["direct"]["file"]).read_text())
+    assert manifest["failed_retry"] is True
+    assert replacement == [
+        {
+            "dataset": "logical_entity",
+            "records": [
+                {"logical_entity_name": "Customer"},
+                {"logical_entity_name": "Party"},
+            ],
+        }
+    ]
 
 
 def test_prepare_stage_writes_one_direct_request_for_small_datasets(

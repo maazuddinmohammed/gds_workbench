@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.tools.change_sets.validation import validate_metadata_documents
+from gds_etl_workbench.application.change_sets.metadata_validation import validate_metadata_documents
 
 
 def test_validation_accepts_full_id_free_record_with_resolved_natural_keys() -> None:

@@ -13,9 +13,8 @@ from databricks.sdk import WorkspaceClient
 from databricks.sdk.errors import PermissionDenied, Unauthenticated
 from databricks.sdk.errors.base import DatabricksError
 from databricks.sdk.service.iam import UserSchema
-from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
-from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import AuthenticationError
 from starlette.datastructures import Headers
 from starlette.responses import JSONResponse
 from starlette.types import ASGIApp, Receive, Scope, Send
@@ -144,11 +143,8 @@ class LocalUserResolver:
         return self._principal
 
 
-class WebIdentityProvider(IdentityProvider):
-    """Preserve existing route interfaces while requiring middleware state."""
-
-    def __init__(self) -> None:
-        super().__init__(AuthMode.AZURE_EASY_AUTH)
+class WebIdentityProvider:
+    """Read the principal bound by Databricks Apps authentication middleware."""
 
     def authenticate(self, headers: Mapping[str, str] | None) -> RequestPrincipal:
         del headers

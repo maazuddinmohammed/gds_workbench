@@ -2,14 +2,14 @@
 
 from typing import Annotated, Self
 
-from gds_etl_workbench.tools.change_sets.common import (
+from gds_etl_workbench.application.change_sets.contracts import (
     MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS,
     MAX_MODEL_STAGE_PAYLOAD_BYTES,
     MAX_STAGE_CHUNK_RECORDS,
     MAX_STAGE_CHUNKS,
     SHA256_PATTERN,
 )
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     ApplyModelChangeSetResult,
     ArchiveModelChangeSetResult,
     BeginModelStageBatchResult,
@@ -22,7 +22,7 @@ from gds_etl_workbench.tools.change_sets.model import (
     StageModelChangeSetResult,
     ValidateModelChangeSetResult,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelChangeSetDataset
+from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 

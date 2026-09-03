@@ -21,7 +21,7 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     WriteTransaction,
 )
-from gds_etl_workbench.tools.databricks.executor import DatabricksSqlConnection
+from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
 from psycopg.types.json import Jsonb
 
 from gds_workbench_api.features.analysis.validation_execution import (

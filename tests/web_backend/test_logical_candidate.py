@@ -11,7 +11,7 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
+from gds_etl_workbench.domain.snapshots.model import LogicalSection
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
 

@@ -14,8 +14,8 @@ from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import TenantRole, ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.infrastructure.metadata_visibility import VISIBLE_OBJECTS_CTE
 from gds_etl_workbench.infrastructure.postgres import Database, ReadIsolation
-from gds_etl_workbench.tools.catalog.visibility import VISIBLE_OBJECTS_CTE
 
 _TOOL_NAME = "get_tenant_details"
 _MAX_CONNECTIONS = 200

@@ -10,6 +10,8 @@ Before notifying, run `validate`; it writes `reports/local-validation/<area>.jso
 
 Then read `staging.md`, run `prepare-stage` with exact server pending datasets, and execute its ordered operations. Never invent splits, hashes, or revision flow.
 
+When server validation returns `valid=false`, cache its active revision with `draft-cache --validation-failed true` before local repair. A corrected, revalidated, re-acknowledged digest may replace only that same task's failed draft through `prepare-stage`; other overlap remains a conflict.
+
 JavaScript `validate` checks exported record rules, uniqueness, references, Tenant/GDS scope, locks, Model dependencies, Bindings, Mapping, Code, and Validation. It and Workbench share the same validators; server validation remains authoritative.
 
 Never generate, regenerate, read, or inspect DBML unless the user explicitly asks. `generate-dbml` exports the effective Model to `model-dbml/`.

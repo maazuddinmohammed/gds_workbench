@@ -5,15 +5,15 @@ from dataclasses import dataclass
 from typing import Any, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
-from gds_etl_workbench.tools.change_sets.model_validation import (
+from gds_etl_workbench.application.change_sets.model_validation import (
     CodeGenerationTargetContext,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
+from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import normalize_model_key_value
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation, ReadTransaction
 
 from gds_workbench_api.features.models import ModelNotFoundError
 

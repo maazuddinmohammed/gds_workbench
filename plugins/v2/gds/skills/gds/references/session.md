@@ -40,6 +40,6 @@ When a required Snapshot is missing or stale:
 
 Ask only for unresolved download/session information. Never edit Snapshots or infer freshness from timestamps.
 
-Before Stage, compare revisions. On mismatch, refresh and reassess; never auto-merge. Notify again only if content changed; byte-identical content retains acknowledgement.
+Before Model Stage, compare the authoritative Model revision with the installed Model Snapshot. On mismatch, refresh and reassess; never auto-merge. Metadata has no tenant-wide revision: require its Snapshot to be non-stale, acquire the Tenant Lock, and let server validation recheck current database state. Never infer a Metadata revision. Notify again only if local content changed; byte-identical content retains acknowledgement.
 
 Apply marks its area stale. Refresh before dependent work. Model replacement requires a newer revision.

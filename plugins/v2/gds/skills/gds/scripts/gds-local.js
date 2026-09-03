@@ -330,7 +330,7 @@ function readSessionState(session) {
         ([area, draft]) =>
           !new Set(["metadata", "model"]).has(area) ||
           !Array.isArray(draft) ||
-          draft.length !== 5 ||
+          !new Set([5, 6]).has(draft.length) ||
           typeof draft[0] !== "string" ||
           !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(
             draft[0],
@@ -341,7 +341,8 @@ function readSessionState(session) {
           typeof draft[3] !== "string" ||
           !/^\d{2,}$/.test(draft[3]) ||
           typeof draft[4] !== "string" ||
-          !/^[0-9a-f]{64}$/.test(draft[4]),
+          !/^[0-9a-f]{64}$/.test(draft[4]) ||
+          (draft.length === 6 && draft[5] !== "validation_failed"),
       ));
   if (
     !state ||
@@ -566,12 +567,23 @@ function cacheServerDraft(options) {
   if (!new Set(["active", "validated"]).has(options.status)) {
     fail("--status must be active or validated.");
   }
+  if (
+    options["validation-failed"] !== undefined &&
+    !new Set(["true", "false"]).has(options["validation-failed"])
+  ) {
+    fail("--validation-failed must be true or false.");
+  }
+  const validationFailed = options["validation-failed"] === "true";
+  if (validationFailed && options.status !== "active") {
+    fail("A failed server validation must leave the draft active.");
+  }
   const task = state.tasks.find((item) => item[0] === state.current);
   if (!task || task[1] !== options.area) {
     fail(`A current ${options.area} task is required to cache a server draft.`);
   }
   const digest = acceptedWorkspaceDigest(session, task, options.area);
   const draft = [options.id.toLowerCase(), revision, options.status, task[0], digest];
+  if (validationFailed) draft.push("validation_failed");
   const existing = cache[options.area];
   if (existing && (existing[0] !== draft[0] || existing[3] !== draft[3])) {
     fail("Cached server draft ID and task are immutable; archive and clear it first.");
@@ -586,6 +598,14 @@ function cacheServerDraft(options) {
     revision === existing[1]
   ) {
     fail("Cached server draft status cannot regress at the same revision.");
+  }
+  if (
+    existing?.[5] === "validation_failed" &&
+    !validationFailed &&
+    options.status === "active" &&
+    revision === existing[1]
+  ) {
+    fail("A failed validation marker clears only after a newer Stage or successful validation.");
   }
   if (
     existing &&
@@ -1888,13 +1908,21 @@ function assertBoundServerDraft(context, digest) {
   if (draft[3] !== task[0]) {
     fail(`Cached ${area} server draft belongs to task ${draft[3]}, not task ${task[0]}.`);
   }
-  return draft[4] === digest;
+  const exact = draft[4] === digest;
+  return {
+    exact,
+    failedRetry:
+      !exact &&
+      draft[2] === "active" &&
+      draft[5] === "validation_failed" &&
+      new Set(["ready", "overridden"]).has(task[3]),
+  };
 }
 
 function reconcileChangeSet(options) {
   const context = changeSetContext(options);
   const digest = assertAcceptedChangeSet(context);
-  const cacheBound = assertBoundServerDraft(context, digest);
+  const binding = assertBoundServerDraft(context, digest);
   const pending = readPending(context);
   const server = parseObjectOption(options.server, "--server");
   const datasetNames = [...new Set([...Object.keys(pending), ...Object.keys(server)])].sort();
@@ -1913,8 +1941,9 @@ function reconcileChangeSet(options) {
       if (issues.length) fail(`Server draft ${name} record is invalid: ${issues[0]}`);
     }
     if (localRecords?.length === 0 && serverRecords.length > 0) {
-      datasets.push([name, "conflict", 0, serverRecords.length]);
-      conflicts.push([name, { explicit_clear: true }]);
+      const classification = binding.failedRetry ? "own_failed_draft" : "conflict";
+      datasets.push([name, classification, 0, serverRecords.length]);
+      if (!binding.failedRetry) conflicts.push([name, { explicit_clear: true }]);
       continue;
     }
     const localMap = new Map(
@@ -1937,7 +1966,7 @@ function reconcileChangeSet(options) {
         onlyLocal += 1;
       } else if (stableStringify(record) === stableStringify(serverMap.get(key))) {
         exactOverlap += 1;
-      } else {
+      } else if (!binding.failedRetry) {
         conflicts.push([
           name,
           Object.fromEntries(
@@ -1948,14 +1977,15 @@ function reconcileChangeSet(options) {
     }
     for (const key of serverMap.keys()) if (!localMap.has(key)) onlyServer += 1;
     let classification;
-    if (conflicts.some((item) => item[0] === name)) classification = "conflict";
+    if (binding.failedRetry) classification = "own_failed_draft";
+    else if (conflicts.some((item) => item[0] === name)) classification = "conflict";
     else if (onlyLocal === 0 && onlyServer === 0) classification = "exact";
     else if (onlyLocal === 0 && exactOverlap === localMap.size) classification = "contained";
     else classification = "non_overlap";
     datasets.push([name, classification, localMap.size, serverMap.size]);
   }
 
-  let classification = "exact";
+  let classification = binding.failedRetry ? "own_failed_draft" : "exact";
   if (conflicts.length) classification = "conflict";
   else if (datasets.some((item) => item[1] === "non_overlap")) classification = "non_overlap";
   else if (datasets.some((item) => item[1] === "contained")) classification = "contained";
@@ -1965,7 +1995,8 @@ function reconcileChangeSet(options) {
     datasets,
     conflicts,
     digest,
-    cache_bound: cacheBound,
+    cache_bound: binding.exact,
+    failed_retry: binding.failedRetry,
     ...(classification === "conflict"
       ? {
           resolution_prompt:
@@ -1975,13 +2006,15 @@ function reconcileChangeSet(options) {
   };
 }
 
-function mergeStageDocuments(context, pending, server) {
+function mergeStageDocuments(context, pending, server, replaceServer = false) {
   const merged = {};
   for (const name of Object.keys(pending).sort()) {
     const dataset = context.byName.get(name);
     const records = new Map();
-    for (const record of server[name] ?? []) {
-      records.set(stableStringify(canonicalKey(optionsArea(context), dataset, record)), record);
+    if (!replaceServer) {
+      for (const record of server[name] ?? []) {
+        records.set(stableStringify(canonicalKey(optionsArea(context), dataset, record)), record);
+      }
     }
     for (const record of pending[name]) {
       records.set(stableStringify(canonicalKey(optionsArea(context), dataset, record)), record);
@@ -2043,7 +2076,7 @@ function transportSafeRecordChunks(records, hardMaximumBytes) {
 function prepareStage(options) {
   const reconciliation = reconcileChangeSet(options);
   if (!reconciliation.ready) fail("Resolve reconciliation conflicts before preparing Stage.");
-  if (!reconciliation.cache_bound) {
+  if (!reconciliation.cache_bound && !reconciliation.failed_retry) {
     fail("Cached server draft is not bound to the accepted local Change Set digest.");
   }
   const context = changeSetContext(options);
@@ -2053,7 +2086,12 @@ function prepareStage(options) {
   const pending = readPending(context);
   if (Object.keys(pending).length === 0) fail("Local Change Set has no affected datasets.");
   const server = parseObjectOption(options.server, "--server");
-  const documents = mergeStageDocuments(context, pending, server);
+  const documents = mergeStageDocuments(
+    context,
+    pending,
+    server,
+    reconciliation.failed_retry,
+  );
   const maximumRecords = area === "metadata" ? 50_000 : 20_000;
   for (const [name, records] of Object.entries(documents)) {
     if (records.length > maximumRecords) {
@@ -2230,6 +2268,7 @@ function prepareStage(options) {
     area,
     task: taskId,
     digest: reconciliation.digest,
+    failed_retry: reconciliation.failed_retry,
     change_set_id: draft[0],
     starting_revision: draft[1],
     strategy,

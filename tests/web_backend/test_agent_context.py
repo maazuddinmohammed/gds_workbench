@@ -12,7 +12,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ModelObjectBindingRecord,
     ObjectSupportRecord,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextLimits,

@@ -259,21 +259,6 @@ def test_database_and_mcp_changes_trigger_the_disposable_postgres_ci_suite() -> 
     assert "-c mcp_server/pyproject.toml tests/mcp" in workflow
 
 
-def test_loader_has_an_independent_frozen_python_312_ci_job() -> None:
-    workflow = WEB_APP_WORKFLOW.read_text(encoding="utf-8")
-    loader_job = workflow[
-        workflow.index("  loader:\n") : workflow.index("\n  database-and-mcp:\n")
-    ]
-
-    assert 'python-version: "3.12"' in loader_job
-    assert "uv sync --frozen --project load_and_merge_scripts" in loader_job
-    assert (
-        "uv run --frozen --project load_and_merge_scripts python -m pytest"
-        in loader_job
-    )
-    assert "load_and_merge_scripts/tests" in loader_job
-
-
 def test_windows_plugin_ci_tracks_and_uses_the_frozen_mcp_project() -> None:
     workflow = PLUGIN_WINDOWS_WORKFLOW.read_text(encoding="utf-8")
 

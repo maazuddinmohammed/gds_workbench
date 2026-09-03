@@ -6,6 +6,11 @@ from collections.abc import Sequence
 from copy import deepcopy
 from typing import cast
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_staged_records,
+)
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     ConceptualObjectRecord,
@@ -15,12 +20,7 @@ from gds_etl_workbench.domain.modeling_records import (
     SupportRecord,
     normalize_model_key_value,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.change_sets.model_validation import (
-    ModelValidationIssue,
-    validate_staged_records,
-)
-from gds_etl_workbench.tools.snapshots.model.contracts import ConceptualSection
+from gds_etl_workbench.domain.snapshots.model import ConceptualSection
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, model_validator
 
 from gds_workbench_api.features.workflows.authoring.repair import (

@@ -6,7 +6,7 @@ from gds_etl_workbench.application.authorization import (
     ResolvedPrincipal,
 )
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.tools.tenants.list_tenants import query_visible_tenants
+from gds_etl_workbench.application.tenants import query_visible_tenants
 from tests.mcp.conftest import DisposablePostgres
 
 from gds_workbench_api.database import WebPostgresDatabase

@@ -15,9 +15,9 @@ from gds_etl_workbench.tools.snapshots.metadata.archive import (
     build_snapshot_archive as build_metadata_snapshot_archive,
     encode_dataset,
 )
-from gds_etl_workbench.tools.snapshots.metadata.contracts import DATASETS as METADATA_DATASETS
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS as METADATA_DATASETS
 from gds_etl_workbench.tools.snapshots.model.archive import build_model_snapshot_archive
-from gds_etl_workbench.tools.snapshots.model.contracts import ModelSnapshot
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 HELPER = (

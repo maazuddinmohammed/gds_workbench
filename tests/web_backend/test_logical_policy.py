@@ -6,8 +6,8 @@ from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
 )
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
-from gds_etl_workbench.tools.snapshots.model.contracts import LogicalSection
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.domain.snapshots.model import LogicalSection
 
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 

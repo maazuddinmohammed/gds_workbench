@@ -7,9 +7,9 @@ from collections.abc import Mapping
 from typing import Protocol
 from uuid import UUID
 
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.tools.change_sets.model import StageModelChange
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (

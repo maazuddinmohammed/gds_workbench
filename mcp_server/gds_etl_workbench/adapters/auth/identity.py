@@ -6,12 +6,12 @@ import base64
 import binascii
 import json
 from collections.abc import Mapping
-from dataclasses import dataclass
 from typing import cast
 from uuid import UUID
 
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import AuthenticationError
 
 _CLIENT_PRINCIPAL_HEADER = "x-ms-client-principal"
 _MAX_DECODED_BYTES = 64 * 1024
@@ -24,16 +24,6 @@ _OBJECT_CLAIMS = frozenset({"oid", "http://schemas.microsoft.com/identity/claims
 _IDENTITY_TYPE_CLAIMS = frozenset({"idtyp"})
 _SCOPE_CLAIMS = frozenset({"scp", "http://schemas.microsoft.com/identity/claims/scope"})
 _ROLE_CLAIMS = frozenset({"roles", "http://schemas.microsoft.com/ws/2008/06/identity/claims/role"})
-
-
-@dataclass(frozen=True, slots=True)
-class AuthenticationError(Exception):
-    public_code: str
-    message: str
-    http_status: int
-
-    def __str__(self) -> str:
-        return self.message
 
 
 class IdentityProvider:

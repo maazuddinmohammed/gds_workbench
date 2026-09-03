@@ -29,7 +29,7 @@ from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.modeling_records import (
     ANALYSIS_VALIDATION_FIELDS,
 )
-from gds_etl_workbench.tools.change_sets.model import (
+from gds_etl_workbench.application.change_sets.model import (
     _DATABASE_TIME_SQL,
     _EXPIRE_OWNED_SQL,
     _LOCK_OWNED_CHANGE_SETS_SQL,
@@ -38,7 +38,7 @@ from gds_etl_workbench.tools.change_sets.model import (
     WRITE_SECTION_COLUMNS,
     register_model_change_set_tools,
 )
-from gds_etl_workbench.tools.change_sets.common import (
+from gds_etl_workbench.application.change_sets.contracts import (
     MAX_MODEL_STAGE_CHUNK_BYTES,
     canonical_records_sha256,
     stage_batch_sha256,
@@ -54,7 +54,7 @@ from gds_etl_workbench.tools.snapshots.archive import SnapshotArchive
 from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
     register_export_model_dbml_tool,
 )
-from gds_etl_workbench.tools.snapshots.model.contracts import (
+from gds_etl_workbench.domain.snapshots.model import (
     DATASETS,
     ModelChangeSetDataset,
 )
