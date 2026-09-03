@@ -366,6 +366,23 @@ If running locally from the repository root, use:
 mcp_server/dist/gds-mcp-appservice-0.2.0.zip
 ```
 
+If Windows Azure CLI fails before upload with
+`Permission denied: .azure\\msal_token_cache.bin.lockfile`, the ZIP has not
+reached App Service. Do not change the ZIP or delete the existing Azure CLI
+profile. Open a new PowerShell window and use a fresh writable CLI profile:
+
+```powershell
+$gdsAzureConfigDir = Join-Path $env:TEMP ("gds-azure-cli-" + [guid]::NewGuid())
+New-Item -ItemType Directory -Path $gdsAzureConfigDir -ErrorAction Stop | Out-Null
+$env:AZURE_CONFIG_DIR = $gdsAzureConfigDir
+az login
+az account set --subscription "<SUBSCRIPTION_ID>"
+```
+
+Keep that PowerShell window open and rerun the `az webapp deploy` command above.
+The isolated profile avoids the locked or inaccessible cache without modifying
+the original credentials directory.
+
 ### Step 13: verify the deployment
 
 Open or call these URLs:
@@ -790,6 +807,7 @@ authentication remains client-managed.
 - [PostgreSQL firewall rules](https://learn.microsoft.com/en-us/azure/postgresql/security/security-firewall-rules)
 - [Configure Python on Linux App Service](https://learn.microsoft.com/en-us/azure/app-service/configure-language-python)
 - [Deploy an App Service ZIP](https://learn.microsoft.com/en-us/azure/app-service/deploy-zip)
+- [Azure CLI configuration options](https://learn.microsoft.com/en-us/cli/azure/azure-cli-configuration)
 - [Use Key Vault references in App Service](https://learn.microsoft.com/en-us/azure/app-service/app-service-key-vault-references)
 - [Secure an App Service MCP server for VS Code](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-mcp-server-vscode)
 - [Configure Microsoft Entra authentication for App Service](https://learn.microsoft.com/en-us/azure/app-service/configure-authentication-provider-aad)

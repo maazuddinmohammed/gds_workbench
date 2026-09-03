@@ -22,7 +22,6 @@ artifacts
 database
 deployment
 docs
-load_and_merge_scripts
 mcp_server/dist
 plugins
 tests

@@ -206,6 +206,15 @@ def test_documented_fresh_install_matches_the_exact_canonical_database_release()
     )
 
 
+def test_mcp_runbook_recovers_from_a_locked_windows_azure_cli_profile() -> None:
+    guide = AZURE_FRESH_DEPLOYMENT.read_text(encoding="utf-8")
+
+    assert "msal_token_cache.bin.lockfile" in guide
+    assert "$gdsAzureConfigDir" in guide
+    assert "$env:AZURE_CONFIG_DIR = $gdsAzureConfigDir" in guide
+    assert "az login" in guide
+
+
 def test_database_cleanup_reference_is_complete_and_remains_commented() -> None:
     sql = "\n".join(
         path.read_text(encoding="utf-8")
