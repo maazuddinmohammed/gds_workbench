@@ -81,7 +81,7 @@ def test_powershell_readiness_is_snapshot_driven() -> None:
     assert "function Get-WorkflowReadiness" in text
     assert "snapshot_missing" in text
     assert "snapshot_stale" in text
-    assert "Download and unzip one fresh required Snapshot" in text
+    assert "Create, download, and install each fresh required Snapshot" in text
     assert "mapping-proof" not in text
     assert "generator-proof" not in text
 

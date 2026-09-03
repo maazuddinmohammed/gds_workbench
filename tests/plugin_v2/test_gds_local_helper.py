@@ -4,6 +4,7 @@ import base64
 import hashlib
 import json
 import subprocess
+import zipfile
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
@@ -99,6 +100,13 @@ def write_snapshot_manifest(
     else:
         manifest["tenant_code"] = tenant_code
     (snapshot / "manifest.json").write_text(json.dumps(manifest))
+
+
+def archive_snapshot(snapshot: Path, archive: Path) -> bytes:
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
+        for file in sorted(path for path in snapshot.rglob("*") if path.is_file()):
+            output.write(file, (Path(snapshot.name) / file.relative_to(snapshot)).as_posix())
+    return archive.read_bytes()
 
 
 def test_session_init_allocates_compact_monotonic_sessions(tmp_path: Path) -> None:
@@ -557,6 +565,152 @@ def write_model_snapshot(session: Path) -> None:
     )
 
 
+def test_snapshot_install_verifies_and_places_a_downloaded_snapshot(
+    tmp_path: Path,
+) -> None:
+    first = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    source_session = Path(json.loads(first.stdout)["path"])
+    write_metadata_snapshot(source_session)
+    snapshot = source_session / "metadata" / "metadata-snapshot"
+    snapshot_id = "00000000-0000-4000-8000-000000000321"
+    write_snapshot_manifest(snapshot, kind="metadata", snapshot_id=snapshot_id)
+    archive = tmp_path / "metadata.zip"
+    content = archive_snapshot(snapshot, archive)
+
+    second = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    target_session = Path(json.loads(second.stdout)["path"])
+    installed = run_helper(
+        "snapshot-install",
+        "--session", str(target_session),
+        "--area", "metadata",
+        "--archive", str(archive),
+        "--snapshot-id", snapshot_id,
+        "--size-bytes", str(len(content)),
+        "--sha256", hashlib.sha256(content).hexdigest(),
+    )
+
+    assert installed.returncode == 0, installed.stderr
+    assert json.loads(installed.stdout) == {
+        "area": "metadata",
+        "snapshot_id": snapshot_id,
+        "model_revision": None,
+        "dataset_count": 2,
+        "refreshed": False,
+    }
+    assert json.loads(run_helper(
+        "inspect", "--session", str(target_session), "--area", "metadata"
+    ).stdout)["id"] == snapshot_id
+
+
+def test_snapshot_install_preserves_current_snapshot_on_descriptor_mismatch(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+    archive = tmp_path / "invalid.zip"
+    archive.write_bytes(b"not a zip")
+
+    installed = run_helper(
+        "snapshot-install",
+        "--session", str(session),
+        "--area", "metadata",
+        "--archive", str(archive),
+        "--snapshot-id", "00000000-0000-4000-8000-000000000321",
+        "--size-bytes", str(archive.stat().st_size),
+        "--sha256", "0" * 64,
+    )
+
+    assert installed.returncode != 0
+    assert "SHA-256" in installed.stderr
+    assert json.loads(run_helper(
+        "inspect", "--session", str(session), "--area", "metadata"
+    ).stdout)["id"] == "snapshot-01"
+
+
+def test_snapshot_install_rejects_unsafe_archive_paths_without_replacing_current(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+    archive = tmp_path / "unsafe.zip"
+    with zipfile.ZipFile(archive, "w", compression=zipfile.ZIP_DEFLATED) as output:
+        output.writestr("../escape.txt", "unsafe")
+    content = archive.read_bytes()
+
+    installed = run_helper(
+        "snapshot-install",
+        "--session", str(session),
+        "--area", "metadata",
+        "--archive", str(archive),
+        "--snapshot-id", "00000000-0000-4000-8000-000000000321",
+        "--size-bytes", str(len(content)),
+        "--sha256", hashlib.sha256(content).hexdigest(),
+    )
+
+    assert installed.returncode != 0
+    assert "unsafe member path" in installed.stderr
+    assert not (tmp_path / "escape.txt").exists()
+    assert json.loads(run_helper(
+        "inspect", "--session", str(session), "--area", "metadata"
+    ).stdout)["id"] == "snapshot-01"
+
+
+def test_snapshot_install_refuses_to_replace_unapplied_local_records(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_metadata_snapshot(session)
+    run_helper(
+        "task-add", "--session", str(session), "--area", "metadata",
+        "--title", "Edit metadata", "--plan", '["Edit"]',
+    )
+    copied = run_helper(
+        "copy", "--session", str(session), "--area", "metadata",
+        "--dataset", "source_object", "--where", '{"system_code":"CRM"}',
+        "--expected-digest", "empty",
+    )
+    assert copied.returncode == 0, copied.stderr
+    source_initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    source_session = Path(json.loads(source_initialized.stdout)["path"])
+    write_metadata_snapshot(source_session)
+    snapshot = source_session / "metadata" / "metadata-snapshot"
+    snapshot_id = "00000000-0000-4000-8000-000000000321"
+    write_snapshot_manifest(snapshot, kind="metadata", snapshot_id=snapshot_id)
+    archive = tmp_path / "current.zip"
+    content = archive_snapshot(snapshot, archive)
+
+    installed = run_helper(
+        "snapshot-install",
+        "--session", str(session),
+        "--area", "metadata",
+        "--archive", str(archive),
+        "--snapshot-id", snapshot_id,
+        "--size-bytes", str(len(content)),
+        "--sha256", hashlib.sha256(content).hexdigest(),
+    )
+
+    assert installed.returncode != 0
+    assert "unapplied local records" in installed.stderr
+    assert json.loads(run_helper(
+        "inspect", "--session", str(session), "--area", "metadata"
+    ).stdout)["id"] == "snapshot-01"
+
+
 def test_model_details_is_change_set_eligible_for_local_edits(tmp_path: Path) -> None:
     initialized = run_helper(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
@@ -684,6 +838,23 @@ def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
     )
     assert accepted.returncode == 0, accepted.stderr
     return session, digest
+
+
+def test_status_exposes_accepted_digest_for_exact_resume(tmp_path: Path) -> None:
+    session, digest = prepare_accepted_metadata_task(tmp_path)
+
+    result = run_helper("status", "--session", str(session))
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["current"] == ["01", "metadata", "Stage Customer", "ready"]
+    assert output["acceptance"] == {
+        "task": "01",
+        "digest": digest,
+        "mode": "valid",
+        "snapshot_id": "snapshot-01",
+        "model_revision": None,
+    }
 
 
 def test_inspect_returns_catalog_not_snapshot_rows(tmp_path: Path) -> None:
@@ -1881,6 +2052,97 @@ def test_helper_model_validation_is_schema_driven(tmp_path: Path) -> None:
     assert output["issues"] == []
 
 
+def test_helper_rejects_logical_type_detail_before_server_staging(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    snapshot = session / "model" / "model-snapshot"
+    (snapshot / "schemas" / "logical_entity.schema.json").write_text(
+        json.dumps(
+            {
+                "type": "object",
+                "additionalProperties": False,
+                "properties": {
+                    "logical_entity_name": {"type": "string"},
+                    "logical_entity_type": {"enum": ["core", "other"]},
+                    "logical_entity_type_detail": {
+                        "anyOf": [{"type": "string"}, {"type": "null"}]
+                    },
+                },
+                "required": [
+                    "logical_entity_name",
+                    "logical_entity_type",
+                    "logical_entity_type_detail",
+                ],
+                "allOf": [
+                    {
+                        "if": {
+                            "properties": {
+                                "logical_entity_type": {"const": "other"}
+                            },
+                            "required": ["logical_entity_type"],
+                        },
+                        "then": {
+                            "properties": {
+                                "logical_entity_type_detail": {"type": "string"}
+                            }
+                        },
+                        "else": {
+                            "properties": {
+                                "logical_entity_type_detail": {"type": "null"}
+                            }
+                        },
+                    }
+                ],
+                "x-gds-change-set-eligible": True,
+            }
+        )
+    )
+    write_snapshot_manifest(
+        snapshot,
+        kind="model",
+        snapshot_id="model-snapshot-01",
+        model_revision=8,
+    )
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Validate Logical Entity",
+        "--plan",
+        '["Build","Validate"]',
+    )
+    assert added.returncode == 0, added.stderr
+    (session / "model-change-set" / "logical_entity.json").write_text(
+        json.dumps(
+            [
+                {
+                    "logical_entity_name": "Customer",
+                    "logical_entity_type": "core",
+                    "logical_entity_type_detail": "Core entity",
+                }
+            ]
+        )
+    )
+
+    result = run_helper("validate", "--session", str(session), "--area", "model")
+
+    assert result.returncode == 0, result.stderr
+    output = json.loads(result.stdout)
+    assert output["valid"] is False
+    assert any(
+        issue[0] == "logical_entity" and "expected null" in issue[2]
+        for issue in output["issues"]
+    )
+
+
 def test_generate_dbml_writes_local_effective_model_files(tmp_path: Path) -> None:
     initialized = run_helper(
         "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
@@ -2275,8 +2537,9 @@ def test_prepare_stage_writes_one_direct_request_for_small_datasets(
     assert manifest["change_set_id"] == draft_id
     assert manifest["starting_revision"] == 2
     assert manifest["limits"] == {
-        "direct_bytes": 1_048_576,
-        "chunk_bytes": 460_800,
+        "direct_bytes": 65_536,
+        "preferred_payload_bytes": 65_536,
+        "hard_chunk_bytes": 460_800,
         "chunk_records": 5_000,
         "chunks_per_batch": 64,
     }
@@ -2384,6 +2647,87 @@ def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
     assert manifest["operations"][-1]["expected_revision_from"] == (
         "matching begin operation"
     )
+
+
+def test_prepare_stage_batches_agent_unsafe_payloads_below_server_limit(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper(
+        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
+    )
+    session = Path(json.loads(initialized.stdout)["path"])
+    write_model_snapshot(session)
+    added = run_helper(
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--title",
+        "Stage large logical model",
+        "--plan",
+        '["Review","Stage"]',
+    )
+    assert added.returncode == 0, added.stderr
+    records = [
+        {
+            "logical_entity_name": "Customer",
+            "logical_attribute_name": f"Attribute{index}",
+            "logical_attribute_is_nullable": True,
+            "logical_attribute_is_primary_key": False,
+            "logical_attribute_is_natural_key": False,
+            "logical_attribute_is_surrogate_key": False,
+            "sources": [],
+            "notes": "x" * 7_000,
+        }
+        for index in range(100)
+    ]
+    (session / "model-change-set" / "logical_attribute.json").write_text(
+        json.dumps(records) + "\n"
+    )
+    reviewed = run_helper(
+        "task-state", "--session", str(session), "--task", "01", "--state", "review"
+    )
+    assert reviewed.returncode == 0, reviewed.stderr
+    digest = json.loads(
+        run_helper("review", "--session", str(session), "--area", "model").stdout
+    )["digest"]
+    accepted = run_helper(
+        "accept", "--session", str(session), "--area", "model", "--digest", digest
+    )
+    assert accepted.returncode == 0, accepted.stderr
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--id",
+        "00000000-0000-4000-8000-000000000123",
+        "--revision",
+        "3",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper(
+        "prepare-stage",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--server",
+        "{}",
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    assert manifest["strategy"] == "batched"
+    assert manifest["direct"] is None
+    assert manifest["limits"]["preferred_payload_bytes"] == 65_536
+    assert manifest["batches"][0]["dataset"] == "logical_attribute"
+    assert all(chunk["bytes"] <= 65_536 for chunk in manifest["batches"][0]["chunks"])
 
 
 def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(
@@ -2498,7 +2842,9 @@ def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(
     manifest = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
     batch = manifest["batches"][0]
     assert batch["payload_mode"] == "json_fragments"
-    assert batch["total_chunk_count"] == 2
+    assert batch["total_chunk_count"] > 2
+    assert batch["chunk_bytes"] == 65_536
+    assert all(chunk["bytes"] <= 65_536 for chunk in batch["chunks"])
     payload = b"".join(
         base64.b64decode(json.loads(Path(chunk["file"]).read_text()), validate=True)
         for chunk in batch["chunks"]

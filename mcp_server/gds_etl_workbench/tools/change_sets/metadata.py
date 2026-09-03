@@ -456,8 +456,9 @@ def register_metadata_change_set_tools(
         description=(
             "Replace the complete pending record lists for one or more Metadata datasets in "
             "one transaction; this never appends. Omitted datasets stay unchanged and empty "
-            "lists clear only that pending dataset. Prefer one call for all affected datasets "
-            "when the request is at most 1 MiB. The draft revision increments once."
+            "lists clear only that pending dataset. Use this only when the client can transfer "
+            "the exact payload reliably; otherwise use Begin, Put, and Commit even below the "
+            "1 MiB hard request limit. The draft revision increments once."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},

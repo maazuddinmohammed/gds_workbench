@@ -13,4 +13,4 @@ For every Bronze/Silver/Gold target:
 - Create and lock the Metadata Change Set under the Model/data-owning Tenant. Populate Object `tenant_code`, `system_code`, and `connection_code` from the physical GDS Connection, and populate `source_tenant_code` from the Model Tenant.
 - Reuse only an exact compatible active target. Otherwise register it.
 
-Apply Metadata only. DDL stays local for user handoff. After Metadata Apply, stop and request a fresh Metadata Snapshot before Model Binding. Do not create Binding, Mapping, Process, or Code in this task.
+Apply Metadata only. DDL stays local for user handoff. After Metadata Apply, automatically create and install a fresh Metadata Snapshot, then stop before Model Binding. Do not create Binding, Mapping, Process, or Code in this task.

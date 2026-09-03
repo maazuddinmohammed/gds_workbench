@@ -5,6 +5,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const readline = require("node:readline");
 const crypto = require("node:crypto");
+const childProcess = require("node:child_process");
 const unicode = require("../workbench/unicode.js");
 const workbenchCore = require("../workbench/core.js");
 const workbenchCommon = require("../workbench/validation/common.js");
@@ -35,9 +36,10 @@ function parseArguments(argv) {
 }
 
 const HELPER_CONTRACT_PATH = path.resolve(__dirname, "..", "contracts", "local-helper.json");
-const DIRECT_STAGE_MAX_BYTES = 1024 * 1024;
+const PREFERRED_STAGE_PAYLOAD_BYTES = 64 * 1024;
+const DIRECT_STAGE_MAX_BYTES = PREFERRED_STAGE_PAYLOAD_BYTES;
 const METADATA_STAGE_CHUNK_MAX_BYTES = 450 * 1024;
-const MODEL_STAGE_RECORD_CHUNK_MAX_BYTES = 900 * 1024;
+const MODEL_STAGE_RECORD_CHUNK_MAX_BYTES = 1024 * 1024;
 const MODEL_STAGE_FRAGMENT_MAX_BYTES = 1024 * 1024;
 const STAGE_CHUNK_MAX_RECORDS = 5000;
 const STAGE_MAX_CHUNKS = 64;
@@ -253,7 +255,10 @@ function locateSnapshot(options) {
     fail(`Expected exactly one unzipped ${options.area} Snapshot; found ${candidates.length}.`);
   }
 
-  const root = candidates[0];
+  return loadSnapshotRoot(candidates[0], session, options.area);
+}
+
+function loadSnapshotRoot(root, session, area, bindSession = true) {
   const manifest = readJsonFile(path.join(root, "manifest.json"), "Snapshot manifest");
   const inventory = snapshotInventory(manifest);
   if (
@@ -274,8 +279,8 @@ function locateSnapshot(options) {
     resolveSnapshotMember(root, manifest.catalog.path, inventory),
     "Snapshot catalog",
   );
-  if (catalog.snapshot_kind !== options.area || manifest.snapshot_kind !== options.area) {
-    fail(`Snapshot kind must match ${options.area}.`);
+  if (catalog.snapshot_kind !== area || manifest.snapshot_kind !== area) {
+    fail(`Snapshot kind must match ${area}.`);
   }
   if (!Array.isArray(catalog.sections)) fail("Snapshot catalog sections are invalid.");
 
@@ -298,7 +303,7 @@ function locateSnapshot(options) {
       byName.set(dataset.name, dataset);
     }
   }
-  assertSessionSnapshotIdentity(session, options.area, manifest, catalog);
+  assertSessionSnapshotIdentity(session, area, manifest, catalog, bindSession);
   return { root, catalog, manifest, inventory, datasets, byName };
 }
 
@@ -372,7 +377,7 @@ function readSessionState(session) {
   return state;
 }
 
-function assertSessionSnapshotIdentity(session, area, manifest, catalog) {
+function assertSessionSnapshotIdentity(session, area, manifest, catalog, bindSession = true) {
   if (area === "metadata") {
     const sessionTenant = path.basename(path.dirname(session));
     if (
@@ -413,7 +418,7 @@ function assertSessionSnapshotIdentity(session, area, manifest, catalog) {
       `Session is bound to Model ${state.model[0]}; start a new session for Model ${modelId}.`,
     );
   }
-  if (!state.model || state.model[1] !== modelName) {
+  if (bindSession && (!state.model || state.model[1] !== modelName)) {
     state.model = [modelId, modelName];
     writeJsonAtomic(path.join(session, "session.json"), state);
   }
@@ -1410,6 +1415,9 @@ function validateChangeSet(options) {
     });
   }
   let metadata = null;
+  let metadataTenantCode = options.area === "metadata"
+    ? context.manifest.tenant_code
+    : context.catalog.model?.tenant_code ?? null;
   if (options.area === "model" && !context.state.stale?.includes("metadata")) {
     try {
       const snapshot = locateSnapshot({ session: context.session, area: "metadata" });
@@ -1431,7 +1439,10 @@ function validateChangeSet(options) {
       }
     }
   }
-  const validationIssues = workbenchAreas[options.area].validate(loaded, metadata);
+  const validationIssues = workbenchAreas[options.area].validate(loaded, metadata, {
+    tenantCode: metadataTenantCode,
+    model: context.catalog.model ?? null,
+  });
   const boundedIssues = validationIssues.slice(0, 200);
   const repairs = boundedIssues.map((issue) => {
     const detail = issue.message || issue.target || issue.endpoint || issue.field || issue.code;
@@ -1696,6 +1707,157 @@ function acceptRefreshedSnapshot(options) {
   return { area: options.area, id: currentId, revision: currentRevision, retired: files.length };
 }
 
+function removeSnapshotInstallPath(target, session) {
+  const resolved = path.resolve(target);
+  const parent = path.dirname(resolved);
+  const name = path.basename(resolved);
+  if (parent !== session || !name.startsWith(".")) {
+    fail("Refusing to remove an unsafe Snapshot installation path.");
+  }
+  if (fs.existsSync(resolved)) fs.rmSync(resolved, { recursive: true, force: false });
+}
+
+function snapshotArchiveEntries(archive) {
+  const result = childProcess.spawnSync("tar", ["-tf", archive], {
+    encoding: "utf8",
+    maxBuffer: 4 * 1024 * 1024,
+    windowsHide: true,
+  });
+  if (result.error || result.status !== 0) fail("Snapshot ZIP could not be inspected.");
+  const entries = result.stdout.split(/\r?\n/).filter(Boolean);
+  if (!entries.length || entries.length > 4096) fail("Snapshot ZIP member count is invalid.");
+  const seen = new Set();
+  for (const entry of entries) {
+    const member = entry.endsWith("/") ? entry.slice(0, -1) : entry;
+    assertSafeSnapshotMemberPath(member);
+    if (seen.has(member)) fail(`Snapshot ZIP contains duplicate member path ${member}.`);
+    seen.add(member);
+  }
+  return entries;
+}
+
+function inspectExtractedSnapshot(root) {
+  let fileCount = 0;
+  let expandedBytes = 0;
+  const pending = [root];
+  while (pending.length) {
+    const directory = pending.pop();
+    for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+      const target = path.join(directory, entry.name);
+      const stat = fs.lstatSync(target);
+      if (stat.isSymbolicLink() || (!stat.isDirectory() && !stat.isFile())) {
+        fail("Snapshot ZIP may contain only regular files and directories.");
+      }
+      if (stat.isDirectory()) pending.push(target);
+      else {
+        fileCount += 1;
+        expandedBytes += stat.size;
+        if (fileCount > 4096 || expandedBytes > 512 * 1024 * 1024) {
+          fail("Snapshot ZIP expands beyond the local safety limit.");
+        }
+      }
+    }
+  }
+}
+
+function findExtractedSnapshotRoot(directory) {
+  const candidates = [];
+  const hasContract = (target) =>
+    fs.existsSync(path.join(target, "catalog.json")) &&
+    fs.existsSync(path.join(target, "manifest.json"));
+  if (hasContract(directory)) candidates.push(directory);
+  for (const entry of fs.readdirSync(directory, { withFileTypes: true })) {
+    if (entry.isDirectory() && !entry.isSymbolicLink()) {
+      const target = path.join(directory, entry.name);
+      if (hasContract(target)) candidates.push(target);
+    }
+  }
+  if (candidates.length !== 1) fail("Snapshot ZIP must contain exactly one Snapshot root.");
+  return candidates[0];
+}
+
+function installSnapshot(options) {
+  if (!new Set(["metadata", "model"]).has(options.area)) {
+    fail("--area must be metadata or model.");
+  }
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(
+    options["snapshot-id"] ?? "",
+  )) fail("--snapshot-id must be a UUID.");
+  if (!/^[0-9a-f]{64}$/.test(options.sha256 ?? "")) {
+    fail("--sha256 must be a lowercase SHA-256 digest.");
+  }
+  const expectedSize = Number(options["size-bytes"]);
+  if (!Number.isSafeInteger(expectedSize) || expectedSize <= 0) {
+    fail("--size-bytes must be a positive integer.");
+  }
+  const session = requireSessionPath(options.session);
+  const archive = path.resolve(options.archive ?? "");
+  if (!fs.existsSync(archive)) fail("Snapshot ZIP was not found.");
+  const archiveStat = fs.lstatSync(archive);
+  if (!archiveStat.isFile() || archiveStat.isSymbolicLink()) {
+    fail("Snapshot ZIP must be a regular file.");
+  }
+  if (archiveStat.size !== expectedSize) fail("Snapshot ZIP size does not match the MCP result.");
+  const archiveDigest = crypto.createHash("sha256").update(fs.readFileSync(archive)).digest("hex");
+  if (archiveDigest !== options.sha256) fail("Snapshot ZIP SHA-256 does not match the MCP result.");
+  snapshotArchiveEntries(archive);
+
+  const state = readSessionState(session);
+  const stale = Array.isArray(state.stale) && state.stale.includes(options.area);
+  const pending = pendingSummary(pendingDirectory(session, options.area));
+  if (pending.files > 0 && !stale) {
+    fail(`Cannot replace the ${options.area} Snapshot while unapplied local records exist.`);
+  }
+  const stage = fs.mkdtempSync(path.join(session, `.${options.area}-install-`));
+  const extracted = path.join(stage, "next");
+  fs.mkdirSync(extracted, { mode: 0o700 });
+  const backup = `${stage}-previous`;
+  const destination = path.join(session, options.area);
+  let movedPrevious = false;
+  let movedNext = false;
+  try {
+    const extraction = childProcess.spawnSync("tar", ["-xf", archive, "-C", extracted], {
+      encoding: "utf8",
+      maxBuffer: 1024 * 1024,
+      windowsHide: true,
+    });
+    if (extraction.error || extraction.status !== 0) fail("Snapshot ZIP could not be extracted.");
+    inspectExtractedSnapshot(extracted);
+    const root = findExtractedSnapshotRoot(extracted);
+    const candidate = loadSnapshotRoot(root, session, options.area, false);
+    if (candidate.manifest.snapshot_id.toLowerCase() !== options["snapshot-id"].toLowerCase()) {
+      fail("Snapshot ZIP ID does not match the MCP result.");
+    }
+
+    fs.renameSync(destination, backup);
+    movedPrevious = true;
+    fs.renameSync(extracted, destination);
+    movedNext = true;
+    const installed = locateSnapshot({ session, area: options.area });
+    let refreshed = false;
+    if (stale) {
+      acceptRefreshedSnapshot({ session, area: options.area });
+      refreshed = true;
+    }
+    removeSnapshotInstallPath(backup, session);
+    movedPrevious = false;
+    removeSnapshotInstallPath(stage, session);
+    return {
+      area: options.area,
+      snapshot_id: installed.manifest.snapshot_id,
+      model_revision: installed.manifest.model_revision ?? null,
+      dataset_count: installed.datasets.length,
+      refreshed,
+    };
+  } catch (error) {
+    if (movedNext && fs.existsSync(destination)) fs.rmSync(destination, { recursive: true });
+    if (movedPrevious && fs.existsSync(backup)) fs.renameSync(backup, destination);
+    if (fs.existsSync(stage)) removeSnapshotInstallPath(stage, session);
+    if (fs.existsSync(backup)) removeSnapshotInstallPath(backup, session);
+    throw error;
+  }
+}
+
 function assertAcceptedChangeSet(context) {
   const task = context.state.tasks.find((item) => item[0] === context.state.current);
   if (!task || !new Set(["ready", "overridden", "staged"]).has(task[3])) {
@@ -1857,6 +2019,27 @@ function recordChunks(records, maximumBytes) {
   return chunks;
 }
 
+function transportSafeRecordChunks(records, hardMaximumBytes) {
+  let chunks = recordChunks(records, PREFERRED_STAGE_PAYLOAD_BYTES);
+  if (chunks !== null && chunks.length <= STAGE_MAX_CHUNKS) {
+    return { chunks, maximumBytes: PREFERRED_STAGE_PAYLOAD_BYTES };
+  }
+  let lower = PREFERRED_STAGE_PAYLOAD_BYTES + 1;
+  let upper = hardMaximumBytes;
+  let best = null;
+  while (lower <= upper) {
+    const candidateMaximum = Math.floor((lower + upper) / 2);
+    const candidate = recordChunks(records, candidateMaximum);
+    if (candidate !== null && candidate.length <= STAGE_MAX_CHUNKS) {
+      best = { chunks: candidate, maximumBytes: candidateMaximum };
+      upper = candidateMaximum - 1;
+    } else {
+      lower = candidateMaximum + 1;
+    }
+  }
+  return best;
+}
+
 function prepareStage(options) {
   const reconciliation = reconcileChangeSet(options);
   if (!reconciliation.ready) fail("Resolve reconciliation conflicts before preparing Stage.");
@@ -1914,28 +2097,44 @@ function prepareStage(options) {
   }
 
   const batches = [];
-  const recordChunkBytes =
+  const recordChunkHardBytes =
     area === "metadata"
       ? METADATA_STAGE_CHUNK_MAX_BYTES
       : MODEL_STAGE_RECORD_CHUNK_MAX_BYTES;
   for (const name of names.filter((dataset) => !directNames.has(dataset))) {
     const records = documents[name];
-    let chunks = recordChunks(records, recordChunkBytes);
+    const preferredChunks = recordChunks(records, PREFERRED_STAGE_PAYLOAD_BYTES);
+    const preferFragments =
+      area === "model" &&
+      name === "generated_code" &&
+      (preferredChunks === null || preferredChunks.length > STAGE_MAX_CHUNKS);
+    const recordPacking = preferFragments
+      ? null
+      : transportSafeRecordChunks(records, recordChunkHardBytes);
+    let chunks = recordPacking?.chunks ?? null;
+    let chunkBytes = recordPacking?.maximumBytes ?? PREFERRED_STAGE_PAYLOAD_BYTES;
     let payloadMode = "records";
     let totalPayloadBytes = null;
-    if (chunks === null || chunks.length > STAGE_MAX_CHUNKS) {
+    if (chunks === null) {
       if (area !== "model" || name !== "generated_code") {
         fail(
           `${name} cannot fit within ${STAGE_MAX_CHUNKS} chunks of ` +
-            `${STAGE_CHUNK_MAX_RECORDS} records and ${recordChunkBytes} bytes.`,
+            `${STAGE_CHUNK_MAX_RECORDS} records and ${recordChunkHardBytes} bytes.`,
         );
       }
       payloadMode = "json_fragments";
       const payload = Buffer.from(stableStringify(records), "utf8");
       totalPayloadBytes = payload.length;
+      chunkBytes = Math.max(
+        PREFERRED_STAGE_PAYLOAD_BYTES,
+        Math.ceil(payload.length / STAGE_MAX_CHUNKS),
+      );
+      if (chunkBytes > MODEL_STAGE_FRAGMENT_MAX_BYTES) {
+        fail(`generated_code exceeds the ${STAGE_MAX_CHUNKS} MiB fragment limit.`);
+      }
       chunks = [];
-      for (let offset = 0; offset < payload.length; offset += MODEL_STAGE_FRAGMENT_MAX_BYTES) {
-        chunks.push(payload.subarray(offset, offset + MODEL_STAGE_FRAGMENT_MAX_BYTES));
+      for (let offset = 0; offset < payload.length; offset += chunkBytes) {
+        chunks.push(payload.subarray(offset, offset + chunkBytes));
       }
       if (chunks.length > STAGE_MAX_CHUNKS) {
         fail(`generated_code exceeds the ${STAGE_MAX_CHUNKS} MiB fragment limit.`);
@@ -1966,6 +2165,7 @@ function prepareStage(options) {
       payload_mode: payloadMode,
       total_record_count: records.length,
       total_chunk_count: chunkDocuments.length,
+      chunk_bytes: chunkBytes,
       ...(totalPayloadBytes === null ? {} : { total_payload_bytes: totalPayloadBytes }),
       batch_sha256: sha256Bytes(
         Buffer.from(chunkDocuments.map((chunk) => chunk.sha256).join(""), "ascii"),
@@ -2035,7 +2235,8 @@ function prepareStage(options) {
     strategy,
     limits: {
       direct_bytes: DIRECT_STAGE_MAX_BYTES,
-      chunk_bytes: recordChunkBytes,
+      preferred_payload_bytes: PREFERRED_STAGE_PAYLOAD_BYTES,
+      hard_chunk_bytes: recordChunkHardBytes,
       chunk_records: STAGE_CHUNK_MAX_RECORDS,
       chunks_per_batch: STAGE_MAX_CHUNKS,
     },
@@ -2147,13 +2348,13 @@ const READINESS_TARGETS = {
   "silver-registration": ["metadata", "model"],
   "logical-binding": ["metadata", "model"],
   "logical-mapping": ["metadata", "model"],
-  "logical-code": ["model"],
+  "logical-code": ["metadata", "model"],
   "dimensional-build": ["metadata", "model"],
   "gold-registration": ["metadata", "model"],
   "dimensional-binding": ["metadata", "model"],
   "dimensional-mapping": ["metadata", "model"],
-  "dimensional-code": ["model"],
-  validation: ["model"],
+  "dimensional-code": ["metadata", "model"],
+  validation: ["metadata", "model"],
   "process-registration": ["metadata", "model"],
 };
 
@@ -2216,7 +2417,7 @@ function readinessIssueCollector() {
 
 function readinessPrompt(issues) {
   return issues.has("snapshot_missing") || issues.has("snapshot_stale")
-    ? "Download and unzip one fresh required Snapshot, replace its area, then resume."
+    ? "Create, download, and install each fresh required Snapshot, then resume."
     : "";
 }
 
@@ -2312,6 +2513,31 @@ function sessionStatus(options) {
     plan = validatePlan(readJsonFile(planPath, "Active or waiting task plan"));
     planDigest = fileDigest(planPath);
   }
+  let acceptance = null;
+  if (current) {
+    const acceptancePath = path.join(session, "tasks", `${current[0]}.accept.json`);
+    if (fs.existsSync(acceptancePath)) {
+      const accepted = readJsonFile(acceptancePath, "Task acceptance");
+      const offset = accepted?.[1] === "valid" ? 2 : accepted?.[1] === "override" ? 3 : -1;
+      if (
+        !Array.isArray(accepted) ||
+        !/^[0-9a-f]{64}$/.test(accepted[0] ?? "") ||
+        offset < 0 ||
+        typeof accepted[offset] !== "string" ||
+        (accepted[offset + 1] !== null &&
+          (!Number.isSafeInteger(accepted[offset + 1]) || accepted[offset + 1] < 0))
+      ) {
+        fail("Task acceptance has an invalid shape.");
+      }
+      acceptance = {
+        task: current[0],
+        digest: accepted[0],
+        mode: accepted[1],
+        snapshot_id: accepted[offset],
+        model_revision: accepted[offset + 1],
+      };
+    }
+  }
   const pending = {};
   for (const area of ["metadata", "model"]) {
     const summary = pendingSummary(pendingDirectory(session, area));
@@ -2341,6 +2567,7 @@ function sessionStatus(options) {
     snapshots,
     pending,
     stashes,
+    acceptance,
   };
 }
 
@@ -2380,6 +2607,7 @@ async function main() {
   else if (command === "validate") output = validateChangeSet(options);
   else if (command === "generate-dbml") output = generateLocalDbml(options);
   else if (command === "accept") output = acceptChangeSet(options);
+  else if (command === "snapshot-install") output = installSnapshot(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);
   else if (command === "reconcile") output = reconcileChangeSet(options);
   else if (command === "prepare-stage") output = prepareStage(options);

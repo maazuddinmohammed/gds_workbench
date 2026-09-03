@@ -1,17 +1,19 @@
 # Staging
 
-Load only after local-digest acceptance and fetching the current server draft.
+Use only after accepting the local digest and fetching the current server draft.
 
-Run `prepare-stage` once with the exact server pending datasets. It reconciles normalized keys, rejects conflicts/stale bindings, combines non-overlap, and writes `tasks/<task>.stage/manifest.json`. Never stage record by record or invent chunks/hashes.
+Run `prepare-stage` once with exact server pending datasets. It reconciles keys and writes the operation manifest. Never stage record-wise, repack, or invent hashes.
+
+Parse each local `payload_file` once into its named MCP argument; never transcribe or rebuild it.
 
 Execute `manifest.json.operations` by `sequence`:
 
-1. Direct Stage: use `payload_file` as the complete `changes`; resolve `expected_revision_from` exactly.
-2. Begin: copy its dataset, counts, mode, optional bytes, batch hash, and revision.
-3. Put: use its payload file, index, hash, and referenced Begin `stage_batch_id`. `records` files become `records`; Model `generated_code` fragment files become `payload_fragment_base64`.
-4. Commit: use the referenced Begin ID/revision. Carry the returned revision only where the next operation directs.
-5. When all operations succeed, refetch and cache the active draft revision before server validation.
+1. Direct: pass complete file value as `changes`; resolve revision source.
+2. Begin: copy its fields and revision.
+3. Put: copy its fields/ID; records become `records`, code fragments `payload_fragment_base64`.
+4. Commit: use its ID/revision; carry returned revision as directed.
+5. Refetch/cache the active draft, then validate server-side.
 
-A present dataset replaces its complete pending server dataset. Repeated direct calls do not append. Empty replacements remain direct because batches cannot be empty.
+A present dataset replaces server pending; calls never append.
 
-Limits: direct request 1 MiB; Metadata chunks 450 KiB/5,000 records; Model record chunks 900 KiB/5,000; 64 chunks per batch. Metadata's server contract enforces 450 KiB. These are packing limits, not output quotas.
+Prefer 64 KiB; enlarge only for the 64-chunk cap. Hard limits: Metadata 450 KiB/5,000 records; Model 1 MiB/5,000. Limits are not quotas.

@@ -156,6 +156,9 @@ _FIELD_GUIDANCE: dict[str, str] = {
     "modeled_attribute_name": (
         "Use the exact current modeled Attribute name under the named Entity."
     ),
+    "logical_entity_type_detail": (
+        "Use null unless logical_entity_type is other; other requires a nonblank detail."
+    ),
     "output_template_code": (
         "Use an advisory Output Template code, or null when no template applies."
     ),
@@ -226,6 +229,21 @@ def enrich_model_dataset_schema(dataset: str, schema: dict[str, object]) -> None
         )
         columns.append(column.model_dump(mode="json"))
     _enrich_nested_field_guidance(schema)
+    if dataset == "logical_entity":
+        schema["allOf"] = [
+            {
+                "if": {
+                    "properties": {"logical_entity_type": {"const": "other"}},
+                    "required": ["logical_entity_type"],
+                },
+                "then": {
+                    "properties": {"logical_entity_type_detail": {"type": "string"}}
+                },
+                "else": {
+                    "properties": {"logical_entity_type_detail": {"type": "null"}}
+                },
+            }
+        ]
     schema["x-gds-population-rules"] = list(rules)
     schema["x-gds-columns"] = columns
 

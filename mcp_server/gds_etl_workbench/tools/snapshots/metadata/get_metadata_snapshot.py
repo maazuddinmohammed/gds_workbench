@@ -119,7 +119,8 @@ def register_create_metadata_snapshot_tool(
         description=(
             "Create a new complete, immutable Metadata Snapshot ZIP for one authorized "
             "Tenant and broad local authoring. The response contains bounded archive metadata "
-            "and a temporary client download URL, never Snapshot rows."
+            "and a temporary client download URL, never Snapshot rows. Download promptly and "
+            "verify the returned Snapshot ID, byte size, and SHA-256 before installing it."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

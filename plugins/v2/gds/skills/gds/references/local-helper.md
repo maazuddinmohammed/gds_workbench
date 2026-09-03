@@ -1,15 +1,17 @@
 # Local helper
 
-Use Node `scripts/gds-local.js` or PowerShell `scripts/gds-local.ps1`. Run `command-contract --command <name>` for syntax.
+Use `scripts/gds-local.js` for governed local work. `.ps1` is a native compatibility helper. Never inspect helper source to rediscover a command; use `command-contract --command <name>` when needed.
 
-State: `session-init`, `status`, `sql-policy`, task commands, `readiness`, `snapshot-refresh`. Snapshot reads: `inspect`, `describe`, bounded `select`. Complete-record edits: `copy`, `upsert`, `upsert-batch`, `discard`.
+State: session/status/task commands, `readiness`, `snapshot-install`, `snapshot-refresh`. Reads: `inspect`, `describe`, bounded `select`. Edits: `copy`, `upsert`, `upsert-batch`, `discard`.
 
-Before user review, run `validate`. It compiles the effective graph and writes `reports/local-validation/<area>.json`. Use `review` only for its action summary. After acknowledgement, `accept` the exact digest, fetch server state, then `reconcile`.
+Download the MCP ZIP temporarily; run `snapshot-install` with exact returned `snapshot_id`, `size_bytes`, and `sha256`; delete it after success. Never expose the signed URL. Installation verifies every member, replaces safely, and reconciles stale areas.
 
-After reconciliation, read `staging.md`. Run `prepare-stage` with the exact server pending datasets and execute its ordered `operations`; never split records, calculate hashes, or infer revision flow.
+Before notifying, run `validate`; it writes `reports/local-validation/<area>.json`. Run `review` only for a requested action summary. After acknowledgement: `accept`, fetch server state, `reconcile`.
 
-`validate` checks signed schemas, key uniqueness, declared references, locks, and safe local state. Workbench runs the same checks. Server authorization, constraints, and Change Set validation remain authoritative.
+Then read `staging.md`, run `prepare-stage` with exact server pending datasets, and execute its ordered operations. Never invent splits, hashes, or revision flow.
 
-`generate-dbml --session <session> --area model` writes the effective local Model to `model-dbml/`; Workbench uses the same renderer.
+JavaScript `validate` checks exported record rules, uniqueness, references, Tenant/GDS scope, locks, Model dependencies, Bindings, Mapping, Code, and Validation. It and Workbench share the same validators; server validation remains authoritative.
+
+Never generate, regenerate, read, or inspect DBML unless the user explicitly asks. `generate-dbml` exports the effective Model to `model-dbml/`.
 
 `task-state staged` requires digest acceptance and server-draft cache. `applied` requires a validated cache. Edits remove acceptance; never relaunch it after every update.

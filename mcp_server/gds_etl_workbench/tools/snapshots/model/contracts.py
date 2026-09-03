@@ -35,6 +35,10 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationCheckRecord,
     ValidationGroupRecord,
 )
+from gds_etl_workbench.domain.portable_validation import (
+    MODEL_RECORD_VALIDATIONS,
+    record_validation_contract,
+)
 
 from .guidance import enrich_model_dataset_schema
 
@@ -207,6 +211,8 @@ class ModelSnapshot(ContractModel):
     model_id: int
     model_name: str
     model_revision: int
+    model_tenant_code: str | None = None
+    other_active_model_names: tuple[str, ...] = ()
     model_input_scope: ModelInputScopeSection
     profiling: ProfilingSection
     analysis: AnalysisSection
@@ -259,7 +265,9 @@ def model_snapshot_records(
 def build_model_dataset_schema(
     definition: ModelingDatasetDefinition,
 ) -> dict[str, object]:
-    generated = definition.row_model.model_json_schema(mode="serialization")
+    # Validation mode includes every JSON representation accepted when staging records.
+    # Snapshot-serialized values remain a valid subset of this contract.
+    generated = definition.row_model.model_json_schema(mode="validation")
     properties = generated.get("properties")
     if not isinstance(properties, dict):
         raise ValueError(f"{definition.name} generated an invalid JSON Schema")
@@ -287,6 +295,9 @@ def build_model_dataset_schema(
         "x-gds-change-set-eligible": definition.change_set_eligible,
     }
     enrich_model_dataset_schema(definition.name, schema)
+    rules = MODEL_RECORD_VALIDATIONS.get(definition.name)
+    if rules is not None:
+        schema["x-gds-record-validation"] = record_validation_contract(rules)
     return schema
 
 

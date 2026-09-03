@@ -98,9 +98,19 @@ def test_visible_lifecycle_is_refresh_acknowledge_and_proceed() -> None:
     assert "positive acknowledgement" in router
     assert "exact current digest" in router
     assert "authorizes an ordinary free Tenant Lock" in router
-    assert "Do not ask again before those actions" in router
     assert "Load only after a positive acknowledgement" in handoff
     assert "ask separately for Apply approval" in router
+    assert "Never ask separately for review acceptance and handoff approval" in router
+    assert "Do not run `review` unless the user asks for an action summary" in router
+
+
+def test_resume_continues_from_recorded_state_without_rebuilding() -> None:
+    session = read(REFERENCES / "session.md")
+    local_helper = read(REFERENCES / "local-helper.md")
+
+    assert "Treat `status.acceptance` as authoritative" in session
+    assert "do not rerun authoring, generators, validation, or review" in session
+    assert "Never inspect helper source to rediscover a command" in local_helper
 
 
 def test_revision_change_forces_fresh_snapshot_and_reassessment() -> None:
@@ -289,7 +299,23 @@ def test_workbench_opens_once_and_chat_acknowledgement_stays_user_facing() -> No
     assert "never relaunch it after every update" in local_helper
     assert "There is no separate user review command" in guide
     assert "positive acknowledgement accepts the exact current content" in guide
-    assert "manually downloaded from the MCP tool result" in guide
+    assert "downloads its ZIP to a temporary file" in guide
+    assert "asks for the working directory only when no session path is known" in guide
+
+
+def test_dbml_is_an_explicit_opt_in_display_export() -> None:
+    router = read(SKILL_ROOT / "SKILL.md")
+    local_helper = read(REFERENCES / "local-helper.md")
+    workbench = read(REFERENCES / "workbench.md")
+
+    rule = (
+        "Never generate, regenerate, read, or inspect DBML unless the user "
+        "explicitly asks"
+    )
+    assert rule in router
+    assert rule in local_helper
+    assert "DBML is a display export, not validation or review evidence" in router
+    assert "DBML generation never runs automatically after a Model edit" in workbench
 
 
 def test_user_guide_explains_vs_code_and_the_simple_workflow() -> None:

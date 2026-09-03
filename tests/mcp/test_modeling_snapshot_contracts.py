@@ -16,6 +16,7 @@ from gds_etl_workbench.domain.modeling_records import (
     ProfilingProfileRecord,
     ValidationCheckRecord,
 )
+from gds_etl_workbench.domain.portable_validation import MODEL_RECORD_VALIDATIONS
 from gds_etl_workbench.tools.snapshots.archive import SnapshotContractError
 from gds_etl_workbench.tools.snapshots.model.archive import (
     build_model_snapshot_archive,
@@ -116,6 +117,35 @@ def test_model_schemas_forbid_removed_authoring_metadata() -> None:
         assert forbidden.isdisjoint(schema["properties"])
 
 
+def test_every_custom_model_record_validator_is_exported_for_local_parity() -> None:
+    custom = {
+        definition.name
+        for definition in DATASETS
+        if definition.row_model.__pydantic_decorators__.field_validators
+        or definition.row_model.__pydantic_decorators__.model_validators
+    }
+
+    assert set(MODEL_RECORD_VALIDATIONS) == custom
+    for dataset, rules in MODEL_RECORD_VALIDATIONS.items():
+        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])[
+            "x-gds-record-validation"
+        ] == {"version": "1.0", "rules": list(rules)}
+
+
+def test_model_schema_accepts_every_decimal_representation_accepted_at_stage() -> None:
+    schema = build_model_dataset_schema(DATASETS_BY_NAME["profiling_profile"])
+
+    assert schema["properties"]["avg_data_length"]["anyOf"][0] == {
+        "minimum": 0.0,
+        "type": "number",
+    }
+    assert schema["properties"]["percent_populated"]["anyOf"][0] == {
+        "maximum": 100.0,
+        "minimum": 0.0,
+        "type": "number",
+    }
+
+
 def test_status_contract_has_only_applied_lifecycle_values() -> None:
     for dataset in (
         "conceptual_object",
@@ -132,6 +162,25 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
             if name.endswith("_status")
         )
         assert status_property["enum"] == ["active", "inactive", "deprecated"]
+
+
+def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
+    schema = build_model_dataset_schema(DATASETS_BY_NAME["logical_entity"])
+
+    assert schema["allOf"] == [
+        {
+            "if": {
+                "properties": {"logical_entity_type": {"const": "other"}},
+                "required": ["logical_entity_type"],
+            },
+            "then": {
+                "properties": {"logical_entity_type_detail": {"type": "string"}}
+            },
+            "else": {
+                "properties": {"logical_entity_type_detail": {"type": "null"}}
+            },
+        }
+    ]
 
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
@@ -226,7 +275,10 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
 
 
 def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> None:
-    snapshot = snapshot_from_graph(complete_model_graph())
+    snapshot = snapshot_from_graph(complete_model_graph()).model_copy(update={
+        "model_tenant_code": "TENANT_A",
+        "other_active_model_names": ("Legacy Model", "Other Model"),
+    })
     created_at = datetime(2026, 9, 1, tzinfo=UTC)
     output = tmp_path / "model-snapshot.zip"
 
@@ -258,6 +310,11 @@ def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> 
     assert [item["name"] for item in sections["validation"]["datasets"]] == [
         "validation_group",
         "validation_check",
+    ]
+    assert catalog["model"]["tenant_code"] == "TENANT_A"
+    assert catalog["model"]["other_active_model_names"] == [
+        "Legacy Model",
+        "Other Model",
     ]
     assert manifest["counts"]["logical_dataset_count"] == 25
     assert manifest["database_ids_included"] is False

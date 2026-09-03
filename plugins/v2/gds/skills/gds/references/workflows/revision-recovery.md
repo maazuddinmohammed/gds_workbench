@@ -3,7 +3,7 @@
 If the authoritative revision differs from the Snapshot revision used for the reviewed digest:
 
 1. Stop before reconciliation or Stage.
-2. Ask the user to download the fresh complete Snapshot from the MCP tool result and replace the affected Snapshot area. Never repeat its temporary signed URL in chat.
+2. Create and download the fresh complete Snapshot, then install it into the known session with `snapshot-install`. Ask the user only if the session/download location cannot be resolved. Never repeat its temporary signed URL in chat.
 3. Re-run readiness and reassess every affected local record against it.
 4. Never merge or repair automatically.
 5. If the exact local bytes remain unchanged, keep the prior positive acknowledgement.

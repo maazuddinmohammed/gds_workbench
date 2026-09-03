@@ -13,6 +13,10 @@ from uuid import UUID
 
 from pydantic import ValidationError
 
+from gds_etl_workbench.domain.portable_validation import (
+    METADATA_RECORD_VALIDATIONS,
+    record_validation_contract,
+)
 from gds_etl_workbench.tools.snapshots.archive import (
     SnapshotArchive,
     SnapshotContractError,
@@ -138,6 +142,9 @@ def build_dataset_document(definition: DatasetDefinition) -> MetadataDatasetDocu
         "x-gds-population-rules": description_document["population_rules"],
         "x-gds-columns": description_document["columns"],
     }
+    rules = METADATA_RECORD_VALIDATIONS.get(definition.name)
+    if rules is not None:
+        schema["x-gds-record-validation"] = record_validation_contract(rules)
     return MetadataDatasetDocument(schema=schema, description=description)
 
 

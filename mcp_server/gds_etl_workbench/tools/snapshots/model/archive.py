@@ -106,6 +106,8 @@ def build_model_snapshot_archive(
             "model_id": snapshot.model_id,
             "model_name": snapshot.model_name,
             "model_revision": snapshot.model_revision,
+            "tenant_code": snapshot.model_tenant_code,
+            "other_active_model_names": list(snapshot.other_active_model_names),
         },
         "instructions": [
             "Read catalog.json first; do not recursively load this archive into context.",

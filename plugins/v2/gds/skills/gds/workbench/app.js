@@ -615,7 +615,12 @@
       render();
       const loaded = await state.workspace.loadArea(area);
       const metadata = area === "model" && areaSnapshot("metadata")?.manifest && !state.workspace.state?.stale?.includes("metadata") ? await state.workspace.loadArea("metadata") : null;
-      const raw = areaModule(area).validate(loaded, metadata);
+      const raw = areaModule(area).validate(loaded, metadata, {
+        tenantCode: area === "model"
+          ? areaSnapshot("model")?.catalog?.model?.tenant_code
+          : areaSnapshot("metadata")?.manifest?.tenant_code,
+        model: areaSnapshot("model")?.catalog?.model ?? null,
+      });
       const issues = raw.slice(0, 200).map(normalizeValidationIssue);
       const validation = {
         digest: await state.workspace.changeSetDigest(area),

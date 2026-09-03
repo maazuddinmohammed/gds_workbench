@@ -153,12 +153,12 @@ def write_both_snapshots(session: Path) -> None:
         ("silver-registration", ["metadata", "model"]),
         ("logical-binding", ["metadata", "model"]),
         ("logical-mapping", ["metadata", "model"]),
-        ("logical-code", ["model"]),
+        ("logical-code", ["metadata", "model"]),
         ("dimensional-build", ["metadata", "model"]),
         ("gold-registration", ["metadata", "model"]),
         ("dimensional-binding", ["metadata", "model"]),
         ("dimensional-mapping", ["metadata", "model"]),
-        ("dimensional-code", ["model"]),
+        ("dimensional-code", ["metadata", "model"]),
         ("process-registration", ["metadata", "model"]),
     ),
 )
@@ -196,7 +196,7 @@ def test_readiness_reports_missing_snapshot_without_loading_rows(tmp_path: Path)
     assert output["ready"] is False
     assert ["snapshot_missing", 1] in output["blockers"]
     assert ["snapshot_missing", ["model"]] in output["examples"]
-    assert output["resolution_prompt"].startswith("Download and unzip one fresh")
+    assert output["resolution_prompt"].startswith("Create, download, and install each fresh")
     assert output["counts"] == {}
 
 
@@ -223,12 +223,7 @@ def test_validation_readiness_requires_bounded_unique_system_codes(
     tmp_path: Path,
 ) -> None:
     session = initialized_session(tmp_path)
-    write_snapshot(
-        session,
-        "model",
-        dataset_name="validation_group",
-        records=[{"id": 1}],
-    )
+    write_both_snapshots(session)
 
     missing = run_helper(
         "readiness", "--session", str(session), "--target", "validation"

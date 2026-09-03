@@ -98,7 +98,8 @@ def register_create_model_snapshot_tool(
             "Create a new complete, immutable, ID-free Model Snapshot ZIP for broad local "
             "authoring. It includes Input Scope, evidence, models, Bindings, Mapping, Code, "
             "and Validation. The response contains bounded archive metadata and a temporary "
-            "client download URL, never Snapshot rows."
+            "client download URL, never Snapshot rows. Download promptly and verify the returned "
+            "Snapshot ID, byte size, and SHA-256 before installing it."
         ),
         annotations=ToolAnnotations(
             read_only_hint=True,

@@ -2,6 +2,16 @@ from __future__ import annotations
 
 from typing import cast
 
+import pytest
+from pydantic import ValidationError
+
+from gds_etl_workbench.domain.metadata_records import (
+    CopyGroupControlRecord,
+    CopyRecord,
+    IngestionAttributeMappingRecord,
+    IngestionObjectMappingRecord,
+)
+from gds_etl_workbench.domain.portable_validation import METADATA_RECORD_VALIDATIONS
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     build_dataset_document,
 )
@@ -41,6 +51,86 @@ EXPECTED_DATASET_NAMES = (
     "process_group",
     "process",
 )
+
+
+def test_metadata_records_reject_database_constraint_failures_before_apply() -> None:
+    object_mapping = {
+        **{
+            f"{side}_{field}": "same"
+            for side in ("source", "target")
+            for field in (
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+            )
+        },
+        "is_active": True,
+    }
+    attribute_mapping = {
+        **object_mapping,
+        "source_attribute_name": "same",
+        "target_attribute_name": " SAME ",
+    }
+    copy = {
+        "tenant_code": "TENANT",
+        "system_code": "SYSTEM",
+        "copy_group_name": "GROUP",
+        **{key: value for key, value in object_mapping.items() if key != "is_active"},
+        "copy_source_record_limit": "9223372036854775808",
+        "copy_source_record_limit_attribute": None,
+        "chunk_type_name": None,
+        "copy_source_initial_sql_script": None,
+        "copy_source_incremental_sql_script": None,
+        "copy_source_file_name": None,
+        "copy_source_file_pattern": None,
+        "copy_source_file_delimiter": None,
+        "source_file_type_name": None,
+        "copy_source_order": 1,
+        "source_data_operation_name": "APPEND",
+        "target_data_operation_name": "APPEND",
+        "is_active": True,
+    }
+
+    invalid = (
+        (IngestionObjectMappingRecord, object_mapping),
+        (IngestionAttributeMappingRecord, attribute_mapping),
+        (
+            CopyGroupControlRecord,
+            {
+                "tenant_code": "TENANT",
+                "system_code": "SYSTEM",
+                "copy_group_name": "GROUP",
+                "member_group_name": None,
+                "copy_group_control_initial_load_date": None,
+                "copy_group_control_last_run_time": None,
+                "copy_group_control_last_run_value": "   ",
+            },
+        ),
+        (CopyRecord, copy),
+    )
+    for model, record in invalid:
+        with pytest.raises(ValidationError):
+            model.model_validate(record)
+
+
+def test_every_custom_metadata_record_validator_is_exported_for_local_parity() -> None:
+    custom = {
+        definition.name
+        for definition in DATASETS
+        if definition.row_model.__pydantic_decorators__.field_validators
+        or definition.row_model.__pydantic_decorators__.model_validators
+    }
+
+    assert set(METADATA_RECORD_VALIDATIONS) == custom
+    for definition in DATASETS:
+        if definition.name not in custom:
+            continue
+        assert build_dataset_document(definition).schema["x-gds-record-validation"] == {
+            "version": "1.0",
+            "rules": list(METADATA_RECORD_VALIDATIONS[definition.name]),
+        }
 
 
 def _object_value(document: dict[str, object], key: str) -> dict[str, object]:

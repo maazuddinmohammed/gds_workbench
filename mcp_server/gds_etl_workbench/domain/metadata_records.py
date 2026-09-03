@@ -197,6 +197,28 @@ class IngestionObjectMappingRecord(MetadataRecord):
     target_object_name: Name400
     is_active: bool
 
+    @model_validator(mode="after")
+    def validate_distinct_objects(self) -> IngestionObjectMappingRecord:
+        source = (
+            self.source_tenant_code,
+            self.source_system_code,
+            self.source_connection_code,
+            self.source_object_schema,
+            self.source_object_name,
+        )
+        target = (
+            self.target_tenant_code,
+            self.target_system_code,
+            self.target_connection_code,
+            self.target_object_schema,
+            self.target_object_name,
+        )
+        if tuple(value.strip(" ").lower() for value in source) == tuple(
+            value.strip(" ").lower() for value in target
+        ):
+            raise ValueError("Ingestion Object Mapping endpoints must be different")
+        return self
+
 
 class IngestionAttributeMappingRecord(MetadataRecord):
     source_tenant_code: Code100
@@ -212,6 +234,30 @@ class IngestionAttributeMappingRecord(MetadataRecord):
     target_object_name: Name400
     target_attribute_name: Name400
     is_active: bool
+
+    @model_validator(mode="after")
+    def validate_distinct_attributes(self) -> IngestionAttributeMappingRecord:
+        source = (
+            self.source_tenant_code,
+            self.source_system_code,
+            self.source_connection_code,
+            self.source_object_schema,
+            self.source_object_name,
+            self.source_attribute_name,
+        )
+        target = (
+            self.target_tenant_code,
+            self.target_system_code,
+            self.target_connection_code,
+            self.target_object_schema,
+            self.target_object_name,
+            self.target_attribute_name,
+        )
+        if tuple(value.strip(" ").lower() for value in source) == tuple(
+            value.strip(" ").lower() for value in target
+        ):
+            raise ValueError("Ingestion Attribute Mapping endpoints must be different")
+        return self
 
 
 class CopyGroupRecord(MetadataRecord):
@@ -239,7 +285,9 @@ class CopyGroupControlRecord(MetadataRecord):
     member_group_name: Name200 | None
     copy_group_control_initial_load_date: date | None
     copy_group_control_last_run_time: datetime | None
-    copy_group_control_last_run_value: str | None
+    copy_group_control_last_run_value: (
+        Annotated[str, StringConstraints(min_length=1, pattern=r"\S")] | None
+    )
 
 
 class CopyRecord(MetadataRecord):
@@ -269,6 +317,14 @@ class CopyRecord(MetadataRecord):
     source_data_operation_name: Name200
     target_data_operation_name: Name200
     is_active: bool
+
+    @model_validator(mode="after")
+    def validate_record_limit(self) -> CopyRecord:
+        if self.copy_source_record_limit is not None:
+            value = int(self.copy_source_record_limit)
+            if not -9_223_372_036_854_775_808 <= value <= 9_223_372_036_854_775_807:
+                raise ValueError("Copy source record limit must fit PostgreSQL BIGINT")
+        return self
 
 
 class ProcessGroupRecord(MetadataRecord):

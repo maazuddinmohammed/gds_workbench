@@ -12,7 +12,7 @@
 })(typeof globalThis === "object" ? globalThis : this, function (common, metadataValidation) {
   "use strict";
 
-  function validate(loaded) {
+  function validate(loaded, _metadataLoaded = null, context = {}) {
     const effective = new Map();
     for (const [name, value] of loaded) {
       effective.set(name, {
@@ -23,6 +23,8 @@
     }
     return [
       ...common.validateLoaded("metadata", loaded),
+      ...metadataValidation.validateLocks(loaded),
+      ...metadataValidation.validateTenantScope(loaded, context.tenantCode),
       ...metadataValidation.validateUniqueConstraints(effective),
       ...metadataValidation.validateReferences(effective),
     ];

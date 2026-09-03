@@ -6,6 +6,7 @@
     "sql-policy": {"usage": "sql-policy --session <session> --policy never|essential|as_needed", "session_required": true, "mutates": true},
     "readiness": {"usage": "readiness --session <session> --target <workflow-target> [--system-codes <JSON-array>]", "session_required": true, "mutates": false},
     "draft-cache": {"usage": "draft-cache --session <session> --area metadata|model (--id <UUID> --revision <n> --status active|validated | --clear true --expected-id <UUID> --expected-revision <n>)", "session_required": true, "mutates": true},
+    "snapshot-install": {"usage": "snapshot-install --session <session> --area metadata|model --archive <downloaded-zip> --snapshot-id <UUID> --size-bytes <n> --sha256 <digest>", "session_required": true, "mutates": true},
     "snapshot-refresh": {"usage": "snapshot-refresh --session <session> --area metadata|model", "session_required": true, "mutates": true},
     "task-add": {"usage": "task-add --session <session> --area <area> --title <short-title> --plan <JSON-array>", "session_required": true, "mutates": true},
     "task-plan": {"usage": "task-plan --session <session> --task <ID> --plan <JSON-array> --expected-digest <digest>", "session_required": true, "mutates": true},

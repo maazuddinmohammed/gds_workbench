@@ -62,7 +62,7 @@
       .map(([, group]) => group);
   }
 
-  function validate(loaded, metadataLoaded = null) {
+  function validate(loaded, metadataLoaded = null, context = {}) {
     const effective = new Map();
     for (const [name, value] of loaded) {
       effective.set(name, {
@@ -87,7 +87,7 @@
       : null;
     return [
       ...common.validateLoaded("model", loaded),
-      ...modelValidation.validateGraph(effective, metadata),
+      ...modelValidation.validateGraph(effective, metadata, context),
     ];
   }
 

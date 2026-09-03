@@ -540,6 +540,8 @@ async def build_model_snapshot(
             "model_id": model.model_id,
             "model_name": model.model_name,
             "model_revision": model.model_revision,
+            "model_tenant_code": model.tenant_code,
+            "other_active_model_names": model.other_active_model_names,
             "model_input_scope": {
                 "details": records["model_details"][0],
                 "objects": records["model_input_scope"],

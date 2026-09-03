@@ -1,6 +1,6 @@
 # Session contract
 
-Use one session for one Tenant Code. A session may be metadata-only; after a Model is selected it cannot switch Models.
+Use one session per Tenant Code. It may be metadata-only; its selected Model cannot change.
 
 ```text
 GDS/<TENANT_CODE>/<SESSION>/
@@ -11,26 +11,35 @@ GDS/<TENANT_CODE>/<SESSION>/
   code/
 ```
 
-`manifest.json` beside the sessions allocates `01`, `02`, and so on without reuse. `session.json` keeps only current task, Model, SQL policy, task tuples, stale areas, and server-draft cache. Never store prompts, secrets, raw rows, or history.
+`manifest.json` allocates unreused IDs. `session.json` keeps task, Model, SQL policy, stale areas, and server-draft cache. Never store prompts, secrets, raw rows, or history.
 
-Open Workbench once after creating the session. On resume call local `status`; do not reopen Workbench unless asked.
+Open Workbench once after session creation. On resume call local `status`. Treat `status.acceptance` as authoritative. If its digest matches, do not rerun authoring, generators, validation, or review. Continue handoff; do not reopen Workbench unless asked.
 
 ## Tasks and coverage
 
-The first plan line records Snapshot IDs and Model revision. Long authoring adds:
+Record Snapshot IDs and Model revision first. Long work adds:
 
 ```text
 Loop: target=<target>; phase=<phase>; scope=<n>; represented=<n>; context=<n>; excluded=<n>; blocked=<n>; next=<key|complete>
 ```
 
-Coverage proves that every selected input was considered. It does not require one output per input.
+Coverage proves each input was considered, not produced as output.
 
-Internal task states may include `queued`, `doing`, `review`, `ready`, `staged`, and `applied`. Do not present them as user actions. Local edits invalidate digest acceptance.
+Task states are internal. Local edits invalidate digest acceptance.
 
 ## Snapshot freshness
 
-The user manually downloads the complete Snapshot from the MCP tool result and unzips its single root into `metadata/` or `model/`. Tell the user where to place it, but never repeat its temporary signed URL in chat. Never edit Snapshot files or infer freshness from timestamps.
+The agent owns setup. If the session path is unknown, ask once for the working directory, run `session-init`, and reuse its path.
 
-Before Stage, compare the authoritative revision with the reviewed Snapshot revision. If different, stop and request a fresh Snapshot. Reassess all affected records; never auto-merge. If content changes, notify the user again. If content remains byte-identical, the existing acknowledgement remains valid.
+When a required Snapshot is missing or stale:
 
-Apply marks only the written area stale. `snapshot-refresh` retires applied local intent only after a replacement Snapshot proves the exact applied records and, for Model, a newer revision.
+1. Call `create_metadata_snapshot` for the session Tenant or `create_model_snapshot` for its Model.
+2. Download its complete ZIP temporarily. Never expose or save the signed URL.
+3. Run `snapshot-install` with returned ID, bytes, and SHA-256. It verifies and replaces the area, retiring exact applied records when stale.
+4. Delete the ZIP and rerun `readiness`.
+
+Ask only for unresolved download/session information. Never edit Snapshots or infer freshness from timestamps.
+
+Before Stage, compare revisions. On mismatch, refresh and reassess; never auto-merge. Notify again only if content changed; byte-identical content retains acknowledgement.
+
+Apply marks its area stale. Refresh before dependent work. Model replacement requires a newer revision.

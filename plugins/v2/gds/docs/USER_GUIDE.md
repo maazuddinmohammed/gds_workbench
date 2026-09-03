@@ -29,7 +29,7 @@ One session belongs to one Tenant and optionally one Model. After a Model is sel
 
 Workbench opens once when the session starts. Keep it open. When the agent says results are ready, click **Refresh**. Each sheet has a read-only **Snapshot** ledger and an editable **Change Set** ledger. Select Snapshot rows and choose **Add selected to Change Set**, or add a new row in Change Set. Editing is available only for Change Set drafts; **Save changes** writes immediately to the local session.
 
-Each sheet has up to three useful multi-select filters. Mapping documents, generated SQL, and Validation SQL stay compact in the ledger; choose **Show details** to open the complete content on its own record page. **Validate locally** runs the same effective-graph checks used by the agent and stores the digest-bound report under `reports/local-validation/`. **Generate DBML** renders the current Model Snapshot plus local Model Change Set into `model-dbml/` for iterative review.
+Each sheet has up to three useful multi-select filters. Mapping documents, generated SQL, and Validation SQL stay compact in the ledger; choose **Show details** to open the complete content on its own record page. **Validate locally** runs the same effective-graph checks used by the agent and stores the digest-bound report under `reports/local-validation/`. **Generate DBML** is optional: use it only when you want a visual export of the current Model Snapshot plus local Model Change Set. Model edits never generate it automatically, and the agent does not inspect it unless asked.
 
 Edit in Workbench, ask the agent for changes, or reply “proceed”, “OK”, or another clear positive acknowledgement.
 
@@ -102,7 +102,7 @@ Logical Mapping
 
 Metadata Authoring and Target Registration are Metadata work. Input Scope, Binding, Mapping, Code, and Validation are Model work. Input Scope Apply must finish before Profiling or model development. Metadata Apply must finish before Binding; Binding Apply must finish before Mapping.
 
-Snapshots are manually downloaded from the MCP tool result and unzipped into the requested session area. The agent explains the destination but does not repeat a temporary signed URL in chat.
+The agent creates each required Snapshot, downloads its ZIP to a temporary file, and installs it into the known session automatically. It asks for the working directory only when no session path is known. The installer verifies the returned Snapshot ID, size, SHA-256, and every archive member; temporary signed URLs are never repeated or saved in chat or session files.
 
 ## Metadata rules
 
@@ -160,7 +160,7 @@ SQL Preflight is optional and separate. It may check syntax before upstream data
 
 ## Safe boundaries
 
-- Snapshots are manually downloaded from the MCP tool result, complete, and read-only.
+- Snapshots are complete and read-only. The agent automatically creates and safely installs a missing or stale Snapshot in the known session.
 - Local Workbench never calls MCP or performs server changes.
 - Metadata and Model Change Sets remain separate.
 - Tenant Lock, revision fencing, server validation, and Apply approval remain mandatory.

@@ -14,9 +14,10 @@ $script:JsonMaxDepth = 512
 $script:CasefoldMap = $null
 $script:Areas = @('metadata', 'model')
 $script:TaskAreas = @('metadata', 'model', 'code', 'validation')
-$script:DirectStageMaxBytes = 1024 * 1024
+$script:PreferredStagePayloadBytes = 64 * 1024
+$script:DirectStageMaxBytes = $script:PreferredStagePayloadBytes
 $script:MetadataStageChunkMaxBytes = 450 * 1024
-$script:ModelStageRecordChunkMaxBytes = 900 * 1024
+$script:ModelStageRecordChunkMaxBytes = 1024 * 1024
 $script:ModelStageFragmentMaxBytes = 1024 * 1024
 $script:StageChunkMaxRecords = 5000
 $script:StageMaxChunks = 64
@@ -27,13 +28,13 @@ $script:ReadinessTargets = [ordered]@{
     'silver-registration' = @('metadata', 'model')
     'logical-binding' = @('metadata', 'model')
     'logical-mapping' = @('metadata', 'model')
-    'logical-code' = @('model')
+    'logical-code' = @('metadata', 'model')
     'dimensional-build' = @('metadata', 'model')
     'gold-registration' = @('metadata', 'model')
     'dimensional-binding' = @('metadata', 'model')
     'dimensional-mapping' = @('metadata', 'model')
-    'dimensional-code' = @('model')
-    'validation' = @('model')
+    'dimensional-code' = @('metadata', 'model')
+    'validation' = @('metadata', 'model')
     'process-registration' = @('metadata', 'model')
 }
 $script:Transitions = @{
@@ -884,6 +885,32 @@ function Get-SessionStatus([hashtable]$Options) {
         [void](Parse-TaskPlan (ConvertTo-GdsJson $plan))
         $planDigest = Get-FileDigest $planPath
     }
+    $acceptance = $null
+    if ($null -ne $current) {
+        $acceptancePath = Join-Path (Join-Path $session 'tasks') ([string]$current[0] + '.accept.json')
+        if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
+            $accepted = @(Read-Json $acceptancePath 'Task acceptance')
+            $offset = if ($accepted.Count -ge 2 -and [string]$accepted[1] -ceq 'valid') {
+                2
+            } elseif ($accepted.Count -ge 2 -and [string]$accepted[1] -ceq 'override') {
+                3
+            } else { -1 }
+            if ($accepted.Count -le ($offset + 1) -or $offset -lt 0 -or
+                [string]$accepted[0] -cnotmatch '^[0-9a-f]{64}$' -or
+                [string]::IsNullOrWhiteSpace([string]$accepted[$offset]) -or
+                ($null -ne $accepted[$offset + 1] -and
+                    -not (Test-SafeJsonInteger $accepted[$offset + 1] $true))) {
+                Fail 'Task acceptance has an invalid shape.'
+            }
+            $acceptance = [ordered]@{
+                task = [string]$current[0]
+                digest = [string]$accepted[0]
+                mode = [string]$accepted[1]
+                snapshot_id = [string]$accepted[$offset]
+                model_revision = $accepted[$offset + 1]
+            }
+        }
+    }
     $pending = [ordered]@{}
     foreach ($area in $script:Areas) {
         $summary = Get-PendingSummary (Get-PendingDirectory $session $area)
@@ -908,7 +935,7 @@ function Get-SessionStatus([hashtable]$Options) {
     $model = $null
     if (Test-Property $state 'model') { $model = @($state.model) }
     $sqlPolicy = if (Test-Property $state 'sql') { [string](Get-Property $state 'sql') } else { $null }
-    return [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; sql_policy = $sqlPolicy; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes) }
+    return [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; sql_policy = $sqlPolicy; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes); acceptance = $acceptance }
 }
 
 function Set-SqlPolicy([hashtable]$Options) {
@@ -1897,7 +1924,7 @@ function Get-ReadinessIssueOutput($Issues) {
 function Get-ReadinessPrompt($Issues) {
     if ((Test-ReadinessIssue $Issues 'snapshot_missing') -or
         (Test-ReadinessIssue $Issues 'snapshot_stale')) {
-        return 'Download and unzip one fresh required Snapshot, replace its area, then resume.'
+        return 'Create, download, and install each fresh required Snapshot, then resume.'
     }
     return ''
 }
@@ -2145,6 +2172,19 @@ function Get-SchemaIssues {
     if ($allOf -is [Array]) {
         foreach ($option in @($allOf)) {
             foreach ($issue in @(Get-SchemaIssues -Value $Value -Schema $option -Root $Root -Location $Location -SeenReferences $SeenReferences)) {
+                [void]$issues.Add($issue)
+            }
+        }
+    }
+    $condition = Get-Property $Schema 'if'
+    if ($null -ne $condition -and $condition -isnot [Array] -and $condition -isnot [string] -and
+        $condition -isnot [ValueType]) {
+        $conditionMatches = @(
+            Get-SchemaIssues -Value $Value -Schema $condition -Root $Root -Location $Location -SeenReferences @()
+        ).Count -eq 0
+        $branch = if ($conditionMatches) { Get-Property $Schema 'then' } else { Get-Property $Schema 'else' }
+        if ($null -ne $branch) {
+            foreach ($issue in @(Get-SchemaIssues -Value $Value -Schema $branch -Root $Root -Location $Location -SeenReferences $SeenReferences)) {
                 [void]$issues.Add($issue)
             }
         }
@@ -2987,6 +3027,156 @@ function Accept-RefreshedSnapshot([hashtable]$Options) {
     return [ordered]@{ area = $area; id = $currentId; revision = $revision; retired = $files.Count }
 }
 
+function Remove-SnapshotInstallDirectory([string]$Path, [string]$Session) {
+    $resolved = [IO.Path]::GetFullPath($Path)
+    if ([IO.Path]::GetDirectoryName($resolved) -cne $Session -or
+        -not ([IO.Path]::GetFileName($resolved)).StartsWith('.', [StringComparison]::Ordinal)) {
+        Fail 'Refusing to remove an unsafe Snapshot installation path.'
+    }
+    if (Test-Path -LiteralPath $resolved) {
+        Remove-Item -LiteralPath $resolved -Recurse -Force
+    }
+}
+
+function Install-Snapshot([hashtable]$Options) {
+    $area = Require-Option $Options 'area'
+    if ($script:Areas -cnotcontains $area) { Fail '--area must be metadata or model.' }
+    $snapshotId = Require-Option $Options 'snapshot-id'
+    if ($snapshotId -cnotmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[1-8][0-9a-fA-F]{3}-[89aAbB][0-9a-fA-F]{3}-[0-9a-fA-F]{12}$') {
+        Fail '--snapshot-id must be a UUID.'
+    }
+    $expectedDigest = Require-Option $Options 'sha256'
+    if ($expectedDigest -cnotmatch '^[0-9a-f]{64}$') {
+        Fail '--sha256 must be a lowercase SHA-256 digest.'
+    }
+    $expectedSizeText = Require-Option $Options 'size-bytes'
+    [long]$expectedSize = 0
+    if (-not [long]::TryParse($expectedSizeText, [ref]$expectedSize) -or $expectedSize -le 0) {
+        Fail '--size-bytes must be a positive integer.'
+    }
+    $session = Resolve-Session $Options
+    $archivePath = [IO.Path]::GetFullPath((Require-Option $Options 'archive'))
+    $archive = Get-Item -LiteralPath $archivePath -Force -ErrorAction Stop
+    if ($archive.PSIsContainer -or ($archive.Attributes -band [IO.FileAttributes]::ReparsePoint)) {
+        Fail 'Snapshot ZIP must be a regular file.'
+    }
+    if ([long]$archive.Length -ne $expectedSize) {
+        Fail 'Snapshot ZIP size does not match the MCP result.'
+    }
+    if ((Get-Sha256Digest $archive.FullName) -cne $expectedDigest) {
+        Fail 'Snapshot ZIP SHA-256 does not match the MCP result.'
+    }
+
+    $state = Read-SessionState $session
+    $stale = (Test-Property $state 'stale') -and @($state.stale) -contains $area
+    $pending = Get-PendingSummary (Get-PendingDirectory $session $area)
+    if ([int]$pending.files -gt 0 -and -not $stale) {
+        Fail "Cannot replace the $area Snapshot while unapplied local records exist."
+    }
+
+    $stage = Join-Path $session ('.' + $area + '-install-' + [Guid]::NewGuid().ToString('N'))
+    $extracted = Join-Path $stage 'next'
+    $backup = $stage + '-previous'
+    $destination = Join-Path $session $area
+    [void][IO.Directory]::CreateDirectory($extracted)
+    $movedPrevious = $false
+    $movedNext = $false
+    try {
+        Add-Type -AssemblyName System.IO.Compression
+        Add-Type -AssemblyName System.IO.Compression.FileSystem
+        $zip = [IO.Compression.ZipFile]::OpenRead($archive.FullName)
+        try {
+            if ($zip.Entries.Count -lt 1 -or $zip.Entries.Count -gt 4096) {
+                Fail 'Snapshot ZIP member count is invalid.'
+            }
+            $seen = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+            [long]$expandedBytes = 0
+            foreach ($entry in @($zip.Entries)) {
+                $name = ([string]$entry.FullName).Replace('\', '/')
+                $isDirectory = $name.EndsWith('/', [StringComparison]::Ordinal)
+                $safeName = if ($isDirectory) { $name.TrimEnd('/') } else { $name }
+                Assert-SafeSnapshotMemberPath $safeName
+                if (-not $seen.Add($safeName)) { Fail "Snapshot ZIP contains duplicate member path $safeName." }
+                $unixType = ([int64]$entry.ExternalAttributes -shr 16) -band 0xF000
+                if ($unixType -eq 0xA000 -or
+                    ([int64]$entry.ExternalAttributes -band [int][IO.FileAttributes]::ReparsePoint)) {
+                    Fail 'Snapshot ZIP may not contain symbolic links.'
+                }
+                if ($isDirectory) { continue }
+                $expandedBytes += [long]$entry.Length
+                if ($expandedBytes -gt 512MB) { Fail 'Snapshot ZIP expands beyond the local safety limit.' }
+                $target = [IO.Path]::GetFullPath((Join-Path $extracted ($safeName.Replace('/', [IO.Path]::DirectorySeparatorChar))))
+                $prefix = $extracted.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+                if (-not $target.StartsWith($prefix, [StringComparison]::Ordinal)) {
+                    Fail 'Snapshot ZIP member escapes its extraction directory.'
+                }
+                [void][IO.Directory]::CreateDirectory([IO.Path]::GetDirectoryName($target))
+                $inputStream = $entry.Open()
+                try {
+                    $outputStream = New-Object IO.FileStream($target, [IO.FileMode]::CreateNew, [IO.FileAccess]::Write, [IO.FileShare]::None)
+                    try { $inputStream.CopyTo($outputStream) }
+                    finally { $outputStream.Dispose() }
+                }
+                finally { $inputStream.Dispose() }
+            }
+        }
+        finally { if ($null -ne $zip) { $zip.Dispose() } }
+
+        $candidateRoots = New-Object System.Collections.Generic.List[string]
+        if ((Test-Path -LiteralPath (Join-Path $extracted 'manifest.json') -PathType Leaf) -and
+            (Test-Path -LiteralPath (Join-Path $extracted 'catalog.json') -PathType Leaf)) {
+            [void]$candidateRoots.Add($extracted)
+        }
+        foreach ($child in @(Get-ChildItem -LiteralPath $extracted -Directory -Force)) {
+            if ($child.Attributes -band [IO.FileAttributes]::ReparsePoint) { continue }
+            if ((Test-Path -LiteralPath (Join-Path $child.FullName 'manifest.json') -PathType Leaf) -and
+                (Test-Path -LiteralPath (Join-Path $child.FullName 'catalog.json') -PathType Leaf)) {
+                [void]$candidateRoots.Add($child.FullName)
+            }
+        }
+        if ($candidateRoots.Count -ne 1) {
+            Fail 'Snapshot ZIP must contain exactly one Snapshot root.'
+        }
+        $candidateManifest = Read-Json (Join-Path $candidateRoots[0] 'manifest.json') 'Snapshot manifest'
+        if (-not (Test-Property $candidateManifest 'snapshot_id') -or
+            [string]$candidateManifest.snapshot_id -cne $snapshotId) {
+            Fail 'Snapshot ZIP ID does not match the MCP result.'
+        }
+
+        [IO.Directory]::Move($destination, $backup)
+        $movedPrevious = $true
+        [IO.Directory]::Move($extracted, $destination)
+        $movedNext = $true
+        $installed = Find-Snapshot @{ session = $session; area = $area }
+        $refreshed = $false
+        if ($stale) {
+            [void](Accept-RefreshedSnapshot @{ session = $session; area = $area })
+            $refreshed = $true
+        }
+        Remove-SnapshotInstallDirectory $backup $session
+        $movedPrevious = $false
+        Remove-SnapshotInstallDirectory $stage $session
+        return [ordered]@{
+            area = $area
+            snapshot_id = [string]$installed.Manifest.snapshot_id
+            model_revision = if (Test-Property $installed.Manifest 'model_revision') { $installed.Manifest.model_revision } else { $null }
+            dataset_count = @($installed.Datasets).Count
+            refreshed = $refreshed
+        }
+    }
+    catch {
+        if ($movedNext -and (Test-Path -LiteralPath $destination)) {
+            Remove-Item -LiteralPath $destination -Recurse -Force
+        }
+        if ($movedPrevious -and (Test-Path -LiteralPath $backup)) {
+            [IO.Directory]::Move($backup, $destination)
+        }
+        if (Test-Path -LiteralPath $stage) { Remove-SnapshotInstallDirectory $stage $session }
+        if (Test-Path -LiteralPath $backup) { Remove-SnapshotInstallDirectory $backup $session }
+        throw
+    }
+}
+
 function ConvertTo-StableJson($Value) {
     return ConvertTo-GdsJson $Value $true
 }
@@ -3141,6 +3331,39 @@ function Get-RecordChunks($Records, [int]$MaximumBytes) {
     }
     if ($current.Count -gt 0) { [void]$chunks.Add(@($current)) }
     return [ordered]@{ fits = $true; chunks = @($chunks) }
+}
+
+function Get-TransportSafeRecordChunks($Records, [int]$HardMaximumBytes) {
+    $preferred = Get-RecordChunks $Records $script:PreferredStagePayloadBytes
+    if ([bool](Get-Property $preferred 'fits') -and
+        @((Get-Property $preferred 'chunks')).Count -le $script:StageMaxChunks) {
+        return [ordered]@{
+            fits = $true
+            chunks = @((Get-Property $preferred 'chunks'))
+            maximum_bytes = $script:PreferredStagePayloadBytes
+        }
+    }
+    $lower = $script:PreferredStagePayloadBytes + 1
+    $upper = $HardMaximumBytes
+    $best = $null
+    while ($lower -le $upper) {
+        $candidateMaximum = [Math]::Floor(($lower + $upper) / 2)
+        $candidate = Get-RecordChunks $Records $candidateMaximum
+        if ([bool](Get-Property $candidate 'fits') -and
+            @((Get-Property $candidate 'chunks')).Count -le $script:StageMaxChunks) {
+            $best = [ordered]@{
+                fits = $true
+                chunks = @((Get-Property $candidate 'chunks'))
+                maximum_bytes = $candidateMaximum
+            }
+            $upper = $candidateMaximum - 1
+        }
+        else { $lower = $candidateMaximum + 1 }
+    }
+    if ($null -eq $best) {
+        return [ordered]@{ fits = $false; chunks = @(); maximum_bytes = $HardMaximumBytes }
+    }
+    return $best
 }
 
 function ConvertTo-DbmlLine($Value) {
@@ -3602,7 +3825,7 @@ function Prepare-Stage([hashtable]$Options) {
         }
     }
 
-    $recordChunkBytes = if ($context.Area -ceq 'metadata') {
+    $recordChunkHardBytes = if ($context.Area -ceq 'metadata') {
         $script:MetadataStageChunkMaxBytes
     } else {
         $script:ModelStageRecordChunkMaxBytes
@@ -3611,21 +3834,38 @@ function Prepare-Stage([hashtable]$Options) {
     foreach ($name in $names) {
         if ($directNames.ContainsKey([string]$name)) { continue }
         $records = @($documents[$name])
-        $recordChunkResult = Get-RecordChunks $records $recordChunkBytes
+        $preferred = Get-RecordChunks $records $script:PreferredStagePayloadBytes
+        $preferFragments = (
+            $context.Area -ceq 'model' -and [string]$name -ceq 'generated_code' -and
+            (-not [bool](Get-Property $preferred 'fits') -or
+                @((Get-Property $preferred 'chunks')).Count -gt $script:StageMaxChunks)
+        )
+        $recordChunkResult = if ($preferFragments) {
+            [ordered]@{ fits = $false; chunks = @(); maximum_bytes = $script:PreferredStagePayloadBytes }
+        } else {
+            Get-TransportSafeRecordChunks $records $recordChunkHardBytes
+        }
         $chunks = @((Get-Property $recordChunkResult 'chunks'))
+        $chunkBytes = [int](Get-Property $recordChunkResult 'maximum_bytes')
         $payloadMode = 'records'
         $totalPayloadBytes = $null
-        if (-not [bool](Get-Property $recordChunkResult 'fits') -or
-            $chunks.Count -gt $script:StageMaxChunks) {
+        if (-not [bool](Get-Property $recordChunkResult 'fits')) {
             if ($context.Area -cne 'model' -or [string]$name -cne 'generated_code') {
                 Fail "$name cannot fit within $($script:StageMaxChunks) bounded record chunks."
             }
             $payloadMode = 'json_fragments'
             [byte[]]$payload = $script:Utf8NoBom.GetBytes((ConvertTo-StableJson $records))
             $totalPayloadBytes = $payload.Length
+            $chunkBytes = [Math]::Max(
+                $script:PreferredStagePayloadBytes,
+                [Math]::Ceiling($payload.Length / $script:StageMaxChunks)
+            )
+            if ($chunkBytes -gt $script:ModelStageFragmentMaxBytes) {
+                Fail "generated_code exceeds the $($script:StageMaxChunks) MiB fragment limit."
+            }
             $fragments = New-Object System.Collections.ArrayList
-            for ($offset = 0; $offset -lt $payload.Length; $offset += $script:ModelStageFragmentMaxBytes) {
-                $length = [Math]::Min($script:ModelStageFragmentMaxBytes, $payload.Length - $offset)
+            for ($offset = 0; $offset -lt $payload.Length; $offset += $chunkBytes) {
+                $length = [Math]::Min($chunkBytes, $payload.Length - $offset)
                 $fragment = New-Object byte[] $length
                 [Array]::Copy($payload, $offset, $fragment, 0, $length)
                 [void]$fragments.Add($fragment)
@@ -3666,6 +3906,7 @@ function Prepare-Stage([hashtable]$Options) {
             payload_mode = $payloadMode
             total_record_count = $records.Count
             total_chunk_count = $chunkDocuments.Count
+            chunk_bytes = $chunkBytes
             batch_sha256 = Get-ByteDigest ([Text.Encoding]::ASCII.GetBytes($hashText))
             chunks = @($chunkDocuments)
         }
@@ -3741,7 +3982,8 @@ function Prepare-Stage([hashtable]$Options) {
         strategy = $strategy
         limits = [ordered]@{
             direct_bytes = $script:DirectStageMaxBytes
-            chunk_bytes = $recordChunkBytes
+            preferred_payload_bytes = $script:PreferredStagePayloadBytes
+            hard_chunk_bytes = $recordChunkHardBytes
             chunk_records = $script:StageChunkMaxRecords
             chunks_per_batch = $script:StageMaxChunks
         }
@@ -3787,6 +4029,7 @@ try {
         'validate' { $output = Validate-Changes $options }
         'generate-dbml' { $output = Generate-LocalDbml $options }
         'accept' { $output = Accept-Changes $options }
+        'snapshot-install' { $output = Install-Snapshot $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }
         'reconcile' { $output = Reconcile-Changes $options }
         'prepare-stage' { $output = Prepare-Stage $options }
