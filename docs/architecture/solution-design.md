@@ -1,6 +1,6 @@
 # GDS Workbench solution overview
 
-Separate entry points. One governed PostgreSQL source of truth.
+Two access paths and one shared PostgreSQL source of truth.
 
 ```mermaid
 flowchart LR
@@ -13,77 +13,105 @@ flowchart LR
         vscode --- localHtml
     end
 
-    subgraph mcpPlatform["MCP PLATFORM"]
+    mcpIdentity["Microsoft Entra ID<br/>Authentication"]
+
+    subgraph azureMcp["AZURE MCP PLATFORM"]
         direction TB
-        mcp["MCP Server<br/>Azure App Service"]
+
+        subgraph appService["Azure App Service"]
+            direction TB
+            easyAuth["Easy Auth"]
+            mcp["MCP Server"]
+            easyAuth --> mcp
+        end
+
         keyVault["Key Vault"]
         storage["Storage Account<br/>Snapshots"]
-        mcp ~~~ keyVault
-        keyVault ~~~ storage
+        mcp -.-> keyVault
+        mcp -.-> storage
     end
 
-    subgraph central[" "]
-        direction TB
-        postgres[("PostgreSQL<br/>SOURCE OF TRUTH<br/>Data · Authorization · Locks · Audit")]
-        entra["Microsoft Entra ID<br/>MCP + Web Authentication"]
-        postgres ~~~ entra
-    end
+    postgres[("PostgreSQL<br/>SOURCE OF TRUTH<br/>Data · Authorization · Locks · Audit")]
 
     subgraph workflowPlatform["WORKFLOW PLATFORM"]
         direction TB
         workflows["GDS Workflows<br/>Shared Logic"]
-        ai["Foundry + Databricks<br/>AI and Data"]
-        workflows --> ai
+
+        subgraph workflowAreas["Workflow areas"]
+            direction LR
+            profiling["Profiling"]
+            analysis["Analysis"]
+            conceptual["Conceptual"]
+            logical["Logical"]
+            dimensional["Dimensional"]
+        end
+
+        models["Foundry + Databricks<br/>Models and Data"]
+
+        workflows --> profiling & analysis & conceptual & logical & dimensional
+        profiling & analysis & conceptual & logical & dimensional --> models
     end
 
-    subgraph webApp["DATABRICKS WEB APP"]
-        direction TB
-        react["React Front End"]
+    subgraph databricksApp["DATABRICKS WEB APP"]
+        direction LR
         fastapi["FastAPI"]
-        react --> fastapi
+        react["React Front End"]
+        fastapi <-->|"API"| react
     end
 
-    subgraph webAccess["WEB & NOTEBOOK ACCESS"]
+    webIdentity["Databricks OAuth<br/>Entra User Identity"]
+
+    subgraph userAccess["WEB & NOTEBOOK ACCESS"]
         direction TB
         browser["Web Browser"]
         notebooks["Databricks Notebooks"]
     end
 
-    vscode -->|"MCP"| mcp
+    vscode --> mcpIdentity
+    mcpIdentity --> easyAuth
     mcp <-->|"Governed access"| postgres
+
     postgres <-->|"Governed state"| workflows
     workflows <-->|"API"| fastapi
     workflows <-->|"Run"| notebooks
-    react <-->|"HTTPS"| browser
+    react <-->|"HTTPS"| webIdentity
+    webIdentity <-->|"Sign in"| browser
 
     classDef access fill:#EFF6FF,stroke:#2563EB,color:#0F172A,stroke-width:1px;
+    classDef auth fill:#FFF7ED,stroke:#D97706,color:#0F172A,stroke-width:1px;
     classDef app fill:#EEF2FF,stroke:#4F46E5,color:#0F172A,stroke-width:1px;
     classDef source fill:#ECFDF5,stroke:#059669,color:#052E16,stroke-width:3px;
     classDef service fill:#F8FAFC,stroke:#64748B,color:#0F172A,stroke-width:1px;
 
     class developer,vscode,localHtml,browser,notebooks access;
-    class mcp,workflows,react,fastapi app;
+    class mcpIdentity,webIdentity,easyAuth auth;
+    class mcp,workflows,profiling,analysis,conceptual,logical,dimensional,fastapi,react app;
     class postgres source;
-    class keyVault,storage,ai,entra service;
+    class keyVault,storage,models service;
 
     style developerAccess fill:#F8FAFC,stroke:#93C5FD,stroke-width:1px;
-    style webAccess fill:#F8FAFC,stroke:#93C5FD,stroke-width:1px;
-    style central fill:transparent,stroke:transparent;
-    style mcpPlatform fill:#FFFFFF,stroke:#C7D2FE,stroke-width:1px;
+    style userAccess fill:#F8FAFC,stroke:#93C5FD,stroke-width:1px;
+    style azureMcp fill:#FFFFFF,stroke:#C7D2FE,stroke-width:1px;
+    style appService fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1px;
     style workflowPlatform fill:#FFFFFF,stroke:#C7D2FE,stroke-width:1px;
-    style webApp fill:#FFFFFF,stroke:#C7D2FE,stroke-width:1px;
+    style workflowAreas fill:#F8FAFC,stroke:#CBD5E1,stroke-width:1px;
+    style databricksApp fill:#FFFFFF,stroke:#C7D2FE,stroke-width:1px;
 ```
 
 ## Reading the diagram
 
-- **Left:** developer access flows from VS Code to MCP.
-- **Center:** PostgreSQL owns shared data and authorization.
-- **Right:** the Web App and notebooks use the same GDS workflow logic.
-- **Supporting services:** Entra ID, Key Vault, Storage, Foundry, and
-  Databricks.
+- The left path is VS Code → Entra ID → Azure App Service → MCP → PostgreSQL.
+- The right path is Browser → Databricks Web App → shared workflows →
+  PostgreSQL.
+- Notebooks run the same workflow logic directly.
+- PostgreSQL authorizes access. Entra ID and Databricks OAuth authenticate
+  users.
 
-The workflow box is a logical view. Its code is packaged independently with the
-Databricks Web App and notebooks; it is not a separate deployed service.
+The workflow box is a logical view. Its code is packaged separately with the
+Web App and notebooks; it is not another deployed service.
+
+Profiling uses governed Databricks data reads. The agent workflows use the
+selected Foundry or Databricks model.
 
 ## References
 
