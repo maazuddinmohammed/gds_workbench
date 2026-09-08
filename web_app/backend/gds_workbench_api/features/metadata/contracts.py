@@ -196,6 +196,7 @@ class ObjectCatalogFilters(ContractModel):
 
 class ObjectCatalogSummary(ContractModel):
     object_id: int = Field(gt=0)
+    review_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
     object_type_code: str = Field(min_length=1, max_length=100)
@@ -211,6 +212,7 @@ class ObjectCatalogSummary(ContractModel):
     attribute_count: int = Field(ge=0)
     batch_attribute_name: str | None = Field(default=None, max_length=400)
     is_active: bool
+    is_locked: bool
 
 
 class ObjectCatalogPage(ContractModel):
@@ -222,10 +224,13 @@ class ObjectCatalogPage(ContractModel):
 
 class ObjectAttribute(ContractModel):
     attribute_id: int = Field(gt=0)
+    review_revision: str = Field(pattern=r"^[0-9a-f]{64}$")
     attribute_name: str = Field(min_length=1, max_length=400)
     attribute_ordinal_position: int = Field(gt=0)
     attribute_description: str | None = Field(default=None, max_length=2000)
+    description_truncated: bool = False
     attribute_data_type: str = Field(min_length=1, max_length=100)
+    attribute_inferred_data_type: str | None = Field(max_length=100)
     attribute_nullability: bool
     is_surrogate_key: bool
     is_natural_key: bool
@@ -233,6 +238,7 @@ class ObjectAttribute(ContractModel):
     is_masking_required: bool
     is_mapped: bool
     is_purge: bool
+    is_locked: bool
     is_active: bool
 
 
@@ -240,7 +246,6 @@ class ObjectCatalogDetail(ObjectCatalogSummary):
     object_type_name: str = Field(min_length=1, max_length=200)
     object_description: str | None = Field(default=None, max_length=2000)
     connection_name: str = Field(min_length=1, max_length=200)
-    is_locked: bool
     attributes: tuple[ObjectAttribute, ...] = Field(max_length=2000)
 
     @model_validator(mode="after")

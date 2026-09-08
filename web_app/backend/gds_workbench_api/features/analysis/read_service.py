@@ -92,6 +92,10 @@ SELECT result.analysis_result_id,
            ELSE 'validated'
        END AS validation_state,
        result.validation_result,
+       result.validation_source_non_null_count,
+       result.validation_source_distinct_count,
+       result.validation_target_non_null_count,
+       result.validation_target_distinct_count,
        result.analysis_result_status AS status,
        result.analysis_result_is_locked AS is_locked,
        result.updated_time AS updated_at
@@ -478,6 +482,24 @@ def _normalize_analysis_endpoint(
 
 
 def _normalize_analysis_summary(row: dict[str, object]) -> AnalysisFindingSummary:
+    # Observed endpoint uniqueness, not an inferred business constraint.
+    cardinality = None
+    source_count = row.get("validation_source_non_null_count")
+    source_distinct = row.get("validation_source_distinct_count")
+    target_count = row.get("validation_target_non_null_count")
+    target_distinct = row.get("validation_target_distinct_count")
+    if (
+        row["validation_result"] is not None
+        and isinstance(source_count, int)
+        and isinstance(source_distinct, int)
+        and isinstance(target_count, int)
+        and isinstance(target_distinct, int)
+        and source_count > 0
+        and target_count > 0
+    ):
+        source = "many" if source_count > source_distinct else "one"
+        target = "many" if target_count > target_distinct else "one"
+        cardinality = f"{source}_to_{target}"
     return AnalysisFindingSummary.model_validate(
         {
             "analysis_result_id": row["analysis_result_id"],
@@ -487,6 +509,7 @@ def _normalize_analysis_summary(row: dict[str, object]) -> AnalysisFindingSummar
             "relationship_confidence": row["relationship_confidence"],
             "validation_state": row["validation_state"],
             "validation_result": row["validation_result"],
+            "observed_cardinality": cardinality,
             "status": row["status"],
             "is_locked": row["is_locked"],
             "updated_at": row["updated_at"],

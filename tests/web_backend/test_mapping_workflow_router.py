@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import RequestPrincipal
-
 from gds_workbench_api.features.mapping.router import (
     ExecuteMappingRunRequest,
     create_mapping_workflow_router,
@@ -70,9 +69,7 @@ class _StaticMappingWorkflowService:
         expected_model_revision: int,
     ) -> None:
         del principal
-        self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
 
 
 def _client(service: _StaticMappingWorkflowService) -> TestClient:
@@ -90,10 +87,8 @@ def _client(service: _StaticMappingWorkflowService) -> TestClient:
     return TestClient(app)
 
 
-def test_mapping_execute_route_starts_each_mode_without_process_local_execution() -> (
-    None
-):
-    for mode in ("one_shot", "tool_assisted", "detailed_coverage"):
+def test_mapping_execute_route_starts_each_mode_without_process_local_execution() -> None:
+    for mode in ('one_shot', 'tool_assisted'):
         service = _StaticMappingWorkflowService()
         with _client(service) as client:
             response = client.post(

@@ -31,12 +31,8 @@ class FakeDatabase:
     audit_records: list[ToolCallLogRecord] = field(
         default_factory=lambda: list[ToolCallLogRecord]()
     )
-    calls: list[tuple[Any, ...]] = field(
-        default_factory=lambda: list[tuple[Any, ...]]()
-    )
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    calls: list[tuple[Any, ...]] = field(default_factory=lambda: list[tuple[Any, ...]]())
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     async def open(self) -> None: ...
 
@@ -130,14 +126,9 @@ async def test_list_models_returns_headers_and_policy_without_audit_columns() ->
     assert result.tenant_id == 3
     assert result.model_count == 1
     assert result.models[0].model_name == "Northwind"
-    assert (
-        result.models[0].silver_model_naming_instructions
-        == "Prefix Silver objects with slv_."
-    )
+    assert result.models[0].silver_model_naming_instructions == "Prefix Silver objects with slv_."
     assert "silver_model_naming_template" not in result.models[0].model_dump()
-    assert result.models[0].silver_model_audit_columns_template == {
-        "columns": ["loaded_at"]
-    }
+    assert result.models[0].silver_model_audit_columns_template == {"columns": ["loaded_at"]}
     assert result.models[0].model_input_scope_object_count == 12
     rendered = repr(call.structured_content)
     for forbidden in ("created_time", "created_by", "updated_time", "updated_by"):
@@ -261,9 +252,7 @@ async def test_list_models_advertises_bounded_pagination_inputs() -> None:
     async with Client(_server(FakeDatabase(models=[]))) as client:
         tools = await client.list_tools()
 
-    schema = next(
-        tool.input_schema for tool in tools.tools if tool.name == "list_models"
-    )
+    schema = next(tool.input_schema for tool in tools.tools if tool.name == "list_models")
     assert schema["properties"]["page_size"] == {
         "default": 200,
         "maximum": 200,

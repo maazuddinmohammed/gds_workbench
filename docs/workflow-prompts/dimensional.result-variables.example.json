@@ -1,0 +1,271 @@
+{
+  "dimensional_submodel_list": [
+    {
+      "dimensional_submodel_name": "SalesMart"
+    }
+  ],
+  "dimensional_submodels": [
+    {
+      "dimensional_submodel_name": "SalesMart",
+      "dimensional_submodel_definition": "Sales analytics.",
+      "dimensional_submodel_status": "active",
+      "dimensional_submodel_is_locked": false
+    }
+  ],
+  "dimensional_entity_list": [
+    {
+      "dimensional_entity_name": "SalesFact"
+    },
+    {
+      "dimensional_entity_name": "CustomerDimension"
+    }
+  ],
+  "dimensional_entities": [
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_entity_definition": "A transaction fact recording one governed sales order.",
+      "dimensional_entity_type": "fact",
+      "dimensional_fact_type": "transaction",
+      "dimensional_entity_grain_definition": "One sales order within the governed source identity scope.",
+      "dimensional_entity_dependency_order": 0,
+      "dimensional_entity_confidence": "high",
+      "dimensional_entity_status": "active",
+      "dimensional_entity_is_locked": false,
+      "submodels": [
+        {
+          "submodel_name": "SalesMart",
+          "membership_status": "active",
+          "membership_is_locked": false
+        }
+      ],
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order.customer"
+          },
+          "source_role": "business_rule",
+          "source_order": 1,
+          "rationale": "Approved dimensional requirement.",
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "sales_order_count"
+          },
+          "source_order": 2,
+          "rationale": "The confirmed rule defines one order per fact row and a count of one for that row.",
+          "status": "active",
+          "is_locked": false,
+          "source_role": "grain_rule"
+        }
+      ]
+    },
+    {
+      "dimensional_entity_name": "CustomerDimension",
+      "dimensional_entity_definition": "CustomerDimension entity.",
+      "dimensional_entity_type": "dimension",
+      "dimensional_fact_type": null,
+      "dimensional_entity_grain_definition": null,
+      "dimensional_entity_dependency_order": 0,
+      "dimensional_entity_confidence": "high",
+      "dimensional_entity_status": "active",
+      "dimensional_entity_is_locked": true,
+      "submodels": [
+        {
+          "submodel_name": "SalesMart",
+          "membership_status": "active",
+          "membership_is_locked": false
+        }
+      ],
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order.customer"
+          },
+          "source_role": "business_rule",
+          "source_order": 1,
+          "rationale": "Approved dimensional requirement.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    }
+  ],
+  "dimensional_attribute_list": [
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "SalesKey"
+    },
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "CustomerKey"
+    },
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "OrderCount"
+    },
+    {
+      "dimensional_entity_name": "CustomerDimension",
+      "dimensional_attribute_name": "CustomerKey"
+    }
+  ],
+  "dimensional_attributes": [
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "SalesKey",
+      "dimensional_attribute_definition": "SalesKey attribute.",
+      "dimensional_attribute_data_type": "bigint",
+      "dimensional_attribute_is_nullable": false,
+      "dimensional_attribute_ordinal_position": 1,
+      "dimensional_attribute_role": "key",
+      "dimensional_attribute_key_role": "surrogate",
+      "dimensional_attribute_is_grain_component": true,
+      "dimensional_attribute_additivity": null,
+      "dimensional_attribute_default_aggregation": null,
+      "dimensional_attribute_aggregation_basis": null,
+      "dimensional_attribute_change_behavior": null,
+      "dimensional_attribute_is_audit_column": false,
+      "dimensional_attribute_confidence": "high",
+      "dimensional_attribute_status": "active",
+      "dimensional_attribute_is_locked": false,
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order.customer"
+          },
+          "source_order": 1,
+          "rationale": "Approved dimensional requirement.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "CustomerKey",
+      "dimensional_attribute_definition": "CustomerKey attribute.",
+      "dimensional_attribute_data_type": "bigint",
+      "dimensional_attribute_is_nullable": false,
+      "dimensional_attribute_ordinal_position": 1,
+      "dimensional_attribute_role": "key",
+      "dimensional_attribute_key_role": "foreign",
+      "dimensional_attribute_is_grain_component": true,
+      "dimensional_attribute_additivity": null,
+      "dimensional_attribute_default_aggregation": null,
+      "dimensional_attribute_aggregation_basis": null,
+      "dimensional_attribute_change_behavior": null,
+      "dimensional_attribute_is_audit_column": false,
+      "dimensional_attribute_confidence": "high",
+      "dimensional_attribute_status": "active",
+      "dimensional_attribute_is_locked": false,
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order.customer"
+          },
+          "source_order": 1,
+          "rationale": "Approved dimensional requirement.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "dimensional_entity_name": "SalesFact",
+      "dimensional_attribute_name": "OrderCount",
+      "dimensional_attribute_definition": "One for each governed order fact row; sum counts orders at compatible aggregation levels.",
+      "dimensional_attribute_data_type": "bigint",
+      "dimensional_attribute_is_nullable": false,
+      "dimensional_attribute_ordinal_position": 3,
+      "dimensional_attribute_role": "measure",
+      "dimensional_attribute_key_role": "none",
+      "dimensional_attribute_is_grain_component": false,
+      "dimensional_attribute_additivity": "additive",
+      "dimensional_attribute_default_aggregation": "SUM",
+      "dimensional_attribute_aggregation_basis": "Each fact row contributes exactly one distinct order under the confirmed grain rule.",
+      "dimensional_attribute_change_behavior": null,
+      "dimensional_attribute_is_audit_column": false,
+      "dimensional_attribute_confidence": "high",
+      "dimensional_attribute_status": "active",
+      "dimensional_attribute_is_locked": false,
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "sales_order_count"
+          },
+          "source_order": 2,
+          "rationale": "The confirmed rule defines one order per fact row and a count of one for that row.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "dimensional_entity_name": "CustomerDimension",
+      "dimensional_attribute_name": "CustomerKey",
+      "dimensional_attribute_definition": "CustomerKey attribute.",
+      "dimensional_attribute_data_type": "bigint",
+      "dimensional_attribute_is_nullable": false,
+      "dimensional_attribute_ordinal_position": 1,
+      "dimensional_attribute_role": "key",
+      "dimensional_attribute_key_role": "surrogate",
+      "dimensional_attribute_is_grain_component": true,
+      "dimensional_attribute_additivity": null,
+      "dimensional_attribute_default_aggregation": null,
+      "dimensional_attribute_aggregation_basis": null,
+      "dimensional_attribute_change_behavior": null,
+      "dimensional_attribute_is_audit_column": false,
+      "dimensional_attribute_confidence": "high",
+      "dimensional_attribute_status": "active",
+      "dimensional_attribute_is_locked": true,
+      "sources": [
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order.customer"
+          },
+          "source_order": 1,
+          "rationale": "Approved dimensional requirement.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    }
+  ],
+  "dimensional_relationship_list": [
+    {
+      "from_dimensional_entity_name": "SalesFact",
+      "from_dimensional_attribute_name": "CustomerKey",
+      "to_dimensional_entity_name": "CustomerDimension",
+      "to_dimensional_attribute_name": "CustomerKey",
+      "dimensional_relationship_kind": "fact_dimension",
+      "dimensional_relationship_role_name": null
+    }
+  ],
+  "dimensional_relationships": [
+    {
+      "dimensional_relationship_name": "SalesCustomer",
+      "dimensional_relationship_definition": "Fact joins Customer Dimension.",
+      "from_dimensional_entity_name": "SalesFact",
+      "from_dimensional_attribute_name": "CustomerKey",
+      "to_dimensional_entity_name": "CustomerDimension",
+      "to_dimensional_attribute_name": "CustomerKey",
+      "dimensional_relationship_kind": "fact_dimension",
+      "dimensional_relationship_cardinality": "many_to_one",
+      "dimensional_relationship_is_optional": false,
+      "dimensional_relationship_role_name": null,
+      "dimensional_relationship_confidence": "high",
+      "dimensional_relationship_basis": "The saved sales policy assigns each order to one customer dimension member.",
+      "dimensional_relationship_cardinality_basis": "Each order references one customer member; a customer member may receive many orders.",
+      "dimensional_relationship_status": "active",
+      "dimensional_relationship_is_locked": false
+    }
+  ]
+}

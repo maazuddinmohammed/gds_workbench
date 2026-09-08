@@ -3,12 +3,14 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { SelectField } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
 import {
   findAgentExecutionProfile,
   listCompatibleExecutionModes,
   reasoningEffortDisplayName,
   resolveAgentProfileSelection,
+  resolveDefaultAgent,
   WORKFLOW_EXECUTION_MODE_NAMES,
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
@@ -50,6 +52,7 @@ export function MappingRunDialog({
   onCompleted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const [pendingStart, setPendingStart] = useState<PendingMappingStart | null>(null);
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
@@ -68,20 +71,15 @@ export function MappingRunDialog({
       executionMode: "tool_assisted" as ExecutionMode,
       objectOutputTemplateId: "",
       attributeOutputTemplateId: "",
-      sdkCode: model.default_agent_sdk_code ?? "",
-      providerCode: model.default_agent_provider_code ?? "",
       modelCode: model.default_agent_model_code ?? "",
       reasoningEffortCode: model.default_reasoning_effort_code ?? "",
-      maxTurns: model.default_max_turns === null ? "" : String(model.default_max_turns),
-      validationRetryCount: model.default_validation_retry_count === null
-        ? ""
-        : String(model.default_validation_retry_count),
     },
     onSubmit: ({ value }) => {
       if (pendingStart) {
         runMutation.mutate({ kind: "retry", ...pendingStart });
         return;
       }
+      if (!agentSelectionValid) return;
       const targetObjectId = Number(value.targetObjectId);
       const sourceSystemId = Number(value.sourceSystemId);
       const objectOutputTemplateId = value.objectOutputTemplateId
@@ -104,14 +102,7 @@ export function MappingRunDialog({
           workflow_execution_mode: value.executionMode,
           selected_object_ids: [targetObjectId],
           requested_batch_id: null,
-          agent: {
-            sdk_code: value.sdkCode,
-            provider_code: value.providerCode,
-            model_code: value.modelCode,
-            reasoning_effort_code: value.reasoningEffortCode,
-            max_turns: Number(value.maxTurns),
-            validation_retry_count: Number(value.validationRetryCount),
-          },
+          agent,
           prompt_overrides: {},
           mapping_operation: value.operation,
           mapping_coverage_mode: "selected_targets",
@@ -145,38 +136,21 @@ export function MappingRunDialog({
     return [...byId.values()].sort((left, right) => left.system_code.localeCompare(right.system_code));
   }, [dependenciesQuery.data?.items]);
   const capabilities = capabilitiesQuery.data;
-  const compatibleSdks = capabilities?.sdks.filter((sdk) => (
-    capabilities.models.some((candidate) => (
-      sdk.provider_codes.includes(candidate.provider_code)
-      && candidate.execution_profiles.some((profile) => profile.sdk_code === sdk.code)
-    ))
-  )) ?? [];
-  const compatibleProviders = capabilities?.providers.filter((provider) => (
-    capabilities.sdks.find((sdk) => sdk.code === values.sdkCode)
-      ?.provider_codes.includes(provider.code) === true
-    && capabilities.models.some((candidate) => (
-      candidate.provider_code === provider.code
-      && candidate.execution_profiles.some((profile) => profile.sdk_code === values.sdkCode)
-    ))
-  )) ?? [];
   const compatibleExecutionModes = capabilities
-    ? listCompatibleExecutionModes(capabilities, values.sdkCode, values.providerCode)
+    ? listCompatibleExecutionModes(capabilities)
     : [];
   const compatibleModels = capabilities?.models.filter((candidate) => (
-    candidate.provider_code === values.providerCode
-    && findAgentExecutionProfile(candidate, values.sdkCode, values.executionMode) !== undefined
+    findAgentExecutionProfile(candidate, values.executionMode) !== undefined
   )) ?? [];
   const selectedModel = compatibleModels.find((candidate) => candidate.code === values.modelCode);
   const selectedProfile = selectedModel
-    ? findAgentExecutionProfile(selectedModel, values.sdkCode, values.executionMode)
+    ? findAgentExecutionProfile(selectedModel, values.executionMode)
     : undefined;
   const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
     selectedProfile?.reasoning_effort_codes.includes(effort.code)
   )) ?? [];
   const targetId = Number(values.targetObjectId);
   const sourceSystemId = Number(values.sourceSystemId);
-  const parsedMaxTurns = Number(values.maxTurns);
-  const parsedRetries = Number(values.validationRetryCount);
   const targetSelectionValid = targets.some((target) => target.object_id === targetId);
   const sourceSystemSelectionValid = sourceSystems.some((system) => system.system_id === sourceSystemId);
   const objectOutputTemplateSelectionValid = values.objectOutputTemplateId === ""
@@ -189,18 +163,16 @@ export function MappingRunDialog({
       template.output_template_id === Number(values.attributeOutputTemplateId)
       && template.output_template_schema_digest_is_valid
     )));
-  const agentSelectionValid = capabilities !== undefined
-    && compatibleSdks.some((sdk) => sdk.code === values.sdkCode)
-    && compatibleProviders.some((provider) => provider.code === values.providerCode)
+  const agent = capabilities ? resolveDefaultAgent(capabilities, values.executionMode, {
+    modelCode: values.modelCode,
+    reasoningEffortCode: values.reasoningEffortCode,
+    maxTurns: model.default_max_turns,
+    validationRetryCount: model.default_validation_retry_count,
+  }) : null;
+  const agentSelectionValid = agent !== null
     && compatibleExecutionModes.includes(values.executionMode)
-    && selectedModel !== undefined
-    && compatibleReasoning.some((effort) => effort.code === values.reasoningEffortCode)
-    && Number.isInteger(parsedMaxTurns)
-    && parsedMaxTurns >= capabilities.max_turns.minimum
-    && parsedMaxTurns <= capabilities.max_turns.maximum
-    && Number.isInteger(parsedRetries)
-    && parsedRetries >= capabilities.validation_retries.minimum
-    && parsedRetries <= capabilities.validation_retries.maximum;
+    && agent.model_code === values.modelCode
+    && agent.reasoning_effort_code === values.reasoningEffortCode;
   const revisionChanged = (
     targetsQuery.data !== undefined
     && targetsQuery.data.modelRevision !== model.model_revision
@@ -221,11 +193,15 @@ export function MappingRunDialog({
         return submission.workflowRunId;
       }
       const { command } = submission;
+      const fingerprint = JSON.stringify(command);
+      if (createAttempt.current?.fingerprint !== fingerprint) {
+        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
+      }
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
         command,
-        globalThis.crypto.randomUUID(),
+        createAttempt.current.key,
       );
       const pending = {
         workflowRunId: result.workflow_run_id,
@@ -251,8 +227,6 @@ export function MappingRunDialog({
   useEffect(() => {
     if (!capabilities) return;
     const resolved = resolveAgentProfileSelection(capabilities, values.executionMode, {
-      sdkCode: values.sdkCode,
-      providerCode: values.providerCode,
       modelCode: values.modelCode,
       reasoningEffortCode: values.reasoningEffortCode,
     });
@@ -260,37 +234,18 @@ export function MappingRunDialog({
     if (values.executionMode !== resolved.executionMode) {
       form.setFieldValue("executionMode", resolved.executionMode);
     }
-    if (values.sdkCode !== resolved.sdkCode) form.setFieldValue("sdkCode", resolved.sdkCode);
-    if (values.providerCode !== resolved.providerCode) {
-      form.setFieldValue("providerCode", resolved.providerCode);
-    }
     if (values.modelCode !== resolved.modelCode) {
       form.setFieldValue("modelCode", resolved.modelCode);
     }
     if (values.reasoningEffortCode !== resolved.reasoningEffortCode) {
       form.setFieldValue("reasoningEffortCode", resolved.reasoningEffortCode);
     }
-    if (!values.maxTurns) {
-      form.setFieldValue("maxTurns", String(model.default_max_turns ?? capabilities.max_turns.default));
-    }
-    if (!values.validationRetryCount) {
-      form.setFieldValue(
-        "validationRetryCount",
-        String(model.default_validation_retry_count ?? capabilities.validation_retries.default),
-      );
-    }
   }, [
     capabilities,
     form,
-    model.default_max_turns,
-    model.default_validation_retry_count,
     values.executionMode,
-    values.maxTurns,
     values.modelCode,
-    values.providerCode,
     values.reasoningEffortCode,
-    values.sdkCode,
-    values.validationRetryCount,
   ]);
   useEffect(() => {
     if (values.targetObjectId && !targets.some((target) => target.object_id === targetId)) {
@@ -398,7 +353,7 @@ export function MappingRunDialog({
                   mappingAttributes={outputTemplatesQuery.data?.mappingAttributes ?? []}
                   objectValue={objectField.state.value}
                   attributeValue={attributeField.state.value}
-                  disabled={outputTemplatesQuery.isPending || outputTemplatesQuery.isError}
+                  disabled={outputTemplatesQuery.isPending || outputTemplatesQuery.isError || runMutation.isPending || pendingStart !== null}
                   onObjectChange={objectField.handleChange}
                   onAttributeChange={attributeField.handleChange}
                 />}
@@ -411,23 +366,8 @@ export function MappingRunDialog({
               <strong id="mapping-agent-heading">Agent configuration</strong>
               <span>Model defaults are preselected and editable for this run.</span>
             </header>
-            <div className="agent-run-grid">
-              <form.Field name="sdkCode">
-                {(field) => <SelectField
-                  label="Agent SDK"
-                  value={field.state.value}
-                  options={compatibleSdks.map((item) => [item.code, item.name])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="providerCode">
-                {(field) => <SelectField
-                  label="Provider"
-                  value={field.state.value}
-                  options={compatibleProviders.map((item) => [item.code, item.name])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
+            <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingStart !== null}>
+              <legend className="sr-only">Model and reasoning</legend>
               <form.Field name="modelCode">
                 {(field) => <SelectField
                   label="Model"
@@ -447,31 +387,13 @@ export function MappingRunDialog({
                   onChange={field.handleChange}
                 />}
               </form.Field>
-              <form.Field name="maxTurns">
-                {(field) => <NumberField
-                  label="Maximum turns"
-                  value={field.state.value}
-                  minimum={capabilities?.max_turns.minimum ?? 1}
-                  maximum={capabilities?.max_turns.maximum ?? 50}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="validationRetryCount">
-                {(field) => <NumberField
-                  label="Validation retries"
-                  value={field.state.value}
-                  minimum={capabilities?.validation_retries.minimum ?? 0}
-                  maximum={capabilities?.validation_retries.maximum ?? 5}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-            </div>
+            </fieldset>
           </section>
 
           {targetsQuery.isPending || dependenciesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading Mapping bindings…</p> : null}
           {targetsQuery.isError || dependenciesQuery.isError ? <p className="inline-error" role="alert">Mapping bindings could not be loaded.</p> : null}
           {outputTemplatesQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Output Templates…</p> : null}
-          {outputTemplatesQuery.isError ? <p className="inline-error" role="alert">Active Output Templates could not be loaded. Free-form remains available.</p> : null}
+          {outputTemplatesQuery.isError ? <p className="inline-error" role="alert">Custom Output Templates could not be loaded. Global defaults remain available.</p> : null}
           {capabilitiesQuery.isError ? <p className="inline-error" role="alert">Agent options could not be loaded.</p> : null}
           {capabilities && !agentSelectionValid ? <p className="inline-error" role="alert">No compatible agent configuration is available.</p> : null}
           {targetsQuery.data && targets.length === 0 ? <p className="inline-error" role="alert">No eligible target Objects are available for this Entity type.</p> : null}
@@ -524,58 +446,6 @@ export function MappingRunDialog({
         </form>
       </section>
     </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: [string, string][];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select…</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  minimum,
-  maximum,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  minimum: number;
-  maximum: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input
-        aria-label={label}
-        type="number"
-        min={minimum}
-        max={maximum}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
   );
 }
 

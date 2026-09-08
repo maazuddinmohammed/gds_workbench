@@ -7,7 +7,7 @@ objects installed by `database/01_reference.sql` through
 `database/19_runtime_integrity.sql`. It excludes seed data plus preflight and
 verification queries.
 
-Inventory totals: **100 tables, 79 functions, and 15 installed triggers**.
+Inventory totals: **103 tables, 96 functions, and 18 installed triggers**.
 
 Read the schemas in dependency order:
 
@@ -109,7 +109,7 @@ retained rather than cascade-deleted.
 - `workflow.validation_group` — Model/Tenant/System-scoped Validation group with internal Mapping and optional Code-context digests, lifecycle, and optional Run provenance.
 - `workflow.validation_check` — Validation query and assertion definition under one Validation Group, including Query A, optional Query B or literal/list operand, result type, operator, category, severity, and lifecycle.
 
-### `application` — web preferences, authoring configuration, and run orchestration (15)
+### `application` — web preferences, authoring configuration, and run orchestration (18)
 
 - `application.principal_preference` — One Principal’s last authorized Tenant selection.
 - `application.workflow_stage` — Ordered stage definition for a workflow/execution-mode pair, including whether it is agentic.
@@ -126,6 +126,10 @@ retained rather than cascade-deleted.
 - `application.workflow_run_system_selection` — Immutable ordered System selection frozen for one Validation Run.
 - `application.workflow_run_mapping_target_selection` — Immutable ordered target Object/source System pair frozen for a Mapping Run.
 - `application.workflow_run_prompt_snapshot` — Immutable resolved prompt version/digest per agentic stage for one Run.
+
+- `application.metadata_enrichment_result` — Bounded description/type outcomes for a selected physical Object or Attribute, with evidence methods and no sample rows.
+- `application.metadata_review_event` — Immutable audit and idempotency receipt for governed physical record review.
+- `application.workflow_run_model_request` — Per-request token consumption and frozen pricing; unknown usage or price remains explicit.
 
 ### `mcp` — governed draft transport and audit (10)
 
@@ -167,7 +171,7 @@ Each entry gives purpose, then execution order.
 
 - `model.reject_model_event_log_mutation` — Trigger function enforcing append-only Model events. Steps: (1) receive an UPDATE, DELETE, or TRUNCATE attempt; (2) raise an exception; (3) allow no mutation.
 
-### `workflow` (4)
+### `workflow` (5)
 
 - `workflow.list_tenant_visible_objects` — Canonical Tenant-visible Object closure. Steps: (1) resolve every Object through mandatory `source_tenant_id`; (2) seed direct ownership, GDS-placement, Copy, Process, and current Model Input Scope references; (3) recursively traverse active ingestion mappings; (4) return each reachable Object with reason flags.
 - `workflow.list_model_object_eligibility` — Canonical Object-level workflow eligibility for one active Model. Steps: (1) read active Model Input Scope and physical metadata; (2) resolve the source Tenant; (3) mark selected Source/Bronze input eligibility; (4) mark bound Silver dimensional-source eligibility; (5) mark bound Silver/Gold Mapping targets; (6) return ordered rows.
@@ -256,6 +260,26 @@ Each entry gives purpose, then execution order.
 - `mcp.apply_metadata_change_set` — Atomic natural-key application of a validated Metadata draft. Steps: (1) validate required identity/revision/digest/correlation inputs, authorize metadata write, and lock the creator-owned draft; (2) atomically expire a due draft/batches with one event and refuse apply; (3) require `validated` plus exact revision/candidate digest; (4) lock touched Objects and fail on business locks; (5) resolve natural keys and upsert all 16 datasets in dependency order, using one post-lock time for conflict updates and terminal state; (6) verify every affected count so dependency drift aborts; (7) mark `applied`, append its event, and return total actions.
 - `mcp.runtime_readiness` — Read-only MCP runtime posture contract. Steps: (1) report schema version and PostgreSQL major; (2) verify required schemas, relations, columns, constraints, and indexes; (3) verify runtime login attributes and sole `gds_app_write` membership; (4) verify exact required and forbidden table/function/column privileges; (5) smoke-test governed query contracts with impossible IDs; (6) return booleans only.
 
+### Enrichment, review and consumption (16)
+
+- `application.assert_workflow_run_usage_binding` — Verify claim, actor and frozen run binding before consumption writes.
+- `application.add_model_input_scope_objects` — Add eligible Source/Bronze Objects through the human-only Model review fence; preserve locks and require revision and workflow checks. The web command records its Change Set in the same transaction.
+- `application.authorize_model_record_review` — Resolve human Model review authority and acquire the Model then Tenant fence.
+- `application.begin_workflow_run_model_request` — Start one idempotent request receipt with immutable pricing and attribution.
+- `application.begin_workflow_run_usage` — Bind consumption tracking to the current governed run claim.
+- `application.complete_metadata_enrichment` — Validate the physical baseline and atomically save enrichment outcomes. Normal runs fill missing metadata; explicit regeneration replaces selected Object descriptions or selected Attribute descriptions within one Object, while every frozen physical revision matches. Attribute runs also fill missing inferred types and preserve existing types. Locks and concurrent edits remain protected.
+- `application.complete_workflow_run_model_request` — Complete one consumption receipt without duplicating retries or rewriting recorded usage.
+- `application.get_metadata_enrichment_connection_values` — Resolve connection material only for an authorized claimed enrichment run; never expose it through MCP or run logs.
+- `application.get_metadata_enrichment_execution_context` — Load the authorized immutable physical selection and evidence context for enrichment.
+- `application.get_metadata_enrichment_results` — Read bounded enrichment outcomes for an authorized Model run.
+- `application.guard_metadata_enrichment_result` — Protect immutable enrichment result identity and content.
+- `application.guard_metadata_review_event` — Protect physical review audit receipts from update or deletion.
+- `application.guard_workflow_run_model_request` — Protect request identity, pricing and terminal usage.
+- `application.metadata_attribute_review_revision` — Compute the opaque revision fence for one physical Attribute review.
+- `application.metadata_object_review_revision` — Compute the opaque revision fence for one physical Object review.
+- `application.review_metadata_records` — Apply exact authorized lock, status, or description changes with parent locks, physical revisions, idempotency and audit. Description audit receipts retain a digest rather than the text.
+- `workflow.list_mapping_source_objects` — Resolve eligible Mapping source Objects with source-Tenant provenance.
+
 ## 3. Installed triggers
 
 All are `BEFORE` triggers. “Row” means once per affected row; “statement” means once for the whole statement.
@@ -275,6 +299,10 @@ All are `BEFORE` triggers. “Row” means once per affected row; “statement�
 - `guard_workflow_run_prompt_snapshot` on `application.workflow_run_prompt_snapshot` — UPDATE/DELETE, row. Steps: (1) intercept; (2) raise unconditionally; (3) preserve the exact prompt version/digest used by the Run.
 - `guard_model_change_set_workflow_binding` on `mcp.model_change_set` — UPDATE, row. Steps: (1) compare Workflow Run binding; (2) reject any change; (3) allow unrelated Model Change Set updates.
 - `reject_tool_call_log_mutation` on `mcp.tool_call_log` — UPDATE/DELETE/TRUNCATE, statement. Steps: (1) intercept mutation; (2) call `mcp.reject_tool_call_log_mutation`; (3) raise, keeping audit rows append-only.
+
+- `guard_metadata_enrichment_result` on `application.metadata_enrichment_result` — Protect enrichment result history.
+- `guard_metadata_review_event` on `application.metadata_review_event` — Protect review audit history.
+- `guard_workflow_run_model_request` on `application.workflow_run_model_request` — Fence request identity and usage transitions.
 
 ## 4. Explicit exclusions
 

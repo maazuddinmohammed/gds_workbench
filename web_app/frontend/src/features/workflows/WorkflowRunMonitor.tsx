@@ -1,7 +1,8 @@
-import { useEffect, useId, useRef, useState, type RefObject } from "react";
+import { useEffect, useId, useRef, useState, type ReactNode, type RefObject } from "react";
 import { createPortal } from "react-dom";
 import {
   useInfiniteQuery,
+  useIsFetching,
   useMutation,
   useQuery,
   useQueryClient,
@@ -22,9 +23,14 @@ import {
   WorkflowEventProgress,
   workflowStageLabel,
 } from "./presentation";
+import { MetadataEnrichmentResults } from "../metadata_enrichment/MetadataEnrichmentResults";
+import { enrichmentResultKey, type MetadataEnrichmentTransport } from "../metadata_enrichment/api";
+import { FailedWorkflowDraft } from "./FailedWorkflowDraft";
+import { WorkflowTokenUsage } from "./WorkflowTokenUsage";
 
 type DraftWorkflow = Extract<
   ModelWorkflow,
+  | "metadata_enrichment"
   | "analysis"
   | "conceptual"
   | "logical"
@@ -45,8 +51,10 @@ export function WorkflowRunMonitor({
   hasTenantLock,
   focusRunId,
   onApplied,
+  enrichmentApi,
 }: {
   api: WorkflowRunMonitorApi;
+  enrichmentApi?: Pick<MetadataEnrichmentTransport, "readMetadataEnrichmentResults">;
   tenantId: number;
   modelId: number;
   modelRevision: number;
@@ -57,7 +65,7 @@ export function WorkflowRunMonitor({
 }) {
   const queryClient = useQueryClient();
   const monitorBodyId = useId();
-  const [expanded, setExpanded] = useState(focusRunId !== null || workflow === "analysis");
+  const [expanded, setExpanded] = useState(focusRunId !== null || (workflow === "analysis" || workflow === "metadata_enrichment"));
   const [selectedRunId, setSelectedRunId] = useState<number | null>(focusRunId);
   const [runIdInput, setRunIdInput] = useState(focusRunId === null ? "" : String(focusRunId));
   const [confirmApply, setConfirmApply] = useState(false);
@@ -84,7 +92,7 @@ export function WorkflowRunMonitor({
     applyIdempotencyKey.current = null;
     setSelectedRunId(focusRunId);
     setRunIdInput(focusRunId === null ? "" : String(focusRunId));
-    if (focusRunId !== null || workflow === "analysis") {
+    if (focusRunId !== null || (workflow === "analysis" || workflow === "metadata_enrichment")) {
       setExpanded(true);
     }
     if (focusRunId !== null) {
@@ -127,8 +135,11 @@ export function WorkflowRunMonitor({
       void eventsQuery.fetchNextPage();
     }
   }, [eventsQuery.fetchNextPage, eventsQuery.hasNextPage, eventsQuery.isFetchingNextPage]);
-  const run = runQuery.data;
-  const validatedDraft = isValidatedDraft(run) ? run : null;
+  const run = workflow === "metadata_enrichment" && runQuery.data?.model_workflow !== workflow
+    ? undefined : runQuery.data;
+  const validatedDraft = workflow !== "metadata_enrichment" && isValidatedDraft(run) ? run : null;
+  const retainedDraft = workflow !== "metadata_enrichment" && Boolean(run?.workflow_run_state === "failed"
+    && run.model_change_set_status === "active" && run.model_change_set_id && run.draft_revision);
   const draftReviewQuery = useQuery({
     queryKey: workflowRunQueryKeys.draftReview(
       tenantId,
@@ -140,7 +151,7 @@ export function WorkflowRunMonitor({
       modelId,
       run?.model_change_set_id ?? "",
     ),
-    enabled: Boolean(validatedDraft),
+    enabled: Boolean(validatedDraft) || retainedDraft,
   });
   const [, setExpiryTick] = useState(0);
   const reviewExpired = isDraftReviewExpired(draftReviewQuery.data ?? null);
@@ -213,7 +224,10 @@ export function WorkflowRunMonitor({
   };
   const parsedRunId = Number(runIdInput);
   const runIdIsValid = Number.isSafeInteger(parsedRunId) && parsedRunId > 0;
-  const refreshing = recentQuery.isFetching
+  const enrichmentResultsFetching = useIsFetching({
+    queryKey: enrichmentResultKey(tenantId, modelId, selectedRunId ?? 0),
+  });
+  const refreshing = enrichmentResultsFetching > 0 || recentQuery.isFetching
     || runQuery.isFetching
     || eventsQuery.isFetching
     || draftReviewQuery.isFetching;
@@ -221,8 +235,18 @@ export function WorkflowRunMonitor({
     const refreshes: Promise<unknown>[] = [recentQuery.refetch()];
     if (selectedRunId !== null) {
       refreshes.push(runQuery.refetch(), eventsQuery.refetch());
+      if (workflow === "metadata_enrichment") {
+        refreshes.push(queryClient.invalidateQueries({
+          queryKey: enrichmentResultKey(tenantId, modelId, selectedRunId),
+        }));
+      }
     }
-    if (validatedDraft) refreshes.push(draftReviewQuery.refetch());
+    if (validatedDraft || retainedDraft) {
+      refreshes.push(draftReviewQuery.refetch());
+      refreshes.push(queryClient.invalidateQueries({
+        queryKey: ["workflow-draft-records", tenantId, modelId, run?.model_change_set_id],
+      }));
+    }
     await Promise.all(refreshes);
   };
 
@@ -348,8 +372,15 @@ export function WorkflowRunMonitor({
                 Run details could not be loaded.
               </div>
             ) : (
+              <>
               <WorkflowRunDetailView
                 run={run}
+                physicalMetadata={workflow === "metadata_enrichment"}
+                enrichmentResults={workflow === "metadata_enrichment" && enrichmentApi
+                && ["completed", "completed_with_repair"].includes(run.workflow_run_state) ? (
+                <MetadataEnrichmentResults key={`${tenantId}-${modelId}-${run.workflow_run_id}`}
+                  api={enrichmentApi} tenantId={tenantId} modelId={modelId} runId={run.workflow_run_id} />
+              ) : null}
                 events={events}
                 eventsPending={eventsQuery.isPending}
                 eventsLoadingMore={eventsQuery.isFetchingNextPage}
@@ -357,6 +388,19 @@ export function WorkflowRunMonitor({
                 draftReview={draftReviewQuery.data ?? null}
                 draftReviewPending={draftReviewQuery.isPending && Boolean(validatedDraft)}
                 draftReviewError={draftReviewQuery.isError}
+                draftRecovery={retainedDraft ? (
+                  <FailedWorkflowDraft
+                    key={`${run.workflow_run_id}-${run.draft_revision}`}
+                    api={api}
+                    tenantId={tenantId}
+                    modelId={modelId}
+                    run={run}
+                    review={draftReviewQuery.data ?? null}
+                    isPending={draftReviewQuery.isPending}
+                    isError={draftReviewQuery.isError}
+                    expired={reviewExpired}
+                  />
+                ) : null}
                 reviewMatches={reviewMatches}
                 reviewExpired={reviewExpired}
                 hasTenantLock={hasTenantLock}
@@ -371,6 +415,7 @@ export function WorkflowRunMonitor({
                   setConfirmApply(true);
                 }}
               />
+              </>
             )}
           </div>
           </div>
@@ -395,6 +440,8 @@ export function WorkflowRunMonitor({
 
 function WorkflowRunDetailView({
   run,
+  physicalMetadata,
+  enrichmentResults,
   events,
   eventsPending,
   eventsLoadingMore,
@@ -402,6 +449,7 @@ function WorkflowRunDetailView({
   draftReview,
   draftReviewPending,
   draftReviewError,
+  draftRecovery,
   reviewMatches,
   reviewExpired,
   hasTenantLock,
@@ -413,6 +461,8 @@ function WorkflowRunDetailView({
   onApply,
 }: {
   run: WorkflowRunDetail;
+  physicalMetadata: boolean;
+  enrichmentResults: ReactNode;
   events: Awaited<ReturnType<WorkflowRunMonitorApi["listWorkflowRunEvents"]>>["items"];
   eventsPending: boolean;
   eventsLoadingMore: boolean;
@@ -420,6 +470,7 @@ function WorkflowRunDetailView({
   draftReview: WorkflowDraftReview | null;
   draftReviewPending: boolean;
   draftReviewError: boolean;
+  draftRecovery: ReactNode;
   reviewMatches: boolean;
   reviewExpired: boolean;
   hasTenantLock: boolean;
@@ -481,6 +532,8 @@ function WorkflowRunDetailView({
         </section>
       ) : null}
 
+      {!physicalMetadata ? <>
+      {draftRecovery}
       {run.model_change_set_status === "validated" ? (
         <AuthoritativeDraftReview
           run={run}
@@ -525,6 +578,10 @@ function WorkflowRunDetailView({
         <p className="inline-success" role="status">Validated draft applied.</p>
       ) : null}
 
+      </> : null}
+
+      {enrichmentResults}
+      <WorkflowTokenUsage usage={run.token_usage} />
       <section className="workflow-run-events" aria-labelledby={`run-${run.workflow_run_id}-events`}>
         <h3 id={`run-${run.workflow_run_id}-events`}>Events</h3>
         {eventsPending ? (
@@ -817,17 +874,22 @@ function isDraftReviewExpired(review: WorkflowDraftReview | null): boolean {
 }
 
 function workflowLabel(workflow: DraftWorkflow): string {
+  if (workflow === "metadata_enrichment") return "Metadata enrichment";
   if (workflow === "validation") return "Validation";
   if (workflow === "code_generation") return "Code Generation";
   return workflow.charAt(0).toUpperCase() + workflow.slice(1);
 }
 
 function runKind(mode: WorkflowRunDetail["workflow_execution_mode"], workflow: ModelWorkflow): string {
+  if (workflow === "metadata_enrichment") return "Physical metadata enrichment";
   if (workflow === "analysis" && mode === null) return "Deterministic validation";
   return mode ? `${mode.replaceAll("_", " ")} authoring` : "Deterministic run";
 }
 
 function draftStatus(run: WorkflowRunDetail): string {
+  if (run.workflow_run_state === "failed" && run.model_change_set_status === "active") {
+    return "Draft retained · corrections required";
+  }
   if (run.model_change_set_status === "validated") return "Validated draft ready";
   if (run.model_change_set_status === "applied") return "Draft applied";
   if (run.model_change_set_status) {

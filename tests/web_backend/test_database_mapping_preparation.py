@@ -3,9 +3,8 @@ from __future__ import annotations
 from typing import Any, LiteralString, Protocol, cast
 from uuid import UUID
 
-from psycopg import Connection
-
 from gds_workbench_api.features.mapping import preparation_repository as preparation
+from psycopg import Connection
 
 
 class DisposablePostgresFixture(Protocol):
@@ -47,7 +46,7 @@ def test_mapping_preparation_queries_compile_against_disposable_postgres(
         (_sql("_MAPPING_BINDING_CONTEXT_SQL"), (18, 501, "logical_entity", 31)),
         (
             _sql("_MAPPING_SOURCE_CONTEXT_SQL"),
-            (18, 501, "logical_entity", 18, 31, 31),
+            (18, 501, "logical_entity", 31),
         ),
         (_sql("_MAPPING_OUTPUT_TEMPLATE_CONTEXT_SQL"), ([801, 802],)),
     )

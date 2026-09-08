@@ -98,6 +98,14 @@ class ObjectLockedError(WorkbenchError):
         )
 
 
+class AttributeLockedError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="attribute_locked",
+            message="Attribute is locked and cannot be changed.",
+        )
+
+
 class CandidateDigestConflictError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(

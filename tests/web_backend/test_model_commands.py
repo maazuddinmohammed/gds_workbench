@@ -11,8 +11,6 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from psycopg.types.json import Jsonb
-
 from gds_workbench_api.capabilities import load_default_agent_capabilities
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.features.models import (
@@ -25,6 +23,7 @@ from gds_workbench_api.features.models import (
 )
 from gds_workbench_api.main import create_app
 from gds_workbench_api.runtime import RuntimeDatabase, create_runtime_app
+from psycopg.types.json import Jsonb
 
 
 class StaticModelCommandService:
@@ -41,7 +40,7 @@ class StaticModelCommandService:
         assert request.silver_model_audit_columns_template == {
             "columns": [{"name": "created_at", "type": "timestamp"}]
         }
-        assert request.default_agent_model_code == "databricks-primary"
+        assert request.default_agent_model_code == "foundry-primary"
         return ModelCommandResult(
             model_id=18,
             tenant_id=7,
@@ -111,9 +110,9 @@ def _complete_model_payload() -> dict[str, object]:
         "gold_model_audit_columns_template": {
             "columns": [{"name": "updated_at", "type": "timestamp"}]
         },
-        "default_agent_sdk_code": "langchain_create_agent",
-        "default_agent_provider_code": "databricks",
-        "default_agent_model_code": "databricks-primary",
+        "default_agent_sdk_code": "openai_agents_sdk",
+        "default_agent_provider_code": "microsoft_foundry",
+        "default_agent_model_code": "foundry-primary",
         "default_reasoning_effort_code": "medium",
         "default_max_turns": 10,
         "default_validation_retry_count": 2,
@@ -261,9 +260,9 @@ async def test_database_create_model_authorizes_lock_and_passes_full_identity_co
     assert isinstance(parameters[9], Jsonb)
     assert isinstance(parameters[10], Jsonb)
     assert parameters[11:] == (
-        "langchain_create_agent",
-        "databricks",
-        "databricks-primary",
+        "openai_agents_sdk",
+        "microsoft_foundry",
+        "foundry-primary",
         "medium",
         10,
         2,
@@ -382,9 +381,9 @@ async def test_revision_commands_precheck_path_tenant_and_call_only_governed_fun
     assert isinstance(update_call[1][10], Jsonb)
     assert isinstance(update_call[1][11], Jsonb)
     assert update_call[1][12:] == (
-        "langchain_create_agent",
-        "databricks",
-        "databricks-primary",
+        "openai_agents_sdk",
+        "microsoft_foundry",
+        "foundry-primary",
         "medium",
         10,
         2,

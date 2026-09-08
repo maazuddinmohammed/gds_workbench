@@ -6,7 +6,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.dimensional import (
     DimensionalAttributeDetail,
     DimensionalAttributeFilters,
@@ -320,9 +319,7 @@ def test_dimensional_object_collection_and_detail_are_normalized() -> None:
     assert "prompt" not in detail.text
 
 
-def test_dimensional_attribute_collection_and_detail_return_normalized_sources() -> (
-    None
-):
+def test_dimensional_attribute_collection_and_detail_return_normalized_sources() -> None:
     app = FastAPI()
     app.include_router(
         create_dimensional_router(
@@ -345,14 +342,10 @@ def test_dimensional_attribute_collection_and_detail_return_normalized_sources()
     assert collection.status_code == 200
     assert collection.json()["items"][0]["dimensional_attribute_role"] == "measure"
     assert detail.status_code == 200
-    assert detail.json()["sources"][0]["source_attribute"]["attribute_name"] == (
-        "order_amount"
-    )
+    assert detail.json()["sources"][0]["source_attribute"]["attribute_name"] == ("order_amount")
 
 
-def test_dimensional_relationship_collection_and_detail_return_named_endpoints() -> (
-    None
-):
+def test_dimensional_relationship_collection_and_detail_return_named_endpoints() -> None:
     app = FastAPI()
     app.include_router(
         create_dimensional_router(

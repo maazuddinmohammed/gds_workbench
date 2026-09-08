@@ -17,6 +17,19 @@ eligible_objects AS MATERIALIZED (
 )
 """
 
+# Complete snapshots retain owned inactive supports; workflow inputs stay eligible.
+_HISTORICAL_OBJECTS_CTE = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_objects AS MATERIALIZED (
+    SELECT model.model_id, object.object_id, TRUE AS is_model_input_eligible
+      FROM requested_model
+      JOIN model.model AS model USING (model_id)
+      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+)
+"""
+
 _SUPPORT_JSON_SQL = """
 COALESCE((
     SELECT jsonb_agg(
@@ -90,8 +103,7 @@ COALESCE((
 ), '[]'::JSONB) AS supports
 """
 
-CONCEPTUAL_OBJECTS_SQL: LiteralString = f"""
-{_ELIGIBLE_OBJECTS_CTE}
+_CONCEPTUAL_OBJECTS_SELECT_SQL: LiteralString = f"""
 SELECT parent.conceptual_object_id,
        parent.conceptual_object_name,
        parent.conceptual_object_definition,
@@ -131,8 +143,7 @@ SELECT parent.conceptual_object_id,
  LIMIT %s OFFSET %s
 """
 
-CONCEPTUAL_RELATIONSHIPS_SQL: LiteralString = f"""
-{_ELIGIBLE_OBJECTS_CTE}
+_CONCEPTUAL_RELATIONSHIPS_SELECT_SQL: LiteralString = f"""
 SELECT parent.conceptual_relationship_id,
        parent.from_conceptual_object_id,
        from_object.conceptual_object_name AS from_conceptual_object_name,
@@ -172,3 +183,14 @@ SELECT parent.conceptual_relationship_id,
           parent.conceptual_relationship_id
  LIMIT %s OFFSET %s
 """
+
+CONCEPTUAL_OBJECTS_SQL: LiteralString = _ELIGIBLE_OBJECTS_CTE + _CONCEPTUAL_OBJECTS_SELECT_SQL
+CONCEPTUAL_RELATIONSHIPS_SQL: LiteralString = (
+    _ELIGIBLE_OBJECTS_CTE + _CONCEPTUAL_RELATIONSHIPS_SELECT_SQL
+)
+HISTORICAL_CONCEPTUAL_OBJECTS_SQL: LiteralString = (
+    _HISTORICAL_OBJECTS_CTE + _CONCEPTUAL_OBJECTS_SELECT_SQL
+)
+HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL: LiteralString = (
+    _HISTORICAL_OBJECTS_CTE + _CONCEPTUAL_RELATIONSHIPS_SELECT_SQL
+)

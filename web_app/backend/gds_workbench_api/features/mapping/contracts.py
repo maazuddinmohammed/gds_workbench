@@ -16,22 +16,22 @@ class MappingContractModel(BaseModel):
 
 class MappingObjectCandidate(MappingContractModel):
     object_dependency_order: int = Field(ge=0)
-    mapping_transformation_document: JsonObject
+    mapping_transformation_document: JsonObject = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_size(self) -> Self:
-        if _json_size(self.mapping_transformation_document) > 524_288:
+        if mapping_json_size(self.mapping_transformation_document) > 524_288:
             raise ValueError("Mapping transformation document exceeds 524,288 bytes")
         return self
 
 
 class MappingAttributeCandidate(MappingContractModel):
     modeled_attribute_name: str = Field(min_length=1, max_length=255, pattern=r"\S")
-    attribute_mapping_transformation_document: JsonObject
+    attribute_mapping_transformation_document: JsonObject = Field(min_length=1)
 
     @model_validator(mode="after")
     def validate_size(self) -> Self:
-        if _json_size(self.attribute_mapping_transformation_document) > 65_536:
+        if mapping_json_size(self.attribute_mapping_transformation_document) > 65_536:
             raise ValueError("Attribute Mapping document exceeds 65,536 bytes")
         return self
 
@@ -58,7 +58,7 @@ class CompleteMappingCandidateV1(MappingContractModel):
         return self
 
 
-def _json_size(value: JsonValue) -> int:
+def mapping_json_size(value: JsonValue) -> int:
     return len(
         json.dumps(
             value,

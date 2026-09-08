@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from collections.abc import Callable, Mapping
+from collections.abc import Mapping
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 from uuid import UUID
@@ -31,7 +31,11 @@ from .workflow_control import (
 )
 
 if TYPE_CHECKING:
+    from gds_workbench_api.capabilities import AgentCapabilityRegistry
     from gds_workbench_api.features.workflows.execution.repository import WorkflowClaimLease
+    from gds_workbench_api.features.workflows.runs.contracts import WorkflowRunDetail
+    from gds_workbench_api.features.workflows.usage.read_service import WorkflowTokenUsageSummary
+    from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
 
 _TERMINAL_STATES = frozenset({"completed", "completed_with_repair", "failed"})
 _NOTEBOOK_CURSOR_KEY = b"gds-notebook-internal-read-key-v1"
@@ -51,14 +55,24 @@ class NotebookWorkflowExecutionResult:
     draft_revision: int | None = None
     candidate_digest: str | None = None
     failure_code: str | None = None
+    token_usage: WorkflowTokenUsageSummary | None = None
+    metadata_enrichment_counts: dict[str, int] | None = None
+    metadata_enrichment_applied_field_counts: dict[str, int] | None = None
 
     def as_dict(self) -> dict[str, object]:
+        from gds_workbench_api.features.workflows.usage.read_service import (
+            WorkflowTokenUsageSummary,
+        )
+
         result: dict[str, object] = {
             "workflow_run_id": self.workflow_run_id,
             "workflow": self.workflow,
             "state": self.state,
             "created": self.created,
             "model_revision": self.model_revision,
+            "token_usage": (self.token_usage or WorkflowTokenUsageSummary()).model_dump(
+                mode="json"
+            ),
         }
         for key, value in (
             ("model_change_set_id", self.model_change_set_id),
@@ -69,14 +83,28 @@ class NotebookWorkflowExecutionResult:
         ):
             if value is not None:
                 result[key] = str(value) if isinstance(value, UUID) else value
+        if self.metadata_enrichment_counts is not None:
+            result["metadata_enrichment"] = {
+                "outcomes": self.metadata_enrichment_counts,
+                "applied_fields": self.metadata_enrichment_applied_field_counts,
+                "message": (
+                    "Applied fields were saved on the shared physical Objects and Attributes. "
+                    "Open this Run in the workbench to inspect results and unavailable evidence."
+                ),
+            }
         if self.model_change_set_id is not None:
+            if self.model_change_set_status == "validated":
+                message = "Draft is ready to review in the workbench. Apply remains explicit."
+            elif self.state == "failed" and self.model_change_set_status == "active":
+                message = (
+                    "Generated draft retained. Open this Run in the workbench to inspect "
+                    "its records and validation errors. Corrections are required before Apply."
+                )
+            else:
+                message = "Draft is not ready to apply."
             result["draft_review"] = {
                 "ready": self.model_change_set_status == "validated",
-                "message": (
-                    "Draft is ready to review in the workbench. Apply remains explicit."
-                    if self.model_change_set_status == "validated"
-                    else "Draft is not ready to apply."
-                ),
+                "message": message,
             }
         return result
 
@@ -165,10 +193,7 @@ async def _execute_notebook_workflow(
     # Imports stay at the execution boundary. Tenant Lock and widget validation
     # do not import or start the App, FastAPI, or MCP server.
     from gds_etl_workbench.application.authorization import AuthorizationService
-    from gds_workbench_api.capabilities import (
-        load_default_agent_capabilities,
-        select_agent_runtime_capabilities,
-    )
+    from gds_workbench_api.capabilities import load_default_agent_capabilities
     from gds_workbench_api.features.workflows.execution import (
         WorkerRunResult,
         WorkflowClaimRunner,
@@ -179,11 +204,6 @@ async def _execute_notebook_workflow(
         create_workflow_runtime_services,
     )
     from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
-    from gds_workbench_api.integrations.agents import DatabricksModelAuthentication
-    from gds_workbench_api.integrations.agents.configuration import (
-        AgentProviderConnection,
-        AgentRuntimeConfiguration,
-    )
     from gds_workbench_api.integrations.databricks import (
         create_databricks_execution_adapters,
     )
@@ -216,8 +236,13 @@ async def _execute_notebook_workflow(
                 model_id=request.model_id,
                 workflow_run_id=created.workflow_run_id,
             )
-            return _execution_result(request, created, detail)
+            return await _execution_result(
+                request, created, detail, database=database, principal=_request_principal(principal)
+            )
 
+        agent_runtime, capabilities = _agent_runtime(
+            request, settings, load_default_agent_capabilities()
+        )
         claim = await asyncio.to_thread(
             _claim_created_run,
             settings.database,
@@ -237,17 +262,14 @@ async def _execute_notebook_workflow(
                 model_id=request.model_id,
                 workflow_run_id=refreshed.workflow_run_id,
             )
-            return _execution_result(request, refreshed, detail)
+            return await _execution_result(
+                request,
+                refreshed,
+                detail,
+                database=database,
+                principal=_request_principal(refreshed_principal),
+            )
 
-        agent_runtime, capabilities, authentications = _agent_runtime(
-            request,
-            settings,
-            load_default_agent_capabilities(),
-            select_agent_runtime_capabilities,
-            AgentProviderConnection,
-            AgentRuntimeConfiguration,
-            DatabricksModelAuthentication,
-        )
         services = create_workflow_runtime_services(
             database=database,
             authorizer=authorizer,
@@ -255,7 +277,7 @@ async def _execute_notebook_workflow(
             agent_capability_registry=capabilities,
             databricks_environment_code=principal.databricks_environment_code,
             databricks_execution=create_databricks_execution_adapters("remote"),
-            provider_authentications=authentications,
+            provider_authentications=None,
         )
         execution_claim = WorkflowExecutionClaim.model_validate(
             {
@@ -301,7 +323,9 @@ async def _execute_notebook_workflow(
             raise NotebookDatabaseError(
                 "Notebook Workflow execution returned without a terminal Run state."
             )
-        return _execution_result(request, created, detail)
+        return await _execution_result(
+            request, created, detail, database=database, principal=execution_claim.principal
+        )
     finally:
         try:
             if services is not None:
@@ -347,78 +371,100 @@ def _request_principal(principal: NotebookPrincipal) -> Any:
 def _agent_runtime(
     request: NotebookWorkflowRequest,
     settings: NotebookRuntimeSettings,
-    capabilities: Any,
-    select_capabilities: Callable[..., Any],
-    connection_type: type[Any],
-    configuration_type: type[Any],
-    authentication_type: type[Any],
-) -> tuple[Any, Any, dict[str, Any] | None]:
+    capabilities: AgentCapabilityRegistry,
+) -> tuple[AgentRuntimeConfiguration, AgentCapabilityRegistry]:
+    from gds_workbench_api.capabilities import select_agent_runtime_capabilities
+    from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
+
     selected_agent = request.create_payload.get("agent")
     if selected_agent is None:
         return (
-            configuration_type(
+            AgentRuntimeConfiguration(
                 mode="fake",
                 timeout_seconds=settings.agent_timeout_seconds,
                 connections=(),
             ),
             capabilities,
-            None,
         )
     if not isinstance(selected_agent, Mapping):
+        raise NotebookConfigurationError("The selected Agent configuration is invalid.")
+    selected = cast(Mapping[str, object], selected_agent)
+    if (
+        selected.get("provider_code") != "microsoft_foundry"
+        or selected.get("sdk_code") != "openai_agents_sdk"
+    ):
         raise NotebookConfigurationError(
-            "Independent notebooks support the Databricks agent provider only."
+            "Notebook Agents require OpenAI Agents SDK with Microsoft Foundry."
         )
-    selected_agent_mapping = cast(Mapping[str, object], selected_agent)
-    if selected_agent_mapping.get("provider_code") != "databricks":
-        raise NotebookConfigurationError(
-            "Independent notebooks support the Databricks agent provider only."
-        )
-    model_code = selected_agent_mapping.get("model_code")
-    if not isinstance(model_code, str):
-        raise NotebookConfigurationError("The selected Databricks Agent model is unavailable.")
-    model_capability = next(
+    model = next(
         (
-            model
-            for model in getattr(capabilities, "models", ())
-            if model.provider_code == "databricks" and model.code == model_code
+            item
+            for item in capabilities.models
+            if item.provider_code == "microsoft_foundry" and item.code == selected.get("model_code")
         ),
         None,
     )
-    if model_capability is None:
-        raise NotebookConfigurationError("The selected Databricks Agent model is not registered.")
-    connection = connection_type(
-        provider_code="databricks",
-        model_code=model_code,
-        model_endpoint=model_capability.deployment_name,
-        timeout_seconds=settings.agent_timeout_seconds,
-    )
-    configuration = configuration_type(
-        mode="remote",
-        timeout_seconds=settings.agent_timeout_seconds,
-        connections=(connection,),
-    )
-    return (
-        configuration,
-        select_capabilities(
-            capabilities,
-            configured_models={
-                (item.provider_code, item.model_code) for item in configuration.connections
-            },
+    if model is None:
+        raise NotebookConfigurationError("The selected Foundry Agent model is not registered.")
+    configuration = settings.agent_runtime
+    if configuration is None or configuration.mode != "remote":
+        raise NotebookConfigurationError(
+            "Configure Foundry authentication in the uploaded root .env before running an Agent."
+        )
+    connection = next(
+        (
+            item
+            for item in configuration.connections
+            if item.provider_code == "microsoft_foundry"
+            and item.model_code == model.code
+            and item.model_endpoint == model.deployment_name
         ),
-        {"databricks": authentication_type(mode="notebook")},
+        None,
+    )
+    if connection is None:
+        raise NotebookConfigurationError("The selected Foundry Agent model is not configured.")
+    return (
+        configuration.model_copy(update={"connections": (connection,)}),
+        select_agent_runtime_capabilities(
+            capabilities, configured_models={(connection.provider_code, connection.model_code)}
+        ),
     )
 
 
-def _execution_result(
+async def _execution_result(
     request: NotebookWorkflowRequest,
     created: WorkflowCreateResult,
-    detail: Any,
+    detail: WorkflowRunDetail,
+    *,
+    database: Any,
+    principal: Any,
 ) -> NotebookWorkflowExecutionResult:
     workflow = (
         f"analysis_{request.analysis_operation}"
         if request.analysis_operation is not None
         else request.workflow
     )
+    counts: dict[str, int] | None = None
+    applied_field_counts: dict[str, int] | None = None
+    if workflow == "metadata_enrichment":
+        from gds_etl_workbench.application.authorization import AuthorizationService
+        from gds_workbench_api.features.metadata_enrichment.read_service import (
+            DatabaseMetadataEnrichmentReadService,
+        )
+
+        # The governed page supplies whole-run counts independently of pagination.
+        # Notebook output contains no physical values or source sample data.
+        page = await DatabaseMetadataEnrichmentReadService(
+            database=database, authorizer=AuthorizationService()
+        ).read_results(
+            principal,
+            tenant_id=request.tenant_id,
+            model_id=request.model_id,
+            workflow_run_id=created.workflow_run_id,
+            limit=1,
+        )
+        counts = {str(key): value for key, value in page.counts.items()}
+        applied_field_counts = {str(key): value for key, value in page.applied_field_counts.items()}
     return NotebookWorkflowExecutionResult(
         workflow_run_id=created.workflow_run_id,
         workflow=workflow,
@@ -430,6 +476,9 @@ def _execution_result(
         draft_revision=detail.draft_revision,
         candidate_digest=detail.candidate_digest,
         failure_code=detail.failure_code,
+        token_usage=detail.token_usage,
+        metadata_enrichment_counts=counts,
+        metadata_enrichment_applied_field_counts=applied_field_counts,
     )
 
 

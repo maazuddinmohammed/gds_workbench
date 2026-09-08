@@ -1437,9 +1437,7 @@ def test_create_workflow_run_freezes_server_derived_selected_scope(
     ).hexdigest()
     assert stored_run == {
         "actor_principal_id": context.principal_id,
-        "actor_entra_principal_identity_id": stored_run[
-            "actor_entra_principal_identity_id"
-        ],
+        "actor_entra_principal_identity_id": stored_run["actor_entra_principal_identity_id"],
         "modeled_entity_type": None,
         "requested_batch_id": "10428",
         "selected_scope_digest": expected_digest,
@@ -2227,9 +2225,7 @@ def test_governed_workflow_run_happy_path_is_idempotent_ordered_and_repair_aware
 ) -> None:
     context = seed_workflow_context(postgres_database)
     correlation_id = uuid4()
-    create_parameters = create_workflow_run_parameters(
-        context, correlation_id=correlation_id
-    )
+    create_parameters = create_workflow_run_parameters(context, correlation_id=correlation_id)
 
     with postgres_database.connect_owner() as connection:
         created = require_row(
@@ -2716,9 +2712,7 @@ def test_create_workflow_run_rejects_a_null_expected_model_revision(
 ) -> None:
     context = seed_workflow_context(postgres_database)
     correlation_id = uuid4()
-    parameters = list(
-        create_workflow_run_parameters(context, correlation_id=correlation_id)
-    )
+    parameters = list(create_workflow_run_parameters(context, correlation_id=correlation_id))
     parameters[3] = None
 
     with (
@@ -3211,9 +3205,7 @@ def test_claim_terminalizes_a_running_run_with_an_inactive_model(
     assert events == [
         {
             "model_event_log_status": "failed",
-            "model_event_log_message": (
-                "Workflow Run execution context is unavailable."
-            ),
+            "model_event_log_message": ("Workflow Run execution context is unavailable."),
         }
     ]
     assert replacement_state == "running"

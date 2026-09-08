@@ -21,11 +21,12 @@ export function MappingOutputTemplateSelection({
     <section className="agent-run-configuration" aria-labelledby="mapping-output-template-heading">
       <header>
         <strong id="mapping-output-template-heading">Output templates</strong>
-        <span>Select each Mapping target type independently, or keep it free-form.</span>
+        <span>New Logical and Dimensional mappings use global defaults. Override either template for this run.</span>
       </header>
       <div className="agent-run-grid">
         <OutputTemplateSelect
           label="Object Mapping Output Template"
+          defaultCode="mapping_object_default"
           templates={mappingObjects}
           value={objectValue}
           disabled={disabled}
@@ -33,6 +34,7 @@ export function MappingOutputTemplateSelection({
         />
         <OutputTemplateSelect
           label="Attribute Mapping Output Template"
+          defaultCode="mapping_attribute_default"
           templates={mappingAttributes}
           value={attributeValue}
           disabled={disabled}
@@ -45,12 +47,14 @@ export function MappingOutputTemplateSelection({
 
 function OutputTemplateSelect({
   label,
+  defaultCode,
   templates,
   value,
   disabled,
   onChange,
 }: {
   label: string;
+  defaultCode: string;
   templates: OutputTemplateSummary[];
   value: string;
   disabled: boolean;
@@ -71,7 +75,7 @@ function OutputTemplateSelect({
         disabled={disabled}
         onChange={(event) => onChange(event.target.value)}
       >
-        <option value="">Free-form · no Output Template</option>
+        <option value="">Use global default</option>
         {templates.map((template) => (
           <option
             key={template.output_template_id}
@@ -87,7 +91,7 @@ function OutputTemplateSelect({
       <small id={descriptionId}>
         {selected
           ? `${selected.output_template_name} · Schema ${selected.output_template_schema_digest_is_valid ? "valid" : "invalid"}.`
-          : "Free-form selected · no Output Template schema validation."}
+          : <>Global default: <code>{defaultCode}</code>. The current template is saved with the new run.</>}
       </small>
     </label>
   );

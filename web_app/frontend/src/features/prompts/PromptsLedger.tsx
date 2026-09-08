@@ -44,8 +44,7 @@ export function PromptsLedger({
       header: "Prompt Template",
       cell: ({ row }) => (
         <span className="prompt-template-name">
-          <strong>{row.original.prompt_template_name}</strong>
-          <code>{row.original.prompt_template_code}</code>
+          <strong title={row.original.prompt_template_name}>{row.original.prompt_template_name}</strong>
         </span>
       ),
     },
@@ -82,11 +81,7 @@ export function PromptsLedger({
         <span className="prompt-version-cell">
           <strong>v{row.original.latest_version_number}</strong>
           <VersionStatus value={row.original.latest_version_status} />
-          {row.original.latest_version_digest ? (
-            <code title={row.original.latest_version_digest}>
-              {shortDigest(row.original.latest_version_digest)}
-            </code>
-          ) : null}
+
         </span>
       ),
     },
@@ -132,7 +127,6 @@ export function PromptsLedger({
     <section className="prompt-ledger" aria-labelledby="prompt-ledger-heading">
       <header className="prompt-ledger-header">
         <div>
-          <p className="eyebrow">Versioned operational ledger</p>
           <h2 id="prompt-ledger-heading">Prompt Templates</h2>
         </div>
         <label className="prompt-local-filter">

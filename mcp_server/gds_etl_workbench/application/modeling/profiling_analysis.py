@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import LiteralString
 
-PROFILING_SQL: LiteralString = """
+_CURRENT_ATTRIBUTE_SCOPE_SQL: LiteralString = """
 WITH requested_model AS (
     SELECT %s::BIGINT AS model_id
 ),
@@ -15,6 +15,24 @@ eligible_attributes AS MATERIALIZED (
           requested_model.model_id
       ) AS eligibility
 )
+"""
+
+# Complete snapshots retain owned inactive evidence; workflow inputs stay eligible.
+_HISTORICAL_ATTRIBUTE_SCOPE_SQL: LiteralString = """
+WITH requested_model AS (
+    SELECT %s::BIGINT AS model_id
+),
+eligible_attributes AS MATERIALIZED (
+    SELECT model.model_id, object.object_id, attribute.attribute_id,
+           TRUE AS is_model_input_eligible
+      FROM requested_model
+      JOIN model.model AS model USING (model_id)
+      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+      JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
+)
+"""
+
+_PROFILING_SELECT_SQL: LiteralString = """
 SELECT profile.object_id,
        tenant.tenant_code,
        system.system_code,
@@ -64,18 +82,9 @@ SELECT profile.object_id,
  LIMIT %s OFFSET %s
 """
 
-ANALYSIS_SQL: LiteralString = """
-WITH requested_model AS (
-    SELECT %s::BIGINT AS model_id
-),
-eligible_attributes AS MATERIALIZED (
-    SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
-          requested_model.model_id
-      ) AS eligibility
-)
-SELECT result.from_object_id,
+_ANALYSIS_SELECT_SQL: LiteralString = """
+SELECT result.analysis_result_id,
+       result.from_object_id,
        from_tenant.tenant_code AS from_tenant_code,
        from_system.system_code AS from_system_code,
        from_connection.connection_code AS from_connection_code,
@@ -150,3 +159,9 @@ SELECT result.from_object_id,
           lower(result.relationship_kind)
  LIMIT %s OFFSET %s
 """
+
+
+PROFILING_SQL: LiteralString = _CURRENT_ATTRIBUTE_SCOPE_SQL + _PROFILING_SELECT_SQL
+ANALYSIS_SQL: LiteralString = _CURRENT_ATTRIBUTE_SCOPE_SQL + _ANALYSIS_SELECT_SQL
+HISTORICAL_PROFILING_SQL: LiteralString = _HISTORICAL_ATTRIBUTE_SCOPE_SQL + _PROFILING_SELECT_SQL
+HISTORICAL_ANALYSIS_SQL: LiteralString = _HISTORICAL_ATTRIBUTE_SCOPE_SQL + _ANALYSIS_SELECT_SQL

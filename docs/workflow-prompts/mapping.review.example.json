@@ -1,0 +1,176 @@
+{
+  "workflow": "mapping",
+  "note": "Synthetic schema example, not a model-quality evaluation or executed SQL. Actual generation requires selected real guide/documents.",
+  "inputs": {
+    "mapping_route": "logical_to_silver",
+    "operation": "build",
+    "target_metadata": {
+      "attributes": [
+        {
+          "attribute_data_type": "BIGINT",
+          "attribute_description": null,
+          "attribute_inferred_data_type": null,
+          "attribute_name": "CustomerID",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 1,
+          "is_active": true
+        }
+      ],
+      "batch_attribute_name": null,
+      "connection_code": "lakehouse",
+      "connection_is_active": true,
+      "is_active": true,
+      "is_global_data_store": true,
+      "is_locked": false,
+      "object_description": null,
+      "object_name": "Customer",
+      "object_schema": "silver_crm",
+      "scope_is_active": true,
+      "scope_is_locked": false,
+      "system_code": "GDS",
+      "system_is_active": true,
+      "tenant_catalog": "northwind",
+      "tenant_code": "NWA",
+      "tenant_is_active": true,
+      "zone_code": "silver"
+    },
+    "source_evidence": [
+      {
+        "is_locked": false,
+        "mapping_order": 1,
+        "object": {
+          "attributes": [
+            {
+              "attribute_data_type": "BIGINT",
+              "attribute_description": null,
+              "attribute_inferred_data_type": null,
+              "attribute_name": "customer_id",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "is_active": true
+            }
+          ],
+          "batch_attribute_name": null,
+          "connection_code": "crm_bronze",
+          "connection_is_active": true,
+          "is_active": true,
+          "is_global_data_store": false,
+          "is_locked": false,
+          "object_description": null,
+          "object_name": "customer",
+          "object_schema": "bronze_crm",
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "system_code": "CRM",
+          "system_is_active": true,
+          "tenant_catalog": "northwind",
+          "tenant_code": "NWA",
+          "tenant_is_active": true,
+          "zone_code": "bronze"
+        },
+        "rationale": "Authoritative CRM feed.",
+        "role": "support"
+      }
+    ],
+    "existing_mapping": [
+      {
+        "attribute_mappings": [
+          {
+            "is_locked": false,
+            "status": "active",
+            "transformation_document": null,
+            "modeled_attribute_name": "CustomerID",
+            "target_attribute_name": "CustomerID"
+          }
+        ],
+        "is_locked": false,
+        "modeled_entity": {
+          "attributes": [
+            {
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Stable customer key.",
+              "attribute_name": "CustomerID",
+              "is_audit_column": false,
+              "is_locked": false,
+              "is_nullable": false,
+              "ordinal_position": 1,
+              "status": "active"
+            }
+          ],
+          "dependency_order": 0,
+          "entity_definition": "A customer.",
+          "entity_kind": "core",
+          "entity_name": "Customer",
+          "grain": "One row per customer.",
+          "is_locked": false,
+          "status": "active"
+        },
+        "object_dependency_order": 0,
+        "status": "active",
+        "transformation_document": null
+      }
+    ],
+    "authoring_policy": {
+      "audit_columns_template": null,
+      "model_name": "Customer Model",
+      "naming_instructions": "Use PascalCase names.",
+      "technical_columns_template": null
+    },
+    "readiness": {
+      "headers": [
+        {
+          "action": "author",
+          "attribute_actions": [
+            {
+              "action": "author",
+              "modeled_attribute_name": "CustomerID"
+            }
+          ]
+        }
+      ],
+      "issues": [],
+      "operation": "build",
+      "ready": true
+    },
+    "source_system": {
+      "is_active": true,
+      "system_code": "CRM",
+      "system_description": null,
+      "system_name": "CRM"
+    },
+    "object_output_template": null,
+    "attribute_output_template": null
+  },
+  "candidate": {
+    "schema_version": "1.0",
+    "object_mapping": {
+      "object_dependency_order": 0,
+      "mapping_transformation_document": {
+        "source": "customer",
+        "grain": "One row per customer",
+        "steps": [
+          "Read the eligible customer source at its documented customer grain."
+        ]
+      }
+    },
+    "attribute_mappings": [
+      {
+        "modeled_attribute_name": "CustomerID",
+        "attribute_mapping_transformation_document": {
+          "expression": "CAST(customer_id AS BIGINT)",
+          "target_attribute_name": "CustomerID"
+        }
+      }
+    ]
+  },
+  "validations": [
+    "Frozen target/Source System pair, route, active bindings and selected eligible sources resolve before authoring.",
+    "Object presence matches readiness; Attribute names cover exactly every actionable bound Attribute once.",
+    "Reject duplicate Attribute identities using the existing case-insensitive name rule.",
+    "Preserve locked/preserve records; author/extend only backend-computed actionable records.",
+    "Validate schema_version, exact outer fields, nonnegative dependency order, nonempty documents and existing record/byte bounds.",
+    "Derive real modeled/physical identities and selected template codes server-side; reject candidate-owned IDs, status, locks and provenance.",
+    "Validate staged records and effective Model graph, including references, dependency order/cycles, locks and revision rules.",
+    "Use bounded repair. Flexible document contents and template guidance are not falsely described as strict reference/type validation."
+  ]
+}

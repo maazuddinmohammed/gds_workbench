@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.code_generation.router import (
     ExecuteCodeGenerationRunRequest,
 )
@@ -45,9 +44,7 @@ class _StaticCodeGenerationWorkflowService:
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart:
         del principal
-        self.starts.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.starts.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
         return AgentWorkflowRunStart(
             changed=self.changed,
             workflow_run_id=workflow_run_id,
@@ -66,9 +63,7 @@ class _StaticCodeGenerationWorkflowService:
         expected_model_revision: int,
     ) -> None:
         del principal
-        self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
 
 
 @dataclass
@@ -158,9 +153,7 @@ def test_execute_endpoint_starts_without_process_local_execution() -> None:
         ).expected_model_revision
         == 4
     )
-    assert set(ExecuteCodeGenerationRunRequest.model_fields) == {
-        "expected_model_revision"
-    }
+    assert set(ExecuteCodeGenerationRunRequest.model_fields) == {"expected_model_revision"}
     assert response.json() == {
         "changed": True,
         "workflow_run_id": 1048,

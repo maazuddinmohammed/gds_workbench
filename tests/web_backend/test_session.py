@@ -12,7 +12,6 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.session import DatabaseSessionService, SessionRecord
 from gds_workbench_api.main import create_app
 

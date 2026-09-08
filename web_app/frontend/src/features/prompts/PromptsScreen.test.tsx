@@ -13,6 +13,7 @@ import type {
   PromptTemplateHeader,
   PromptTemplateSummary,
   PromptTemplateVersion,
+  PromptWorkflow,
 } from "./api";
 
 describe("governed Prompts experience", () => {
@@ -29,6 +30,7 @@ describe("governed Prompts experience", () => {
     await user.click(promptsLink);
 
     const ledger = await screen.findByRole("table", { name: "Prompt Templates" });
+    expect(within(screen.getByLabelText("Workflow")).getByRole("option", { name: "Validation" })).toBeInTheDocument();
     expect(within(ledger).getByText("Tenant entity review")).toBeVisible();
     expect(within(ledger).getByText("Global entity review")).toBeVisible();
 
@@ -101,7 +103,25 @@ describe("governed Prompts experience", () => {
       system_prompt_template: "New governed system body",
       instruction_prompt_template: "New governed instruction body",
       tool_instruction_prompt_template: null,
+      agent_tool_names: null,
     });
+  });
+
+  it("keeps dialog keyboard focus inside and restores focus when closed", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub()), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts"] }) })} />);
+    const trigger = await screen.findByRole("button", { name: "New Prompt Template" });
+    await screen.findByRole("table", { name: "Prompt Templates" });
+    await user.click(trigger);
+    const dialog = screen.getByRole("dialog", { name: "Create Prompt Template" });
+    expect(within(dialog).getByRole("button", { name: "Close Prompt Template creation" })).toHaveFocus();
+    await user.keyboard("{Shift>}{Tab}{/Shift}");
+    expect(within(dialog).getByRole("button", { name: "Cancel" })).toHaveFocus();
+    await user.keyboard("{Tab}");
+    expect(within(dialog).getByRole("button", { name: "Close Prompt Template creation" })).toHaveFocus();
+    await user.keyboard("{Escape}");
+    expect(trigger).toHaveFocus();
+    expect(screen.queryByRole("dialog")).not.toBeInTheDocument();
   });
 
   it("saves a fenced draft, publishes it immutably, retires it, and renders bodies as inert text", async () => {
@@ -114,14 +134,19 @@ describe("governed Prompts experience", () => {
 
     const heading = await screen.findByRole("heading", { name: "Tenant entity review" });
     expect(heading).toHaveFocus();
+    await user.click(screen.getByRole("heading", { name: "Allowed variables" }));
     expect(screen.getByRole("table", { name: "Allowed Prompt variables" })).toBeVisible();
-    expect(screen.getByRole("button", { name: "Usage list unavailable" })).toBeDisabled();
+    expect(screen.queryByRole("button", { name: "Usage list unavailable" })).toBeNull();
     expect(container.querySelector("script")).toBeNull();
 
     const systemEditor = screen.getByLabelText("System Prompt");
     expect(systemEditor).toHaveValue("Treat <script> as literal Prompt text.");
     await user.clear(systemEditor);
     await user.type(systemEditor, "Updated governed system body");
+    const datasetTool = screen.getByRole("checkbox", { name: /get_agent_context_dataset/ });
+    expect(datasetTool).toBeChecked();
+    expect(datasetTool).toBeEnabled();
+    await user.click(screen.getByRole("checkbox", { name: /get_agent_context_manifest/ }));
     await user.click(screen.getByRole("button", { name: "Save draft" }));
 
     const draftCall = await waitForCall(fetcher, (input, init) => (
@@ -133,6 +158,7 @@ describe("governed Prompts experience", () => {
       system_prompt_template: "Updated governed system body",
       instruction_prompt_template: "Review the modeled Entity.",
       tool_instruction_prompt_template: null,
+      agent_tool_names: ["get_agent_context_dataset"],
     });
 
     await user.click(await screen.findByRole("button", { name: "Publish version" }));
@@ -157,6 +183,72 @@ describe("governed Prompts experience", () => {
       expect.objectContaining({ method: "POST" }),
     );
     expect((await screen.findAllByText("Retired"))[0]).toBeVisible();
+  });
+
+  it("inserts at the active selection, previews only on request, and keeps stale previews separate", async () => {
+    const fetcher = promptFetchStub();
+    const user = userEvent.setup();
+    const { container } = render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const system = await screen.findByLabelText("System Prompt");
+    await user.clear(system);
+    await user.type(system, "Before selected after");
+    (system as HTMLTextAreaElement).setSelectionRange(7, 15);
+    await user.click(screen.getByRole("heading", { name: "Allowed variables" }));
+    await user.click(screen.getByRole("button", { name: "Insert entity_name" }));
+    await vi.waitFor(() => expect(system).toHaveFocus());
+    expect(system).toHaveValue("Before {{ entity_name }} after");
+    expect(fetcher.mock.calls.some(([input]) => String(input).endsWith("/preview"))).toBe(false);
+    await user.click(screen.getByRole("button", { name: "Preview prompts" }));
+    expect(await screen.findByText("Preview rendered successfully with synthetic data.")).toBeVisible();
+    expect(screen.getByText("Before Customer after")).toBeVisible();
+    expect(container.querySelector("script")).toBeNull();
+    await user.type(system, " changed");
+    expect(screen.getByText("Prompts or tools changed. Preview again to see the current text.")).toBeVisible();
+    expect(screen.queryByText("Before Customer after")).not.toBeInTheDocument();
+  });
+
+  it("saves no enabled tools explicitly and resets text and tools to the saved version", async () => {
+    const fetcher = promptFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const system = await screen.findByLabelText("System Prompt");
+    await user.type(system, " Unsaved");
+    await user.click(screen.getByRole("button", { name: "Clear tools" }));
+    expect(screen.getByText("0 of 2 enabled")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Reset edits" }));
+    expect(system).toHaveValue(promptDraft.system_prompt_template);
+    expect(screen.getByText("2 of 2 enabled")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear tools" }));
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    const call = await waitForCall(fetcher, (input, init) => input.endsWith("/31/draft") && init?.method === "PUT");
+    expect(JSON.parse(String(call[1]?.body)).agent_tool_names).toEqual([]);
+    await screen.findByText("No tools enabled. Include the context needed through variables in your prompts.");
+  });
+
+  it("retains working text and tool choices after a save conflict or preview error", async () => {
+    const fetcher = promptFetchStub({ saveStatus: 409, previewStatus: 422 });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    const system = await screen.findByLabelText("System Prompt");
+    await user.clear(system);
+    await user.type(system, "Retain these edits");
+    await user.click(screen.getByRole("button", { name: "Clear tools" }));
+    await user.click(screen.getByRole("button", { name: "Preview prompts" }));
+    expect(await screen.findByText(/Preview could not be rendered/)).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Save draft" }));
+    expect(await screen.findByText(/This draft changed after you opened it/)).toBeVisible();
+    expect(system).toHaveValue("Retain these edits");
+    expect(screen.getByText("0 of 2 enabled")).toBeVisible();
+    expect(screen.queryByText("secret persisted Prompt and physical row")).not.toBeInTheDocument();
+  });
+
+  it("shows the frozen tool selection for published Code prompts with default execution mode", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(promptFetchStub({ promptWorkflow: "code_generation" })), history: createMemoryHistory({ initialEntries: ["/tenants/7/prompts/templates/31"] }) })} />);
+    await screen.findByLabelText("System Prompt");
+    await user.click(screen.getByRole("button", { name: /Version 1.*Published/ }));
+    await user.click(screen.getByText("Enabled tools"));
+    expect(screen.getByText("get_agent_context_dataset")).toBeVisible();
   });
 
   it("shows effective Model provenance and changes only a lock-gated Model override", async () => {
@@ -239,8 +331,12 @@ function promptFetchStub(options: {
   pendingLibrary?: boolean;
   emptyLibrary?: boolean;
   libraryStatus?: number;
+  saveStatus?: number;
+  previewStatus?: number;
+  promptWorkflow?: PromptWorkflow;
 } = {}) {
   let detail = structuredClone(promptDetail);
+  if (options.promptWorkflow) detail.template = { ...detail.template, model_workflow: options.promptWorkflow, workflow_execution_mode: null };
   let createdDetail = structuredClone(newPromptDetail);
   let modelAssignment = structuredClone(modelAssignmentState);
   return vi.fn<typeof fetch>(async (input, init) => {
@@ -327,6 +423,7 @@ function promptFetchStub(options: {
       return jsonResponse({ ...newPromptHeader, prompt_template_id: 31, ...body });
     }
     if (url === "/api/v1/tenants/7/prompts/templates/31/draft" && method === "PUT") {
+      if (options.saveStatus) return libraryFailure(options.saveStatus);
       const body = JSON.parse(String(init?.body)) as {
         system_prompt_template: string;
         instruction_prompt_template: string;
@@ -349,6 +446,10 @@ function promptFetchStub(options: {
         updated_at: saved.updated_at,
       };
       return jsonResponse(saved);
+    }
+    if (url === "/api/v1/tenants/7/prompts/templates/31/preview" && method === "POST") {
+      if (options.previewStatus) return libraryFailure(options.previewStatus);
+      return jsonResponse({ rendered_system_prompt: "Before Customer after", rendered_instruction_prompt: "Review the modeled Entity.", rendered_tool_instruction_prompt: null });
     }
     if (url === "/api/v1/tenants/7/prompts/templates/31/versions/91/publish" && method === "POST") {
       const version = transitionVersion(detail, "published");
@@ -571,6 +672,10 @@ const promptDetail: PromptTemplateDetail = {
   template: tenantTemplateSummary,
   allowed_variables: promptStageCatalog.items[0]?.allowed_variables ?? [],
   versions: [promptDraft, promptPublished],
+  available_tools: [
+    {name: "get_agent_context_manifest", description: "Read the manifest.", input_schema: {type: "object", properties: {}}},
+    {name: "get_agent_context_dataset", description: "Read one page.", input_schema: {type: "object", properties: {dataset: {}, offset: {}, limit: {}}}},
+  ],
 };
 
 const newPromptHeader: PromptTemplateHeader = {

@@ -6,12 +6,19 @@ import json
 import logging
 from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model import (
+    StageModelChange,
+    validate_model_stage_changes,
+)
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_future_graph,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
@@ -23,12 +30,17 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.capabilities import CODE_GENERATION_AGENT_EXECUTION_MODE
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
+    WorkflowChangeSetValidationError,
+)
+from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+    build_downstream_readers,
+    project_downstream_inputs,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -50,9 +62,13 @@ from gds_workbench_api.features.workflows.authoring.progress import (
     intermediate_progress_points,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidation,
+    AgentCandidateValidationError,
     AgentContextPolicy,
     AgentExecutor,
+    AgentValidationIssue,
     load_default_agent_context_policy,
+    model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 
@@ -100,6 +116,22 @@ class CodeGenerationContextRepository(Protocol):
 
 
 class CodeGenerationChangeSetHandoff(Protocol):
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> object: ...
+
     async def finalize(
         self,
         principal: RequestPrincipal,
@@ -268,9 +300,10 @@ class DatabaseCodeGenerationExecutor:
         self._authorizer = authorizer
         self._plan_repository = plan_repository or PostgresAgentRunPlanRepository()
         self._context_repository = context_repository or PostgresCodeGenerationContextRepository()
+        self._context_policy = context_policy or load_default_agent_context_policy()
         self._stage_runner = AgentStageRunner(
             executor=agent_executor,
-            policy=context_policy or load_default_agent_context_policy(),
+            policy=self._context_policy,
         )
         self._handoff = handoff
         self._no_op = no_op
@@ -287,6 +320,9 @@ class DatabaseCodeGenerationExecutor:
         workflow_run_claim_token: UUID,
     ) -> CodeGenerationExecutionResult:
         finalization_attempted = False
+        changes: tuple[StageModelChange, ...] = ()
+        rejected_changes: tuple[StageModelChange, ...] = ()
+        rejected_issues: tuple[ModelValidationIssue, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -315,6 +351,9 @@ class DatabaseCodeGenerationExecutor:
                     plan=plan,
                 )
 
+            snapshot, physical_scope = context.snapshot, context.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Code Generation validation context is unavailable.")
             target_count = len(context.targets)
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
@@ -348,6 +387,27 @@ class DatabaseCodeGenerationExecutor:
                     context,
                     target_ref=target.target_ref,
                 )
+                prompt_values = project_downstream_inputs(
+                    "code_generation", cast(dict[str, Any], target_context)
+                )
+                prompt_values["sql_generation_guide"] = guide_content
+                prompt_context = cast(
+                    JsonValue,
+                    {
+                        "__gds_downstream_inputs__": "code_generation",
+                        "values": prompt_values,
+                    },
+                )
+                result_budget = max(1, self._context_policy.stage_max_context_bytes // 2)
+                readers = build_downstream_readers(
+                    "code_generation",
+                    prompt_values,
+                    max_result_bytes=min(
+                        2 * 1024 * 1024, max(1, result_budget // stage_plan.selection.max_turns)
+                    ),
+                    max_page_records=200,
+                    max_cumulative_result_bytes=result_budget,
+                )
                 validator = CodeGenerationCandidateValidator(
                     targets=(
                         CodeGenerationTargetReference(
@@ -357,6 +417,45 @@ class DatabaseCodeGenerationExecutor:
                         ),
                     )
                 )
+
+                async def validate_complete_candidate(
+                    value: JsonValue,
+                    validator: CodeGenerationCandidateValidator = validator,
+                    position: int = position,
+                ) -> AgentCandidateValidation:
+                    nonlocal rejected_changes, rejected_issues
+                    try:
+                        candidate_changes = _generated_code_changes(
+                            artifacts=(*artifacts, *validator.parse_validated(value)),
+                            contexts=context.targets[:position],
+                            modeled_entity_type=cast(ModeledEntityType, plan.modeled_entity_type),
+                        )
+                        validate_model_stage_changes(list(candidate_changes))
+                    except (InvalidRequestError, ValidationError):
+                        return AgentCandidateValidation(
+                            issues=(
+                                AgentValidationIssue(
+                                    code="candidate.change_set_bounds",
+                                    path=(),
+                                    message=(
+                                        "Combined Code exceeds Model Change Set limits. "
+                                        "Reduce redundant artifacts while retaining all target "
+                                        "and System coverage."
+                                    ),
+                                ),
+                            )
+                        )
+                    checked = validate_future_graph(
+                        snapshot=snapshot,
+                        staged_documents={
+                            change.dataset: change.records for change in candidate_changes
+                        },
+                        physical_scope=physical_scope,
+                    )
+                    if checked.issues and position == target_count:
+                        rejected_changes, rejected_issues = candidate_changes, checked.issues
+                    return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+
                 outcome = await self._stage_runner.run(
                     plan=stage_plan,
                     stage_code="sql_generation",
@@ -367,11 +466,13 @@ class DatabaseCodeGenerationExecutor:
                         "workflow.code_generation.sql_generation_guide": guide_content,
                         "workflow.validation_failures": [],
                     },
-                    context=target_context,
+                    context=prompt_context,
                     output_schema=validator.output_schema(),
-                    allowed_tool_names=(),
+                    allowed_tool_names=readers.allowed_tool_names,
+                    local_tool_catalog=readers,
                     validator=validator,
                     max_candidate_bytes=MAX_MODEL_STAGE_PAYLOAD_BYTES,
+                    final_validation=validate_complete_candidate,
                 )
                 artifacts.extend(validator.parse_validated(outcome.candidate))
                 highest_attempt = max(highest_attempt, outcome.attempt_count)
@@ -445,6 +546,38 @@ class DatabaseCodeGenerationExecutor:
             )
             return finalization.handoff
         except Exception as error:
+            retention_issues = (
+                error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
+            )
+            if isinstance(error, AgentCandidateValidationError) and rejected_changes:
+                changes, retention_issues = rejected_changes, rejected_issues
+            if retention_issues and changes and isinstance(error, WorkbenchError):
+                try:
+                    await self._handoff.retain_failed_candidate(
+                        principal,
+                        tenant_id=tenant_id,
+                        model_id=model_id,
+                        workflow_run_id=workflow_run_id,
+                        expected_workflow="code_generation",
+                        expected_model_revision=expected_model_revision,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        changes=changes,
+                        issues=retention_issues,
+                        failure_code=error.code,
+                        safe_failure_message=(
+                            "Validation failed. A rejected draft was retained for review."
+                        ),
+                    )
+                except Exception as retention_error:
+                    _logger.warning(
+                        "Rejected Workflow draft retention remains pending.",
+                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                    )
+                    raise _safe_execution_error(
+                        retention_error,
+                        finalization_attempted=True,
+                    ) from None
+                raise error from None
             safe_error = _safe_execution_error(
                 error,
                 finalization_attempted=finalization_attempted,
@@ -539,6 +672,7 @@ def _generated_code_changes(
                 artifact_type="sql_file",
                 generated_code_content=artifact.generated_sql,
                 generated_code_status="active",
+                generated_code_is_locked=False,
             ),
         )
         system_records.extend(
@@ -548,6 +682,7 @@ def _generated_code_changes(
                 artifact_name=artifact.artifact_name,
                 source_system_code=system_code,
                 generated_code_source_system_status="active",
+                generated_code_source_system_is_locked=False,
             )
             for system_code in artifact.source_system_codes
         )
@@ -594,11 +729,17 @@ def _reconcile_generated_code(
             changed.append(record)
             continue
         prior_record, context = prior
+        if prior_record.generated_code_is_locked:
+            continue
         current_names = {name.strip().casefold() for name in context.current_artifact_names}
         if record != prior_record or record.artifact_name.strip().casefold() not in current_names:
             changed.append(record)
     for key, (record, _) in applied.items():
-        if key not in candidate_by_key and record.generated_code_status == "active":
+        if (
+            key not in candidate_by_key
+            and record.generated_code_status == "active"
+            and not record.generated_code_is_locked
+        ):
             changed.append(record.model_copy(update={"generated_code_status": "inactive"}))
     return tuple(changed)
 
@@ -615,11 +756,18 @@ def _reconcile_generated_code_source_systems(
     if len(candidate_by_key) != len(candidates) or len(applied) != len(applied_records):
         raise InvalidRequestError("Generated Code source System assignments are ambiguous.")
 
-    changed = [record for key, record in candidate_by_key.items() if record != applied.get(key)]
+    changed = [
+        record
+        for key, record in candidate_by_key.items()
+        if record != applied.get(key)
+        and (key not in applied or not applied[key].generated_code_source_system_is_locked)
+    ]
     changed.extend(
         record.model_copy(update={"generated_code_source_system_status": "inactive"})
         for key, record in applied.items()
-        if key not in candidate_by_key and record.generated_code_source_system_status == "active"
+        if key not in candidate_by_key
+        and record.generated_code_source_system_status == "active"
+        and not record.generated_code_source_system_is_locked
     )
     return tuple(changed)
 
@@ -733,7 +881,7 @@ def _target_context_manifest(target_context: JsonValue) -> JsonValue:
         JsonValue,
         {
             "target_ref": target_ref,
-            "target_context_delivery": "request_context_original_context",
+            "target_context_delivery": "workflow_variables_and_optional_readers",
             "target_context_sha256": sha256(encoded).hexdigest(),
             "target_context_byte_count": len(encoded),
         },

@@ -1,3 +1,6 @@
+import { TargetExportButton } from "../model_targets/TargetExportDialog";
+import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
+import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 
@@ -17,7 +20,7 @@ import {
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
-type DimensionalView = "objects" | "attributes" | "relationships";
+type DimensionalView = "objects" | "attributes" | "relationships" | "submodels";
 
 export function DimensionalScreen({
   api,
@@ -32,6 +35,7 @@ export function DimensionalScreen({
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<DimensionalView>("objects");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [objectFilters, setObjectFilters] = useState<DimensionalFilters>({});
@@ -77,7 +81,9 @@ export function DimensionalScreen({
     enabled: view === "relationships",
   });
 
+  const activeReviewQuery = view === "objects" ? objectsQuery : view === "attributes" ? attributesQuery : relationshipsQuery;
   const refresh = async () => {
+    setSelectedIds(new Set());
     await Promise.all([
       view === "objects"
         ? objectsQuery.refetch()
@@ -114,13 +120,14 @@ export function DimensionalScreen({
               ["objects", "Objects"],
               ["attributes", "Attributes"],
               ["relationships", "Relationships"],
+              ["submodels", "Submodels"],
             ] as const).map(([nextView, label]) => (
               <button
                 key={nextView}
                 className={view === nextView ? "is-active" : ""}
                 type="button"
                 aria-pressed={view === nextView}
-                onClick={() => setView(nextView)}
+                onClick={() => { setSelectedIds(new Set()); setView(nextView); }}
               >
                 {label}
               </button>
@@ -128,6 +135,7 @@ export function DimensionalScreen({
           </nav>
         </div>
         <div className="workflow-command-actions">
+          <TargetExportButton api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision} layer="dimensional" entityIds={view === "objects" && selectedIds.size ? [...selectedIds] : undefined} />
           <button className="button button-secondary button-small" type="button" onClick={refresh}>
             Refresh
           </button>
@@ -152,31 +160,46 @@ export function DimensionalScreen({
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
+      {view === "submodels" ? <ModelRecordHistory
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset="dimensional_submodel" label="Dimensional Submodels" hasTenantLock={hasTenantLock}
+      /> : <>
+      <ModelRecordReview
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset={view === "objects" ? "dimensional_entity" : view === "attributes" ? "dimensional_attribute" : "dimensional_relationship"}
+        selectedIds={selectedIds} hasTenantLock={hasTenantLock}
+        disabled={activeReviewQuery.isPending || activeReviewQuery.isError || activeReviewQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
+        onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
+      />
       {view === "objects" ? <DimensionalObjectsLedger
+        selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
         modelId={model.model_id}
         items={objectsQuery.data?.pages.flatMap((page) => page.items) ?? []}
         filters={objectFilters}
         state={queryState(objectsQuery, model.model_revision)}
-        onApplyFilters={setObjectFilters}
+        onApplyFilters={(next) => { setSelectedIds(new Set()); setObjectFilters(next); }}
         onLoadMore={() => void objectsQuery.fetchNextPage()}
       /> : view === "attributes" ? <DimensionalAttributesLedger
+        selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
         modelId={model.model_id}
         items={attributesQuery.data?.pages.flatMap((page) => page.items) ?? []}
         filters={attributeFilters}
         state={queryState(attributesQuery, model.model_revision)}
-        onApplyFilters={setAttributeFilters}
+        onApplyFilters={(next) => { setSelectedIds(new Set()); setAttributeFilters(next); }}
         onLoadMore={() => void attributesQuery.fetchNextPage()}
       /> : <DimensionalRelationshipsLedger
+        selectedIds={selectedIds} onSelectionChange={setSelectedIds}
         tenantId={tenantId}
         modelId={model.model_id}
         items={relationshipsQuery.data?.pages.flatMap((page) => page.items) ?? []}
         filters={relationshipFilters}
         state={queryState(relationshipsQuery, model.model_revision)}
-        onApplyFilters={setRelationshipFilters}
+        onApplyFilters={(next) => { setSelectedIds(new Set()); setRelationshipFilters(next); }}
         onLoadMore={() => void relationshipsQuery.fetchNextPage()}
       />}
+      </>}
       {runDialogOpen ? (
         <WorkflowRunDialog
           api={api}

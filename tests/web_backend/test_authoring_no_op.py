@@ -10,7 +10,6 @@ from uuid import UUID
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
-
 from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
 from gds_workbench_api.features.workflows.authoring.no_op import (
     AuthoringNoOpRequest,
@@ -79,9 +78,7 @@ class NoOpTransaction:
             "final_event_attempt": 2,
             "final_event_stage": "conceptual.backend_validation",
             "final_event_status": "warning",
-            "final_event_message": (
-                "Conceptual authoring completed with no effective change."
-            ),
+            "final_event_message": ("Conceptual authoring completed with no effective change."),
             "final_event_current": 1,
             "final_event_total": 1,
             "final_finding_count": 0,

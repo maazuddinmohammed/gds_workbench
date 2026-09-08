@@ -4,6 +4,79 @@ export type MetadataSection = "reference" | "foundational" | "operational";
 export type MetadataCellValue = string | number | boolean | null;
 export type MetadataRow = Record<string, MetadataCellValue>;
 export type MetadataFilters = Record<string, MetadataCellValue>;
+export type MetadataActiveState = "active" | "inactive" | "all";
+export interface ObjectCatalogFilters {
+  zone?: "source" | "bronze" | "silver" | "gold";
+  systemCode?: string;
+  sourceTenantCode?: string;
+  activeState?: MetadataActiveState;
+}
+export interface ObjectCatalogSummary {
+  object_id: number;
+  review_revision: string;
+  object_schema: string;
+  object_name: string;
+  object_type_code: string;
+  zone_code: "source" | "bronze" | "silver" | "gold";
+  connection_id: number;
+  connection_code: string;
+  system_id: number;
+  system_code: string;
+  system_name: string;
+  source_tenant_id: number;
+  source_tenant_code: string;
+  source_tenant_name: string;
+  attribute_count: number;
+  batch_attribute_name: string | null;
+  is_active: boolean;
+  is_locked: boolean;
+}
+export interface ObjectAttribute {
+  attribute_id: number;
+  review_revision: string;
+  attribute_name: string;
+  attribute_ordinal_position: number;
+  attribute_description: string | null;
+  description_truncated?: boolean;
+  attribute_data_type: string;
+  attribute_inferred_data_type: string | null;
+  attribute_nullability: boolean;
+  is_surrogate_key: boolean;
+  is_natural_key: boolean;
+  is_meta_data: boolean;
+  is_masking_required: boolean;
+  is_mapped: boolean;
+  is_purge: boolean;
+  is_locked: boolean;
+  is_active: boolean;
+}
+export interface ObjectCatalogDetail extends ObjectCatalogSummary {
+  object_type_name: string;
+  object_description: string | null;
+  connection_name: string;
+  attributes: ObjectAttribute[];
+}
+export interface ObjectCatalogPage {
+  schema_version: "1.0";
+  tenant_id: number;
+  items: ObjectCatalogSummary[];
+  next_cursor: string | null;
+}
+export type MetadataReviewAction = "lock" | "unlock" | "deactivate" | "reactivate";
+export type ReviewMetadataRecordsCommand = {
+  record_type: "object" | "attribute";
+  action: MetadataReviewAction;
+  records: Array<{ record_id: number; expected_revision: string }>;
+} | {
+  record_type: "object" | "attribute";
+  action: "describe";
+  records: Array<{ record_id: number; expected_revision: string; description: string | null }>;
+};
+export interface ReviewMetadataRecordsResult {
+  review_event_id: number;
+  action_count: number;
+  records: Array<{ record_id: number; review_revision: string; is_active: boolean; is_locked: boolean }>;
+}
 export const METADATA_XLSX_MEDIA_TYPE =
   "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
@@ -205,6 +278,9 @@ export interface ImportMetadataWorkbookResult {
 }
 
 export interface MetadataApi {
+  listMetadataObjects: (tenantId: number, filters?: ObjectCatalogFilters, pageSize?: number, cursor?: string) => Promise<ObjectCatalogPage>;
+  readMetadataObject: (tenantId: number, objectId: number) => Promise<ObjectCatalogDetail>;
+  reviewMetadataRecords: (tenantId: number, command: ReviewMetadataRecordsCommand, idempotencyKey: string) => Promise<ReviewMetadataRecordsResult>;
   listMetadataDatasets: (tenantId: number) => Promise<MetadataDatasetRegistry>;
   describeMetadataDataset: (
     tenantId: number,
@@ -264,6 +340,21 @@ export interface MetadataApi {
 
 export function createMetadataApi(request: HttpRequest): MetadataApi {
   return {
+    listMetadataObjects: (tenantId, filters = {}, pageSize = 50, cursor) => {
+      const query = new URLSearchParams();
+      if (filters.zone) query.set("zone", filters.zone);
+      if (filters.systemCode?.trim()) query.set("system_code", filters.systemCode.trim().toLowerCase());
+      if (filters.sourceTenantCode?.trim()) query.set("source_tenant_code", filters.sourceTenantCode.trim().toLowerCase());
+      query.set("active_state", filters.activeState ?? "active");
+      query.set("page_size", String(pageSize));
+      if (cursor) query.set("cursor", cursor);
+      return request<ObjectCatalogPage>(`/api/v1/tenants/${tenantId}/metadata/objects?${query}`);
+    },
+    readMetadataObject: (tenantId, objectId) => request<ObjectCatalogDetail>(`/api/v1/tenants/${tenantId}/metadata/objects/${objectId}`),
+    reviewMetadataRecords: (tenantId, command, idempotencyKey) => request<ReviewMetadataRecordsResult>(
+      `/api/v1/tenants/${tenantId}/metadata/review`,
+      { method: "POST", headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey }, body: JSON.stringify(command) },
+    ),
     listMetadataDatasets: (tenantId) =>
       request<MetadataDatasetRegistry>(`/api/v1/tenants/${tenantId}/metadata/datasets`),
     describeMetadataDataset: (tenantId, dataset) =>
@@ -425,6 +516,8 @@ export function createMetadataApi(request: HttpRequest): MetadataApi {
 }
 
 export const metadataQueryKeys = {
+  objects: (tenantId: number, filters: ObjectCatalogFilters, cursor: string | undefined) => ["metadata-objects", tenantId, filters, cursor] as const,
+  object: (tenantId: number, objectId: number | null) => ["metadata-object", tenantId, objectId] as const,
   registry: (tenantId: number) => ["metadata-registry", tenantId] as const,
   dataset: (tenantId: number, dataset: string) => (
     ["metadata-dataset", tenantId, dataset] as const
@@ -444,6 +537,8 @@ export function metadataFieldLabel(field: string): string {
   const domainLabels: Record<string, string> = {
     scope_tenant_code: "Assigned Tenant",
     connection_tenant_code: "GDS Connection Owner",
+    attribute_data_type: "Storage type",
+    attribute_inferred_data_type: "Inferred type",
   };
   if (domainLabels[field]) return domainLabels[field];
   return field

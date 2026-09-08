@@ -126,7 +126,7 @@ CREATE TABLE model.model_event_log (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual',
             'logical', 'dimensional', 'mapping',
-            'code_generation', 'validation', 'dbml'
+            'code_generation', 'validation', 'metadata_enrichment', 'dbml'
         )
     ),
     CONSTRAINT ck_model_event_log_order CHECK (

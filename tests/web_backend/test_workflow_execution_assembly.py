@@ -9,8 +9,10 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-
 from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.features.metadata_enrichment.repository import (
+    MetadataEnrichmentRepository,
+)
 from gds_workbench_api.features.workflows.execution.assembly import (
     create_workflow_runtime_services,
 )
@@ -71,6 +73,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
         "DatabaseMappingExecutor",
         "DatabaseCodeGenerationExecutor",
         "DatabaseValidationExecutor",
+        "DatabaseMetadataEnrichmentExecutor",
     ):
         monkeypatch.setattr(
             f"gds_workbench_api.features.workflows.execution.assembly.{executor_name}",
@@ -87,6 +90,7 @@ def test_workflow_runtime_services_share_one_executor_graph(
     )
 
     assert agent_router_arguments["provider_authentications"] is None
+    assert agent_router_arguments["usage_recorder"] is services.usage_recorder
 
     authoring = tuple(
         captured[name]
@@ -102,14 +106,13 @@ def test_workflow_runtime_services_share_one_executor_graph(
     for dependency in ("agent_executor", "handoff", "no_op", "lifecycle"):
         expected = authoring[0][dependency]
         assert all(arguments[dependency] is expected for arguments in authoring)
-    assert (
-        captured["DatabaseCodeGenerationExecutor"]["agent_executor"]
-        is shared_agent_executor
-    )
-    assert (
-        captured["DatabaseCodeGenerationExecutor"]["lifecycle"]
-        is authoring[0]["lifecycle"]
-    )
+    assert captured["DatabaseCodeGenerationExecutor"]["agent_executor"] is shared_agent_executor
+    assert captured["DatabaseCodeGenerationExecutor"]["lifecycle"] is authoring[0]["lifecycle"]
+    enrichment = captured["DatabaseMetadataEnrichmentExecutor"]
+    assert enrichment["agent_executor"] is shared_agent_executor
+    assert enrichment["lifecycle"] is authoring[0]["lifecycle"]
+    assert isinstance(enrichment["repository"], MetadataEnrichmentRepository)
+    assert enrichment["sql_executor"] is None  # Fake mode performs no remote reads.
 
     execution = services.execution_services()
     assert execution.profiling is services.profiling
@@ -121,6 +124,8 @@ def test_workflow_runtime_services_share_one_executor_graph(
     assert execution.mapping is services.mapping
     assert execution.code_generation is services.code_generation
     assert execution.validation is services.validation
+    assert execution.metadata_enrichment is services.metadata_enrichment
+    assert execution.usage_recorder is services.usage_recorder
 
 
 def test_workflow_runtime_services_forward_provider_authentications(

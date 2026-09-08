@@ -13,6 +13,9 @@ from pydantic import (
     model_validator,
 )
 
+from gds_workbench_api.features.workflows.authoring.agent_execution import LocalAgentToolDefinition
+from gds_workbench_api.features.workflows.authoring.tool_configuration import AgentToolName
+
 type ModelWorkflow = Literal[
     "profiling",
     "analysis",
@@ -22,11 +25,13 @@ type ModelWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
+    "metadata_enrichment_object",
+    "metadata_enrichment_attribute",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",
     "tool_assisted",
-    "detailed_coverage",
 ]
 type PromptVariableDataType = Literal[
     "text",
@@ -53,6 +58,11 @@ class PromptStageVariable(PromptContract):
     description: str = Field(min_length=1, max_length=2000)
     example: JsonValue | None = None
     order: int = Field(gt=0)
+    value_schema: dict[str, JsonValue] | None = None
+    source: str | None = Field(default=None, min_length=1, max_length=500)
+    availability: str | None = Field(default=None, min_length=1, max_length=500)
+    delivery: Literal["inline_value", "structured_context", "tool_dataset"] | None = None
+    context_path: str | None = Field(default=None, min_length=1, max_length=200)
 
 
 class PromptStage(PromptContract):
@@ -140,6 +150,17 @@ class PromptTemplateVersion(PromptContract):
     prompt_template_id: int = Field(gt=0)
     workflow_stage_id: int = Field(gt=0)
     prompt_template_version_number: int = Field(gt=0)
+    agent_tool_names: list[AgentToolName] | None = Field(default=None, max_length=100)
+
+    @field_validator("agent_tool_names")
+    @classmethod
+    def validate_tool_selection(
+        cls, value: list[AgentToolName] | None
+    ) -> list[AgentToolName] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Prompt tool names must be unique")
+        return sorted(value) if value is not None else None
+
     system_prompt_template: str = Field(min_length=1, max_length=262144)
     instruction_prompt_template: str = Field(min_length=1, max_length=262144)
     tool_instruction_prompt_template: str | None = Field(
@@ -164,6 +185,7 @@ class PromptTemplateDetail(PromptContract):
     template: PromptTemplateSummary
     allowed_variables: tuple[PromptStageVariable, ...] = Field(max_length=100)
     versions: tuple[PromptTemplateVersion, ...] = Field(max_length=200)
+    available_tools: tuple[LocalAgentToolDefinition, ...] = Field(default=(), max_length=100)
 
 
 class PromptTemplateNotFoundError(WorkbenchError):
@@ -245,6 +267,17 @@ class UpdatePromptTemplateRequest(PromptRequest):
 class SavePromptDraftRequest(PromptRequest):
     expected_prompt_template_version_id: int | None = Field(default=None, gt=0)
     expected_updated_at: datetime | None = None
+    agent_tool_names: list[AgentToolName] | None = Field(default=None, max_length=100)
+
+    @field_validator("agent_tool_names")
+    @classmethod
+    def validate_tool_selection(
+        cls, value: list[AgentToolName] | None
+    ) -> list[AgentToolName] | None:
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("Prompt tool names must be unique")
+        return sorted(value) if value is not None else None
+
     system_prompt_template: str = Field(min_length=1, max_length=262144)
     instruction_prompt_template: str = Field(min_length=1, max_length=262144)
     tool_instruction_prompt_template: str | None = Field(
@@ -273,6 +306,14 @@ class SavePromptDraftRequest(PromptRequest):
         if (self.expected_prompt_template_version_id is None) != (self.expected_updated_at is None):
             raise ValueError("Draft version and timestamp fences must be supplied together")
         return self
+
+
+class PromptPreview(PromptContract):
+    rendered_system_prompt: str = Field(max_length=1_000_000, repr=False)
+    rendered_instruction_prompt: str = Field(max_length=1_000_000, repr=False)
+    rendered_tool_instruction_prompt: str | None = Field(
+        default=None, max_length=1_000_000, repr=False
+    )
 
 
 class SetModelPromptAssignmentRequest(PromptRequest):

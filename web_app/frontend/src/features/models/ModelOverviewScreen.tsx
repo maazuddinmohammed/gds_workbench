@@ -5,6 +5,7 @@ import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { formatDateTime } from "../../shared/presentation";
 import { ErrorPage, LoadingPage } from "../../shared/ui";
 import type { TenantsApi } from "../tenants/api";
+import { validTenantModelIds } from "./ModelRouteFrame";
 import { ModelWorkspaceShell } from "./ModelWorkspaceShell";
 import type {
   ModelDetail,
@@ -61,13 +62,6 @@ export function ModelOverviewScreen({
   );
 }
 
-function validTenantModelIds(tenantId: number, modelId: number): boolean {
-  return Number.isSafeInteger(tenantId)
-    && tenantId > 0
-    && Number.isSafeInteger(modelId)
-    && modelId > 0;
-}
-
 function ModelOverviewView({
   model,
   overview,
@@ -98,7 +92,11 @@ function ModelOverviewView({
             <p className="eyebrow">Current model journey</p>
             <h2 id="workflow-ledger-heading">Workflow ledger</h2>
           </div>
-          <span>Server-backed · quality warnings never block</span>
+          <Link className="text-action"
+            to="/tenants/$tenantId/models/$modelId/metadata-enrichment"
+            params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}>
+            Enrich physical metadata
+          </Link>
         </header>
         {overview.model_revision !== model.model_revision ? (
           <div className="surface-state is-error" role="alert">

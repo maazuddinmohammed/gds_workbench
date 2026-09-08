@@ -21,6 +21,8 @@ from gds_workbench_api.features.model_input_scope.contracts import (
     ModelInputScopeObject,
     ModelInputScopeObjectNotFoundError,
     ModelInputScopePage,
+    ScopeLocation,
+    ScopeSearchOptions,
 )
 from gds_workbench_api.features.models import ModelNotFoundError
 
@@ -45,6 +47,10 @@ SELECT model_input_scope.model_input_scope_id,
        eligible_object.object_schema,
        eligible_object.object_name,
        eligible_object.zone_code,
+       left(object.object_description, 2000) AS object_description,
+       coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
+       object.is_locked,
+       application.metadata_object_review_revision(object) AS review_revision,
        object.batch_attribute_name,
        attribute_count.attribute_count,
        eligible_object.is_model_input_eligible,
@@ -104,6 +110,10 @@ SELECT model_input_scope.model_input_scope_id,
        eligible_object.object_schema,
        eligible_object.object_name,
        eligible_object.zone_code,
+       left(object.object_description, 2000) AS object_description,
+       coalesce(length(object.object_description) > 2000, FALSE) AS description_truncated,
+       object.is_locked,
+       application.metadata_object_review_revision(object) AS review_revision,
        object.batch_attribute_name,
        attribute_count.attribute_count,
        eligible_object.is_model_input_eligible,
@@ -140,10 +150,13 @@ SELECT model_input_scope.model_input_scope_id,
 
 _MODEL_INPUT_SCOPE_ATTRIBUTES_SQL = """
 SELECT attribute.attribute_id,
+       application.metadata_attribute_review_revision(attribute, object) AS review_revision,
        attribute.attribute_name,
        attribute.attribute_ordinal_position,
        left(attribute.attribute_description, 2000) AS attribute_description,
+       coalesce(length(attribute.attribute_description) > 2000, FALSE) AS description_truncated,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.is_surrogate_key,
        attribute.is_natural_key,
@@ -151,8 +164,11 @@ SELECT attribute.attribute_id,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
+       attribute.is_locked,
        attribute.is_active
   FROM core.attribute AS attribute
+  JOIN core.object AS object
+    ON object.object_id = attribute.object_id
  WHERE attribute.object_id = %s
    AND attribute.is_active
  ORDER BY attribute.attribute_ordinal_position,
@@ -217,8 +233,9 @@ SELECT object.object_id,
    AND (%s::TEXT IS NULL OR lower(btrim(source_tenant.tenant_code)) = %s)
    AND (
        %s::TEXT IS NULL
-       OR strpos(lower(btrim(object.object_name)), %s) > 0
+       OR strpos(lower(btrim(object.object_schema) || '.' || btrim(object.object_name)), %s) > 0
    )
+   AND (%s::BIGINT IS NULL OR connection.tenant_id = %s)
  ORDER BY lower(btrim(source_tenant.tenant_code)),
           lower(btrim(system.system_code)),
           lower(btrim(object.object_schema)),
@@ -228,7 +245,33 @@ SELECT object.object_id,
 """
 
 
+_SCOPE_SEARCH_OPTIONS_SQL: LiteralString = f"""
+{VISIBLE_OBJECTS_CTE}
+SELECT DISTINCT placement.tenant_id, placement.tenant_code, placement.tenant_name,
+       system.system_code, system.system_name, lower(btrim(zone.zone_code)) AS zone_code
+  FROM visible_objects AS visible
+  JOIN core.object AS object ON object.object_id = visible.object_id AND object.is_active
+  JOIN core.connection AS connection
+    ON connection.connection_id = object.connection_id AND connection.is_active
+  JOIN core.tenant AS placement
+    ON placement.tenant_id = connection.tenant_id AND placement.is_active
+  JOIN core.system AS system ON system.system_id = connection.system_id AND system.is_active
+  JOIN reference.zone AS zone ON zone.zone_id = object.zone_id AND zone.is_active
+ WHERE lower(btrim(zone.zone_code)) IN ('source', 'bronze')
+ ORDER BY placement.tenant_name, placement.tenant_id,
+          system.system_name, system.system_code, zone_code
+"""
+
+
 class ModelInputScopeService(Protocol):
+    async def search_options(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+    ) -> ScopeSearchOptions: ...
+
     async def list_candidates(
         self,
         principal: RequestPrincipal,
@@ -241,6 +284,7 @@ class ModelInputScopeService(Protocol):
         object_name: str | None,
         page_size: int,
         cursor: str | None,
+        placement_tenant_id: int | None = None,
     ) -> ModelInputScopeCandidatePage: ...
 
     async def list_input_scope(
@@ -287,6 +331,30 @@ class DatabaseModelInputScopeService:
         self._authorizer = authorizer
         self._cursors = CursorCodec(cursor_signing_key)
 
+    async def search_options(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+    ) -> ScopeSearchOptions:
+        async with self._database.read_transaction(
+            isolation=ReadIsolation.REPEATABLE_READ
+        ) as transaction:
+            await self._authorizer.authorize_tenant(
+                transaction, principal, tenant_id=tenant_id, policy=ToolPolicy.TENANT_READ
+            )
+            header = await transaction.fetch_one(
+                _MODEL_INPUT_SCOPE_HEADER_SQL, (tenant_id, model_id)
+            )
+            if header is None:
+                raise ModelNotFoundError()
+            rows = await transaction.fetch_all(_SCOPE_SEARCH_OPTIONS_SQL, (tenant_id,))
+        return ScopeSearchOptions(
+            model_revision=header["model_revision"],
+            locations=tuple(ScopeLocation.model_validate(row) for row in rows),
+        )
+
     async def list_candidates(
         self,
         principal: RequestPrincipal,
@@ -299,9 +367,11 @@ class DatabaseModelInputScopeService:
         object_name: str | None,
         page_size: int,
         cursor: str | None,
+        placement_tenant_id: int | None = None,
     ) -> ModelInputScopeCandidatePage:
         filters = {
             "model_id": model_id,
+            "placement_tenant_id": placement_tenant_id,
             "object_name": object_name,
             "source_tenant_code": source_tenant_code,
             "system_code": system_code,
@@ -342,6 +412,8 @@ class DatabaseModelInputScopeService:
                     source_tenant_code,
                     object_name,
                     object_name,
+                    placement_tenant_id,
+                    placement_tenant_id,
                     page_size + 1,
                     offset,
                 ),

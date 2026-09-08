@@ -17,17 +17,14 @@ from mcp.server.mcpserver import MCPServer
 from mcp.types import TextContent
 from psycopg import sql
 from psycopg.types.json import Jsonb
-from tests.mcp.model_test_fixtures import (
-    complete_model_graph,
-)
 
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.modeling_records import (
-    ANALYSIS_VALIDATION_FIELDS,
+from gds_etl_workbench.application.change_sets.contracts import (
+    MAX_MODEL_STAGE_CHUNK_BYTES,
+    canonical_records_sha256,
+    stage_batch_sha256,
 )
 from gds_etl_workbench.application.change_sets.model import (
     _DATABASE_TIME_SQL,
@@ -36,12 +33,19 @@ from gds_etl_workbench.application.change_sets.model import (
     _STAGE_SQL,
     _TOUCH_MODEL_STAGE_BATCH_SQL,
     WRITE_SECTION_COLUMNS,
+    StageModelChange,
     register_model_change_set_tools,
+    validate_model_stage_changes,
 )
-from gds_etl_workbench.application.change_sets.contracts import (
-    MAX_MODEL_STAGE_CHUNK_BYTES,
-    canonical_records_sha256,
-    stage_batch_sha256,
+from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.modeling_records import (
+    ANALYSIS_VALIDATION_FIELDS,
+)
+from gds_etl_workbench.domain.snapshots.model import (
+    CHANGE_SET_DATASETS_BY_NAME,
+    DATASETS,
+    ModelChangeSetDataset,
 )
 from gds_etl_workbench.tools.modeling.model_details import register_list_models_tool
 from gds_etl_workbench.tools.modeling.model_input_scope import (
@@ -54,14 +58,13 @@ from gds_etl_workbench.tools.snapshots.archive import SnapshotArchive
 from gds_etl_workbench.tools.snapshots.dbml.get_model_dbml import (
     register_export_model_dbml_tool,
 )
-from gds_etl_workbench.domain.snapshots.model import (
-    DATASETS,
-    ModelChangeSetDataset,
-)
 from gds_etl_workbench.tools.snapshots.model.get_model_snapshot import (
     register_create_model_snapshot_tool,
 )
 from gds_etl_workbench.tools.snapshots.storage import SnapshotKind
+from tests.mcp.model_test_fixtures import (
+    complete_model_graph,
+)
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
@@ -392,9 +395,7 @@ async def test_get_model_change_set_persists_parent_and_batch_expiry_once(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool(
-                "create_model_change_set", {"model_id": model_id}
-            )
+            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             begun = await client.call_tool(
@@ -487,9 +488,7 @@ async def test_stage_model_change_set_persists_expiry_before_rejecting_mutation(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool(
-                "create_model_change_set", {"model_id": model_id}
-            )
+            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             with postgres_database.connect_owner() as connection:
@@ -577,20 +576,12 @@ async def test_concurrent_model_change_set_create_is_one_idempotent_draft(
                 client.call_tool("create_model_change_set", {"model_id": model_id}),
             )
             assert all(result.is_error is False for result in results)
-            assert sorted(
-                result.structured_content["created"] for result in results
-            ) == [
+            assert sorted(result.structured_content["created"] for result in results) == [
                 False,
                 True,
             ]
             assert (
-                len(
-                    {
-                        result.structured_content["model_change_set_id"]
-                        for result in results
-                    }
-                )
-                == 1
+                len({result.structured_content["model_change_set_id"] for result in results}) == 1
             )
     finally:
         await database.close()
@@ -659,9 +650,7 @@ async def test_create_expiry_clock_is_captured_after_waiting_for_the_draft_lock(
                     """,
                     (initial_id,),
                 ).fetchone()
-                lock_time = blocker.execute(
-                    "SELECT clock_timestamp() AS current_time"
-                ).fetchone()
+                lock_time = blocker.execute("SELECT clock_timestamp() AS current_time").fetchone()
                 assert lock_time is not None
                 blocker.execute(
                     """
@@ -1047,12 +1036,58 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             assert normally_staged.is_error is False
             assert normally_staged.structured_content["draft_revision"] == 2
 
-            begun = await client.call_tool(
+            profiling_records = staged["profiling_profile"]
+            profiling_chunk_sha256 = canonical_records_sha256(profiling_records)
+            normalized_profiling = validate_model_stage_changes(
+                [StageModelChange(dataset="profiling_profile", records=profiling_records)]
+            )["profiling_profile"]
+            assert profiling_chunk_sha256 != canonical_records_sha256(normalized_profiling)
+            profiling_batch_sha256 = stage_batch_sha256([profiling_chunk_sha256])
+            profiling_begun = await client.call_tool(
                 "begin_model_stage_batch",
                 {
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
                     "expected_draft_revision": 2,
+                    "dataset": "profiling_profile",
+                    "total_record_count": len(profiling_records),
+                    "total_chunk_count": 1,
+                    "batch_sha256": profiling_batch_sha256,
+                },
+            )
+            assert profiling_begun.is_error is False
+            profiling_batch_id = profiling_begun.structured_content["stage_batch_id"]
+            profiling_put = await client.call_tool(
+                "put_model_stage_chunk",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "stage_batch_id": profiling_batch_id,
+                    "dataset": "profiling_profile",
+                    "chunk_index": 1,
+                    "records": profiling_records,
+                    "chunk_sha256": profiling_chunk_sha256,
+                },
+            )
+            assert profiling_put.is_error is False
+            profiling_committed = await client.call_tool(
+                "commit_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "stage_batch_id": profiling_batch_id,
+                    "expected_draft_revision": 2,
+                },
+            )
+            assert profiling_committed.is_error is False
+            assert profiling_committed.structured_content["draft_revision"] == 3
+
+            begun = await client.call_tool(
+                "begin_model_stage_batch",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                    "expected_draft_revision": 3,
                     "dataset": "conceptual_object",
                     "total_record_count": 2,
                     "total_chunk_count": 2,
@@ -1066,7 +1101,7 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                 {
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
-                    "expected_draft_revision": 2,
+                    "expected_draft_revision": 3,
                     "dataset": "conceptual_object",
                     "total_record_count": 2,
                     "total_chunk_count": 2,
@@ -1102,7 +1137,7 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                             "model_id": model_id,
                             "model_change_set_id": change_set_id,
                             "stage_batch_id": stage_batch_id,
-                            "expected_draft_revision": 2,
+                            "expected_draft_revision": 3,
                         },
                     )
                     assert incomplete.is_error is True
@@ -1115,11 +1150,11 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
                     "stage_batch_id": stage_batch_id,
-                    "expected_draft_revision": 2,
+                    "expected_draft_revision": 3,
                 },
             )
             assert committed.is_error is False
-            assert committed.structured_content["draft_revision"] == 3
+            assert committed.structured_content["draft_revision"] == 4
             assert committed.structured_content["record_count"] == 2
             replayed = await client.call_tool(
                 "commit_model_stage_batch",
@@ -1127,12 +1162,12 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
                     "stage_batch_id": stage_batch_id,
-                    "expected_draft_revision": 2,
+                    "expected_draft_revision": 3,
                 },
             )
             assert replayed.is_error is False
             assert replayed.structured_content["replayed"] is True
-            assert replayed.structured_content["draft_revision"] == 3
+            assert replayed.structured_content["draft_revision"] == 4
 
             pending = await client.call_tool(
                 "get_model_change_set",
@@ -1144,24 +1179,39 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             )
             assert pending.is_error is False
             assert pending.structured_content["records"] == conceptual_objects
+            fingerprint = await client.call_tool(
+                "get_model_change_set_fingerprint",
+                {
+                    "model_id": model_id,
+                    "model_change_set_id": change_set_id,
+                },
+            )
+            assert fingerprint.is_error is False
+            assert fingerprint.structured_content["draft_revision"] == 4
+            assert fingerprint.structured_content["dataset_count"] == len(
+                CHANGE_SET_DATASETS_BY_NAME
+            )
+            assert fingerprint.structured_content["record_count"] == sum(
+                len(records) for records in complete_model_graph().values()
+            )
+            assert "records" not in fingerprint.structured_content
+            assert len(fingerprint.structured_content["fingerprint"]) == 64
             validated = await client.call_tool(
                 "validate_model_change_set",
                 {
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
-                    "expected_draft_revision": 3,
+                    "expected_draft_revision": 4,
                 },
             )
             assert validated.is_error is False
-            assert validated.structured_content["valid"] is True, (
-                validated.structured_content
-            )
+            assert validated.structured_content["valid"] is True, validated.structured_content
             applied = await client.call_tool(
                 "apply_model_change_set",
                 {
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
-                    "expected_draft_revision": 3,
+                    "expected_draft_revision": 4,
                 },
             )
             assert applied.is_error is False
@@ -1172,7 +1222,7 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
                     "model_id": model_id,
                     "model_change_set_id": change_set_id,
                     "stage_batch_id": stage_batch_id,
-                    "expected_draft_revision": 2,
+                    "expected_draft_revision": 3,
                 },
             )
             assert terminal_replay.is_error is True
@@ -1200,8 +1250,8 @@ async def test_model_stage_batch_runs_through_validate_and_apply(
             (change_set_id,),
         ).fetchone()
 
-    assert stored == {"stage_batch_status": "committed", "committed_revision": 3}
-    assert section_puts == {"count": 2}
+    assert stored == {"stage_batch_status": "committed", "committed_revision": 4}
+    assert section_puts == {"count": 3}
 
 
 @pytest.mark.asyncio
@@ -1215,6 +1265,7 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
     _acquire_tenant_lock(postgres_database, tenant_id)
     content = "-- " + ("x" * 1_100_000) + " café\nSELECT 1 AS result;"
     record: dict[str, object] = {
+        "generated_code_is_locked": False,
         "modeled_entity_type": "logical_entity",
         "modeled_entity_name": "FragmentedCode",
         "artifact_name": "FragmentedCode.sql",
@@ -1235,9 +1286,7 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
         payload[unicode_offset + 1 :],
     ]
     assert len(payload) > MAX_MODEL_STAGE_CHUNK_BYTES
-    assert all(
-        0 < len(fragment) <= MAX_MODEL_STAGE_CHUNK_BYTES for fragment in fragments
-    )
+    assert all(0 < len(fragment) <= MAX_MODEL_STAGE_CHUNK_BYTES for fragment in fragments)
     chunk_hashes = [hashlib.sha256(fragment).hexdigest() for fragment in fragments]
 
     database = postgres_database.create_runtime_adapter()
@@ -1260,9 +1309,7 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
     await database.open()
     try:
         async with Client(server) as client:
-            created = await client.call_tool(
-                "create_model_change_set", {"model_id": model_id}
-            )
+            created = await client.call_tool("create_model_change_set", {"model_id": model_id})
             assert created.is_error is False
             change_set_id = created.structured_content["model_change_set_id"]
             begun = await client.call_tool(
@@ -1346,9 +1393,7 @@ async def test_model_stage_batch_reassembles_generated_code_json_fragments(
         metadata = row["input_metadata"]
         assert "payload_fragment_base64" not in metadata
         assert "payload_fragment" not in metadata
-        assert metadata["payload_fragment_base64_characters"] == len(
-            base64.b64encode(fragment)
-        )
+        assert metadata["payload_fragment_base64_characters"] == len(base64.b64encode(fragment))
 
 
 @pytest.mark.asyncio
@@ -1626,9 +1671,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
             assert descriptor["model_id"] == model_id
             assert descriptor["model_revision"] == 2
             assert descriptor["content_type"] == "application/zip"
-            snapshot_counts, serialized = _snapshot_archive(
-                snapshot_store.archive_content["model"]
-            )
+            snapshot_counts, serialized = _snapshot_archive(snapshot_store.archive_content["model"])
             dbml_result = await client.call_tool(
                 "export_model_dbml",
                 {
@@ -1659,9 +1702,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                 {"model_id": model_id},
             )
             assert rename_change_set.is_error is False
-            rename_change_set_id = rename_change_set.structured_content[
-                "model_change_set_id"
-            ]
+            rename_change_set_id = rename_change_set.structured_content["model_change_set_id"]
             rename_stage = await client.call_tool(
                 "stage_model_change_set",
                 {
@@ -1728,9 +1769,7 @@ async def test_all_model_datasets_materialize_and_round_trip_as_one_snapshot(
                 {"model_id": model_id},
             )
             assert invalid_eligibility.is_error is False
-            invalid_eligibility_id = invalid_eligibility.structured_content[
-                "model_change_set_id"
-            ]
+            invalid_eligibility_id = invalid_eligibility.structured_content["model_change_set_id"]
             non_bronze_profile = deepcopy(staged["profiling_profile"][0])
             non_bronze_profile.update(
                 {
@@ -2303,8 +2342,7 @@ def _replace_codes(value: object, *, code_prefix: str = "MODEL_TOOL") -> object:
     if isinstance(value, dict):
         mapping = cast(dict[object, object], value)
         replaced_mapping: dict[object, object] = {
-            key: _replace_codes(item, code_prefix=code_prefix)
-            for key, item in mapping.items()
+            key: _replace_codes(item, code_prefix=code_prefix) for key, item in mapping.items()
         }
         return replaced_mapping
     if isinstance(value, list):
@@ -2325,9 +2363,7 @@ def _snapshot_archive(content: bytes) -> tuple[dict[str, int], str]:
         assert manifest["snapshot_kind"] == "model"
         assert manifest["database_ids_included"] is False
         for definition in DATASETS:
-            rows = archive.read(f"model-snapshot/{definition.rows_path}").decode(
-                "utf-8"
-            )
+            rows = archive.read(f"model-snapshot/{definition.rows_path}").decode("utf-8")
             counts[definition.name] = len(rows.splitlines())
             serialized.append(rows)
     return counts, "".join(serialized)
@@ -2348,9 +2384,7 @@ def _assert_dbml_archive(content: bytes) -> None:
         assert manifest["snapshot_kind"] == "dbml"
         assert manifest["counts"]["dbml_file_count"] == 5
         logical = archive.read("model-dbml/files/logical_complete.dbml").decode()
-        dimensional = archive.read(
-            "model-dbml/files/dimensional_complete.dbml"
-        ).decode()
+        dimensional = archive.read("model-dbml/files/dimensional_complete.dbml").decode()
         assert 'Table "Order"' in logical
         assert "Ref logical_relationship_1:" in logical
         assert 'Table "SalesFact"' in dimensional

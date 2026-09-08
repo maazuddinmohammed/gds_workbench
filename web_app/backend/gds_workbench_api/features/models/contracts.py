@@ -16,6 +16,7 @@ type ModelWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
 ]
 
 

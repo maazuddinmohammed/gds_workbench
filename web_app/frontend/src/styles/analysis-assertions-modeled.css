@@ -132,6 +132,16 @@
   padding: 0.75rem;
 }
 
+fieldset.agent-run-grid {
+  min-width: 0;
+  margin: 0;
+  border: 0;
+}
+
+.agent-run-grid-two {
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
 .agent-run-grid label {
   display: grid;
   min-width: 0;
@@ -721,3 +731,59 @@
     border-left: 0;
   }
 }
+
+/* Analysis keeps inferred rationale separate from recorded measurements. */
+.analysis-count-comparison table { min-width: 28rem; }
+.analysis-count-comparison td { font-variant-numeric: tabular-nums; }
+.analysis-policy-details { margin-top: 1rem; font-size: 0.72rem; }
+.analysis-policy-details summary { cursor: pointer; color: var(--muted); }
+.analysis-policy-details code { display: block; margin-top: 0.65rem; overflow-wrap: anywhere; }
+
+.support-record-details { margin-top: 0.85rem; padding-top: 0.65rem; border-top: 1px solid var(--line); }
+.support-record-details summary { width: fit-content; color: var(--muted); font-size: 0.72rem; cursor: pointer; }
+
+.logical-detail-page .detail-section > h3,
+.dimensional-detail-page .detail-section > h3 { margin: 1.25rem 0 0; font-size: 0.84rem; color: var(--ink); }
+
+/* Record meaning leads; source and operational details remain available on demand. */
+.workflow-detail-page { width: min(64rem, 100%); }
+.workflow-detail-header { align-items: start; gap: 1rem; }
+.workflow-detail-header > div:first-child { min-width: 0; }
+.detail-badge-stack { flex-wrap: wrap; justify-content: end; max-width: 19rem; }
+.detail-primary { padding: 1.5rem 0 1.75rem; }
+.detail-primary > header { margin-bottom: 0.65rem; }
+.detail-primary .detail-prose.is-prominent { max-width: 68ch; border: 0; background: none; padding: 0; color: var(--ink); font-size: 1rem; line-height: 1.65; }
+.detail-fact-grid { grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: 1rem 1.5rem; }
+.detail-primary .detail-fact-grid { max-width: 54rem; }
+.detail-disclosure { padding: 1rem 0; }
+.detail-disclosure > summary { cursor: pointer; color: var(--ink-2); font-size: 0.85rem; }
+.detail-disclosure > summary h2 { display: inline; font-size: 0.85rem; font-weight: 600; }
+.detail-disclosure > summary > span { color: var(--muted); margin-left: 0.65rem; font-size: 0.75rem; }
+.detail-disclosure[open] > summary { margin-bottom: 1rem; }
+.entity-detail-attributes { table-layout: auto; min-width: 35rem; }
+.entity-detail-attributes :is(th, td) { padding: 0.7rem 0.8rem; overflow-wrap: anywhere; }
+.entity-detail-attributes td:first-child { font-weight: 600; }
+.metadata-enrichment-screen h1 { margin: 0 0 0.35rem; font-size: 1.35rem; letter-spacing: -0.03em; }
+.metadata-enrichment-screen .workflow-commandbar { align-items: center; }
+@media (max-width: 42rem) {
+  .detail-fact-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .detail-badge-stack { justify-content: start; }
+}
+
+.mapping-original-document { max-height: 30rem; overflow: auto; white-space: pre-wrap; overflow-wrap: anywhere; padding: 1rem; background: var(--soft); font-size: 0.75rem; }
+
+.modeled-source-mappings .workflow-table-scroll { max-height: none; }
+.modeled-source-mappings table { min-width: 40rem; }
+.modeled-source-mappings td { vertical-align: top; }
+.modeled-source-mappings td:first-child { min-width: 11rem; max-width: 20rem; overflow-wrap: anywhere; }
+.modeled-source-mappings .modeled-source-rationale { min-width: 16rem; max-width: 34rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.modeled-source-role { display: block; color: var(--muted); margin-top: 0.3rem; font-size: 0.72rem; }
+.modeled-source-detail { min-width: 6rem; }
+.modeled-source-detail[open] { width: min(30rem, 65vw); }
+.modeled-source-detail summary { cursor: pointer; color: var(--orange-dark); }
+.modeled-source-detail .mapping-document-section { padding: 0.75rem 0; margin: 0; }
+
+.workflow-detail-page .workflow-table-scroll > .entity-detail-attributes { min-width: 44rem; }
+.entity-detail-attributes .selection-column { width: 2.5rem; max-width: 2.5rem; padding-inline: 0.6rem; }
+.entity-detail-attributes td:not(:nth-child(5)) { white-space: nowrap; }
+.modeled-source-mappings .workflow-table-scroll > table { min-width: 40rem; }

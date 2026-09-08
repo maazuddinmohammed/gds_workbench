@@ -20,6 +20,7 @@ describe("governed Metadata experience", () => {
     await user.click(link);
 
     expect(await screen.findByRole("heading", { name: "Metadata" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Objects and Attributes" })).toHaveAttribute("href", "/tenants/7/metadata/objects");
     expect(screen.getByRole("button", { name: /Reference 8 sheets/ })).toHaveAttribute("aria-current", "page");
     expect(screen.getByRole("button", { name: /Foundational 4 sheets/ })).toBeVisible();
     expect(screen.getByRole("button", { name: /Operational 16 sheets/ })).toBeVisible();
@@ -50,6 +51,25 @@ describe("governed Metadata experience", () => {
     expect(within(detail).getByRole("button", { name: "Close Metadata row details" })).toHaveFocus();
     await user.keyboard("{Escape}");
     expect(screen.queryByRole("dialog", { name: "Row details" })).not.toBeInTheDocument();
+  });
+
+  it("distinguishes physical storage and inferred types in the attribute catalog and details", async () => {
+    const user = userEvent.setup();
+    renderMetadata(metadataFetchStub());
+    await screen.findByRole("table", { name: "System Types normalized Metadata" });
+    await user.click(screen.getByRole("button", { name: /Operational 16 sheets/ }));
+    await user.click(screen.getByRole("button", { name: "Source Attributes" }));
+    const table = await screen.findByRole("table", { name: "Source Attributes normalized Metadata" });
+    expect(within(table).getByRole("columnheader", { name: "Storage type" })).toBeVisible();
+    expect(within(table).getByRole("columnheader", { name: "Inferred type" })).toBeVisible();
+    expect(within(table).getByText("string")).toBeVisible();
+    expect(within(table).getByText("bigint")).toBeVisible();
+    await user.click(within(table).getByRole("button", { name: "Show details" }));
+    const detail = await screen.findByRole("dialog", { name: "Row details" });
+    expect(within(detail).getByText("Storage type").parentElement).toHaveTextContent("string");
+    expect(within(detail).getByText("Inferred type").parentElement).toHaveTextContent("bigint");
+    expect(within(detail).getByText("Is Locked").parentElement).toHaveTextContent("Yes");
+    expect(within(detail).getByText("Is Active").parentElement).toHaveTextContent("Yes");
   });
 
   it("does not expose the removed Metadata Discovery Scope dataset", async () => {
@@ -225,9 +245,11 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
           additionalProperties: false,
           properties: Object.fromEntries(item.columns.map((field) => [
             field,
-            field === "is_active"
-              ? { type: "boolean", title: "Is Active" }
-              : { type: "string", minLength: 1, maxLength: 400, title: title(field) },
+            field.startsWith("is_")
+              ? { type: "boolean", title: title(field) }
+              : field === "attribute_inferred_data_type"
+                ? { anyOf: [{ type: "string", maxLength: 100 }, { type: "null" }] }
+                : { type: "string", minLength: 1, maxLength: 400, title: title(field) },
           ])),
           required: item.columns,
         },
@@ -243,7 +265,10 @@ function metadataFetchStub(options: { hasLock?: boolean; registryStatus?: number
           ? [{ system_type_code: "CRM", system_type_name: "Customer system", is_active: true }]
           : dataset === "source_object" && !options.emptySource
             ? [{ tenant_code: "NWA", object_name: "Customer", is_active: true }]
-            : [],
+            : dataset === "source_attribute"
+              ? [{ tenant_code: "NWA", attribute_name: "customer_id", attribute_data_type: "string",
+                attribute_inferred_data_type: "bigint", is_locked: true, is_active: true }]
+              : [],
         next_cursor: null,
       });
     }
@@ -313,7 +338,8 @@ const registry: MetadataDatasetDescription[] = [
   descriptor("system_type", "System Types", "reference", ["system_type_code", "system_type_name", "is_active"], ["system_type_code"]),
   ...["connection_type", "object_type", "zone", "chunk_type", "file_type", "data_operation", "process_type"].map((name) => descriptor(name, title(name), "reference", [`${name}_code`, `${name}_name`])),
   descriptor("source_object", "Source Objects", "operational", ["tenant_code", "object_name", "is_active"], ["tenant_code", "object_name"]),
-  ...["source_attribute", "bronze_object", "bronze_attribute", "silver_object", "silver_attribute", "gold_object", "gold_attribute", "ingestion_object_mapping", "ingestion_attribute_mapping", "copy_group", "member_group", "copy_group_control", "copy", "process_group", "process"].map((name) => descriptor(name, title(name), "operational", ["tenant_code", `${name}_name`, "is_active"], ["tenant_code", `${name}_name`])),
+  descriptor("source_attribute", "Source Attributes", "operational", ["tenant_code", "attribute_name", "attribute_data_type", "attribute_inferred_data_type", "is_locked", "is_active"], ["tenant_code", "attribute_name"]),
+  ...["bronze_object", "bronze_attribute", "silver_object", "silver_attribute", "gold_object", "gold_attribute", "ingestion_object_mapping", "ingestion_attribute_mapping", "copy_group", "member_group", "copy_group_control", "copy", "process_group", "process"].map((name) => descriptor(name, title(name), "operational", ["tenant_code", `${name}_name`, "is_active"], ["tenant_code", `${name}_name`])),
 ];
 
 function changeSetDetail({ revision, status, stagedRecords, validationOutcome, dataset }: { revision: number; status: string; stagedRecords: Array<Record<string, string | boolean>>; validationOutcome: Record<string, unknown> | null; dataset: string | null }) {

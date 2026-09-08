@@ -9,6 +9,15 @@ from gds_etl_workbench.application.identity import IdentityProvider
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.snapshots.model import ModelDataset
 
+from gds_workbench_api.features.model_change_sets.input_scope import AddInputScopeRequest
+from gds_workbench_api.features.model_targets.contracts import (
+    ApplyModelBindingRequest,
+    GeneratedBindingsPreview,
+    GenerateModelBindingsRequest,
+    ModelBindingPreview,
+    PreviewModelBindingRequest,
+)
+
 from .contracts import (
     ApplyModelChangeSetResult,
     ArchiveModelChangeSetResult,
@@ -19,12 +28,18 @@ from .contracts import (
     CreateModelChangeSetResult,
     ExpectedDraftRevisionRequest,
     GetModelChangeSetResult,
+    ModelRecordHistoryPage,
+    PreviewModelRecordsRequest,
+    PreviewModelRecordsResult,
     PutModelStageChunkRequest,
     PutModelStageChunkResult,
+    ReviewModelRecordsRequest,
+    ReviewModelRecordsResult,
     StageModelChangeSetRequest,
     StageModelChangeSetResult,
     ValidateModelChangeSetResult,
 )
+from .review import ModelReviewDataset
 
 type PositivePathId = Annotated[int, Path(gt=0)]
 type ChunkIndex = Annotated[int, Path(gt=0, le=MAX_STAGE_CHUNKS)]
@@ -32,6 +47,59 @@ type IdempotencyKey = Annotated[UUID, Header(alias="Idempotency-Key")]
 
 
 class ModelChangeSetService(Protocol):
+    async def add_input_scope(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: AddInputScopeRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult: ...
+
+    async def bind_registered_target(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: PreviewModelBindingRequest
+        | ApplyModelBindingRequest
+        | GenerateModelBindingsRequest,
+        idempotency_key: UUID | None = None,
+    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult: ...
+
+    async def list_review_records(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        dataset: ModelReviewDataset,
+        expected_model_revision: int,
+        page: int = 1,
+    ) -> ModelRecordHistoryPage: ...
+
+    async def preview_record_review(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: PreviewModelRecordsRequest,
+        page: int = 1,
+    ) -> PreviewModelRecordsResult: ...
+
+    async def review_records(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        command: ReviewModelRecordsRequest,
+        idempotency_key: UUID,
+    ) -> ReviewModelRecordsResult: ...
+
     async def create_or_resume(
         self,
         principal: RequestPrincipal,
@@ -141,6 +209,173 @@ def create_model_change_sets_router(
     router = APIRouter(
         prefix="/api/v1/tenants/{tenant_id}/models/{model_id}/change-sets",
         tags=["model-change-sets"],
+    )
+
+    async def add_input_scope(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: AddInputScopeRequest,
+        idempotency_key: IdempotencyKey,
+    ) -> ReviewModelRecordsResult:
+        return await service.add_input_scope(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/input-scope/add",
+        add_input_scope,
+        methods=["POST"],
+        response_model=ReviewModelRecordsResult,
+    )
+
+    async def preview_binding(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: PreviewModelBindingRequest,
+    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
+        return await service.bind_registered_target(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+        )
+
+    router.add_api_route(
+        "/bindings/preview", preview_binding, methods=["POST"], response_model=ModelBindingPreview
+    )
+
+    async def apply_binding(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: ApplyModelBindingRequest,
+        idempotency_key: IdempotencyKey,
+    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
+        return await service.bind_registered_target(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/bindings/apply", apply_binding, methods=["POST"], response_model=ReviewModelRecordsResult
+    )
+
+    async def generate_bindings(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: GenerateModelBindingsRequest,
+    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
+        return await service.bind_registered_target(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+        )
+
+    async def apply_generated_bindings(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: GenerateModelBindingsRequest,
+        idempotency_key: IdempotencyKey,
+    ) -> ModelBindingPreview | GeneratedBindingsPreview | ReviewModelRecordsResult:
+        return await service.bind_registered_target(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/bindings/generate/preview",
+        generate_bindings,
+        methods=["POST"],
+        response_model=GeneratedBindingsPreview,
+    )
+    router.add_api_route(
+        "/bindings/generate/apply",
+        apply_generated_bindings,
+        methods=["POST"],
+        response_model=ReviewModelRecordsResult,
+    )
+
+    async def list_review_records(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        dataset: ModelReviewDataset,
+        expected_model_revision: Annotated[int, Query(gt=0)],
+        page: Annotated[int, Query(ge=1, le=250)] = 1,
+    ) -> ModelRecordHistoryPage:
+        return await service.list_review_records(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            dataset=dataset,
+            expected_model_revision=expected_model_revision,
+            page=page,
+        )
+
+    router.add_api_route(
+        "/review/records",
+        list_review_records,
+        methods=["GET"],
+        response_model=ModelRecordHistoryPage,
+    )
+
+    async def preview_record_review(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: PreviewModelRecordsRequest,
+        page: Annotated[int, Query(ge=1, le=250)] = 1,
+    ) -> PreviewModelRecordsResult:
+        return await service.preview_record_review(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            page=page,
+        )
+
+    router.add_api_route(
+        "/review/preview",
+        preview_record_review,
+        methods=["POST"],
+        response_model=PreviewModelRecordsResult,
+    )
+
+    async def review_records(
+        request: Request,
+        tenant_id: PositivePathId,
+        model_id: PositivePathId,
+        command: ReviewModelRecordsRequest,
+        idempotency_key: IdempotencyKey,
+    ) -> ReviewModelRecordsResult:
+        return await service.review_records(
+            identity_provider.authenticate(request.headers),
+            tenant_id=tenant_id,
+            model_id=model_id,
+            command=command,
+            idempotency_key=idempotency_key,
+        )
+
+    router.add_api_route(
+        "/review",
+        review_records,
+        methods=["POST"],
+        response_model=ReviewModelRecordsResult,
     )
 
     async def create_or_resume(

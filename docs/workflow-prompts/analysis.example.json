@@ -1,0 +1,249 @@
+{
+  "status": "synthetic_design_example",
+  "variables": {
+    "source_context": [
+      {
+        "tenant_code": "ACME",
+        "tenant_description": "Wholesale distribution business.",
+        "system_code": "ERP",
+        "system_description": "Manages sales orders and billing.",
+        "system_type_code": "ERP",
+        "system_type_description": "Systems for managing core business operations.",
+        "connection_code": "ERP_SOURCE",
+        "connection_description": null,
+        "connection_type_code": "SQL_SERVER",
+        "connection_type_description": "Connection to a Microsoft SQL Server database.",
+        "zone_code": "source",
+        "zone_description": "Originating source data."
+      }
+    ],
+    "gds_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "zone_code": "bronze",
+        "zone_description": "Stores ingested source data."
+      }
+    ],
+    "object_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Orders",
+        "object_description": "Sales orders; one row represents one order.",
+        "zone_code": "bronze"
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Customers",
+        "object_description": "ERP customer accounts; one row per customer account.",
+        "zone_code": "bronze"
+      }
+    ],
+    "object_attribute_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Orders",
+        "attributes": [
+          {
+            "attribute_name": "CustomerCode",
+            "attribute_description": "ERP customer account that placed this order.",
+            "attribute_data_type": "VARCHAR",
+            "attribute_inferred_data_type": "VARCHAR",
+            "attribute_nullability": false,
+            "is_natural_key": false,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": {
+              "profiled_at": "2026-09-07T14:30:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 1000,
+              "non_null_count": 1000,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 100,
+              "min_data_length": 6,
+              "max_data_length": 6,
+              "avg_data_length": 6,
+              "percent_populated": 100,
+              "percent_duplicates": 90,
+              "percent_null": 0,
+              "percent_blank": 0,
+              "percent_distinct": 10
+            }
+          }
+        ],
+        "selected_attribute_names": [
+          "CustomerCode"
+        ]
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Customers",
+        "attributes": [
+          {
+            "attribute_name": "CustomerCode",
+            "attribute_description": "Business identifier of this ERP customer account.",
+            "attribute_data_type": "VARCHAR",
+            "attribute_inferred_data_type": "VARCHAR",
+            "attribute_nullability": false,
+            "is_natural_key": true,
+            "is_surrogate_key": false,
+            "is_masking_required": false,
+            "is_meta_data": false,
+            "profile": {
+              "profiled_at": "2026-09-07T14:30:00Z",
+              "row_scope": "all_rows",
+              "batch_attribute_name": null,
+              "batch_id": null,
+              "row_count": 100,
+              "non_null_count": 100,
+              "null_count": 0,
+              "blank_count": 0,
+              "distinct_count": 100,
+              "min_data_length": 6,
+              "max_data_length": 6,
+              "avg_data_length": 6,
+              "percent_populated": 100,
+              "percent_duplicates": 0,
+              "percent_null": 0,
+              "percent_blank": 0,
+              "percent_distinct": 100
+            }
+          }
+        ],
+        "selected_attribute_names": [
+          "CustomerCode"
+        ]
+      }
+    ],
+    "ingestion_mapping": [
+      {
+        "source": {
+          "tenant_code": "ACME",
+          "system_code": "ERP",
+          "connection_code": "ERP_SOURCE",
+          "object_schema": "sales",
+          "object_name": "SalesOrder",
+          "object_description": "Sales orders created in ERP; one row per order."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders"
+        }
+      },
+      {
+        "source": {
+          "tenant_code": "ACME",
+          "system_code": "ERP",
+          "connection_code": "ERP_SOURCE",
+          "object_schema": "sales",
+          "object_name": "Customer",
+          "object_description": "ERP customer accounts; one row per customer account."
+        },
+        "target": {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Customers"
+        }
+      }
+    ],
+    "object_relationship_context": [
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Orders",
+        "incoming_relationships": [],
+        "outgoing_relationships": []
+      },
+      {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Customers",
+        "incoming_relationships": [],
+        "outgoing_relationships": []
+      }
+    ],
+    "modeling_assertions": [
+      {
+        "modeling_assertion_record_key": "order_customer_reference",
+        "modeling_assertion_document_name": "ERP relationship notes",
+        "modeling_assertion_record_type": "relationship",
+        "modeling_assertion_text": "Within this ERP source, Orders.CustomerCode references the customer account identified by Customers.CustomerCode.",
+        "modeling_assertion_details": {
+          "from": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "attribute_name": "CustomerCode"
+          },
+          "to": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers",
+            "attribute_name": "CustomerCode"
+          }
+        },
+        "modeling_assertion_source_location": {
+          "section": "Orders and customers"
+        },
+        "modeling_assertion_confidence": "high"
+      }
+    ]
+  },
+  "expected_candidate": {
+    "relationships": [
+      {
+        "from_tenant_code": "GDS",
+        "from_system_code": "WAREHOUSE",
+        "from_connection_code": "MAIN",
+        "from_object_schema": "bronze",
+        "from_object_name": "Orders",
+        "from_attribute_name": "CustomerCode",
+        "to_tenant_code": "GDS",
+        "to_system_code": "WAREHOUSE",
+        "to_connection_code": "MAIN",
+        "to_object_schema": "bronze",
+        "to_object_name": "Customers",
+        "to_attribute_name": "CustomerCode",
+        "relationship_kind": "reference",
+        "relationship_confidence": "high",
+        "relationship_basis": "The saved Attribute descriptions identify the ordering-customer reference and ERP customer identifier; assertion order_customer_reference explicitly links these endpoints within the same ERP source. The saved all-row Customers Profile has 100 non-null and 100 distinct values, supporting target uniqueness in that measured scope. No join-coverage measurement is supplied."
+      }
+    ]
+  },
+  "unsupported_case": {
+    "scenario": "Two independent CRMs both use CustomerID, but no evidence establishes a shared identifier domain or cross-system identity.",
+    "expected_candidate": {
+      "relationships": []
+    }
+  }
+}

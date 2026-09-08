@@ -3,6 +3,7 @@ from pathlib import Path
 
 _ROOT = Path(__file__).parents[1]
 _EXPECTED = {
+    "metadata_enrichment.py": "metadata_enrichment",
     "profiling.py": "profiling",
     "analysis_inference.py": "analysis_inference",
     "analysis_validation.py": "analysis_validation",
@@ -78,10 +79,11 @@ def test_notebook_runtime_dependencies_are_explicit_and_pinned() -> None:
         "databricks-sdk==0.133.0",
         "databricks-sql-connector==4.4.0",
         "fastapi==0.141.1",
-        "langchain==1.3.15",
-        "langchain-openai==1.5.1",
+        "jinja2==3.1.6",
+        "jsonschema==4.26.0",
         "mcp==2.0.0",
         "openai-agents==0.22.0",
+        "httpx2==2.10.0",
         "openpyxl==3.1.5",
         "psycopg[binary]==3.3.4",
         "psycopg-pool==3.3.1",
@@ -98,12 +100,14 @@ def test_notebook_control_has_no_app_http_client_surface() -> None:
     for forbidden in (
         "AppName",
         "WaitTimeoutSeconds",
-        "databricks.sdk",
         "requests",
         "oidc/v1/token",
         "apiToken()",
     ):
         assert forbidden not in source
+    for path in source_root.glob("*.py"):
+        if path.name != "preflight.py":
+            assert "databricks.sdk" not in path.read_text()
 
 
 def test_readme_documents_independent_source_runtime_and_fixed_identity() -> None:

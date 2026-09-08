@@ -1,27 +1,32 @@
+import json
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import SecretStr
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
+    LocalAgentToolDefinition,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidation,
+    ValidationRepairRunner,
+    load_default_agent_context_policy,
 )
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
-    DatabricksModelAuthentication,
     FoundryApiKeyAuthentication,
     FoundryModelAuthentication,
-    LangChainCreateAgentAdapter,
     OpenAIAgentsSdkAdapter,
     OpenAIProviderCredentials,
 )
 from gds_workbench_api.integrations.agents.configuration import (
     AgentProviderConnection,
 )
+from pydantic import JsonValue, SecretStr, ValidationError
 
 
 def _request(
@@ -54,124 +59,171 @@ def _request(
 class FakeModelAuthentication:
     async def authenticate(self) -> OpenAIProviderCredentials:
         return OpenAIProviderCredentials(
-            api_key=SecretStr("short-lived-databricks-token"),
-            base_url="https://fixture.azuredatabricks.net/serving-endpoints",
+            api_key=SecretStr("short-lived-foundry-token"),
+            base_url="https://fixture.openai.azure.com/openai/v1/",
+        )
+
+
+def test_agent_connection_rejects_removed_provider() -> None:
+    with pytest.raises(ValidationError):
+        AgentProviderConnection.model_validate(
+            {
+                "provider_code": "databricks",
+                "model_code": "removed-model",
+                "model_endpoint": "removed-endpoint",
+                "timeout_seconds": 90,
+            }
         )
 
 
 @pytest.mark.asyncio
-async def test_langchain_adapter_uses_prompt_json_and_bounded_turns(
+async def test_openai_adapter_rejects_removed_sdk_before_provider_io() -> None:
+    connection = AgentProviderConnection(
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
+        model_endpoint="fixture-endpoint",
+        timeout_seconds=90,
+    )
+    with pytest.raises(ValueError, match="requires one authentication adapter"):
+        OpenAIAgentsSdkAdapter(connections=(connection,))
+    adapter = OpenAIAgentsSdkAdapter(
+        connections=(connection,),
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
+    )
+    with pytest.raises(WorkbenchError) as caught:
+        await adapter.execute(
+            _request(
+                sdk_code="langchain_create_agent",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
+            )
+        )
+    assert caught.value.code == "invalid_request"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "malformed",
+    (
+        '```json\n{"entities":[]}\n```',
+        '{"entities":[',
+        '{"entities":[1],"entities":[]}',
+        '{"descriptions":{"target":"first","target":"second"}}',
+    ),
+    ids=("fenced", "incomplete", "duplicate-field", "duplicate-description-target"),
+)
+async def test_provider_json_format_errors_reach_bounded_validation_repair(
     monkeypatch: pytest.MonkeyPatch,
+    malformed: str,
 ) -> None:
-    captured: dict[str, Any] = {}
+    outputs = iter((malformed, '{"entities":[]}'))
+    contexts: list[dict[str, Any]] = []
 
-    class FakeGraph:
-        async def ainvoke(
-            self,
-            values: dict[str, Any],
-            config: dict[str, Any],
-        ) -> dict[str, Any]:
-            captured["values"] = values
-            captured["config"] = config
-            return {
-                "messages": [
-                    SimpleNamespace(type="ai", tool_calls=[], content="intermediate"),
-                    SimpleNamespace(
-                        type="ai",
-                        tool_calls=[{"name": "local"}],
-                        content=[
-                            {"type": "reasoning", "reasoning": "not an answer"},
-                            {"type": "text", "text": '{"entities":[]}'},
-                        ],
-                    ),
-                ],
-            }
+    class FakeClient:
+        def __init__(self, **_: Any) -> None:
+            pass
 
-    def fake_model(**kwargs: Any) -> str:
-        captured["model"] = kwargs
-        return "model"
+        async def close(self) -> None:
+            pass
 
-    def fake_create_agent(**kwargs: Any) -> FakeGraph:
-        captured["agent"] = kwargs
-        return FakeGraph()
+    class FakeRunner:
+        @staticmethod
+        async def run(_: object, payload: str, **__: Any) -> SimpleNamespace:
+            contexts.append(json.loads(payload)["context"])
+            return SimpleNamespace(
+                final_output=next(outputs), raw_responses=[object()], new_items=[]
+            )
 
-    monkeypatch.setattr(agent_adapters, "ChatOpenAI", fake_model)
-    monkeypatch.setattr(agent_adapters, "create_agent", fake_create_agent)
-    adapter = LangChainCreateAgentAdapter(
+    class Validator:
+        async def validate(self, candidate: JsonValue) -> AgentCandidateValidation:
+            assert candidate == {"entities": []}
+            return AgentCandidateValidation(issues=())
+
+    monkeypatch.setattr(agent_adapters, "AsyncOpenAI", FakeClient)
+    monkeypatch.setattr(agent_adapters, "OpenAIChatCompletionsModel", FakeClient)
+    monkeypatch.setattr(agent_adapters, "Agent", FakeClient)
+    monkeypatch.setattr(agent_adapters, "Runner", FakeRunner)
+    adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
-                model_endpoint="production-agent-endpoint",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
+                model_endpoint="fixture-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": FakeModelAuthentication()},
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
-
-    result = await adapter.execute(
-        _request(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-primary",
-        )
+    result = await ValidationRepairRunner(
+        executor=adapter,
+        policy=load_default_agent_context_policy(),
+    ).run(
+        request=_request(
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-primary",
+        ),
+        validator=Validator(),
     )
 
     assert result.candidate == {"entities": []}
-    assert result.turn_count == 2
-    assert result.tool_call_count == 1
-    assert "response_format" not in captured["agent"]
-    assert captured["agent"]["system_prompt"].endswith(AGENT_OUTPUT_CONTRACT_INSTRUCTION)
-    assert captured["config"] == {"recursion_limit": 13}
-    assert captured["model"]["model"] == "production-agent-endpoint"
-    assert "store" not in captured["model"]
-    assert "short-lived-databricks-token" not in repr(adapter)
+    assert result.attempt_count == 2
+    assert "original_context" not in contexts[0]
+    assert "original_context" not in contexts[1]
+    assert contexts[1]["repair"]["previous_candidate"] == malformed
+    assert contexts[1]["repair"]["validation_issues"][0]["code"] == "candidate.output_schema_type"
+    assert malformed not in repr(result)
 
 
 @pytest.mark.asyncio
-async def test_langchain_adapter_routes_exact_model_with_shared_provider_authentication(
+async def test_openai_adapter_routes_exact_model_with_shared_provider_authentication(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Any] = {}
 
-    class FakeGraph:
-        async def ainvoke(self, *_: Any, **__: Any) -> dict[str, Any]:
-            return {
-                "messages": [SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')]
-            }
+    class FakeClient:
+        def __init__(self, **_: Any) -> None: ...
+
+        async def close(self) -> None: ...
+
+    class FakeRunner:
+        @staticmethod
+        async def run(*_: Any, **__: Any) -> SimpleNamespace:
+            return SimpleNamespace(
+                final_output='{"entities":[]}', raw_responses=[object()], new_items=[]
+            )
 
     def fake_model(**kwargs: Any) -> str:
         captured["model"] = kwargs
         return "model"
 
-    def fake_create_agent(**_: Any) -> FakeGraph:
-        return FakeGraph()
-
-    monkeypatch.setattr(agent_adapters, "ChatOpenAI", fake_model)
-    monkeypatch.setattr(agent_adapters, "create_agent", fake_create_agent)
-    adapter = LangChainCreateAgentAdapter(
+    monkeypatch.setattr(agent_adapters, "AsyncOpenAI", FakeClient)
+    monkeypatch.setattr(agent_adapters, "OpenAIChatCompletionsModel", fake_model)
+    monkeypatch.setattr(agent_adapters, "Agent", FakeClient)
+    monkeypatch.setattr(agent_adapters, "Runner", FakeRunner)
+    adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="primary-endpoint",
                 timeout_seconds=90,
             ),
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-secondary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-secondary",
                 model_endpoint="secondary-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": FakeModelAuthentication()},
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
 
     await adapter.execute(
         _request(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-secondary",
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-secondary",
         )
     )
 
@@ -179,71 +231,10 @@ async def test_langchain_adapter_routes_exact_model_with_shared_provider_authent
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("reasoning_effort_code", "expected_reasoning_effort"),
-    (("default", None), ("none", "none")),
-)
-async def test_langchain_adapter_distinguishes_provider_default_and_explicit_none(
-    monkeypatch: pytest.MonkeyPatch,
-    reasoning_effort_code: str,
-    expected_reasoning_effort: str | None,
-) -> None:
-    captured: dict[str, Any] = {}
-
-    class FakeGraph:
-        async def ainvoke(self, *_: Any, **__: Any) -> dict[str, Any]:
-            return {
-                "messages": [SimpleNamespace(type="ai", tool_calls=[], content='{"entities":[]}')]
-            }
-
-    def fake_model(**kwargs: Any) -> dict[str, Any]:
-        return captured.setdefault("model", kwargs)
-
-    def fake_create_agent(**_: Any) -> FakeGraph:
-        return FakeGraph()
-
-    monkeypatch.setattr(
-        agent_adapters,
-        "ChatOpenAI",
-        fake_model,
-    )
-    monkeypatch.setattr(agent_adapters, "create_agent", fake_create_agent)
-    adapter = LangChainCreateAgentAdapter(
-        connections=(
-            AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
-                model_endpoint="primary-endpoint",
-                timeout_seconds=90,
-            ),
-        ),
-        model_authentications={"databricks": FakeModelAuthentication()},
-    )
-    request = _request(
-        sdk_code="langchain_create_agent",
-        provider_code="databricks",
-        model_code="databricks-primary",
-    )
-
-    await adapter.execute(
-        request.model_copy(
-            update={
-                "selection": request.selection.model_copy(
-                    update={"reasoning_effort_code": reasoning_effort_code}
-                )
-            }
-        )
-    )
-
-    if expected_reasoning_effort is None:
-        assert "reasoning_effort" not in captured["model"]
-    else:
-        assert captured["model"]["reasoning_effort"] == expected_reasoning_effort
-
-
-@pytest.mark.asyncio
+@pytest.mark.parametrize("empty_tool_selection", (False, True), ids=("one-shot", "zero-tools"))
 async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     monkeypatch: pytest.MonkeyPatch,
+    empty_tool_selection: bool,
 ) -> None:
     captured: dict[str, Any] = {}
 
@@ -265,6 +256,13 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     class FakeToolCall:
         pass
 
+    class EmptyToolCatalog:
+        definitions: tuple[LocalAgentToolDefinition, ...] = ()
+        max_cumulative_result_bytes = 1024
+
+        def invoke(self, tool_name: str, arguments: Mapping[str, JsonValue]) -> JsonValue:
+            raise AssertionError("No tools are enabled")
+
     class FakeRunner:
         @staticmethod
         async def run(*args: Any, **kwargs: Any) -> SimpleNamespace:
@@ -272,7 +270,7 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
             return SimpleNamespace(
                 final_output='{"relationships":[]}',
                 raw_responses=[object(), object(), object()],
-                new_items=[FakeToolCall(), object()],
+                new_items=[] if empty_tool_selection else [FakeToolCall(), object()],
             )
 
     monkeypatch.setattr(agent_adapters, "AsyncOpenAI", FakeClient)
@@ -283,33 +281,49 @@ async def test_openai_agents_adapter_disables_tracing_and_parses_json(
     adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=80,
             ),
         ),
-        model_authentications={"databricks": FakeModelAuthentication()},
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
 
-    result = await adapter.execute(
-        _request(
-            sdk_code="openai_agents_sdk",
-            provider_code="databricks",
-            model_code="databricks-primary",
-        )
+    request = _request(
+        sdk_code="openai_agents_sdk",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
     )
+    if empty_tool_selection:
+        request = AgentExecutionRequest.model_validate(
+            {
+                **request.model_dump(),
+                "execution_mode": "tool_assisted",
+                "local_tool_catalog": EmptyToolCatalog(),
+                "allowed_tool_names": (),
+            }
+        )
+
+    result = await adapter.execute(request)
 
     assert result.candidate == {"relationships": []}
     assert result.turn_count == 3
-    assert result.tool_call_count == 1
-    _, run_kwargs = cast(tuple[tuple[Any, ...], dict[str, Any]], captured["run"])
+    assert result.tool_call_count == (0 if empty_tool_selection else 1)
+    run_args, run_kwargs = cast(tuple[tuple[Any, ...], dict[str, Any]], captured["run"])
     assert run_kwargs["max_turns"] == 6
     assert run_kwargs["run_config"].tracing_disabled is True
     assert run_kwargs["run_config"].trace_include_sensitive_data is False
     assert captured["closed"] is True
     assert captured["model"]["model"] == "production-agent-endpoint"
     assert captured["agent"]["model_settings"].store is None
+    assert captured["agent"]["tools"] == []
+    assert captured["agent"]["model_settings"].tool_choice is None
+    assert json.loads(run_args[1]) == {
+        "instruction": request.instruction_prompt,
+        "context": {"repair": None},
+        "required_output_schema": request.output_schema,
+    }
     assert captured["agent"]["instructions"].endswith(AGENT_OUTPUT_CONTRACT_INSTRUCTION)
 
 
@@ -357,18 +371,18 @@ async def test_openai_agents_adapter_distinguishes_provider_default_and_explicit
     adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="primary-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": FakeModelAuthentication()},
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
     request = _request(
         sdk_code="openai_agents_sdk",
-        provider_code="databricks",
-        model_code="databricks-primary",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
     )
 
     await adapter.execute(
@@ -389,79 +403,18 @@ async def test_openai_agents_adapter_distinguishes_provider_default_and_explicit
 
 @pytest.mark.asyncio
 async def test_adapter_rejects_provider_without_configured_connection() -> None:
-    adapter = LangChainCreateAgentAdapter(connections=())
+    adapter = OpenAIAgentsSdkAdapter(connections=())
 
     with pytest.raises(WorkbenchError) as caught:
         await adapter.execute(
             _request(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
-                model_code="databricks-primary",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
             )
         )
 
     assert caught.value.code == "invalid_request"
-
-
-@pytest.mark.asyncio
-async def test_databricks_model_authentication_uses_unified_oauth(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    class FakeConfig:
-        host = "https://fixture.azuredatabricks.net"
-
-        @staticmethod
-        def authenticate() -> dict[str, str]:
-            return {"Authorization": "Bearer never-log-this-token"}
-
-    class FakeWorkspace:
-        def __init__(self, **kwargs: object) -> None:
-            assert kwargs["product"] == "gds-workbench-web"
-            assert kwargs["auth_type"] == "oauth-m2m"
-            assert kwargs["debug_headers"] is False
-            self.config = FakeConfig()
-
-    monkeypatch.setattr(agent_adapters, "WorkspaceClient", FakeWorkspace)
-
-    credentials = await DatabricksModelAuthentication().authenticate()
-
-    assert credentials.base_url == ("https://fixture.azuredatabricks.net/serving-endpoints")
-    assert credentials.api_key.get_secret_value() == "never-log-this-token"
-    assert "never-log-this-token" not in repr(credentials)
-
-
-@pytest.mark.asyncio
-async def test_databricks_notebook_authentication_uses_default_unified_auth(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, object] = {}
-
-    class FakeConfig:
-        host = "https://fixture.azuredatabricks.net"
-
-        @staticmethod
-        def authenticate() -> dict[str, str]:
-            return {"Authorization": "Bearer never-log-this-notebook-token"}
-
-    class FakeWorkspace:
-        def __init__(self, **kwargs: object) -> None:
-            captured.update(kwargs)
-            self.config = FakeConfig()
-
-    monkeypatch.setattr(agent_adapters, "WorkspaceClient", FakeWorkspace)
-
-    authentication = DatabricksModelAuthentication(mode="notebook")
-    credentials = await authentication.authenticate()
-
-    assert captured == {
-        "debug_headers": False,
-        "product": "gds-workbench-notebook",
-        "product_version": "0.1.0",
-    }
-    assert "auth_type" not in captured
-    assert credentials.api_key.get_secret_value() == "never-log-this-notebook-token"
-    assert "never-log-this-notebook-token" not in repr(credentials)
-    assert "never-log-this-notebook-token" not in repr(authentication)
 
 
 @pytest.mark.asyncio
@@ -546,23 +499,23 @@ async def test_foundry_authentication_uses_direct_entra_token(
 
 @pytest.mark.asyncio
 async def test_adapter_requires_selected_model_mapping() -> None:
-    adapter = LangChainCreateAgentAdapter(
+    adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": FakeModelAuthentication()},
+        model_authentications={"microsoft_foundry": FakeModelAuthentication()},
     )
 
     with pytest.raises(WorkbenchError) as caught:
         await adapter.execute(
             _request(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
                 model_code="different-model",
             )
         )

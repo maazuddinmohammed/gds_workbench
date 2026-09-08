@@ -8,15 +8,15 @@ import pytest
 from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.change_sets import metadata as canonical_metadata
+from gds_etl_workbench.application.change_sets.metadata_validation import (
+    MetadataChangeSetValidation,
+)
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from gds_etl_workbench.application.change_sets import metadata as canonical_metadata
-from gds_etl_workbench.application.change_sets.metadata_validation import MetadataChangeSetValidation
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
-from psycopg.types.json import Jsonb
-
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_workbench_api.features.metadata.workbook import (
     XLSX_MEDIA_TYPE,
     MetadataWorkbookSheet,
@@ -40,6 +40,7 @@ from gds_workbench_api.features.metadata_change_sets.service import (
     DatabaseMetadataChangeSetService,
 )
 from gds_workbench_api.main import create_app
+from psycopg.types.json import Jsonb
 
 _CHANGE_SET_ID = UUID("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
 _IDEMPOTENCY_KEY = UUID("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
@@ -319,9 +320,7 @@ def test_metadata_change_set_routes_derive_identity_and_expose_every_command() -
             content=b"bounded workbook",
         )
 
-    assert [
-        response.status_code for response in (created, staged, fetched, validated)
-    ] == [
+    assert [response.status_code for response in (created, staged, fetched, validated)] == [
         201,
         200,
         200,

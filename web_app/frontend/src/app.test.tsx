@@ -523,6 +523,18 @@ describe("Active Scope", () => {
     const drawer = await screen.findByRole("complementary", { name: "Model Input Scope Object details" });
     expect(within(drawer).getByRole("heading", { name: "customer_raw" })).toBeVisible();
     expect(within(drawer).getByText("customer_id")).toBeVisible();
+    expect(within(drawer).getByRole("link", { name: "Review physical metadata" })).toHaveAttribute("href", "/tenants/7/metadata/objects?objectId=501");
+    const attributes = within(drawer).getByRole("table", { name: "Attributes for customer_raw" });
+    expect(within(attributes).getByRole("columnheader", { name: "Storage type" })).toBeVisible();
+    expect(within(attributes).getByRole("columnheader", { name: "Inferred type" })).toBeVisible();
+    expect(within(attributes).getByRole("columnheader", { name: "Lock" })).toBeVisible();
+    const attributeRows = within(attributes).getAllByRole("row").slice(1);
+    expect(within(attributeRows[0]!).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "customer_id", "string", "bigint", "No", "Yes", "Locked",
+    ]);
+    expect(within(attributeRows[1]!).getAllByRole("cell").map((cell) => cell.textContent)).toEqual([
+      "customer_name", "string", "Not inferred", "Yes", "No", "Open",
+    ]);
     expect(within(drawer).getByText("Source or Bronze input").parentElement).toHaveTextContent(
       "Eligible",
     );
@@ -808,7 +820,8 @@ const modelInputScopeDetailPayload = {
       attribute_name: "customer_id",
       attribute_ordinal_position: 1,
       attribute_description: "Customer identifier",
-      attribute_data_type: "bigint",
+      attribute_data_type: "string",
+      attribute_inferred_data_type: "bigint",
       attribute_nullability: false,
       is_surrogate_key: false,
       is_natural_key: true,
@@ -816,6 +829,7 @@ const modelInputScopeDetailPayload = {
       is_masking_required: false,
       is_mapped: false,
       is_purge: false,
+      is_locked: true,
       is_active: true,
     },
     {
@@ -824,6 +838,7 @@ const modelInputScopeDetailPayload = {
       attribute_ordinal_position: 2,
       attribute_description: null,
       attribute_data_type: "string",
+      attribute_inferred_data_type: null,
       attribute_nullability: true,
       is_surrogate_key: false,
       is_natural_key: false,
@@ -831,6 +846,7 @@ const modelInputScopeDetailPayload = {
       is_masking_required: false,
       is_mapped: false,
       is_purge: false,
+      is_locked: false,
       is_active: true,
     },
   ],

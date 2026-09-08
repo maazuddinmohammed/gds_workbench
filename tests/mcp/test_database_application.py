@@ -18,6 +18,9 @@ if TYPE_CHECKING:
 
 
 APPLICATION_TABLES = {
+    "metadata_enrichment_result",
+    "metadata_review_event",
+    "workflow_run_model_request",
     "output_template",
     "output_template_field",
     "principal_preference",
@@ -437,11 +440,7 @@ def test_web_workflow_provenance_is_fenced_to_run_or_same_model(
         (
             table_schema,
             table_name,
-            (
-                (column_name,)
-                if table_name in parent_derived_model
-                else (column_name, "model_id")
-            ),
+            ((column_name,) if table_name in parent_derived_model else (column_name, "model_id")),
         )
         for table_schema, table_name, column_name in WEB_PROVENANCE_COLUMNS
     }
@@ -1512,8 +1511,8 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
                 workflow_stage_order,
                 workflow_stage_is_agentic
             ) VALUES (
-                'dimensional', 'detailed_coverage', 'topology_builder',
-                'Topology builder', 10, TRUE
+                'dimensional', 'one_shot', 'candidate_authoring',
+                'Candidate authoring', 10, TRUE
             )
             RETURNING workflow_stage_id
             """
@@ -1609,14 +1608,14 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
         model_id=model_id,
         principal_id=principal_id,
         model_workflow="dimensional",
-        workflow_execution_mode="detailed_coverage",
+        workflow_execution_mode="one_shot",
     )
     model_run_id = _create_agentic_workflow_run(
         postgres_database,
         model_id=model_id,
         principal_id=principal_id,
         model_workflow="dimensional",
-        workflow_execution_mode="detailed_coverage",
+        workflow_execution_mode="one_shot",
     )
 
     with postgres_database.connect_owner() as connection:
@@ -1664,7 +1663,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
         model_id=model_id,
         principal_id=principal_id,
         model_workflow="dimensional",
-        workflow_execution_mode="detailed_coverage",
+        workflow_execution_mode="one_shot",
     )
     with postgres_database.connect_owner() as connection:
         global_count = require_row(
@@ -1717,7 +1716,7 @@ def test_prompt_resolution_snapshots_override_then_model_then_global(
         model_id=model_id,
         principal_id=principal_id,
         model_workflow="dimensional",
-        workflow_execution_mode="detailed_coverage",
+        workflow_execution_mode="one_shot",
     )
 
     with (
@@ -1777,9 +1776,7 @@ def test_model_agent_defaults_are_optional_and_naming_is_not_coupled_to_audit(
     assert row == {
         "silver_model_naming_instructions": "Use clear business names.",
         "silver_model_audit_columns_template": None,
-        "gold_model_audit_columns_template": [
-            {"name": "created_time", "type": "timestamp"}
-        ],
+        "gold_model_audit_columns_template": [{"name": "created_time", "type": "timestamp"}],
         "default_max_turns": 50,
         "default_validation_retry_count": 5,
     }

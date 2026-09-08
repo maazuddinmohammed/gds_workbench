@@ -1,3 +1,4 @@
+import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -23,6 +24,8 @@ export function ValidationScreen({
   hasAppPermission: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [reviewDataset, setReviewDataset] = useState<"validation_group" | "validation_check">("validation_group");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
   const systemsQuery = useQuery({
@@ -63,6 +66,7 @@ export function ValidationScreen({
     ]);
   };
   const refresh = async () => {
+    setSelectedIds(new Set());
     await Promise.all([systemsQuery.refetch(), ledgerQuery.refetch()]);
   };
 
@@ -138,7 +142,24 @@ export function ValidationScreen({
         focusRunId={startedRunId}
         onApplied={invalidateValidation}
       />
+      <label className="field-label">Review selection
+        <select value={reviewDataset} onChange={(event) => {
+          setSelectedIds(new Set());
+          setReviewDataset(event.target.value as "validation_group" | "validation_check");
+        }}>
+          <option value="validation_group">Groups</option>
+          <option value="validation_check">Checks</option>
+        </select>
+      </label>
+      <ModelRecordReview
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset={reviewDataset} selectedIds={selectedIds} hasTenantLock={canAuthor}
+        disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.model_revision !== model.model_revision}
+        onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
+      />
+      {reviewDataset === "validation_check" ? <p className="field-help">Expand a Group to select its Checks.</p> : null}
       <ValidationLedger
+        selection={{ dataset: reviewDataset, selectedIds, onSelectionChange: setSelectedIds }}
         groups={ledgerQuery.data?.groups ?? []}
         modelRevision={model.model_revision}
         loadedModelRevision={ledgerQuery.data?.model_revision}

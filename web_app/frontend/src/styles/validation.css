@@ -55,6 +55,7 @@
 }
 
 .validation-group {
+  min-width: 0;
   border-bottom: 1px solid var(--line-strong);
 }
 
@@ -118,12 +119,13 @@
 
 .validation-group-description {
   display: grid;
-  grid-template-columns: minmax(12rem, 0.7fr) minmax(28rem, 1.3fr);
+  grid-template-columns: minmax(0, 1fr);
   gap: 1.5rem;
   padding: 0 0 0.9rem 2.25rem;
 }
 
 .validation-group-description > p {
+  overflow-wrap: anywhere;
   margin: 0;
   color: var(--muted);
   font-size: 0.68rem;
@@ -210,6 +212,7 @@
 }
 
 .validation-check-detail h4 {
+  overflow-wrap: anywhere;
   margin: 0.15rem 0 0;
   font-size: 0.86rem;
 }
@@ -248,7 +251,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 1rem;
-  margin: 0.85rem 0 0;
+  margin: 0.85rem 0 1rem;
 }
 
 .validation-check-facts > div {
@@ -356,10 +359,6 @@
   font-size: 0.64rem;
 }
 
-.validation-agent-profile .detail-fact-grid {
-  grid-template-columns: repeat(3, minmax(0, 1fr));
-}
-
 @media (max-width: 58rem) {
   .validation-group-summary,
   .validation-group-description {
@@ -371,8 +370,7 @@
     padding-left: 2.25rem;
   }
 
-  .validation-query-grid,
-  .validation-agent-profile .detail-fact-grid {
+  .validation-query-grid {
     grid-template-columns: 1fr;
   }
 }

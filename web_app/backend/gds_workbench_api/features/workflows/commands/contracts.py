@@ -8,6 +8,7 @@ from uuid import UUID
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from gds_workbench_api.capabilities import AgentRunSelection
+from gds_workbench_api.features.metadata_enrichment.contracts import EnrichmentDescriptionTarget
 from gds_workbench_api.features.workflows.runs import (
     ExecutionMode,
     ModeledEntityType,
@@ -35,8 +36,20 @@ class CreateWorkflowRunRequest(BaseModel):
     mapping_operation: Literal["build", "extend"] | None = None
     mapping_coverage_mode: Literal["selected_targets"] | None = None
     mapping_source_system_id: int | None = Field(default=None, gt=0)
-    mapping_object_output_template_id: int | None = Field(default=None, gt=0)
-    mapping_attribute_output_template_id: int | None = Field(default=None, gt=0)
+    mapping_object_output_template_id: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Null or omitted selects the global default Object template for the Mapping Run."
+        ),
+    )
+    mapping_attribute_output_template_id: int | None = Field(
+        default=None,
+        gt=0,
+        description=(
+            "Null or omitted selects the global default Attribute template for the Mapping Run."
+        ),
+    )
     code_generation_coverage_mode: (
         Literal[
             "selected_targets",
@@ -46,6 +59,9 @@ class CreateWorkflowRunRequest(BaseModel):
     ) = None
     sql_generation_guide_version_id: int | None = Field(default=None, gt=0)
     agent: AgentRunSelection | None = None
+    description_targets: list[EnrichmentDescriptionTarget] | None = Field(
+        default=None, min_length=1, max_length=5_000
+    )
     prompt_overrides: dict[str, Annotated[int, Field(gt=0, strict=True)]] = Field(
         default_factory=dict,
         max_length=200,
@@ -86,6 +102,19 @@ class CreateWorkflowRunRequest(BaseModel):
 
     @model_validator(mode="after")
     def validate_workflow_shape(self) -> Self:
+        if self.description_targets is not None:
+            targets = self.description_targets
+            objects = {target.object_id for target in targets}
+            attributes = {target.attribute_id is not None for target in targets}
+            identities = {(target.object_id, target.attribute_id) for target in targets}
+            if (
+                self.model_workflow != "metadata_enrichment"
+                or objects != set(self.selected_object_ids)
+                or len(attributes) != 1
+                or (True in attributes and len(objects) != 1)
+                or len(identities) != len(targets)
+            ):
+                raise ValueError("Select unique Object descriptions or Attributes of one Object")
         if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
             raise ValueError("Selected Object IDs must be unique")
         normalized_system_codes = [value.casefold() for value in self.selected_system_codes]
@@ -123,6 +152,12 @@ class CreateWorkflowRunRequest(BaseModel):
             ):
                 raise ValueError("Code Generation inputs are unavailable for this workflow")
 
+        if self.model_workflow == "metadata_enrichment" and (
+            self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Metadata enrichment requires one-shot execution")
+        if self.model_workflow == "metadata_enrichment" and len(self.selected_object_ids) > 200:
+            raise ValueError("Metadata enrichment supports at most 200 selected Objects per run")
         agentic = self.model_workflow in {"code_generation", "validation"} or (
             self.workflow_execution_mode is not None
         )

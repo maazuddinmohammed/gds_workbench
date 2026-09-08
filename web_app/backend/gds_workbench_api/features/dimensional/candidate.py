@@ -8,7 +8,6 @@ from typing import cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -33,6 +32,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
     enrich_agent_output_model_definitions,
+    model_validation_issues,
     parse_pydantic_candidate,
 )
 
@@ -193,7 +193,12 @@ class DimensionalCandidateValidator:
         for index, submodel in enumerate(parsed.submodels):
             if submodel.dimensional_submodel_is_locked:
                 _lock_forbidden(("submodels", index), issues)
+        raw_entities: list[dict[str, object]] = []
         for index, entity in enumerate(parsed.entities):
+            existing = self._applied_entities.get(_entity_key(entity))
+            merged = _merge_entity(entity, existing)
+            unchanged_applied = existing is not None and merged == existing.model_dump(mode="json")
+            raw_entities.append(merged)
             if entity.dimensional_entity_is_locked:
                 _lock_forbidden(("entities", index), issues)
             for nested_index, membership in enumerate(entity.submodels):
@@ -203,7 +208,10 @@ class DimensionalCandidateValidator:
                 if source.is_locked:
                     _lock_forbidden(("entities", index, "sources", source_index), issues)
                 if isinstance(source, DimensionalObjectSourceRecord):
-                    valid = _physical_object_key(source.source_object) in self._selected_object_keys
+                    valid = (
+                        unchanged_applied
+                        or _physical_object_key(source.source_object) in self._selected_object_keys
+                    )
                     code = "candidate.source_outside_selection"
                     message = "Silver Object source must belong to this immutable run selection."
                 else:
@@ -223,7 +231,12 @@ class DimensionalCandidateValidator:
                             message=message,
                         )
                     )
+        raw_attributes: list[dict[str, object]] = []
         for index, attribute in enumerate(parsed.attributes):
+            existing = self._applied_attributes.get(_attribute_key(attribute))
+            merged = _merge_attribute(attribute, existing)
+            unchanged_applied = existing is not None and merged == existing.model_dump(mode="json")
+            raw_attributes.append(merged)
             if (
                 attribute.dimensional_attribute_role in ("technical", "audit")
                 or attribute.dimensional_attribute_key_role in ("surrogate", "foreign")
@@ -246,7 +259,8 @@ class DimensionalCandidateValidator:
                     _lock_forbidden(("attributes", index, "sources", source_index), issues)
                 if isinstance(source, AttributePhysicalSourceRecord):
                     valid = (
-                        _physical_attribute_key(source.source_attribute)
+                        unchanged_applied
+                        or _physical_attribute_key(source.source_attribute)
                         in self._selected_attribute_keys
                     )
                     code = "candidate.source_outside_selection"
@@ -282,20 +296,11 @@ class DimensionalCandidateValidator:
         )
         entities, entity_issues = validate_staged_records(
             "dimensional_entity",
-            [
-                _merge_entity(record, self._applied_entities.get(_entity_key(record)))
-                for record in parsed.entities
-            ],
+            raw_entities,
         )
         attributes, attribute_issues = validate_staged_records(
             "dimensional_attribute",
-            [
-                _merge_attribute(
-                    record,
-                    self._applied_attributes.get(_attribute_key(record)),
-                )
-                for record in parsed.attributes
-            ],
+            raw_attributes,
         )
         relationships, relationship_issues = validate_staged_records(
             "dimensional_relationship",
@@ -312,7 +317,9 @@ class DimensionalCandidateValidator:
         typed_attributes = cast(tuple[DimensionalAttributeRecord, ...], attributes)
         typed_relationships = cast(tuple[DimensionalRelationshipRecord, ...], relationships)
         issues.extend(
-            _model_issues(submodel_issues + entity_issues + attribute_issues + relationship_issues)
+            model_validation_issues(
+                submodel_issues + entity_issues + attribute_issues + relationship_issues
+            )
         )
         for index, record in enumerate(typed_submodels):
             existing = self._applied_submodels.get(_submodel_key(record))
@@ -493,21 +500,6 @@ def _merge_nested[T: BaseModel](
         value[lock_field] = False
         merged.append(value)
     return merged
-
-
-def _model_issues(issues: tuple[ModelValidationIssue, ...]) -> tuple[AgentValidationIssue, ...]:
-    return tuple(
-        AgentValidationIssue(
-            code=f"candidate.{issue.code}",
-            path=(
-                issue.dataset,
-                *((issue.record_number - 1,) if issue.record_number is not None else ()),
-                *issue.fields,
-            ),
-            message=issue.message,
-        )
-        for issue in issues
-    )
 
 
 def _lock_forbidden(

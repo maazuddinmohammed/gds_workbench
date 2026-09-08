@@ -8,6 +8,7 @@ import { formatRequiredDateTime as formatDateTime } from "../../shared/presentat
 import {
   promptQueryKeys,
   type PromptStageVariable,
+  type PromptTool,
   type PromptTemplateVersion,
   type PromptsApi,
 } from "./api";
@@ -16,6 +17,8 @@ import {
   PromptTransitionDialog,
 } from "./PromptTemplateDialogs";
 import { humanize, modeLabel, shortDigest } from "./PromptsLedger";
+import { PromptVariables } from "./PromptVariables";
+import { PromptTools } from "./PromptTools";
 
 interface PendingTransition {
   action: "publish" | "retire";
@@ -116,7 +119,7 @@ export function PromptTemplateDetailPage({
           >
             ← Back to Prompts
           </Link>
-          <p className="eyebrow">{template.prompt_template_code}</p>
+          <p className="eyebrow">{humanize(template.model_workflow)} · {modeLabel(template.workflow_execution_mode)}</p>
           <h1 ref={heading} tabIndex={-1}>{template.prompt_template_name}</h1>
           <p>{template.prompt_template_description ?? "No description provided."}</p>
         </div>
@@ -208,6 +211,8 @@ export function PromptTemplateDetailPage({
               api={api}
               tenantId={tenantId}
               promptTemplateId={promptTemplateId}
+              availableTools={detail.available_tools ?? []}
+              variables={detail.allowed_variables}
               version={null}
               seed={draftSeed === "blank" ? null : draftSeed}
               onCancel={() => setDraftSeed(null)}
@@ -239,13 +244,14 @@ export function PromptTemplateDetailPage({
                   ) : null}
                 </div>
               </header>
-              <VersionProvenance version={selected} />
               {selected.prompt_template_version_status === "draft" && canMutate ? (
                 <PromptBodyEditor
                   key={`draft-${selected.prompt_template_version_id}-${selected.updated_at}`}
                   api={api}
                   tenantId={tenantId}
                   promptTemplateId={promptTemplateId}
+                  availableTools={detail.available_tools ?? []}
+                  variables={detail.allowed_variables}
                   version={selected}
                   seed={selected}
                   onCancel={null}
@@ -256,8 +262,14 @@ export function PromptTemplateDetailPage({
                   }}
                 />
               ) : (
+                <>
                 <PromptBodiesReadOnly version={selected} />
+                {(detail.available_tools?.length ?? 0) > 0 || (selected.agent_tool_names?.length ?? 0) > 0 ? (
+                  <details className="prompt-version-details"><summary>Enabled tools</summary>{selected.agent_tool_names?.length === 0 ? <p className="prompt-editor-note">No tools enabled for this version.</p> : <ul>{(selected.agent_tool_names ?? (detail.available_tools ?? []).map((tool) => tool.name)).map((name) => <li key={name}><code>{name}</code></li>)}</ul>}</details>
+                ) : null}
+                </>
               )}
+              <details className="prompt-version-details"><summary>Version details</summary><VersionProvenance version={selected} /></details>
             </>
           ) : (
             <div className="empty-state">
@@ -269,18 +281,9 @@ export function PromptTemplateDetailPage({
         </section>
       </div>
 
-      <AllowedVariables variables={detail.allowed_variables} />
+      {!draftSeed && !(selected?.prompt_template_version_status === "draft" && canMutate) ? <AllowedVariables variables={detail.allowed_variables} /> : null}
 
-      <section className="prompt-assignment-gap" aria-labelledby="assignment-usage-heading">
-        <div>
-          <p className="eyebrow">Assignment visibility</p>
-          <h2 id="assignment-usage-heading">Model assignment usage</h2>
-          <p>The current API does not expose which Models use this Prompt Template.</p>
-        </div>
-        <button className="button button-secondary button-small" type="button" disabled>
-          Usage list unavailable
-        </button>
-      </section>
+
 
       {editHeaderOpen ? (
         <EditPromptHeaderDialog
@@ -319,6 +322,8 @@ function PromptBodyEditor({
   tenantId,
   promptTemplateId,
   version,
+  availableTools,
+  variables,
   seed,
   onCancel,
   onPublish,
@@ -328,22 +333,31 @@ function PromptBodyEditor({
   tenantId: number;
   promptTemplateId: number;
   version: PromptTemplateVersion | null;
+  availableTools: PromptTool[];
+  variables: PromptStageVariable[];
   seed: PromptTemplateVersion | null;
   onCancel: (() => void) | null;
   onPublish?: () => void;
   onSaved: (versionId: number) => Promise<void>;
 }) {
+  const editorRefs = useRef<Partial<Record<"system" | "instruction" | "tool", HTMLTextAreaElement>>>({});
+  const [activePrompt, setActivePrompt] = useState<"system" | "instruction" | "tool">("instruction");
+  const preview = useMutation({
+    mutationFn: (command: Parameters<PromptsApi["previewPrompt"]>[2]) => api.previewPrompt(tenantId, promptTemplateId, command),
+  });
   const mutation = useMutation({
-    mutationFn: ({ system, instruction, tool }: {
+    mutationFn: ({ system, instruction, tool, toolNames }: {
       system: string;
       instruction: string;
       tool: string;
+      toolNames: string[] | null;
     }) => api.savePromptDraft(tenantId, promptTemplateId, {
       expected_prompt_template_version_id: version?.prompt_template_version_id ?? null,
       expected_updated_at: version?.updated_at ?? null,
       system_prompt_template: system,
       instruction_prompt_template: instruction,
       tool_instruction_prompt_template: tool.trim() ? tool : null,
+      agent_tool_names: toolNames,
     }),
     onSuccess: async (saved) => onSaved(saved.prompt_template_version_id),
   });
@@ -352,6 +366,7 @@ function PromptBodyEditor({
       system: seed?.system_prompt_template ?? "",
       instruction: seed?.instruction_prompt_template ?? "",
       tool: seed?.tool_instruction_prompt_template ?? "",
+      toolNames: seed?.agent_tool_names ?? null as string[] | null,
     },
     onSubmit: ({ value }) => mutation.mutate(value),
   });
@@ -363,6 +378,26 @@ function PromptBodyEditor({
     && bodyBytes(values.instruction) <= 262_144
     && bodyBytes(values.tool) <= 262_144;
   const newDraft = version === null;
+  const previewCommand = {
+    system_prompt_template: values.system,
+    instruction_prompt_template: values.instruction,
+    tool_instruction_prompt_template: values.tool.trim() ? values.tool : null,
+    agent_tool_names: values.toolNames,
+  };
+  const previewIsCurrent = JSON.stringify(preview.variables) === JSON.stringify(previewCommand);
+
+  const insertVariable = (name: string) => {
+    const textarea = editorRefs.current[activePrompt];
+    const body = values[activePrompt];
+    const start = textarea?.selectionStart ?? body.length;
+    const end = textarea?.selectionEnd ?? start;
+    const placeholder = `{{ ${name} }}`;
+    form.setFieldValue(activePrompt, `${body.slice(0, start)}${placeholder}${body.slice(end)}`);
+    requestAnimationFrame(() => {
+      textarea?.focus();
+      textarea?.setSelectionRange(start + placeholder.length, start + placeholder.length);
+    });
+  };
 
   return (
     <form
@@ -383,14 +418,24 @@ function PromptBodyEditor({
         </header>
       ) : null}
       <p className="prompt-editor-note">
-        Only variables in the reference below are accepted by this stage. Prompt bodies remain server-governed.
+        Define behavior in the System Prompt and the task and context in the Instruction Prompt.
+        This workflow accepts the variables below; each is optional to include.
       </p>
+      <details className="prompt-rendering-help">
+        <summary>How to use variables</summary>
+        <p>Insert a whole value with <code>{"{{ variable_name }}"}</code>, or select a field or list item. Use Jinja conditions and loops to shape the context. Python execution is not supported.</p>
+        <pre>{"{{ object_context }}\n{{ object_context[0].object_name }}\n{% for object in object_context %}\n{{ object.object_name }}\n{% endfor %}"}</pre>
+        <p>Use only variables and fields in this workflow’s reference. Missing data is null. Unknown names or invalid expressions fail validation. Values are rendered once; braces inside their data remain literal.</p>
+      </details>
       <form.Field name="system">
         {(field) => (
           <label>
             <span>System Prompt</span>
             <textarea
               aria-label="System Prompt"
+              ref={(element) => { if (element) editorRefs.current.system = element; }}
+              onFocus={() => setActivePrompt("system")}
+              disabled={mutation.isPending}
               autoComplete="off"
               spellCheck={false}
               value={field.state.value}
@@ -407,6 +452,9 @@ function PromptBodyEditor({
             <span>Instruction Prompt</span>
             <textarea
               aria-label="Instruction Prompt"
+              ref={(element) => { if (element) editorRefs.current.instruction = element; }}
+              onFocus={() => setActivePrompt("instruction")}
+              disabled={mutation.isPending}
               autoComplete="off"
               spellCheck={false}
               value={field.state.value}
@@ -417,12 +465,24 @@ function PromptBodyEditor({
           </label>
         )}
       </form.Field>
-      <form.Field name="tool">
+      <AllowedVariables variables={variables} onInsert={insertVariable} activePrompt={activePrompt} disabled={mutation.isPending} />
+      {availableTools.length > 0 ? (
+        <form.Field name="toolNames">
+          {(field) => <PromptTools tools={availableTools} selected={field.state.value ?? availableTools.map((tool) => tool.name)} disabled={mutation.isPending} onChange={field.handleChange} />}
+        </form.Field>
+      ) : null}
+      {availableTools.length > 0 || values.tool ? <details className="prompt-version-details">
+        <summary>Additional tool instructions (optional)</summary>
+        <p className="prompt-editor-note">Tool guidance can live in the System or Instruction Prompt. Use this field for separately stored guidance.</p>
+        <form.Field name="tool">
         {(field) => (
           <label>
             <span>Tool instructions (optional)</span>
             <textarea
               aria-label="Tool instructions (optional)"
+              ref={(element) => { if (element) editorRefs.current.tool = element; }}
+              onFocus={() => setActivePrompt("tool")}
+              disabled={mutation.isPending}
               autoComplete="off"
               spellCheck={false}
               value={field.state.value}
@@ -432,7 +492,8 @@ function PromptBodyEditor({
             <small>{bodyBytes(field.state.value).toLocaleString()} / 262,144 UTF-8 bytes</small>
           </label>
         )}
-      </form.Field>
+        </form.Field>
+      </details> : null}
       {!isValid ? (
         <p className="prompt-validation-note">
           System and Instruction Prompts are required. Each body is limited to 262,144 UTF-8 bytes.
@@ -440,9 +501,25 @@ function PromptBodyEditor({
       ) : null}
       {mutation.isError ? (
         <p className="inline-error" role="alert">
-          The draft could not be saved. Refresh before retrying; another editor may have changed it.
+          {mutation.error instanceof ApiError && mutation.error.status === 409
+            ? "This draft changed after you opened it. Your edits are still here; copy them before refreshing to inspect the newer version."
+            : mutation.error instanceof ApiError && [400, 422].includes(mutation.error.status)
+              ? "The draft failed validation. Check variable names, expressions, tool choices, and body limits. Your edits are still here."
+              : "The draft could not be saved. Your edits are still here. Check your permission and Tenant Lock, then retry."}
         </p>
       ) : null}
+      <section className="prompt-preview-section" aria-label="Prompt preview">
+        <div className="prompt-preview-heading"><div><h3>Preview with synthetic examples</h3><p className="prompt-editor-note">Check rendered text using this workflow’s example values. No model is called.</p></div>
+          <button className="button button-secondary button-small" type="button" disabled={!isValid || preview.isPending || mutation.isPending} onClick={() => preview.mutate(previewCommand)}>{preview.isPending ? "Rendering preview…" : "Preview prompts"}</button>
+        </div>
+        {preview.isError && previewIsCurrent ? <p className="inline-error" role="alert">Preview could not be rendered. Check variable names, fields, and Jinja syntax against the reference. Your edits are unchanged.</p> : null}
+        {preview.data && !previewIsCurrent ? <p className="prompt-editor-note" role="status">Prompts or tools changed. Preview again to see the current text.</p> : null}
+        {preview.data && previewIsCurrent ? <div className="prompt-preview-results"><p className="prompt-editor-note" role="status">Preview rendered successfully with synthetic data.</p>{[
+          ["System Prompt", preview.data.rendered_system_prompt],
+          ["Instruction Prompt", preview.data.rendered_instruction_prompt],
+          ["Tool instructions", preview.data.rendered_tool_instruction_prompt],
+        ].map(([label, value]) => value ? <details className="prompt-input-shape" key={label} open><summary>{label} preview</summary><pre>{value}</pre></details> : null)}</div> : null}
+      </section>
       <footer className="prompt-editor-actions">
         <span>
           {version
@@ -452,6 +529,7 @@ function PromptBodyEditor({
               : "New blank draft"}
         </span>
         <div>
+          <button className="button button-secondary button-small" type="button" disabled={!isDirty || mutation.isPending} onClick={() => { form.reset(); mutation.reset(); preview.reset(); }}>Reset edits</button>
           {onCancel ? (
             <button className="button button-secondary button-small" type="button" onClick={onCancel}>
               Cancel
@@ -484,12 +562,13 @@ function PromptBodyEditor({
 function PromptBodiesReadOnly({ version }: { version: PromptTemplateVersion }) {
   return (
     <div className="prompt-bodies-readonly">
-      <ReadOnlyBody label="System Prompt" value={version.system_prompt_template} />
       <ReadOnlyBody label="Instruction Prompt" value={version.instruction_prompt_template} />
-      <ReadOnlyBody
-        label="Tool instructions"
-        value={version.tool_instruction_prompt_template ?? "No tool instructions stored."}
-      />
+      <details className="prompt-version-details"><summary>System Prompt</summary>
+        <ReadOnlyBody label="System Prompt" value={version.system_prompt_template} />
+      </details>
+      {version.tool_instruction_prompt_template ? <details className="prompt-version-details"><summary>Tool instructions</summary>
+        <ReadOnlyBody label="Tool instructions" value={version.tool_instruction_prompt_template} />
+      </details> : null}
     </div>
   );
 }
@@ -497,7 +576,7 @@ function PromptBodiesReadOnly({ version }: { version: PromptTemplateVersion }) {
 function ReadOnlyBody({ label, value }: { label: string; value: string }) {
   return (
     <label>
-      <span>{label} · immutable</span>
+      <span>{label}</span>
       <textarea aria-label={`${label} immutable`} readOnly spellCheck={false} value={value} />
     </label>
   );
@@ -521,36 +600,18 @@ function VersionProvenance({ version }: { version: PromptTemplateVersion }) {
   );
 }
 
-function AllowedVariables({ variables }: { variables: PromptStageVariable[] }) {
+function AllowedVariables({ variables, onInsert, activePrompt, disabled }: {
+  variables: PromptStageVariable[];
+  onInsert?: (name: string) => void;
+  activePrompt?: "system" | "instruction" | "tool";
+  disabled?: boolean;
+}) {
   return (
-    <section className="prompt-detail-variables" aria-labelledby="prompt-detail-variables-heading">
-      <header>
-        <div>
-          <p className="eyebrow">Stage contract</p>
-          <h2 id="prompt-detail-variables-heading">Allowed variables</h2>
-        </div>
-        <span>{variables.length}</span>
-      </header>
-      {variables.length ? (
-        <div className="table-scroll">
-          <table aria-label="Allowed Prompt variables">
-            <thead><tr><th>Variable</th><th>Type</th><th>Resolver</th><th>Description</th></tr></thead>
-            <tbody>
-              {variables.map((variable) => (
-                <tr key={variable.name}>
-                  <td><code>{`{{${variable.name}}}`}</code>{variable.is_required ? <small>Required</small> : null}</td>
-                  <td>{humanize(variable.data_type)}</td>
-                  <td><code>{variable.resolver_key}</code></td>
-                  <td>{variable.description}</td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      ) : (
-        <div className="empty-state compact">This stage allows no variables.</div>
-      )}
-    </section>
+    <details className="prompt-detail-variables" aria-labelledby="prompt-detail-variables-heading">
+      <summary><h2 id="prompt-detail-variables-heading">Allowed variables</h2><span>{variables.length}</span></summary>
+      {onInsert ? <p className="prompt-editor-note">Insert into: <strong>{activePrompt === "system" ? "System Prompt" : activePrompt === "tool" ? "Tool instructions" : "Instruction Prompt"}</strong>. Select text in a prompt to replace it.</p> : null}
+      <PromptVariables variables={variables} onInsert={onInsert} disabled={disabled} />
+    </details>
   );
 }
 

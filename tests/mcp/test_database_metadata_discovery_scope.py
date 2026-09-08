@@ -64,9 +64,7 @@ def test_global_connection_object_stores_the_data_tenant_directly(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        data_tenant_id, connection_id, zone_id, object_type_id = _seed_object_parents(
-            connection
-        )
+        data_tenant_id, connection_id, zone_id, object_type_id = _seed_object_parents(connection)
         row = connection.execute(
             """
             INSERT INTO core.object (

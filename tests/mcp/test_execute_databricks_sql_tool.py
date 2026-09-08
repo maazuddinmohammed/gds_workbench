@@ -45,9 +45,7 @@ class FakeDatabase:
     audit_records: list[ToolCallLogRecord] = field(
         default_factory=lambda: list[ToolCallLogRecord]()
     )
-    lookups: list[tuple[int, str]] = field(
-        default_factory=lambda: list[tuple[int, str]]()
-    )
+    lookups: list[tuple[int, str]] = field(default_factory=lambda: list[tuple[int, str]]())
 
     async def open(self) -> None:
         return None
@@ -112,12 +110,10 @@ class FakeExecutor:
         cells_truncated=False,
     )
     failure: Exception | None = None
-    calls: list[tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]] = (
-        field(
-            default_factory=lambda: list[
-                tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]
-            ]()
-        )
+    calls: list[tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]] = field(
+        default_factory=lambda: list[
+            tuple[DatabricksSqlConnection, ValidatedDatabricksSql, int, int]
+        ]()
     )
 
     async def execute(

@@ -20,7 +20,6 @@ ROOT_GITIGNORE = ROOT / ".gitignore"
 
 APP_ROOT_FILES = {
     "DEPLOYMENT_GUIDE.md",
-    "app.foundry.yaml.example",
     "app.yaml",
     "package-lock.json",
     "package.json",
@@ -56,6 +55,8 @@ NOTEBOOK_PACKAGE_EXCLUSIONS = {
             "configuration.py",
             "errors.py",
             "features/model_change_sets/router.py",
+            "features/model_targets/router.py",
+            "features/model_targets/service.py",
             "features/workflows/authoring/change_set_apply_router.py",
             "features/workflows/execution/configuration.py",
             "frontend.py",
@@ -393,7 +394,9 @@ def test_operator_instructions_use_folder_upload_as_the_primary_ui_path() -> Non
     assert "drag the expanded `gds-workbench-app-source` folder" in normalized
     assert "flatten its nested source folders" in normalized
     assert "CLI upload alternative" in instructions
-    assert "--agent-provider microsoft_foundry" in instructions
+    assert "python3 deployment/databricks_ui/build_uploads.py\n" in instructions
+    assert "Databricks-only" not in instructions
+    assert "databricks-ui-foundry" not in instructions
     assert "Do not edit or replace its generated `app.yaml`" in normalized
 
 
@@ -476,7 +479,7 @@ def test_manifest_matches_every_generated_source_file(tmp_path: Path) -> None:
     builder = _load_builder()
     result = builder.build_uploads(tmp_path / "release")
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
-    assert manifest["agent_provider"] == "databricks"
+    assert manifest["agent_provider"] == "microsoft_foundry"
 
     for key, directory in (
         ("app_source", result.app_source_directory),
@@ -555,7 +558,7 @@ def test_every_packaged_notebook_module_imports_from_the_extracted_artifact(
         package.extractall(extracted)
 
     source_root = extracted / "src"
-    modules = set()
+    modules: set[str] = set()
     for path in source_root.rglob("*.py"):
         relative = path.relative_to(source_root)
         parts = relative.with_suffix("").parts
@@ -652,7 +655,7 @@ def test_archives_are_reproducible_and_source_files_are_unchanged(
     ).read_bytes()
 
 
-def test_foundry_build_selects_manifest_before_hashing_and_is_self_contained(
+def test_explicit_foundry_build_uses_canonical_manifest_and_is_self_contained(
     tmp_path: Path,
 ) -> None:
     builder = _load_builder()
@@ -666,7 +669,7 @@ def test_foundry_build_selects_manifest_before_hashing_and_is_self_contained(
     manifest = json.loads(result.manifest.read_text(encoding="utf-8"))
     app_records = {record["path"]: record for record in manifest["app_source"]}
 
-    assert app_yaml.read_bytes() == (ROOT / "app.foundry.yaml.example").read_bytes()
+    assert app_yaml.read_bytes() == (ROOT / "app.yaml").read_bytes()
     assert guide.read_bytes() == (ROOT / "web_app/DEPLOYMENT_GUIDE.md").read_bytes()
     assert manifest["agent_provider"] == "microsoft_foundry"
     assert app_records["app.yaml"]["sha256"] == _sha256(app_yaml)
@@ -675,12 +678,15 @@ def test_foundry_build_selects_manifest_before_hashing_and_is_self_contained(
         assert package.read("DEPLOYMENT_GUIDE.md") == guide.read_bytes()
 
 
-def test_builder_rejects_unknown_agent_provider_before_writing(tmp_path: Path) -> None:
+@pytest.mark.parametrize("provider", ["databricks", "unknown"])
+def test_builder_rejects_removed_or_unknown_agent_provider_before_writing(
+    tmp_path: Path, provider: str
+) -> None:
     builder = _load_builder()
     output = tmp_path / "invalid-release"
 
     with pytest.raises(builder.ArtifactBuildError, match="unsupported agent provider"):
-        builder.build_uploads(output, agent_provider="unknown")
+        builder.build_uploads(output, agent_provider=provider)
 
     assert not output.exists()
 
@@ -707,8 +713,7 @@ def test_failed_rebuild_preserves_previous_generated_output(
     builder.build_uploads(output)
     original_checksum = _sha256(output / "gds-workbench-app-source.zip")
 
-    def fail_build(_destination: Path, *, agent_provider: str) -> None:
-        assert agent_provider == "databricks"
+    def fail_build(_destination: Path) -> None:
         raise builder.ArtifactBuildError("simulated build failure")
 
     monkeypatch.setattr(builder, "_build_app_source", fail_build)

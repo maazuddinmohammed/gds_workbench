@@ -1,3 +1,4 @@
+import { ModelTargetsScreen } from "./features/model_targets/ModelTargetsScreen";
 import {
   QueryClient,
   QueryClientProvider,
@@ -28,6 +29,7 @@ import {
   ConceptualObjectDetailPage,
   ConceptualRelationshipDetailPage,
 } from "./features/conceptual/ConceptualDetail";
+import { MetadataEnrichmentScreen } from "./features/metadata_enrichment/MetadataEnrichmentScreen";
 import { ConceptualScreen } from "./features/conceptual/ConceptualScreen";
 import {
   LogicalAttributeDetailPage,
@@ -57,6 +59,7 @@ import { ModelPromptSettings } from "./features/prompts/ModelPromptSettings";
 import { PromptsScreen } from "./features/prompts/PromptsScreen";
 import { PromptTemplateDetailPage } from "./features/prompts/PromptTemplateDetail";
 import { MetadataScreen } from "./features/metadata/MetadataScreen";
+import { PhysicalMetadataScreen } from "./features/metadata/PhysicalMetadataScreen";
 import { TenantEntryScreen } from "./features/tenants/TenantEntryScreen";
 import { TenantHomeScreen } from "./features/tenants/TenantHomeScreen";
 import { ModelsLedgerScreen } from "./features/models/ModelsLedgerScreen";
@@ -108,6 +111,16 @@ const tenantMetadataRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/metadata",
   component: TenantMetadata,
+});
+
+const tenantMetadataObjectsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/metadata/objects",
+  validateSearch: (search: Record<string, unknown>): { objectId?: number } => {
+    const objectId = Number(search.objectId);
+    return Number.isSafeInteger(objectId) && objectId > 0 ? { objectId } : {};
+  },
+  component: TenantMetadataObjects,
 });
 
 const tenantModelsRoute = createRoute({
@@ -249,6 +262,12 @@ const tenantModelAssertionRecordRoute = createRoute({
   component: ModelAssertionRecord,
 });
 
+const tenantModelMetadataEnrichmentRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/models/$modelId/metadata-enrichment",
+  component: ModelMetadataEnrichment,
+});
+
 const tenantModelConceptualRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/conceptual",
@@ -271,6 +290,13 @@ const tenantModelLogicalRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/models/$modelId/logical",
   component: ModelLogical,
+});
+
+const tenantModelTargetsRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/models/$modelId/targets",
+  validateSearch: (search: Record<string, unknown>): { layer: "logical" | "dimensional" } => ({ layer: search.layer === "dimensional" ? "dimensional" : "logical" }),
+  component: ModelTargets,
 });
 
 const tenantModelLogicalEntityRoute = createRoute({
@@ -325,6 +351,7 @@ const routeTree = rootRoute.addChildren([
   tenantEntryRoute,
   tenantHomeRoute,
   tenantMetadataRoute,
+  tenantMetadataObjectsRoute,
   tenantModelsRoute,
   tenantMappingRoute,
   tenantMappingModelRoute,
@@ -347,10 +374,12 @@ const routeTree = rootRoute.addChildren([
   tenantModelAssertionsRoute,
   tenantModelAssertionDocumentRoute,
   tenantModelAssertionRecordRoute,
+  tenantModelMetadataEnrichmentRoute,
   tenantModelConceptualRoute,
   tenantModelConceptualObjectRoute,
   tenantModelConceptualRelationshipRoute,
   tenantModelLogicalRoute,
+  tenantModelTargetsRoute,
   tenantModelLogicalEntityRoute,
   tenantModelLogicalAttributeRoute,
   tenantModelLogicalRelationshipRoute,
@@ -445,6 +474,16 @@ function TenantMetadata() {
       )}
     </TenantRouteFrame>
   );
+}
+
+function TenantMetadataObjects() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId } = tenantMetadataObjectsRoute.useParams();
+  const { objectId } = tenantMetadataObjectsRoute.useSearch();
+  const navigate = useNavigate({ from: tenantMetadataObjectsRoute.fullPath });
+  return <TenantRouteFrame api={api} tenantId={Number(tenantId)} activeNav="metadata" loadingLabel="Loading physical metadata">
+    {({ home }) => <PhysicalMetadataScreen key={tenantId} api={api} tenantId={Number(tenantId)} tenantLock={home.lock} canWriteMetadata={home.tenant.effective_role !== "viewer"} objectId={objectId ?? null} onObjectChange={(id) => { void navigate({ search: id === null ? {} : { objectId: id } }); }} />}
+  </TenantRouteFrame>;
 }
 
 function ModelsLedger() {
@@ -982,6 +1021,20 @@ function AssertionDetailRoute({
   );
 }
 
+function ModelMetadataEnrichment() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, modelId } = tenantModelMetadataEnrichmentRoute.useParams();
+  return (
+    <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)}
+      activeStage="metadata-enrichment" loadingLabel="Loading Metadata enrichment">
+      {({ home, model }) => (
+        <MetadataEnrichmentScreen api={api} tenantId={Number(tenantId)} model={model}
+          hasTenantLock={home.lock.owned_by_current_principal === true} />
+      )}
+    </ModelRouteFrame>
+  );
+}
+
 function ModelConceptual() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelConceptualRoute.useParams();
@@ -1078,6 +1131,15 @@ function ConceptualDetailRoute({
   );
 }
 
+function ModelTargets() {
+  const { api } = rootRoute.useRouteContext();
+  const { tenantId, modelId } = tenantModelTargetsRoute.useParams();
+  const { layer } = tenantModelTargetsRoute.useSearch();
+  return <ModelRouteFrame api={api} tenantId={Number(tenantId)} modelId={Number(modelId)} activeStage="targets" loadingLabel="Loading target registration">
+    {({ home, model }) => <ModelTargetsScreen api={api} tenantId={Number(tenantId)} model={model} layer={layer} hasTenantLock={home.lock.owned_by_current_principal === true} />}
+  </ModelRouteFrame>;
+}
+
 function ModelLogical() {
   const { api } = rootRoute.useRouteContext();
   const { tenantId, modelId } = tenantModelLogicalRoute.useParams();
@@ -1118,12 +1180,14 @@ function ModelLogicalEntity() {
       activeStage="logical"
       loadingLabel="Loading Logical"
     >
-      {() => (
+      {({ home, model }) => (
         <LogicalEntityDetailPage
           api={api}
           tenantId={numericTenantId}
           modelId={numericModelId}
           entityId={numericEntityId}
+          modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>
@@ -1262,12 +1326,14 @@ function ModelDimensionalObject() {
       activeStage="dimensional"
       loadingLabel="Loading Dimensional"
     >
-      {() => (
+      {({ home, model }) => (
         <DimensionalObjectDetailPage
           api={api}
           tenantId={numericTenantId}
           modelId={numericModelId}
           entityId={numericEntityId}
+          modelRevision={model.model_revision}
+          hasTenantLock={home.lock.owned_by_current_principal === true}
         />
       )}
     </ModelRouteFrame>

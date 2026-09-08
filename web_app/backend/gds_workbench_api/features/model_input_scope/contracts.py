@@ -23,6 +23,24 @@ from gds_workbench_api.features.metadata.contracts import ObjectAttribute
 type ZoneCode = Literal["source", "bronze"]
 
 
+class ScopeLocation(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    tenant_id: int
+    tenant_code: str
+    tenant_name: str
+    system_code: str
+    system_name: str
+    zone_code: ZoneCode
+
+
+class ScopeSearchOptions(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True)
+
+    model_revision: int
+    locations: tuple[ScopeLocation, ...]
+
+
 class ModelInputScopeObject(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True)
 
@@ -38,6 +56,10 @@ class ModelInputScopeObject(BaseModel):
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
     zone_code: ZoneCode
+    object_description: str | None = Field(default=None, max_length=2000, repr=False)
+    description_truncated: bool = False
+    is_locked: bool = False
+    review_revision: str | None = Field(default=None, pattern=r"^[0-9a-f]{64}$")
     batch_attribute_name: str | None = Field(default=None, max_length=400)
     attribute_count: int = Field(ge=0)
     is_model_input_eligible: bool

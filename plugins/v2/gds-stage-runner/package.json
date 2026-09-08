@@ -1,0 +1,111 @@
+{
+  "name": "gds-stage-runner",
+  "displayName": "GDS Stage Runner",
+  "description": "Deterministically stages approved GDS Change Sets without placing payloads in model context.",
+  "version": "0.1.0",
+  "publisher": "gds-workbench",
+  "license": "UNLICENSED",
+  "private": true,
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/maazuddinmohammed/gds_workbench.git",
+    "directory": "plugins/v2/gds-stage-runner"
+  },
+  "type": "module",
+  "engines": {
+    "vscode": "^1.136.0"
+  },
+  "categories": [
+    "Machine Learning"
+  ],
+  "extensionKind": [
+    "workspace"
+  ],
+  "capabilities": {
+    "untrustedWorkspaces": {
+      "supported": false,
+      "description": "Stage requires a trusted GDS workspace."
+    }
+  },
+  "activationEvents": [
+    "onLanguageModelTool:gds_stageApprovedManifest",
+    "onCommand:gdsStageRunner.check"
+  ],
+  "main": "./dist/extension.cjs",
+  "contributes": {
+    "commands": [
+      {
+        "command": "gdsStageRunner.check",
+        "title": "GDS: Check Stage Runner"
+      }
+    ],
+    "languageModelTools": [
+      {
+        "name": "gds_stageApprovedManifest",
+        "displayName": "Stage Approved GDS Change Set",
+        "modelDescription": "Stages one digest-approved GDS Metadata or Model Change Set from its local Stage request. Use only after local validation and user acknowledgement. Returns a bounded receipt and never returns payload records.",
+        "canBeReferencedInPrompt": true,
+        "toolReferenceName": "gdsStageApprovedManifest",
+        "inputSchema": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "manifestPath": {
+              "type": "string",
+              "description": "Absolute path returned by the GDS prepare-stage-request helper."
+            },
+            "expectedDigest": {
+              "type": "string",
+              "pattern": "^[0-9a-f]{64}$",
+              "description": "Exact local Change Set digest acknowledged by the user."
+            }
+          },
+          "required": [
+            "manifestPath",
+            "expectedDigest"
+          ]
+        }
+      }
+    ],
+    "configuration": {
+      "title": "GDS Stage Runner",
+      "properties": {
+        "gds.stageRunner.profile": {
+          "type": "string",
+          "scope": "machine",
+          "enum": [
+            "production",
+            "local",
+            "azureLocalTest"
+          ],
+          "default": "production",
+          "description": "Production requires Microsoft authentication. Local permits only loopback. Azure Local Test is an explicit temporary no-auth profile."
+        },
+        "gds.stageRunner.localUrl": {
+          "type": "string",
+          "scope": "machine",
+          "default": "http://127.0.0.1:8000/mcp",
+          "description": "Local MCP URL. Only loopback HTTP URLs ending in /mcp are accepted."
+        }
+      }
+    }
+  },
+  "scripts": {
+    "test": "vitest run",
+    "check": "tsc --noEmit",
+    "compile": "npm run check && node esbuild.mjs",
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/gds-stage-runner-0.1.0.vsix"
+  },
+  "devDependencies": {
+    "@types/node": "24.10.0",
+    "@types/express": "5.0.6",
+    "@types/vscode": "1.136.0",
+    "@vscode/vsce": "3.9.2",
+    "esbuild": "0.28.2",
+    "typescript": "6.0.3",
+    "vitest": "4.1.7"
+  },
+  "dependencies": {
+    "@modelcontextprotocol/sdk": "1.30.0"
+  }
+}

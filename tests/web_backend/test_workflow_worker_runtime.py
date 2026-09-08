@@ -11,7 +11,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-
 from gds_workbench_api.configuration import RuntimeSettings
 from gds_workbench_api.features.workflows.execution import (
     WorkerRunResult,
@@ -158,9 +157,7 @@ class BlockingDispatcher:
 
 
 @pytest.mark.asyncio
-async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> (
-    None
-):
+async def test_worker_process_closes_database_and_releases_active_claim_on_shutdown() -> None:
     database = ProcessDatabase()
     claim = _claim()
     claims = OneClaimRepository(claim)

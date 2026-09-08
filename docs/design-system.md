@@ -236,3 +236,30 @@ Before completing a frontend change:
 - Test keyboard focus and a narrow viewport.
 - Confirm no automatic workflow polling was added.
 - Run `npm run check` from the repository root.
+
+### Model metadata and target handoff
+
+- Enrichment opens on current physical metadata. Keep Workflow history separate
+  and collapsed; show run state, date, and scope count, with consumption on demand.
+- Use Schema before Object in scoped metadata tables. Object details contain
+  Attribute descriptions and inferred types. Row Actions contain only Edit;
+  Show details opens the Object's Attributes. Put selection before Schema and
+  bulk Lock/Unlock beside Refresh runs, using the physical locks from Metadata.
+- Run enrichment offers all unlocked or selected records at the current level:
+  Object descriptions from the list, Attribute descriptions from Object details.
+  Attribute runs also infer missing types and preserve existing inferred types.
+  Freeze every selected physical revision; concurrent changes protect the batch.
+  Description edits and runs use existing governed commands and receipts.
+- Logical Attributes live inside Entity details, including review actions and
+  their source mapping links. Logical and Dimensional provenance use the same
+  Source/Rationale/Status table and structured detail renderer as Mapping.
+- Target Binding uses Logical/Dimensional segmented links and a rounded table of
+  Entities, registered schema/Object, and lock state. Unbound targets show a dash.
+  Search opens a schema/Object picker; Show details opens Attribute assignments.
+  Generate previews unique, trimmed, case-insensitive name matches within a
+  registered schema. Attribute Generate applies the same name-matching rule.
+  Keep locks in bulk controls above each table. Changed assignments need a fresh
+  preview before Apply; preserve locked and existing bindings.
+- Size tables for their actual columns. Keep selection controls compact and row
+  actions visible at desktop widths; contain horizontal scrolling inside tables
+  on narrow screens. Preserve keyboard focus after returning or saving.

@@ -2,12 +2,14 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import sys
 from collections.abc import Callable, Coroutine
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlsplit
 
 from .errors import NotebookConfigurationError, NotebookDatabaseError
 from .runtime import (
@@ -31,6 +33,7 @@ class NotebookPreflightResult:
     principal_display_name: str
     principal_type: str
     databricks_environment_code: str
+    foundry_configured: bool = False
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -41,6 +44,7 @@ class NotebookPreflightResult:
             "principal_display_name": self.principal_display_name,
             "principal_type": self.principal_type,
             "databricks_environment_code": self.databricks_environment_code,
+            "foundry_configured": self.foundry_configured,
         }
 
 
@@ -78,16 +82,39 @@ async def _check_async_runtime(
     settings: NotebookRuntimeSettings,
     principal: NotebookPrincipal,
 ) -> NotebookPreflightResult:
-    from gds_workbench_api.capabilities import load_default_agent_capabilities
-    from gds_workbench_api.integrations.agents import DatabricksModelAuthentication
+    from databricks.sdk import WorkspaceClient
     from gds_workbench_runtime.profiling import load_default_profiling_policy
 
-    capabilities = load_default_agent_capabilities()
-    if not any(model.provider_code == "databricks" for model in capabilities.models):
-        raise NotebookConfigurationError("The Agent registry has no Databricks model deployment.")
     load_default_profiling_policy()
     database = create_notebook_workflow_database(settings.database)
-    authentication = DatabricksModelAuthentication(mode="notebook")
+
+    def check_unified_auth() -> None:
+        workspace = WorkspaceClient(
+            debug_headers=False,
+            product="gds-workbench-notebook",
+            product_version="0.1.0",
+        )
+        headers = workspace.config.authenticate()
+        authorization = next(
+            (value for name, value in headers.items() if name.lower() == "authorization"), ""
+        )
+        scheme, _, token = authorization.partition(" ")
+        host = urlsplit(workspace.config.host or "")
+        if (
+            scheme.lower() != "bearer"
+            or not token
+            or host.scheme != "https"
+            or not host.hostname
+            or host.username is not None
+            or host.password is not None
+            or host.path not in {"", "/"}
+            or host.query
+            or host.fragment
+        ):
+            raise NotebookDatabaseError(
+                "Databricks notebook unified authentication is unavailable."
+            )
+
     await database.open()
     try:
         readiness = await database.readiness()
@@ -95,16 +122,9 @@ async def _check_async_runtime(
             raise NotebookDatabaseError(
                 "Notebook database execution provisioning is incomplete or unavailable."
             )
-        credentials = await authentication.authenticate()
-        if not credentials.base_url or not credentials.api_key.get_secret_value():
-            raise NotebookDatabaseError(
-                "Databricks notebook unified authentication is unavailable."
-            )
+        await asyncio.to_thread(check_unified_auth)
     finally:
-        try:
-            await authentication.close()
-        finally:
-            await database.close()
+        await database.close()
     return NotebookPreflightResult(
         python_version="3.12",
         database_ready=True,
@@ -113,6 +133,7 @@ async def _check_async_runtime(
         principal_display_name=principal.display_name,
         principal_type=principal.principal_type,
         databricks_environment_code=principal.databricks_environment_code,
+        foundry_configured=settings.agent_runtime is not None,
     )
 
 

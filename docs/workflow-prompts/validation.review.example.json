@@ -1,0 +1,196 @@
+{
+  "workflow": "validation",
+  "note": "Synthetic schema example, not a model-quality evaluation or executed SQL. Actual generation requires selected real guide/documents.",
+  "inputs": {
+    "system_ref": "system_1",
+    "system_scope": {
+      "tenant_code": "NWA",
+      "system_code": "CRM"
+    },
+    "mapping_evidence": [
+      {
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Customer",
+        "context": {
+          "target_metadata": {
+            "tenant_code": "NWA",
+            "tenant_catalog": "northwind",
+            "system_code": "GDS",
+            "connection_code": "lakehouse",
+            "object_schema": "silver_crm",
+            "object_name": "Customer",
+            "object_description": null,
+            "zone_code": "silver",
+            "source_tenant_code": "NWA",
+            "source_tenant_name": "Northwind",
+            "tenant_name": "Shared warehouse",
+            "system_name": "Warehouse",
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_description": null,
+                "attribute_inferred_data_type": null,
+                "attribute_name": "CustomerID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "is_active": true,
+                "is_locked": false
+              }
+            ]
+          },
+          "source_metadata": [
+            {
+              "role": "primary",
+              "rationale": "Recorded customer source.",
+              "mapping_order": 1,
+              "is_locked": false,
+              "object": {
+                "tenant_code": "NWA",
+                "tenant_catalog": "northwind",
+                "system_code": "CRM",
+                "connection_code": "crm_bronze",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "object_description": null,
+                "zone_code": "bronze",
+                "is_active": true,
+                "is_locked": false,
+                "scope_is_active": true,
+                "scope_is_locked": false,
+                "attributes": [
+                  {
+                    "attribute_data_type": "BIGINT",
+                    "attribute_description": null,
+                    "attribute_inferred_data_type": null,
+                    "attribute_name": "customer_id",
+                    "attribute_nullability": false,
+                    "attribute_ordinal_position": 1,
+                    "is_active": true,
+                    "is_locked": false
+                  }
+                ]
+              },
+              "source_system_code": "CRM"
+            }
+          ],
+          "source_systems": [
+            {
+              "system_code": "CRM",
+              "system_name": "CRM",
+              "dependency_order": 10
+            }
+          ],
+          "object_transformations": [
+            {
+              "object_dependency_order": 10,
+              "entity": {
+                "entity_type": "logical_entity",
+                "entity_name": "Customer",
+                "definition": "Customer identity.",
+                "classification": "entity",
+                "grain": null
+              },
+              "transformation": {
+                "steps": [
+                  {
+                    "name": "customers",
+                    "source": "customer_source"
+                  }
+                ]
+              },
+              "source_system_code": "CRM"
+            }
+          ],
+          "attribute_transformations": [
+            {
+              "target_attribute_name": "CustomerID",
+              "target_attribute_ordinal_position": 1,
+              "transformation": {
+                "expression": "CAST(customer_id AS BIGINT)"
+              },
+              "source_system_code": "CRM",
+              "modeled_entity_type": "logical_entity",
+              "modeled_entity_name": "Customer"
+            }
+          ]
+        }
+      }
+    ],
+    "current_code": [
+      {
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Customer",
+        "artifact_name": "customer.sql",
+        "artifact_type": "sql_file",
+        "generated_code_content": "SELECT customer_id FROM warehouse.bronze.customer;",
+        "generated_code_status": "active",
+        "generated_code_is_locked": false,
+        "source_system_codes": [
+          "CRM"
+        ]
+      }
+    ],
+    "applied_groups": [
+      {
+        "is_locked": false,
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "validation_group_name": "customer_keys",
+        "validation_group_description": "Recorded customer key constraints.",
+        "is_active": true
+      }
+    ],
+    "applied_checks": [
+      {
+        "is_locked": false,
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "validation_group_name": "customer_keys",
+        "validation_check_name": "customer_id_not_null",
+        "validation_check_description": null,
+        "validation_category_code": "technical.nullability",
+        "validation_severity": "blocking",
+        "validation_query_sql": "SELECT count(*) FROM warehouse.silver.customer WHERE customer_id IS NULL",
+        "validation_comparison_query_sql": null,
+        "validation_result_data_type": "integer",
+        "validation_comparison_operator": "equal",
+        "validation_comparison_value_type": "literal",
+        "validation_comparison_value": 0,
+        "is_active": true
+      }
+    ]
+  },
+  "candidate": {
+    "system_ref": "system_1",
+    "validation_groups": [
+      {
+        "validation_group_name": "customer_keys",
+        "validation_group_description": "Recorded customer key constraints.",
+        "validation_checks": [
+          {
+            "validation_check_name": "customer_id_not_null",
+            "validation_check_description": null,
+            "validation_category_code": "technical.nullability",
+            "validation_severity": "blocking",
+            "validation_query_sql": "SELECT count(*) FROM warehouse.silver.customer WHERE customer_id IS NULL",
+            "validation_comparison_query_sql": null,
+            "validation_result_data_type": "integer",
+            "validation_comparison_operator": "equal",
+            "validation_comparison_value_type": "literal",
+            "validation_comparison_value": 0
+          }
+        ]
+      }
+    ]
+  },
+  "validations": [
+    "Exact system_ref resolves to frozen scope; combined run covers all selected Systems once.",
+    "Group names are unique within System; Check names within Group, using normalized keys.",
+    "Validate schema, severity/operator/type enums and operator/operand combinations.",
+    "Validate typed scalars/lists, homogeneous nonempty lists, date/time forms and Query B requirements.",
+    "Validate governed Databricks SQL/qualification. Scalar one-row/one-column shape is an execution check.",
+    "Preserve locked Groups/Checks; retire omitted unlocked active definitions under existing complete-ledger reconciliation.",
+    "Validate count/byte bounds and active Group-parent references in the effective Model graph.",
+    "Repair before staging; server-side ownership, scope, Tenant Lock and revision fences remain authoritative."
+  ]
+}

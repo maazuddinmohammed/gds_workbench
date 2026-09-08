@@ -8,10 +8,8 @@ from types import TracebackType
 from typing import Any, Self
 
 import pytest
-from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
-from pydantic import ValidationError
-
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.features.analysis.validation_execution import (
     AnalysisValidationEndpoint,
     AnalysisValidationEvidence,
@@ -21,6 +19,7 @@ from gds_workbench_api.features.analysis.validation_execution import (
     build_analysis_validation_query,
     load_default_analysis_validation_policy,
 )
+from pydantic import ValidationError
 
 _RESULT_COLUMNS = (
     "validation_source_non_null_count",

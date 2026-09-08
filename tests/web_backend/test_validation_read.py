@@ -11,15 +11,14 @@ import pytest
 from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_etl_workbench.application.change_sets.model_validation import (
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
-
+from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.infrastructure.postgres import ReadIsolation
 from gds_workbench_api.features.validation import (
     ValidationEligibleSystem,
     ValidationEligibleSystemCollection,
@@ -79,6 +78,7 @@ def _group_row(
     active: bool = True,
 ) -> dict[str, object]:
     return {
+        "is_locked": False,
         "validation_group_id": group_id,
         "system_id": system_id,
         "system_code": system_code,
@@ -92,6 +92,7 @@ def _group_row(
 
 def _check_row(*, group_id: int) -> dict[str, object]:
     return {
+        "validation_check_is_locked": False,
         "validation_group_id": group_id,
         "validation_check_id": 501,
         "validation_check_name": "counts_match",
@@ -99,9 +100,7 @@ def _check_row(*, group_id: int) -> dict[str, object]:
         "validation_category_code": "business.reconciliation",
         "validation_severity": "blocking",
         "validation_query_sql": "SELECT count(*) FROM catalog.silver.customer",
-        "validation_comparison_query_sql": (
-            "SELECT count(*) FROM catalog.gold.dim_customer"
-        ),
+        "validation_comparison_query_sql": ("SELECT count(*) FROM catalog.gold.dim_customer"),
         "validation_result_data_type": "integer",
         "validation_comparison_operator": "equal",
         "validation_comparison_value_type": "query",
@@ -404,6 +403,7 @@ class StaticValidationService:
             model_revision=4,
             groups=(
                 ValidationValidationGroup(
+                    is_locked=False,
                     validation_group_id=41,
                     system_id=9,
                     system_code="erp",
@@ -415,6 +415,7 @@ class StaticValidationService:
                     is_active=True,
                     checks=(
                         ValidationValidationCheck(
+                            is_locked=False,
                             validation_check_id=501,
                             validation_check_name="executes",
                             validation_check_description=None,

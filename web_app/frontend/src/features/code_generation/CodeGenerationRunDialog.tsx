@@ -3,6 +3,7 @@ import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { SelectField } from "../../shared/ui";
 import type { MappingEntityType } from "../mapping/api";
 import type { ModelDetail } from "../models/api";
 import {
@@ -22,7 +23,7 @@ export type CodeGenerationCoverage = "selected_targets" | "all_eligible_targets"
 type CodeGenerationRunSubmission =
   | { kind: "create"; command: CreateWorkflowRunCommand }
   | { kind: "retry"; workflowRunId: number };
-const CODE_GENERATION_AGENT_EXECUTION_MODE = "detailed_coverage" as const;
+const CODE_GENERATION_AGENT_EXECUTION_MODE = "tool_assisted" as const;
 
 export function CodeGenerationRunDialog({
   api,
@@ -44,6 +45,7 @@ export function CodeGenerationRunDialog({
   onStarted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const [pendingWorkflowRunId, setPendingWorkflowRunId] = useState<number | null>(null);
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
@@ -51,20 +53,15 @@ export function CodeGenerationRunDialog({
   });
   const form = useForm({
     defaultValues: {
-      sdkCode: model.default_agent_sdk_code ?? "",
-      providerCode: model.default_agent_provider_code ?? "",
       modelCode: model.default_agent_model_code ?? "",
       reasoningEffortCode: model.default_reasoning_effort_code ?? "",
-      maxTurns: model.default_max_turns === null ? "" : String(model.default_max_turns),
-      validationRetryCount: model.default_validation_retry_count === null
-        ? ""
-        : String(model.default_validation_retry_count),
     },
-    onSubmit: ({ value }) => {
+    onSubmit: () => {
       if (pendingWorkflowRunId !== null) {
         runMutation.mutate({ kind: "retry", workflowRunId: pendingWorkflowRunId });
         return;
       }
+      if (!agentSelectionValid) return;
       runMutation.mutate({
         kind: "create",
         command: {
@@ -76,14 +73,7 @@ export function CodeGenerationRunDialog({
             : [],
           modeled_entity_type: entityType,
           requested_batch_id: null,
-          agent: {
-            sdk_code: value.sdkCode,
-            provider_code: value.providerCode,
-            model_code: value.modelCode,
-            reasoning_effort_code: value.reasoningEffortCode,
-            max_turns: Number(value.maxTurns),
-            validation_retry_count: Number(value.validationRetryCount),
-          },
+          agent,
           prompt_overrides: {},
           code_generation_coverage_mode: coverage,
           sql_generation_guide_version_id: null,
@@ -93,33 +83,9 @@ export function CodeGenerationRunDialog({
   });
   const values = useStore(form.store, (state) => state.values);
   const capabilities = capabilitiesQuery.data;
-  const compatibleSdks = capabilities?.sdks.filter((sdk) => (
-    capabilities.models.some((candidate) => (
-      sdk.provider_codes.includes(candidate.provider_code)
-      && findAgentExecutionProfile(
-        candidate,
-        sdk.code,
-        CODE_GENERATION_AGENT_EXECUTION_MODE,
-      ) !== undefined
-    ))
-  )) ?? [];
-  const compatibleProviders = capabilities?.providers.filter((provider) => (
-    capabilities.sdks.find((sdk) => sdk.code === values.sdkCode)
-      ?.provider_codes.includes(provider.code) === true
-    && capabilities.models.some((candidate) => (
-      candidate.provider_code === provider.code
-      && findAgentExecutionProfile(
-        candidate,
-        values.sdkCode,
-        CODE_GENERATION_AGENT_EXECUTION_MODE,
-      ) !== undefined
-    ))
-  )) ?? [];
   const compatibleModels = capabilities?.models.filter((candidate) => (
-    candidate.provider_code === values.providerCode
-    && findAgentExecutionProfile(
+    findAgentExecutionProfile(
       candidate,
-      values.sdkCode,
       CODE_GENERATION_AGENT_EXECUTION_MODE,
     ) !== undefined
   )) ?? [];
@@ -127,26 +93,20 @@ export function CodeGenerationRunDialog({
   const selectedProfile = selectedModel
     ? findAgentExecutionProfile(
       selectedModel,
-      values.sdkCode,
       CODE_GENERATION_AGENT_EXECUTION_MODE,
     )
     : undefined;
   const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) => (
     selectedProfile?.reasoning_effort_codes.includes(effort.code)
   )) ?? [];
-  const parsedMaxTurns = Number(values.maxTurns);
-  const parsedRetries = Number(values.validationRetryCount);
-  const agentSelectionValid = capabilities !== undefined
-    && compatibleSdks.some((sdk) => sdk.code === values.sdkCode)
-    && compatibleProviders.some((provider) => provider.code === values.providerCode)
-    && selectedModel !== undefined
-    && compatibleReasoning.some((effort) => effort.code === values.reasoningEffortCode)
-    && Number.isInteger(parsedMaxTurns)
-    && parsedMaxTurns >= capabilities.max_turns.minimum
-    && parsedMaxTurns <= capabilities.max_turns.maximum
-    && Number.isInteger(parsedRetries)
-    && parsedRetries >= capabilities.validation_retries.minimum
-    && parsedRetries <= capabilities.validation_retries.maximum;
+  const agent = capabilities ? resolveDefaultAgent(capabilities, CODE_GENERATION_AGENT_EXECUTION_MODE, {
+    modelCode: values.modelCode,
+    reasoningEffortCode: values.reasoningEffortCode,
+    maxTurns: model.default_max_turns,
+    validationRetryCount: model.default_validation_retry_count,
+  }) : null;
+  const agentSelectionValid = agent !== null && agent.model_code === values.modelCode
+    && agent.reasoning_effort_code === values.reasoningEffortCode;
   const selectionValid = coverage === "all_eligible_targets" || selectedTargets.length > 0;
   const runMutation = useMutation({
     mutationFn: async (submission: CodeGenerationRunSubmission) => {
@@ -160,11 +120,15 @@ export function CodeGenerationRunDialog({
         return submission.workflowRunId;
       }
       const { command } = submission;
+      const fingerprint = JSON.stringify(command);
+      if (createAttempt.current?.fingerprint !== fingerprint) {
+        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
+      }
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
         command,
-        globalThis.crypto.randomUUID(),
+        createAttempt.current.key,
       );
       setPendingWorkflowRunId(result.workflow_run_id);
       await api.executeCodeGenerationRun(
@@ -183,47 +147,12 @@ export function CodeGenerationRunDialog({
 
   useEffect(() => closeButton.current?.focus(), []);
   useEffect(() => {
-    if (!capabilities) return;
-    const resolved = resolveDefaultAgent(
-      capabilities,
-      CODE_GENERATION_AGENT_EXECUTION_MODE,
-      {
-        sdkCode: values.sdkCode,
-        providerCode: values.providerCode,
-        modelCode: values.modelCode,
-        reasoningEffortCode: values.reasoningEffortCode,
-        maxTurns: model.default_max_turns,
-        validationRetryCount: model.default_validation_retry_count,
-      },
-    );
-    if (!resolved) return;
-    if (values.sdkCode !== resolved.sdk_code) form.setFieldValue("sdkCode", resolved.sdk_code);
-    if (values.providerCode !== resolved.provider_code) {
-      form.setFieldValue("providerCode", resolved.provider_code);
+    if (!agent) return;
+    if (values.modelCode !== agent.model_code) form.setFieldValue("modelCode", agent.model_code);
+    if (values.reasoningEffortCode !== agent.reasoning_effort_code) {
+      form.setFieldValue("reasoningEffortCode", agent.reasoning_effort_code);
     }
-    if (values.modelCode !== resolved.model_code) {
-      form.setFieldValue("modelCode", resolved.model_code);
-    }
-    if (values.reasoningEffortCode !== resolved.reasoning_effort_code) {
-      form.setFieldValue("reasoningEffortCode", resolved.reasoning_effort_code);
-    }
-    if (!values.maxTurns) form.setFieldValue("maxTurns", String(resolved.max_turns));
-    if (!values.validationRetryCount) {
-      form.setFieldValue("validationRetryCount", String(resolved.validation_retry_count));
-    }
-  }, [
-    capabilities,
-    form,
-    model.default_max_turns,
-    model.default_validation_retry_count,
-    values.maxTurns,
-    values.modelCode,
-    values.providerCode,
-    values.reasoningEffortCode,
-    values.sdkCode,
-    values.validationRetryCount,
-  ]);
-
+  }, [agent?.model_code, agent?.reasoning_effort_code, form, values.modelCode, values.reasoningEffortCode]);
   const allTargets = coverage === "all_eligible_targets";
   const title = allTargets ? "Generate all eligible SQL" : selectedRunTitle(selectedTargets);
 
@@ -270,7 +199,7 @@ export function CodeGenerationRunDialog({
             <dl className="detail-fact-grid">
               <Fact label="Model" value={`${model.model_name} · r${model.model_revision}`} />
               <Fact label="Modeled layer" value={layerLabel(entityType)} />
-              <Fact label="Execution mode" value="Detailed coverage" />
+              <Fact label="Context tools" value="Configured by the prompt template" />
               <Fact
                 label="Coverage"
                 value={allTargets ? "All eligible target Objects" : `${selectedTargets.length} selected target Object${selectedTargets.length === 1 ? "" : "s"}`}
@@ -297,23 +226,8 @@ export function CodeGenerationRunDialog({
               <strong id="code-generation-agent-heading">Generator configuration</strong>
               <span>Model defaults are preselected and editable for this run.</span>
             </header>
-            <div className="agent-run-grid">
-              <form.Field name="sdkCode">
-                {(field) => <SelectField
-                  label="Agent SDK"
-                  value={field.state.value}
-                  options={compatibleSdks.map((item) => [item.code, item.name])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="providerCode">
-                {(field) => <SelectField
-                  label="Provider"
-                  value={field.state.value}
-                  options={compatibleProviders.map((item) => [item.code, item.name])}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
+            <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingWorkflowRunId !== null}>
+              <legend className="sr-only">Model and reasoning</legend>
               <form.Field name="modelCode">
                 {(field) => <SelectField
                   label="Model"
@@ -333,25 +247,7 @@ export function CodeGenerationRunDialog({
                   onChange={field.handleChange}
                 />}
               </form.Field>
-              <form.Field name="maxTurns">
-                {(field) => <NumberField
-                  label="Maximum turns"
-                  value={field.state.value}
-                  minimum={capabilities?.max_turns.minimum ?? 1}
-                  maximum={capabilities?.max_turns.maximum ?? 50}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-              <form.Field name="validationRetryCount">
-                {(field) => <NumberField
-                  label="Validation retries"
-                  value={field.state.value}
-                  minimum={capabilities?.validation_retries.minimum ?? 0}
-                  maximum={capabilities?.validation_retries.maximum ?? 5}
-                  onChange={field.handleChange}
-                />}
-              </form.Field>
-            </div>
+            </fieldset>
           </section>
 
           {capabilitiesQuery.isError ? (
@@ -399,58 +295,6 @@ export function CodeGenerationRunDialog({
         </form>
       </section>
     </div>
-  );
-}
-
-function SelectField({
-  label,
-  value,
-  options,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  options: [string, string][];
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
-        <option value="">Select…</option>
-        {options.map(([optionValue, optionLabel]) => (
-          <option key={optionValue} value={optionValue}>{optionLabel}</option>
-        ))}
-      </select>
-    </label>
-  );
-}
-
-function NumberField({
-  label,
-  value,
-  minimum,
-  maximum,
-  onChange,
-}: {
-  label: string;
-  value: string;
-  minimum: number;
-  maximum: number;
-  onChange: (value: string) => void;
-}) {
-  return (
-    <label>
-      <span>{label}</span>
-      <input
-        aria-label={label}
-        type="number"
-        min={minimum}
-        max={maximum}
-        value={value}
-        onChange={(event) => onChange(event.target.value)}
-      />
-    </label>
   );
 }
 

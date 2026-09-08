@@ -58,6 +58,9 @@ class AnalysisFindingSummary(ReviewContract):
     relationship_confidence: Literal["low", "medium", "high"]
     validation_state: AnalysisValidationState
     validation_result: AnalysisValidationResult | None = None
+    observed_cardinality: (
+        Literal["one_to_one", "one_to_many", "many_to_one", "many_to_many"] | None
+    ) = None
     status: AnalysisStatus
     is_locked: bool
     updated_at: datetime

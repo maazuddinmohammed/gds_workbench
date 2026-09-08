@@ -8,6 +8,7 @@ const crypto = require("node:crypto");
 const childProcess = require("node:child_process");
 const unicode = require("../workbench/unicode.js");
 const workbenchCore = require("../workbench/core.js");
+const { normalize: normalizedValue, stableStringify } = workbenchCore;
 const workbenchCommon = require("../workbench/validation/common.js");
 const workbenchAreas = {
   metadata: require("../workbench/metadata.js"),
@@ -312,6 +313,18 @@ function readSessionState(session) {
   const invalidSqlPolicy =
     state?.sql !== undefined &&
     !new Set(["never", "essential", "as_needed"]).has(state.sql);
+  const invalidSubagentPolicy =
+    state?.subagents !== undefined &&
+    (!Array.isArray(state.subagents) ||
+      state.subagents.length !== 2 ||
+      !new Set(["inherit", "disabled", "fixed"]).has(state.subagents[0]) ||
+      (state.subagents[0] === "fixed"
+        ? typeof state.subagents[1] !== "string" ||
+          !state.subagents[1] ||
+          state.subagents[1] !== state.subagents[1].trim() ||
+          state.subagents[1].length > 200 ||
+          /[\u0000-\u001f\u007f]/u.test(state.subagents[1])
+        : state.subagents[1] !== null));
   const invalidModel =
     state?.model !== undefined &&
     (!Array.isArray(state.model) ||
@@ -351,6 +364,7 @@ function readSessionState(session) {
     (state.current !== null && typeof state.current !== "string") ||
     invalidModel ||
     invalidSqlPolicy ||
+    invalidSubagentPolicy ||
     invalidDraftCache ||
     state.tasks.some(
       (task) =>
@@ -811,26 +825,6 @@ function parseWhere(value) {
     fail("--where must be a JSON object.");
   }
   return parsed;
-}
-
-function normalizedValue(area, field, value) {
-  if (typeof value !== "string") return value;
-  if (area === "model") {
-    return unicode.casefold(value.replace(/^ +| +$/g, ""));
-  }
-  if (/(_code|_name|_schema)$/.test(field)) {
-    return unicode.lower(value.replace(/^ +| +$/g, ""));
-  }
-  return value;
-}
-
-function stableStringify(value) {
-  if (value === null || typeof value !== "object") return JSON.stringify(value);
-  if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
-  return `{${Object.keys(value)
-    .sort()
-    .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
-    .join(",")}}`;
 }
 
 function digestValue(value) {
@@ -2036,17 +2030,17 @@ function sha256Bytes(value) {
 function recordChunks(records, maximumBytes) {
   const chunks = [];
   let current = [];
+  let currentBytes = 2; // JSON array brackets.
   for (const record of records) {
-    const candidate = [...current, record];
-    const candidateBytes = Buffer.byteLength(stableStringify(candidate), "utf8");
-    if (candidate.length <= STAGE_CHUNK_MAX_RECORDS && candidateBytes <= maximumBytes) {
-      current = candidate;
-      continue;
+    const recordBytes = Buffer.byteLength(stableStringify(record), "utf8");
+    if (recordBytes + 2 > maximumBytes) return null;
+    if (current.length && (current.length === STAGE_CHUNK_MAX_RECORDS || currentBytes + recordBytes + 1 > maximumBytes)) {
+      chunks.push(current);
+      current = [];
+      currentBytes = 2;
     }
-    if (current.length === 0) return null;
-    chunks.push(current);
-    current = [record];
-    if (Buffer.byteLength(stableStringify(current), "utf8") > maximumBytes) return null;
+    currentBytes += recordBytes + (current.length ? 1 : 0);
+    current.push(record);
   }
   if (current.length) chunks.push(current);
   return chunks;
@@ -2071,6 +2065,70 @@ function transportSafeRecordChunks(records, hardMaximumBytes) {
     }
   }
   return best;
+}
+
+function prepareStageRequest(options) {
+  const context = changeSetContext(options);
+  const area = optionsArea(context);
+  const digest = assertAcceptedChangeSet(context);
+  const binding = assertBoundServerDraft(context, digest);
+  if (!binding.exact && !binding.failedRetry) {
+    fail("Cached server draft is not bound to the accepted local Change Set digest.");
+  }
+  const draft = context.state.cs?.[area];
+  if (!draft || draft[2] !== "active") fail(`Cached ${area} server draft must be active.`);
+  const pending = readPending(context);
+  const names = Object.keys(pending).sort();
+  if (names.length === 0) fail("Local Change Set has no affected datasets.");
+  const target = {
+    ...(area === "metadata"
+      ? { tenant_code: context.manifest.tenant_code }
+      : {
+          model_id: context.manifest.model_id,
+          model_name: context.manifest.model_name,
+          model_revision: context.manifest.model_revision,
+        }),
+    change_set_id: draft[0],
+    starting_revision: draft[1],
+  };
+  const manifest = {
+    schema_version: "2.0",
+    kind: "gds-stage-request",
+    area,
+    task: context.current[0],
+    accepted_digest: digest,
+    failed_retry: binding.failedRetry,
+    snapshot: {
+      snapshot_id: context.manifest.snapshot_id,
+      manifest_sha256: fileDigest(path.join(context.root, "manifest.json")),
+    },
+    target,
+    datasets: names.map((name) => {
+      const dataset = context.byName.get(name);
+      const payloadFile = path.join(context.directory, `${name}.json`);
+      return {
+        dataset: name,
+        canonical_key: dataset.canonical_key,
+        record_count: pending[name].length,
+        payload_file: payloadFile,
+        sha256: fileDigest(payloadFile),
+      };
+    }),
+  };
+  const manifestPath = path.join(
+    context.session,
+    "tasks",
+    `${context.current[0]}.stage-request.json`,
+  );
+  writeJsonAtomic(manifestPath, manifest);
+  return {
+    manifest: manifestPath,
+    area,
+    change_set_id: draft[0],
+    starting_revision: draft[1],
+    dataset_count: names.length,
+    accepted_digest: digest,
+  };
 }
 
 function prepareStage(options) {
@@ -2382,6 +2440,7 @@ function initializeSession(options) {
 
 const READINESS_TARGETS = {
   "metadata-authoring": ["metadata"],
+  "metadata-enrichment": ["metadata", "model"],
   "model-input-scope": ["metadata", "model"],
   "logical-build": ["metadata", "model"],
   "silver-registration": ["metadata", "model"],
@@ -2600,6 +2659,9 @@ function sessionStatus(options) {
     plan_digest: planDigest,
     tasks: state.tasks,
     model: state.model ?? null,
+    subagent_policy: state.subagents
+      ? { mode: state.subagents[0], model: state.subagents[1] }
+      : null,
     sql_policy: state.sql ?? null,
     cs: state.cs ?? {},
     stale: Array.isArray(state.stale) ? state.stale : [],
@@ -2608,6 +2670,36 @@ function sessionStatus(options) {
     stashes,
     acceptance,
   };
+}
+
+function setSubagentPolicy(options) {
+  const session = requireSessionPath(options.session);
+  const mode = options.mode;
+  if (!new Set(["inherit", "disabled", "fixed"]).has(mode)) {
+    fail("--mode must be inherit, disabled, or fixed.");
+  }
+
+  const hasModel = Object.hasOwn(options, "model");
+  let model = null;
+  if (mode === "fixed") {
+    model = options.model;
+    if (
+      typeof model !== "string" ||
+      !model ||
+      model !== model.trim() ||
+      model.length > 200 ||
+      /[\u0000-\u001f\u007f]/u.test(model)
+    ) {
+      fail("--model must be the exact bounded VS Code model name for fixed mode.");
+    }
+  } else if (hasModel) {
+    fail("--model is allowed only with fixed mode.");
+  }
+
+  const state = readSessionState(session);
+  state.subagents = [mode, model];
+  writeJsonAtomic(path.join(session, "session.json"), state);
+  return { subagent_policy: { mode, model } };
 }
 
 function setSqlPolicy(options) {
@@ -2627,6 +2719,7 @@ async function main() {
   if (command === "command-contract") output = commandContract(options);
   else if (command === "session-init") output = initializeSession(options);
   else if (command === "status") output = sessionStatus(options);
+  else if (command === "subagent-policy") output = setSubagentPolicy(options);
   else if (command === "sql-policy") output = setSqlPolicy(options);
   else if (command === "readiness") output = workflowReadiness(options);
   else if (command === "inspect") output = inspectSnapshot(options);
@@ -2649,6 +2742,7 @@ async function main() {
   else if (command === "snapshot-install") output = installSnapshot(options);
   else if (command === "snapshot-refresh") output = acceptRefreshedSnapshot(options);
   else if (command === "reconcile") output = reconcileChangeSet(options);
+  else if (command === "prepare-stage-request") output = prepareStageRequest(options);
   else if (command === "prepare-stage") output = prepareStage(options);
   else fail(`Unknown command: ${command}.`);
   process.stdout.write(`${JSON.stringify(output)}\n`);

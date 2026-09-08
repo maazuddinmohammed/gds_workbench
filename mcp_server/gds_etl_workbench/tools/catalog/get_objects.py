@@ -62,6 +62,7 @@ SELECT attribute.attribute_id,
        attribute.attribute_ordinal_position,
        left(attribute.attribute_description, 2000) AS attribute_description,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.is_surrogate_key,
        attribute.is_natural_key,
@@ -69,6 +70,7 @@ SELECT attribute.attribute_id,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
+       attribute.is_locked,
        attribute.is_active
   FROM core.attribute AS attribute
  WHERE attribute.object_id = ANY(%s::BIGINT[])
@@ -90,6 +92,7 @@ class AttributeDetails(ContractModel):
     attribute_ordinal_position: int = Field(gt=0)
     attribute_description: str | None = Field(default=None, max_length=2000)
     attribute_data_type: str = Field(min_length=1, max_length=100)
+    attribute_inferred_data_type: str | None = Field(max_length=100)
     attribute_nullability: bool
     is_surrogate_key: bool
     is_natural_key: bool
@@ -97,6 +100,7 @@ class AttributeDetails(ContractModel):
     is_masking_required: bool
     is_mapped: bool
     is_purge: bool
+    is_locked: bool
     is_active: bool
 
 

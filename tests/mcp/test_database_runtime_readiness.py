@@ -11,9 +11,7 @@ if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
-RUNTIME_INTEGRITY_SQL = (
-    Path(__file__).parents[2] / "database" / "19_runtime_integrity.sql"
-)
+RUNTIME_INTEGRITY_SQL = Path(__file__).parents[2] / "database" / "19_runtime_integrity.sql"
 VERIFY_INSTALL_SQL = Path(__file__).parents[2] / "database" / "20_verify_install.sql"
 
 
@@ -75,9 +73,7 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
             "revision_transaction_insert": True,
         }
 
-        connection.execute(
-            cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8"))
-        )
+        connection.execute(cast(LiteralString, RUNTIME_INTEGRITY_SQL.read_text(encoding="utf-8")))
         repaired = connection.execute(
             """
             SELECT has_schema_privilege(
@@ -119,9 +115,7 @@ def test_runtime_integrity_sql_can_repair_grants_and_recheck_an_install(
     }
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute(
-            "SELECT * FROM mcp.runtime_readiness()"
-        ).fetchone()
+        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
 
     assert contract is not None
     assert contract["runtime_role_ok"] is True
@@ -229,9 +223,7 @@ def test_runtime_integrity_revokes_an_unlisted_web_mcp_function(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        connection.execute(
-            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
-        )
+        connection.execute("GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write")
         connection.execute(
             cast(
                 LiteralString,
@@ -333,9 +325,7 @@ async def test_runtime_readiness_checks_the_complete_mcp_database_contract(
     assert readiness.code == "ready"
 
     with postgres_database.connect_runtime() as connection:
-        contract = connection.execute(
-            "SELECT * FROM mcp.runtime_readiness()"
-        ).fetchone()
+        contract = connection.execute("SELECT * FROM mcp.runtime_readiness()").fetchone()
 
     assert contract == {
         "schema_version": "1.0.0",
@@ -742,9 +732,7 @@ def test_verify_install_rejects_an_unlisted_web_mcp_function(
         pytest.raises(RaiseException, match="runtime function privileges"),
         connection.transaction(),
     ):
-        connection.execute(
-            "GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write"
-        )
+        connection.execute("GRANT EXECUTE ON FUNCTION mcp.runtime_readiness() TO gds_web_write")
         connection.execute(
             cast(
                 LiteralString,

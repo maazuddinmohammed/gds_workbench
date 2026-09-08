@@ -1,3 +1,4 @@
+import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { JsonObject, ReviewStatus } from "../../shared/contracts";
 import type { ModelsApi } from "../models/api";
@@ -228,7 +229,7 @@ export interface MappingTransport {
   ) => Promise<OutputTemplatePage>;
 }
 
-export type MappingApi = MappingTransport
+export type MappingApi = MappingTransport & ModelRecordReviewApi
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,

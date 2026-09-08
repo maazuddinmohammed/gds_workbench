@@ -1,0 +1,1108 @@
+{
+  "status": "verified_against_repository_schema_and_record_models",
+  "coverage": "Every leaf field plus explicit grouping paths in the seven current Analysis variables. Object relationship groups reuse the existing 17 relationship fields in both directions; grouping is derived, not persisted. Composite resolvers remain unimplemented.",
+  "deployed_database_verified": false,
+  "fields": [
+    {
+      "prompt_path": "source_context[].tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].tenant_description",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_description",
+      "file": "database/02_core.sql",
+      "line": 24,
+      "declaration": "TEXT",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].system_description",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_description",
+      "file": "database/02_core.sql",
+      "line": 47,
+      "declaration": "TEXT",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].system_type_code",
+      "status": "existing_join_projection",
+      "table": "reference.system_type",
+      "column": "system_type_code",
+      "file": "database/01_reference.sql",
+      "line": 28,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].system_type_description",
+      "status": "existing_join_projection",
+      "table": "reference.system_type",
+      "column": "system_type_description",
+      "file": "database/01_reference.sql",
+      "line": 30,
+      "declaration": "TEXT",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].connection_description",
+      "status": "previously_approved_addition_not_implemented",
+      "planned_table": "core.connection",
+      "planned_column": "connection_description",
+      "notes": "Previously approved optional Connection description. Not present in current SQL or ConnectionRecord; remains null until implemented and populated."
+    },
+    {
+      "prompt_path": "source_context[].connection_type_code",
+      "status": "existing_join_projection",
+      "table": "reference.connection_type",
+      "column": "connection_type_code",
+      "file": "database/01_reference.sql",
+      "line": 56,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].connection_type_description",
+      "status": "existing_join_projection",
+      "table": "reference.connection_type",
+      "column": "connection_type_description",
+      "file": "database/01_reference.sql",
+      "line": 58,
+      "declaration": "TEXT",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].zone_code",
+      "status": "existing_join_projection",
+      "table": "reference.zone",
+      "column": "zone_code",
+      "file": "database/01_reference.sql",
+      "line": 42,
+      "declaration": "VARCHAR(30) NOT NULL",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "source_context[].zone_description",
+      "status": "existing_join_projection",
+      "table": "reference.zone",
+      "column": "zone_description",
+      "file": "database/01_reference.sql",
+      "line": 44,
+      "declaration": "TEXT",
+      "notes": "Resolve contributing source Connections via registered ingestion lineage; source zone describes mapped Source placement."
+    },
+    {
+      "prompt_path": "gds_context[].tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "gds_context[].system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "gds_context[].connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "gds_context[].zone_code",
+      "status": "existing_join_projection",
+      "table": "reference.zone",
+      "column": "zone_code",
+      "file": "database/01_reference.sql",
+      "line": 42,
+      "declaration": "VARCHAR(30) NOT NULL"
+    },
+    {
+      "prompt_path": "gds_context[].zone_description",
+      "status": "existing_join_projection",
+      "table": "reference.zone",
+      "column": "zone_description",
+      "file": "database/01_reference.sql",
+      "line": 44,
+      "declaration": "TEXT"
+    },
+    {
+      "prompt_path": "object_context[].tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_context[].system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_context[].connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_context[].object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL"
+    },
+    {
+      "prompt_path": "object_context[].object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL"
+    },
+    {
+      "prompt_path": "object_context[].object_description",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_description",
+      "file": "database/02_core.sql",
+      "line": 174,
+      "declaration": "TEXT"
+    },
+    {
+      "prompt_path": "object_context[].zone_code",
+      "status": "existing_join_projection",
+      "table": "reference.zone",
+      "column": "zone_code",
+      "file": "database/01_reference.sql",
+      "line": 42,
+      "declaration": "VARCHAR(30) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].selected_attribute_names",
+      "status": "derived_from_authorized_selection",
+      "notes": "Names from the eligible selected Attributes already owned by this physical Object. A prompt selection projection, not a database column."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].attribute_name",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "attribute_name",
+      "file": "database/02_core.sql",
+      "line": 201,
+      "declaration": "VARCHAR(400) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].attribute_description",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "attribute_description",
+      "file": "database/02_core.sql",
+      "line": 204,
+      "declaration": "TEXT"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].attribute_data_type",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "attribute_data_type",
+      "file": "database/02_core.sql",
+      "line": 205,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].attribute_inferred_data_type",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "attribute_inferred_data_type",
+      "file": "database/02_core.sql",
+      "line": 206,
+      "declaration": "VARCHAR(100)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].attribute_nullability",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "attribute_nullability",
+      "file": "database/02_core.sql",
+      "line": 207,
+      "declaration": "BOOLEAN NOT NULL DEFAULT TRUE"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].is_natural_key",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "is_natural_key",
+      "file": "database/02_core.sql",
+      "line": 211,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].is_surrogate_key",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "is_surrogate_key",
+      "file": "database/02_core.sql",
+      "line": 210,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].is_masking_required",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "is_masking_required",
+      "file": "database/02_core.sql",
+      "line": 213,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].is_meta_data",
+      "status": "existing_column",
+      "table": "core.attribute",
+      "column": "is_meta_data",
+      "file": "database/02_core.sql",
+      "line": 212,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile",
+      "status": "derived_from_authorized_selection",
+      "notes": "Nullable grouping of the current Model Profile matched by physical Object/Attribute key. The grouping envelope is not a database column."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.profiled_at",
+      "status": "previously_approved_addition_not_implemented",
+      "planned_table": "workflow.attribute_profile",
+      "planned_column": "profiled_at",
+      "notes": "Previously approved saved Profile provenance; absent from current Profile SQL and record model. core.object.batch_attribute_name exists as configuration but does not prove a saved Profile used a batch. Do not substitute created/updated time or guess scope."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.row_scope",
+      "status": "previously_approved_addition_not_implemented",
+      "planned_table": "workflow.attribute_profile",
+      "planned_column": "row_scope",
+      "notes": "Previously approved saved Profile provenance; absent from current Profile SQL and record model. core.object.batch_attribute_name exists as configuration but does not prove a saved Profile used a batch. Do not substitute created/updated time or guess scope."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.batch_attribute_name",
+      "status": "previously_approved_addition_not_implemented",
+      "planned_table": "workflow.attribute_profile",
+      "planned_column": "batch_attribute_name",
+      "notes": "Previously approved saved Profile provenance; absent from current Profile SQL and record model. core.object.batch_attribute_name exists as configuration but does not prove a saved Profile used a batch. Do not substitute created/updated time or guess scope."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.batch_id",
+      "status": "previously_approved_addition_not_implemented",
+      "planned_table": "workflow.attribute_profile",
+      "planned_column": "batch_id",
+      "notes": "Previously approved saved Profile provenance; absent from current Profile SQL and record model. core.object.batch_attribute_name exists as configuration but does not prove a saved Profile used a batch. Do not substitute created/updated time or guess scope."
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.row_count",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "row_count",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 12,
+      "declaration": "BIGINT NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.non_null_count",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "non_null_count",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 13,
+      "declaration": "BIGINT NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.null_count",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "null_count",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 14,
+      "declaration": "BIGINT NOT NULL"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.blank_count",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "blank_count",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 15,
+      "declaration": "BIGINT"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.distinct_count",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "distinct_count",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 16,
+      "declaration": "BIGINT"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.min_data_length",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "min_data_length",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 17,
+      "declaration": "INTEGER"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.max_data_length",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "max_data_length",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 18,
+      "declaration": "INTEGER"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.avg_data_length",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "avg_data_length",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 19,
+      "declaration": "NUMERIC(20, 6)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.percent_populated",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "percent_populated",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 20,
+      "declaration": "NUMERIC(7, 4)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.percent_duplicates",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "percent_duplicates",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 21,
+      "declaration": "NUMERIC(7, 4)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.percent_null",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "percent_null",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 22,
+      "declaration": "NUMERIC(7, 4)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.percent_blank",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "percent_blank",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 23,
+      "declaration": "NUMERIC(7, 4)"
+    },
+    {
+      "prompt_path": "object_attribute_context[].attributes[].profile.percent_distinct",
+      "status": "existing_column",
+      "table": "workflow.attribute_profile",
+      "column": "percent_distinct",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 24,
+      "declaration": "NUMERIC(7, 4)"
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].source.object_description",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_description",
+      "file": "database/02_core.sql",
+      "line": 174,
+      "declaration": "TEXT",
+      "notes": "Follow core.ingestion_object_mapping.source_object_id to the actual source Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].target.tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.target_object_id to the actual target Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].target.system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.target_object_id to the actual target Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].target.connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.target_object_id to the actual target Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].target.object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.target_object_id to the actual target Object; never infer links from names."
+    },
+    {
+      "prompt_path": "ingestion_mapping[].target.object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Follow core.ingestion_object_mapping.target_object_id to the actual target Object; never infer links from names."
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_record_key",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_record_key",
+      "file": "database/04_model.sql",
+      "line": 237,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_document_name",
+      "status": "existing_join_projection",
+      "table": "model.modeling_assertion_document",
+      "column": "modeling_assertion_document_name",
+      "file": "database/04_model.sql",
+      "line": 193,
+      "declaration": "VARCHAR(255) NOT NULL"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_record_type",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_record_type",
+      "file": "database/04_model.sql",
+      "line": 238,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_text",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_text",
+      "file": "database/04_model.sql",
+      "line": 239,
+      "declaration": "TEXT NOT NULL"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_details",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_details",
+      "file": "database/04_model.sql",
+      "line": 240,
+      "declaration": "JSONB NOT NULL DEFAULT '{}'::JSONB"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_source_location",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_source_location",
+      "file": "database/04_model.sql",
+      "line": 241,
+      "declaration": "JSONB"
+    },
+    {
+      "prompt_path": "modeling_assertions[].modeling_assertion_confidence",
+      "status": "existing_column",
+      "table": "model.modeling_assertion_record",
+      "column": "modeling_assertion_confidence",
+      "file": "database/04_model.sql",
+      "line": 243,
+      "declaration": "VARCHAR(10)"
+    },
+    {
+      "prompt_path": "object_relationship_context[].tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Physical Object key of the authorized selected group; same registered Object projection as object_context."
+    },
+    {
+      "prompt_path": "object_relationship_context[].system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Physical Object key of the authorized selected group; same registered Object projection as object_context."
+    },
+    {
+      "prompt_path": "object_relationship_context[].connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Physical Object key of the authorized selected group; same registered Object projection as object_context."
+    },
+    {
+      "prompt_path": "object_relationship_context[].object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Physical Object key of the authorized selected group; same registered Object projection as object_context."
+    },
+    {
+      "prompt_path": "object_relationship_context[].object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Physical Object key of the authorized selected group; same registered Object projection as object_context."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].from_attribute_name",
+      "status": "existing_join_projection",
+      "table": "core.attribute",
+      "column": "attribute_name",
+      "file": "database/02_core.sql",
+      "line": 201,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].to_attribute_name",
+      "status": "existing_join_projection",
+      "table": "core.attribute",
+      "column": "attribute_name",
+      "file": "database/02_core.sql",
+      "line": 201,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].relationship_kind",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_kind",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 79,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].relationship_confidence",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_confidence",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 80,
+      "declaration": "VARCHAR(10) NOT NULL DEFAULT 'medium'"
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].relationship_basis",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_basis",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 81,
+      "declaration": "TEXT NOT NULL"
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].analysis_result_status",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "analysis_result_status",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 92,
+      "declaration": "VARCHAR(20) NOT NULL DEFAULT 'active'"
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships[].analysis_result_is_locked",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "analysis_result_is_locked",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 93,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].from_attribute_name",
+      "status": "existing_join_projection",
+      "table": "core.attribute",
+      "column": "attribute_name",
+      "file": "database/02_core.sql",
+      "line": 201,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the from endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_tenant_code",
+      "status": "existing_join_projection",
+      "table": "core.tenant",
+      "column": "tenant_code",
+      "file": "database/02_core.sql",
+      "line": 22,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_system_code",
+      "status": "existing_join_projection",
+      "table": "core.system",
+      "column": "system_code",
+      "file": "database/02_core.sql",
+      "line": 45,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_connection_code",
+      "status": "existing_join_projection",
+      "table": "core.connection",
+      "column": "connection_code",
+      "file": "database/02_core.sql",
+      "line": 84,
+      "declaration": "VARCHAR(100) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_object_schema",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_schema",
+      "file": "database/02_core.sql",
+      "line": 169,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_object_name",
+      "status": "existing_join_projection",
+      "table": "core.object",
+      "column": "object_name",
+      "file": "database/02_core.sql",
+      "line": 170,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].to_attribute_name",
+      "status": "existing_join_projection",
+      "table": "core.attribute",
+      "column": "attribute_name",
+      "file": "database/02_core.sql",
+      "line": 201,
+      "declaration": "VARCHAR(400) NOT NULL",
+      "notes": "Existing AnalysisResultRecord field; resolve the to endpoint foreign keys through Object, Attribute and Connection ancestry. Not a physical analysis_result column."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].relationship_kind",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_kind",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 79,
+      "declaration": "VARCHAR(100) NOT NULL"
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].relationship_confidence",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_confidence",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 80,
+      "declaration": "VARCHAR(10) NOT NULL DEFAULT 'medium'"
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].relationship_basis",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "relationship_basis",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 81,
+      "declaration": "TEXT NOT NULL"
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].analysis_result_status",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "analysis_result_status",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 92,
+      "declaration": "VARCHAR(20) NOT NULL DEFAULT 'active'"
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships[].analysis_result_is_locked",
+      "status": "existing_column",
+      "table": "workflow.analysis_result",
+      "column": "analysis_result_is_locked",
+      "file": "database/05_workflow_analysis.sql",
+      "line": 93,
+      "declaration": "BOOLEAN NOT NULL DEFAULT FALSE"
+    },
+    {
+      "prompt_path": "object_relationship_context[]",
+      "status": "authorized_selection_and_direction_grouping",
+      "notes": "Derived view over selected Objects and saved Analysis endpoints; not a database column. Grouping and empty lists preserve scope; directional repetitions are views of one stored relationship."
+    },
+    {
+      "prompt_path": "object_relationship_context[].incoming_relationships",
+      "status": "authorized_selection_and_direction_grouping",
+      "notes": "Derived view over selected Objects and saved Analysis endpoints; not a database column. Grouping and empty lists preserve scope; directional repetitions are views of one stored relationship."
+    },
+    {
+      "prompt_path": "object_relationship_context[].outgoing_relationships",
+      "status": "authorized_selection_and_direction_grouping",
+      "notes": "Derived view over selected Objects and saved Analysis endpoints; not a database column. Grouping and empty lists preserve scope; directional repetitions are views of one stored relationship."
+    }
+  ],
+  "other_design_only_structures": [
+    {
+      "name": "metadata_enrichment_object / metadata_enrichment_attribute",
+      "status": "approved_workflow_split_not_runtime_registered",
+      "notes": "Current workflow_stage registration permits metadata_enrichment; separate workflow codes and routing are approved design changes, not existing rows."
+    },
+    {
+      "name": "Five foundational composite variable names and restricted Jinja expressions",
+      "status": "approved_projection_and_rendering_design_not_implemented",
+      "notes": "Current enrichment registry uses its existing request variables and simple placeholder rendering. Do not claim these proposed bindings/templates already run."
+    },
+    {
+      "name": "Analysis GDS list, six dedicated readers, and explicit paging",
+      "status": "accepted_design_not_runtime_registered",
+      "notes": "Reader selection/defaults, assertion access, and paging direction are accepted design. Page fields and cursors are derived transport metadata, not database columns. Exact wording/examples are ready for final review; runtime remains unimplemented."
+    },
+    {
+      "name": "modeling_assertion_details and modeling_assertion_source_location nested example keys",
+      "status": "illustrative_values_inside_existing_jsonb_fields",
+      "notes": "identifier_scope, cross_system_identity and section are example JSON members, not claimed SQL columns or a required universal detail schema."
+    },
+    {
+      "name": "object_relationship_context",
+      "status": "accepted_grouped_projection_not_runtime_registered",
+      "notes": "Replaces the flat applied_relationships prompt variable. No database or authored output schema change."
+    }
+  ]
+}

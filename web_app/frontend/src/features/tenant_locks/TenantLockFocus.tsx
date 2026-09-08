@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useInfiniteQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 
+import { initials } from "../../shared/presentation";
 import {
   acquireTenantLockErrorMessage,
   overrideTenantLockErrorMessage,
@@ -437,15 +438,6 @@ function LockDetail({ label, value }: { label: string; value: ReactNode }) {
       <strong>{value}</strong>
     </span>
   );
-}
-
-function initials(name: string): string {
-  return name
-    .trim()
-    .split(/\s+/)
-    .slice(0, 2)
-    .map((part) => part[0]?.toLocaleUpperCase() ?? "")
-    .join("") || "G";
 }
 
 function formatDateTime(value: string | null): string | null {

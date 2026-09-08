@@ -34,13 +34,9 @@ class ExpectedCall:
 @dataclass
 class ScriptedTransaction:
     expected: list[ExpectedCall]
-    calls: list[tuple[str, LiteralString, tuple[Any, ...]]] = field(
-        default_factory=list
-    )
+    calls: list[tuple[str, LiteralString, tuple[Any, ...]]] = field(default_factory=list)
 
-    def _next(
-        self, method: Literal["one", "all"], query: LiteralString
-    ) -> ExpectedCall:
+    def _next(self, method: Literal["one", "all"], query: LiteralString) -> ExpectedCall:
         assert self.expected, f"unexpected {method} query: {' '.join(query.split())}"
         expected = self.expected.pop(0)
         assert expected.method == method
@@ -134,9 +130,7 @@ def _mapping_attribute() -> MappingAttributeRecord:
 async def test_physical_keys_use_placement_tenant_and_fence_source_to_model() -> None:
     transaction = ScriptedTransaction(
         [
-            ExpectedCall(
-                "one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}
-            ),
+            ExpectedCall("one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}),
             ExpectedCall(
                 "one",
                 "JOIN core.attribute AS attribute",
@@ -177,9 +171,7 @@ async def test_physical_keys_use_placement_tenant_and_fence_source_to_model() ->
 async def test_model_input_scope_materializes_before_model_bindings() -> None:
     transaction = ScriptedTransaction(
         [
-            ExpectedCall(
-                "one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}
-            ),
+            ExpectedCall("one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}),
             ExpectedCall(
                 "one",
                 "INSERT INTO model.model_input_scope",
@@ -218,9 +210,7 @@ async def test_model_input_scope_materializes_before_model_bindings() -> None:
 async def test_bindings_resolve_target_attributes_under_the_bound_object() -> None:
     transaction = ScriptedTransaction(
         [
-            ExpectedCall(
-                "one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}
-            ),
+            ExpectedCall("one", "SELECT object.object_id", {"object_id": 11, "system_id": 5}),
             ExpectedCall("one", "SELECT logical_entity_id", {"logical_entity_id": 101}),
             ExpectedCall(
                 "one",
@@ -232,9 +222,7 @@ async def test_bindings_resolve_target_attributes_under_the_bound_object() -> No
                 "SELECT attribute.logical_attribute_id",
                 {"logical_attribute_id": 102},
             ),
-            ExpectedCall(
-                "one", "JOIN core.attribute AS attribute", {"attribute_id": 12}
-            ),
+            ExpectedCall("one", "JOIN core.attribute AS attribute", {"attribute_id": 12}),
             ExpectedCall(
                 "one",
                 "INSERT INTO workflow.model_attribute_binding",
@@ -269,9 +257,7 @@ async def test_mapping_materializes_only_through_bindings() -> None:
                 {"mapping_source_system_dependency_id": 1},
             ),
             ExpectedCall("one", "SELECT mapping_object_id", None),
-            ExpectedCall(
-                "one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}
-            ),
+            ExpectedCall("one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}),
             ExpectedCall("one", "SELECT mapping_attribute_id", None),
             ExpectedCall(
                 "one",
@@ -282,9 +268,7 @@ async def test_mapping_materializes_only_through_bindings() -> None:
     )
     materializer = _materializer(transaction)
     materializer._model_object_bindings[("logical_entity", "customer")] = (201, 11)
-    materializer._model_attribute_bindings[
-        ("logical_entity", "customer", "customerid")
-    ] = 202
+    materializer._model_attribute_bindings[("logical_entity", "customer", "customerid")] = 202
     materializer._system_ids["crm"] = 55
     materializer._output_template_ids[("mapping_object", "mapping-object")] = 501
     materializer._output_template_ids[("mapping_attribute", "mapping-attribute")] = 502
@@ -320,9 +304,7 @@ async def test_workflow_mapping_policy_overrides_record_template() -> None:
     transaction = ScriptedTransaction(
         [
             ExpectedCall("one", "SELECT mapping_object_id", None),
-            ExpectedCall(
-                "one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}
-            ),
+            ExpectedCall("one", "INSERT INTO workflow.mapping_object", {"mapping_object_id": 301}),
         ]
     )
     materializer = ModelMaterializer.for_workflow_apply(
@@ -346,9 +328,7 @@ async def test_workflow_mapping_policy_overrides_record_template() -> None:
 
 
 @pytest.mark.asyncio
-async def test_generated_code_uses_server_digest_and_separate_source_assignment() -> (
-    None
-):
+async def test_generated_code_uses_server_digest_and_separate_source_assignment() -> None:
     transaction = ScriptedTransaction(
         [
             ExpectedCall(
@@ -357,9 +337,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
                 {"code_input_digest": "a" * 64},
             ),
             ExpectedCall("one", "SELECT generated_code_id", None),
-            ExpectedCall(
-                "one", "INSERT INTO workflow.generated_code", {"generated_code_id": 401}
-            ),
+            ExpectedCall("one", "INSERT INTO workflow.generated_code", {"generated_code_id": 401}),
             ExpectedCall("one", "SELECT generated_code_source_system_id", None),
             ExpectedCall(
                 "one",
@@ -372,6 +350,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
     materializer._model_object_bindings[("logical_entity", "customer")] = (201, 11)
     materializer._system_ids["crm"] = 55
     artifact = GeneratedCodeRecord(
+        generated_code_is_locked=False,
         modeled_entity_type="logical_entity",
         modeled_entity_name="Customer",
         artifact_name="Customer.sql",
@@ -380,6 +359,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
         generated_code_status="active",
     )
     assignment = GeneratedCodeSourceSystemRecord(
+        generated_code_source_system_is_locked=False,
         modeled_entity_type="logical_entity",
         modeled_entity_name="Customer",
         artifact_name="Customer.sql",
@@ -403,9 +383,7 @@ async def test_generated_code_uses_server_digest_and_separate_source_assignment(
 
 def _digest(value: object) -> str:
     return hashlib.sha256(
-        json.dumps(
-            value, ensure_ascii=False, sort_keys=True, separators=(",", ":")
-        ).encode()
+        json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
 
 
@@ -462,6 +440,7 @@ async def test_validation_digests_are_derived_after_mapping_and_code() -> None:
     materializer._tenant_ids["tenant-a"] = 1
     materializer._system_ids["crm"] = 55
     group = ValidationGroupRecord(
+        is_locked=False,
         tenant_code="Tenant-A",
         system_code="CRM",
         validation_group_name="Customer completeness",

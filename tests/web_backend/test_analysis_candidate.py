@@ -8,11 +8,10 @@ from gds_etl_workbench.domain.modeling_records import (
     AnalysisResultRecord,
     PhysicalAttributeKey,
 )
-from pydantic import JsonValue
-
 from gds_workbench_api.features.analysis.candidate import (
     AnalysisInferenceCandidateValidator,
 )
+from pydantic import JsonValue
 
 
 def _attribute(*, object_name: str, attribute_name: str) -> PhysicalAttributeKey:
@@ -108,15 +107,11 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
 
     schema = validator.output_schema()
     relationships = cast(dict[str, JsonValue], schema["properties"])["relationships"]
-    items = cast(
-        dict[str, JsonValue], cast(dict[str, JsonValue], relationships)["items"]
-    )
+    items = cast(dict[str, JsonValue], cast(dict[str, JsonValue], relationships)["items"])
     reference = cast(str, items["$ref"])
     definition_name = reference.rsplit("/", 1)[-1]
     definition = cast(dict[str, JsonValue], schema["$defs"])[definition_name]
-    fields = cast(
-        dict[str, JsonValue], cast(dict[str, JsonValue], definition)["properties"]
-    )
+    fields = cast(dict[str, JsonValue], cast(dict[str, JsonValue], definition)["properties"])
     assert "relationship_basis" in fields
     assert "validation_result" not in fields
     assert "analysis_result_status" not in fields
@@ -126,9 +121,7 @@ async def test_new_inference_normalizes_only_agent_owned_fields() -> None:
 @pytest.mark.asyncio
 async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> None:
     validator = _validator(applied=(_applied(),))
-    candidate: JsonValue = {
-        "relationships": [_candidate(basis="Updated inference evidence.")]
-    }
+    candidate: JsonValue = {"relationships": [_candidate(basis="Updated inference evidence.")]}
 
     assert (await validator.validate(candidate)).issues == ()
     stored = validator.parse_validated(candidate)[0].records[0]
@@ -143,9 +136,7 @@ async def test_inference_preserves_validation_lifecycle_and_lock_fields() -> Non
 @pytest.mark.asyncio
 async def test_locked_relationship_cannot_be_changed_by_inference() -> None:
     validator = _validator(applied=(_applied(locked=True),))
-    candidate: JsonValue = {
-        "relationships": [_candidate(basis="Changed while locked.")]
-    }
+    candidate: JsonValue = {"relationships": [_candidate(basis="Changed while locked.")]}
 
     validation = await validator.validate(candidate)
 
@@ -163,17 +154,13 @@ async def test_inference_rejects_endpoints_outside_immutable_selection() -> None
 
     validation = await validator.validate(candidate)
 
-    assert [issue.code for issue in validation.issues] == [
-        "candidate.endpoint_outside_selection"
-    ]
+    assert [issue.code for issue in validation.issues] == ["candidate.endpoint_outside_selection"]
 
 
 @pytest.mark.asyncio
 async def test_inference_rejects_unowned_fields_and_duplicate_identities() -> None:
     validator = _validator()
-    unowned: JsonValue = {
-        "relationships": [_candidate(extra={"analysis_result_is_locked": True})]
-    }
+    unowned: JsonValue = {"relationships": [_candidate(extra={"analysis_result_is_locked": True})]}
     duplicate: JsonValue = {
         "relationships": [_candidate(), _candidate(basis="Duplicate identity.")]
     }
@@ -194,10 +181,7 @@ async def test_empty_or_unchanged_inference_is_a_valid_noop() -> None:
     assert (await validator.validate({"relationships": []})).issues == ()
     assert validator.parse_validated({"relationships": []}) == ()
     assert (
-        validator.parse_validated(
-            {"relationships": [_candidate(basis="Original evidence.")]}
-        )
-        == ()
+        validator.parse_validated({"relationships": [_candidate(basis="Original evidence.")]}) == ()
     )
 
 
@@ -216,3 +200,104 @@ async def test_existing_canonical_identity_keeps_its_stored_relationship_kind() 
 
     assert (await validator.validate(candidate)).issues == ()
     assert validator.parse_validated(candidate) == ()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "duplicate_fields",
+    [{}, {"relationship_kind": " Reference "}, {"from_object_name": " ORDER_RAW "}],
+)
+async def test_identical_inference_duplicates_produce_one_record(
+    duplicate_fields: dict[str, JsonValue],
+) -> None:
+    validator = _validator()
+    candidate: JsonValue = {"relationships": [_candidate(), _candidate(extra=duplicate_fields)]}
+
+    assert (await validator.validate(candidate)).issues == ()
+    assert validator.parse_validated(candidate) == validator.parse_validated(
+        {"relationships": [_candidate()]}
+    )
+
+
+@pytest.mark.asyncio
+async def test_duplicate_unchanged_locked_relationship_is_a_noop() -> None:
+    validator = _validator(applied=(_applied(locked=True),))
+    candidate: JsonValue = {
+        "relationships": [
+            _candidate(basis="Original evidence."),
+            _candidate(basis="Original evidence."),
+        ]
+    }
+
+    assert (await validator.validate(candidate)).issues == ()
+    assert validator.parse_validated(candidate) == ()
+
+
+@pytest.mark.asyncio
+async def test_duplicate_with_conflicting_confidence_requires_correction() -> None:
+    validator = _validator()
+    candidate: JsonValue = {
+        "relationships": [
+            _candidate(),
+            _candidate(extra={"relationship_confidence": "medium"}),
+        ]
+    }
+
+    validation = await validator.validate(candidate)
+
+    assert [(issue.code, issue.path) for issue in validation.issues] == [
+        ("candidate.relationship_duplicate", ("relationships", 1))
+    ]
+    with pytest.raises(InvalidRequestError):
+        validator.parse_validated(candidate)
+
+
+@pytest.mark.asyncio
+async def test_duplicate_broken_reference_still_fails_scope_validation() -> None:
+    validator = _validator()
+    missing = _candidate(extra={"to_object_name": "outside_scope_raw"})
+    candidate: JsonValue = {"relationships": [missing, missing]}
+
+    validation = await validator.validate(candidate)
+
+    assert [(issue.code, issue.path) for issue in validation.issues] == [
+        ("candidate.endpoint_outside_selection", ("relationships", 0))
+    ]
+    with pytest.raises(InvalidRequestError):
+        validator.parse_validated(candidate)
+
+
+@pytest.mark.asyncio
+async def test_lock_error_uses_original_index_after_duplicate_removal() -> None:
+    validator = _validator(applied=(_applied(locked=True, relationship_kind="association"),))
+    candidate: JsonValue = {
+        "relationships": [
+            _candidate(),
+            _candidate(),
+            _candidate(extra={"relationship_kind": "association"}),
+        ]
+    }
+
+    validation = await validator.validate(candidate)
+
+    assert [(issue.code, issue.path) for issue in validation.issues] == [
+        ("candidate.record_locked", ("relationships", 2))
+    ]
+
+
+@pytest.mark.asyncio
+async def test_schema_error_uses_original_index_after_duplicate_removal() -> None:
+    validator = _validator()
+    candidate: JsonValue = {
+        "relationships": [
+            _candidate(),
+            _candidate(),
+            _candidate(extra={"to_object_name": "order_raw"}),
+        ]
+    }
+
+    validation = await validator.validate(candidate)
+
+    assert [(issue.code, issue.path) for issue in validation.issues] == [
+        ("candidate.record_schema_invalid", ("relationships", 2))
+    ]

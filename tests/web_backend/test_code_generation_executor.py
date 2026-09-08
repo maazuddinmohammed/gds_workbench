@@ -3,13 +3,18 @@ from __future__ import annotations
 import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
-from hashlib import sha256
+from pathlib import Path
 from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.application.change_sets.contracts import (
+    MAX_MODEL_STAGE_PAYLOAD_BYTES,
+)
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -25,10 +30,6 @@ from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeSourceSystemRecord,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
-from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
@@ -78,8 +79,32 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
+
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
+
+
+def _source_context(
+    *,
+    guide_content: str = "Use deterministic MERGE SQL.",
+    transformation_kind: str = "direct",
+    mapping_expression: str | None = None,
+    target_name: str = "Customer",
+) -> dict[str, Any]:
+    fixture = json.loads(
+        (Path(__file__).parent / "fixtures" / "downstream_prompt_contexts.json").read_text()
+    )
+    context = deepcopy(fixture["code_generation"]["targets"][0]["context"])
+    context["guide"]["content"] = guide_content
+    context["target"]["object_name"] = target_name
+    document = {"kind": transformation_kind}
+    if mapping_expression is not None:
+        document["expression"] = mapping_expression
+    context["object_mappings"][0]["transformation"] = document
+    context["attribute_mappings"][0]["transformation"] = deepcopy(document)
+    return context
 
 
 def _principal() -> RequestPrincipal:
@@ -106,10 +131,10 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
         selected_scope_digest="a" * 64,
         selected_object_ids=(501, 502),
         selection=AgentRunSelection(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-primary",
-            reasoning_effort_code="medium",
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-primary",
+            reasoning_effort_code="none",
             max_turns=8,
             validation_retry_count=retry_count,
         ),
@@ -122,16 +147,12 @@ def _plan(*, retry_count: int = 1) -> AgentRunPlan:
                 prompt_template_digest="b" * 64,
                 templates=PromptComponentTemplates(
                     system="Generate SQL only.",
-                    instruction=(
-                        "Use {{stage_context}} and guide {{sql_generation_guide}}."
-                    ),
+                    instruction=("Use {{stage_context}} and guide {{sql_generation_guide}}."),
                 ),
                 variables=(
                     PromptVariableDefinition(
                         name="stage_context",
-                        resolver_key=(
-                            "workflow.code_generation.common.sql_generation.context"
-                        ),
+                        resolver_key=("workflow.code_generation.common.sql_generation.context"),
                         data_type="json",
                         is_required=True,
                     ),
@@ -175,17 +196,11 @@ def _execution_context() -> CodeGenerationExecutionContext:
                 "targets": [
                     {
                         "target_ref": "target_1",
-                        "context": {
-                            "guide": {"content": "Use deterministic MERGE SQL."},
-                            "object_mappings": [{"kind": "direct"}],
-                        },
+                        "context": _source_context(),
                     },
                     {
                         "target_ref": "target_2",
-                        "context": {
-                            "guide": {"content": "Use deterministic MERGE SQL."},
-                            "object_mappings": [{"kind": "join"}],
-                        },
+                        "context": _source_context(transformation_kind="join"),
                     },
                 ]
             },
@@ -203,6 +218,7 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                 update={
                     "applied_generated_code": (
                         GeneratedCodeRecord(
+                            generated_code_is_locked=False,
                             modeled_entity_type="logical_entity",
                             modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
@@ -213,6 +229,7 @@ def _applied_execution_context() -> CodeGenerationExecutionContext:
                     ),
                     "applied_generated_code_source_systems": (
                         GeneratedCodeSourceSystemRecord(
+                            generated_code_source_system_is_locked=False,
                             modeled_entity_type="logical_entity",
                             modeled_entity_name=target.modeled_entity_name,
                             artifact_name=f"target_{position}.sql",
@@ -250,10 +267,7 @@ def _execution_context_for_target_count(
                 "targets": [
                     {
                         "target_ref": target.target_ref,
-                        "context": {
-                            "guide": {"content": "Use deterministic MERGE SQL."},
-                            "object_mappings": [{"kind": "direct"}],
-                        },
+                        "context": _source_context(),
                     }
                     for target in targets
                 ]
@@ -287,39 +301,12 @@ def _multibyte_execution_context(
                 "targets": [
                     {
                         "target_ref": target.target_ref,
-                        "context": {
-                            "target": {
-                                "tenant_code": "é" * 100,
-                                "system_code": "é" * 100,
-                                "object_schema": "é" * 400,
-                                "object_name": "é" * 399 + str(position),
-                            },
-                            "source_systems": [
-                                {"system_code": "é" * 100, "dependency_order": 10}
-                            ],
-                            "object_mappings": [
-                                {
-                                    "source_system": {"system_code": "é" * 100},
-                                    "transformation": {
-                                        "kind": "expression",
-                                        "expression": mapping_expression,
-                                    },
-                                }
-                            ],
-                            "attribute_mappings": [
-                                {
-                                    "source_system": {"system_code": "é" * 100},
-                                    "target": "é" * 400,
-                                    "expression": mapping_expression,
-                                }
-                            ],
-                            "guide": {
-                                "guide_code": "default_sql",
-                                "guide_name": "Default SQL",
-                                "version_number": 1,
-                                "content": guide_content,
-                            },
-                        },
+                        "context": _source_context(
+                            guide_content=guide_content,
+                            transformation_kind="expression",
+                            mapping_expression=mapping_expression,
+                            target_name="é" * 399 + str(position),
+                        ),
                     }
                     for position, target in enumerate(targets, start=1)
                 ]
@@ -351,9 +338,7 @@ class _Authorizer:
 @dataclass
 class _Database:
     transaction: object = field(default_factory=object)
-    write_isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    write_isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -368,9 +353,7 @@ class _Database:
 @dataclass
 class _PlanRepository:
     plan: AgentRunPlan = field(default_factory=_plan)
-    calls: list[tuple[int, int, int]] = field(
-        default_factory=lambda: list[tuple[int, int, int]]()
-    )
+    calls: list[tuple[int, int, int]] = field(default_factory=lambda: list[tuple[int, int, int]]())
 
     async def load(
         self,
@@ -388,9 +371,7 @@ class _PlanRepository:
 @dataclass
 class _ContextRepository:
     context: CodeGenerationExecutionContext = field(default_factory=_execution_context)
-    calls: list[tuple[int, int]] = field(
-        default_factory=lambda: list[tuple[int, int]]()
-    )
+    calls: list[tuple[int, int]] = field(default_factory=lambda: list[tuple[int, int]]())
 
     async def load(
         self,
@@ -401,13 +382,17 @@ class _ContextRepository:
     ) -> CodeGenerationExecutionContext:
         del transaction
         self.calls.append((tenant_id, plan.workflow_run_id))
-        return self.context
+        return (
+            self.context
+            if self.context.snapshot is not None
+            else code_validation_context(self.context)
+        )
 
 
 @dataclass
 class _AgentExecutor:
     responses: list[JsonValue | Exception]
-    sdk_code: str = "langchain_create_agent"
+    sdk_code: str = "openai_agents_sdk"
     requests: list[AgentExecutionRequest] = field(
         default_factory=lambda: list[AgentExecutionRequest]()
     )
@@ -443,7 +428,7 @@ class _AgentExecutor:
 
 
 @dataclass
-class _Handoff:
+class _Handoff(RetainingHandoff):
     calls: list[tuple[StageModelChange, ...]] = field(
         default_factory=lambda: list[tuple[StageModelChange, ...]]()
     )
@@ -517,9 +502,7 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair"
-                if request.final_event.attempt > 1
-                else "completed"
+                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -533,9 +516,7 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     failed: tuple[str, str] | None = None
     claim_tokens: list[UUID] = field(default_factory=lambda: list[UUID]())
     fail_error: Exception | None = None
@@ -659,9 +640,7 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
     )
     service, *_ = _service(
         executor=agent,
-        plan_repository=_PlanRepository(
-            plan=plan.model_copy(update={"stages": (seeded_stage,)})
-        ),
+        plan_repository=_PlanRepository(plan=plan.model_copy(update={"stages": (seeded_stage,)})),
     )
 
     await service.execute_started(
@@ -691,20 +670,17 @@ async def test_executor_renders_selected_guide_into_each_agent_instruction() -> 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
     ("provider_code", "model_code"),
-    (
-        ("databricks", "databricks-primary"),
-        ("microsoft_foundry", "foundry-primary"),
-    ),
+    (("microsoft_foundry", "foundry-primary"),),
 )
 async def test_configured_code_generation_profile_accepts_internal_bounded_stage(
     provider_code: str,
     model_code: str,
 ) -> None:
     selection = AgentRunSelection(
-        sdk_code="langchain_create_agent",
+        sdk_code="openai_agents_sdk",
         provider_code=provider_code,
         model_code=model_code,
-        reasoning_effort_code="medium",
+        reasoning_effort_code="none",
         max_turns=8,
         validation_retry_count=1,
     )
@@ -715,19 +691,11 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
         responses=[
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
             ),
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
             ),
         ]
     )
@@ -750,8 +718,8 @@ async def test_configured_code_generation_profile_accepts_internal_bounded_stage
     assert result.staged_record_count == 4
     assert lifecycle.failed is None
     assert [request.execution_mode for request in adapter.requests] == [
-        "detailed_coverage",
-        "detailed_coverage",
+        "tool_assisted",
+        "tool_assisted",
     ]
 
 
@@ -761,19 +729,11 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
         responses=[
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
             ),
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
             ),
         ]
     )
@@ -793,9 +753,15 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     assert len(agent.requests) == 2
     request = agent.requests[0]
     assert request.workflow == "code_generation"
-    assert request.execution_mode == "detailed_coverage"
+    assert request.execution_mode == "tool_assisted"
     assert request.selection == _plan().selection
-    assert request.allowed_tool_names == ()
+    assert set(request.allowed_tool_names) == {
+        "get_code_target",
+        "get_code_sources",
+        "get_code_source_systems",
+        "get_object_transformations",
+        "get_attribute_transformations",
+    }
     assert "Use deterministic MERGE SQL." in request.instruction_prompt
     execution_context = _execution_context().agent_context
     assert isinstance(execution_context, dict)
@@ -807,17 +773,17 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     assert isinstance(guide, str)
     attempt_context = cast(dict[str, Any], request.context)
     original_context = cast(dict[str, Any], attempt_context["original_context"])
-    delivered_targets = cast(list[dict[str, Any]], original_context["targets"])
-    delivered_source = cast(dict[str, Any], delivered_targets[0]["context"])
-    delivered_guide = cast(dict[str, Any], delivered_source["guide"])
+    delivered = cast(dict[str, Any], original_context["values"])
     assert attempt_context["repair"] is None
-    assert delivered_targets[0]["target_ref"] == expected_target["target_ref"]
-    assert delivered_source["object_mappings"] == target_context["object_mappings"]
-    assert "content" not in delivered_guide
-    assert delivered_guide["content_delivery"] == "sql_generation_guide_variable"
-    assert delivered_guide["content_byte_count"] == len(guide.encode("utf-8"))
+    assert delivered["target_ref"] == expected_target["target_ref"]
+    assert (
+        delivered["object_transformations"][0]["transformation"]
+        == target_context["object_mappings"][0]["transformation"]
+    )
+    assert "mapping_object_id" not in delivered["object_transformations"][0]
+    assert delivered["sql_generation_guide"] == guide
     assert request.instruction_prompt.count(guide) == 1
-    assert "request_context_original_context" in request.instruction_prompt
+    assert "request_context_original_context" not in request.instruction_prompt
     assert len(handoff.calls) == 1
     assert no_op.requests == []
     assert [change.dataset for change in handoff.calls[0]] == [
@@ -838,9 +804,7 @@ async def test_executor_uses_frozen_plan_and_hands_off_one_atomic_draft() -> Non
     assert result.staged_record_count == 4
     assert "SELECT" not in repr(result)
     assert lifecycle.failed is None
-    assert [
-        (event.sequence, event.attempt, event.stage) for event in lifecycle.events
-    ] == [
+    assert [(event.sequence, event.attempt, event.stage) for event in lifecycle.events] == [
         (2, 1, "code_generation.sql_generation"),
         (3, 1, "code_generation.sql_generation"),
     ]
@@ -899,7 +863,10 @@ async def test_executor_allows_candidate_up_to_stage_batch_payload_envelope() ->
 
 
 @pytest.mark.asyncio
-async def test_executor_completes_no_op_when_generated_code_is_unchanged() -> None:
+@pytest.mark.parametrize("locked", [False, True])
+async def test_executor_completes_no_op_when_generated_code_is_unchanged(
+    locked: bool,
+) -> None:
     agent = _AgentExecutor(
         responses=[
             cast(
@@ -916,13 +883,36 @@ async def test_executor_completes_no_op_when_generated_code_is_unchanged() -> No
             for position in (1, 2)
         ]
     )
+    context = _applied_execution_context()
+    if locked:
+        context = context.model_copy(
+            update={
+                "targets": tuple(
+                    target.model_copy(
+                        update={
+                            "applied_generated_code": tuple(
+                                record.model_copy(update={"generated_code_is_locked": True})
+                                for record in target.applied_generated_code
+                            ),
+                            "applied_generated_code_source_systems": tuple(
+                                record.model_copy(
+                                    update={"generated_code_source_system_is_locked": True}
+                                )
+                                for record in target.applied_generated_code_source_systems
+                            ),
+                        }
+                    )
+                    for target in context.targets
+                )
+            }
+        )
     handoff = _Handoff()
     no_op = _NoOp()
     service, _database, _authorizer, handoff, no_op, lifecycle = _service(
         executor=agent,
         handoff=handoff,
         no_op=no_op,
-        context=_applied_execution_context(),
+        context=context,
     )
 
     result = await service.execute_started(
@@ -986,9 +976,7 @@ async def test_executor_does_not_mark_run_failed_after_uncertain_finalization() 
 async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
     target_count = 80
     context = _execution_context_for_target_count(target_count)
-    plan = _plan().model_copy(
-        update={"selected_object_ids": tuple(range(501, 501 + target_count))}
-    )
+    plan = _plan().model_copy(update={"selected_object_ids": tuple(range(501, 501 + target_count))})
     agent = _AgentExecutor(
         responses=[
             cast(
@@ -1038,9 +1026,7 @@ async def test_executor_bounds_progress_events_for_large_target_sets() -> None:
 
 
 @pytest.mark.asyncio
-async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_requests() -> (
-    None
-):
+async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_requests() -> None:
     guide = "é" * 131_072
     mapping_expression = "é" * 40_000
     context = _multibyte_execution_context(
@@ -1048,7 +1034,7 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
         mapping_expression=mapping_expression,
     )
     policy = AgentContextPolicy(
-        one_shot_max_context_bytes=256 * 1_024,
+        one_shot_max_context_bytes=512 * 1_024,
         stage_max_context_bytes=512 * 1_024,
         max_candidate_bytes=512 * 1_024,
         max_validation_issues=100,
@@ -1062,19 +1048,11 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
             wrong_target,
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_1", "generated_sql": "SELECT 1;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]},
             ),
             cast(
                 JsonValue,
-                {
-                    "artifacts": [
-                        {"target_ref": "target_2", "generated_sql": "SELECT 2;"}
-                    ]
-                },
+                {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]},
             ),
         ]
     )
@@ -1106,9 +1084,8 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
         agent_request_envelope_bytes(request) <= policy.stage_max_context_bytes
         for request in agent.requests
     )
-    assert max(agent_request_envelope_bytes(request) for request in agent.requests) > (
-        policy.one_shot_max_context_bytes
-    )
+    assert max(agent_request_envelope_bytes(request) for request in agent.requests) > 262_144
+    assert all(request.execution_mode == "tool_assisted" for request in agent.requests)
     assert any(
         cast(dict[str, JsonValue], request.context)["repair"] is not None
         for request in agent.requests
@@ -1124,15 +1101,13 @@ async def test_executor_keeps_maximal_multibyte_guide_and_mapping_in_bounded_req
             sort_keys=True,
         ).encode("utf-8")
         assert mapping_expression in encoded.decode("utf-8")
-        assert guide not in encoded.decode("utf-8")
+        assert guide in encoded.decode("utf-8")
         assert request.instruction_prompt.count(guide) == 1
-        assert sha256(encoded).hexdigest() in request.instruction_prompt
+        assert "request_context_original_context" not in request.instruction_prompt
 
 
 @pytest.mark.asyncio
-async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> (
-    None
-):
+async def test_executor_rejects_unrepresentable_target_before_provider_without_truncation() -> None:
     context = _multibyte_execution_context(
         guide_content="é" * 131_072,
         mapping_expression="é" * 90_000,
@@ -1141,14 +1116,42 @@ async def test_executor_rejects_unrepresentable_target_before_provider_without_t
     handoff = _Handoff()
     no_op = _NoOp()
     lifecycle = _Lifecycle()
+    plan = _plan()
+    stage = plan.stages[0]
+    additions = ("object_transformations", "attribute_transformations")
+    stage = stage.model_copy(
+        update={
+            "templates": stage.templates.model_copy(
+                update={
+                    "instruction": stage.templates.instruction
+                    + "\n{{ object_transformations }}\n{{ attribute_transformations }}"
+                }
+            ),
+            "variables": (
+                *stage.variables,
+                *(
+                    PromptVariableDefinition(
+                        name=name,
+                        resolver_key="workflow.code_generation.common.sql_generation.inputs."
+                        + name,
+                        data_type="json",
+                        is_required=True,
+                    )
+                    for name in additions
+                ),
+            ),
+        }
+    )
+    plan = plan.model_copy(update={"stages": (stage,)})
     service, _database, _authorizer, handoff, no_op, lifecycle = _service(
         executor=agent,
         handoff=handoff,
         no_op=no_op,
         lifecycle=lifecycle,
+        plan_repository=_PlanRepository(plan=plan),
         context=context,
         context_policy=AgentContextPolicy(
-            one_shot_max_context_bytes=256 * 1_024,
+            one_shot_max_context_bytes=512 * 1_024,
             stage_max_context_bytes=512 * 1_024,
             max_candidate_bytes=512 * 1_024,
             max_validation_issues=100,
@@ -1170,16 +1173,12 @@ async def test_executor_rejects_unrepresentable_target_before_provider_without_t
     assert no_op.requests == []
     assert lifecycle.failed == (
         "agent_context_too_large",
-        (
-            "The selected execution mode cannot accept this context. Choose another mode explicitly."
-        ),
+        ("The selected execution mode cannot accept this context. Choose another mode explicitly."),
     )
 
 
 @pytest.mark.asyncio
-async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> (
-    None
-):
+async def test_executor_uses_common_validation_repair_before_one_atomic_handoff() -> None:
     wrong_target = cast(
         JsonValue,
         {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 1;"}]},
@@ -1195,9 +1194,7 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     handoff = _Handoff()
     lifecycle = _Lifecycle()
     service, _database, _authorizer, handoff, _no_op, lifecycle = _service(
-        executor=_AgentExecutor(
-            responses=[wrong_target, first_complete, second_complete]
-        ),
+        executor=_AgentExecutor(responses=[wrong_target, first_complete, second_complete]),
         handoff=handoff,
         lifecycle=lifecycle,
     )
@@ -1216,15 +1213,11 @@ async def test_executor_uses_common_validation_repair_before_one_atomic_handoff(
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].attempt == 2
     assert handoff.final_events[-1].status == "warning"
-    assert any(
-        event.attempt == 2 and event.status == "warning" for event in lifecycle.events
-    )
+    assert any(event.attempt == 2 and event.status == "warning" for event in lifecycle.events)
 
 
 @pytest.mark.asyncio
-async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> (
-    None
-):
+async def test_executor_records_only_safe_failure_and_never_stores_partial_output() -> None:
     diagnostic = "token=secret; prompt=raw; SQL=DROP TABLE x; provider trace"
     lifecycle = _Lifecycle()
     handoff = _Handoff()
@@ -1289,9 +1282,7 @@ async def test_executor_rejects_noncanonical_mode_without_provider_fallback() ->
 
 
 @pytest.mark.asyncio
-async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> (
-    None
-):
+async def test_executor_propagates_a_bounded_terminal_failure_persistence_error() -> None:
     lifecycle = _Lifecycle(fail_error=DependencyUnavailableError())
     handoff = _Handoff()
     no_op = _NoOp()
@@ -1321,3 +1312,140 @@ async def test_executor_propagates_a_bounded_terminal_failure_persistence_error(
         "Original safe execution failure.",
     )
     assert lifecycle.claim_tokens == [_CLAIM_TOKEN, _CLAIM_TOKEN]
+
+
+def code_validation_context(
+    context: CodeGenerationExecutionContext,
+) -> CodeGenerationExecutionContext:
+    """Applied Mapping and physical bindings for synthetic Code targets."""
+    from dataclasses import fields, replace
+
+    from gds_etl_workbench.domain.modeling_records import (
+        ModelingRecord,
+        normalize_model_key_value,
+    )
+    from gds_etl_workbench.domain.snapshots.model import (
+        DATASETS_BY_NAME,
+        ModelChangeSetDataset,
+        model_snapshot_records,
+    )
+
+    from tests.mcp.model_test_fixtures import snapshot_from_graph
+    from tests.web_backend.mapping_fixtures import (
+        mapping_preparation,
+        mapping_validation_preparation,
+    )
+
+    records: dict[ModelChangeSetDataset, dict[tuple[object, ...], ModelingRecord]] = {}
+    from gds_etl_workbench.application.change_sets.model_validation import (
+        PhysicalModelCatalog,
+    )
+
+    scopes: list[PhysicalModelCatalog] = []
+    for target in context.targets:
+        prepared = mapping_preparation(
+            existing=True, modeled_entity_type=target.modeled_entity_type
+        )
+        original = prepared.context
+        header = original.headers[0]
+        prepared = mapping_validation_preparation(
+            prepared.plan,
+            original.model_copy(
+                update={
+                    "target": original.target.model_copy(
+                        update={"object_name": target.modeled_entity_name}
+                    ),
+                    "headers": (
+                        header.model_copy(
+                            update={
+                                "modeled_entity": header.modeled_entity.model_copy(
+                                    update={"entity_name": target.modeled_entity_name}
+                                )
+                            }
+                        ),
+                    ),
+                }
+            ),
+        )
+        assert prepared.snapshot is not None and prepared.physical_scope is not None
+        scopes.append(prepared.physical_scope)
+        for dataset_name, values in model_snapshot_records(prepared.snapshot).items():
+            dataset = cast(ModelChangeSetDataset, dataset_name)
+            if dataset in {"generated_code", "generated_code_source_system"}:
+                values = (
+                    target.applied_generated_code
+                    if dataset == "generated_code"
+                    else target.applied_generated_code_source_systems
+                )
+            if dataset in {"mapping_object", "mapping_attribute", "mapping_dependency"}:
+                values = tuple(
+                    record.model_copy(update={"source_system_code": code})
+                    for record in values
+                    for code in target.source_system_codes
+                )
+            by_key = records.setdefault(dataset, {})
+            for record in values:
+                key = tuple(
+                    normalize_model_key_value(getattr(record, name))
+                    for name in DATASETS_BY_NAME[dataset].canonical_key
+                )
+                by_key[key] = record
+    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+        dataset: [record.model_dump(mode="json") for record in values.values()]
+        for dataset, values in records.items()
+    }
+    snapshot = snapshot_from_graph(graph).model_copy(update={"model_id": 18, "model_revision": 7})
+    scope = replace(
+        scopes[0],
+        **{
+            field.name: frozenset().union(*(getattr(item, field.name) for item in scopes))
+            for field in fields(scopes[0])
+            if field.name != "model_tenant_code"
+        },
+    )
+    scope = replace(
+        scope,
+        active_system_codes=scope.active_system_codes
+        | frozenset(
+            code.casefold() for target in context.targets for code in target.source_system_codes
+        ),
+    )
+    return context.model_copy(update={"snapshot": snapshot, "physical_scope": scope})
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("selected_tools", [(), ("get_code_sources",)])
+async def test_executor_honors_saved_optional_reader_selection(
+    selected_tools: tuple[str, ...],
+) -> None:
+    plan = _plan()
+    plan = plan.model_copy(
+        update={"stages": (plan.stages[0].model_copy(update={"agent_tool_names": selected_tools}),)}
+    )
+    agent = _AgentExecutor(
+        responses=[
+            cast(
+                JsonValue, {"artifacts": [{"target_ref": "target_1", "generated_sql": "SELECT 1;"}]}
+            ),
+            cast(
+                JsonValue, {"artifacts": [{"target_ref": "target_2", "generated_sql": "SELECT 2;"}]}
+            ),
+        ]
+    )
+    service, _, _, _, _, lifecycle = _service(
+        executor=agent, plan_repository=_PlanRepository(plan=plan)
+    )
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+    assert lifecycle.failed is None
+    for request in agent.requests:
+        assert request.allowed_tool_names == selected_tools
+        assert request.local_tool_catalog is not None
+        with pytest.raises(InvalidRequestError):
+            request.local_tool_catalog.invoke("get_code_target", {})

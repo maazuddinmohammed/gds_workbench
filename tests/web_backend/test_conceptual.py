@@ -13,7 +13,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.conceptual import (
     AssertionRecordReference,
     ConceptualAssertionSupport,
@@ -317,9 +316,7 @@ def test_conceptual_object_detail_returns_typed_normalized_support_rows() -> Non
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["conceptual_object_definition"] == (
-        "A governed party receiving services."
-    )
+    assert payload["conceptual_object_definition"] == ("A governed party receiving services.")
     assert payload["workflow_run_id"] is None
     assert payload["supports"][0]["support_source_type"] == "object"
     assert payload["supports"][0]["source_object"]["object_name"] == "customer_raw"
@@ -370,19 +367,13 @@ def test_conceptual_relationship_detail_returns_full_basis_and_typed_support() -
     )
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/v1/tenants/7/models/18/conceptual/relationships/201"
-        )
+        response = client.get("/api/v1/tenants/7/models/18/conceptual/relationships/201")
 
     assert response.status_code == 200
     payload = response.json()
-    assert payload["conceptual_relationship_definition"] == (
-        "A Customer may place Orders."
-    )
+    assert payload["conceptual_relationship_definition"] == ("A Customer may place Orders.")
     assert payload["conceptual_relationship_basis"] == ("Customer and Order metadata.")
-    assert payload["conceptual_relationship_cardinality_basis"] == (
-        "Observed Customer keys."
-    )
+    assert payload["conceptual_relationship_cardinality_basis"] == ("Observed Customer keys.")
     assert payload["supports"][0]["support_source_type"] == "assertion"
     assert payload["supports"][0]["workflow_run_id"] is None
 
@@ -512,9 +503,7 @@ async def test_database_conceptual_objects_are_authorized_and_cursor_bound() -> 
 
     assert first.model_revision == 4
     assert [item.conceptual_object_name for item in first.items] == ["Customer"]
-    assert [item.conceptual_object_name for item in second.items] == [
-        "Customer Account"
-    ]
+    assert [item.conceptual_object_name for item in second.items] == ["Customer Account"]
     assert second.items[0].workflow_run_id == 81
     assert second.next_cursor is None
     assert database.transaction.offsets == [0, 1]
@@ -544,9 +533,7 @@ class ConceptualDetailTransaction:
                 "conceptual_object_id": 101,
                 "workflow_run_id": None,
                 "conceptual_object_name": "Customer",
-                "conceptual_object_definition": (
-                    "A governed party receiving services."
-                ),
+                "conceptual_object_definition": ("A governed party receiving services."),
                 "conceptual_object_type": "business_entity",
                 "conceptual_object_grain": "One governed party",
                 "conceptual_object_aliases": ["Client"],
@@ -634,9 +621,7 @@ class ConceptualDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_object_detail_reads_every_normalized_support() -> (
-    None
-):
+async def test_database_conceptual_object_detail_reads_every_normalized_support() -> None:
     service = DatabaseConceptualService(
         database=ConceptualDetailDatabase(),
         authorizer=AuthorizationService(),
@@ -809,9 +794,7 @@ class ConceptualRelationshipDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_relationships_are_authorized_and_cursor_bound() -> (
-    None
-):
+async def test_database_conceptual_relationships_are_authorized_and_cursor_bound() -> None:
     database = ConceptualRelationshipDatabase()
     service = DatabaseConceptualService(
         database=database,
@@ -877,9 +860,7 @@ class ConceptualRelationshipDetailTransaction:
                 "conceptual_relationship_definition": ("A Customer may place Orders."),
                 "conceptual_relationship_cardinality": "one_to_many",
                 "conceptual_relationship_basis": "Customer and Order metadata.",
-                "conceptual_relationship_cardinality_basis": (
-                    "Observed Customer keys."
-                ),
+                "conceptual_relationship_cardinality_basis": ("Observed Customer keys."),
                 "conceptual_relationship_confidence": "high",
                 "conceptual_relationship_status": "active",
                 "conceptual_relationship_is_locked": True,
@@ -948,9 +929,7 @@ class ConceptualRelationshipDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_conceptual_relationship_detail_reads_normalized_support() -> (
-    None
-):
+async def test_database_conceptual_relationship_detail_reads_normalized_support() -> None:
     service = DatabaseConceptualService(
         database=ConceptualRelationshipDetailDatabase(),
         authorizer=AuthorizationService(),

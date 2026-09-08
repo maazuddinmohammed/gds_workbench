@@ -5,15 +5,14 @@ from uuid import uuid4
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from psycopg import Connection
-from psycopg.types.json import Jsonb
-
+from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.assertions import (
     AssertionDocumentFilters,
     AssertionRecordFilters,
     DatabaseAssertionsService,
 )
-from gds_workbench_api.database import WebPostgresDatabase
+from psycopg import Connection
+from psycopg.types.json import Jsonb
 
 
 class DisposablePostgresFixture(Protocol):
@@ -289,9 +288,7 @@ async def test_assertion_review_reads_round_trip_through_the_web_role(
     finally:
         await database.close()
 
-    assert [item.modeling_assertion_document_id for item in documents.items] == [
-        document_id
-    ]
+    assert [item.modeling_assertion_document_id for item in documents.items] == [document_id]
     assert documents.items[0].workflow_run_id is None
     assert documents.items[0].record_count == 1
     assert documents.items[0].source_system is not None

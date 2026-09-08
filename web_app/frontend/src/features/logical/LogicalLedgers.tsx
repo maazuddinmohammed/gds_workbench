@@ -1,3 +1,4 @@
+import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -9,8 +10,6 @@ import {
 } from "@tanstack/react-table";
 
 import type {
-  LogicalAttribute,
-  LogicalAttributeFilters,
   LogicalEntity,
   LogicalEntityFilters,
   LogicalFilters,
@@ -36,6 +35,7 @@ export function LogicalEntitiesLedger({
   submodels,
   submodelsState,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -46,10 +46,13 @@ export function LogicalEntitiesLedger({
   submodels: LogicalSubmodel[];
   submodelsState: "loading" | "error" | "revision_mismatch" | "ready";
   state: LedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: LogicalEntityFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<LogicalEntity>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_entity_id, "Logical Entities"),
     {
       accessorKey: "logical_entity_name",
       header: "Logical Entity",
@@ -103,7 +106,7 @@ export function LogicalEntitiesLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
@@ -305,106 +308,13 @@ function LogicalEntityFilterBar({
   );
 }
 
-export function LogicalAttributesLedger({
-  tenantId,
-  modelId,
-  items,
-  filters,
-  state,
-  onApplyFilters,
-  onLoadMore,
-}: {
-  tenantId: number;
-  modelId: number;
-  items: LogicalAttribute[];
-  filters: LogicalAttributeFilters;
-  state: LedgerState;
-  onApplyFilters: (filters: LogicalAttributeFilters) => void;
-  onLoadMore: () => void;
-}) {
-  const columns = useMemo<ColumnDef<LogicalAttribute>[]>(() => [
-    {
-      accessorKey: "logical_attribute_name",
-      header: "Logical Attribute",
-      cell: ({ row }) => (
-        <span className="endpoint-cell">
-          <strong>{row.original.logical_attribute_name}</strong>
-          <span>{row.original.logical_attribute_data_type}</span>
-        </span>
-      ),
-    },
-    { accessorKey: "logical_entity_name", header: "Entity" },
-    { accessorKey: "logical_attribute_ordinal_position", header: "Ordinal" },
-    {
-      id: "keys",
-      header: "Key role",
-      cell: ({ row }) => row.original.logical_attribute_is_primary_key
-        ? "Primary"
-        : row.original.logical_attribute_is_natural_key
-          ? "Natural"
-          : row.original.logical_attribute_is_surrogate_key
-            ? "Surrogate"
-            : "—",
-    },
-    {
-      accessorKey: "logical_attribute_is_nullable",
-      header: "Nullable",
-      cell: ({ getValue }) => getValue<boolean>() ? "Yes" : "No",
-    },
-    {
-      accessorKey: "logical_attribute_status",
-      header: "Status",
-      cell: ({ getValue }) => humanize(getValue<string>()),
-    },
-    {
-      accessorKey: "logical_attribute_is_locked",
-      header: "Lock",
-      cell: ({ getValue }) => getValue<boolean>() ? "Locked" : "Open",
-    },
-    {
-      id: "action",
-      header: "",
-      cell: ({ row }) => (
-        <Link
-          className="text-action"
-          aria-label={`Open Logical Attribute ${row.original.logical_attribute_id}`}
-          to="/tenants/$tenantId/models/$modelId/logical/attributes/$attributeId"
-          params={{
-            tenantId: String(tenantId),
-            modelId: String(modelId),
-            attributeId: String(row.original.logical_attribute_id),
-          }}
-        >
-          Show details
-        </Link>
-      ),
-    },
-  ], [modelId, tenantId]);
-  return (
-    <LogicalLedgerSurface
-      tableLabel="Logical Attributes"
-      items={items}
-      columns={columns}
-      state={state}
-      onLoadMore={onLoadMore}
-      filters={(
-        <LogicalCollectionFilterBar
-          kind="Attribute"
-          filters={filters}
-          includeEntity
-          onApplyFilters={onApplyFilters}
-        />
-      )}
-    />
-  );
-}
-
 export function LogicalRelationshipsLedger({
   tenantId,
   modelId,
   items,
   filters,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -413,10 +323,13 @@ export function LogicalRelationshipsLedger({
   items: LogicalRelationship[];
   filters: LogicalRelationshipFilters;
   state: LedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: LogicalRelationshipFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<LogicalRelationship>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_relationship_id, "Logical Relationships"),
     { accessorKey: "logical_relationship_name", header: "Relationship" },
     {
       id: "from",
@@ -475,7 +388,7 @@ export function LogicalRelationshipsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <LogicalLedgerSurface
       tableLabel="Logical Relationships"
@@ -501,6 +414,7 @@ export function LogicalSubmodelsLedger({
   items,
   filters,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -509,10 +423,13 @@ export function LogicalSubmodelsLedger({
   items: LogicalSubmodel[];
   filters: LogicalFilters;
   state: LedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: LogicalFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<LogicalSubmodel>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.logical_submodel_id, "Logical Submodels"),
     { accessorKey: "logical_submodel_name", header: "Logical Submodel" },
     { accessorKey: "entity_count", header: "Entities" },
     {
@@ -548,7 +465,7 @@ export function LogicalSubmodelsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <LogicalLedgerSurface
       tableLabel="Logical Submodels"
@@ -573,12 +490,12 @@ function LogicalCollectionFilterBar<T extends LogicalFilters>({
   includeEntity = false,
   onApplyFilters,
 }: {
-  kind: "Attribute" | "Relationship" | "Submodel";
+  kind: "Relationship" | "Submodel";
   filters: T;
   includeEntity?: boolean;
   onApplyFilters: (filters: T) => void;
 }) {
-  const filterWithEntity = filters as LogicalAttributeFilters;
+  const filterWithEntity = filters as LogicalRelationshipFilters;
   const form = useForm({
     defaultValues: {
       namePrefix: filters.namePrefix ?? "",

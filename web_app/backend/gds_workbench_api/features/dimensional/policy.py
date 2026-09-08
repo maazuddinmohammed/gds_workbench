@@ -39,6 +39,10 @@ type _Nonblank2000 = Annotated[
 ]
 
 
+class DimensionalProjectionConflictError(InvalidRequestError):
+    """Candidate semantics conflict with the frozen Gold policy; safe to repair."""
+
+
 class GoldPolicyColumn(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
@@ -231,8 +235,10 @@ def project_dimensional_gold_policy(
                     ),
                 )
             except ValidationError:
-                raise InvalidRequestError(
-                    "The Gold surrogate-key template produced an invalid column."
+                raise DimensionalProjectionConflictError(
+                    "The Gold surrogate-key template produced an invalid column. Shorten the "
+                    "Entity name so the configured key name fits 255 characters and its "
+                    "definition fits 2000 characters. Preserve the frozen policy."
                 ) from None
             specifications.append((surrogate, "technical", "surrogate"))
             if any(
@@ -254,7 +260,9 @@ def project_dimensional_gold_policy(
             normalize_model_key_value(column.semantic_name) for column, _, _ in specifications
         ]
         if len(normalized_names) != len(set(normalized_names)):
-            raise InvalidRequestError("Gold policy columns collide after normalization.")
+            raise DimensionalProjectionConflictError(
+                "Gold policy columns collide after normalization."
+            )
 
         for offset, (column, role, key_role) in enumerate(specifications, start=1):
             key = (entity_key, normalize_model_key_value(column.semantic_name))
@@ -353,11 +361,13 @@ def project_dimensional_foreign_key_policy(
         from_entity = entities.get(from_key)
         to_entity = entities.get(to_key)
         if from_entity is None or to_entity is None:
-            raise InvalidRequestError("A Dimensional Relationship references an unknown Entity.")
+            raise DimensionalProjectionConflictError(
+                "A Dimensional Relationship references an unknown Entity."
+            )
 
         if from_entity.dimensional_entity_type in ("fact", "bridge"):
             if to_entity.dimensional_entity_type != "dimension":
-                raise InvalidRequestError(
+                raise DimensionalProjectionConflictError(
                     "Fact and Bridge Relationships must point to a Dimension."
                 )
             surrogate_candidates = [
@@ -369,7 +379,7 @@ def project_dimensional_foreign_key_policy(
                 and attribute.dimensional_attribute_status == "active"
             ]
             if len(surrogate_candidates) != 1:
-                raise InvalidRequestError(
+                raise DimensionalProjectionConflictError(
                     "A referenced Dimension must have exactly one effective surrogate key."
                 )
             surrogate = surrogate_candidates[0]
@@ -397,15 +407,17 @@ def project_dimensional_foreign_key_policy(
                     definition=definition,
                 )
             except (KeyError, ValidationError):
-                raise InvalidRequestError(
-                    "The Gold foreign-key template produced an invalid column."
+                raise DimensionalProjectionConflictError(
+                    "The Gold foreign-key template produced an invalid column. Shorten the "
+                    "Entity or role name so the configured column name fits 255 characters "
+                    "and its definition fits 2000 characters. Preserve the frozen policy."
                 ) from None
             attribute_key = (
                 from_key,
                 normalize_model_key_value(column.semantic_name),
             )
             if attribute_key in projected_fk_keys:
-                raise InvalidRequestError(
+                raise DimensionalProjectionConflictError(
                     "Two Dimensional Relationships project the same foreign-key name."
                 )
             projected_fk_keys.add(attribute_key)
@@ -430,7 +442,9 @@ def project_dimensional_foreign_key_policy(
                 )
             )
         elif to_entity.dimensional_entity_type in ("fact", "bridge"):
-            raise InvalidRequestError("Fact and Bridge Relationships must use the from endpoint.")
+            raise DimensionalProjectionConflictError(
+                "Fact and Bridge Relationships must use the from endpoint."
+            )
         else:
             projected_relationships.append(relationship)
 
@@ -485,7 +499,9 @@ def project_dimensional_foreign_key_policy(
                 and applied_record.dimensional_attribute_is_locked
                 and applied_record != reordered
             ):
-                raise InvalidRequestError("A locked Gold policy column cannot be projected.")
+                raise DimensionalProjectionConflictError(
+                    "A locked Gold policy column cannot be projected."
+                )
             attributes[key] = reordered
             if applied_record != reordered:
                 projected_attributes[key] = reordered
@@ -576,7 +592,7 @@ def _policy_attribute(
         or existing.dimensional_attribute_key_role != key_role
         or existing.sources
     ):
-        raise InvalidRequestError(
+        raise DimensionalProjectionConflictError(
             "A configured Gold policy column conflicts with an existing Attribute."
         )
     desired = DimensionalAttributeRecord(
@@ -604,7 +620,7 @@ def _policy_attribute(
         sources=(),
     )
     if existing is not None and existing.dimensional_attribute_is_locked and existing != desired:
-        raise InvalidRequestError("A locked Gold policy column cannot be projected.")
+        raise DimensionalProjectionConflictError("A locked Gold policy column cannot be projected.")
     return desired
 
 

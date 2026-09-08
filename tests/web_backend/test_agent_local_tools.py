@@ -1,15 +1,12 @@
 from __future__ import annotations
 
 import json
-from collections.abc import Generator, Mapping
-from contextlib import contextmanager
+from collections.abc import Mapping
 from types import SimpleNamespace
 from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import JsonValue, SecretStr, ValidationError
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -17,11 +14,11 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 )
 from gds_workbench_api.integrations.agents import adapters as agent_adapters
 from gds_workbench_api.integrations.agents.adapters import (
-    LangChainCreateAgentAdapter,
-    OpenAIProviderCredentials,
     OpenAIAgentsSdkAdapter,
+    OpenAIProviderCredentials,
 )
 from gds_workbench_api.integrations.agents.configuration import AgentProviderConnection
+from pydantic import JsonValue, SecretStr, ValidationError
 
 
 class _Catalog:
@@ -74,25 +71,23 @@ class _Catalog:
 class _ModelAuthentication:
     async def authenticate(self) -> OpenAIProviderCredentials:
         return OpenAIProviderCredentials(
-            api_key=SecretStr("short-lived-databricks-token"),
-            base_url="https://fixture.azuredatabricks.net/serving-endpoints",
+            api_key=SecretStr("short-lived-foundry-token"),
+            base_url="https://fixture.openai.azure.com/openai/v1/",
         )
 
 
 def _selection(*, sdk_code: str) -> AgentRunSelection:
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code="databricks",
-        model_code="databricks-primary",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
         reasoning_effort_code="medium",
         max_turns=6,
         validation_retry_count=2,
     )
 
 
-def _request(
-    *, sdk_code: str, catalog: _Catalog | None = None
-) -> AgentExecutionRequest:
+def _request(*, sdk_code: str, catalog: _Catalog | None = None) -> AgentExecutionRequest:
     catalog = catalog or _Catalog()
     return AgentExecutionRequest(
         workflow_run_id=1048,
@@ -112,7 +107,7 @@ def _request(
 
 def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
     catalog = _Catalog()
-    request = _request(sdk_code="langchain_create_agent", catalog=catalog)
+    request = _request(sdk_code="openai_agents_sdk", catalog=catalog)
 
     assert request.local_tool_catalog is catalog
     assert "local_tool_catalog" not in request.model_dump()
@@ -123,7 +118,7 @@ def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
     assert "local_tool_catalog" not in schema["properties"]
 
     with pytest.raises(ValidationError):
-        _request(sdk_code="langchain_create_agent", catalog=catalog).model_copy(
+        _request(sdk_code="openai_agents_sdk", catalog=catalog).model_copy(
             update={"allowed_tool_names": ("get_agent_context_manifest",)},
         ).model_validate(
             {
@@ -147,7 +142,7 @@ def test_tool_catalog_is_ephemeral_and_names_must_match_exactly() -> None:
         AgentExecutionRequest.model_validate(
             {
                 **request.model_dump(),
-                "execution_mode": "detailed_coverage",
+                "execution_mode": "one_shot",
                 "allowed_tool_names": request.allowed_tool_names,
                 "local_tool_catalog": catalog,
             },
@@ -168,7 +163,7 @@ def test_each_provider_conversation_has_a_fresh_cumulative_tool_budget() -> None
         ).encode("utf-8")
     )
     catalog = _Catalog(max_cumulative_result_bytes=manifest_bytes)
-    wrapper = getattr(agent_adapters, "_PerExecutionToolCatalog")
+    wrapper = agent_adapters._PerExecutionToolCatalog  # pyright: ignore[reportPrivateUsage]
 
     first_conversation = wrapper(catalog)
     assert first_conversation.invoke("get_agent_context_manifest", {}) == manifest
@@ -178,88 +173,6 @@ def test_each_provider_conversation_has_a_fresh_cumulative_tool_budget() -> None
     second_conversation = wrapper(catalog)
     assert second_conversation.invoke("get_agent_context_manifest", {}) == manifest
     assert captured.value.code == "agent_context_tool_result_too_large"
-
-
-@pytest.mark.asyncio
-async def test_langchain_adapter_wraps_only_the_attached_local_catalog(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    captured: dict[str, Any] = {}
-    catalog = _Catalog()
-
-    @contextmanager
-    def fake_tracing_context(**kwargs: object) -> Generator[None]:
-        captured["tracing"] = kwargs
-        yield
-
-    def fake_model(**_: object) -> str:
-        return "model"
-
-    class FakeGraph:
-        async def ainvoke(
-            self,
-            values: dict[str, Any],
-            config: dict[str, Any],
-        ) -> dict[str, Any]:
-            del values, config
-            tools = cast(list[Any], captured["tools"])
-            manifest = await tools[0].ainvoke({})
-            dataset = await tools[1].ainvoke(
-                {"dataset": "selected_objects", "offset": 0, "limit": 1}
-            )
-            captured["tool_results"] = (manifest, dataset)
-            return {
-                "messages": [
-                    SimpleNamespace(
-                        type="ai",
-                        tool_calls=[{"name": "local"}],
-                        content='{"objects":[],"relationships":[]}',
-                    )
-                ],
-            }
-
-    monkeypatch.setattr(agent_adapters, "ChatOpenAI", fake_model)
-    monkeypatch.setattr(agent_adapters, "tracing_context", fake_tracing_context)
-
-    def fake_create_agent(**kwargs: Any) -> FakeGraph:
-        captured["tools"] = kwargs["tools"]
-        return FakeGraph()
-
-    monkeypatch.setattr(agent_adapters, "create_agent", fake_create_agent)
-    adapter = LangChainCreateAgentAdapter(
-        connections=(
-            AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
-                model_endpoint="production-agent-endpoint",
-                timeout_seconds=90,
-            ),
-        ),
-        model_authentications={"databricks": _ModelAuthentication()},
-    )
-
-    result = await adapter.execute(
-        _request(sdk_code="langchain_create_agent", catalog=catalog)
-    )
-
-    tools = cast(list[Any], captured["tools"])
-    assert [tool.name for tool in tools] == list(
-        _request(sdk_code="langchain_create_agent").allowed_tool_names
-    )
-    assert captured["tool_results"] == (
-        {"datasets": [{"name": "selected_objects", "count": 1}]},
-        {
-            "dataset": "selected_objects",
-            "offset": 0,
-            "items": [{"object_name": "customer_raw"}],
-            "next_offset": None,
-        },
-    )
-    assert result.candidate == {"objects": [], "relationships": []}
-    assert captured["tracing"] == {"enabled": False}
-    assert [name for name, _ in catalog.calls] == list(
-        _request(sdk_code="langchain_create_agent").allowed_tool_names
-    )
 
 
 @pytest.mark.asyncio
@@ -304,18 +217,16 @@ async def test_openai_agents_adapter_wraps_only_the_attached_local_catalog(
     adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": _ModelAuthentication()},
+        model_authentications={"microsoft_foundry": _ModelAuthentication()},
     )
 
-    result = await adapter.execute(
-        _request(sdk_code="openai_agents_sdk", catalog=catalog)
-    )
+    result = await adapter.execute(_request(sdk_code="openai_agents_sdk", catalog=catalog))
 
     tools = cast(list[Any], captured["tools"])
     assert [tool.name for tool in tools] == list(
@@ -333,21 +244,21 @@ async def test_tool_wrapper_construction_failure_is_redacted(
     def fail(_: object) -> tuple[object, ...]:
         raise RuntimeError("sensitive schema diagnostic")
 
-    monkeypatch.setattr(agent_adapters, "_langchain_tools", fail)
-    adapter = LangChainCreateAgentAdapter(
+    monkeypatch.setattr(agent_adapters, "_openai_tools", fail)
+    adapter = OpenAIAgentsSdkAdapter(
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 model_endpoint="production-agent-endpoint",
                 timeout_seconds=90,
             ),
         ),
-        model_authentications={"databricks": _ModelAuthentication()},
+        model_authentications={"microsoft_foundry": _ModelAuthentication()},
     )
 
     with pytest.raises(WorkbenchError) as captured:
-        await adapter.execute(_request(sdk_code="langchain_create_agent"))
+        await adapter.execute(_request(sdk_code="openai_agents_sdk"))
 
     error = captured.value
     assert getattr(error, "code", None) == "agent_execution_failed"

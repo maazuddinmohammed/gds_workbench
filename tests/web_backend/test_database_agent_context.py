@@ -5,8 +5,6 @@ from uuid import uuid4
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from psycopg import Connection
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.workflows.authoring.context import (
@@ -17,6 +15,7 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
 )
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+from psycopg import Connection
 
 _DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 
@@ -49,9 +48,9 @@ def _plan(*, model_id: int, model_revision: int, object_id: int) -> AgentRunPlan
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": (object_id,),
             "selection": AgentRunSelection(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
-                model_code="databricks-primary",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=2,

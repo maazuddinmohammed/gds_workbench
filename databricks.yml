@@ -54,6 +54,10 @@ variables:
     description: Secret key containing the Entra tenant UUID.
   databricks_environment_code_secret_key:
     description: Secret key containing the registered GDS environment code.
+  foundry_openai_base_url_secret_key:
+    description: Secret key containing the Microsoft Foundry OpenAI resource URL.
+  foundry_api_key_secret_key:
+    description: Secret key containing the Microsoft Foundry API key.
 
 resources:
   apps:
@@ -92,6 +96,18 @@ resources:
           secret:
             scope: ${var.secret_scope}
             key: ${var.databricks_environment_code_secret_key}
+            permission: READ
+        - name: foundry-openai-base-url
+          description: Microsoft Foundry OpenAI resource endpoint.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.foundry_openai_base_url_secret_key}
+            permission: READ
+        - name: foundry-api-key
+          description: Microsoft Foundry model authentication.
+          secret:
+            scope: ${var.secret_scope}
+            key: ${var.foundry_api_key_secret_key}
             permission: READ
 
 targets:

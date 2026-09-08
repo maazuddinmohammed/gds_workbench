@@ -3,31 +3,31 @@ from __future__ import annotations
 import logging
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
-from typing import Any, Literal, cast
+from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
+    PhysicalModelCatalog,
+    validate_future_graph,
+)
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
+from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import AgentRunSelection
-from gds_workbench_api.features.logical.detailed import (
-    logical_json_bytes,
-    logical_json_digest,
-)
 from gds_workbench_api.features.logical.service import (
     DatabaseLogicalExecutor,
     LogicalExecutionFailedError,
@@ -45,6 +45,7 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentAuthoringContext,
     AgentContextBundle,
     InMemoryAgentContextToolCatalog,
+    modeled_layer_dependencies,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -60,16 +61,17 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidationError,
     AgentContextPolicy,
-    agent_request_envelope_bytes,
-)
-from gds_workbench_api.integrations.agents.fake_logical import (
-    detailed_logical_candidate,
 )
 from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
+
+from tests.mcp.model_test_fixtures import snapshot_from_graph
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-8444-444444444444")
 
@@ -83,18 +85,7 @@ def _principal() -> RequestPrincipal:
 
 
 def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
-    stage_codes = (
-        (
-            "topology_builder",
-            "topology_reconciler",
-            "entity_detail_builder",
-            "whole_model_reconciliation",
-            "validator_worker",
-            "validator_lead",
-        )
-        if mode == "detailed_coverage"
-        else ("candidate_authoring",)
-    )
+    stage_codes = ("candidate_authoring",)
     stages: list[FrozenAgentStage] = []
     for position, stage_code in enumerate(stage_codes, start=1):
         variables = [
@@ -108,10 +99,6 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
         instruction = "Use {{stage_context}}."
         if stage_code in {
             "candidate_authoring",
-            "topology_builder",
-            "topology_reconciler",
-            "entity_detail_builder",
-            "whole_model_reconciliation",
         }:
             variables.append(
                 PromptVariableDefinition(
@@ -122,7 +109,7 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
                 )
             )
             instruction += " Follow {{naming_instructions}}."
-        if stage_code in {"candidate_authoring", "whole_model_reconciliation"}:
+        if stage_code in {"candidate_authoring"}:
             variables.append(
                 PromptVariableDefinition(
                     name="validation_failures",
@@ -158,9 +145,9 @@ def _plan(*, mode: str = "one_shot", retry_count: int = 1) -> AgentRunPlan:
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": (501,),
             "selection": AgentRunSelection(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
-                model_code="databricks-primary",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=retry_count,
@@ -203,6 +190,8 @@ def _selected_object() -> dict[str, object]:
                 "attribute_ordinal_position": 1,
                 "attribute_description": "Customer identifier.",
                 "attribute_data_type": "bigint",
+                "attribute_inferred_data_type": None,
+                "is_locked": False,
                 "attribute_nullability": False,
                 "attribute_custom_code": None,
                 "is_surrogate_key": False,
@@ -377,146 +366,158 @@ def _empty_candidate() -> JsonValue:
     )
 
 
-def _detailed_candidates(*, blocking_first: bool = False) -> list[JsonValue]:
-    full = cast(dict[str, JsonValue], _candidate())
-    submodel = cast(list[JsonValue], full["submodels"])[0]
-    entity = cast(list[JsonValue], full["entities"])[0]
-    attribute = cast(list[JsonValue], full["attributes"])[0]
-    object_key = {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "connection_code": "SOURCE",
-        "object_schema": "bronze",
-        "object_name": "customer_raw",
-    }
-    source_attribute = {**object_key, "attribute_name": "customer_id"}
-    contribution = cast(
-        JsonValue,
-        {
-            "contribution_ref": "object_00001",
-            "source_object": object_key,
-            "disposition": "represented",
-            "rationale": "Represents Customer.",
-            "proposals": [
-                {
-                    "local_entity_ref": "customer",
-                    "candidate_entity_name": "Customer",
-                    "candidate_entity_type": "core",
-                    "candidate_entity_grain": "One row per Customer.",
-                    "candidate_submodel_names": ["Customer Domain"],
-                    "source_attributes": [source_attribute],
-                }
-            ],
-        },
-    )
-    topology = cast(
-        JsonValue,
-        {
-            "submodels": [
-                {
-                    "canonical_submodel_ref": "customer_domain",
-                    "submodel": submodel,
-                }
-            ],
-            "entities": [
-                {
-                    "canonical_entity_ref": "customer",
-                    "logical_entity_name": "Customer",
-                    "contribution_refs": ["object_00001.customer"],
-                    "submodel_refs": ["customer_domain"],
-                }
-            ],
-            "discarded_contribution_refs": [],
-        },
-    )
-    detail = cast(
-        JsonValue,
-        {
-            "canonical_entity_ref": "customer",
-            "entity": entity,
-            "attributes": [attribute],
-        },
-    )
-    reconciliation = cast(
-        JsonValue,
-        {
-            "submodels": [submodel],
-            "entities": [entity],
-            "attributes": [attribute],
-            "relationships": [],
-            "reviewed_submodel_refs": ["customer_domain"],
-            "reviewed_entity_refs": ["customer"],
-            "reviewed_relationship_signal_refs": [],
-            "reviewed_applied_record_refs": [],
-        },
-    )
-    clean_worker = cast(
-        JsonValue,
-        {
-            "package_ref": "validation_00001",
-            "reviewed_record_refs": [
-                "submodel:customer domain",
-                "entity:customer",
-                "attribute:customer|customer id",
-            ],
-            "findings": [],
-        },
-    )
-    clean_lead = cast(
-        JsonValue,
-        {
-            "reviewed_package_refs": ["validation_00001"],
-            "reviewed_finding_refs": [],
-            "blocking_finding_refs": [],
-            "repair_brief": None,
-        },
-    )
-    base = [contribution, topology, detail, reconciliation]
-    if not blocking_first:
-        return [*base, clean_worker, clean_lead]
-    finding = {
-        "finding_ref": "validation_00001.finding_00001",
-        "severity": "error",
-        "code": "logical.review_required",
-        "message": "Repair one blocking model concern.",
-        "record_refs": ["entity:customer"],
-    }
-    blocking_worker = cast(
-        JsonValue,
-        {
-            "package_ref": "validation_00001",
-            "reviewed_record_refs": [
-                "submodel:customer domain",
-                "entity:customer",
-                "attribute:customer|customer id",
-            ],
-            "findings": [finding],
-        },
-    )
-    blocking_lead = cast(
-        JsonValue,
-        {
-            "reviewed_package_refs": ["validation_00001"],
-            "reviewed_finding_refs": ["validation_00001.finding_00001"],
-            "blocking_finding_refs": ["validation_00001.finding_00001"],
-            "repair_brief": "Repair the blocking concern.",
-        },
-    )
-    return [
-        *base,
-        blocking_worker,
-        blocking_lead,
-        reconciliation,
-        clean_worker,
-        clean_lead,
+def _validation_context(
+    bundle: AgentContextBundle,
+    *,
+    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] | None = None,
+) -> AgentContextBundle:
+    context = bundle.context
+    objects = [
+        PhysicalObjectKey.model_validate(item.object.model_dump(), extra="ignore")
+        for item in context.selected_objects
     ]
+    ordered_source_keys = tuple(
+        tuple(str(value).casefold() for value in item.model_dump().values()) for item in objects
+    )
+    source_objects = frozenset(ordered_source_keys)
+    source_attributes = frozenset(
+        (*key, attribute.attribute_name.casefold())
+        for key, selected in zip(ordered_source_keys, context.selected_objects, strict=True)
+        for attribute in selected.attributes
+    )
+    records: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+        **(graph or {}),
+        "model_details": [context.model_details.model_dump(mode="json")],
+        "model_input_scope": [
+            {
+                **item.model_dump(mode="json"),
+                "model_input_scope_is_locked": False,
+                "is_active": True,
+            }
+            for item in objects
+        ],
+        "modeling_assertion_document": [
+            item.model_dump(mode="json") for item in context.assertion.documents
+        ],
+        "modeling_assertion_record": [
+            item.model_dump(mode="json") for item in context.assertion.records
+        ],
+    }
+    snapshot = snapshot_from_graph(records).model_copy(
+        update={"model_id": context.model_id, "model_revision": context.model_revision}
+    )
+    target_objects = frozenset(
+        tuple(
+            str(value).casefold()
+            for value in PhysicalObjectKey.model_validate(item, extra="ignore")
+            .model_dump()
+            .values()
+        )
+        for item in records.get("model_object_binding", [])
+    )
+    target_attributes = frozenset(
+        (*key, str(attribute["attribute_name"]).casefold())
+        for key in target_objects
+        for attribute in records.get("model_attribute_binding", [])
+    )
+    physical_scope = PhysicalModelCatalog(
+        model_tenant_code="NWA",
+        active_system_codes=frozenset({"crm"}),
+        objects=cast(Any, source_objects | target_objects),
+        attributes=cast(Any, source_attributes | target_attributes),
+        model_input_objects=cast(Any, source_objects),
+        model_input_attributes=cast(Any, source_attributes),
+        dimensional_source_objects=frozenset(),
+        dimensional_source_attributes=frozenset(),
+        logical_mapping_target_objects=cast(Any, target_objects),
+        logical_mapping_target_attributes=cast(Any, target_attributes),
+        dimensional_mapping_target_objects=frozenset(),
+        dimensional_mapping_target_attributes=frozenset(),
+    )
+    return replace(bundle, snapshot=snapshot, physical_scope=physical_scope)
+
+
+def _bound_context_bundle(mode: str) -> AgentContextBundle:
+    bundle = _context_bundle(mode=mode)
+    bundle = replace(
+        bundle,
+        context=bundle.context.model_copy(
+            update={
+                "model_details": bundle.context.model_details.model_copy(
+                    update={"silver_model_audit_columns_template": None}
+                ),
+            }
+        ),
+    )
+    candidate = cast(dict[str, list[dict[str, object]]], _candidate())
+    graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+        "logical_submodel": candidate["submodels"],
+        "logical_entity": candidate["entities"],
+        "logical_attribute": candidate["attributes"],
+        "model_object_binding": [
+            {
+                "tenant_code": "NWA",
+                "system_code": "CRM",
+                "connection_code": "TARGET",
+                "object_schema": "silver",
+                "object_name": "customer",
+                "modeled_entity_type": "logical_entity",
+                "modeled_entity_name": "Customer",
+                "model_object_binding_status": "active",
+                "model_object_binding_is_locked": False,
+            }
+        ],
+        "model_attribute_binding": [
+            {
+                "modeled_entity_type": "logical_entity",
+                "modeled_entity_name": "Customer",
+                "modeled_attribute_name": "Customer Id",
+                "attribute_name": "customer_id",
+                "model_attribute_binding_status": "active",
+                "model_attribute_binding_is_locked": False,
+            }
+        ],
+    }
+    bundle = _validation_context(bundle, graph=graph)
+    assert bundle.snapshot is not None and bundle.physical_scope is not None
+    assert validate_future_graph(
+        snapshot=bundle.snapshot,
+        staged_documents={},
+        physical_scope=bundle.physical_scope,
+    ).valid
+    context = bundle.context.model_copy(
+        update={
+            "applied": bundle.context.applied.model_copy(
+                update={"logical": bundle.snapshot.logical}
+            ),
+            "read_only_dependencies": modeled_layer_dependencies(
+                bundle.snapshot, modeled_entity_type="logical_entity"
+            ),
+        }
+    )
+    catalog = (
+        InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=128 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    return replace(
+        bundle,
+        context=context,
+        tool_catalog=catalog,
+        embedded_context=catalog.manifest
+        if catalog is not None
+        else cast(JsonValue, context.model_dump(mode="json")),
+    )
 
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -575,7 +576,7 @@ class _ContextRepository:
         plan: AgentRunPlan,
     ) -> AgentContextBundle:
         del transaction, tenant_id, plan
-        return self.bundle
+        return self.bundle if self.bundle.snapshot is not None else _validation_context(self.bundle)
 
 
 @dataclass
@@ -598,22 +599,7 @@ class _AgentExecutor:
 
 
 @dataclass
-class _LocalFakeAgent:
-    requests: list[AgentExecutionRequest] = field(
-        default_factory=lambda: list[AgentExecutionRequest]()
-    )
-
-    async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
-        self.requests.append(request)
-        return AgentExecutionResult(
-            candidate=detailed_logical_candidate(request),
-            turn_count=1,
-            tool_call_count=0,
-        )
-
-
-@dataclass
-class _Handoff:
+class _Handoff(RetainingHandoff):
     calls: list[tuple[StageModelChange, ...]] = field(
         default_factory=lambda: list[tuple[StageModelChange, ...]]()
     )
@@ -686,9 +672,7 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair"
-                if request.final_event.attempt > 1
-                else "completed"
+                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -702,9 +686,7 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -742,7 +724,7 @@ class _Lifecycle:
 
 def _service(
     *,
-    agent: _AgentExecutor | _LocalFakeAgent,
+    agent: _AgentExecutor,
     plan: AgentRunPlan | None = None,
     no_op: _NoOp | None = None,
     context_bundle: AgentContextBundle | None = None,
@@ -763,9 +745,7 @@ def _service(
             plan_repository=_PlanRepository(selected_plan),
             context_repository=_ContextRepository(
                 context_bundle
-                or _context_bundle(
-                    mode=selected_plan.workflow_execution_mode or "one_shot"
-                )
+                or _context_bundle(mode=selected_plan.workflow_execution_mode or "one_shot")
             ),
             context_policy=AgentContextPolicy(
                 one_shot_max_context_bytes=128 * 1024,
@@ -813,17 +793,14 @@ async def test_one_shot_projects_audit_columns_then_hands_off_once() -> None:
     attribute_change = next(
         change for change in handoff.calls[0] if change.dataset == "logical_attribute"
     )
-    assert [
-        record["logical_attribute_name"] for record in attribute_change.records
-    ] == [
+    assert [record["logical_attribute_name"] for record in attribute_change.records] == [
         "Created At",
         "Customer Id",
     ]
     assert handoff.final_events[-1].finding_count == 4
     assert lifecycle.failed is None
     assert [
-        (event.sequence, event.stage)
-        for event in (*lifecycle.events, *handoff.final_events)
+        (event.sequence, event.stage) for event in (*lifecycle.events, *handoff.final_events)
     ] == [
         (2, "logical.candidate_authoring"),
         (3, "logical.backend_validation"),
@@ -869,9 +846,7 @@ async def test_empty_candidate_completes_with_atomic_no_op_receipt() -> None:
 async def test_repaired_empty_candidate_preserves_attempt_and_warning() -> None:
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=_AgentExecutor(
-            responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]
-        ),
+        agent=_AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _empty_candidate()]),
         no_op=no_op,
     )
 
@@ -956,9 +931,7 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(source_name="outside_selection"), _candidate()]
-    )
+    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -978,6 +951,134 @@ async def test_validation_repair_keeps_original_context_then_hands_off_once() ->
     assert repair["validation_issues"]
     assert len(handoff.calls) == 1
     assert handoff.final_events[-1].status == "warning"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+async def test_full_graph_binding_failure_is_repaired_before_handoff(mode: str) -> None:
+    bundle = _bound_context_bundle(mode)
+    invalid = cast(dict[str, list[dict[str, object]]], _candidate())
+    invalid["entities"][0]["logical_entity_status"] = "inactive"
+    corrected = cast(dict[str, list[dict[str, object]]], _candidate())
+    corrected["entities"][0]["logical_entity_definition"] = (
+        "One customer identified by the CRM business key."
+    )
+    agent = _AgentExecutor(responses=cast(list[JsonValue | Exception], [invalid, corrected]))
+    service, _, _, handoff, lifecycle = _service(
+        agent=agent, plan=_plan(mode=mode), context_bundle=bundle
+    )
+
+    await service.execute_started(
+        _principal(),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+        expected_model_revision=7,
+        workflow_run_claim_token=_CLAIM_TOKEN,
+    )
+
+    assert len(agent.requests) == 2
+    repaired = cast(dict[str, Any], agent.requests[1].context)
+    assert (
+        repaired["original_context"]
+        == cast(dict[str, Any], agent.requests[0].context)["original_context"]
+    )
+    assert repaired["repair"]["validation_issues"] == [
+        {
+            "code": "candidate.active_dependency_invalid",
+            "path": ["logical_attribute", "logical_entity_name"],
+            "message": "Active Logical Attribute requires an active parent Entity.",
+        },
+        {
+            "code": "candidate.active_dependency_invalid",
+            "path": ["model_object_binding", "modeled_entity_name"],
+            "message": "Active Object Binding requires an active modeled Entity.",
+        },
+    ]
+    if mode == "tool_assisted":
+        assert bundle.tool_catalog is not None
+        page = cast(
+            dict[str, Any],
+            bundle.tool_catalog.invoke(
+                "get_agent_context_dataset",
+                {
+                    "dataset": "read_only_model_object_binding",
+                    "offset": 0,
+                    "limit": 1,
+                },
+            ),
+        )
+        assert page["items"][0]["modeled_entity_name"] == "Customer"
+    else:
+        assert (
+            repaired["original_context"]["read_only_dependencies"][0]["record"][
+                "modeled_entity_name"
+            ]
+            == "Customer"
+        )
+    assert len(handoff.calls) == 1
+    assert bundle.snapshot is not None and bundle.physical_scope is not None
+    assert validate_future_graph(
+        snapshot=bundle.snapshot,
+        staged_documents={change.dataset: change.records for change in handoff.calls[0]},
+        physical_scope=bundle.physical_scope,
+    ).valid
+    entity_change = next(
+        change for change in handoff.calls[0] if change.dataset == "logical_entity"
+    )
+    assert (
+        entity_change.records[0]["logical_entity_definition"]
+        == corrected["entities"][0]["logical_entity_definition"]
+    )
+    assert handoff.final_events[-1].attempt == 2
+    assert lifecycle.failed is None
+
+
+@pytest.mark.asyncio
+async def test_post_policy_graph_failure_retains_canonical_rejected_draft() -> None:
+    bundle = _bound_context_bundle("one_shot")
+    assert bundle.snapshot is not None
+    details = _context_bundle().context.model_details
+    context = bundle.context.model_copy(update={"model_details": details})
+    snapshot = bundle.snapshot.model_copy(
+        update={
+            "model_input_scope": bundle.snapshot.model_input_scope.model_copy(
+                update={"details": details}
+            ),
+        }
+    )
+    bundle = replace(
+        bundle,
+        context=context,
+        snapshot=snapshot,
+        embedded_context=cast(JsonValue, context.model_dump(mode="json")),
+    )
+    agent = _AgentExecutor(responses=[_candidate(), _candidate()])
+    service, _, _, handoff, lifecycle = _service(agent=agent, context_bundle=bundle)
+
+    with pytest.raises(AgentCandidateValidationError):
+        await service.execute_started(
+            _principal(),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+            expected_model_revision=7,
+            workflow_run_claim_token=_CLAIM_TOKEN,
+        )
+
+    assert len(agent.requests) == 2
+    issues = cast(dict[str, Any], agent.requests[1].context)["repair"]["validation_issues"]
+    assert any(issue["path"][0] == "model_attribute_binding" for issue in issues)
+    assert handoff.calls == []
+    assert len(handoff.retained) == 1
+    retained = handoff.retained[0]
+    assert retained["failure_code"] == "agent_candidate_validation_failed"
+    assert retained["issues"][0].dataset == "model_attribute_binding"
+    attributes = next(
+        change for change in retained["changes"] if change.dataset == "logical_attribute"
+    )
+    assert any(record["logical_attribute_name"] == "Created At" for record in attributes.records)
+    assert lifecycle.failed is None
 
 
 @pytest.mark.asyncio
@@ -1056,418 +1157,3 @@ async def test_fixed_plan_mismatch_is_rejected_before_agent_execution() -> None:
     assert agent.requests == []
     assert handoff.calls == []
     assert lifecycle.failed is not None
-
-
-@pytest.mark.asyncio
-async def test_detailed_coverage_runs_fixed_loops_then_one_atomic_handoff() -> None:
-    agent = _AgentExecutor(
-        responses=cast(list[JsonValue | Exception], _detailed_candidates())
-    )
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        expected_model_revision=7,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-    )
-
-    assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-        "entity_detail_builder",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-    ]
-    assert all(
-        request.execution_mode == "detailed_coverage" for request in agent.requests
-    )
-    assert all(request.allowed_tool_names == () for request in agent.requests)
-    assert len(handoff.calls) == 1
-    assert result.staged_record_count == 4
-    assert lifecycle.failed is None
-
-
-@pytest.mark.asyncio
-async def test_detailed_coverage_projects_maximal_supporting_assertion_without_losing_sources() -> (
-    None
-):
-    assertion_text = "é" * 200_000
-    assertion_record = {
-        "modeling_assertion_record_key": "Customer.Rule.1",
-        "modeling_assertion_document_name": "Customer Rules",
-        "modeling_assertion_record_type": "business_rule",
-        "modeling_assertion_text": assertion_text,
-        "modeling_assertion_details": {"rule_kind": "identity"},
-        "modeling_assertion_source_location": {"page": 1},
-        "modeling_assertion_applicable_layers": ("logical",),
-        "modeling_assertion_confidence": "high",
-        "modeling_assertion_record_status": "active",
-        "modeling_assertion_record_is_locked": False,
-    }
-    bundle = _context_bundle(
-        mode="detailed_coverage",
-        assertion={
-            "documents": (
-                {
-                    "modeling_assertion_document_name": "Customer Rules",
-                    "tenant_code": "NWA",
-                    "system_code": "CRM",
-                    "modeling_assertion_file_pattern": None,
-                    "modeling_assertion_document_type": "policy",
-                    "modeling_assertion_document_description": "Customer policy.",
-                    "modeling_assertion_document_metadata": {},
-                    "is_active": True,
-                },
-            ),
-            "records": (assertion_record,),
-        },
-    )
-    agent = _AgentExecutor(
-        responses=cast(list[JsonValue | Exception], _detailed_candidates())
-    )
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-        context_bundle=bundle,
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        expected_model_revision=7,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-    )
-
-    assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert lifecycle.failed is None
-    assert len(handoff.calls) == 1
-    assert all(
-        agent_request_envelope_bytes(request) <= 128 * 1024
-        for request in agent.requests
-    )
-    original_context = cast(dict[str, JsonValue], agent.requests[0].context)[
-        "original_context"
-    ]
-    projected = cast(dict[str, JsonValue], original_context)
-    manifest = cast(dict[str, JsonValue], projected["batch_manifest"])
-    selected = cast(dict[str, JsonValue], projected["selected_object"])
-    assertions = cast(dict[str, JsonValue], projected["assertions"])
-    record_section = cast(dict[str, JsonValue], assertions["records"])
-    record_projection = cast(
-        dict[str, JsonValue],
-        cast(list[JsonValue], record_section["records"])[0],
-    )
-    assert manifest["records_are_lossless"] is True
-    assert (
-        cast(dict[str, JsonValue], selected["object"])["object_name"] == "customer_raw"
-    )
-    assert len(cast(list[JsonValue], selected["attributes"])) == 1
-    assert record_projection["projection_kind"] == "bounded_semantic_projection"
-    assert record_projection["canonical_utf8_bytes"] == logical_json_bytes(
-        cast(JsonValue, assertion_record)
-    )
-    assert record_projection["canonical_sha256"] == logical_json_digest(
-        cast(JsonValue, assertion_record)
-    )
-
-
-@pytest.mark.asyncio
-async def test_detailed_coverage_fails_closed_when_one_authoritative_object_cannot_fit() -> (
-    None
-):
-    base = _context_bundle(mode="detailed_coverage")
-    selected = base.context.selected_objects[0]
-    oversized_object = selected.object.model_copy(
-        update={"object_description": "x" * 200_000}
-    )
-    oversized_context = base.context.model_copy(
-        update={
-            "selected_objects": (
-                selected.model_copy(update={"object": oversized_object}),
-            )
-        }
-    )
-    bundle = AgentContextBundle(
-        context=oversized_context,
-        embedded_context=cast(JsonValue, oversized_context.model_dump(mode="json")),
-    )
-    agent = _AgentExecutor(responses=[])
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-        context_bundle=bundle,
-    )
-
-    with pytest.raises(InvalidRequestError, match="authoritative|selected Logical"):
-        await service.execute_started(
-            _principal(),
-            tenant_id=7,
-            model_id=18,
-            workflow_run_id=1048,
-            expected_model_revision=7,
-            workflow_run_claim_token=_CLAIM_TOKEN,
-        )
-
-    assert agent.requests == []
-    assert handoff.calls == []
-    assert lifecycle.failed is not None
-
-
-def test_detailed_topology_pages_maximum_legal_selected_attribute_count_exactly() -> (
-    None
-):
-    bundle = _context_bundle(mode="detailed_coverage")
-    selected = bundle.context.selected_objects[0]
-    source_attribute = selected.attributes[0]
-    attributes = tuple(
-        source_attribute.model_copy(
-            update={
-                "attribute_name": f"source_attribute_{position:05d}",
-                "attribute_ordinal_position": position,
-                "attribute_description": "Bounded source Attribute.",
-            }
-        )
-        for position in range(1, 20_001)
-    )
-    selected = selected.model_copy(update={"attributes": attributes})
-    service, *_ = _service(
-        agent=_LocalFakeAgent(),
-        plan=_plan(mode="detailed_coverage"),
-        context_bundle=bundle,
-    )
-
-    batches = service._topology_builder_batches(  # pyright: ignore[reportPrivateUsage]
-        plan=_plan(mode="detailed_coverage"),
-        context=bundle,
-        selected=selected,
-    )
-
-    assert len(batches) > 1
-    assert len({batch.contribution_ref for batch in batches}) == len(batches)
-    assert tuple(
-        attribute.attribute_name
-        for batch in batches
-        for attribute in batch.source_attributes
-    ) == tuple(attribute.attribute_name for attribute in attributes)
-    for batch in batches:
-        stage_context = cast(dict[str, JsonValue], batch.context)
-        selected_slice = cast(dict[str, JsonValue], stage_context["selected_object"])
-        attribute_values = cast(list[JsonValue], selected_slice["attributes"])
-        manifest = cast(dict[str, JsonValue], stage_context["batch_manifest"])
-        assert manifest["record_count"] == len(attribute_values)
-        assert manifest["ordered_record_digest"] == logical_json_digest(
-            cast(JsonValue, attribute_values)
-        )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize("attribute_count", [24, 50, 100, 200])
-async def test_detailed_coverage_byte_pages_many_attributes_without_source_loss(
-    attribute_count: int,
-) -> None:
-    base = _context_bundle(mode="detailed_coverage")
-    selected = base.context.selected_objects[0]
-    source_attribute = selected.attributes[0]
-    attributes = tuple(
-        source_attribute.model_copy(
-            update={
-                "attribute_name": f"source_attribute_{position:03d}",
-                "attribute_ordinal_position": position,
-                "attribute_description": f"Source Attribute {position}.",
-            }
-        )
-        for position in range(1, attribute_count + 1)
-    )
-    paged_context = base.context.model_copy(
-        update={
-            "selected_objects": (
-                selected.model_copy(update={"attributes": attributes}),
-            )
-        }
-    )
-    bundle = AgentContextBundle(
-        context=paged_context,
-        embedded_context=cast(JsonValue, paged_context.model_dump(mode="json")),
-    )
-    agent = _LocalFakeAgent()
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-        context_bundle=bundle,
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        expected_model_revision=7,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-    )
-
-    assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert lifecycle.failed is None
-    assert len(handoff.calls) == 1
-    if attribute_count >= 100:
-        assert (
-            sum(request.stage == "topology_builder" for request in agent.requests) > 1
-        )
-    assert (
-        sum(request.stage == "entity_detail_builder" for request in agent.requests) > 1
-    )
-    if attribute_count >= 50:
-        assert (
-            sum(
-                request.stage == "whole_model_reconciliation"
-                for request in agent.requests
-            )
-            > 1
-        )
-    assert all(
-        agent_request_envelope_bytes(request) <= 128 * 1024
-        for request in agent.requests
-    )
-    assert all(
-        cast(dict[str, JsonValue], request.context)["repair"] is None
-        for request in agent.requests
-    )
-    attribute_change = next(
-        change for change in handoff.calls[0] if change.dataset == "logical_attribute"
-    )
-    represented_sources = {
-        cast(str, source_attribute["attribute_name"])
-        for record in attribute_change.records
-        for source in cast(list[dict[str, JsonValue]], record["sources"])
-        if source.get("support_source_type") == "attribute"
-        for source_attribute in [cast(dict[str, JsonValue], source["source_attribute"])]
-    }
-    assert represented_sources == {
-        f"source_attribute_{position:03d}" for position in range(1, attribute_count + 1)
-    }
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("disposition", "expected_status"),
-    [("not_logical", "running"), ("needs_review", "warning")],
-)
-async def test_detailed_empty_coverage_completes_with_true_no_op_event(
-    disposition: Literal["not_logical", "needs_review"],
-    expected_status: Literal["running", "warning"],
-) -> None:
-    source = {
-        "tenant_code": "NWA",
-        "system_code": "CRM",
-        "connection_code": "SOURCE",
-        "object_schema": "bronze",
-        "object_name": "customer_raw",
-    }
-    agent = _AgentExecutor(
-        responses=cast(
-            list[JsonValue | Exception],
-            [
-                {
-                    "contribution_ref": "object_00001",
-                    "source_object": source,
-                    "disposition": disposition,
-                    "rationale": "The source has no represented Logical entity.",
-                    "proposals": [],
-                },
-                {
-                    "submodels": [],
-                    "entities": [],
-                    "discarded_contribution_refs": [],
-                },
-                {
-                    "submodels": [],
-                    "entities": [],
-                    "attributes": [],
-                    "relationships": [],
-                    "reviewed_submodel_refs": [],
-                    "reviewed_entity_refs": [],
-                    "reviewed_relationship_signal_refs": [],
-                    "reviewed_applied_record_refs": [],
-                },
-            ],
-        )
-    )
-    no_op = _NoOp()
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-        no_op=no_op,
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        expected_model_revision=7,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-    )
-
-    assert isinstance(result, AuthoringNoOpReceipt)
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-        "whole_model_reconciliation",
-    ]
-    assert handoff.calls == []
-    assert lifecycle.failed is None
-    assert no_op.requests[0].final_event.sequence == 7
-    assert no_op.requests[0].final_event.attempt == 1
-    assert no_op.requests[0].final_event.status == expected_status
-
-
-@pytest.mark.asyncio
-async def test_detailed_blocker_repairs_only_whole_model_from_immutable_context() -> (
-    None
-):
-    agent = _AgentExecutor(
-        responses=cast(
-            list[JsonValue | Exception],
-            _detailed_candidates(blocking_first=True),
-        )
-    )
-    service, _database, _authorizer, handoff, _lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage", retry_count=1),
-    )
-
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        expected_model_revision=7,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-    )
-
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-        "entity_detail_builder",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-    ]
-    first = cast(dict[str, JsonValue], agent.requests[3].context)
-    repaired = cast(dict[str, JsonValue], agent.requests[6].context)
-    assert repaired["original_context"] == first["original_context"]
-    assert "logical.review_required" in agent.requests[6].instruction_prompt
-    assert len(handoff.calls) == 1
-    assert handoff.final_events[-1].status == "warning"

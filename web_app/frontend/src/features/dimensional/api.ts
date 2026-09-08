@@ -1,3 +1,5 @@
+import type { ModelTargetsTransport } from "../model_targets/api";
+import type { ModelRecordHistoryApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
@@ -258,7 +260,7 @@ export interface DimensionalTransport {
   ) => Promise<DimensionalRelationshipDetail>;
 }
 
-export type DimensionalApi = DimensionalTransport
+export type DimensionalApi = DimensionalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordHistoryApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

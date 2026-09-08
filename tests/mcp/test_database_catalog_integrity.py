@@ -37,9 +37,7 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
         re.findall(
             r"^- `((?:reference|core|security|model|workflow|application|mcp)"
             r"\.[a-z][a-z0-9_]*)` —",
-            _inventory_section(
-                inventory, "## 2. Functions", "## 3. Installed triggers"
-            ),
+            _inventory_section(inventory, "## 2. Functions", "## 3. Installed triggers"),
             re.MULTILINE,
         )
     )
@@ -138,10 +136,8 @@ def test_installed_catalog_matches_the_exhaustive_inventory(
     assert [
         (trigger["trigger_name"], trigger["relation_name"]) for trigger in triggers
     ] == trigger_pairs
-    assert all(
-        trigger["function_name"] == trigger["trigger_name"] for trigger in triggers
-    )
-    assert row == {"table_count": 100, "function_count": 79, "trigger_count": 15}
+    assert all(trigger["function_name"] == trigger["trigger_name"] for trigger in triggers)
+    assert row == {"table_count": 103, "function_count": 96, "trigger_count": 18}
 
 
 def test_every_release_table_has_a_valid_primary_key_and_valid_constraints(

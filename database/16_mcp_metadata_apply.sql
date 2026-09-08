@@ -27,6 +27,7 @@ DECLARE
     v_decision RECORD;
     v_change_set RECORD;
     v_touched_object RECORD;
+    v_touched_attribute RECORD;
     v_actor VARCHAR(255);
     v_expected_count INTEGER;
     v_affected_count INTEGER;
@@ -223,6 +224,48 @@ BEGIN
         END IF;
     END LOOP;
 
+    FOR v_touched_attribute IN
+        SELECT attribute.attribute_id, attribute.is_locked
+          FROM jsonb_to_recordset(
+              v_change_set.source_attribute_document
+              || v_change_set.bronze_attribute_document
+              || v_change_set.silver_attribute_document
+              || v_change_set.gold_attribute_document
+          ) AS record (
+              tenant_code VARCHAR(100), system_code VARCHAR(100),
+              connection_code VARCHAR(100), object_schema VARCHAR(400),
+              object_name VARCHAR(400), attribute_name VARCHAR(400)
+          )
+          JOIN core.tenant AS placement
+            ON lower(btrim(placement.tenant_code)) = lower(btrim(record.tenant_code))
+          JOIN core.system AS system
+            ON lower(btrim(system.system_code)) = lower(btrim(record.system_code))
+          JOIN core.connection AS connection
+            ON connection.tenant_id = placement.tenant_id
+           AND connection.system_id = system.system_id
+           AND lower(btrim(connection.connection_code)) = lower(btrim(record.connection_code))
+          JOIN core.object AS object
+            ON object.connection_id = connection.connection_id
+           AND object.source_tenant_id = p_tenant_id
+           AND lower(btrim(object.object_schema)) = lower(btrim(record.object_schema))
+           AND lower(btrim(object.object_name)) = lower(btrim(record.object_name))
+          JOIN core.attribute AS attribute
+            ON attribute.object_id = object.object_id
+           AND lower(btrim(attribute.attribute_name)) = lower(btrim(record.attribute_name))
+         ORDER BY attribute.attribute_id
+         FOR UPDATE OF attribute
+    LOOP
+        IF v_touched_attribute.is_locked THEN
+            RETURN QUERY SELECT
+                FALSE, 'attribute_locked'::VARCHAR(50),
+                v_change_set.metadata_change_set_status::VARCHAR(20),
+                v_change_set.draft_revision::BIGINT,
+                v_change_set.applied_time::TIMESTAMPTZ,
+                0::INTEGER;
+            RETURN;
+        END IF;
+    END LOOP;
+
     v_actor := ('principal:' || v_decision.principal_id::TEXT)::VARCHAR(255);
     SET CONSTRAINTS
         core.uq_attribute_object_ordinal,
@@ -355,17 +398,19 @@ BEGIN
               object_name VARCHAR(400), attribute_name VARCHAR(400),
               fc_attribute_name VARCHAR(400), attribute_ordinal_position INTEGER,
               attribute_description TEXT, attribute_data_type VARCHAR(100),
+              attribute_inferred_data_type VARCHAR(100),
               attribute_nullability BOOLEAN, attribute_custom_code TEXT,
               is_surrogate_key BOOLEAN, is_natural_key BOOLEAN,
               is_meta_data BOOLEAN, is_masking_required BOOLEAN,
-              is_mapped BOOLEAN, is_purge BOOLEAN, is_active BOOLEAN
+              is_mapped BOOLEAN, is_purge BOOLEAN, is_locked BOOLEAN, is_active BOOLEAN
           )
     )
     INSERT INTO core.attribute AS target (
         object_id, attribute_name, fc_attribute_name, attribute_ordinal_position,
-        attribute_description, attribute_data_type, attribute_nullability,
+        attribute_description, attribute_data_type, attribute_inferred_data_type,
+        attribute_nullability,
         attribute_custom_code, is_surrogate_key, is_natural_key, is_meta_data,
-        is_masking_required, is_mapped, is_purge, is_active,
+        is_masking_required, is_mapped, is_purge, is_locked, is_active,
         created_by, updated_by
     )
     SELECT object.object_id,
@@ -374,6 +419,7 @@ BEGIN
            records.attribute_ordinal_position,
            records.attribute_description,
            records.attribute_data_type,
+           records.attribute_inferred_data_type,
            records.attribute_nullability,
            records.attribute_custom_code,
            records.is_surrogate_key,
@@ -382,6 +428,7 @@ BEGIN
            records.is_masking_required,
            records.is_mapped,
            records.is_purge,
+           records.is_locked,
            records.is_active,
            v_actor,
            v_actor
@@ -406,6 +453,7 @@ BEGIN
         attribute_ordinal_position = EXCLUDED.attribute_ordinal_position,
         attribute_description = EXCLUDED.attribute_description,
         attribute_data_type = EXCLUDED.attribute_data_type,
+        attribute_inferred_data_type = EXCLUDED.attribute_inferred_data_type,
         attribute_nullability = EXCLUDED.attribute_nullability,
         attribute_custom_code = EXCLUDED.attribute_custom_code,
         is_surrogate_key = EXCLUDED.is_surrogate_key,
@@ -414,6 +462,7 @@ BEGIN
         is_masking_required = EXCLUDED.is_masking_required,
         is_mapped = EXCLUDED.is_mapped,
         is_purge = EXCLUDED.is_purge,
+        is_locked = EXCLUDED.is_locked,
         is_active = EXCLUDED.is_active,
         updated_time = v_now,
         updated_by = EXCLUDED.updated_by;

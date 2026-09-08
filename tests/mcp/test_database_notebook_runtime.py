@@ -20,9 +20,7 @@ def test_notebook_runtime_identity_and_tenant_lock_surface(
 
     with postgres_database.connect_notebook_runtime() as connection:
         assert (
-            connection.execute(
-                "SELECT * FROM security.current_notebook_principal()"
-            ).fetchone()
+            connection.execute("SELECT * FROM security.current_notebook_principal()").fetchone()
             is None
         )
         denied = connection.execute(

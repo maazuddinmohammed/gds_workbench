@@ -48,6 +48,13 @@ _EXACT_GUIDANCE = {
         "or scale when applicable.",
         ("varchar(200)",),
     ),
+    "attribute_inferred_data_type": ColumnGuidance(
+        "Source or inferred semantic data type, separate from physical storage.",
+        "Preserve the physical attribute_data_type. Populate this field from source "
+        "schema evidence or conservative sample inference; use null when unknown. "
+        "Downstream authoring should consider it when choosing types and explicit casts.",
+        ("DECIMAL(18,2)",),
+    ),
     "attribute_nullability": ColumnGuidance(
         "Whether the physical Attribute permits null values.",
         "Use true when null is permitted and false when every row must contain a value.",
@@ -179,9 +186,9 @@ _EXACT_GUIDANCE = {
         (False,),
     ),
     "is_locked": ColumnGuidance(
-        "Whether the Object is protected from Metadata Change Set modification.",
-        "Preserve the current value. A locked applied Object cannot be changed through a "
-        "Metadata Change Set.",
+        "Whether this Object or Attribute is protected from metadata authoring.",
+        "Preserve the current value. A locked Object protects itself and all its "
+        "Attributes; an Attribute lock additionally protects that Attribute.",
         (False,),
     ),
     "is_mapped": ColumnGuidance(

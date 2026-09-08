@@ -12,8 +12,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-from pydantic import ValidationError
-
 from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     AgentModelExecutionProfile,
@@ -26,6 +24,34 @@ from gds_workbench_api.features.workflows.commands import (
     WorkflowRunCommandResult,
 )
 from gds_workbench_api.main import create_app
+from pydantic import ValidationError
+
+
+@pytest.mark.parametrize("mode", [None, "tool_assisted"])
+def test_metadata_enrichment_request_requires_one_shot(mode: str | None) -> None:
+    with pytest.raises(ValidationError, match="requires one-shot"):
+        CreateWorkflowRunRequest.model_validate(
+            {
+                "expected_model_revision": 4,
+                "model_workflow": "metadata_enrichment",
+                "workflow_execution_mode": mode,
+                "selected_object_ids": [101],
+            },
+            strict=True,
+        )
+
+
+def test_metadata_enrichment_rejects_an_unbounded_selection() -> None:
+    with pytest.raises(ValidationError, match="at most 200"):
+        CreateWorkflowRunRequest.model_validate(
+            {
+                "expected_model_revision": 4,
+                "model_workflow": "metadata_enrichment",
+                "workflow_execution_mode": "one_shot",
+                "selected_object_ids": list(range(1, 202)),
+            },
+            strict=True,
+        )
 
 
 class StaticWorkflowCommandService:
@@ -87,7 +113,7 @@ def test_agentic_run_is_explicit_and_queues_one_atomic_run() -> None:
                 "agent": {
                     "sdk_code": "openai_agents_sdk",
                     "provider_code": "openai",
-                    "model_code": "databricks-primary",
+                    "model_code": "foundry-primary",
                     "reasoning_effort_code": "high",
                     "max_turns": 15,
                     "validation_retry_count": 2,
@@ -127,7 +153,7 @@ def test_deterministic_and_agentic_inputs_cannot_be_mixed() -> None:
                 "agent": {
                     "sdk_code": "openai_agents_sdk",
                     "provider_code": "openai",
-                    "model_code": "databricks-primary",
+                    "model_code": "foundry-primary",
                     "reasoning_effort_code": "high",
                     "max_turns": 15,
                     "validation_retry_count": 2,
@@ -388,20 +414,20 @@ class WorkflowCommandTransaction:
             assert parameters == (7, 18)
             return {
                 "model_revision": 4,
-                "default_agent_sdk_code": "langchain_create_agent",
-                "default_agent_provider_code": "databricks",
-                "default_agent_model_code": "databricks-primary",
+                "default_agent_sdk_code": "openai_agents_sdk",
+                "default_agent_provider_code": "microsoft_foundry",
+                "default_agent_model_code": "foundry-primary",
                 "default_reasoning_effort_code": "medium",
                 "default_max_turns": 10,
                 "default_validation_retry_count": 2,
             }
         assert "application.create_workflow_run" in query
-        assert len(parameters) == 26
+        assert len(parameters) == 27
         assert parameters[3:7] == (18, 4, "profiling", None)
         assert parameters[13] == [101, 102]
         assert parameters[14] == []
         assert parameters[16] == "10428"
-        assert parameters[19:] == (None, None, None, None, None, None, None)
+        assert parameters[19:] == (None, None, None, None, None, None, None, None)
         return {
             "created": True,
             "workflow_run_id": 1048,
@@ -428,7 +454,9 @@ class WorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_derives_actor_and_calls_only_governed_function() -> None:
+async def test_database_command_derives_actor_and_calls_only_governed_function() -> (
+    None
+):
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
         authorizer=AuthorizationService(),
@@ -464,17 +492,19 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_agent_against_the_requested_execution_mode() -> None:
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
+    None
+):
     registry = load_default_agent_capabilities()
     databricks_model = next(
-        model for model in registry.models if model.code == "databricks-primary"
+        model for model in registry.models if model.code == "foundry-primary"
     )
     restricted = databricks_model.model_copy(
         update={
             "execution_profiles": (
                 AgentModelExecutionProfile(
-                    sdk_code="langchain_create_agent",
-                    execution_mode="detailed_coverage",
+                    sdk_code="openai_agents_sdk",
+                    execution_mode="tool_assisted",
                     reasoning_effort_codes=("medium",),
                 ),
             )
@@ -483,7 +513,8 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model for model in registry.models
+                restricted if model.code == restricted.code else model
+                for model in registry.models
             )
         }
     )
@@ -499,9 +530,9 @@ async def test_database_command_validates_agent_against_the_requested_execution_
             "workflow_execution_mode": "one_shot",
             "selected_object_ids": [101],
             "agent": {
-                "sdk_code": "langchain_create_agent",
-                "provider_code": "databricks",
-                "model_code": "databricks-primary",
+                "sdk_code": "openai_agents_sdk",
+                "provider_code": "microsoft_foundry",
+                "model_code": "foundry-primary",
                 "reasoning_effort_code": "medium",
                 "max_turns": 10,
                 "validation_retry_count": 2,
@@ -530,6 +561,13 @@ class _RecordingCapabilityRegistry:
         self.execution_modes: list[str | None] = []
         self.selections: list[AgentRunSelection] = []
 
+    def resolve_default_selection(self, **values: Any) -> AgentRunSelection:
+        selection = load_default_agent_capabilities().resolve_default_selection(
+            **values
+        )
+        self.validate_selection(selection, execution_mode=values["execution_mode"])
+        return selection
+
     def validate_selection(
         self,
         selection: AgentRunSelection,
@@ -542,7 +580,9 @@ class _RecordingCapabilityRegistry:
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_code_generation_against_internal_detailed_mode() -> None:
+async def test_database_command_validates_code_generation_against_internal_tool_assisted_mode() -> (
+    None
+):
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -557,9 +597,9 @@ async def test_database_command_validates_code_generation_against_internal_detai
             "modeled_entity_type": "logical_entity",
             "code_generation_coverage_mode": "selected_targets",
             "agent": {
-                "sdk_code": "langchain_create_agent",
-                "provider_code": "databricks",
-                "model_code": "databricks-primary",
+                "sdk_code": "openai_agents_sdk",
+                "provider_code": "microsoft_foundry",
+                "model_code": "foundry-primary",
                 "reasoning_effort_code": "medium",
                 "max_turns": 10,
                 "validation_retry_count": 2,
@@ -582,11 +622,13 @@ async def test_database_command_validates_code_generation_against_internal_detai
             command=command,
         )
 
-    assert registry.execution_modes == ["detailed_coverage"]
+    assert registry.execution_modes == ["tool_assisted"]
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_validation_against_internal_detailed_mode() -> None:
+async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> (
+    None
+):
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -600,9 +642,9 @@ async def test_database_command_validates_validation_against_internal_detailed_m
             "selected_object_ids": [],
             "selected_system_codes": ["CRM", "ERP"],
             "agent": {
-                "sdk_code": "langchain_create_agent",
-                "provider_code": "databricks",
-                "model_code": "databricks-primary",
+                "sdk_code": "openai_agents_sdk",
+                "provider_code": "microsoft_foundry",
+                "model_code": "foundry-primary",
                 "reasoning_effort_code": "medium",
                 "max_turns": 10,
                 "validation_retry_count": 2,
@@ -625,11 +667,11 @@ async def test_database_command_validates_validation_against_internal_detailed_m
             command=command,
         )
 
-    assert registry.execution_modes == ["detailed_coverage"]
+    assert registry.execution_modes == ["tool_assisted"]
 
 
 class _ImplicitDefaultWorkflowCommandTransaction(WorkflowCommandTransaction):
-    def __init__(self, *, model_code: str = "databricks-primary") -> None:
+    def __init__(self, *, model_code: str = "foundry-primary") -> None:
         self.model_code = model_code
         self.create_called = False
 
@@ -699,7 +741,9 @@ class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_keeps_implicit_model_agent_resolution_in_database() -> None:
+async def test_database_command_passes_validated_defaults_to_governed_creation() -> (
+    None
+):
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -732,7 +776,14 @@ async def test_database_command_keeps_implicit_model_agent_resolution_in_databas
     assert result.workflow_run_id == 1050
     assert transaction.create_parameters is not None
     assert transaction.create_parameters[3:7] == (18, 4, "conceptual", "one_shot")
-    assert transaction.create_parameters[7:13] == (None, None, None, None, None, None)
+    assert transaction.create_parameters[7:13] == (
+        "openai_agents_sdk",
+        "microsoft_foundry",
+        "foundry-primary",
+        "medium",
+        10,
+        2,
+    )
 
 
 @pytest.mark.parametrize(
@@ -757,7 +808,7 @@ async def test_database_command_keeps_implicit_model_agent_resolution_in_databas
                 "code_generation_coverage_mode": "selected_targets",
                 "prompt_overrides": {},
             },
-            "detailed_coverage",
+            "tool_assisted",
         ),
     ),
 )
@@ -789,10 +840,12 @@ async def test_database_command_validates_implicit_model_agent_default(
 
     assert registry.selections == [
         AgentRunSelection(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-primary",
-            reasoning_effort_code="medium",
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-primary",
+            reasoning_effort_code="none"
+            if expected_mode == "tool_assisted"
+            else "medium",
             max_turns=10,
             validation_retry_count=2,
         )
@@ -802,10 +855,25 @@ async def test_database_command_validates_implicit_model_agent_default(
 
 
 @pytest.mark.asyncio
-async def test_database_command_rejects_removed_implicit_model_agent_default() -> None:
-    transaction = _ImplicitDefaultWorkflowCommandTransaction(model_code="removed-model")
+async def test_database_command_recovers_retired_implicit_model_agent_default() -> None:
+    class RetiredDefaults(_SuccessfulImplicitDefaultWorkflowCommandTransaction):
+        async def fetch_one(
+            self,
+            query: LiteralString,
+            parameters: tuple[Any, ...] = (),
+        ) -> dict[str, Any] | None:
+            row = await super().fetch_one(query, parameters)
+            if row is not None and "FROM model.model AS target_model" in query:
+                row.update(
+                    default_agent_sdk_code="langchain_create_agent",
+                    default_agent_provider_code="databricks",
+                    default_agent_model_code="removed-model",
+                )
+            return row
+
+    transaction = RetiredDefaults()
     service = DatabaseWorkflowCommandService(
-        database=_ImplicitDefaultWorkflowCommandDatabase(transaction),
+        database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
@@ -815,28 +883,31 @@ async def test_database_command_rejects_removed_implicit_model_agent_default() -
             "model_workflow": "conceptual",
             "workflow_execution_mode": "one_shot",
             "selected_object_ids": [101],
-            "prompt_overrides": {},
         },
         strict=True,
     )
-
-    with pytest.raises(InvalidRequestError, match="unavailable"):
-        await service.create_run(
-            RequestPrincipal(
-                actor_kind=ActorKind.HUMAN,
-                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
-                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
-            ),
-            tenant_id=7,
-            model_id=18,
-            correlation_id=UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
-            command=command,
-        )
-
-    assert transaction.create_called is False
+    await service.create_run(
+        RequestPrincipal(
+            actor_kind=ActorKind.HUMAN,
+            entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+        ),
+        tenant_id=7,
+        model_id=18,
+        correlation_id=UUID("cccccccc-cccc-cccc-cccc-cccccccccccc"),
+        command=command,
+    )
+    assert transaction.create_parameters is not None
+    assert transaction.create_parameters[7:10] == (
+        "openai_agents_sdk",
+        "microsoft_foundry",
+        "foundry-primary",
+    )
 
 
 class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
+    create_parameters: tuple[Any, ...] | None = None
+
     async def fetch_one(
         self,
         query: LiteralString,
@@ -844,19 +915,18 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
     ) -> dict[str, Any] | None:
         if "application.create_workflow_run" not in query:
             return await super().fetch_one(query, parameters)
-        assert len(parameters) == 26
-        assert parameters[3:7] == (18, 4, "mapping", "one_shot")
+        assert len(parameters) == 27
+        self.create_parameters = parameters
+        assert parameters[3:6] == (18, 4, "mapping")
+        assert parameters[6] in {"one_shot", "tool_assisted"}
         assert parameters[13] == [101]
         assert parameters[14] == []
-        assert parameters[19:] == (
+        assert parameters[19:22] == (
             "build",
             "selected_targets",
             77,
-            501,
-            502,
-            None,
-            None,
         )
+        assert parameters[24:] == (None, None, None)
         return {
             "created": True,
             "workflow_run_id": 1049,
@@ -875,17 +945,41 @@ class MappingWorkflowCommandTransaction(WorkflowCommandTransaction):
 
 
 class MappingWorkflowCommandDatabase:
+    def __init__(self, transaction: MappingWorkflowCommandTransaction) -> None:
+        self.transaction = transaction
+
     @asynccontextmanager
     async def write_transaction(
         self,
     ) -> AsyncGenerator[WriteTransaction]:
-        yield cast(WriteTransaction, MappingWorkflowCommandTransaction())
+        yield cast(WriteTransaction, self.transaction)
 
 
 @pytest.mark.asyncio
-async def test_database_command_forwards_mapping_output_template_ids() -> None:
+@pytest.mark.parametrize("mode", ("one_shot", "tool_assisted"))
+@pytest.mark.parametrize(
+    "template_fields",
+    (
+        {},
+        {
+            "mapping_object_output_template_id": None,
+            "mapping_attribute_output_template_id": None,
+        },
+        {"mapping_object_output_template_id": 501},
+        {"mapping_attribute_output_template_id": 502},
+        {
+            "mapping_object_output_template_id": 501,
+            "mapping_attribute_output_template_id": 502,
+        },
+    ),
+    ids=("omitted", "null", "custom-object", "custom-attribute", "custom-both"),
+)
+async def test_database_command_forwards_mapping_output_template_selection(
+    mode: str, template_fields: dict[str, int | None]
+) -> None:
+    transaction = MappingWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
-        database=MappingWorkflowCommandDatabase(),
+        database=MappingWorkflowCommandDatabase(transaction),
         authorizer=AuthorizationService(),
         agent_capability_registry=load_default_agent_capabilities(),
     )
@@ -898,14 +992,13 @@ async def test_database_command_forwards_mapping_output_template_ids() -> None:
         {
             "expected_model_revision": 4,
             "model_workflow": "mapping",
-            "workflow_execution_mode": "one_shot",
+            "workflow_execution_mode": mode,
             "selected_object_ids": [101],
             "mapping_operation": "build",
             "mapping_coverage_mode": "selected_targets",
             "mapping_source_system_id": 77,
-            "mapping_object_output_template_id": 501,
-            "mapping_attribute_output_template_id": 502,
             "prompt_overrides": {},
+            **template_fields,
         },
         strict=True,
     )
@@ -919,3 +1012,53 @@ async def test_database_command_forwards_mapping_output_template_ids() -> None:
     )
 
     assert result.workflow_run_id == 1049
+    assert transaction.create_parameters is not None
+    assert transaction.create_parameters[22:24] == (
+        template_fields.get("mapping_object_output_template_id"),
+        template_fields.get("mapping_attribute_output_template_id"),
+    )
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("target", ("Object", "Attribute"))
+async def test_missing_mapping_default_returns_a_clear_controlled_error(
+    target: str,
+) -> None:
+    class MissingDefaultTransaction(MappingWorkflowCommandTransaction):
+        async def fetch_one(
+            self, query: LiteralString, parameters: tuple[Any, ...] = ()
+        ) -> dict[str, Any] | None:
+            if "application.create_workflow_run" in query:
+                raise RuntimeError(
+                    f"Global default Mapping {target} output template is unavailable"
+                )
+            return await super().fetch_one(query, parameters)
+
+    service = DatabaseWorkflowCommandService(
+        database=MappingWorkflowCommandDatabase(MissingDefaultTransaction()),
+        authorizer=AuthorizationService(),
+        agent_capability_registry=load_default_agent_capabilities(),
+    )
+    with pytest.raises(InvalidRequestError) as caught:
+        await service.create_run(
+            RequestPrincipal(
+                actor_kind=ActorKind.HUMAN,
+                entra_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+                entra_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+            ),
+            tenant_id=7,
+            model_id=18,
+            correlation_id=UUID("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"),
+            command=CreateWorkflowRunRequest(
+                expected_model_revision=4,
+                model_workflow="mapping",
+                workflow_execution_mode="one_shot",
+                selected_object_ids=[101],
+                mapping_operation="build",
+                mapping_coverage_mode="selected_targets",
+                mapping_source_system_id=77,
+            ),
+        )
+    assert (
+        caught.value.message == "The global Mapping output templates are unavailable."
+    )

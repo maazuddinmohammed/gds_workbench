@@ -2,6 +2,7 @@
 
 from collections.abc import Mapping
 from typing import Literal, Protocol, Self, runtime_checkable
+from uuid import UUID, uuid4
 
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from pydantic import (
@@ -18,6 +19,10 @@ from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     AgentRunSelection,
 )
+from gds_workbench_api.features.workflows.usage.contracts import (
+    AgentUsageRecorder,
+    ModelRequestRecorder,
+)
 
 type AgenticWorkflow = Literal[
     "analysis_inference",
@@ -27,11 +32,11 @@ type AgenticWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
 ]
 type AgentExecutionMode = Literal[
     "one_shot",
     "tool_assisted",
-    "detailed_coverage",
 ]
 
 AGENT_OUTPUT_CONTRACT_INSTRUCTION = (
@@ -39,7 +44,12 @@ AGENT_OUTPUT_CONTRACT_INSTRUCTION = (
     "required_output_schema as authoritative. Before returning, verify every required "
     "field, omit fields forbidden by additionalProperties, and satisfy every declared "
     "JSON Schema constraint, including types, enum, const, format, patterns, and string, "
-    "numeric, object, and array bounds."
+    "numeric, object, and array bounds. The current schema overrides incompatible "
+    "formatting instructions or examples in older prompts. Context identities and "
+    "manifests are read-only evidence; repeat them only where the schema asks. "
+    "The backend preserves existing locks; emit only the authoring values allowed "
+    "by the schema. When repair.previous_candidate_omitted is true, regenerate "
+    "from the rendered prompt evidence, enabled tools, and validation issues."
 )
 
 
@@ -51,6 +61,9 @@ class LocalAgentToolDefinition(BaseModel):
     name: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
     description: str = Field(min_length=1, max_length=500)
     input_schema: dict[str, JsonValue] = Field(repr=False)
+    result_schema: dict[str, JsonValue] | None = Field(default=None, repr=False)
+    example: dict[str, JsonValue] | None = Field(default=None, repr=False)
+    default_behavior: str | None = Field(default=None, max_length=500)
 
     @field_validator("description")
     @classmethod
@@ -102,6 +115,13 @@ class AgentExecutionRequest(BaseModel):
     stage: str = Field(pattern=r"^[a-z][a-z0-9_.-]{0,99}$")
     execution_mode: AgentExecutionMode
     selection: AgentRunSelection
+    invocation_id: UUID = Field(default_factory=uuid4, exclude=True)
+    authoring_attempt: int = Field(default=1, ge=1, le=6, exclude=True)
+    model_request_recorder: SkipJsonSchema[ModelRequestRecorder | None] = Field(
+        default=None,
+        exclude=True,
+        repr=False,
+    )
     system_prompt: str = Field(min_length=1, max_length=1_000_000, repr=False)
     instruction_prompt: str = Field(min_length=1, max_length=1_000_000, repr=False)
     tool_instruction: str | None = Field(
@@ -147,8 +167,7 @@ class AgentExecutionRequest(BaseModel):
 
         definition_names = tuple(definition.name for definition in catalog.definitions)
         if (
-            not definition_names
-            or len(definition_names) != len(set(definition_names))
+            len(definition_names) != len(set(definition_names))
             or definition_names != self.allowed_tool_names
         ):
             raise ValueError("The local tool catalog must match the explicit Run tool list")
@@ -156,6 +175,16 @@ class AgentExecutionRequest(BaseModel):
 
     def with_selection(self, selection: AgentRunSelection) -> Self:
         return self.model_copy(update={"selection": selection})
+
+
+def agent_input_payload(request: AgentExecutionRequest) -> dict[str, JsonValue]:
+    """Only author-rendered evidence and backend output/repair controls reach the model."""
+    repair = request.context.get("repair") if isinstance(request.context, dict) else None
+    return {
+        "instruction": request.instruction_prompt,
+        "context": {"repair": repair},
+        "required_output_schema": request.output_schema,
+    }
 
 
 class AgentExecutionResult(BaseModel):
@@ -186,6 +215,14 @@ class AgentExecutionFailedError(WorkbenchError):
         )
 
 
+class AgentContextToolRequestError(WorkbenchError):
+    def __init__(self) -> None:
+        super().__init__(
+            code="agent_context_tool_request_invalid",
+            message="The local agent context tool request is invalid.",
+        )
+
+
 class AgentContextToolResultTooLargeError(WorkbenchError):
     """A local Agent port result exceeded its configured byte allowance."""
 
@@ -205,6 +242,7 @@ class AgentExecutionRouter:
         capabilities: AgentCapabilityRegistry,
         adapters: tuple[AgentExecutionAdapter, ...],
         resources: tuple[AgentExecutionResource, ...] = (),
+        usage_recorder: AgentUsageRecorder | None = None,
     ) -> None:
         sdk_codes = [adapter.sdk_code for adapter in adapters]
         if len(sdk_codes) != len(set(sdk_codes)):
@@ -215,6 +253,7 @@ class AgentExecutionRouter:
         self._capabilities = capabilities
         self._adapters = {adapter.sdk_code: adapter for adapter in adapters}
         self._resources = resources
+        self._usage_recorder = usage_recorder
         self._closed = False
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
@@ -225,6 +264,17 @@ class AgentExecutionRouter:
         adapter = self._adapters.get(request.selection.sdk_code)
         if adapter is None:
             raise InvalidRequestError("The selected agent SDK is unavailable.")
+        if self._usage_recorder is not None:
+            request = request.model_copy(
+                update={
+                    "model_request_recorder": self._usage_recorder.make_invocation_recorder(
+                        workflow_run_id=request.workflow_run_id,
+                        stage_code=request.stage,
+                        invocation_id=request.invocation_id,
+                        authoring_attempt=request.authoring_attempt,
+                    )
+                }
+            )
         try:
             result = await adapter.execute(request)
             if result.turn_count > request.selection.max_turns:

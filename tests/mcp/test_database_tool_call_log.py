@@ -38,9 +38,7 @@ async def test_list_tenants_call_appends_audit_row_end_to_end(
         pool_min=1,
         pool_max=2,
         pool_timeout_seconds=5,
-        metadata_snapshot_storage_account_url=(
-            "https://snapshot.blob.core.windows.net"
-        ),
+        metadata_snapshot_storage_account_url=("https://snapshot.blob.core.windows.net"),
         metadata_snapshot_storage_container="snapshots",
         metadata_snapshot_download_ttl_seconds=900,
         metadata_snapshot_retention_hours=24,
@@ -232,10 +230,7 @@ async def test_runtime_adapter_retains_only_databricks_sql_digest_metadata(
     assert row is not None
     assert "sql" not in row["input_metadata"]
     assert row["input_metadata"]["sql_character_count"] == 100_000
-    assert (
-        row["input_metadata"]["sql_sha256"]
-        == hashlib.sha256(sql.encode("utf-8")).hexdigest()
-    )
+    assert row["input_metadata"]["sql_sha256"] == hashlib.sha256(sql.encode("utf-8")).hexdigest()
 
 
 def test_tool_call_log_rejects_update_and_delete(

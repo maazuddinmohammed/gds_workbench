@@ -1,0 +1,247 @@
+{
+  "logical_submodel_list": [
+    {
+      "logical_submodel_name": "Sales"
+    }
+  ],
+  "logical_submodels": [
+    {
+      "logical_submodel_name": "Sales",
+      "logical_submodel_definition": "Customer and order management.",
+      "logical_submodel_status": "active",
+      "logical_submodel_is_locked": false
+    }
+  ],
+  "logical_entity_list": [
+    {
+      "logical_entity_name": "Customer"
+    },
+    {
+      "logical_entity_name": "Order"
+    }
+  ],
+  "logical_entities": [
+    {
+      "logical_entity_name": "Customer",
+      "logical_entity_definition": "A recorded business customer.",
+      "logical_entity_type": "core",
+      "logical_entity_type_detail": null,
+      "logical_entity_grain": "One row per customer.",
+      "logical_entity_dependency_order": 0,
+      "logical_entity_confidence": "high",
+      "logical_entity_status": "active",
+      "logical_entity_is_locked": true,
+      "submodels": [
+        {
+          "submodel_name": "Sales",
+          "membership_status": "active",
+          "membership_is_locked": false
+        }
+      ],
+      "sources": [
+        {
+          "support_source_type": "object",
+          "source_object": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers"
+          },
+          "source_order": 1,
+          "rationale": "Registered physical source for this Entity.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "logical_entity_name": "Order",
+      "logical_entity_definition": "A recorded business order.",
+      "logical_entity_type": "transaction",
+      "logical_entity_type_detail": null,
+      "logical_entity_grain": "One row per order.",
+      "logical_entity_dependency_order": 1,
+      "logical_entity_confidence": "high",
+      "logical_entity_status": "active",
+      "logical_entity_is_locked": false,
+      "submodels": [
+        {
+          "submodel_name": "Sales",
+          "membership_status": "active",
+          "membership_is_locked": false
+        }
+      ],
+      "sources": [
+        {
+          "support_source_type": "object",
+          "source_object": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders"
+          },
+          "source_order": 1,
+          "rationale": "Registered physical source for this Entity.",
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order_customer_reference"
+          },
+          "source_order": 2,
+          "rationale": "Approved rule defines each Order as belonging to one Customer.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    }
+  ],
+  "logical_attribute_list": [
+    {
+      "logical_entity_name": "Customer",
+      "logical_attribute_name": "CustomerId"
+    },
+    {
+      "logical_entity_name": "Order",
+      "logical_attribute_name": "OrderId"
+    },
+    {
+      "logical_entity_name": "Order",
+      "logical_attribute_name": "CustomerId"
+    }
+  ],
+  "logical_attributes": [
+    {
+      "logical_entity_name": "Customer",
+      "logical_attribute_name": "CustomerId",
+      "logical_attribute_definition": "CustomerId recorded for this Customer.",
+      "logical_attribute_data_type": "bigint",
+      "logical_attribute_is_nullable": false,
+      "logical_attribute_is_primary_key": true,
+      "logical_attribute_is_natural_key": true,
+      "logical_attribute_is_surrogate_key": false,
+      "logical_attribute_ordinal_position": 1,
+      "logical_attribute_is_audit_column": false,
+      "logical_attribute_status": "active",
+      "logical_attribute_is_locked": true,
+      "sources": [
+        {
+          "support_source_type": "attribute",
+          "source_attribute": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers",
+            "attribute_name": "customer_id"
+          },
+          "source_order": 1,
+          "rationale": "Recorded source for this Attribute.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "logical_entity_name": "Order",
+      "logical_attribute_name": "OrderId",
+      "logical_attribute_definition": "OrderId recorded for this Order.",
+      "logical_attribute_data_type": "bigint",
+      "logical_attribute_is_nullable": false,
+      "logical_attribute_is_primary_key": true,
+      "logical_attribute_is_natural_key": true,
+      "logical_attribute_is_surrogate_key": false,
+      "logical_attribute_ordinal_position": 1,
+      "logical_attribute_is_audit_column": false,
+      "logical_attribute_status": "active",
+      "logical_attribute_is_locked": false,
+      "sources": [
+        {
+          "support_source_type": "attribute",
+          "source_attribute": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "attribute_name": "order_id"
+          },
+          "source_order": 1,
+          "rationale": "Recorded source for this Attribute.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    },
+    {
+      "logical_entity_name": "Order",
+      "logical_attribute_name": "CustomerId",
+      "logical_attribute_definition": "CustomerId recorded for this Order.",
+      "logical_attribute_data_type": "bigint",
+      "logical_attribute_is_nullable": false,
+      "logical_attribute_is_primary_key": false,
+      "logical_attribute_is_natural_key": false,
+      "logical_attribute_is_surrogate_key": false,
+      "logical_attribute_ordinal_position": 2,
+      "logical_attribute_is_audit_column": false,
+      "logical_attribute_status": "active",
+      "logical_attribute_is_locked": false,
+      "sources": [
+        {
+          "support_source_type": "attribute",
+          "source_attribute": {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "attribute_name": "customer_id"
+          },
+          "source_order": 1,
+          "rationale": "Recorded source for this Attribute.",
+          "status": "active",
+          "is_locked": false
+        },
+        {
+          "support_source_type": "assertion",
+          "assertion_record": {
+            "modeling_assertion_record_key": "order_customer_reference"
+          },
+          "source_order": 2,
+          "rationale": "Approved rule defines each Order as belonging to one Customer.",
+          "status": "active",
+          "is_locked": false
+        }
+      ]
+    }
+  ],
+  "logical_relationship_list": [
+    {
+      "from_logical_entity_name": "Order",
+      "from_logical_attribute_name": "CustomerId",
+      "to_logical_entity_name": "Customer",
+      "to_logical_attribute_name": "CustomerId",
+      "logical_relationship_name": "OrderCustomer"
+    }
+  ],
+  "logical_relationships": [
+    {
+      "logical_relationship_name": "OrderCustomer",
+      "logical_relationship_definition": "An Order belongs to one Customer; a Customer may have many Orders.",
+      "from_logical_entity_name": "Order",
+      "from_logical_attribute_name": "CustomerId",
+      "to_logical_entity_name": "Customer",
+      "to_logical_attribute_name": "CustomerId",
+      "logical_relationship_cardinality": "many_to_one",
+      "logical_relationship_confidence": "high",
+      "logical_relationship_basis": "The saved business rule identifies the Order customer reference.",
+      "logical_relationship_cardinality_basis": "The rule requires one Customer per Order and permits many Orders per Customer.",
+      "logical_relationship_status": "active",
+      "logical_relationship_is_locked": false
+    }
+  ]
+}

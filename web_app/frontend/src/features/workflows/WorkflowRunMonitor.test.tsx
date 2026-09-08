@@ -13,6 +13,122 @@ import type {
 import { WorkflowRunMonitor } from "./WorkflowRunMonitor";
 
 describe("Workflow Run monitor", () => {
+  it("updates recording token usage with the existing manual Refresh", async () => {
+    const api = monitorApi();
+    const user = userEvent.setup();
+    const running: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "running",
+      model_change_set_id: null, model_change_set_status: null,
+      token_usage: { status: "recording", request_count: 2, reported_request_count: 1,
+        pending_request_count: 1, missing_usage_request_count: 0,
+        input_tokens: 900, output_tokens: 100, total_tokens: 1_000,
+        cached_input_tokens: null, cache_write_input_tokens: null, reasoning_output_tokens: null,
+        cost_estimate: { status: "unavailable", currency: "USD", amount: null,
+          priced_request_count: 0, unpriced_request_count: 0, pricing_bases: [],
+          unpriced_reasons: { pricing_not_configured: 0, outside_pricing_window: 0,
+            context_limit_exceeded: 0, missing_usage: 0, unsupported_token_types: 0 } },
+        history_incomplete: false } };
+    api.readWorkflowRun.mockResolvedValue(running);
+    renderMonitor(api, vi.fn(async () => undefined));
+    const usage = await screen.findByRole("region", { name: "Token usage" });
+    expect(usage).toHaveTextContent("Recording so far");
+    expect(usage).toHaveTextContent("1 of 2 requests reported token usage. 1 pending.");
+    expect(within(usage).getByRole("region", { name: "Estimated model token cost" })).toHaveTextContent("Not available");
+    expect(api.readWorkflowRun).toHaveBeenCalledTimes(1);
+
+    api.readWorkflowRun.mockResolvedValue({ ...running, workflow_run_state: "completed",
+      token_usage: { ...running.token_usage, status: "complete", reported_request_count: 2,
+        pending_request_count: 0, input_tokens: 1_200, output_tokens: 300, total_tokens: 1_500,
+        cost_estimate: { ...running.token_usage.cost_estimate, status: "estimated", amount: "0.018",
+          priced_request_count: 2, pricing_bases: ["Configured rates"] } } });
+    await user.click(screen.getByRole("button", { name: "Refresh runs" }));
+    await waitFor(() => expect(usage).toHaveTextContent("Complete"));
+    expect(within(usage).getByText((1_500).toLocaleString())).toBeVisible();
+    expect(usage).not.toHaveTextContent("1 pending");
+    expect(within(usage).getByText("USD 0.018")).toBeVisible();
+    expect(api.readWorkflowRun).toHaveBeenCalledTimes(2);
+  });
+
+  it("shows recorded zero model usage for deterministic Analysis validation", async () => {
+    const api = monitorApi({ deterministic: true });
+    const run = workflowRun(true);
+    api.readWorkflowRun.mockResolvedValue({ ...run, token_usage: {
+      ...run.token_usage, status: "complete", input_tokens: 0, output_tokens: 0, total_tokens: 0,
+      cached_input_tokens: 0, cache_write_input_tokens: 0, reasoning_output_tokens: 0,
+      cost_estimate: { ...run.token_usage.cost_estimate, status: "estimated", amount: "0" },
+    } });
+    renderMonitor(api, vi.fn(async () => undefined), "analysis");
+    const usage = await screen.findByRole("region", { name: "Token usage" });
+    expect(usage).toHaveTextContent("No model requests were made.");
+    expect(within(usage).getByText("USD 0")).toBeVisible();
+    expect(within(usage).getAllByText("0").filter((item) => item.closest("details") === null)).toHaveLength(3);
+    expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
+  });
+
+  it("retains failed draft diagnostics and loads exact generated records only when requested", async () => {
+    const api = monitorApi();
+    const user = userEvent.setup();
+    const run: WorkflowRunDetail = { ...workflowRun(false), workflow_run_state: "failed",
+      model_change_set_status: "active", candidate_digest: null, validated_at: null,
+      failure_code: "workflow_change_set_validation_failed", failure_message: "Draft needs corrections." };
+    const review = failedDraftReview();
+    api.readWorkflowRun.mockResolvedValue(run);
+    api.readWorkflowDraftReview.mockImplementation(async (_tenant, _model, _id, dataset) => ({
+      ...review, dataset: dataset ?? null,
+      records: dataset ? [{ conceptual_object_name: "Customer", conceptual_object_definition: "A customer account." },
+        { conceptual_object_name: "Purchase", conceptual_object_definition: "An order placed by a customer." }] : null,
+    }));
+    renderMonitor(api, vi.fn(async () => undefined));
+    expect(await screen.findByRole("table", { name: "Validation error groups" })).toHaveTextContent("active dependency invalid");
+    expect(screen.getByText(/2 generated records retained/)).toBeVisible();
+    expect(screen.getByText(/Group counts include all validation errors/)).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
+    expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(1);
+    await user.click(screen.getByRole("button", { name: "Inspect conceptual object record 2" }));
+    const record = await screen.findByRole("article", { name: "Generated conceptual object record 2" });
+    expect(record).toHaveTextContent("An order placed by a customer.");
+    expect(api.readWorkflowDraftReview).toHaveBeenLastCalledWith(7, 18, run.model_change_set_id, "conceptual_object");
+    await user.click(screen.getByRole("button", { name: "Previous record" }));
+    expect(screen.getByRole("article", { name: "Generated conceptual object record 1" })).toHaveTextContent("A customer account.");
+    expect(api.applyWorkflowDraft).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("button", { name: "Refresh runs" }));
+    await waitFor(() => expect(api.readWorkflowDraftReview).toHaveBeenCalledTimes(4));
+  });
+
+  it.each(["wrong revision", "wrong model", "expired", "unavailable"])(
+    "hides retained records when their response is %s", async (reason) => {
+      const api = monitorApi();
+      const user = userEvent.setup();
+      api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "failed",
+        model_change_set_status: "active", candidate_digest: null, validated_at: null });
+      const review = failedDraftReview();
+      api.readWorkflowDraftReview.mockImplementation(async (_tenant, _model, _id, dataset) => {
+        if (!dataset) return review;
+        if (reason === "unavailable") throw new Error("Unavailable");
+        return { ...review, dataset, records: [{ conceptual_object_definition: "Stale content must be hidden." }],
+          ...(reason === "wrong revision" ? { draft_revision: 99 } : {}),
+          ...(reason === "wrong model" ? { model_id: 99 } : {}),
+          ...(reason === "expired" ? { expires_at: "2020-01-01T00:00:00Z" } : {}),
+        };
+      });
+      renderMonitor(api, vi.fn(async () => undefined));
+      await user.selectOptions(await screen.findByLabelText("Inspect generated dataset"), "conceptual_object");
+      expect(await screen.findByText(/Generated records could not be loaded or the draft changed/)).toBeVisible();
+      expect(screen.queryByText("Stale content must be hidden.")).not.toBeInTheDocument();
+      expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
+    },
+  );
+
+  it("keeps failed-draft controls unavailable when summary loading fails", async () => {
+    const api = monitorApi();
+    api.readWorkflowRun.mockResolvedValue({ ...workflowRun(false), workflow_run_state: "failed",
+      model_change_set_status: "active", candidate_digest: null, validated_at: null });
+    api.readWorkflowDraftReview.mockRejectedValue(new Error("Unavailable"));
+    renderMonitor(api, vi.fn(async () => undefined));
+    expect(await screen.findByText(/The retained draft is unavailable or changed/)).toBeVisible();
+    expect(screen.queryByLabelText("Inspect generated dataset")).not.toBeInTheDocument();
+    expect(screen.queryByRole("button", { name: "Apply validated draft" })).not.toBeInTheDocument();
+  });
+
   it("keeps recent-run status and Refresh available in a compact monitor by default", async () => {
     const api = monitorApi();
     renderMonitor(api, vi.fn(async () => undefined), "conceptual", null);
@@ -118,7 +234,7 @@ describe("Workflow Run monitor", () => {
     const validationRun: WorkflowRunDetail = {
       ...workflowRun(false),
       model_workflow: "validation",
-      workflow_execution_mode: "detailed_coverage",
+      workflow_execution_mode: "one_shot",
     };
     const validationReview: WorkflowDraftReview = {
       ...workflowDraftReview(false),
@@ -317,7 +433,7 @@ describe("Workflow Run monitor", () => {
       items: [
         progressEvent({
           sequence: 2,
-          message: "Detailed coverage started for 30 selected Objects.",
+          message: "One-shot started for 30 selected Objects.",
           current: 0,
           total: 30,
         }),
@@ -346,7 +462,7 @@ describe("Workflow Run monitor", () => {
     const eventList = within(eventsSection as HTMLElement).getByRole("list");
     const items = within(eventList).getAllByRole("listitem");
     expect(items).toHaveLength(3);
-    expect(items[0]).toHaveTextContent("Detailed coverage started");
+    expect(items[0]).toHaveTextContent("One-shot started");
     expect(items[1]).toHaveTextContent("10 of 30");
     expect(items[2]).toHaveTextContent("2 findings");
     const finalItem = items.at(2);
@@ -360,6 +476,15 @@ describe("Workflow Run monitor", () => {
       ...workflowRun(false),
       workflow_run_state: "failed",
       failure_code: "agent_context_too_large",
+      token_usage: { status: "partial", request_count: 2, reported_request_count: 1,
+        pending_request_count: 0, missing_usage_request_count: 1,
+        input_tokens: 700, output_tokens: 50, total_tokens: 750,
+        cached_input_tokens: null, cache_write_input_tokens: null, reasoning_output_tokens: null,
+        cost_estimate: { status: "partial", currency: "USD", amount: "0.001",
+          priced_request_count: 1, unpriced_request_count: 1, pricing_bases: ["Configured rates"],
+          unpriced_reasons: { pricing_not_configured: 0, outside_pricing_window: 0,
+            context_limit_exceeded: 0, missing_usage: 1, unsupported_token_types: 0 } },
+        history_incomplete: false },
       failure_message: (
         "The selected execution mode cannot accept this context. Choose another mode explicitly."
       ),
@@ -397,6 +522,12 @@ describe("Workflow Run monitor", () => {
     const eventMeta = screen.getByText("Event 3 · Attempt 2").closest("small");
     expect(eventMeta).toHaveTextContent("1 of 2");
     expect(eventMeta).toHaveTextContent("1 finding");
+    const usage = screen.getByRole("region", { name: "Token usage" });
+    expect(usage).toHaveTextContent("Partial");
+    expect(usage).toHaveTextContent("1 of 2 requests reported token usage. 1 without usage.");
+    expect(within(usage).getByText("750")).toBeVisible();
+    expect(within(usage).getByText("USD 0.001")).toBeVisible();
+    expect(usage).toHaveTextContent("Partial estimate; includes 1 priced request only.");
   });
 
   it("keeps one Apply idempotency key across an ambiguous error and confirmation reopen", async () => {
@@ -567,6 +698,17 @@ function monitorApi(options: {
 
 function workflowRun(deterministic: boolean): WorkflowRunDetail {
   return {
+    token_usage: {
+      status: "unavailable", request_count: 0, reported_request_count: 0,
+      pending_request_count: 0, missing_usage_request_count: 0,
+      input_tokens: null, output_tokens: null, total_tokens: null,
+      cached_input_tokens: null, cache_write_input_tokens: null, reasoning_output_tokens: null,
+      cost_estimate: { status: "unavailable", currency: "USD", amount: null,
+        priced_request_count: 0, unpriced_request_count: 0, pricing_bases: [],
+        unpriced_reasons: { pricing_not_configured: 0, outside_pricing_window: 0,
+          context_limit_exceeded: 0, missing_usage: 0, unsupported_token_types: 0 } },
+      history_incomplete: false,
+    },
     workflow_run_id: 1048,
     model_workflow: deterministic ? "analysis" : "conceptual",
     workflow_execution_mode: deterministic ? null : "one_shot",
@@ -630,6 +772,19 @@ function workflowDraftReview(stale: boolean, expired = false): WorkflowDraftRevi
   };
 }
 
+function failedDraftReview(): WorkflowDraftReview {
+  return { ...workflowDraftReview(false), status: "active", candidate_digest: null, validated_at: null,
+    dataset_counts: [{ dataset: "conceptual_object", record_count: 2 }],
+    validation_outcome: {
+      schema_version: "1.0", valid: false, phase: "complete", staged_record_count: 2,
+      error_count: 26, action_review: [], errors_truncated: true,
+      error_groups: [{ dataset: "conceptual_object", code: "active_dependency_invalid", count: 26 }],
+      errors: [{ code: "active_dependency_invalid", dataset: "conceptual_object", record_number: 2,
+        fields: ["is_active"], message: "An active relationship requires this object." }],
+    },
+  };
+}
+
 function workflowEvent(sequence: number) {
   return {
     sequence,
@@ -651,7 +806,7 @@ function progressEvent(overrides: Partial<WorkflowRunEvent>): WorkflowRunEvent {
     attempt: 1,
     stage: "conceptual.object_contribution",
     status: "running",
-    message: "Detailed coverage is running.",
+    message: "One-shot is running.",
     current: 0,
     total: 1,
     percent: "0",

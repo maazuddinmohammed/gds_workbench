@@ -5,7 +5,6 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.code_generation.context import (
     PostgresCodeGenerationContextRepository,
@@ -15,6 +14,25 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
 )
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+
+
+@pytest.fixture(autouse=True)
+def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.mcp.model_test_fixtures import (
+        complete_physical_scope,
+        empty_model_snapshot,
+    )
+
+    async def load_graph(*_: object, tenant_id: int, plan: AgentRunPlan):
+        assert tenant_id == 7 and plan.model_id == 18
+        return empty_model_snapshot().model_copy(
+            update={"model_id": 18, "model_revision": 7}
+        ), complete_physical_scope()
+
+    monkeypatch.setattr(
+        "gds_workbench_api.features.code_generation.context.load_frozen_model_graph",
+        load_graph,
+    )
 
 
 def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
@@ -33,9 +51,9 @@ def _plan(*, selected_object_ids: tuple[int, ...] = (501, 502)) -> AgentRunPlan:
         selected_scope_digest="a" * 64,
         selected_object_ids=selected_object_ids,
         selection=AgentRunSelection(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-primary",
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-primary",
             reasoning_effort_code="medium",
             max_turns=8,
             validation_retry_count=1,

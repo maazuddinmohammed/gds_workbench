@@ -13,7 +13,6 @@ from gds_etl_workbench.domain.errors import (
     TenantWorkflowConflictError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
     DatabaseAgentWorkflowLifecycle,

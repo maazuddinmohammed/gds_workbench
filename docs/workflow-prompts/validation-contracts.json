@@ -1,0 +1,223 @@
+{
+  "status": "implemented_workflow_validation_checklists",
+  "scope": "Validate before saving against the initial authorized scope/index using complete natural keys.",
+  "schema_source": "field-provenance.json",
+  "shared_patterns": [
+    "natural_key_scope_lookup",
+    "duplicates",
+    "locks",
+    "schema_values"
+  ],
+  "workflows": [
+    {
+      "workflow": "metadata_enrichment_object",
+      "modes": [
+        "one_shot"
+      ],
+      "checks": [
+        "Returned Object key exists in the initial authorized scope/index.",
+        "No duplicate Object targets.",
+        "Locked Object descriptions cannot change."
+      ]
+    },
+    {
+      "workflow": "metadata_enrichment_attribute",
+      "modes": [
+        "one_shot"
+      ],
+      "checks": [
+        "Returned Attribute key exists under its stated Object in the initial authorized scope/index.",
+        "No duplicate Attribute targets.",
+        "Locked Attribute descriptions cannot change."
+      ]
+    },
+    {
+      "workflow": "analysis",
+      "modes": [
+        "one_shot",
+        "tool_assisted"
+      ],
+      "checks": [
+        "Complete from-Attribute key and parent Object exist in the initial authorized scope/index.",
+        "Complete to-Attribute key and parent Object exist in the initial authorized scope/index.",
+        "No duplicate relationship identities: Model + from key + to key + relationship kind.",
+        "Locked relationships cannot change.",
+        "Values match the actual Pydantic/database contract, including confidence values and distinct endpoints."
+      ],
+      "generation_policy": "Previously approved high-confidence-only authoring; separate from the stored confidence enum.",
+      "schema_notes": [
+        "relationship_confidence accepts low, medium, high.",
+        "relationship_kind and relationship_basis are nonblank text; kind is not an enum.",
+        "Analysis has no cardinality field.",
+        "Status and lock are backend-owned; inference cannot author them."
+      ]
+    },
+    {
+      "workflow": "conceptual",
+      "modes": [
+        "one_shot",
+        "tool_assisted"
+      ],
+      "checks": [
+        "New/changed Object supports use complete physical Object keys in the initial authorized scope/index.",
+        "Assertion supports reference eligible active Conceptual-applicable records from active Documents in the frozen context.",
+        "Relationship endpoint names exist in the applied-plus-candidate Model and are distinct; active relationships require active concepts.",
+        "No duplicate concept identities, relationship identities, support sources within a parent, or aliases within a concept.",
+        "Locked records and supports cannot change. Returned lock fields are false; the backend retains saved locks.",
+        "Required fields and values match the existing Pydantic/database contract, including status, confidence, cardinality, and the correct Object/Assertion support variant."
+      ],
+      "schema_sources": [
+        "../../database/06_workflow_conceptual.sql",
+        "../../mcp_server/gds_etl_workbench/domain/modeling_records.py",
+        "../../web_app/backend/gds_workbench_api/features/conceptual/candidate.py",
+        "../../mcp_server/gds_etl_workbench/application/change_sets/model_validation.py"
+      ],
+      "generation_policy": "Approved supported high/medium authoring in both modes; speculative low-confidence changes are omitted. Stored confidence remains low/medium/high.",
+      "schema_notes": [
+        "Concept identity is conceptual_object_name; relationship identity is from name + to name + relationship name.",
+        "Cardinality accepts one_to_one, one_to_many, many_to_one, many_to_many, unknown.",
+        "Omitted records/supports remain and unchanged results are no-ops.",
+        "Correctable candidate errors use the existing bounded repair loop.",
+        "Conceptual duplicates remain strict; Analysis duplicate collapse has not been ported here."
+      ],
+      "implementation_status": "Confirmed prompts, variables, and readers implemented; existing workflow-specific candidate and save checks preserved."
+    },
+    {
+      "workflow": "logical",
+      "modes": [
+        "one_shot",
+        "tool_assisted"
+      ],
+      "checks": [
+        "New/changed Entity Object sources use complete physical Object keys in the initial authorized scope/index.",
+        "New/changed Attribute sources use complete physical Attribute keys under their actual in-scope Object.",
+        "Assertion sources reference eligible active Logical-applicable records from active Documents in the frozen context.",
+        "Submodel memberships, Attribute parents, and relationship endpoints exist in the applied-plus-candidate Model; active references require active parents/endpoints and relationship endpoint pairs are distinct.",
+        "No duplicate Submodel, Entity, Attribute, relationship, per-Entity membership, or per-parent source identities.",
+        "Locked records, sources, and memberships cannot change; candidate lock fields are false and saved locks are retained.",
+        "Required fields and values match existing Pydantic/database rules, including type/type-detail, cardinality, confidence, key/nullability policy, and positive or nonnegative order fields. AI-authored audit Attributes are rejected.",
+        "Preserve existing deterministic audit-template projection and whole-graph dependency checks before saving; read-only dependency context remains excluded from prompts/readers."
+      ],
+      "generation_policy": "Approved Logical quality policy: supported high/medium Entities and high-confidence relationships with justified specific cardinality; Attributes use evidence without an invented confidence field.",
+      "failure_behavior": "Existing bounded correction; immutable locks and retained omissions; strict duplicate checks; unresolved backend dependency/policy conflict remains a failure.",
+      "implementation_status": "Confirmed prompts, variables, and readers implemented; existing workflow-specific candidate and save checks preserved.",
+      "schema_sources": [
+        "mcp_server/gds_etl_workbench/domain/modeling_records.py",
+        "web_app/backend/gds_workbench_api/features/logical/candidate.py",
+        "web_app/backend/gds_workbench_api/features/logical/policy.py",
+        "mcp_server/gds_etl_workbench/application/change_sets/model_validation.py",
+        "database/07_workflow_logical.sql"
+      ]
+    },
+    {
+      "workflow": "dimensional",
+      "modes": [
+        "one_shot",
+        "tool_assisted"
+      ],
+      "checks": [
+        "New/changed Entity Object sources use complete eligible Silver Object keys in the initial authorized scope/index.",
+        "New/changed Attribute sources use complete eligible Silver Attribute keys under the actual selected Object.",
+        "Assertion sources reference eligible active Dimensional-applicable records from active Documents in the frozen context.",
+        "Submodel memberships, Attribute parents, and relationship endpoints exist in the applied-plus-candidate Model before policy projection; active references require active records and endpoint pairs are distinct.",
+        "No duplicate Submodel, Entity, Attribute, relationship, per-Entity membership, or per-parent source identities. Relationship identity includes both endpoint pairs, kind, and nullable role.",
+        "Locked records, sources, and memberships cannot change; returned lock fields are false and saved locks are retained.",
+        "Required fields/values match existing Pydantic/database rules: fact type/grain, role/key-role, measure policy, cardinality, confidence, orders, and the 1-20,000 combined-record bound. Reject AI-authored technical/audit/surrogate/FK Attributes.",
+        "Validate both configured Gold templates, apply existing surrogate/history/audit and FK projection, then preserve final identity/lock and whole-graph dependency checks before saving."
+      ],
+      "generation_policy": "Proposed: supported high/medium Entities and Attributes; high-confidence relationships with specific supported cardinality and optionality.",
+      "failure_behavior": "Existing strict duplicates and bounded repair. Omitted content remains; unchanged valid records are no-ops. Empty Dimensional candidates currently fail validation; never invent content to satisfy the minimum.",
+      "implementation_status": "Confirmed prompts, variables, and readers implemented; existing workflow-specific candidate and save checks preserved.",
+      "schema_sources": [
+        "mcp_server/gds_etl_workbench/domain/modeling_records.py",
+        "web_app/backend/gds_workbench_api/features/dimensional/candidate.py",
+        "web_app/backend/gds_workbench_api/features/dimensional/policy.py",
+        "web_app/backend/gds_workbench_api/features/dimensional/service.py",
+        "mcp_server/gds_etl_workbench/application/change_sets/model_validation.py"
+      ]
+    },
+    {
+      "workflow": "profiling",
+      "modes": [],
+      "checks": [
+        "Selected Object/Attribute keys exist in authorized scope.",
+        "Batch configuration is valid for every selected Object.",
+        "Measurement targets are complete and unique.",
+        "Counts, lengths, and percentages satisfy existing metric rules."
+      ],
+      "failure_behavior": "All-or-nothing saving; no model correction loop."
+    },
+    {
+      "workflow": "mapping",
+      "modes": [
+        "one_shot",
+        "tool_assisted"
+      ],
+      "internal_agent_mode": "selected_mode",
+      "checks": [
+        "Frozen target/Source System pair, route, active bindings and selected eligible sources resolve before authoring.",
+        "Object presence matches readiness; Attribute names cover exactly every actionable bound Attribute once.",
+        "Reject duplicate Attribute identities using the existing case-insensitive name rule.",
+        "Preserve locked/preserve records; author/extend only backend-computed actionable records.",
+        "Validate schema_version, exact outer fields, nonnegative dependency order, nonempty documents and existing record/byte bounds.",
+        "Derive real modeled/physical identities and selected template codes server-side; reject candidate-owned IDs, status, locks and provenance.",
+        "Validate staged records and effective Model graph, including references, dependency order/cycles, locks and revision rules.",
+        "Use bounded repair. Flexible document contents and template guidance are not falsely described as strict reference/type validation."
+      ],
+      "contract_reference": "mapping.context.json#/preserved_output_schema"
+    },
+    {
+      "workflow": "code_generation",
+      "modes": [
+        null
+      ],
+      "internal_agent_mode": "tool_assisted",
+      "checks": [
+        "Every target_ref resolves to a frozen target and every frozen target is covered.",
+        "Artifact file names are valid and unique within target; reject paths and dot names.",
+        "System assignments are known and cover every target's frozen System exactly once.",
+        "Validate artifact_role: transformations assign Systems; support assigns none.",
+        "Validate exact schema and bounds; parse SQL-only Databricks statements and reject fences/control garbage.",
+        "Derive stored natural identities, bindings, assignments and provenance; preserve generated-code locks.",
+        "Validate combined candidate/Change Set limits and effective Model graph before staging/apply.",
+        "Repair against frozen scope. Parsing is not execution or complete semantic relation/column checking."
+      ],
+      "contract_reference": "code.context.json#/preserved_output_schema"
+    },
+    {
+      "workflow": "validation",
+      "modes": [
+        null
+      ],
+      "internal_agent_mode": "tool_assisted",
+      "checks": [
+        "Exact system_ref resolves to frozen scope; combined run covers all selected Systems once.",
+        "Group names are unique within System; Check names within Group, using normalized keys.",
+        "Validate schema, severity/operator/type enums and operator/operand combinations.",
+        "Validate typed scalars/lists, homogeneous nonempty lists, date/time forms and Query B requirements.",
+        "Validate governed Databricks SQL/qualification. Scalar one-row/one-column shape is an execution check.",
+        "Preserve locked Groups/Checks; retire omitted unlocked active definitions under existing complete-ledger reconciliation.",
+        "Validate count/byte bounds and active Group-parent references in the effective Model graph.",
+        "Repair before staging; server-side ownership, scope, Tenant Lock and revision fences remain authoritative."
+      ],
+      "contract_reference": "validation.context.json#/preserved_output_schema"
+    }
+  ],
+  "duplicate_handling": {
+    "analysis": "Keep one identical canonical-identity record. Conflicting confidence/basis returns correction feedback.",
+    "metadata": "Description output remains a map; check unique target keys without changing its envelope.",
+    "existing_records": "Unchanged is a no-op; allowed unlocked changes update the existing identity. Omission never deletes."
+  },
+  "reuse": "Reuse existing normalization, scope indexes, locks, Pydantic models, and bounded correction loop. Keep each workflow list visible; no new framework.",
+  "preserved_checks": "Existing output shape, required coverage, text limits, and transaction-time authorization/revision/database checks still apply.",
+  "implementation_status": {
+    "analysis_identical_duplicate_removal": "Implemented at the inference candidate boundary, with original-row error locations and focused tests.",
+    "shared_staging_duplicate_validation": "Unchanged; strict rejection remains.",
+    "enrichment_split_and_natural_key_output": "Implemented: separate Object/Attribute prompt identities, complete natural-key target coverage, lock checks, and unsplit Object units.",
+    "composite_variables_and_renderer": "Implemented: workflow-local typed variables and bounded restricted Jinja; no hidden evidence append.",
+    "connection_description_and_profile_provenance": "Implemented where stored evidence exists; unavailable historical batch column name remains null.",
+    "analysis_tools": "Implemented: six optional frozen readers with full natural-key selectors.",
+    "downstream_tools": "Implemented for Conceptual, Logical, Dimensional, Mapping, Code Generation, and Validation.",
+    "local_verification": "See ../workflow-implementation-verification.md for suite and rebuilt artifact results."
+  }
+}

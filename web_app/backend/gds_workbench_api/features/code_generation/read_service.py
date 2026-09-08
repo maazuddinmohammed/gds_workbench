@@ -57,7 +57,23 @@ WITH target_model AS (
           layer.modeled_entity_type
       ) AS context
 )
-SELECT context.source_context -> 'target' AS target,
+SELECT jsonb_build_object(
+           'object_id', context.source_context -> 'target' -> 'object_id',
+           'source_tenant_id', context.source_context -> 'target' -> 'source_tenant_id',
+           'source_tenant_code', context.source_context -> 'target' -> 'source_tenant_code',
+           'source_tenant_name', context.source_context -> 'target' -> 'source_tenant_name',
+           'tenant_id', context.source_context -> 'target' -> 'tenant_id',
+           'tenant_code', context.source_context -> 'target' -> 'tenant_code',
+           'tenant_name', context.source_context -> 'target' -> 'tenant_name',
+           'system_id', context.source_context -> 'target' -> 'system_id',
+           'system_code', context.source_context -> 'target' -> 'system_code',
+           'system_name', context.source_context -> 'target' -> 'system_name',
+           'connection_id', context.source_context -> 'target' -> 'connection_id',
+           'connection_code', context.source_context -> 'target' -> 'connection_code',
+           'object_schema', context.source_context -> 'target' -> 'object_schema',
+           'object_name', context.source_context -> 'target' -> 'object_name',
+           'zone_code', context.source_context -> 'target' -> 'zone_code'
+       ) AS target,
        context.modeled_entity_type AS entity_type,
        mapping_support.mapping_supports,
        mapping_support.mapping_support_count,
@@ -139,6 +155,7 @@ SELECT context.source_context -> 'target' AS target,
                          'workflow_run_id', generated.workflow_run_id,
                          'generated_at', generated.updated_time,
                          'generated_code_status', generated.generated_code_status,
+                         'generated_code_is_locked', generated.generated_code_is_locked,
                          'source_system_codes', association.source_system_codes,
                          'artifact_is_current',
                              generated.generated_code_status = 'active'
@@ -210,25 +227,22 @@ _GENERATED_SQL_ARTIFACT_DETAIL_SQL: LiteralString = """
 SELECT artifact.generated_code_id AS generated_sql_artifact_id,
        artifact.artifact_name,
        target_model.model_id,
-       coalesce(
-           current_context.source_context -> 'target',
-           jsonb_build_object(
-               'object_id', target_object.object_id,
-               'source_tenant_id', target_source_tenant.tenant_id,
-               'source_tenant_code', target_source_tenant.tenant_code,
-               'source_tenant_name', target_source_tenant.tenant_name,
-               'tenant_id', target_tenant.tenant_id,
-               'tenant_code', target_tenant.tenant_code,
-               'tenant_name', target_tenant.tenant_name,
-               'system_id', target_system.system_id,
-               'system_code', target_system.system_code,
-               'system_name', target_system.system_name,
-               'connection_id', target_connection.connection_id,
-               'connection_code', target_connection.connection_code,
-               'object_schema', target_object.object_schema,
-               'object_name', target_object.object_name,
-               'zone_code', lower(btrim(target_zone.zone_code))
-           )
+       jsonb_build_object(
+           'object_id', target_object.object_id,
+           'source_tenant_id', target_source_tenant.tenant_id,
+           'source_tenant_code', target_source_tenant.tenant_code,
+           'source_tenant_name', target_source_tenant.tenant_name,
+           'tenant_id', target_tenant.tenant_id,
+           'tenant_code', target_tenant.tenant_code,
+           'tenant_name', target_tenant.tenant_name,
+           'system_id', target_system.system_id,
+           'system_code', target_system.system_code,
+           'system_name', target_system.system_name,
+           'connection_id', target_connection.connection_id,
+           'connection_code', target_connection.connection_code,
+           'object_schema', target_object.object_schema,
+           'object_name', target_object.object_name,
+           'zone_code', lower(btrim(target_zone.zone_code))
        ) AS target,
        binding.modeled_entity_type AS entity_type,
        source_system.source_systems,
@@ -242,6 +256,7 @@ SELECT artifact.generated_code_id AS generated_sql_artifact_id,
            FALSE
        ) AS artifact_is_current,
        artifact.generated_code_status,
+       artifact.generated_code_is_locked,
        CASE
            WHEN guide_version.sql_generation_guide_version_id IS NULL THEN NULL
            ELSE jsonb_build_object(

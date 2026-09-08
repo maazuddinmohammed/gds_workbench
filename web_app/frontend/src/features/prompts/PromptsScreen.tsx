@@ -5,16 +5,17 @@ import { useNavigate } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type {
-  ModelWorkflow,
   WorkflowExecutionMode,
 } from "../workflows/api";
 import {
   promptQueryKeys,
   type PromptStage,
   type PromptTemplateFilters,
+  type PromptWorkflow,
   type PromptsApi,
 } from "./api";
 import { CreatePromptDialog } from "./PromptTemplateDialogs";
+import { PromptVariables } from "./PromptVariables";
 import {
   PromptsLedger,
   humanize,
@@ -22,20 +23,23 @@ import {
   type PromptVisibilityFilter,
 } from "./PromptsLedger";
 
-const WORKFLOWS: ModelWorkflow[] = [
+const WORKFLOWS: PromptWorkflow[] = [
   "profiling",
+  "metadata_enrichment",
+  "metadata_enrichment_object",
+  "metadata_enrichment_attribute",
   "analysis",
   "conceptual",
   "logical",
   "dimensional",
   "mapping",
   "code_generation",
+  "validation",
 ];
 
 const EXECUTION_MODES: WorkflowExecutionMode[] = [
   "one_shot",
   "tool_assisted",
-  "detailed_coverage",
 ];
 
 export function PromptsScreen({
@@ -77,7 +81,7 @@ export function PromptsScreen({
     },
     onSubmit: ({ value }) => {
       const next: PromptTemplateFilters = {};
-      if (value.workflow) next.workflow = value.workflow as ModelWorkflow;
+      if (value.workflow) next.workflow = value.workflow as PromptWorkflow;
       if (value.mode) next.mode = value.mode as WorkflowExecutionMode;
       if (value.stageCode) next.stageCode = value.stageCode;
       if (value.status) next.status = value.status as "draft" | "published" | "retired";
@@ -125,10 +129,9 @@ export function PromptsScreen({
     <main className="workspace prompts-workspace page-enter">
       <header className="prompts-commandbar">
         <div>
-          <p className="eyebrow">Governed language layer</p>
           <h1>Prompts</h1>
           <p>
-            Global defaults and {tenantName} variants, versioned by agentic workflow stage.
+            Templates for {tenantName} and shared workflow defaults.
           </p>
         </div>
         <div className="prompts-command-actions">
@@ -339,36 +342,13 @@ function AllowedVariableReference({ stages }: { stages: PromptStage[] }) {
               </div>
               <span>{stage.allowed_variables.length} variables</span>
             </header>
-            {stage.allowed_variables.length ? (
-              <dl className="prompt-variable-list">
-                {stage.allowed_variables.map((variable) => (
-                  <div key={variable.name}>
-                    <dt>
-                      <code>{`{{${variable.name}}}`}</code>
-                      {variable.is_required ? <span>Required</span> : null}
-                    </dt>
-                    <dd>
-                      {variable.description}
-                      <small>{variable.data_type} · resolver {variable.resolver_key}</small>
-                      {variable.example === null ? null : (
-                        <code>Example: {boundedExample(variable.example)}</code>
-                      )}
-                    </dd>
-                  </div>
-                ))}
-              </dl>
-            ) : (
-              <p>No variables are available for this stage.</p>
-            )}
+            <PromptVariables
+              variables={stage.allowed_variables}
+              label={`${stage.workflow_stage_name} inputs · ${stage.model_workflow} · ${modeLabel(stage.workflow_execution_mode)}`}
+            />
           </section>
         ))}
       </div>
     </details>
   );
-}
-
-function boundedExample(value: unknown): string {
-  const text = typeof value === "string" ? value : JSON.stringify(value);
-  if (!text) return "Unavailable";
-  return text.length > 160 ? `${text.slice(0, 157)}…` : text;
 }

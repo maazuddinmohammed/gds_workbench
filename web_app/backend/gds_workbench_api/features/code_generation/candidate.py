@@ -119,7 +119,10 @@ class _AgentSqlBatch(BaseModel):
     artifacts: list[_AgentSqlArtifact] = Field(
         min_length=1,
         max_length=50_000,
-        description="Complete artifact ledger covering every frozen target exactly once.",
+        description=(
+            "Complete artifact ledger assigning each frozen source System exactly once "
+            "per target across transformation artifacts; support artifacts assign none."
+        ),
     )
 
 

@@ -100,7 +100,6 @@ SELECT object.object_id,
    AND lower(btrim(object.object_schema)) = lower(btrim(%s))
    AND lower(btrim(object.object_name)) = lower(btrim(%s))
    AND connection.is_active
-   AND object.is_active
    AND system.is_active
    AND object.source_tenant_id = target_model.tenant_id
 """
@@ -129,8 +128,6 @@ SELECT object.object_id,
    AND lower(btrim(object.object_name)) = lower(btrim(%s))
    AND lower(btrim(attribute.attribute_name)) = lower(btrim(%s))
    AND connection.is_active
-   AND object.is_active
-   AND attribute.is_active
    AND system.is_active
    AND object.source_tenant_id = target_model.tenant_id
 """
@@ -769,9 +766,10 @@ INSERT INTO workflow.generated_code (
     code_input_digest,
     agent_run_id,
     workflow_run_id,
-    generated_code_status
+    generated_code_status,
+    generated_code_is_locked
 )
-VALUES (%s, %s, %s, %s, %s, NULL, %s, %s)
+VALUES (%s, %s, %s, %s, %s, NULL, %s, %s, %s)
 RETURNING generated_code_id
 """
 
@@ -784,6 +782,7 @@ UPDATE workflow.generated_code
        agent_run_id = NULL,
        workflow_run_id = %s,
        generated_code_status = %s,
+       generated_code_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE generated_code_id = %s
@@ -804,9 +803,10 @@ INSERT INTO workflow.generated_code_source_system (
     source_system_id,
     agent_run_id,
     workflow_run_id,
-    generated_code_source_system_status
+    generated_code_source_system_status,
+    generated_code_source_system_is_locked
 )
-VALUES (%s, %s, NULL, %s, %s)
+VALUES (%s, %s, NULL, %s, %s, %s)
 RETURNING generated_code_source_system_id
 """
 
@@ -815,6 +815,7 @@ UPDATE workflow.generated_code_source_system
    SET agent_run_id = NULL,
        workflow_run_id = %s,
        generated_code_source_system_status = %s,
+       generated_code_source_system_is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE generated_code_source_system_id = %s
@@ -902,9 +903,10 @@ INSERT INTO workflow.validation_group (
     validation_group_description,
     mapping_context_digest,
     code_context_digest,
-    is_active
+    is_active,
+    is_locked
 )
-VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, NULL, %s, %s, %s, %s, %s, %s, %s)
 RETURNING validation_group_id
 """
 
@@ -917,6 +919,7 @@ UPDATE workflow.validation_group
        mapping_context_digest = %s,
        code_context_digest = %s,
        is_active = %s,
+       is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE validation_group_id = %s
@@ -944,9 +947,10 @@ INSERT INTO workflow.validation_check (
     validation_comparison_operator,
     validation_comparison_value_type,
     validation_comparison_value,
-    is_active
+    is_active,
+    is_locked
 )
-VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
+VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
 RETURNING validation_check_id
 """
 
@@ -963,6 +967,7 @@ UPDATE workflow.validation_check
        validation_comparison_value_type = %s,
        validation_comparison_value = %s,
        is_active = %s,
+       is_locked = %s,
        updated_time = CURRENT_TIMESTAMP,
        updated_by = CURRENT_USER
  WHERE validation_check_id = %s
@@ -1093,13 +1098,45 @@ class ModelMaterializer:
         action_count += await self._apply_conceptual_relationships(
             records.get("conceptual_relationship", ())
         )
+        object_bindings = tuple(
+            _as(record, ModelObjectBindingRecord)
+            for record in records.get("model_object_binding", ())
+        )
+        attribute_bindings = tuple(
+            _as(record, ModelAttributeBindingRecord)
+            for record in records.get("model_attribute_binding", ())
+        )
         action_count += await self._apply_logical(records)
-        action_count += await self._apply_dimensional(records)
+        # Dimensional physical sources reference Logical Silver bindings. Each
+        # layer's bindings must exist after its entities and before its consumers.
         action_count += await self._apply_model_object_bindings(
-            records.get("model_object_binding", ())
+            tuple(
+                record
+                for record in object_bindings
+                if record.modeled_entity_type == "logical_entity"
+            )
         )
         action_count += await self._apply_model_attribute_bindings(
-            records.get("model_attribute_binding", ())
+            tuple(
+                record
+                for record in attribute_bindings
+                if record.modeled_entity_type == "logical_entity"
+            )
+        )
+        action_count += await self._apply_dimensional(records)
+        action_count += await self._apply_model_object_bindings(
+            tuple(
+                record
+                for record in object_bindings
+                if record.modeled_entity_type == "dimensional_entity"
+            )
+        )
+        action_count += await self._apply_model_attribute_bindings(
+            tuple(
+                record
+                for record in attribute_bindings
+                if record.modeled_entity_type == "dimensional_entity"
+            )
         )
         action_count += await self._apply_mapping(records)
         action_count += await self._apply_generated_code(records.get("generated_code", ()))
@@ -2549,6 +2586,7 @@ SELECT attribute.{config.attribute_id}
                 str(context["code_input_digest"]).strip(),
                 code_workflow_run_id,
                 record.generated_code_status,
+                record.generated_code_is_locked,
             )
             if existing is None:
                 row = await self.transaction.fetch_one(
@@ -2588,6 +2626,7 @@ SELECT attribute.{config.attribute_id}
                         source_system_id,
                         code_workflow_run_id,
                         record.generated_code_source_system_status,
+                        record.generated_code_source_system_is_locked,
                     ),
                 )
             else:
@@ -2596,6 +2635,7 @@ SELECT attribute.{config.attribute_id}
                     (
                         code_workflow_run_id,
                         record.generated_code_source_system_status,
+                        record.generated_code_source_system_is_locked,
                         existing["generated_code_source_system_id"],
                     ),
                 )
@@ -2738,6 +2778,7 @@ SELECT attribute.{config.attribute_id}
                 mapping_context_digest,
                 code_context_digest,
                 record.is_active,
+                record.is_locked,
             )
             if existing is None:
                 row = await self.transaction.fetch_one(
@@ -2788,6 +2829,7 @@ SELECT attribute.{config.attribute_id}
                 record.validation_comparison_value_type,
                 comparison_value,
                 record.is_active,
+                record.is_locked,
             )
             if existing is None:
                 row = await self.transaction.fetch_one(

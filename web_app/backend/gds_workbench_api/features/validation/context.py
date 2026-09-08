@@ -11,6 +11,7 @@ from typing import Any, Literal, LiteralString, Protocol, cast
 
 from gds_etl_workbench.application.change_sets.model_validation import (
     CodeGenerationTargetContext,
+    PhysicalModelCatalog,
     validation_code_context_digest,
     validation_mapping_context_digest,
 )
@@ -21,9 +22,12 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationGroupRecord,
     normalize_model_key_value,
 )
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.context import (
+    load_frozen_model_graph,
     reject_forbidden_provider_json,
 )
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
@@ -116,6 +120,7 @@ SELECT context.object_id,
                          'artifact_type', artifact.artifact_type,
                          'generated_code_content', artifact.generated_code_content,
                          'generated_code_status', artifact.generated_code_status,
+                         'generated_code_is_locked', artifact.generated_code_is_locked,
                          'source_system_codes', assignment.source_system_codes
                      ) ORDER BY lower(btrim(artifact.artifact_name)),
                                 artifact.generated_code_id
@@ -183,6 +188,7 @@ SELECT tenant.tenant_code,
        validation_group.mapping_context_digest,
        validation_group.code_context_digest,
        validation_group.is_active AS validation_group_is_active,
+       validation_group.is_locked AS validation_group_is_locked,
        validation_check.validation_check_name,
        validation_check.validation_check_description,
        validation_check.validation_category_code,
@@ -193,7 +199,8 @@ SELECT tenant.tenant_code,
        validation_check.validation_comparison_operator,
        validation_check.validation_comparison_value_type,
        validation_check.validation_comparison_value,
-       validation_check.is_active AS validation_check_is_active
+       validation_check.is_active AS validation_check_is_active,
+       validation_check.is_locked AS validation_check_is_locked
   FROM requested_run AS run
   JOIN core.tenant AS tenant
     ON tenant.tenant_id = run.tenant_id
@@ -402,6 +409,9 @@ class ValidationSystemAuthoringContext(BaseModel):
 
 
 class ValidationExecutionContext(BaseModel):
+    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
+
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     systems: tuple[ValidationSystemAuthoringContext, ...] = Field(
@@ -438,11 +448,17 @@ class PostgresValidationContextRepository:
         target_rows = await transaction.fetch_all(_TARGET_CONTEXT_SQL, parameters)
         applied_rows = await transaction.fetch_all(_APPLIED_VALIDATION_SQL, parameters)
         try:
-            return _assemble_context(
+            context = _assemble_context(
                 plan=plan,
                 system_rows=system_rows,
                 target_rows=target_rows,
                 applied_rows=applied_rows,
+            )
+            snapshot, physical_scope = await load_frozen_model_graph(
+                cast(ReadTransaction, transaction), tenant_id=tenant_id, plan=plan
+            )
+            return context.model_copy(
+                update={"snapshot": snapshot, "physical_scope": physical_scope}
             )
         except InvalidRequestError:
             raise
@@ -697,6 +713,7 @@ def _applied_validation(
                 "validation_group_name": row.get("validation_group_name"),
                 "validation_group_description": row.get("validation_group_description"),
                 "is_active": row.get("validation_group_is_active"),
+                "is_locked": row.get("validation_group_is_locked"),
             },
             strict=True,
         )
@@ -739,6 +756,7 @@ def _applied_validation(
                 "validation_comparison_value_type": row.get("validation_comparison_value_type"),
                 "validation_comparison_value": comparison_value,
                 "is_active": row.get("validation_check_is_active"),
+                "is_locked": row.get("validation_check_is_locked"),
             },
             strict=True,
         )

@@ -11,6 +11,14 @@ import {
 } from "./api";
 
 describe("Workflow HTTP adapter", () => {
+  it("fetches generated records for an explicitly selected draft dataset", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
+    const api = createWorkflowsApi(createHttpRequest(fetcher));
+    await api.readWorkflowDraftReview(7, 18, "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa", "conceptual_object");
+    expect(String(fetcher.mock.calls[0]?.[0])).toBe(
+      "/api/v1/tenants/7/models/18/change-sets/aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa?dataset=conceptual_object",
+    );
+  });
   it("owns exact capabilities and Workflow Run read transports", async () => {
     const fetcher = vi.fn<typeof fetch>().mockImplementation(async () => jsonResponse({}));
     const api = createWorkflowsApi(createHttpRequest(fetcher));
@@ -68,7 +76,7 @@ describe("Workflow HTTP adapter", () => {
     await api.executeAnalysisValidationRun(7, 18, 1055, 18);
     await api.executeConceptualRun(7, 18, 1049, "one_shot", 18);
     await api.executeLogicalRun(7, 18, 1050, "tool_assisted", 18);
-    await api.executeDimensionalRun(7, 18, 1051, "detailed_coverage", 18);
+    await api.executeDimensionalRun(7, 18, 1051, "one_shot", 18);
     await api.executeMappingRun(7, 18, 1052, "tool_assisted", 18);
     await api.executeCodeGenerationRun(7, 18, 1053, 18);
 
@@ -135,7 +143,7 @@ describe("Workflow HTTP adapter", () => {
       expected_model_revision: 18,
     }));
     expect(fetcher.mock.calls[8]?.[1]?.body).toBe(JSON.stringify({
-      execution_mode: "detailed_coverage",
+      execution_mode: "one_shot",
       expected_model_revision: 18,
     }));
     expect(fetcher.mock.calls[9]?.[1]?.body).toBe(JSON.stringify({
@@ -148,193 +156,77 @@ describe("Workflow HTTP adapter", () => {
   });
 });
 
-describe("Agent capability defaults", () => {
-  it("distinguishes an omitted reasoning parameter from explicitly disabled reasoning", () => {
-    expect(reasoningEffortDisplayName({ code: "default", name: "Default" }))
-      .toBe("Provider default (omit setting)");
-    expect(reasoningEffortDisplayName({ code: "none", name: "None" }))
-      .toBe("None (explicitly disable reasoning)");
+describe("Foundry agent selection", () => {
+  const capabilities: AgentCapabilities = {
+    schema_version: "3.0",
+    sdks: [
+      { code: "langchain_create_agent", name: "Retired SDK", provider_codes: ["databricks", "microsoft_foundry"] },
+      { code: "openai_agents_sdk", name: "OpenAI Agents SDK", provider_codes: ["microsoft_foundry", "databricks"] },
+    ],
+    providers: [{ code: "databricks", name: "Retired provider" }, { code: "microsoft_foundry", name: "Microsoft Foundry" }],
+    models: [
+      { code: "retired-provider", name: "Retired provider", provider_code: "databricks", deployment_name: "legacy",
+        execution_profiles: [{ sdk_code: "openai_agents_sdk", execution_mode: "tool_assisted", reasoning_effort_codes: ["high"] }] },
+      { code: "retired-sdk", name: "Retired SDK", provider_code: "microsoft_foundry", deployment_name: "legacy",
+        execution_profiles: [{ sdk_code: "langchain_create_agent", execution_mode: "tool_assisted", reasoning_effort_codes: ["high"] }] },
+      { code: "broad", name: "Broad", provider_code: "microsoft_foundry", deployment_name: "broad",
+        execution_profiles: [
+          { sdk_code: "openai_agents_sdk", execution_mode: "one_shot", reasoning_effort_codes: ["default", "none"] },
+        ] },
+      { code: "paged", name: "Paged", provider_code: "microsoft_foundry", deployment_name: "paged",
+        execution_profiles: [{ sdk_code: "openai_agents_sdk", execution_mode: "tool_assisted", reasoning_effort_codes: ["medium", "high"] }] },
+    ],
+    reasoning_efforts: ["default", "none", "medium", "high"].map((code) => ({ code, name: code })),
+    max_turns: { minimum: 1, default: 10, maximum: 50 },
+    validation_retries: { minimum: 0, default: 2, maximum: 5 },
+  };
+
+  it("keeps model default and explicitly disabled reasoning distinct", () => {
+    expect(reasoningEffortDisplayName({ code: "default", name: "Default" })).toBe("Model default");
+    expect(reasoningEffortDisplayName({ code: "none", name: "None" })).toBe("None");
+    expect(resolveAgentProfileSelection(capabilities, "one_shot", {
+      modelCode: "broad", reasoningEffortCode: "none",
+    })).toEqual({ executionMode: "one_shot", modelCode: "broad", reasoningEffortCode: "none" });
   });
 
-  it("derives modes from the selected SDK and provider, then repairs dependent fields", () => {
-    const capabilities: AgentCapabilities = {
-      schema_version: "3.0",
-      sdks: [
-        { code: "sdk-a", name: "SDK A", provider_codes: ["provider-a", "provider-b"] },
-        { code: "sdk-b", name: "SDK B", provider_codes: ["provider-b"] },
-      ],
-      providers: [
-        { code: "provider-a", name: "Provider A" },
-        { code: "provider-b", name: "Provider B" },
-      ],
-      models: [
-        {
-          code: "broad",
-          name: "Broad",
-          provider_code: "provider-a",
-          deployment_name: "provider-a-broad",
-          execution_profiles: [
-            {
-              sdk_code: "sdk-a",
-              execution_mode: "one_shot",
-              reasoning_effort_codes: ["low"],
-            },
-            {
-              sdk_code: "sdk-a",
-              execution_mode: "detailed_coverage",
-              reasoning_effort_codes: ["high"],
-            },
-          ],
-        },
-        {
-          code: "paged",
-          name: "Paged",
-          provider_code: "provider-a",
-          deployment_name: "provider-a-paged",
-          execution_profiles: [{
-            sdk_code: "sdk-a",
-            execution_mode: "tool_assisted",
-            reasoning_effort_codes: ["none"],
-          }],
-        },
-        {
-          code: "secondary",
-          name: "Secondary",
-          provider_code: "provider-b",
-          deployment_name: "provider-b-model",
-          execution_profiles: [{
-            sdk_code: "sdk-b",
-            execution_mode: "one_shot",
-            reasoning_effort_codes: ["low"],
-          }],
-        },
-      ],
-      reasoning_efforts: [
-        { code: "none", name: "Default" },
-        { code: "low", name: "Low" },
-        { code: "high", name: "High" },
-      ],
-      max_turns: { minimum: 1, default: 10, maximum: 50 },
-      validation_retries: { minimum: 0, default: 2, maximum: 5 },
-    };
-
-    expect(listCompatibleExecutionModes(capabilities, "sdk-a", "provider-a"))
-      .toEqual(["one_shot", "tool_assisted", "detailed_coverage"]);
-    expect(listCompatibleExecutionModes(capabilities, "sdk-a", "provider-b")).toEqual([]);
+  it.each(["retired-provider", "retired-sdk", "removed-model"])("ignores retired selection %s while preserving the workflow mode", (modelCode) => {
+    expect(listCompatibleExecutionModes(capabilities)).toEqual(["one_shot", "tool_assisted"]);
     expect(resolveAgentProfileSelection(capabilities, "tool_assisted", {
-      sdkCode: "sdk-a",
-      providerCode: "provider-a",
-      modelCode: "broad",
-      reasoningEffortCode: "low",
-    })).toEqual({
-      executionMode: "tool_assisted",
-      sdkCode: "sdk-a",
-      providerCode: "provider-a",
-      modelCode: "paged",
-      reasoningEffortCode: "none",
-    });
-    expect(resolveAgentProfileSelection(capabilities, "tool_assisted", {
-      sdkCode: "sdk-b",
-      providerCode: "provider-b",
-      modelCode: "paged",
-      reasoningEffortCode: "none",
-    })).toEqual({
-      executionMode: "one_shot",
-      sdkCode: "sdk-b",
-      providerCode: "provider-b",
-      modelCode: "secondary",
-      reasoningEffortCode: "low",
-    });
+      modelCode, reasoningEffortCode: "retired-effort",
+    })).toEqual({ executionMode: "tool_assisted", modelCode: "paged", reasoningEffortCode: "medium" });
   });
 
-  it("chooses only a model profile compatible with the effective execution mode", () => {
-    const capabilities: AgentCapabilities = {
-      schema_version: "3.0",
-      sdks: [{
-        code: "openai_agents_sdk",
-        name: "OpenAI Agents SDK",
-        provider_codes: ["databricks"],
-      }],
-      providers: [{ code: "databricks", name: "Databricks Model Serving" }],
-      models: [
-        {
-          code: "one-shot-only",
-          name: "One-shot deployment",
-          provider_code: "databricks",
-          deployment_name: "model-a",
-          execution_profiles: [{
-            sdk_code: "openai_agents_sdk",
-            execution_mode: "one_shot",
-            reasoning_effort_codes: ["low"],
-          }],
-        },
-        {
-          code: "scalable",
-          name: "Scalable deployment",
-          provider_code: "databricks",
-          deployment_name: "model-b",
-          execution_profiles: [{
-            sdk_code: "openai_agents_sdk",
-            execution_mode: "tool_assisted",
-            reasoning_effort_codes: ["medium", "high"],
-          }],
-        },
-      ],
-      reasoning_efforts: [
-        { code: "low", name: "Low" },
-        { code: "medium", name: "Medium" },
-        { code: "high", name: "High" },
-      ],
-      max_turns: { minimum: 1, default: 10, maximum: 50 },
-      validation_retries: { minimum: 0, default: 2, maximum: 5 },
-    };
+  it("repairs dependent model and effort when the selected mode changes", () => {
+    expect(resolveAgentProfileSelection(capabilities, "one_shot", {
+      modelCode: "paged", reasoningEffortCode: "medium",
+    })).toEqual({ executionMode: "one_shot", modelCode: "broad", reasoningEffortCode: "default" });
+  });
 
+  it.each([
+    [8, 0, 8, 0], [null, null, 10, 2], [0, -1, 10, 2],
+    [51, 6, 10, 2], [1.5, 1.5, 10, 2], [Number.NaN, Number.NaN, 10, 2],
+  ])("resolves hidden limits without clamping: %s / %s", (maxTurns, validationRetryCount, expectedTurns, expectedRetries) => {
     expect(resolveDefaultAgent(capabilities, "tool_assisted", {
-      sdkCode: "openai_agents_sdk",
-      providerCode: "databricks",
-      modelCode: "one-shot-only",
-      reasoningEffortCode: "low",
-      maxTurns: null,
-      validationRetryCount: null,
-    })).toEqual({
-      sdk_code: "openai_agents_sdk",
-      provider_code: "databricks",
-      model_code: "scalable",
-      reasoning_effort_code: "medium",
-      max_turns: 10,
-      validation_retry_count: 2,
-    });
+      modelCode: "retired-provider", reasoningEffortCode: "high", maxTurns, validationRetryCount,
+    })).toEqual({ sdk_code: "openai_agents_sdk", provider_code: "microsoft_foundry",
+      model_code: "paged", reasoning_effort_code: "high", max_turns: expectedTurns, validation_retry_count: expectedRetries });
   });
 
-  it("returns null when no deployment supports the effective execution mode", () => {
-    const capabilities: AgentCapabilities = {
-      schema_version: "3.0",
-      sdks: [{ code: "sdk", name: "SDK", provider_codes: ["provider"] }],
-      providers: [{ code: "provider", name: "Provider" }],
-      models: [{
-        code: "model",
-        name: "Model",
-        provider_code: "provider",
-        deployment_name: "model-a",
-        execution_profiles: [{
-          sdk_code: "sdk",
-          execution_mode: "one_shot",
-          reasoning_effort_codes: ["medium"],
-        }],
-      }],
-      reasoning_efforts: [{ code: "medium", name: "Medium" }],
-      max_turns: { minimum: 1, default: 10, maximum: 50 },
-      validation_retries: { minimum: 0, default: 2, maximum: 5 },
-    };
-
-    expect(resolveDefaultAgent(capabilities, "detailed_coverage", {
-      sdkCode: null,
-      providerCode: null,
-      modelCode: null,
-      reasoningEffortCode: null,
-      maxTurns: null,
-      validationRetryCount: null,
+  it("never changes a fixed workflow mode to use an incompatible model", () => {
+    const toolOnly = { ...capabilities, models: capabilities.models.filter((model) => model.code === "paged") };
+    expect(resolveDefaultAgent(toolOnly, "one_shot", {
+      modelCode: "paged", reasoningEffortCode: "medium", maxTurns: 8, validationRetryCount: 1,
     })).toBeNull();
+    expect(resolveAgentProfileSelection(toolOnly, "one_shot", {
+      modelCode: "paged", reasoningEffortCode: "medium",
+    }, ["one_shot"])).toBeNull();
+  });
+
+  it("does not offer unsupported or unregistered provider, SDK or reasoning profiles", () => {
+    expect(listCompatibleExecutionModes({ ...capabilities, sdks: [] })).toEqual([]);
+    expect(listCompatibleExecutionModes({ ...capabilities, providers: [] })).toEqual([]);
+    expect(listCompatibleExecutionModes({ ...capabilities, reasoning_efforts: [] })).toEqual([]);
+    expect(listCompatibleExecutionModes({ ...capabilities, models: capabilities.models.slice(0, 2) })).toEqual([]);
   });
 });
 

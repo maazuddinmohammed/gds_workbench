@@ -23,7 +23,6 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-
 from gds_workbench_api.features.profiling.workflow import (
     DatabaseProfilingWorkflowRepository,
     ExecuteProfilingRunRequest,
@@ -725,9 +724,7 @@ async def test_database_repository_groups_context_without_exposing_credentials()
 @pytest.mark.asyncio
 async def test_database_repository_profiles_source_only_through_foreign_catalog() -> None:
     database = _Database()
-    database.transaction.profiling_context_rows = _profiling_context_rows(
-        zone_code="source"
-    )
+    database.transaction.profiling_context_rows = _profiling_context_rows(zone_code="source")
     repository = DatabaseProfilingWorkflowRepository(
         database=database,
         environment_code="DEV",

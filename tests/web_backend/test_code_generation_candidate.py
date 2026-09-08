@@ -3,16 +3,15 @@ from __future__ import annotations
 from typing import cast
 
 import pytest
-from pydantic import JsonValue
-
 from gds_workbench_api.features.code_generation.candidate import (
     CodeGenerationCandidateValidator,
     CodeGenerationTargetReference,
 )
-from gds_workbench_api.features.code_generation.contracts import SqlArtifactDownload
 from gds_workbench_api.features.code_generation.contracts import (
     CodeGenerationTargetObjectReference,
+    SqlArtifactDownload,
 )
+from pydantic import JsonValue
 
 
 def _artifact(

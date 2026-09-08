@@ -22,7 +22,6 @@ from gds_workbench_api.capabilities import (
     CODE_GENERATION_AGENT_EXECUTION_MODE,
     VALIDATION_AGENT_EXECUTION_MODE,
     AgentCapabilityRegistry,
-    AgentRunSelection,
 )
 from gds_workbench_api.features.models import ModelNotFoundError, ModelRevisionConflictError
 from gds_workbench_api.features.workflows.commands.contracts import (
@@ -61,7 +60,7 @@ SELECT created.created,
   FROM application.create_workflow_run(
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
        %s, %s, %s, %s, %s, %s, %s, %s, %s,
-       %s, %s, %s, %s, %s, %s, %s, %s
+       %s, %s, %s, %s, %s, %s, %s, %s, %s
   ) AS created
 """
 
@@ -128,31 +127,16 @@ class DatabaseWorkflowCommandService:
                 )
                 if owner is None:
                     raise ModelNotFoundError()
-                if command.agent is None and agent_execution_mode is not None:
-                    try:
-                        model_default_agent = AgentRunSelection.model_validate(
-                            {
-                                "sdk_code": owner.get("default_agent_sdk_code"),
-                                "provider_code": owner.get("default_agent_provider_code"),
-                                "model_code": owner.get("default_agent_model_code"),
-                                "reasoning_effort_code": owner.get("default_reasoning_effort_code"),
-                                "max_turns": owner.get("default_max_turns"),
-                                "validation_retry_count": owner.get(
-                                    "default_validation_retry_count"
-                                ),
-                            },
-                            strict=True,
-                        )
-                    except ValueError:
-                        raise InvalidRequestError(
-                            "The Model default agent configuration is unavailable."
-                        ) from None
-                    self._agent_capability_registry.validate_selection(
-                        model_default_agent,
+                agent = command.agent
+                if agent is None and agent_execution_mode is not None:
+                    agent = self._agent_capability_registry.resolve_default_selection(
                         execution_mode=agent_execution_mode,
+                        model_code=owner.get("default_agent_model_code"),
+                        reasoning_effort_code=owner.get("default_reasoning_effort_code"),
+                        max_turns=owner.get("default_max_turns"),
+                        validation_retry_count=owner.get("default_validation_retry_count"),
                     )
                 identity = _identity_triple(principal)
-                agent = command.agent
                 row = await transaction.fetch_one(
                     _CREATE_WORKFLOW_RUN_SQL,
                     identity
@@ -180,6 +164,14 @@ class DatabaseWorkflowCommandService:
                         command.mapping_attribute_output_template_id,
                         command.code_generation_coverage_mode,
                         command.sql_generation_guide_version_id,
+                        Jsonb(
+                            [
+                                target.model_dump(mode="json")
+                                for target in command.description_targets
+                            ]
+                        )
+                        if command.description_targets is not None
+                        else None,
                     ),
                 )
         except Exception as error:
@@ -205,17 +197,28 @@ def _raise_safe_workflow_error(error: Exception) -> Never:
     message = _primary_database_message(error)
     if message == "stale_model_revision":
         raise ModelRevisionConflictError() from error
+    if message == "metadata_description_conflict":
+        raise WorkbenchError(
+            "metadata_revision_conflict",
+            "The description changed or its record is locked. Refresh and review again.",
+        ) from error
     if message in {
         "Workflow Run Model is unavailable",
         "Model is unavailable",
     }:
         raise ModelNotFoundError() from error
     if message in {
+        "Global default Mapping Object output template is unavailable",
+        "Global default Mapping Attribute output template is unavailable",
+    }:
+        raise InvalidRequestError("The global Mapping output templates are unavailable.") from error
+    if message in {
         "Selected Scope must contain between 1 and 50000 Objects",
         "Selected Scope Object IDs must be positive",
         "Selected Scope Object IDs must be unique",
         "Selected Scope contains an unavailable or ineligible Object",
         "Selected Scope is required",
+        "Invalid description regeneration target",
         "Validation requires between 1 and 1000 Systems and no Object selection",
         "System selection is available only for Validation",
         "Selected System Codes must be nonblank",

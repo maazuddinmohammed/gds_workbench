@@ -74,6 +74,4 @@ def test_mapping_snapshot_uses_binding_identity_not_repeated_physical_keys() -> 
     assert "mapping_profile_key" not in object_sql
     assert "mapping_package_document" not in object_sql
     assert "mapping_attribute.model_attribute_binding_id" in attribute_sql
-    assert (
-        "mapping_attribute.attribute_mapping_transformation_document" in attribute_sql
-    )
+    assert "mapping_attribute.attribute_mapping_transformation_document" in attribute_sql

@@ -1,0 +1,1496 @@
+{
+  "workflow": "mapping",
+  "stage": "mapping_authoring",
+  "modes": [
+    "one_shot",
+    "tool_assisted"
+  ],
+  "status": "authorized_for_implementation",
+  "variables": {
+    "mapping_route": {
+      "description": "Frozen logical_to_silver or dimensional_to_gold route; it fixes eligible source and target layers.",
+      "value_schema": {
+        "enum": [
+          "logical_to_silver",
+          "dimensional_to_gold"
+        ],
+        "type": "string"
+      },
+      "example": "logical_to_silver"
+    },
+    "operation": {
+      "description": "Frozen build or extend operation. Per-record readiness determines exactly which transformations are actionable.",
+      "value_schema": {
+        "enum": [
+          "build",
+          "extend"
+        ],
+        "type": "string"
+      },
+      "example": "build"
+    },
+    "target_metadata": {
+      "description": "Actual target Object natural key, physical catalog, description, layer, lifecycle/locks and ordered registered Attributes with type, inferred type, nullability and descriptions. No internal IDs.",
+      "value_schema": {
+        "$defs": {
+          "MappingPhysicalAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Attribute Name",
+                "type": "string"
+              },
+              "attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Attribute Data Type",
+                "type": "string"
+              },
+              "attribute_inferred_data_type": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Attribute Inferred Data Type"
+              },
+              "attribute_nullability": {
+                "title": "Attribute Nullability",
+                "type": "boolean"
+              },
+              "attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "attribute_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Attribute Description"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_data_type",
+              "attribute_inferred_data_type",
+              "attribute_nullability",
+              "attribute_ordinal_position",
+              "is_active"
+            ],
+            "title": "MappingPhysicalAttribute",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "tenant_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Tenant Code",
+            "type": "string"
+          },
+          "tenant_catalog": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tenant Catalog",
+            "type": "string"
+          },
+          "tenant_is_active": {
+            "title": "Tenant Is Active",
+            "type": "boolean"
+          },
+          "system_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "System Code",
+            "type": "string"
+          },
+          "system_is_active": {
+            "title": "System Is Active",
+            "type": "boolean"
+          },
+          "connection_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Connection Code",
+            "type": "string"
+          },
+          "connection_is_active": {
+            "title": "Connection Is Active",
+            "type": "boolean"
+          },
+          "is_global_data_store": {
+            "title": "Is Global Data Store",
+            "type": "boolean"
+          },
+          "object_schema": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Object Schema",
+            "type": "string"
+          },
+          "object_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Object Name",
+            "type": "string"
+          },
+          "object_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Object Description"
+          },
+          "batch_attribute_name": {
+            "anyOf": [
+              {
+                "maxLength": 400,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Batch Attribute Name"
+          },
+          "zone_code": {
+            "enum": [
+              "source",
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Zone Code",
+            "type": "string"
+          },
+          "scope_is_locked": {
+            "title": "Scope Is Locked",
+            "type": "boolean"
+          },
+          "scope_is_active": {
+            "title": "Scope Is Active",
+            "type": "boolean"
+          },
+          "is_locked": {
+            "title": "Is Locked",
+            "type": "boolean"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/$defs/MappingPhysicalAttribute"
+            },
+            "maxItems": 5000,
+            "title": "Attributes",
+            "type": "array"
+          }
+        },
+        "required": [
+          "tenant_code",
+          "tenant_catalog",
+          "tenant_is_active",
+          "system_code",
+          "system_is_active",
+          "connection_code",
+          "connection_is_active",
+          "is_global_data_store",
+          "object_schema",
+          "object_name",
+          "zone_code",
+          "scope_is_locked",
+          "scope_is_active",
+          "is_locked",
+          "is_active",
+          "attributes"
+        ],
+        "title": "MappingPhysicalObject",
+        "type": "object"
+      },
+      "example": {
+        "attributes": [
+          {
+            "attribute_data_type": "BIGINT",
+            "attribute_description": null,
+            "attribute_inferred_data_type": null,
+            "attribute_name": "CustomerID",
+            "attribute_nullability": false,
+            "attribute_ordinal_position": 1,
+            "is_active": true
+          }
+        ],
+        "batch_attribute_name": null,
+        "connection_code": "lakehouse",
+        "connection_is_active": true,
+        "is_active": true,
+        "is_global_data_store": true,
+        "is_locked": false,
+        "object_description": null,
+        "object_name": "Customer",
+        "object_schema": "silver_crm",
+        "scope_is_active": true,
+        "scope_is_locked": false,
+        "system_code": "GDS",
+        "system_is_active": true,
+        "tenant_catalog": "northwind",
+        "tenant_code": "NWA",
+        "tenant_is_active": true,
+        "zone_code": "silver"
+      }
+    },
+    "source_evidence": {
+      "description": "Eligible source contributions, each with role, rationale, mapping_order, lock and nested actual physical Object/Attributes. Scoped to this frozen target/Source System pair.",
+      "value_schema": {
+        "$defs": {
+          "MappingPhysicalAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Attribute Name",
+                "type": "string"
+              },
+              "attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Attribute Data Type",
+                "type": "string"
+              },
+              "attribute_inferred_data_type": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Attribute Inferred Data Type"
+              },
+              "attribute_nullability": {
+                "title": "Attribute Nullability",
+                "type": "boolean"
+              },
+              "attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "attribute_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Attribute Description"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_data_type",
+              "attribute_inferred_data_type",
+              "attribute_nullability",
+              "attribute_ordinal_position",
+              "is_active"
+            ],
+            "title": "MappingPhysicalAttribute",
+            "type": "object"
+          },
+          "MappingPhysicalObject": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "tenant_catalog": {
+                "maxLength": 255,
+                "minLength": 1,
+                "title": "Tenant Catalog",
+                "type": "string"
+              },
+              "tenant_is_active": {
+                "title": "Tenant Is Active",
+                "type": "boolean"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "System Code",
+                "type": "string"
+              },
+              "system_is_active": {
+                "title": "System Is Active",
+                "type": "boolean"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "connection_is_active": {
+                "title": "Connection Is Active",
+                "type": "boolean"
+              },
+              "is_global_data_store": {
+                "title": "Is Global Data Store",
+                "type": "boolean"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Object Name",
+                "type": "string"
+              },
+              "object_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Object Description"
+              },
+              "batch_attribute_name": {
+                "anyOf": [
+                  {
+                    "maxLength": 400,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Batch Attribute Name"
+              },
+              "zone_code": {
+                "enum": [
+                  "source",
+                  "bronze",
+                  "silver",
+                  "gold"
+                ],
+                "title": "Zone Code",
+                "type": "string"
+              },
+              "scope_is_locked": {
+                "title": "Scope Is Locked",
+                "type": "boolean"
+              },
+              "scope_is_active": {
+                "title": "Scope Is Active",
+                "type": "boolean"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "attributes": {
+                "items": {
+                  "$ref": "#/$defs/MappingPhysicalAttribute"
+                },
+                "maxItems": 5000,
+                "title": "Attributes",
+                "type": "array"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "tenant_catalog",
+              "tenant_is_active",
+              "system_code",
+              "system_is_active",
+              "connection_code",
+              "connection_is_active",
+              "is_global_data_store",
+              "object_schema",
+              "object_name",
+              "zone_code",
+              "scope_is_locked",
+              "scope_is_active",
+              "is_locked",
+              "is_active",
+              "attributes"
+            ],
+            "title": "MappingPhysicalObject",
+            "type": "object"
+          },
+          "MappingSource": {
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "title": "Role",
+                "type": "string"
+              },
+              "rationale": {
+                "maxLength": 2000,
+                "minLength": 1,
+                "title": "Rationale",
+                "type": "string"
+              },
+              "mapping_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Mapping Order"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "object": {
+                "$ref": "#/$defs/MappingPhysicalObject"
+              }
+            },
+            "required": [
+              "role",
+              "rationale",
+              "is_locked",
+              "object"
+            ],
+            "title": "MappingSource",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/MappingSource"
+        },
+        "maxItems": 128,
+        "type": "array"
+      },
+      "example": [
+        {
+          "is_locked": false,
+          "mapping_order": 1,
+          "object": {
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_description": null,
+                "attribute_inferred_data_type": null,
+                "attribute_name": "customer_id",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "is_active": true
+              }
+            ],
+            "batch_attribute_name": null,
+            "connection_code": "crm_bronze",
+            "connection_is_active": true,
+            "is_active": true,
+            "is_global_data_store": false,
+            "is_locked": false,
+            "object_description": null,
+            "object_name": "customer",
+            "object_schema": "bronze_crm",
+            "scope_is_active": true,
+            "scope_is_locked": false,
+            "system_code": "CRM",
+            "system_is_active": true,
+            "tenant_catalog": "northwind",
+            "tenant_code": "NWA",
+            "tenant_is_active": true,
+            "zone_code": "bronze"
+          },
+          "rationale": "Authoritative CRM feed.",
+          "role": "support"
+        }
+      ]
+    },
+    "existing_mapping": {
+      "description": "Single existing target binding/header with modeled Entity/Attributes, natural Attribute-name bindings, Object/Attribute transformation documents, dependency order, statuses and locks. Null document means unauthored.",
+      "value_schema": {
+        "$defs": {
+          "ExistingMappingAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "transformation_document": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/JsonObject"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "status": {
+                "$ref": "#/$defs/LifecycleStatus",
+                "default": "active"
+              },
+              "is_locked": {
+                "default": false,
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "modeled_attribute_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "target_attribute_name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "modeled_attribute_name",
+              "target_attribute_name"
+            ],
+            "title": "ExistingMappingAttribute",
+            "type": "object"
+          },
+          "ExistingMappingHeader": {
+            "additionalProperties": false,
+            "properties": {
+              "modeled_entity": {
+                "$ref": "#/$defs/MappingModeledEntity"
+              },
+              "object_dependency_order": {
+                "minimum": 0,
+                "title": "Object Dependency Order",
+                "type": "integer"
+              },
+              "transformation_document": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/JsonObject"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null
+              },
+              "status": {
+                "$ref": "#/$defs/LifecycleStatus",
+                "default": "active"
+              },
+              "is_locked": {
+                "default": false,
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "attribute_mappings": {
+                "items": {
+                  "$ref": "#/$defs/ExistingMappingAttribute"
+                },
+                "maxItems": 20000,
+                "title": "Attribute Mappings",
+                "type": "array"
+              }
+            },
+            "required": [
+              "modeled_entity",
+              "object_dependency_order",
+              "attribute_mappings"
+            ],
+            "title": "ExistingMappingHeader",
+            "type": "object"
+          },
+          "JsonObject": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "JsonValue": {},
+          "LifecycleStatus": {
+            "enum": [
+              "active",
+              "inactive",
+              "deprecated"
+            ],
+            "type": "string"
+          },
+          "MappingModeledAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "title": "Attribute Name",
+                "type": "string"
+              },
+              "attribute_definition": {
+                "minLength": 1,
+                "title": "Attribute Definition",
+                "type": "string"
+              },
+              "attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Attribute Data Type",
+                "type": "string"
+              },
+              "is_nullable": {
+                "title": "Is Nullable",
+                "type": "boolean"
+              },
+              "ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Ordinal Position",
+                "type": "integer"
+              },
+              "is_audit_column": {
+                "title": "Is Audit Column",
+                "type": "boolean"
+              },
+              "status": {
+                "$ref": "#/$defs/LifecycleStatus"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_definition",
+              "attribute_data_type",
+              "is_nullable",
+              "ordinal_position",
+              "is_audit_column",
+              "status",
+              "is_locked"
+            ],
+            "title": "MappingModeledAttribute",
+            "type": "object"
+          },
+          "MappingModeledEntity": {
+            "additionalProperties": false,
+            "properties": {
+              "entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "title": "Entity Name",
+                "type": "string"
+              },
+              "entity_definition": {
+                "minLength": 1,
+                "title": "Entity Definition",
+                "type": "string"
+              },
+              "entity_kind": {
+                "maxLength": 50,
+                "minLength": 1,
+                "title": "Entity Kind",
+                "type": "string"
+              },
+              "grain": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Grain"
+              },
+              "dependency_order": {
+                "minimum": 0,
+                "title": "Dependency Order",
+                "type": "integer"
+              },
+              "status": {
+                "$ref": "#/$defs/LifecycleStatus"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "attributes": {
+                "items": {
+                  "$ref": "#/$defs/MappingModeledAttribute"
+                },
+                "maxItems": 5000,
+                "title": "Attributes",
+                "type": "array"
+              }
+            },
+            "required": [
+              "entity_name",
+              "entity_definition",
+              "entity_kind",
+              "dependency_order",
+              "status",
+              "is_locked",
+              "attributes"
+            ],
+            "title": "MappingModeledEntity",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/ExistingMappingHeader"
+        },
+        "maxItems": 1,
+        "minItems": 1,
+        "type": "array"
+      },
+      "example": [
+        {
+          "attribute_mappings": [
+            {
+              "is_locked": false,
+              "status": "active",
+              "transformation_document": null,
+              "modeled_attribute_name": "CustomerID",
+              "target_attribute_name": "CustomerID"
+            }
+          ],
+          "is_locked": false,
+          "modeled_entity": {
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_definition": "Stable customer key.",
+                "attribute_name": "CustomerID",
+                "is_audit_column": false,
+                "is_locked": false,
+                "is_nullable": false,
+                "ordinal_position": 1,
+                "status": "active"
+              }
+            ],
+            "dependency_order": 0,
+            "entity_definition": "A customer.",
+            "entity_kind": "core",
+            "entity_name": "Customer",
+            "grain": "One row per customer.",
+            "is_locked": false,
+            "status": "active"
+          },
+          "object_dependency_order": 0,
+          "status": "active",
+          "transformation_document": null
+        }
+      ]
+    },
+    "authoring_policy": {
+      "description": "Model name, effective naming instructions and configured audit/technical column templates; do not invent physical columns.",
+      "value_schema": {
+        "$defs": {
+          "JsonObject": {
+            "additionalProperties": {
+              "$ref": "#/$defs/JsonValue"
+            },
+            "type": "object"
+          },
+          "JsonValue": {}
+        },
+        "additionalProperties": false,
+        "properties": {
+          "model_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Model Name",
+            "type": "string"
+          },
+          "naming_instructions": {
+            "anyOf": [
+              {
+                "maxLength": 32768,
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Naming Instructions"
+          },
+          "audit_columns_template": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "technical_columns_template": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/JsonObject"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          }
+        },
+        "required": [
+          "model_name"
+        ],
+        "title": "MappingAuthoringPolicy",
+        "type": "object"
+      },
+      "example": {
+        "audit_columns_template": null,
+        "model_name": "Customer Model",
+        "naming_instructions": "Use PascalCase names.",
+        "technical_columns_template": null
+      }
+    },
+    "readiness": {
+      "description": "Backend-computed ready flag, operation, Object action and Attribute actions keyed by modeled_attribute_name; author/extend require output, preserve requires omission, blocked prohibits generation.",
+      "value_schema": {
+        "$defs": {
+          "MappingAttributeReadiness": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "$ref": "#/$defs/ReadinessAction"
+              },
+              "modeled_attribute_name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "action",
+              "modeled_attribute_name"
+            ],
+            "title": "MappingAttributeReadiness",
+            "type": "object"
+          },
+          "MappingHeaderReadiness": {
+            "additionalProperties": false,
+            "properties": {
+              "action": {
+                "$ref": "#/$defs/ReadinessAction"
+              },
+              "attribute_actions": {
+                "items": {
+                  "$ref": "#/$defs/MappingAttributeReadiness"
+                },
+                "title": "Attribute Actions",
+                "type": "array"
+              }
+            },
+            "required": [
+              "action",
+              "attribute_actions"
+            ],
+            "title": "MappingHeaderReadiness",
+            "type": "object"
+          },
+          "MappingOperation": {
+            "enum": [
+              "build",
+              "extend"
+            ],
+            "type": "string"
+          },
+          "MappingReadinessIssue": {
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                "title": "Code",
+                "type": "string"
+              },
+              "message": {
+                "maxLength": 500,
+                "minLength": 1,
+                "title": "Message",
+                "type": "string"
+              }
+            },
+            "required": [
+              "code",
+              "message"
+            ],
+            "title": "MappingReadinessIssue",
+            "type": "object"
+          },
+          "ReadinessAction": {
+            "enum": [
+              "author",
+              "extend",
+              "preserve",
+              "blocked"
+            ],
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "ready": {
+            "title": "Ready",
+            "type": "boolean"
+          },
+          "operation": {
+            "$ref": "#/$defs/MappingOperation"
+          },
+          "headers": {
+            "items": {
+              "$ref": "#/$defs/MappingHeaderReadiness"
+            },
+            "title": "Headers",
+            "type": "array"
+          },
+          "issues": {
+            "items": {
+              "$ref": "#/$defs/MappingReadinessIssue"
+            },
+            "title": "Issues",
+            "type": "array"
+          }
+        },
+        "required": [
+          "ready",
+          "operation",
+          "headers",
+          "issues"
+        ],
+        "title": "MappingReadiness",
+        "type": "object"
+      },
+      "example": {
+        "headers": [
+          {
+            "action": "author",
+            "attribute_actions": [
+              {
+                "action": "author",
+                "modeled_attribute_name": "CustomerID"
+              }
+            ]
+          }
+        ],
+        "issues": [],
+        "operation": "build",
+        "ready": true
+      }
+    },
+    "source_system": {
+      "description": "Exact selected Source System code, name, description and activity. The run supplies its single Source Tenant; System code is scoped to that Tenant.",
+      "value_schema": {
+        "additionalProperties": false,
+        "properties": {
+          "system_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "System Code",
+            "type": "string"
+          },
+          "system_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "System Name",
+            "type": "string"
+          },
+          "system_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "System Description"
+          },
+          "is_active": {
+            "title": "Is Active",
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "system_code",
+          "system_name",
+          "is_active"
+        ],
+        "title": "MappingSourceSystem",
+        "type": "object"
+      },
+      "example": {
+        "is_active": true,
+        "system_code": "CRM",
+        "system_description": null,
+        "system_name": "CRM"
+      }
+    },
+    "object_output_template": {
+      "description": "Selected Object transformation template by nominal code with description, typed ordered fields, required flags and examples; null means no selected template. Guidance does not change the fixed outer output schema.",
+      "value_schema": {
+        "anyOf": [
+          {
+            "$defs": {
+              "JsonValue": {},
+              "MappingOutputTemplateField": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]{0,99}$",
+                    "title": "Name",
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "title": "Description",
+                    "type": "string"
+                  },
+                  "data_type": {
+                    "enum": [
+                      "string",
+                      "integer",
+                      "number",
+                      "boolean",
+                      "object",
+                      "array"
+                    ],
+                    "title": "Data Type",
+                    "type": "string"
+                  },
+                  "array_item_type": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "string",
+                          "integer",
+                          "number",
+                          "boolean",
+                          "object"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Array Item Type"
+                  },
+                  "example": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/JsonValue"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "is_required": {
+                    "title": "Is Required",
+                    "type": "boolean"
+                  },
+                  "order": {
+                    "exclusiveMinimum": 0,
+                    "title": "Order",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "data_type",
+                  "array_item_type",
+                  "is_required",
+                  "order"
+                ],
+                "title": "MappingOutputTemplateField",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                "title": "Code",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Name",
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Description"
+              },
+              "target_type": {
+                "enum": [
+                  "mapping_object",
+                  "mapping_attribute"
+                ],
+                "title": "Target Type",
+                "type": "string"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "fields": {
+                "items": {
+                  "$ref": "#/$defs/MappingOutputTemplateField"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "title": "Fields",
+                "type": "array"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "target_type",
+              "is_active",
+              "fields"
+            ],
+            "title": "MappingOutputTemplate",
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": null
+    },
+    "attribute_output_template": {
+      "description": "Selected Attribute transformation template by nominal code with description, typed ordered fields, required flags and examples; null means no selected template.",
+      "value_schema": {
+        "anyOf": [
+          {
+            "$defs": {
+              "JsonValue": {},
+              "MappingOutputTemplateField": {
+                "additionalProperties": false,
+                "properties": {
+                  "name": {
+                    "pattern": "^[a-z][a-z0-9_]{0,99}$",
+                    "title": "Name",
+                    "type": "string"
+                  },
+                  "description": {
+                    "maxLength": 2000,
+                    "minLength": 1,
+                    "title": "Description",
+                    "type": "string"
+                  },
+                  "data_type": {
+                    "enum": [
+                      "string",
+                      "integer",
+                      "number",
+                      "boolean",
+                      "object",
+                      "array"
+                    ],
+                    "title": "Data Type",
+                    "type": "string"
+                  },
+                  "array_item_type": {
+                    "anyOf": [
+                      {
+                        "enum": [
+                          "string",
+                          "integer",
+                          "number",
+                          "boolean",
+                          "object"
+                        ],
+                        "type": "string"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "title": "Array Item Type"
+                  },
+                  "example": {
+                    "anyOf": [
+                      {
+                        "$ref": "#/$defs/JsonValue"
+                      },
+                      {
+                        "type": "null"
+                      }
+                    ],
+                    "default": null
+                  },
+                  "is_required": {
+                    "title": "Is Required",
+                    "type": "boolean"
+                  },
+                  "order": {
+                    "exclusiveMinimum": 0,
+                    "title": "Order",
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "name",
+                  "description",
+                  "data_type",
+                  "array_item_type",
+                  "is_required",
+                  "order"
+                ],
+                "title": "MappingOutputTemplateField",
+                "type": "object"
+              }
+            },
+            "additionalProperties": false,
+            "properties": {
+              "code": {
+                "pattern": "^[a-z][a-z0-9_.-]{0,99}$",
+                "title": "Code",
+                "type": "string"
+              },
+              "name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "Name",
+                "type": "string"
+              },
+              "description": {
+                "anyOf": [
+                  {
+                    "maxLength": 2000,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Description"
+              },
+              "target_type": {
+                "enum": [
+                  "mapping_object",
+                  "mapping_attribute"
+                ],
+                "title": "Target Type",
+                "type": "string"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "fields": {
+                "items": {
+                  "$ref": "#/$defs/MappingOutputTemplateField"
+                },
+                "maxItems": 500,
+                "minItems": 1,
+                "title": "Fields",
+                "type": "array"
+              }
+            },
+            "required": [
+              "code",
+              "name",
+              "target_type",
+              "is_active",
+              "fields"
+            ],
+            "title": "MappingOutputTemplate",
+            "type": "object"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "example": null
+    }
+  },
+  "selection": "Every variable and reader is workflow-local and author-selected. Defaults do not force inclusion. No hidden context append. Use restricted Jinja, render once; values are data.",
+  "control_handles": "target_ref/system_ref are retained opaque output-control handles, not database IDs. All evidence joins use actual nominal keys.",
+  "default_inline": {
+    "one_shot": [
+      "mapping_route",
+      "operation",
+      "target_metadata",
+      "source_evidence",
+      "existing_mapping",
+      "authoring_policy",
+      "readiness",
+      "source_system",
+      "object_output_template",
+      "attribute_output_template"
+    ],
+    "tool_assisted": [
+      "mapping_route",
+      "operation",
+      "authoring_policy",
+      "readiness",
+      "source_system",
+      "object_output_template",
+      "attribute_output_template"
+    ]
+  },
+  "preserved_output_schema": {
+    "$defs": {
+      "JsonObject": {
+        "additionalProperties": {
+          "$ref": "#/$defs/JsonValue"
+        },
+        "minProperties": 1,
+        "type": "object"
+      },
+      "JsonValue": {},
+      "MappingAttributeCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "modeled_attribute_name": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "title": "Modeled Attribute Name",
+            "type": "string"
+          },
+          "attribute_mapping_transformation_document": {
+            "$ref": "#/$defs/JsonObject"
+          }
+        },
+        "required": [
+          "modeled_attribute_name",
+          "attribute_mapping_transformation_document"
+        ],
+        "title": "MappingAttributeCandidate",
+        "type": "object"
+      },
+      "MappingObjectCandidate": {
+        "additionalProperties": false,
+        "properties": {
+          "object_dependency_order": {
+            "minimum": 0,
+            "title": "Object Dependency Order",
+            "type": "integer"
+          },
+          "mapping_transformation_document": {
+            "$ref": "#/$defs/JsonObject"
+          }
+        },
+        "required": [
+          "object_dependency_order",
+          "mapping_transformation_document"
+        ],
+        "title": "MappingObjectCandidate",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "description": "Agent output: transformation content only; identity comes from the frozen run.",
+    "properties": {
+      "schema_version": {
+        "const": "1.0",
+        "title": "Schema Version",
+        "type": "string"
+      },
+      "object_mapping": {
+        "anyOf": [
+          {
+            "$ref": "#/$defs/MappingObjectCandidate"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "attribute_mappings": {
+        "items": {
+          "$ref": "#/$defs/MappingAttributeCandidate"
+        },
+        "maxItems": 5000,
+        "title": "Attribute Mappings",
+        "type": "array"
+      }
+    },
+    "required": [
+      "schema_version",
+      "object_mapping",
+      "attribute_mappings"
+    ],
+    "title": "CompleteMappingCandidateV1",
+    "type": "object"
+  }
+}

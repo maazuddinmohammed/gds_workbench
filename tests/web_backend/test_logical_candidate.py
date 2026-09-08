@@ -12,10 +12,9 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.domain.snapshots.model import LogicalSection
+from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 from jsonschema import Draft202012Validator
 from pydantic import JsonValue
-
-from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
 
 
 def _object(name: str = "customer_raw") -> PhysicalObjectKey:
@@ -153,9 +152,7 @@ async def test_candidate_requires_complete_future_references() -> None:
     assert "candidate.entity_missing" in {issue.code for issue in issues}
 
 
-async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> (
-    None
-):
+async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_change() -> None:
     original = _candidate()
     applied = LogicalSection(
         submodels=(
@@ -175,18 +172,14 @@ async def test_candidate_preserves_omitted_nested_records_and_rejects_locked_cha
         ),
         relationships=(),
     )
-    locked_entity = applied.entities[0].model_copy(
-        update={"logical_entity_is_locked": True}
-    )
+    locked_entity = applied.entities[0].model_copy(update={"logical_entity_is_locked": True})
     applied = applied.model_copy(update={"entities": (locked_entity,)})
     candidate = deepcopy(original)
     entity = _first_record(candidate, "entities")
     entity["logical_entity_definition"] = "Changed by the agent."
     entity["sources"] = []
 
-    issues = (
-        await _validator(applied=applied).validate(cast(JsonValue, candidate))
-    ).issues
+    issues = (await _validator(applied=applied).validate(cast(JsonValue, candidate))).issues
 
     assert "candidate.record_locked" in {issue.code for issue in issues}
 
@@ -223,11 +216,14 @@ async def test_candidate_reports_cross_field_failure_at_the_invalid_record() -> 
     attribute["logical_attribute_is_surrogate_key"] = True
     validator = _validator()
 
-    assert tuple(
-        Draft202012Validator(validator.output_schema()).iter_errors(  # pyright: ignore[reportUnknownMemberType]
-            cast(JsonValue, candidate)
+    assert (
+        tuple(
+            Draft202012Validator(validator.output_schema()).iter_errors(  # pyright: ignore[reportUnknownMemberType]
+                cast(JsonValue, candidate)
+            )
         )
-    ) == ()
+        == ()
+    )
 
     issues = (await validator.validate(cast(JsonValue, candidate))).issues
 

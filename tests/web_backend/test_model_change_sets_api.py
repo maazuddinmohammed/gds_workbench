@@ -9,14 +9,14 @@ from fastapi import FastAPI
 from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_etl_workbench.application.change_sets.model import (
     ModelChangeSetDatasetCount,
     validate_model_stage_changes,
 )
+from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.snapshots.model import ModelChangeSetDataset
+from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from gds_workbench_api.features.model_change_sets.contracts import (
     ApplyModelChangeSetResult,
     CreateModelChangeSetRequest,
@@ -213,9 +213,7 @@ def test_assertion_stage_route_accepts_bounded_structured_records() -> None:
                                 "modeling_assertion_record_type": "identity_rule",
                                 "modeling_assertion_text": "Customer identity is stable.",
                                 "modeling_assertion_details": {"verified": False},
-                                "modeling_assertion_source_location": {
-                                    "section": "Identity"
-                                },
+                                "modeling_assertion_source_location": {"section": "Identity"},
                                 "modeling_assertion_applicable_layers": ["logical"],
                                 "modeling_assertion_confidence": "high",
                                 "modeling_assertion_record_status": "active",
@@ -314,9 +312,7 @@ def test_assertion_stage_rejects_unsafe_content_before_database_access(
         )
 
     assert response.status_code == 422
-    assert response.json()["error"]["message"].startswith(
-        f"Record 1 at {field}:"
-    )
+    assert response.json()["error"]["message"].startswith(f"Record 1 at {field}:")
     assert raw_marker not in response.text
     assert database.write_attempted is False
 
@@ -389,9 +385,7 @@ class CreateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_create_service_authorizes_owned_lock_and_current_model_revision() -> (
-    None
-):
+async def test_create_service_authorizes_owned_lock_and_current_model_revision() -> None:
     database = CreateDatabase()
     service = DatabaseModelChangeSetService(
         database=database,

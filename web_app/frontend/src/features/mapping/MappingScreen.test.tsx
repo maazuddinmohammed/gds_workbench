@@ -1,3 +1,4 @@
+import { withRecordReview } from "../../test/modelRecordReview";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -58,11 +59,11 @@ describe("Mapping journey", () => {
     expect(screen.getByText("silver_nwa.customer")).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Object Mapping 81" }));
 
-    const objectHeading = await screen.findByRole("heading", { name: "silver_nwa.customer" });
+    const objectHeading = await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 });
     expect(objectHeading).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Transformation document" })).toBeVisible();
     expect(screen.getByText("Join strategy")).toBeVisible();
-    expect(screen.getByRole("article", { name: "Joins 1" })).toHaveTextContent("customer_address_raw");
+    expect(screen.getByRole("list", { name: 'Transformation document["join_strategy"]["joins"]' })).toHaveTextContent("customer_address_raw");
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.queryByText(JSON.stringify(mappingObjectDetail.mapping_document))).not.toBeInTheDocument();
 
@@ -73,12 +74,24 @@ describe("Mapping journey", () => {
     await user.click(screen.getByRole("link", { name: "Open Attribute Mapping 91" }));
 
     const attributeHeading = await screen.findByRole("heading", {
-      name: "silver_nwa.customer.customer_name",
+      name: "silver_nwa.customer.customer_name", level: 1,
     });
     expect(attributeHeading).toHaveFocus();
-    expect(screen.getByText("crm_customer.customer_name")).toBeVisible();
+    expect(screen.getAllByText("crm_customer.customer_name")).toHaveLength(2);
     expect(screen.getByText("Normalize whitespace")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Parent Object Mapping" })).toBeVisible();
+    expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
+      "Mapping context", "Transformation document", "Parent Object Mapping", "Provenance",
+    ]);
+    expect(screen.getAllByText("mapping.attribute.standard")).toHaveLength(1);
+    expect(screen.getByText("c".repeat(64))).not.toBeVisible();
+    await user.click(screen.getByText("Connection and template details"));
+    await user.click(screen.getByRole("heading", { name: "Provenance" }));
+    await user.click(screen.getByText("Record details"));
+    expect(screen.getByText("c".repeat(64))).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Parent Object Mapping" }));
+    await user.click(screen.getByRole("link", { name: "Object Mapping 81" }));
+    expect(await screen.findByRole("heading", { name: "silver_nwa.customer", level: 1 })).toHaveFocus();
   });
 
   it("follows opaque Mapping cursors and refreshes the active ledger", async () => {
@@ -178,6 +191,9 @@ describe("Mapping journey", () => {
     expect(executionMode).toHaveValue("tool_assisted");
     expect(screen.getByLabelText("Object Mapping Output Template")).toHaveValue("");
     expect(screen.getByLabelText("Attribute Mapping Output Template")).toHaveValue("");
+    expect(screen.getAllByRole("option", { name: "Use global default" })).toHaveLength(2);
+    expect(screen.getByText("mapping_object_default")).toBeVisible();
+    expect(screen.getByText("mapping_attribute_default")).toBeVisible();
     expect(screen.getByRole("option", {
       name: "Standard Object Mapping · Schema valid",
     })).toBeInTheDocument();
@@ -201,9 +217,9 @@ describe("Mapping journey", () => {
       selected_object_ids: [701],
       requested_batch_id: null,
       agent: {
-        sdk_code: "openai_agents",
-        provider_code: "databricks",
-        model_code: "databricks-primary",
+        sdk_code: "openai_agents_sdk",
+        provider_code: "microsoft_foundry",
+        model_code: "foundry-primary",
         reasoning_effort_code: "medium",
         max_turns: 8,
         validation_retry_count: 1,
@@ -222,6 +238,45 @@ describe("Mapping journey", () => {
         body: JSON.stringify({ execution_mode: "tool_assisted", expected_model_revision: 18 }),
       }),
     );
+  });
+
+  it.each(["network", "server"] as const)("retries an ambiguous Mapping %s create with the original command and key", async (failure) => {
+    const success = mappingFetchStub();
+    let attempts = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST" && ++attempts === 1) {
+        if (failure === "network") throw new TypeError("Synthetic network failure");
+        return jsonResponse({ error: { code: "unavailable" } }, 503);
+      }
+      return success(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Mapping Dependencies" });
+    await user.click(screen.getByRole("button", { name: "Run Mapping" }));
+    await screen.findByRole("heading", { name: "Configure Mapping run" });
+    await user.selectOptions(screen.getByLabelText("Target Object"), "701");
+    await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    const submit = await screen.findByRole("button", { name: "Create and run Mapping" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    await user.click(submit);
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Model")).toBeEnabled();
+    await user.click(submit);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const creates = fetcher.mock.calls.filter(([input, init]) =>
+      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.[1]?.body).toBe(creates[0]?.[1]?.body);
+    const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
+    expect(firstKey).toMatch(/^[a-f0-9-]{36}$/);
+    expect(new Headers(creates[1]?.[1]?.headers).get("Idempotency-Key")).toBe(firstKey);
   });
 
   it("retries a conflicted Mapping start without creating another run", async () => {
@@ -282,6 +337,8 @@ describe("Mapping journey", () => {
       name: "Close Configure Mapping run",
     })).toBeDisabled());
     expect(screen.getByRole("button", { name: "Cancel" })).toBeDisabled();
+    expect(screen.getByLabelText("Object Mapping Output Template")).toBeDisabled();
+    expect(screen.getByLabelText("Attribute Mapping Output Template")).toBeDisabled();
     await user.keyboard("{Escape}");
     expect(screen.getByRole("dialog", { name: "Configure Mapping run" })).toBeVisible();
 
@@ -292,8 +349,13 @@ describe("Mapping journey", () => {
     )).not.toBeInTheDocument());
   });
 
-  it("preserves independent free-form Output Template choices as null", async () => {
-    const fetcher = mappingFetchStub();
+  it.each([
+    { layer: "logical_entity", customObject: false, templatesUnavailable: false },
+    { layer: "dimensional_entity", customObject: false, templatesUnavailable: false },
+    { layer: "logical_entity", customObject: true, templatesUnavailable: false },
+    { layer: "logical_entity", customObject: false, templatesUnavailable: true },
+  ])("uses server-resolved global defaults with independent overrides: $layer, custom=$customObject, unavailable=$templatesUnavailable", async ({ layer, customObject, templatesUnavailable }) => {
+    const fetcher = mappingFetchStub({ templatesUnavailable });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({
       api: createApiClient(fetcher),
@@ -302,16 +364,30 @@ describe("Mapping journey", () => {
 
     await screen.findByRole("table", { name: "Mapping Dependencies" });
     await user.click(screen.getByRole("button", { name: "Run Mapping" }));
-    await screen.findByRole("option", { name: "Standard Attribute Mapping · Schema valid" });
+    const dialog = await screen.findByRole("dialog", { name: "Configure Mapping run" });
+    if (templatesUnavailable) {
+      expect(await within(dialog).findByRole("alert")).toHaveTextContent(
+        "Custom Output Templates could not be loaded. Global defaults remain available.",
+      );
+    } else {
+      await screen.findByRole("option", { name: "Standard Attribute Mapping · Schema valid" });
+    }
+    await user.selectOptions(within(dialog).getByLabelText("Entity type"), layer);
+    await waitFor(() => expect(screen.getByRole("option", { name: "silver_nwa.customer · GDS" })).toBeInTheDocument());
     await user.selectOptions(screen.getByLabelText("Target Object"), "701");
     await user.selectOptions(screen.getByLabelText("Source System"), "2");
+    if (customObject) {
+      await user.selectOptions(screen.getByLabelText("Object Mapping Output Template"), "801");
+    }
+    expect(within(screen.getByLabelText("Attribute Mapping Output Template")).getByRole("option", { name: "Use global default" })).toHaveProperty("selected", true);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Create and run Mapping" })).toBeEnabled());
     await user.click(screen.getByRole("button", { name: "Create and run Mapping" }));
 
     const createCall = fetcher.mock.calls.find(([input, init]) => (
       String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST"
     ));
     expect(JSON.parse(String(createCall?.[1]?.body))).toEqual(expect.objectContaining({
-      mapping_object_output_template_id: null,
+      mapping_object_output_template_id: customObject ? 801 : null,
       mapping_attribute_output_template_id: null,
     }));
   });
@@ -327,6 +403,7 @@ function mappingFetchStub(options: {
   role?: string;
   executeConflictOnce?: boolean;
   executeGate?: Promise<void>;
+  templatesUnavailable?: boolean;
 } = {}) {
   let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input) => {
@@ -380,6 +457,7 @@ function mappingFetchStub(options: {
     }
     if (url === "/api/v1/tenants/7/models/18/mapping/attributes/91") return jsonResponse(mappingAttributeDetail);
     if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_object&active=true&page_size=200") {
+      if (options.templatesUnavailable) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
         tenant_id: 7,
         items: [objectOutputTemplate, {
@@ -393,6 +471,7 @@ function mappingFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/output-templates?target_type=mapping_attribute&active=true&page_size=200") {
+      if (options.templatesUnavailable) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({ tenant_id: 7, items: [attributeOutputTemplate], next_cursor: null });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
@@ -580,15 +659,15 @@ const mappingAttributeDetail = {
 
 const agentCapabilities = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
     execution_profiles: ["tool_assisted"].map((execution_mode) => ({
-      sdk_code: "openai_agents",
+      sdk_code: "openai_agents_sdk",
       execution_mode,
       reasoning_effort_codes: ["medium"],
     })),
@@ -627,3 +706,20 @@ function jsonResponse(value: unknown, status = 200): Response {
     headers: { "content-type": "application/json" },
   });
 }
+
+
+it.each([["Dependencies", "mapping_dependency", 71], ["Object mappings", "mapping_object", 81], ["Attribute mappings", "mapping_attribute", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
+  const { fetcher, commands } = withRecordReview(mappingFetchStub());
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/mapping/models/18"] }),
+  })} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: view }));
+  const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Mapping .* ${recordId}$`) });
+  await user.click(selection);
+  await user.click(screen.getByRole("button", { name: "Lock selected" }));
+  const apply = await screen.findByRole("button", { name: "Apply this change" });
+  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
+  await user.click(apply);
+  expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
+});

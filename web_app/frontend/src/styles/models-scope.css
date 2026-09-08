@@ -93,28 +93,6 @@
   margin-top: 2rem;
 }
 
-.mapping-document-list {
-  display: grid;
-  gap: 0.75rem;
-}
-
-.mapping-document-list > article {
-  padding: 0.85rem;
-  border: 1px solid var(--line);
-  border-left: 3px solid var(--blue);
-  background: var(--soft);
-}
-
-.mapping-document-list > article > small {
-  display: block;
-  margin-bottom: 0.65rem;
-  color: var(--blue-dark);
-  font-size: 0.62rem;
-  font-weight: 800;
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-}
-
 .mapping-value-list {
   display: grid;
   gap: 0.4rem;
@@ -676,7 +654,8 @@ a.model-step:hover {
 }
 
 .scope-ledger table {
-  min-width: 45rem;
+  min-width: 50rem;
+  table-layout: auto;
 }
 
 .scope-ledger th {
@@ -685,33 +664,9 @@ a.model-step:hover {
   top: 0;
 }
 
-.scope-ledger th:first-child,
-.scope-ledger td:first-child {
-  width: 19%;
-}
-
-.scope-ledger th:nth-child(2),
-.scope-ledger td:nth-child(2),
-.scope-ledger th:nth-child(3),
-.scope-ledger td:nth-child(3) {
-  width: 17%;
-}
-
-.scope-ledger th:nth-child(4),
-.scope-ledger td:nth-child(4),
-.scope-ledger th:nth-child(5),
-.scope-ledger td:nth-child(5) {
-  width: 9%;
-}
-
-.scope-ledger th:nth-child(6),
-.scope-ledger td:nth-child(6) {
-  width: 15%;
-}
-
-.scope-ledger th:last-child,
-.scope-ledger td:last-child {
-  width: 14%;
+.scope-ledger :is(th, td) {
+  max-width: 18rem;
+  overflow-wrap: anywhere;
 }
 
 .scope-ledger tbody tr {
@@ -1090,3 +1045,49 @@ a.model-step:hover {
     margin: 0 -0.8rem;
   }
 }
+
+.mapping-normalized-document dt > code { display: block; margin-top: 0.3rem; text-transform: none; letter-spacing: normal; overflow-wrap: anywhere; }
+.mapping-normalized-document > .mapping-document-branch { grid-template-columns: 1fr; }
+.mapping-normalized-document > .mapping-document-branch > dd { border-left: 0; }
+.mapping-json-scalar { display: flex; align-items: baseline; gap: 0.7rem; justify-content: space-between; min-width: 0; }
+.mapping-json-scalar > span { white-space: pre-wrap; overflow-wrap: anywhere; }
+.mapping-json-scalar > small { color: var(--muted); font-size: 0.62rem; flex-shrink: 0; }
+.mapping-value-list > li { padding: 0.25rem 0; }
+
+/* Human lifecycle review preserves readable, scrollable dependency rows. */
+.workflow-table-scroll th:has(> .model-review-checkbox),
+.workflow-table-scroll td:has(> .model-review-checkbox) { width: 3rem; }
+.workflow-table-scroll th:has(> .model-review-checkbox) + th,
+.workflow-table-scroll td:has(> .model-review-checkbox) + td { width: 28%; }
+.model-record-review-dialog { min-width: 0; background: var(--surface); }
+.model-record-review-body { display: grid; gap: 0.75rem; min-width: 0; }
+.model-record-review-body p { margin: 0; }
+.model-record-review-body .table-scroll { max-height: 24rem; }
+.model-record-review-body .table-scroll table { min-width: 36rem; width: 100%; table-layout: fixed; font-size: 0.8rem; }
+.model-record-review-body th, .model-record-review-body td {
+  padding: 0.65rem; text-align: left; vertical-align: top; border-bottom: 1px solid var(--line);
+}
+.model-record-review-body th { position: sticky; top: 0; background: var(--surface); }
+.model-record-review-body .table-scroll td { overflow-wrap: anywhere; white-space: normal; }
+.model-record-review-body th:nth-child(1) { width: 35%; }
+.model-record-review-body th:nth-child(2) { width: 25%; }
+.model-record-review-body td small { display: block; color: var(--muted); }
+
+.scope-add-dialog { width: min(62rem, calc(100vw - 2rem)); }
+.scope-add-filters { display: grid; grid-template-columns: 1fr 1fr 8rem; gap: 0.8rem; align-items: end; }
+.scope-add-filters label { display: grid; gap: 0.35rem; min-width: 0; color: var(--muted); font-size: 0.75rem; }
+.scope-add-filters label:nth-child(4) { grid-column: 1 / 3; }
+.scope-add-filters :is(input, select) { min-width: 0; width: 100%; min-height: 2.6rem; padding: 0.6rem; border: 1px solid var(--line); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); }
+.scope-add-dialog .workflow-table-scroll { margin-block: 1rem; max-height: 45vh; }
+.scope-add-dialog .workflow-table-scroll table { min-width: 32rem; }
+.scope-add-dialog th:first-child { width: 2.75rem; }
+.scope-add-actions { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding-top: 1rem; border-top: 1px solid var(--line); }
+@media (max-width: 42rem) {
+  .scope-add-filters { grid-template-columns: 1fr; }
+  .scope-add-filters label:nth-child(4) { grid-column: auto; }
+}
+
+.scope-ledger :is(th, td) { padding: 0.8rem 0.75rem; overflow-wrap: normal; }
+.scope-ledger th, .scope-ledger .zone-badge { white-space: nowrap; }
+.scope-ledger .scope-object-name strong { min-width: 5rem; max-width: 18rem; overflow-wrap: anywhere; }
+.scope-add-dialog tbody th { font-weight: 600; font-size: inherit; text-transform: none; letter-spacing: normal; color: var(--ink); background: transparent; }

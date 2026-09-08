@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
+import { DetailState } from "../../shared/ui";
 
 import { ApiError } from "../../core/http";
 import type { MappingAttributeDetail, MappingObjectDetail } from "./api";
@@ -71,32 +72,23 @@ function MappingObjectDetailView({
         locked={detail.is_locked}
         headingRef={heading}
       />
-      <section className="detail-section" aria-labelledby="mapping-target-object">
-        <header><h2 id="mapping-target-object">Target Object</h2></header>
+      <section className="detail-section detail-primary" aria-labelledby="mapping-object-context">
+        <header><h2 id="mapping-object-context">Mapping context</h2></header>
+        <div className="endpoint-comparison">
+          <section><small>Modeled source</small><h3>{detail.source.entity_name}</h3><span>{humanize(detail.source.entity_type)}</span></section>
+          <span aria-hidden="true">→</span>
+          <section><small>Target Object</small><h3>{detail.target.object_schema}.{detail.target.object_name}</h3><span>{detail.target.zone_code}</span></section>
+        </div>
+        <details className="support-record-details"><summary>Connection and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Tenant" value={`${detail.target.tenant_name} (${detail.target.tenant_code})`} />
-          <Fact label="System" value={`${detail.target.system_name} (${detail.target.system_code}) · ID ${detail.target.system_id}`} />
-          <Fact label="Connection" value={`${detail.target.connection_code} · ID ${detail.target.connection_id}`} />
-          <Fact label="Zone" value={detail.target.zone_code} />
-          <Fact label="Object ID" value={String(detail.target.object_id)} />
+          <Fact label="Target Tenant" value={`${detail.target.tenant_name} (${detail.target.tenant_code})`} />
+          <Fact label="Target System" value={`${detail.target.system_name} (${detail.target.system_code})`} />
+          <Fact label="Connection" value={detail.target.connection_code} />
+          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code})`} />
           <Fact label="Dependency order" value={String(detail.dependency_order)} />
         </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="mapping-modeled-source">
-        <header><h2 id="mapping-modeled-source">Modeled source</h2></header>
-        <dl className="detail-fact-grid">
-          <Fact label="Entity" value={detail.source.entity_name} />
-          <Fact label="Entity type" value={humanize(detail.source.entity_type)} />
-          <Fact label="Entity ID" value={String(detail.source.entity_id)} />
-          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code}) · ID ${detail.source_system.system_id}`} />
-        </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="mapping-output-template">
-        <header><h2 id="mapping-output-template">Output template</h2></header>
-        <dl className="detail-fact-grid">
-          <Fact label="Output template" value={detail.output_template?.output_template_name ?? "Free form"} />
-          <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
-        </dl>
+        <OutputTemplate template={detail.output_template} />
+        </details>
       </section>
       <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
       <MappingProvenance detail={detail} />
@@ -128,58 +120,40 @@ function MappingAttributeDetailView({
         locked={detail.is_locked}
         headingRef={heading}
       />
-      <section className="detail-section" aria-labelledby="mapping-target-attribute">
-        <header><h2 id="mapping-target-attribute">Target Attribute</h2></header>
+      <section className="detail-section detail-primary" aria-labelledby="mapping-attribute-context">
+        <header><h2 id="mapping-attribute-context">Mapping context</h2></header>
+        <div className="endpoint-comparison">
+          <section><small>Modeled source</small><h3>{detail.source.entity.entity_name}.{detail.source.attribute_name}</h3><span>{humanize(detail.source.entity.entity_type)}</span></section>
+          <span aria-hidden="true">→</span>
+          <section><small>Target Attribute</small><h3>{target.object.object_schema}.{target.object.object_name}.{target.attribute_name}</h3><span>{target.attribute_data_type} · {target.object.zone_code}</span></section>
+        </div>
+        <details className="support-record-details"><summary>Connection and template details</summary>
         <dl className="detail-fact-grid">
-          <Fact label="Tenant" value={`${target.object.tenant_name} (${target.object.tenant_code})`} />
-          <Fact label="System" value={`${target.object.system_name} (${target.object.system_code}) · ID ${target.object.system_id}`} />
-          <Fact label="Connection" value={`${target.object.connection_code} · ID ${target.object.connection_id}`} />
-          <Fact label="Zone" value={target.object.zone_code} />
-          <Fact label="Object ID" value={String(target.object.object_id)} />
-          <Fact label="Attribute ID" value={String(target.attribute_id)} />
-          <Fact label="Data type" value={target.attribute_data_type} />
+          <Fact label="Target Tenant" value={`${target.object.tenant_name} (${target.object.tenant_code})`} />
+          <Fact label="Target System" value={`${target.object.system_name} (${target.object.system_code})`} />
+          <Fact label="Connection" value={target.object.connection_code} />
+          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code})`} />
           <Fact label="Ordinal" value={String(target.attribute_ordinal_position)} />
         </dl>
+        <OutputTemplate template={detail.output_template} />
+        </details>
       </section>
-      <section className="detail-section" aria-labelledby="mapping-source-attribute">
-        <header><h2 id="mapping-source-attribute">Modeled source</h2></header>
+      <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
+      <details className="detail-section detail-disclosure" aria-labelledby="mapping-parent-object">
+        <summary><h2 id="mapping-parent-object">Parent Object Mapping</h2></summary>
         <dl className="detail-fact-grid">
-          <Fact label="Entity" value={detail.source.entity.entity_name} />
-          <Fact label="Entity type" value={humanize(detail.source.entity.entity_type)} />
-          <Fact label="Entity ID" value={String(detail.source.entity.entity_id)} />
-          <Fact label="Attribute" value={detail.source.attribute_name} />
-          <Fact label="Attribute ID" value={String(detail.source.attribute_id)} />
-          <Fact label="Source System" value={`${detail.source_system.system_name} (${detail.source_system.system_code}) · ID ${detail.source_system.system_id}`} />
-        </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="mapping-parent-object">
-        <header><h2 id="mapping-parent-object">Parent Object Mapping</h2></header>
-        <dl className="detail-fact-grid">
-          <Fact label="Object Mapping ID" value={String(detail.parent_object_mapping.mapping_object_id)} />
+          <div><dt>Object Mapping</dt><dd>
+            <Link className="text-action" to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+              params={{ tenantId: String(tenantId), modelId: String(modelId), mappingObjectId: String(detail.parent_object_mapping.mapping_object_id) }}>
+              Object Mapping {detail.parent_object_mapping.mapping_object_id}
+            </Link>
+          </dd></div>
           <Fact label="Dependency order" value={String(detail.parent_object_mapping.dependency_order)} />
           <Fact label="Status" value={humanize(detail.parent_object_mapping.status)} />
           <Fact label="Lock" value={detail.parent_object_mapping.is_locked ? "Locked" : "Open"} />
         </dl>
-      </section>
-      <section className="detail-section" aria-labelledby="mapping-attribute-delivery">
-        <header><h2 id="mapping-attribute-delivery">Delivery contract</h2></header>
-        <dl className="detail-fact-grid">
-          <Fact label="Output template" value={detail.output_template?.output_template_name ?? "Free form"} />
-          <Fact label="Template ID" value={detail.output_template ? String(detail.output_template.output_template_id) : "Free form"} />
-          <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
-          <Fact label="Template target" value={detail.output_template ? humanize(detail.output_template.output_template_target_type) : "Free form"} />
-          <Fact label="Template state" value={detail.output_template ? detail.output_template.is_active ? "Active" : "Inactive" : "Free form"} />
-        </dl>
-      </section>
-      <MappingDocumentView title="Transformation document" document={detail.mapping_document} />
-      <section className="detail-section" aria-labelledby="mapping-attribute-provenance">
-        <header><h2 id="mapping-attribute-provenance">Provenance</h2></header>
-        <dl className="detail-fact-grid">
-          <Fact label="Workflow" value={detail.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${detail.workflow_run_id}`} />
-          <Fact label="Created" value={formatDateTime(detail.created_at)} />
-          <Fact label="Updated" value={formatDateTime(detail.updated_at)} />
-        </dl>
-      </section>
+      </details>
+      <MappingProvenance detail={detail} />
     </article>
   );
 }
@@ -226,29 +200,54 @@ function DetailHeader({
   );
 }
 
-function MappingProvenance({ detail }: { detail: MappingObjectDetail }) {
+function OutputTemplate({ template }: { template: MappingObjectDetail["output_template"] }) {
   return (
-    <section className="detail-section" aria-labelledby="mapping-provenance">
-      <header><h2 id="mapping-provenance">Provenance</h2></header>
+    <dl className="detail-fact-grid">
+      <Fact label="Output template" value={template?.output_template_name ?? "Free form"} />
+      {template ? <>
+        <Fact label="Template code" value={template.output_template_code} />
+        <Fact label="Template target" value={humanize(template.output_template_target_type)} />
+        <Fact label="Template state" value={template.is_active ? "Active" : "Inactive"} />
+      </> : null}
+    </dl>
+  );
+}
+
+function MappingProvenance({ detail }: { detail: MappingObjectDetail | MappingAttributeDetail }) {
+  const target = "mapping_attribute_id" in detail ? detail.target.object : detail.target;
+  const source = "mapping_attribute_id" in detail ? detail.source.entity : detail.source;
+  return (
+    <details className="detail-section detail-disclosure" aria-labelledby="mapping-provenance">
+      <summary><h2 id="mapping-provenance">Provenance</h2></summary>
       <dl className="detail-fact-grid">
         <Fact label="Workflow" value={detail.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${detail.workflow_run_id}`} />
-        <Fact label="Template ID" value={detail.output_template ? String(detail.output_template.output_template_id) : "Free form"} />
-        <Fact label="Template code" value={detail.output_template?.output_template_code ?? "Free form"} />
-        <Fact label="Template target" value={detail.output_template ? humanize(detail.output_template.output_template_target_type) : "Free form"} />
-        <Fact label="Template state" value={detail.output_template ? detail.output_template.is_active ? "Active" : "Inactive" : "Free form"} />
         <Fact label="Created" value={formatDateTime(detail.created_at)} />
         <Fact label="Updated" value={formatDateTime(detail.updated_at)} />
       </dl>
-    </section>
+      <details className="support-record-details">
+        <summary>Record details</summary>
+        <dl className="detail-fact-grid">
+          <Fact label="Target Object ID" value={String(target.object_id)} />
+          <Fact label="Target System ID" value={String(target.system_id)} />
+          <Fact label="Connection ID" value={String(target.connection_id)} />
+          <Fact label="Source Entity ID" value={String(source.entity_id)} />
+          <Fact label="Source System ID" value={String(detail.source_system.system_id)} />
+          {"mapping_attribute_id" in detail ? <>
+            <Fact label="Target Attribute ID" value={String(detail.target.attribute_id)} />
+            <Fact label="Source Attribute ID" value={String(detail.source.attribute_id)} />
+          </> : null}
+          {detail.output_template ? <>
+            <Fact label="Template ID" value={String(detail.output_template.output_template_id)} />
+            <div className="digest-fact"><dt>Template schema digest</dt><dd><code>{detail.output_template.output_template_schema_digest}</code></dd></div>
+          </> : null}
+        </dl>
+      </details>
+    </details>
   );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {
   return <div><dt>{label}</dt><dd>{value}</dd></div>;
-}
-
-function DetailState({ label, error = false }: { label: string; error?: boolean }) {
-  return <div className={`surface-state detail-state${error ? " is-error" : ""}`} {...(error ? { role: "alert" } : { "aria-busy": true })}>{label}</div>;
 }
 
 function detailError(error: Error, kind: "Object" | "Attribute"): string {

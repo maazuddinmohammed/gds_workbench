@@ -269,6 +269,7 @@ class ValidationSystemCandidateValidator:
             try:
                 groups.append(
                     ValidationGroupRecord(
+                        is_locked=False,
                         tenant_code=self._context.tenant_code,
                         system_code=self._context.system_code,
                         validation_group_name=group.validation_group_name,
@@ -311,6 +312,7 @@ class ValidationSystemCandidateValidator:
                     comparison_value = check.validation_comparison_value
                     checks.append(
                         ValidationCheckRecord(
+                            is_locked=False,
                             tenant_code=self._context.tenant_code,
                             system_code=self._context.system_code,
                             validation_group_name=group.validation_group_name,
@@ -397,6 +399,8 @@ def reconcile_validation_candidates(
             raise InvalidRequestError("The Validation candidate context is ambiguous.")
 
         for key, desired in desired_groups.items():
+            if key in applied_groups and applied_groups[key].is_locked:
+                continue
             if desired != applied_groups.get(key) or key not in {
                 (
                     normalize_model_key_value(system.tenant_code),
@@ -407,14 +411,16 @@ def reconcile_validation_candidates(
             }:
                 changed_groups.append(desired)
         for key, applied in applied_groups.items():
-            if key not in desired_groups and applied.is_active:
+            if key not in desired_groups and applied.is_active and not applied.is_locked:
                 changed_groups.append(applied.model_copy(update={"is_active": False}))
 
         for key, desired in desired_checks.items():
+            if key in applied_checks and applied_checks[key].is_locked:
+                continue
             if desired != applied_checks.get(key):
                 changed_checks.append(desired)
         for key, applied in applied_checks.items():
-            if key not in desired_checks and applied.is_active:
+            if key not in desired_checks and applied.is_active and not applied.is_locked:
                 changed_checks.append(applied.model_copy(update={"is_active": False}))
 
     changes: list[StageModelChange] = []

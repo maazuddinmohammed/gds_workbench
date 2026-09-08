@@ -54,9 +54,14 @@ from gds_workbench_api.features.metadata import (
     MetadataDatabase,
     PostgresMetadataRepository,
 )
+from gds_workbench_api.features.metadata.review import DatabaseMetadataReviewService
 from gds_workbench_api.features.metadata_change_sets import (
     DatabaseMetadataChangeSetService,
     MetadataChangeSetDatabase,
+)
+from gds_workbench_api.features.metadata_enrichment.read_service import (
+    DatabaseMetadataEnrichmentReadService,
+    MetadataEnrichmentReadDatabase,
 )
 from gds_workbench_api.features.model_change_sets.service import (
     DatabaseModelChangeSetService,
@@ -66,6 +71,7 @@ from gds_workbench_api.features.model_input_scope import (
     DatabaseModelInputScopeService,
     ModelInputScopeReadDatabase,
 )
+from gds_workbench_api.features.model_targets.service import DatabaseModelTargetsService
 from gds_workbench_api.features.models import (
     DatabaseModelCommandService,
     DatabaseModelService,
@@ -139,6 +145,7 @@ class RuntimeDatabase(
     TenantLockDatabase,
     MetadataDatabase,
     MetadataChangeSetDatabase,
+    MetadataEnrichmentReadDatabase,
     OutputTemplateDatabase,
     PromptDatabase,
     SqlGenerationGuideDatabase,
@@ -272,6 +279,7 @@ def create_runtime_app(
             authorizer=authorizer,
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
+        metadata_review_service=DatabaseMetadataReviewService(database=runtime_database),
         metadata_service=DatabaseMetadataService(
             database=runtime_database,
             repository=PostgresMetadataRepository(),
@@ -321,6 +329,9 @@ def create_runtime_app(
             cursor_signing_key=runtime_settings.cursor_signing_key,
         ),
         conceptual_workflow_service=workflow_services.conceptual,
+        model_targets_service=DatabaseModelTargetsService(
+            database=runtime_database, authorizer=authorizer
+        ),
         logical_service=DatabaseLogicalService(
             database=runtime_database,
             authorizer=authorizer,
@@ -346,6 +357,11 @@ def create_runtime_app(
         ),
         code_generation_workflow_service=workflow_services.code_generation,
         validation_read_service=DatabaseValidationReadService(
+            database=runtime_database,
+            authorizer=authorizer,
+        ),
+        metadata_enrichment_workflow_service=workflow_services.metadata_enrichment,
+        metadata_enrichment_read_service=DatabaseMetadataEnrichmentReadService(
             database=runtime_database,
             authorizer=authorizer,
         ),

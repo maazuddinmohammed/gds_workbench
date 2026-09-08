@@ -15,6 +15,7 @@ describe("Model Analysis", () => {
     const ledger = await screen.findByRole("table", { name: "Analysis findings" });
     expect(within(ledger).getByText("customer_raw")).toBeVisible();
     expect(within(ledger).getByText("invoice_raw")).toBeVisible();
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
 
     await user.selectOptions(screen.getByLabelText("Object endpoint"), "501");
     await user.selectOptions(screen.getByLabelText("Validation state"), "unvalidated");
@@ -28,13 +29,134 @@ describe("Model Analysis", () => {
 
     await screen.findByRole("table", { name: "Analysis findings" });
     await user.click(screen.getByRole("checkbox", { name: "Select finding 81" }));
-    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
-    expect(screen.getByText("Review updates are not available from the web API yet.")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("1 finding updated.");
+    await waitFor(() => {
+      expect(screen.getByRole("checkbox", { name: "Select finding 81" })).not.toBeChecked();
+      expect(within(screen.getByRole("table", { name: "Analysis findings" })).getByText("Locked")).toBeVisible();
+    });
+    const reviewCall = fetcher.mock.calls.find(([input]) => String(input).endsWith("/change-sets/review"));
+    expect(JSON.parse(String(reviewCall?.[1]?.body))).toEqual({
+      dataset: "analysis_result", record_ids: [81], action: "lock", expected_model_revision: 18,
+    });
+    expect(new Headers(reviewCall?.[1]?.headers).get("Idempotency-Key"))
+      .toMatch(/^[0-9a-f-]{36}$/);
 
     await user.click(screen.getByRole("link", { name: "Open finding 81" }));
     expect(await screen.findByRole("heading", { name: /customer_raw.*invoice_raw/i })).toBeVisible();
     expect(screen.getByText("Matched customer identifier semantics.")).toBeVisible();
     expect(screen.getByText("2 missing targets")).toBeVisible();
+    expect(screen.getByText("Locked")).toBeVisible();
+  });
+
+  it.each([null, "supported", "inconclusive", "unsupported"] as const)("separates inference, record state and validation result (%s)", async (result) => {
+    const user = userEvent.setup();
+    const fetcher = analysisFetchStub({ detailResult: result });
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/analysis/81"] }),
+    })} />);
+    const heading = await screen.findByRole("heading", { name: /customer_raw.*invoice_raw/i });
+    expect(heading).toHaveFocus();
+    expect(screen.getByText("Active")).toBeVisible();
+    expect(screen.getByText("Open")).toBeVisible();
+    expect(screen.getByText("Connection: crm-prod · Schema: bronze")).not.toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Relationship endpoints" }));
+    expect(screen.getByText("Connection: crm-prod · Schema: bronze")).toBeVisible();
+    expect(screen.getByText("Connection: erp-prod · Schema: bronze")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Relationship inference" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Recorded validation evidence" })).toBeVisible();
+    if (result === null) {
+      expect(screen.getByText("Not validated")).toBeVisible();
+      expect(screen.getByText("No validation evidence is recorded for this finding.")).toBeVisible();
+      expect(screen.queryByRole("table", { name: "Recorded endpoint counts" })).not.toBeInTheDocument();
+    } else {
+      expect(screen.getAllByText(result)).toHaveLength(2);
+      expect(within(screen.getByRole("table", { name: "Recorded endpoint counts" })).getAllByRole("row")).toHaveLength(3);
+      expect(screen.getByText("Duplicate target keys").nextElementSibling).toHaveTextContent("0");
+      const digest = screen.getByText("a".repeat(64));
+      expect(digest).not.toBeVisible();
+      await user.click(screen.getByRole("heading", { name: "Provenance" }));
+      const summary = screen.getByText("Validation policy digest");
+      await user.click(summary);
+      expect(digest).toBeVisible();
+    }
+  });
+
+  it("unlocks, deactivates, and reactivates findings using each refreshed Model revision", async () => {
+    const fetcher = analysisFetchStub({ findingLocked: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+    await user.click(screen.getByRole("checkbox", { name: "Show inactive" }));
+    await user.click(screen.getByRole("button", { name: "Apply finding filters" }));
+
+    for (const [label, expectedStatus] of [
+      ["Unlock selected", "Open"], ["Make inactive", "Inactive"], ["Make active", "Active"],
+    ] as const) {
+      await user.click(await screen.findByRole("checkbox", { name: "Select finding 81" }));
+      await user.click(screen.getByRole("button", { name: label }));
+      await waitFor(() => {
+        expect(screen.getByRole("checkbox", { name: "Select finding 81" })).not.toBeChecked();
+        expect(within(screen.getByRole("table", { name: "Analysis findings" })).getByText(expectedStatus)).toBeVisible();
+      });
+    }
+    const commands = fetcher.mock.calls
+      .filter(([input]) => String(input).endsWith("/change-sets/review"))
+      .map(([, init]) => JSON.parse(String(init?.body)));
+    expect(commands).toEqual([
+      { dataset: "analysis_result", record_ids: [81], action: "unlock", expected_model_revision: 18 },
+      { dataset: "analysis_result", record_ids: [81], action: "deactivate", expected_model_revision: 19 },
+      { dataset: "analysis_result", record_ids: [81], action: "reactivate", expected_model_revision: 20 },
+    ]);
+  });
+
+  it.each(["network", "server"] as const)("retries an uncertain %s response with the original key and command", async (reviewFailureOnce) => {
+    const fetcher = analysisFetchStub({ reviewFailureOnce });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Select finding 81" }));
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+
+    expect(await screen.findByRole("alert")).toHaveTextContent("The review result could not be confirmed.");
+    expect(screen.getByRole("checkbox", { name: "Select finding 81" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Make inactive" })).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Retry review" }));
+    expect(await screen.findByRole("status")).toHaveTextContent("1 finding updated.");
+    const calls = fetcher.mock.calls.filter(([input]) => String(input).endsWith("/change-sets/review"));
+    expect(calls).toHaveLength(2);
+    expect(calls[1]?.[1]?.body).toBe(calls[0]?.[1]?.body);
+    expect(new Headers(calls[1]?.[1]?.headers).get("Idempotency-Key"))
+      .toBe(new Headers(calls[0]?.[1]?.headers).get("Idempotency-Key"));
+    expect(within(await screen.findByRole("table", { name: "Analysis findings" })).getByText("Locked")).toBeVisible();
+  });
+
+  it("keeps selection and gives a safe next action after a definitive conflict", async () => {
+    const fetcher = analysisFetchStub({ reviewFailureOnce: "conflict" });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(fetcher)} />);
+    await user.click(await screen.findByRole("checkbox", { name: "Select finding 81" }));
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+    expect(await screen.findByRole("alert")).toHaveTextContent("Refresh, check your selection, then retry.");
+    expect(screen.getByRole("checkbox", { name: "Select finding 81" })).toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+    await screen.findByRole("status");
+    const calls = fetcher.mock.calls.filter(([input]) => String(input).endsWith("/change-sets/review"));
+    expect(calls).toHaveLength(2);
+    expect(new Headers(calls[1]?.[1]?.headers).get("Idempotency-Key"))
+      .not.toBe(new Headers(calls[0]?.[1]?.headers).get("Idempotency-Key"));
+  });
+
+  it("requires selection and an owned Tenant Lock for review", async () => {
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ hasTenantLock: false }))} />);
+    await screen.findByRole("table", { name: "Analysis findings" });
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Select finding 81" }));
+    expect(screen.getByRole("button", { name: "Unlock selected" })).toBeDisabled();
+    expect(screen.getByText("Tenant Lock required for review updates.")).toBeVisible();
   });
 
   it("shows Analysis run history and starts explicit inference and validation runs", async () => {
@@ -51,10 +173,13 @@ describe("Model Analysis", () => {
 
     await user.click(screen.getByRole("button", { name: "Run inference" }));
     const inferenceDialog = await screen.findByRole("dialog", { name: "Configure Analysis inference" });
+    for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
+      expect(within(inferenceDialog).queryByLabelText(label)).not.toBeInTheDocument();
+    }
     const executionMode = within(inferenceDialog).getByLabelText("Execution mode");
     expect(within(executionMode).getAllByRole("option").map((option) => (
       (option as HTMLOptionElement).value
-    ))).toEqual(["", "one_shot", "tool_assisted", "detailed_coverage"]);
+    ))).toEqual(["", "one_shot", "tool_assisted"]);
     expect(executionMode).toHaveValue("tool_assisted");
     expect(within(inferenceDialog).queryByRole("option", {
       name: "One-shot-only deployment",
@@ -78,7 +203,7 @@ describe("Model Analysis", () => {
       workflow_execution_mode: "tool_assisted",
       selected_object_ids: [501, 502],
       requested_batch_id: null,
-      agent: expect.objectContaining({ model_code: "databricks-primary" }),
+      agent: expect.objectContaining({ model_code: "foundry-primary" }),
     }));
     expect(fetcher).toHaveBeenCalledWith(
       "/api/v1/tenants/7/models/18/analysis/inference-runs/1051/execute",
@@ -123,19 +248,19 @@ describe("Model Analysis", () => {
     const reasoning = within(dialog).getByLabelText("Reasoning effort");
 
     expect(executionMode).toHaveValue("tool_assisted");
-    expect(model).toHaveValue("databricks-primary");
+    expect(model).toHaveValue("foundry-primary");
     expect(reasoning).toHaveValue("medium");
 
     await user.selectOptions(executionMode, "one_shot");
     await waitFor(() => expect(within(model).getByRole("option", {
       name: "One-shot-only deployment",
     })).toBeInTheDocument());
-    await user.selectOptions(model, "databricks-one-shot");
+    await user.selectOptions(model, "foundry-one-shot");
     await waitFor(() => expect(reasoning).toHaveValue("low"));
 
-    await user.selectOptions(executionMode, "detailed_coverage");
+    await user.selectOptions(executionMode, "tool_assisted");
     await waitFor(() => {
-      expect(model).toHaveValue("databricks-primary");
+      expect(model).toHaveValue("foundry-primary");
       expect(reasoning).toHaveValue("medium");
       expect(within(model).queryByRole("option", {
         name: "One-shot-only deployment",
@@ -186,6 +311,7 @@ describe("Model Analysis", () => {
     expect(await screen.findByRole("alert")).toHaveTextContent(
       "The Model changed while Analysis results were loading.",
     );
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
     mismatchRender.unmount();
 
     render(<WorkbenchApp router={analysisRouter(analysisFetchStub({ error: true }))} />);
@@ -209,26 +335,62 @@ function analysisFetchStub(options: {
   error?: boolean;
   inferenceStartConflictsOnce?: boolean;
   modelRevision?: number;
+  hasTenantLock?: boolean;
+  findingLocked?: boolean;
+  detailResult?: "supported" | "inconclusive" | "unsupported" | null;
+  reviewFailureOnce?: "network" | "server" | "conflict";
 } = {}) {
   let inferenceStartAttempts = 0;
+  let reviewAttempts = 0;
+  let revision = 18;
+  const finding = { ...analysisFindingPayload, is_locked: options.findingLocked ?? false };
+  const reviewedKeys = new Set<string>();
   return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
-    if (url === "/api/v1/tenants/7/home") return jsonResponse(tenantHomePayload);
-    if (url === "/api/v1/tenants/7/models/18") return jsonResponse(modelPayload);
+    if (url === "/api/v1/tenants/7/home") return jsonResponse({
+      ...tenantHomePayload,
+      lock: { ...tenantHomePayload.lock, owned_by_current_principal: options.hasTenantLock ?? true },
+    });
+    if (url === "/api/v1/tenants/7/models/18") return jsonResponse({ ...modelPayload, model_revision: revision });
     if (url === "/api/v1/tenants/7/models/18/input-scope?zone=bronze&page_size=200") {
-      return jsonResponse(scopePayload);
+      return jsonResponse({ ...scopePayload, model_revision: revision });
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/analysis?") && init?.method !== "POST") {
       if (options.error) return jsonResponse({ error: { code: "unavailable" } }, 503);
       return jsonResponse({
         model_id: 18,
-        model_revision: options.modelRevision ?? 18,
-        items: options.empty ? [] : [analysisFindingPayload],
+        model_revision: options.modelRevision ?? revision,
+        items: options.empty || (finding.status === "inactive" && !url.includes("show_inactive=true")) ? [] : [finding],
         next_cursor: null,
       });
     }
     if (url === "/api/v1/tenants/7/models/18/analysis/81") {
-      return jsonResponse(analysisDetailPayload);
+      return jsonResponse({ ...analysisDetailPayload, is_locked: finding.is_locked, status: finding.status,
+        ...(options.detailResult !== undefined ? {
+          validation_result: options.detailResult,
+          validation_state: options.detailResult === null ? "unvalidated" : "validated",
+          evidence: options.detailResult === null ? null : { ...analysisDetailPayload.evidence, result: options.detailResult },
+        } : {}),
+      });
+    }
+    if (url === "/api/v1/tenants/7/models/18/change-sets/review") {
+      reviewAttempts += 1;
+      if (options.reviewFailureOnce === "conflict" && reviewAttempts === 1) {
+        return jsonResponse({ error: { code: "model_revision_conflict" } }, 409);
+      }
+      const key = new Headers(init?.headers).get("Idempotency-Key") ?? "";
+      const command = JSON.parse(String(init?.body));
+      if (!reviewedKeys.has(key)) {
+        if (command.action === "lock" || command.action === "unlock") finding.is_locked = command.action === "lock";
+        else finding.status = command.action === "deactivate" ? "inactive" : "active";
+        revision += 1;
+        reviewedKeys.add(key);
+      }
+      if (reviewAttempts === 1 && options.reviewFailureOnce === "network") throw new TypeError("Synthetic network failure");
+      if (reviewAttempts === 1 && options.reviewFailureOnce === "server") return jsonResponse({ error: { code: "unavailable" } }, 503);
+      return jsonResponse({
+        model_id: 18, model_change_set_id: "11111111-1111-4111-8111-111111111111", model_revision: revision, action_count: 1,
+      });
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/runs?workflow=analysis")) {
       return jsonResponse({ items: analysisRunsPayload, next_cursor: null });
@@ -480,27 +642,27 @@ const analysisRunsPayload = [
 
 const capabilitiesPayload = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents SDK", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents SDK", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [
     {
-      code: "databricks-primary",
+      code: "foundry-primary",
       name: "GPT-5.6",
-      provider_code: "databricks",
-      deployment_name: "databricks-primary",
-      execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
-        sdk_code: "openai_agents",
+      provider_code: "microsoft_foundry",
+      deployment_name: "foundry-primary",
+      execution_profiles: ["one_shot", "tool_assisted"].map((execution_mode) => ({
+        sdk_code: "openai_agents_sdk",
         execution_mode,
         reasoning_effort_codes: ["medium"],
       })),
     },
     {
-      code: "databricks-one-shot",
+      code: "foundry-one-shot",
       name: "One-shot-only deployment",
-      provider_code: "databricks",
-      deployment_name: "databricks-detailed",
+      provider_code: "microsoft_foundry",
+      deployment_name: "foundry-one-shot",
       execution_profiles: [{
-        sdk_code: "openai_agents",
+        sdk_code: "openai_agents_sdk",
         execution_mode: "one_shot",
         reasoning_effort_codes: ["low"],
       }],

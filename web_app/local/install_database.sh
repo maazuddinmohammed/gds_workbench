@@ -128,11 +128,16 @@ sed \
 psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
     -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_identity_seed"
 
-sed \
-    -e "s/__REPLACE_WITH_ENTRA_TENANT_ID__/${GDS_LOCAL_ENTRA_TENANT_ID}/g" \
-    -e "s/__REPLACE_WITH_ENTRA_OBJECT_ID__/${GDS_LOCAL_PRINCIPAL_OBJECT_ID}/g" \
-    -e "s/__REPLACE_WITH_PRINCIPAL_TYPE__/user/g" \
-    "$database_root/seed/05_global_prompt_defaults.template.sql" \
-    > "$local_prompt_seed"
-psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
-    -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_prompt_seed"
+for global_seed_file in \
+    05_global_prompt_defaults.template.sql \
+    07_global_mapping_output_templates.template.sql
+do
+    sed \
+        -e "s/__REPLACE_WITH_ENTRA_TENANT_ID__/${GDS_LOCAL_ENTRA_TENANT_ID}/g" \
+        -e "s/__REPLACE_WITH_ENTRA_OBJECT_ID__/${GDS_LOCAL_PRINCIPAL_OBJECT_ID}/g" \
+        -e "s/__REPLACE_WITH_PRINCIPAL_TYPE__/user/g" \
+        "$database_root/seed/$global_seed_file" \
+        > "$local_prompt_seed"
+    psql --username "$POSTGRES_USER" --dbname "$POSTGRES_DB" \
+        -X -v ON_ERROR_STOP=1 --single-transaction -f "$local_prompt_seed"
+done

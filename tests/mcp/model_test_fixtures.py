@@ -263,6 +263,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
         ],
         "generated_code": [
             {
+                "generated_code_is_locked": False,
                 "modeled_entity_type": "logical_entity",
                 "modeled_entity_name": "Order",
                 "artifact_name": "Order.sql",
@@ -273,6 +274,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
         ],
         "generated_code_source_system": [
             {
+                "generated_code_source_system_is_locked": False,
                 "modeled_entity_type": "logical_entity",
                 "modeled_entity_name": "Order",
                 "artifact_name": "Order.sql",
@@ -282,6 +284,7 @@ def complete_model_graph() -> dict[ModelChangeSetDataset, list[dict[str, object]
         ],
         "validation_group": [
             {
+                "is_locked": False,
                 "tenant_code": "TENANT-A",
                 "system_code": "ERP",
                 "validation_group_name": "OrderValidation",
@@ -497,9 +500,7 @@ def dimensional_attribute(
         "dimensional_attribute_definition": f"{name} attribute.",
         "dimensional_attribute_data_type": "bigint",
         "dimensional_attribute_is_nullable": False,
-        "dimensional_attribute_ordinal_position": (
-            1 if name in {"SalesKey", "CustomerKey"} else 2
-        ),
+        "dimensional_attribute_ordinal_position": (1 if name in {"SalesKey", "CustomerKey"} else 2),
         "dimensional_attribute_role": "key",
         "dimensional_attribute_key_role": key_role,
         "dimensional_attribute_is_grain_component": True,
@@ -595,6 +596,7 @@ def mapping_attribute(
 
 def validation_check() -> dict[str, object]:
     return {
+        "is_locked": False,
         "tenant_code": "TENANT-A",
         "system_code": "ERP",
         "validation_group_name": "OrderValidation",
@@ -714,21 +716,17 @@ def complete_physical_scope() -> PhysicalModelCatalog:
         model_tenant_code="TENANT-A",
         active_system_codes=frozenset({"erp", "gds"}),
         objects=input_objects | target_objects,
-        attributes=input_attributes
-        | logical_target_attributes
-        | dimensional_target_attributes,
+        attributes=input_attributes | logical_target_attributes | dimensional_target_attributes,
         model_input_objects=input_objects,
         model_input_attributes=input_attributes,
         dimensional_source_objects=frozenset(),
         dimensional_source_attributes=frozenset(),
         logical_mapping_target_objects=frozenset(
-            tuple(part.casefold() for part in key)
-            for key in (SILVER_ORDER, SILVER_CUSTOMER)
+            tuple(part.casefold() for part in key) for key in (SILVER_ORDER, SILVER_CUSTOMER)
         ),
         logical_mapping_target_attributes=logical_target_attributes,
         dimensional_mapping_target_objects=frozenset(
-            tuple(part.casefold() for part in key)
-            for key in (GOLD_SALES_FACT, GOLD_CUSTOMER)
+            tuple(part.casefold() for part in key) for key in (GOLD_SALES_FACT, GOLD_CUSTOMER)
         ),
         dimensional_mapping_target_attributes=dimensional_target_attributes,
     )

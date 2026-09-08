@@ -72,6 +72,7 @@
   const OBJECT_KEY = [
     "tenant_code", "system_code", "connection_code", "object_schema", "object_name",
   ];
+  const ATTRIBUTE_KEY = [...OBJECT_KEY, "attribute_name"];
 
   function key(fields, record) {
     return core.stableStringify(
@@ -91,24 +92,38 @@
 
   function validateLocks(datasets) {
     const baseline = recordsByType(datasets, "baseline");
-    const locked = new Set(
+    const lockedObjects = new Set(
       (baseline.get("object") || [])
         .filter((record) => record.is_locked === true)
         .map((record) => key(OBJECT_KEY, record)),
+    );
+    const lockedAttributes = new Set(
+      (baseline.get("attribute") || [])
+        .filter((record) => record.is_locked === true)
+        .map((record) => key(ATTRIBUTE_KEY, record)),
     );
     const issues = [];
     for (const [dataset, value] of datasets) {
       const type = value.definition.record_type || value.definition.name;
       if (!["object", "attribute"].includes(type)) continue;
       (value.pending || []).forEach((record, index) => {
-        if (!locked.has(key(OBJECT_KEY, record))) return;
-        issues.push({
-          code: "object_locked",
-          dataset,
-          record: index + 1,
-          field: "object_name",
-          message: "Object is locked; neither it nor its Attributes can be changed.",
-        });
+        if (lockedObjects.has(key(OBJECT_KEY, record))) {
+          issues.push({
+            code: "object_locked",
+            dataset,
+            record: index + 1,
+            field: "object_name",
+            message: "Object is locked; neither it nor its Attributes can be changed.",
+          });
+        } else if (type === "attribute" && lockedAttributes.has(key(ATTRIBUTE_KEY, record))) {
+          issues.push({
+            code: "attribute_locked",
+            dataset,
+            record: index + 1,
+            field: "attribute_name",
+            message: "Attribute is locked and cannot be changed.",
+          });
+        }
       });
     }
     return issues;

@@ -2,107 +2,41 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import TYPE_CHECKING, LiteralString, cast
+from typing import TYPE_CHECKING, Any, LiteralString, cast
+
+from psycopg import sql
 
 from tests.mcp.database_test_support import require_row
-from psycopg import sql
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
-SEED_FILE = (
-    Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
-)
+SEED_FILE = Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
 
 EXPECTED_STAGES = {
+    ("metadata_enrichment_object", "one_shot", "candidate_authoring", 10, True),
+    ("metadata_enrichment_attribute", "one_shot", "candidate_authoring", 20, True),
     ("profiling", None, "profile_attributes", 10, False),
     ("analysis", None, "relationship_validation", 10, False),
     ("analysis", "one_shot", "relationship_inference", 10, True),
     ("analysis", "tool_assisted", "relationship_inference", 10, True),
-    ("analysis", "detailed_coverage", "candidate_finder", 10, True),
-    ("analysis", "detailed_coverage", "relationship_resolver", 20, True),
-    ("analysis", "detailed_coverage", "whole_slice_reconciler", 30, True),
-    ("analysis", "detailed_coverage", "analysis_reviewer", 40, True),
     ("conceptual", None, "backend_validation", 100, False),
     ("conceptual", "one_shot", "candidate_authoring", 10, True),
     ("conceptual", "tool_assisted", "candidate_authoring", 10, True),
-    ("conceptual", "detailed_coverage", "object_contribution", 10, True),
-    ("conceptual", "detailed_coverage", "entity_consolidation", 20, True),
-    ("conceptual", "detailed_coverage", "entity_attribute_detail", 30, True),
-    (
-        "conceptual",
-        "detailed_coverage",
-        "relationship_candidate_derivation",
-        40,
-        False,
-    ),
-    (
-        "conceptual",
-        "detailed_coverage",
-        "relationship_cardinality_refinement",
-        50,
-        True,
-    ),
-    (
-        "conceptual",
-        "detailed_coverage",
-        "whole_model_reconciliation",
-        60,
-        True,
-    ),
     ("logical", None, "policy_projection", 50, False),
     ("logical", None, "backend_validation", 100, False),
     ("logical", "one_shot", "candidate_authoring", 10, True),
     ("logical", "tool_assisted", "candidate_authoring", 10, True),
-    ("logical", "detailed_coverage", "topology_builder", 10, True),
-    ("logical", "detailed_coverage", "topology_reconciler", 20, True),
-    ("logical", "detailed_coverage", "entity_detail_builder", 30, True),
-    (
-        "logical",
-        "detailed_coverage",
-        "whole_model_reconciliation",
-        40,
-        True,
-    ),
-    ("logical", "detailed_coverage", "validator_worker", 60, True),
-    ("logical", "detailed_coverage", "validator_lead", 70, True),
     ("dimensional", None, "gold_policy_projection", 50, False),
     ("dimensional", None, "foreign_key_projection", 80, False),
     ("dimensional", None, "backend_validation", 100, False),
     ("dimensional", "one_shot", "candidate_authoring", 10, True),
     ("dimensional", "tool_assisted", "candidate_authoring", 10, True),
-    ("dimensional", "detailed_coverage", "topology_builder", 10, True),
-    (
-        "dimensional",
-        "detailed_coverage",
-        "topology_reconciler",
-        20,
-        True,
-    ),
-    (
-        "dimensional",
-        "detailed_coverage",
-        "entity_detail_builder",
-        30,
-        True,
-    ),
-    (
-        "dimensional",
-        "detailed_coverage",
-        "whole_model_reconciliation",
-        40,
-        True,
-    ),
-    ("dimensional", "detailed_coverage", "validator_worker", 60, True),
-    ("dimensional", "detailed_coverage", "validator_lead", 70, True),
     ("mapping", None, "dependency_validation", 80, False),
     ("mapping", None, "backend_validation", 100, False),
     ("mapping", "one_shot", "mapping_authoring", 10, True),
     ("mapping", "tool_assisted", "mapping_authoring", 10, True),
-    ("mapping", "detailed_coverage", "header_mapper", 10, True),
-    ("mapping", "detailed_coverage", "attribute_mapper", 20, True),
-    ("mapping", "detailed_coverage", "target_validator", 30, True),
     ("code_generation", None, "sql_generation", 10, True),
     ("code_generation", None, "sql_validation", 20, False),
     ("validation", None, "validation_generation", 10, True),
@@ -138,168 +72,129 @@ VariableIdentity = tuple[
     str,
 ]
 
-NAMING_STAGES: set[StageIdentity] = {
-    ("conceptual", "one_shot", "candidate_authoring"),
-    ("conceptual", "tool_assisted", "candidate_authoring"),
-    ("conceptual", "detailed_coverage", "object_contribution"),
-    ("conceptual", "detailed_coverage", "entity_consolidation"),
-    ("conceptual", "detailed_coverage", "entity_attribute_detail"),
-    (
-        "conceptual",
-        "detailed_coverage",
-        "relationship_cardinality_refinement",
-    ),
-    ("conceptual", "detailed_coverage", "whole_model_reconciliation"),
-    ("logical", "one_shot", "candidate_authoring"),
-    ("logical", "tool_assisted", "candidate_authoring"),
-    ("logical", "detailed_coverage", "topology_builder"),
-    ("logical", "detailed_coverage", "topology_reconciler"),
-    ("logical", "detailed_coverage", "entity_detail_builder"),
-    ("logical", "detailed_coverage", "whole_model_reconciliation"),
-    ("dimensional", "one_shot", "candidate_authoring"),
-    ("dimensional", "tool_assisted", "candidate_authoring"),
-    ("dimensional", "detailed_coverage", "topology_builder"),
-    ("dimensional", "detailed_coverage", "topology_reconciler"),
-    ("dimensional", "detailed_coverage", "entity_detail_builder"),
-    ("dimensional", "detailed_coverage", "whole_model_reconciliation"),
+FOUNDATIONAL_NAMES = {
+    "source_context",
+    "gds_context",
+    "object_context",
+    "object_attribute_context",
+    "ingestion_mapping",
+    "object_relationship_context",
+    "modeling_assertions",
 }
-
-REPAIR_STAGES: set[StageIdentity] = {
-    ("analysis", "one_shot", "relationship_inference"),
-    ("analysis", "tool_assisted", "relationship_inference"),
-    ("analysis", "detailed_coverage", "whole_slice_reconciler"),
-    ("conceptual", "one_shot", "candidate_authoring"),
-    ("conceptual", "tool_assisted", "candidate_authoring"),
-    ("conceptual", "detailed_coverage", "whole_model_reconciliation"),
-    ("logical", "one_shot", "candidate_authoring"),
-    ("logical", "tool_assisted", "candidate_authoring"),
-    ("logical", "detailed_coverage", "whole_model_reconciliation"),
-    ("dimensional", "one_shot", "candidate_authoring"),
-    ("dimensional", "tool_assisted", "candidate_authoring"),
-    ("dimensional", "detailed_coverage", "whole_model_reconciliation"),
-    ("mapping", "one_shot", "mapping_authoring"),
-    ("mapping", "tool_assisted", "mapping_authoring"),
-    ("mapping", "detailed_coverage", "header_mapper"),
-    ("mapping", "detailed_coverage", "attribute_mapper"),
-    ("code_generation", None, "sql_generation"),
-    ("validation", None, "validation_generation"),
+CONCEPTUAL_NAMES = {
+    "conceptual_object_list",
+    "conceptual_objects",
+    "conceptual_relationship_list",
+    "conceptual_relationships",
 }
-
-MAPPING_OBJECT_TEMPLATE_STAGES: set[StageIdentity] = {
-    ("mapping", "one_shot", "mapping_authoring"),
-    ("mapping", "tool_assisted", "mapping_authoring"),
-    ("mapping", "detailed_coverage", "header_mapper"),
+LOGICAL_NAMES = {
+    "logical_submodel_list",
+    "logical_submodels",
+    "logical_entity_list",
+    "logical_entities",
+    "logical_attribute_list",
+    "logical_attributes",
+    "logical_relationship_list",
+    "logical_relationships",
 }
-
-MAPPING_ATTRIBUTE_TEMPLATE_STAGES: set[StageIdentity] = {
-    ("mapping", "one_shot", "mapping_authoring"),
-    ("mapping", "tool_assisted", "mapping_authoring"),
-    ("mapping", "detailed_coverage", "attribute_mapper"),
+DIMENSIONAL_NAMES = {name.replace("logical", "dimensional") for name in LOGICAL_NAMES}
+EXPECTED_NAMES = {
+    "metadata_enrichment_object": FOUNDATIONAL_NAMES
+    - {"object_relationship_context", "modeling_assertions"},
+    "metadata_enrichment_attribute": FOUNDATIONAL_NAMES
+    - {"object_relationship_context", "modeling_assertions"},
+    "analysis": FOUNDATIONAL_NAMES,
+    "conceptual": FOUNDATIONAL_NAMES | CONCEPTUAL_NAMES,
+    "logical": FOUNDATIONAL_NAMES
+    | CONCEPTUAL_NAMES
+    | LOGICAL_NAMES
+    | {"naming_instructions", "audit_columns"},
+    "dimensional": LOGICAL_NAMES
+    | DIMENSIONAL_NAMES
+    | {
+        "gds_context",
+        "object_context",
+        "object_attribute_context",
+        "modeling_assertions",
+        "logical_bindings",
+        "naming_instructions",
+        "audit_columns",
+        "technical_columns",
+    },
+    "mapping": {
+        "mapping_route",
+        "operation",
+        "target_metadata",
+        "source_evidence",
+        "existing_mapping",
+        "authoring_policy",
+        "readiness",
+        "source_system",
+        "object_output_template",
+        "attribute_output_template",
+    },
+    "code_generation": {
+        "target_metadata",
+        "source_metadata",
+        "source_systems",
+        "object_transformations",
+        "attribute_transformations",
+        "target_ref",
+        "sql_generation_guide",
+    },
+    "validation": {
+        "system_ref",
+        "system_scope",
+        "mapping_evidence",
+        "current_code",
+        "applied_groups",
+        "applied_checks",
+    },
 }
 
 
 def _expected_variables() -> set[VariableIdentity]:
+    from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+        list_prompt_input_contracts,
+    )
+    from jsonschema import Draft202012Validator
+
     variables: set[VariableIdentity] = set()
     for workflow, mode, stage, _, is_agentic in EXPECTED_STAGES:
         if not is_agentic:
             continue
-        stage_identity = (workflow, mode, stage)
-        if stage_identity == ("validation", None, "validation_generation"):
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "validation_context",
-                    "workflow.validation.common.validation_context",
-                    "json",
-                    True,
-                    10,
-                    '{"system_ref":"system_1"}',
-                )
+        contracts = list_prompt_input_contracts(
+            model_workflow=workflow,
+            workflow_execution_mode=mode,
+            stage_code=stage,
+        )
+        assert {contract.name for contract in contracts} == EXPECTED_NAMES[workflow]
+        for index, contract in enumerate(contracts, 1):
+            assert (
+                contract.resolver_key
+                == f"workflow.{workflow}.common.{stage}.inputs.{contract.name}"
             )
-        else:
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "stage_context",
-                    f"workflow.{workflow}.{mode or 'common'}.{stage}.context",
-                    "json",
-                    True,
-                    10,
-                    '{"items":[],"schema_version":"1.0"}',
-                )
+            Draft202012Validator.check_schema(contract.value_schema)
+            assert cast(Any, Draft202012Validator(contract.value_schema)).is_valid(contract.example)
+            # The catalog supplies the complete example; SQL reference rows retain
+            # a bounded preview and use null when that preview exceeds the seed cap.
+            encoded_example = json.dumps(
+                contract.example, ensure_ascii=False, separators=(",", ":")
             )
-        if stage_identity in NAMING_STAGES:
+            stored_example = (
+                None if len(encoded_example.encode("utf-8")) > 3500 else contract.example
+            )
             variables.add(
                 (
                     workflow,
                     mode,
                     stage,
-                    "naming_instructions",
-                    "model.naming_instructions",
-                    "text",
+                    contract.name,
+                    contract.resolver_key,
+                    contract.data_type,
                     False,
-                    20,
-                    '""',
-                )
-            )
-        if stage_identity in REPAIR_STAGES:
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "validation_failures",
-                    "workflow.validation_failures",
-                    "json",
-                    False,
-                    30,
-                    "[]",
-                )
-            )
-        if stage_identity in MAPPING_OBJECT_TEMPLATE_STAGES:
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "mapping_object_output_template",
-                    "workflow.mapping.object_output_template",
-                    "json",
-                    False,
-                    40,
-                    '{"fields":[]}',
-                )
-            )
-        if stage_identity in MAPPING_ATTRIBUTE_TEMPLATE_STAGES:
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "mapping_attribute_output_template",
-                    "workflow.mapping.attribute_output_template",
-                    "json",
-                    False,
-                    50,
-                    '{"fields":[]}',
-                )
-            )
-        if stage_identity == ("code_generation", None, "sql_generation"):
-            variables.add(
-                (
-                    workflow,
-                    mode,
-                    stage,
-                    "sql_generation_guide",
-                    "workflow.code_generation.sql_generation_guide",
-                    "text",
-                    True,
-                    40,
-                    '""',
+                    index * 10,
+                    _example_identity(stored_example),
                 )
             )
     return variables
@@ -368,6 +263,11 @@ def test_application_reference_seed_allowlists_exact_prompt_variables(
         ).fetchall()
 
     assert all(row["workflow_stage_variable_description"].strip() for row in rows)
+    assert sum(stage[4] for stage in EXPECTED_STAGES) == 14
+    assert all(not row["workflow_stage_variable_is_required"] for row in rows)
+    assert not {"stage_context", "read_only_dependencies", "available_tools"} & {
+        row["workflow_stage_variable_name"] for row in rows
+    }
     assert {
         (
             row["model_workflow"],

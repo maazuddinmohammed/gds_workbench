@@ -3,7 +3,6 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.workflows.authoring.lifecycle import AgentWorkflowEvent
 from gds_workbench_api.features.workflows.authoring.progress import (
     AgentWorkflowProgress,
@@ -23,9 +22,7 @@ def _principal() -> RequestPrincipal:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
 
     async def append_event(
         self,
@@ -52,9 +49,7 @@ def test_intermediate_progress_points_are_bounded_and_exclude_completion() -> No
 
 
 @pytest.mark.asyncio
-async def test_progress_allocates_contiguous_events_and_reserves_the_final_event() -> (
-    None
-):
+async def test_progress_allocates_contiguous_events_and_reserves_the_final_event() -> None:
     lifecycle = _Lifecycle()
     progress = AgentWorkflowProgress(
         lifecycle=lifecycle,
@@ -68,7 +63,7 @@ async def test_progress_allocates_contiguous_events_and_reserves_the_final_event
         attempt=1,
         stage="conceptual.object_contribution",
         status="running",
-        message="Detailed coverage started for 80 selected Objects.",
+        message="Candidate authoring started for 80 selected Objects.",
         current=0,
         total=80,
         finding_count=0,

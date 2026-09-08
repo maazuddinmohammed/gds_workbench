@@ -148,6 +148,7 @@ def write_both_snapshots(session: Path) -> None:
     ("target", "areas"),
     (
         ("metadata-authoring", ["metadata"]),
+        ("metadata-enrichment", ["metadata", "model"]),
         ("model-input-scope", ["metadata", "model"]),
         ("logical-build", ["metadata", "model"]),
         ("silver-registration", ["metadata", "model"]),
@@ -178,7 +179,10 @@ def test_readiness_uses_only_target_snapshot_requirements(
     assert "records" not in output
 
 
-def test_readiness_reports_missing_snapshot_without_loading_rows(tmp_path: Path) -> None:
+@pytest.mark.parametrize("target", ["logical-build", "metadata-enrichment"])
+def test_readiness_reports_missing_snapshot_without_loading_rows(
+    tmp_path: Path, target: str
+) -> None:
     session = initialized_session(tmp_path)
     write_snapshot(
         session,
@@ -188,7 +192,7 @@ def test_readiness_reports_missing_snapshot_without_loading_rows(tmp_path: Path)
     )
 
     result = run_helper(
-        "readiness", "--session", str(session), "--target", "logical-build"
+        "readiness", "--session", str(session), "--target", target
     )
 
     assert result.returncode == 0, result.stderr
@@ -200,7 +204,8 @@ def test_readiness_reports_missing_snapshot_without_loading_rows(tmp_path: Path)
     assert output["counts"] == {}
 
 
-def test_readiness_reports_stale_snapshot(tmp_path: Path) -> None:
+@pytest.mark.parametrize("target", ["logical-build", "metadata-enrichment"])
+def test_readiness_reports_stale_snapshot(tmp_path: Path, target: str) -> None:
     session = initialized_session(tmp_path)
     write_both_snapshots(session)
     state_path = session / "session.json"

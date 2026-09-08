@@ -1,14 +1,13 @@
 from __future__ import annotations
 
 import pytest
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     LogicalAttributeRecord,
     LogicalEntityRecord,
 )
-from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.snapshots.model import LogicalSection
-
 from gds_workbench_api.features.logical.policy import project_logical_audit_policy
 
 
@@ -104,9 +103,7 @@ def test_projection_adds_policy_columns_to_new_and_applied_active_entities() -> 
 
     assert len(attributes) == 5
     audit = [item for item in attributes if item["logical_attribute_is_audit_column"]]
-    assert {
-        (item["logical_entity_name"], item["logical_attribute_name"]) for item in audit
-    } == {
+    assert {(item["logical_entity_name"], item["logical_attribute_name"]) for item in audit} == {
         ("Account", "Created At"),
         ("Account", "Updated At"),
         ("Customer", "Created At"),

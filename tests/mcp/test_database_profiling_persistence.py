@@ -121,9 +121,7 @@ def _profile(
         "object_id": object_id,
         "attribute_id": attribute_id,
         "source_context_digest": (
-            digest_character * 64
-            if source_context_digest is None
-            else source_context_digest
+            digest_character * 64 if source_context_digest is None else source_context_digest
         ),
         "row_count": row_count,
         "non_null_count": non_null_count,
@@ -217,11 +215,7 @@ def _persist_parameters(
         context.entra_tenant_id,
         context.entra_object_id,
         workflow_run_id,
-        (
-            context.model_revision
-            if expected_model_revision is None
-            else expected_model_revision
-        ),
+        (context.model_revision if expected_model_revision is None else expected_model_revision),
         Jsonb(profiles),
     )
 
@@ -392,10 +386,7 @@ def test_running_profiling_results_replace_selected_profiles_and_complete(
     ]
     assert stored[0]["agent_run_id"] is None
     assert stored[0]["workflow_run_id"] == workflow_run_id
-    assert (
-        stored[0]["source_context_digest"]
-        == source_context_digests[selected_attributes[0][1]]
-    )
+    assert stored[0]["source_context_digest"] == source_context_digests[selected_attributes[0][1]]
     assert stored[0]["row_count"] == 10
     assert stored[1]["workflow_run_id"] == workflow_run_id
     assert stored[2]["agent_run_id"] == "manual-outside"
@@ -892,9 +883,7 @@ def test_profiling_persistence_requires_owned_lock_and_current_revision(
                     expected_model_revision=context.model_revision + 1,
                 ),
             ).fetchone()
-        null_revision_parameters = list(
-            _persist_parameters(context, workflow_run_id, profiles)
-        )
+        null_revision_parameters = list(_persist_parameters(context, workflow_run_id, profiles))
         null_revision_parameters[3] = None
         with (
             pytest.raises(RaiseException, match="stale_model_revision"),

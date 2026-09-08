@@ -1,9 +1,9 @@
-"""MCP annotations shared by Change Set tool adapters."""
+"""Closed-world MCP annotations shared by governed tool adapters."""
 
 from mcp.types import ToolAnnotations
 
 
-def change_set_annotations(
+def closed_world_annotations(
     *,
     read_only: bool,
     idempotent: bool,
@@ -17,4 +17,4 @@ def change_set_annotations(
     )
 
 
-__all__ = ["change_set_annotations"]
+__all__ = ["closed_world_annotations"]

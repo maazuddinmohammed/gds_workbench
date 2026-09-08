@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
@@ -18,6 +18,7 @@ import {
   type PromptsApi,
 } from "./api";
 import { humanize, modeLabel, shortDigest } from "./PromptsLedger";
+import { trapPromptDialogFocus, usePromptDialogFocus } from "./PromptTemplateDialogs";
 
 export function ModelPromptSettings({
   api,
@@ -280,7 +281,7 @@ function PromptAssignmentDialog({
       version.promptTemplateVersionId === selectedVersionId
     )) === true;
 
-  useEffect(() => closeButton.current?.focus(), []);
+  usePromptDialogFocus(closeButton);
 
   return (
     <div className="dialog-scrim prompt-dialog-scrim" role="presentation">
@@ -290,6 +291,7 @@ function PromptAssignmentDialog({
         aria-modal="true"
         aria-labelledby="prompt-assignment-heading"
         onKeyDown={(event) => {
+          trapPromptDialogFocus(event);
           if (event.key === "Escape") onClose();
         }}
       >

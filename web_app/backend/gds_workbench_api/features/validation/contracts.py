@@ -63,6 +63,7 @@ class ValidationValidationCheck(_Contract):
     ]
     validation_comparison_value: JsonValue | None = Field(default=None, repr=False)
     is_active: bool
+    is_locked: bool
 
 
 class ValidationValidationGroup(_Contract):
@@ -75,6 +76,7 @@ class ValidationValidationGroup(_Contract):
     code_context_is_current: bool
     validation_group_is_current: bool
     is_active: bool
+    is_locked: bool
     checks: tuple[ValidationValidationCheck, ...] = Field(max_length=50_000)
 
 

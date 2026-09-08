@@ -48,7 +48,7 @@ PHYSICAL_NATURAL_KEYS = {
 }
 
 
-def test_object_is_the_only_core_object_attribute_lock_source(
+def test_objects_and_attributes_have_independent_locks(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -63,7 +63,10 @@ def test_object_is_the_only_core_object_attribute_lock_source(
             """
         ).fetchall()
 
-    assert lock_columns == [{"table_name": "object", "column_name": "is_locked"}]
+    assert lock_columns == [
+        {"table_name": "attribute", "column_name": "is_locked"},
+        {"table_name": "object", "column_name": "is_locked"},
+    ]
 
 
 def test_snapshot_natural_keys_still_have_database_unique_indexes(

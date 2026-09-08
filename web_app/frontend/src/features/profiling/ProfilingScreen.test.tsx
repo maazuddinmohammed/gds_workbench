@@ -5,6 +5,7 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import type { WorkflowTokenUsage } from "../workflows/api";
 
 describe("Model Profiling", () => {
   it("shows normalized result filters and opens complete Object evidence on its own page", async () => {
@@ -48,46 +49,72 @@ describe("Model Profiling", () => {
     expect(screen.getByText("This response contains 2 of 12 Attribute profiles.")).toBeVisible();
 
     const context = screen.getByRole("region", { name: "Profiled Object context" });
-    expectFact(context, "Object ID", "501");
-    expectFact(context, "Model ID", "18");
     expectFact(context, "Model revision", "r18");
     expectFact(context, "Object", "bronze_crm.customer_raw");
     expectFact(context, "Source Tenant", "Global Reference Data (GRDM)");
-    expectFact(context, "Source Tenant ID", "8");
     expectFact(context, "System", "Customer Relationship Management (CRM)");
-    expectFact(context, "System ID", "31");
     expectFact(context, "Connection", "CRM_DBR");
-    expectFact(context, "Connection ID", "21");
     expectFact(context, "Profiles returned", "2");
     expectFact(context, "Last profiled", "Aug 24");
 
     const profileTable = screen.getByRole("table", { name: "Attribute profiles" });
     expect(screen.getByRole("region", { name: "Scrollable Attribute profile metrics" }))
       .toHaveAttribute("tabindex", "0");
-    expect(within(profileTable).getByRole("columnheader", { name: "Counts" }))
-      .toHaveAttribute("colspan", "5");
-    expect(within(profileTable).getByRole("columnheader", { name: "Percentages" }))
-      .toHaveAttribute("colspan", "5");
-    expect(within(profileTable).getByRole("columnheader", { name: "Provenance" }))
-      .toHaveAttribute("colspan", "5");
-    expect(within(profileTable).getByRole("columnheader", { name: "Source context digest" }))
-      .toBeVisible();
+    expect(within(profileTable).getAllByRole("columnheader")).toHaveLength(9);
+    expect(within(profileTable).getByRole("columnheader", { name: "Catalog type" })).toBeVisible();
+    expect(within(profileTable).queryByText("Source context digest")).not.toBeInTheDocument();
 
     const customerProfile = profileRow(profileTable, "customer_id");
-    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(21);
-    expect(customerProfile).toHaveTextContent("601");
+    expect(within(customerProfile).getAllByRole("cell")).toHaveLength(8);
     expect(customerProfile).toHaveTextContent("bigint");
     expect(customerProfile).toHaveTextContent("10");
     expect(customerProfile).toHaveTextContent("80%");
-    expect(customerProfile).toHaveTextContent("Run 1048");
-    expect(customerProfile).toHaveTextContent("Not recorded");
-    expect(customerProfile).toHaveTextContent("a".repeat(64));
+    expect(customerProfile).toHaveTextContent("0%");
+    expect(customerProfile).not.toHaveTextContent("a".repeat(64));
+
+    const review = within(customerProfile).getByRole("button", { name: "Review customer_id" });
+    review.focus();
+    await user.keyboard("{Enter}");
+    const inspector = screen.getByRole("region", { name: "customer_id" });
+    expect(within(inspector).getByRole("heading", { name: "customer_id" })).toHaveFocus();
+    expect(review).toHaveAttribute("aria-expanded", "true");
+    expect(review).toHaveAttribute("aria-controls", inspector.id);
+    for (const [label, value] of [
+      ["Catalog type", "bigint"], ["Ordinal position", "1"], ["Attribute ID", "601"],
+      ["Rows", "10"], ["Non-null rows", "8"], ["Null rows", "2"], ["Blank rows", "0"],
+      ["Distinct values", "8"], ["Minimum length", "1"], ["Maximum length", "8"], ["Average length", "4.2"],
+      ["Populated", "80%"], ["Distinct", "100%"], ["Duplicates", "0%"], ["Null", "20%"], ["Blank", "0%"],
+      ["Workflow run", "Run 1048"], ["Agent run", "Not recorded"],
+      ["Created", "Aug 24"], ["Updated", "Aug 24"], ["Source context digest", "a".repeat(64)],
+    ] as const) expectFact(inspector, label, value);
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "customer_id" })).not.toBeInTheDocument();
+    expect(review).toHaveFocus();
+    expect(review).toHaveAttribute("aria-expanded", "false");
 
     const statusProfile = profileRow(profileTable, "status");
     expect(statusProfile).toHaveTextContent("string");
     expect(statusProfile).toHaveTextContent("100%");
-    expect(statusProfile).toHaveTextContent("Not recorded");
     expect(statusProfile).toHaveTextContent("—");
+    const reviewStatus = within(statusProfile).getByRole("button", { name: "Review status" });
+    reviewStatus.focus();
+    await user.keyboard(" ");
+    const statusInspector = screen.getByRole("region", { name: "status" });
+    expect(within(statusInspector).getByRole("heading", { name: "status" })).toHaveFocus();
+    expectFact(statusInspector, "Null rows", "0");
+    expectFact(statusInspector, "Blank rows", "Not recorded");
+    expectFact(statusInspector, "Average length", "Not recorded");
+    expectFact(statusInspector, "Workflow run", "Not recorded");
+    expectFact(statusInspector, "Source context digest", "b".repeat(64));
+    await user.click(within(statusInspector).getByRole("button", { name: "Close Attribute profile" }));
+    expect(reviewStatus).toHaveFocus();
+    expect(fetcher.mock.calls.filter(([input]) => String(input).endsWith("/profiling/501"))).toHaveLength(1);
+
+    const recordDetails = screen.getByText("Object record details").closest("details")!;
+    await user.click(within(recordDetails).getByText("Object record details"));
+    for (const [label, value] of [
+      ["Object ID", "501"], ["Model ID", "18"], ["Source Tenant ID", "8"], ["System ID", "31"], ["Connection ID", "21"],
+    ] as const) expectFact(recordDetails, label, value);
 
     await user.click(screen.getByRole("link", { name: "Back to Profiling" }));
     expect(await screen.findByRole("table", { name: "Profiling results" })).toBeVisible();
@@ -144,6 +171,8 @@ describe("Model Profiling", () => {
     expect(within(drawer).getByRole("heading", { name: "PR-1048" })).toBeVisible();
     expect(within(drawer).getByText("Prepare selected Objects")).toBeVisible();
     expect(within(drawer).getByText("8 of 8")).toBeVisible();
+    expect(within(drawer).getByRole("region", { name: "Token usage" }))
+      .toHaveTextContent("Token usage was not recorded for this run.");
     expect(within(drawer).getByRole("progressbar", {
       name: "Prepare progress: 8 of 8",
     })).toHaveValue(8);
@@ -151,6 +180,35 @@ describe("Model Profiling", () => {
     await user.click(within(drawer).getByRole("button", { name: "Close profiling run details" }));
     expect(screen.queryByRole("complementary", { name: "Profiling run details" })).not.toBeInTheDocument();
     expect(screen.getByRole("button", { name: "Show details for profiling run PR-1048" })).toHaveFocus();
+  });
+
+  it("refreshes token usage through the selected Profiling Run read", async () => {
+    const options: { tokenUsage?: WorkflowTokenUsage } = {};
+    const fetcher = profilingFetchStub(options);
+    const router = profilingRouter(fetcher);
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={router} />);
+    await screen.findByRole("table", { name: "Profiling results" });
+    await user.click(screen.getByRole("button", { name: "Runs" }));
+    await user.click(await screen.findByRole("button", { name: "Show details for profiling run PR-1048" }));
+    const usage = await screen.findByRole("region", { name: "Token usage" });
+    expect(usage).toHaveTextContent("Unavailable");
+    const runReads = () => fetcher.mock.calls.filter(([url]) => String(url) === "/api/v1/tenants/7/models/18/runs/1048");
+    expect(runReads()).toHaveLength(1);
+
+    options.tokenUsage = { status: "complete", request_count: 0, reported_request_count: 0,
+      pending_request_count: 0, missing_usage_request_count: 0,
+      input_tokens: 0, output_tokens: 0, total_tokens: 0,
+      cached_input_tokens: 0, cache_write_input_tokens: 0, reasoning_output_tokens: 0,
+      cost_estimate: { status: "estimated", currency: "USD", amount: "0",
+        priced_request_count: 0, unpriced_request_count: 0, pricing_bases: [],
+        unpriced_reasons: { pricing_not_configured: 0, outside_pricing_window: 0,
+          context_limit_exceeded: 0, missing_usage: 0, unsupported_token_types: 0 } },
+      history_incomplete: false };
+    await user.click(screen.getByRole("button", { name: "Refresh" }));
+    await waitFor(() => expect(usage).toHaveTextContent("No model requests were made."));
+    expect(within(usage).getByText("USD 0")).toBeVisible();
+    expect(runReads()).toHaveLength(2);
   });
 
   it("creates a queued run, then requires a separate explicit execute action", async () => {
@@ -246,6 +304,7 @@ function profilingFetchStub(options: {
   emptyResults?: boolean;
   resultsError?: boolean;
   executeConflictOnce?: boolean;
+  tokenUsage?: WorkflowTokenUsage;
 } = {}): ReturnType<typeof vi.fn<typeof fetch>> {
   let runCreated = false;
   let runExecuted = false;
@@ -319,6 +378,15 @@ function profilingFetchStub(options: {
         validation_retry_count: null,
         failure_code: null,
         failure_message: null,
+        token_usage: options.tokenUsage ?? { status: "unavailable", request_count: 0,
+          reported_request_count: 0, pending_request_count: 0, missing_usage_request_count: 0,
+          input_tokens: null, output_tokens: null, total_tokens: null,
+          cached_input_tokens: null, cache_write_input_tokens: null, reasoning_output_tokens: null,
+          cost_estimate: { status: "unavailable", currency: "USD", amount: null,
+            priced_request_count: 0, unpriced_request_count: 0, pricing_bases: [],
+            unpriced_reasons: { pricing_not_configured: 0, outside_pricing_window: 0,
+              context_limit_exceeded: 0, missing_usage: 0, unsupported_token_types: 0 } },
+          history_incomplete: false },
       });
     }
     if (url.match(/^\/api\/v1\/tenants\/7\/models\/18\/runs\/(1048|1049)\/events\?/)) {

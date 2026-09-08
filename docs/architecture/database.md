@@ -45,10 +45,9 @@ cross-Model reference.
 
 ## Foundational and Model invariants
 
-Reference codes use trimmed, case-insensitive uniqueness. The deterministic CSV
-fixtures under `tests/database/fixtures/reference/` have the same shape as the
-external Excel loader and pass through the production table constraints.
-Runtime DDL is not coupled to that loader.
+Reference codes use trimmed, case-insensitive uniqueness. Database tests under
+`tests/mcp/` exercise the production constraints in disposable PostgreSQL.
+Runtime DDL is not coupled to the external Excel loader.
 
 Connection stores optional test initial and incremental batch metadata. A
 nullable Object batch-attribute name must still be nonblank when present.
@@ -330,13 +329,13 @@ PostgreSQL deployment must use PostgreSQL 18 and preserve these grants.
 Run:
 
 ```bash
-mcp_server/.venv/bin/pytest tests/mcp/test_database_authorization.py -q
+PYTHONPATH=mcp_server mcp_server/.venv/bin/python -m pytest -c mcp_server/pyproject.toml tests/mcp/test_database_authorization.py --tb=no --show-capture=no -q
 ```
 
 The fixture rejects existing DSN/libpq connection environment, creates random
 database, owner, runtime login, passwords, port, container name, and sentinel,
 uses the pinned PostgreSQL 18 image, runs the preflight, installs files `01`
-through `12`, runs the verifier, and exercises the actual runtime role and
+through `19`, runs `20_verify_install.sql`, and exercises the actual runtime role and
 pool. Cleanup validates
 the per-run container label and stops only that container. There is no drop,
 truncate, reset, external-DSN, or populated-database cleanup path.

@@ -5,7 +5,6 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.validation.context import (
     PostgresValidationContextRepository,
@@ -15,6 +14,25 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     FrozenAgentStage,
 )
 from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+
+
+@pytest.fixture(autouse=True)
+def frozen_validation_graph(monkeypatch: pytest.MonkeyPatch) -> None:
+    from tests.mcp.model_test_fixtures import (
+        complete_physical_scope,
+        empty_model_snapshot,
+    )
+
+    async def load_graph(*_: object, tenant_id: int, plan: AgentRunPlan):
+        assert tenant_id == 7 and plan.model_id == 18
+        return empty_model_snapshot().model_copy(
+            update={"model_id": 18, "model_revision": 7}
+        ), complete_physical_scope()
+
+    monkeypatch.setattr(
+        "gds_workbench_api.features.validation.context.load_frozen_model_graph",
+        load_graph,
+    )
 
 
 def _plan() -> AgentRunPlan:
@@ -55,9 +73,7 @@ def _plan() -> AgentRunPlan:
     )
 
 
-def _target_row(
-    *, generated: bool = True, source_system: str = "erp"
-) -> dict[str, Any]:
+def _target_row(*, generated: bool = True, source_system: str = "erp") -> dict[str, Any]:
     content = "SELECT * FROM catalog.silver.customer"
     row: dict[str, Any] = {
         "object_id": 501,
@@ -94,6 +110,7 @@ def _target_row(
                 "artifact_type": "sql_file",
                 "generated_code_content": content,
                 "generated_code_status": "active",
+                "generated_code_is_locked": False,
                 "source_system_codes": [source_system],
             }
         ]
@@ -102,6 +119,8 @@ def _target_row(
 
 def _applied_row() -> dict[str, Any]:
     return {
+        "validation_group_is_locked": False,
+        "validation_check_is_locked": False,
         "tenant_code": "acme",
         "system_code": "erp",
         "validation_group_name": "reconciliation",
@@ -180,9 +199,7 @@ class ContextTransaction:
 
 
 @pytest.mark.asyncio
-async def test_repository_builds_exact_system_mapping_code_and_applied_validation_context() -> (
-    None
-):
+async def test_repository_builds_exact_system_mapping_code_and_applied_validation_context() -> None:
     context = await PostgresValidationContextRepository().load(
         ContextTransaction(),
         tenant_id=7,
@@ -194,9 +211,7 @@ async def test_repository_builds_exact_system_mapping_code_and_applied_validatio
     assert system.system_ref == "system_1"
     assert system.system_code == "erp"
     assert system.current_group_names == ()
-    assert [group.validation_group_name for group in system.applied_groups] == [
-        "reconciliation"
-    ]
+    assert [group.validation_group_name for group in system.applied_groups] == ["reconciliation"]
     assert [check.validation_check_name for check in system.applied_checks] == [
         "row_count_nonnegative"
     ]
@@ -217,9 +232,7 @@ async def test_repository_requires_complete_mapping_for_every_frozen_system() ->
 
 
 @pytest.mark.asyncio
-async def test_repository_fails_closed_when_live_system_code_drifted_from_snapshot() -> (
-    None
-):
+async def test_repository_fails_closed_when_live_system_code_drifted_from_snapshot() -> None:
     with pytest.raises(InvalidRequestError, match="complete active applied Mapping"):
         await PostgresValidationContextRepository().load(
             ContextTransaction(target_rows=[_target_row(source_system="erp_renamed")]),
@@ -243,9 +256,7 @@ async def test_repository_omits_absent_code_from_authoring_context() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repository_rejects_oversize_aggregate_before_full_context_fetch() -> (
-    None
-):
+async def test_repository_rejects_oversize_aggregate_before_full_context_fetch() -> None:
     transaction = ContextTransaction(aggregate_context_bytes=64 * 1024 * 1024 + 1)
 
     with pytest.raises(InvalidRequestError, match="bounded size"):

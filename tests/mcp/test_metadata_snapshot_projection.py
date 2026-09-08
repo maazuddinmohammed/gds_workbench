@@ -31,10 +31,25 @@ def test_projection_resolves_ids_and_every_projected_row_matches_its_model() -> 
     assert process["object_schema"] == "dbo"
 
 
+def test_projection_preserves_inferred_type_and_attribute_lock() -> None:
+    raw = _raw_rows()
+    for definition in DATASETS:
+        if definition.record_type == "attribute":
+            for attribute in raw[definition.name]:
+                attribute["attribute_inferred_data_type"] = "decimal(18,2)"
+                attribute["is_locked"] = True
+    projected = project_id_free_rows(raw)
+
+    for definition in DATASETS:
+        if definition.record_type == "attribute":
+            encoded = encode_dataset(definition, projected[definition.name])
+            for attribute in _decode(encoded.rows_jsonl):
+                assert attribute["attribute_inferred_data_type"] == "decimal(18,2)"
+                assert attribute["is_locked"] is True
+
+
 def _decode(content: bytes) -> list[dict[str, Any]]:
-    return [
-        cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()
-    ]
+    return [cast(dict[str, Any], json.loads(line)) for line in content.decode().splitlines()]
 
 
 def _raw_rows() -> dict[str, list[dict[str, object]]]:
@@ -74,9 +89,7 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
                 "zone_description": None,
                 "is_active": True,
             }
-            for zone_id, zone_code in enumerate(
-                ("source", "bronze", "silver", "gold"), start=20
-            )
+            for zone_id, zone_code in enumerate(("source", "bronze", "silver", "gold"), start=20)
         ],
         "chunk_type": [
             {
@@ -128,6 +141,8 @@ def _raw_rows() -> dict[str, list[dict[str, object]]]:
         "attribute_ordinal_position": 1,
         "attribute_description": None,
         "attribute_data_type": "bigint",
+        "attribute_inferred_data_type": None,
+        "is_locked": False,
         "attribute_nullability": False,
         "attribute_custom_code": None,
         "is_surrogate_key": False,

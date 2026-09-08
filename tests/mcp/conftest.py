@@ -21,8 +21,7 @@ from psycopg.rows import dict_row
 type TestRow = dict[str, Any]
 
 POSTGRES_IMAGE = (
-    "postgres:18.6-bookworm@"
-    "sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
+    "postgres:18.6-bookworm@sha256:1c59e2c3c818eaa0f0628f695b36e7c9e362d6b219b36a54a32df645cbd7e1af"
 )
 DATABASE_ROOT = Path(__file__).parents[2] / "database"
 DATABASE_FILES = tuple(
@@ -166,9 +165,7 @@ class DisposablePostgres:
 
 
 def disposable_postgres() -> Iterator[DisposablePostgres]:
-    unexpected = sorted(
-        key for key in FORBIDDEN_CONNECTION_ENVIRONMENT if os.environ.get(key)
-    )
+    unexpected = sorted(key for key in FORBIDDEN_CONNECTION_ENVIRONMENT if os.environ.get(key))
     if unexpected:
         pytest.fail(f"database tests reject connection environment: {unexpected[0]}")
 
@@ -230,9 +227,7 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
         )
         fixture.wait_until_ready()
         with fixture.connect_owner() as connection, connection.transaction():
-            connection.execute(
-                "CREATE TABLE public.gds_test_sentinel (marker UUID PRIMARY KEY)"
-            )
+            connection.execute("CREATE TABLE public.gds_test_sentinel (marker UUID PRIMARY KEY)")
             connection.execute(
                 "INSERT INTO public.gds_test_sentinel (marker) VALUES (%s)",
                 (marker,),
@@ -286,9 +281,7 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
                 ).format(sql.Literal(runtime_user))
             )
             connection.execute(
-                sql.SQL("GRANT gds_app_write TO {}").format(
-                    sql.Identifier(runtime_user)
-                )
+                sql.SQL("GRANT gds_app_write TO {}").format(sql.Identifier(runtime_user))
             )
             connection.execute(
                 sql.SQL(
@@ -308,9 +301,7 @@ def disposable_postgres() -> Iterator[DisposablePostgres]:
                 ).format(sql.Literal(web_runtime_user))
             )
             connection.execute(
-                sql.SQL("GRANT gds_web_write TO {}").format(
-                    sql.Identifier(web_runtime_user)
-                )
+                sql.SQL("GRANT gds_web_write TO {}").format(sql.Identifier(web_runtime_user))
             )
             connection.execute(
                 sql.SQL("GRANT SELECT ON public.gds_test_sentinel TO {}").format(
@@ -428,8 +419,6 @@ def _assert_fixture_identity(
         ).fetchone()
         == {"can_read": True}
     ):
-        sentinel = connection.execute(
-            "SELECT marker FROM public.gds_test_sentinel"
-        ).fetchone()
+        sentinel = connection.execute("SELECT marker FROM public.gds_test_sentinel").fetchone()
         if sentinel is None or sentinel["marker"] != fixture.marker:
             raise AssertionError("database fixture sentinel mismatch")

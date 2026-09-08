@@ -1,6 +1,7 @@
-import { useState } from "react";
-import { useInfiniteQuery, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useRef, useState } from "react";
+import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
+import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import type { WorkflowRunFilterState } from "../workflows/api";
 import {
@@ -14,6 +15,8 @@ import {
   analysisQueryKeys,
   type AnalysisApi,
   type AnalysisFilters,
+  type AnalysisReviewAction,
+  type AnalysisReviewCommand,
 } from "./api";
 import { AnalysisResults } from "./AnalysisResults";
 import { AnalysisRuns } from "./AnalysisRuns";
@@ -39,6 +42,11 @@ export function AnalysisScreen({
   const [runState, setRunState] = useState<WorkflowRunFilterState>("");
   const [runDialog, setRunDialog] = useState<RunDialogKind>(null);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
+  const [reviewNotice, setReviewNotice] = useState("");
+  const reviewRequest = useRef<{
+    command: AnalysisReviewCommand;
+    idempotencyKey: string;
+  } | null>(null);
   const findingsQuery = useInfiniteQuery({
     queryKey: analysisQueryKeys.findings(tenantId, model.model_id, filters),
     queryFn: ({ pageParam }) => api.listAnalysisFindings(
@@ -66,6 +74,50 @@ export function AnalysisScreen({
     ),
     enabled: view === "runs",
   });
+  const revisionMismatch = findingsQuery.data !== undefined
+    && findingsQuery.data.pages.some((page) => page.model_revision !== model.model_revision);
+  const reviewMutation = useMutation({
+    mutationFn: (request: NonNullable<typeof reviewRequest.current>) => api.reviewAnalysisFindings(
+      tenantId,
+      model.model_id,
+      request.command,
+      request.idempotencyKey,
+    ),
+    onSuccess: async (result) => {
+      reviewRequest.current = null;
+      setSelectedIds(new Set());
+      setReviewNotice(`${result.action_count} finding${result.action_count === 1 ? "" : "s"} updated.`);
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: ["analysis-findings", tenantId, model.model_id] }),
+        queryClient.invalidateQueries({ queryKey: ["analysis-finding", tenantId, model.model_id] }),
+        queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
+        queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, model.model_id] }),
+        queryClient.invalidateQueries({ queryKey: workflowCreationQueryKeys.bronzeScope(tenantId, model.model_id) }),
+        queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
+      ]);
+    },
+    onError: (error) => {
+      if (error instanceof ApiError && error.status < 500 && error.status !== 408) {
+        reviewRequest.current = null;
+      }
+    },
+  });
+  const reviewRetryable = reviewMutation.isError && reviewRequest.current !== null;
+  const reviewFindings = (action: AnalysisReviewAction) => {
+    if (!hasTenantLock || selectedIds.size === 0 || selectedIds.size > 200
+      || revisionMismatch || findingsQuery.isPending || findingsQuery.isError
+      || reviewMutation.isPending || reviewRetryable) return;
+    setReviewNotice("");
+    reviewRequest.current = {
+      command: {
+        record_ids: [...selectedIds].sort((left, right) => left - right),
+        action,
+        expected_model_revision: model.model_revision,
+      },
+      idempotencyKey: globalThis.crypto.randomUUID(),
+    };
+    reviewMutation.mutate(reviewRequest.current);
+  };
   const refresh = async () => {
     await Promise.all([
       view === "results"
@@ -143,15 +195,20 @@ export function AnalysisScreen({
           selectedIds={selectedIds}
           isLoading={findingsQuery.isPending}
           isError={findingsQuery.isError}
-          revisionMismatch={
-            findingsQuery.data !== undefined
-            && findingsQuery.data.pages.some(
-              (page) => page.model_revision !== model.model_revision,
-            )
-          }
+          revisionMismatch={revisionMismatch}
           hasMore={findingsQuery.hasNextPage}
           isLoadingMore={findingsQuery.isFetchingNextPage}
           hasTenantLock={hasTenantLock}
+          reviewPending={reviewMutation.isPending}
+          reviewRetryable={reviewRetryable}
+          reviewError={reviewMutation.error ? reviewFailureMessage(reviewMutation.error) : null}
+          reviewNotice={reviewNotice}
+          onReview={reviewFindings}
+          onRetryReview={() => {
+            if (reviewRequest.current && hasTenantLock && !reviewMutation.isPending) {
+              reviewMutation.mutate(reviewRequest.current);
+            }
+          }}
           onApplyFilters={(nextFilters) => {
             setSelectedIds(new Set());
             setFilters(nextFilters);
@@ -221,4 +278,19 @@ export function AnalysisScreen({
       ) : null}
     </div>
   );
+}
+
+function reviewFailureMessage(error: Error): string {
+  if (!(error instanceof ApiError) || error.status >= 500 || error.status === 408) {
+    return "The review result could not be confirmed. Retry review to safely check the same request.";
+  }
+  if (error.code === "record_locked") return "Unlock selected findings before changing their status.";
+  if (error.code === "tenant_workflow_conflict") {
+    return "A Workflow Run is active. Wait for it to finish, then refresh before reviewing findings.";
+  }
+  if (error.status === 403) return "Review was not authorized. Confirm your role and owned Tenant Lock, then retry.";
+  if (error.status === 409 || error.code === "model_record_not_found") {
+    return "The Model or selected findings changed. Refresh, check your selection, then retry.";
+  }
+  return "The review was rejected. Refresh and check the selected findings before retrying.";
 }

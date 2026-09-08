@@ -10,7 +10,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.logical.router import (
     ExecuteLogicalRunRequest,
     create_logical_workflow_router,
@@ -76,9 +75,7 @@ class _StaticLogicalWorkflowService:
     ) -> None:
         del principal
         assert workflow_run_claim_token == _CLAIM_TOKEN
-        self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
 
 
 @dataclass
@@ -226,18 +223,18 @@ async def test_workflow_passes_the_internal_claim_only_to_logical_execution() ->
     assert executor.calls == 1
 
 
-def test_execute_endpoint_accepts_explicit_detailed_coverage_mode() -> None:
+def test_execute_endpoint_accepts_explicit_one_shot_mode() -> None:
     service = _StaticLogicalWorkflowService()
 
     with _client(service) as client:
         response = client.post(
             "/api/v1/tenants/7/models/18/logical/runs/1048/execute",
             json={
-                "execution_mode": "detailed_coverage",
+                "execution_mode": "one_shot",
                 "expected_model_revision": 4,
             },
         )
 
     assert response.status_code == 202
-    assert service.starts == [(7, 18, 1048, "detailed_coverage", 4)]
+    assert service.starts == [(7, 18, 1048, "one_shot", 4)]
     assert service.executions == []

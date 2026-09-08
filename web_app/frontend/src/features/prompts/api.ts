@@ -3,6 +3,7 @@ import type { ModelWorkflow, WorkflowExecutionMode } from "../workflows/api";
 
 export type PromptOwnershipScope = "global" | "tenant";
 export type PromptVersionStatus = "draft" | "published" | "retired";
+export type PromptWorkflow = ModelWorkflow | "metadata_enrichment_object" | "metadata_enrichment_attribute";
 
 export interface PromptStageVariable {
   name: string;
@@ -12,11 +13,17 @@ export interface PromptStageVariable {
   description: string;
   example: unknown;
   order: number;
+  value_schema?: Record<string, unknown> | null;
+  source?: string | null;
+  availability?: string | null;
+  delivery?: "inline_value" | "structured_context" | "tool_dataset" | null;
+  context_path?: string | null;
+  group?: string | null;
 }
 
 export interface PromptStage {
   workflow_stage_id: number;
-  model_workflow: ModelWorkflow;
+  model_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
@@ -31,7 +38,7 @@ export interface PromptStageCatalog {
 }
 
 export interface PromptTemplateFilters {
-  workflow?: ModelWorkflow;
+  workflow?: PromptWorkflow;
   mode?: WorkflowExecutionMode;
   stageCode?: string;
   status?: PromptVersionStatus;
@@ -40,7 +47,7 @@ export interface PromptTemplateFilters {
 export interface PromptTemplateSummary {
   prompt_template_id: number;
   workflow_stage_id: number;
-  model_workflow: ModelWorkflow;
+  model_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
@@ -72,6 +79,7 @@ export interface PromptTemplateVersion {
   system_prompt_template: string;
   instruction_prompt_template: string;
   tool_instruction_prompt_template: string | null;
+  agent_tool_names?: string[] | null;
   prompt_template_digest: string;
   prompt_template_version_status: PromptVersionStatus;
   published_at: string | null;
@@ -80,11 +88,21 @@ export interface PromptTemplateVersion {
   updated_at: string;
 }
 
+export interface PromptTool {
+  name: string;
+  description: string;
+  input_schema: Record<string, unknown>;
+  result_schema?: Record<string, unknown> | null;
+  example?: unknown;
+  default_behavior?: string | null;
+}
+
 export interface PromptTemplateDetail {
   tenant_id: number;
   template: PromptTemplateSummary;
   allowed_variables: PromptStageVariable[];
   versions: PromptTemplateVersion[];
+  available_tools?: PromptTool[];
 }
 
 export interface PromptTemplateHeader {
@@ -122,6 +140,16 @@ export interface SavePromptDraftCommand {
   system_prompt_template: string;
   instruction_prompt_template: string;
   tool_instruction_prompt_template: string | null;
+  agent_tool_names?: string[] | null;
+}
+
+export type PreviewPromptCommand = Pick<SavePromptDraftCommand,
+  "system_prompt_template" | "instruction_prompt_template" | "tool_instruction_prompt_template" | "agent_tool_names">;
+
+export interface PromptPreview {
+  rendered_system_prompt: string;
+  rendered_instruction_prompt: string;
+  rendered_tool_instruction_prompt: string | null;
 }
 
 export interface PromptAssignmentTarget {
@@ -140,7 +168,7 @@ export interface PromptAssignmentTarget {
 
 export interface ModelPromptAssignmentState {
   workflow_stage_id: number;
-  model_workflow: ModelWorkflow;
+  model_workflow: PromptWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   workflow_stage_code: string;
   workflow_stage_name: string;
@@ -188,6 +216,11 @@ export interface PromptsApi {
     promptTemplateId: number,
     command: SavePromptDraftCommand,
   ) => Promise<PromptTemplateVersion>;
+  previewPrompt: (
+    tenantId: number,
+    promptTemplateId: number,
+    command: PreviewPromptCommand,
+  ) => Promise<PromptPreview>;
   publishPromptVersion: (
     tenantId: number,
     promptTemplateId: number,
@@ -245,6 +278,11 @@ export function createPromptsApi(request: HttpRequest): PromptsApi {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(command),
         },
+      ),
+    previewPrompt: (tenantId, promptTemplateId, command) =>
+      request<PromptPreview>(
+        `/api/v1/tenants/${tenantId}/prompts/templates/${promptTemplateId}/preview`,
+        { method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(command) },
       ),
     publishPromptVersion: (tenantId, promptTemplateId, promptTemplateVersionId) =>
       request<PromptTemplateVersion>(

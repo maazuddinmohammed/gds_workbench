@@ -13,7 +13,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.logical import (
     AssertionRecordReference,
     DatabaseLogicalService,
@@ -625,9 +624,7 @@ class LogicalCollectionDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound() -> (
-    None
-):
+async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound() -> None:
     database = LogicalCollectionDatabase()
     service = DatabaseLogicalService(
         database=database,
@@ -673,9 +670,7 @@ async def test_database_logical_entities_are_tenant_authorized_and_cursor_bound(
             principal,
             tenant_id=7,
             model_id=18,
-            filters=LogicalEntityFilters(
-                name_prefix="account", logical_submodel_id=301
-            ),
+            filters=LogicalEntityFilters(name_prefix="account", logical_submodel_id=301),
             page_size=1,
             cursor=first.next_cursor,
         )

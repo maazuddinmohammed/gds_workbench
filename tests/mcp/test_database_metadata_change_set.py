@@ -269,10 +269,7 @@ def test_metadata_change_set_has_exact_sixteen_documents(
     assert event_section_check is not None
     for column_name in DOCUMENT_COLUMNS:
         assert f"jsonb_typeof({column_name})" in document_check["definition"]
-        assert (
-            f"octet_length(({column_name})::text) <= 16777216"
-            in document_check["definition"]
-        )
+        assert f"octet_length(({column_name})::text) <= 16777216" in document_check["definition"]
     for section_name in NEW_SECTION_NAMES:
         assert section_name in event_section_check["definition"]
 
@@ -322,16 +319,10 @@ def test_metadata_stage_batch_storage_is_bounded_and_not_directly_accessible(
     assert "total_record_count <= 50000" in definitions
     assert "total_chunk_count >= 1" in definitions
     assert "total_chunk_count <= 64" in definitions
-    assert (
-        "active" in definitions
-        and "committed" in definitions
-        and "expired" in definitions
-    )
+    assert "active" in definitions and "committed" in definitions and "expired" in definitions
     assert chunk_check is not None
     assert "jsonb_typeof(records_document) = 'array'" in chunk_check["definition"]
-    assert (
-        "octet_length((records_document)::text) <= 524288" in chunk_check["definition"]
-    )
+    assert "octet_length((records_document)::text) <= 524288" in chunk_check["definition"]
 
 
 def test_runtime_can_only_mutate_metadata_change_sets_through_governed_functions(
@@ -440,9 +431,7 @@ def test_metadata_change_set_enforces_new_document_and_event_contract(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
-        tenant_id, principal_id = _seed_change_set_parents(
-            connection, suffix="DOCUMENTS"
-        )
+        tenant_id, principal_id = _seed_change_set_parents(connection, suffix="DOCUMENTS")
         change_set_id = uuid4()
         correlation_id = uuid4()
         documents = connection.execute(
@@ -873,9 +862,7 @@ def test_metadata_stage_batch_commits_complete_chunks_once_and_replays_safely(
             }
         ],
     ]
-    chunk_sha256s = [
-        hashlib.sha256(f"chunk-{index}".encode()).hexdigest() for index in (1, 2)
-    ]
+    chunk_sha256s = [hashlib.sha256(f"chunk-{index}".encode()).hexdigest() for index in (1, 2)]
     batch_sha256 = hashlib.sha256("".join(chunk_sha256s).encode("ascii")).hexdigest()
 
     with postgres_database.connect_runtime() as connection:
@@ -1591,9 +1578,7 @@ def test_metadata_expiry_clock_is_captured_after_waiting_for_row_lock(
                 if waiting == {"waiting": True}:
                     break
                 if time.monotonic() >= deadline:
-                    raise AssertionError(
-                        "runtime did not wait for the change-set row lock"
-                    )
+                    raise AssertionError("runtime did not wait for the change-set row lock")
                 time.sleep(0.01)
 
             deadline = time.monotonic() + 2
@@ -2166,18 +2151,27 @@ def test_apply_metadata_change_set_checks_seal_and_upserts_natural_key_record(
 
 
 @pytest.mark.parametrize(
-    ("suffix", "entra_tenant_id", "entra_object_id", "stage_attribute"),
+    ("suffix", "entra_tenant_id", "entra_object_id", "stage_attribute", "lock_attribute"),
     (
         (
             "LOCKED_OBJECT_APPLY",
             UUID("10000000-0000-0000-0000-000000000048"),
             UUID("20000000-0000-0000-0000-000000000048"),
             False,
+            False,
         ),
         (
             "LOCKED_ATTRIBUTE_APPLY",
             UUID("10000000-0000-0000-0000-000000000049"),
             UUID("20000000-0000-0000-0000-000000000049"),
+            True,
+            False,
+        ),
+        (
+            "ATTR_LOCK_APPLY",
+            uuid4(),
+            uuid4(),
+            True,
             True,
         ),
     ),
@@ -2189,6 +2183,7 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
     entra_object_id: UUID,
     *,
     stage_attribute: bool,
+    lock_attribute: bool,
 ) -> None:
     change_set_id, tenant_id = _seed_locked_change_set(
         postgres_database,
@@ -2228,6 +2223,8 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
         "attribute_ordinal_position": 1,
         "attribute_description": "Changed",
         "attribute_data_type": "bigint",
+        "attribute_inferred_data_type": None,
+        "is_locked": False,
         "attribute_nullability": False,
         "attribute_custom_code": None,
         "is_surrogate_key": False,
@@ -2309,10 +2306,10 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
                 connection_id, source_tenant_id,
                 object_schema, object_name, object_description,
                 object_type_id, zone_id, is_locked
-            ) VALUES (%s, %s, 'public', 'customers', 'Original', %s, %s, TRUE)
+            ) VALUES (%s, %s, 'public', 'customers', 'Original', %s, %s, %s)
             RETURNING object_id
             """,
-            (connection_id, tenant_id, object_type_id, zone_id),
+            (connection_id, tenant_id, object_type_id, zone_id, not lock_attribute),
         ).fetchone()
         assert object_row is not None
         object_id = object_row["object_id"]
@@ -2320,10 +2317,10 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
             """
             INSERT INTO core.attribute (
                 object_id, attribute_name, attribute_ordinal_position,
-                attribute_description, attribute_data_type
-            ) VALUES (%s, 'customer_id', 1, 'Original', 'bigint')
+                attribute_description, attribute_data_type, is_locked
+            ) VALUES (%s, 'customer_id', 1, 'Original', 'bigint', %s)
             """,
-            (object_id,),
+            (object_id, lock_attribute),
         )
         if stage_attribute:
             connection.execute(
@@ -2386,7 +2383,7 @@ def test_apply_rechecks_object_lock_before_object_or_attribute_write(
 
     assert applied == {
         "applied": False,
-        "denial_code": "object_locked",
+        "denial_code": "attribute_locked" if lock_attribute else "object_locked",
         "metadata_change_set_status": "validated",
         "action_count": 0,
     }
@@ -2542,9 +2539,7 @@ def test_late_copy_failure_rolls_back_earlier_object_insert(
             ),
         )
 
-    with pytest.raises(
-        psycopg.errors.SerializationFailure, match="Copy dependency changed"
-    ):
+    with pytest.raises(psycopg.errors.SerializationFailure, match="Copy dependency changed"):
         with postgres_database.connect_runtime() as connection:
             connection.execute(
                 """
@@ -2720,6 +2715,10 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
     tenant_code = "CHANGE_SET_TENANT_ALL_APPLY"
     gds_tenant_code = "GLOBAL_ALL_APPLY"
     documents = _all_apply_documents(tenant_code, gds_tenant_code)
+    for zone in ("source", "bronze", "silver", "gold"):
+        documents[f"{zone}_attribute"][0].update(
+            attribute_data_type="STRING", attribute_inferred_data_type="BIGINT", is_locked=True
+        )
     digest = "d" * 64
 
     with postgres_database.connect_owner() as connection:
@@ -2907,6 +2906,9 @@ def test_apply_metadata_change_set_writes_all_sixteen_datasets(
                        JOIN core.object AS object
                          ON object.object_id = attribute.object_id
                       WHERE object.source_tenant_id = %s
+                        AND attribute.attribute_data_type = 'STRING'
+                        AND attribute.attribute_inferred_data_type = 'BIGINT'
+                        AND attribute.is_locked
                    ) AS attributes,
                    (
                        SELECT count(*)
@@ -3183,6 +3185,8 @@ def _all_apply_documents(
             "attribute_ordinal_position": 1,
             "attribute_description": None,
             "attribute_data_type": "bigint",
+            "attribute_inferred_data_type": None,
+            "is_locked": False,
             "attribute_nullability": False,
             "attribute_custom_code": None,
             "is_surrogate_key": False,
@@ -3219,11 +3223,7 @@ def _all_apply_documents(
         "ingestion_object_mapping": [object_mapping],
         "ingestion_attribute_mapping": [
             {
-                **{
-                    key: value
-                    for key, value in object_mapping.items()
-                    if key != "is_active"
-                },
+                **{key: value for key, value in object_mapping.items() if key != "is_active"},
                 "source_attribute_name": "customer_id",
                 "target_attribute_name": "customer_id",
                 "is_active": True,
@@ -3265,11 +3265,7 @@ def _all_apply_documents(
                 "tenant_code": tenant_code,
                 "system_code": system_code,
                 "copy_group_name": "CUSTOMERS",
-                **{
-                    key: value
-                    for key, value in object_mapping.items()
-                    if key != "is_active"
-                },
+                **{key: value for key, value in object_mapping.items() if key != "is_active"},
                 "copy_source_record_limit": "100",
                 "copy_source_record_limit_attribute": None,
                 "chunk_type_name": None,
@@ -3317,9 +3313,7 @@ def _all_apply_documents(
     }
 
 
-def _age_metadata_change_set_past_expiry(
-    connection: Connection[Any], change_set_id: UUID
-) -> None:
+def _age_metadata_change_set_past_expiry(connection: Connection[Any], change_set_id: UUID) -> None:
     connection.execute(
         """
         UPDATE mcp.metadata_change_set

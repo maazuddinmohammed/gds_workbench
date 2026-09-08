@@ -1,0 +1,99 @@
+{
+  "source_context": [
+    {
+      "tenant_code": "ACME",
+      "tenant_description": "Wholesale distribution business.",
+      "system_code": "ERP",
+      "system_description": "Manages sales orders and billing.",
+      "system_type_code": "ERP",
+      "system_type_description": "Systems for managing core business operations.",
+      "connection_code": "ERP_SOURCE",
+      "connection_description": null,
+      "connection_type_code": "SQL_SERVER",
+      "connection_type_description": "Connection to a Microsoft SQL Server database.",
+      "zone_code": "source",
+      "zone_description": "Originating source data."
+    }
+  ],
+  "gds_context": {
+    "tenant_code": "GDS",
+    "system_code": "WAREHOUSE",
+    "connection_code": "MAIN",
+    "zone_code": "bronze",
+    "zone_description": "Stores ingested source data."
+  },
+  "object_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "bronze",
+      "object_name": "Orders",
+      "object_description": "Sales orders; one row represents one order.",
+      "zone_code": "bronze"
+    }
+  ],
+  "object_attribute_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "bronze",
+      "object_name": "Orders",
+      "attributes": [
+        {
+          "attribute_name": "OrderNumber",
+          "attribute_description": "Order number assigned by ERP.",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "is_natural_key": true,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": {
+            "profiled_at": "2026-09-07T14:30:00Z",
+            "row_scope": "all_rows",
+            "batch_attribute_name": null,
+            "batch_id": null,
+            "row_count": 1000,
+            "non_null_count": 1000,
+            "null_count": 0,
+            "blank_count": null,
+            "distinct_count": 1000,
+            "min_data_length": null,
+            "max_data_length": null,
+            "avg_data_length": null,
+            "percent_populated": 100,
+            "percent_duplicates": 0,
+            "percent_null": 0,
+            "percent_blank": null,
+            "percent_distinct": 100
+          }
+        }
+      ],
+      "selected_attribute_names": [
+        "OrderNumber"
+      ]
+    }
+  ],
+  "ingestion_mapping": [
+    {
+      "source": {
+        "tenant_code": "ACME",
+        "system_code": "ERP",
+        "connection_code": "ERP_SOURCE",
+        "object_schema": "sales",
+        "object_name": "SalesOrder",
+        "object_description": "Sales orders created in ERP; one row per order."
+      },
+      "target": {
+        "tenant_code": "GDS",
+        "system_code": "WAREHOUSE",
+        "connection_code": "MAIN",
+        "object_schema": "bronze",
+        "object_name": "Orders"
+      }
+    }
+  ]
+}

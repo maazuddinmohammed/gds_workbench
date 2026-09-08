@@ -1,3 +1,4 @@
+import { ModelRecordHistory } from "../model_record_review/ModelRecordHistory";
 import { useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -42,6 +43,7 @@ export function CodeGenerationScreen({
   hasAppPermission: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [view, setView] = useState<"targets" | "artifacts">("targets");
   const [filters, setFilters] = useState<RequiredLayerFilters>({
     entityType: "logical_entity",
   });
@@ -173,7 +175,7 @@ export function CodeGenerationScreen({
       </header>
       <div className="workflow-context-line code-generation-context-line">
         <strong>{model.model_name} · r{model.model_revision}</strong>
-        <span>Generation produces a Model Change Set draft. Review its validation, then Apply it to store SQL.</span>
+
       </div>
       {startedRunId ? (
         <p className="code-generation-run-notice" role="status">
@@ -190,7 +192,14 @@ export function CodeGenerationScreen({
         focusRunId={startedRunId}
         onApplied={refresh}
       />
-      <CodeGenerationLedger
+      <nav className="workflow-tabs" aria-label="Code views">
+        <button type="button" className={view === "targets" ? "is-active" : ""} aria-pressed={view === "targets"} onClick={() => setView("targets")}>Generation targets</button>
+        <button type="button" className={view === "artifacts" ? "is-active" : ""} aria-pressed={view === "artifacts"} onClick={() => setView("artifacts")}>Applied Code</button>
+      </nav>
+      {view === "artifacts" ? <ModelRecordHistory
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset="generated_code" label="Applied Code" hasTenantLock={canGenerate}
+      /> : <CodeGenerationLedger
         tenantId={tenantId}
         modelId={model.model_id}
         items={targetsQuery.data?.items ?? []}
@@ -229,7 +238,7 @@ export function CodeGenerationScreen({
           setCursor(cursorHistory.at(-1));
           setCursorHistory(cursorHistory.slice(0, -1));
         }}
-      />
+      />}
       {runDialog ? (
         <CodeGenerationRunDialog
           api={api}

@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal, LiteralString, cast
@@ -18,6 +19,7 @@ from pydantic import Field
 from gds_etl_workbench.application.authorization import AuthorizationService, ResolvedPrincipal
 from gds_etl_workbench.application.change_sets.action_review import DatasetActionReview
 from gds_etl_workbench.application.change_sets.contracts import (
+    MAX_AGENT_VALIDATION_ERROR_EXAMPLES,
     MAX_MODEL_STAGE_CHUNK_BYTES,
     MAX_MODEL_STAGE_FRAGMENT_BASE64_CHARACTERS,
     MAX_MODEL_STAGE_PAYLOAD_BYTES,
@@ -25,6 +27,8 @@ from gds_etl_workbench.application.change_sets.contracts import (
     MAX_STAGE_CHUNKS,
     SHA256_PATTERN,
     ChangeSetContractModel,
+    ChangeSetValidationErrorGroup,
+    bounded_validation_outcome,
     canonical_records_bytes,
     canonical_records_sha256,
     decode_canonical_base64_fragment,
@@ -65,7 +69,11 @@ from gds_etl_workbench.domain.snapshots.model import (
     ModelDataset,
 )
 from gds_etl_workbench.infrastructure.metadata_visibility import VISIBLE_OBJECTS_CTE
-from gds_etl_workbench.infrastructure.postgres import WriteDatabase, WriteTransaction
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadTransaction,
+    WriteDatabase,
+    WriteTransaction,
+)
 
 if TYPE_CHECKING:
     from mcp.server.mcpserver import Context, MCPServer
@@ -123,7 +131,6 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
     ON TRUE
   LEFT JOIN core.object AS object
     ON object.object_id = visible_objects.object_id
-   AND object.is_active
   LEFT JOIN core.connection AS connection
     ON connection.connection_id = object.connection_id
    AND connection.is_active
@@ -135,9 +142,10 @@ SELECT model_tenant.tenant_code AS model_tenant_code,
    AND system.is_active
   LEFT JOIN core.attribute AS attribute
     ON attribute.object_id = object.object_id
-   AND attribute.is_active
 """
 
+# Physical identity retains inactive records for historical references. These
+# separate governed selectors still restrict new work to current eligibility.
 _MODEL_OBJECT_ELIGIBILITY_SQL: LiteralString = """
 SELECT object_id,
        is_model_input_eligible,
@@ -884,6 +892,27 @@ class GetModelChangeSetResult(ContractModel):
     terminal_at: datetime | None
 
 
+class ModelChangeSetDatasetFingerprint(ContractModel):
+    dataset: ModelChangeSetDataset
+    record_count: int = Field(ge=0)
+    sha256: str = Field(pattern=SHA256_PATTERN)
+
+
+class GetModelChangeSetFingerprintResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    fingerprint_version: Literal["1.0"] = "1.0"
+    area: Literal["model"] = "model"
+    model_id: int = Field(gt=0)
+    model_change_set_id: UUID
+    status: Literal["active", "validated", "applied", "expired", "discarded", "superseded"]
+    draft_revision: int = Field(gt=0)
+    dataset_count: int = Field(ge=0)
+    record_count: int = Field(ge=0)
+    datasets: tuple[ModelChangeSetDatasetFingerprint, ...]
+    fingerprint: str = Field(pattern=SHA256_PATTERN)
+    expires_at: datetime
+
+
 class ValidateModelChangeSetResult(ContractModel):
     schema_version: Literal["1.0"] = "1.0"
     model_id: int = Field(gt=0)
@@ -895,7 +924,9 @@ class ValidateModelChangeSetResult(ContractModel):
     candidate_digest: str | None
     staged_record_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
+    error_groups: tuple[ChangeSetValidationErrorGroup, ...]
     errors: tuple[ModelValidationError, ...]
+    errors_truncated: bool
     action_review: tuple[ModelChangeSetActionReview, ...]
     validated_at: datetime | None
     expires_at: datetime
@@ -936,12 +967,12 @@ def register_model_change_set_tools(
     authorizer: AuthorizationService,
     audit: ToolCallAuditMiddleware,
 ) -> None:
-    from gds_etl_workbench.adapters.auth.identity import AuthenticationError
-    from gds_etl_workbench.adapters.mcp.annotations import change_set_annotations
-
-    _annotations = change_set_annotations
-
     from mcp.server.mcpserver import Context as McpContext
+
+    from gds_etl_workbench.adapters.auth.identity import AuthenticationError
+    from gds_etl_workbench.adapters.mcp.annotations import (
+        closed_world_annotations as _annotations,
+    )
 
     globals()["Context"] = McpContext
 
@@ -1424,7 +1455,7 @@ def register_model_change_set_tools(
             Field(
                 pattern=SHA256_PATTERN,
                 description=(
-                    "SHA-256 of normalized records, or decoded fragment bytes in "
+                    "SHA-256 of exact canonical request records, or decoded fragment bytes in "
                     "json_fragments mode."
                 ),
             ),
@@ -1465,9 +1496,9 @@ def register_model_change_set_tools(
                 encoded = canonical_records_bytes(normalized)
                 if len(encoded) > MAX_MODEL_STAGE_CHUNK_BYTES:
                     raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
-                if canonical_records_sha256(normalized) != chunk_sha256:
+                if canonical_records_sha256(records) != chunk_sha256:
                     raise InvalidRequestError(
-                        "The Stage chunk SHA-256 does not match its normalized records."
+                        "The Stage chunk SHA-256 does not match its request records."
                     )
             else:
                 if (
@@ -1952,7 +1983,7 @@ def register_model_change_set_tools(
                 status=row["model_change_set_status"],
                 draft_revision=row["draft_revision"],
                 candidate_digest=row["candidate_digest"],
-                validation_outcome=row["validation_outcome"],
+                validation_outcome=bounded_validation_outcome(row["validation_outcome"]),
                 dataset_counts=tuple(
                     ModelDatasetCount(dataset=cast(ModelDataset, name), record_count=len(records))
                     for name, records in sorted(pending.items())
@@ -1980,6 +2011,100 @@ def register_model_change_set_tools(
         policy=READ_POLICY,
         summarize_input=_audit_get_input,
         retain_arguments={"model_id", "model_change_set_id", "dataset", "schema_version"},
+    )
+
+    @server.tool(
+        description=(
+            "Return bounded counts and SHA-256 fingerprints for the caller's exact Model "
+            "Change Set revision without returning pending records. Use this to verify Stage "
+            "transport, including active drafts that failed validation."
+        ),
+        annotations=_annotations(read_only=True, idempotent=True),
+        meta={"gds/toolPolicy": READ_POLICY.value},
+        structured_output=True,
+    )
+    async def get_model_change_set_fingerprint(
+        ctx: Context[None],
+        model_id: Annotated[int, Field(gt=0)],
+        model_change_set_id: UUID,
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> GetModelChangeSetFingerprintResult:
+        del schema_version
+        try:
+            request_principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                model, principal = await _authorize_model(
+                    transaction,
+                    authorizer=authorizer,
+                    request_principal=request_principal,
+                    model_id=model_id,
+                    policy=READ_POLICY,
+                )
+                row = await _owned_change_set(
+                    transaction,
+                    change_set_id=model_change_set_id,
+                    model_id=model.model_id,
+                    principal=principal,
+                    for_update=True,
+                )
+                expired = await _expire_change_set_if_due(
+                    transaction,
+                    row=row,
+                    model_id=model.model_id,
+                    principal=principal,
+                    correlation_id=row["correlation_id"],
+                )
+                if expired is not None:
+                    row = expired
+            _require_mcp_writable_pending(row)
+            pending = _pending_datasets(row)
+            datasets = tuple(
+                ModelChangeSetDatasetFingerprint(
+                    dataset=cast(ModelChangeSetDataset, name),
+                    record_count=len(records),
+                    sha256=canonical_records_sha256(records),
+                )
+                for name in sorted(CHANGE_SET_DATASETS_BY_NAME)
+                for records in [pending.get(name, [])]
+            )
+            fingerprint_document = {
+                "area": "model",
+                "datasets": [item.model_dump(mode="json") for item in datasets],
+                "fingerprint_version": "1.0",
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    fingerprint_document,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            return GetModelChangeSetFingerprintResult(
+                model_id=model_id,
+                model_change_set_id=model_change_set_id,
+                status=row["model_change_set_status"],
+                draft_revision=row["draft_revision"],
+                dataset_count=len(datasets),
+                record_count=sum(item.record_count for item in datasets),
+                datasets=datasets,
+                fingerprint=fingerprint,
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise ModelChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise ModelChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise ModelChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "get_model_change_set_fingerprint",
+        policy=READ_POLICY,
+        summarize_input=_audit_model_input,
+        retain_arguments={"model_id", "model_change_set_id", "schema_version"},
     )
 
     @server.tool(
@@ -2081,7 +2206,12 @@ def register_model_change_set_tools(
                 candidate_digest=updated["candidate_digest"],
                 staged_record_count=sum(len(records) for records in validation.records.values()),
                 error_count=len(validation.issues),
-                errors=tuple(_error(issue) for issue in validation.issues),
+                error_groups=_model_error_groups(validation),
+                errors=tuple(
+                    _error(issue)
+                    for issue in validation.issues[:MAX_AGENT_VALIDATION_ERROR_EXAMPLES]
+                ),
+                errors_truncated=(len(validation.issues) > MAX_AGENT_VALIDATION_ERROR_EXAMPLES),
                 action_review=_model_action_review(validation.action_review),
                 validated_at=updated["validated_time"],
                 expires_at=updated["expires_time"],
@@ -2590,7 +2720,7 @@ async def _validate_locked_change_set(
 
 
 async def _load_physical_scope(
-    transaction: WriteTransaction,
+    transaction: ReadTransaction,
     model: ModelReadContext,
 ) -> PhysicalModelCatalog:
     rows = await transaction.fetch_all(_MODEL_PHYSICAL_SCOPE_SQL, (model.tenant_id,))
@@ -2703,6 +2833,9 @@ def _validation_outcome(validation: ValidatedModelChangeSet) -> dict[str, object
         "phase": validation.phase,
         "staged_record_count": sum(len(records) for records in validation.records.values()),
         "error_count": len(validation.issues),
+        "error_groups": [
+            group.model_dump(mode="json") for group in _model_error_groups(validation)
+        ],
         "errors": [
             {
                 "code": issue.code,
@@ -2711,10 +2844,21 @@ def _validation_outcome(validation: ValidatedModelChangeSet) -> dict[str, object
                 "fields": list(issue.fields),
                 "message": issue.message,
             }
-            for issue in validation.issues
+            for issue in validation.issues[:MAX_AGENT_VALIDATION_ERROR_EXAMPLES]
         ],
+        "errors_truncated": len(validation.issues) > MAX_AGENT_VALIDATION_ERROR_EXAMPLES,
         "action_review": [summary.as_document() for summary in validation.action_review],
     }
+
+
+def _model_error_groups(
+    validation: ValidatedModelChangeSet,
+) -> tuple[ChangeSetValidationErrorGroup, ...]:
+    groups = Counter((issue.dataset, issue.code) for issue in validation.issues)
+    return tuple(
+        ChangeSetValidationErrorGroup(dataset=dataset, code=code, count=count)
+        for (dataset, code), count in sorted(groups.items())
+    )
 
 
 def _error(issue: ModelValidationIssue) -> ModelValidationError:
@@ -2876,7 +3020,9 @@ def _audit_get_input(arguments: Mapping[str, Any]) -> dict[str, str | int]:
 # names; the web adapter imports only these explicit public contracts.
 decode_canonical_model_stage_payload = _decode_canonical_stage_payload
 model_change_set_documents = _documents
+model_validation_outcome = _validation_outcome
 model_validation_error = _error
+model_validation_error_groups = _model_error_groups
 model_action_review = _model_action_review
 pending_model_change_set_datasets = _pending_datasets
 require_mcp_writable_pending = _require_mcp_writable_pending
@@ -2884,8 +3030,8 @@ require_model_stage_batch = _require_model_stage_batch
 require_mutable_model_change_set = _require_mutable
 validate_model_change_set_document_bounds = _validate_document_bounds
 validate_locked_model_change_set = _validate_locked_change_set
+load_model_physical_scope = _load_physical_scope
 validate_model_stage_changes = _validate_stage_changes
-model_validation_outcome = _validation_outcome
 
 
 __all__ = [
@@ -2897,6 +3043,7 @@ __all__ = [
     "model_action_review",
     "model_change_set_documents",
     "model_validation_error",
+    "model_validation_error_groups",
     "model_validation_outcome",
     "pending_model_change_set_datasets",
     "require_mcp_writable_pending",

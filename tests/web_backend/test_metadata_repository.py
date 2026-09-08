@@ -10,8 +10,6 @@ from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME,
     normalize_natural_key_value,
 )
-from psycopg import Connection
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata import (
     FOUNDATIONAL_DATASETS,
@@ -22,6 +20,7 @@ from gds_workbench_api.features.metadata import (
     OperationalDataset,
     PostgresMetadataRepository,
 )
+from psycopg import Connection
 
 
 class DisposablePostgres(Protocol):
@@ -112,9 +111,7 @@ async def test_reference_rows_are_global_but_fixed_filtered_and_secret_free() ->
 
 
 @pytest.mark.asyncio
-async def test_all_eight_reference_datasets_use_the_closed_global_query_registry() -> (
-    None
-):
+async def test_all_eight_reference_datasets_use_the_closed_global_query_registry() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -129,9 +126,7 @@ async def test_all_eight_reference_datasets_use_the_closed_global_query_registry
         )
 
     assert len(transaction.queries) == 8
-    for dataset, (query, parameters) in zip(
-        REFERENCE_DATASETS, transaction.queries, strict=True
-    ):
+    for dataset, (query, parameters) in zip(REFERENCE_DATASETS, transaction.queries, strict=True):
         assert f"FROM reference.{dataset} AS {dataset}" in query
         assert "connection_value" not in query
         assert "core." not in query
@@ -139,9 +134,7 @@ async def test_all_eight_reference_datasets_use_the_closed_global_query_registry
 
 
 @pytest.mark.asyncio
-async def test_foundational_connection_rows_use_only_the_tenant_visible_closure() -> (
-    None
-):
+async def test_foundational_connection_rows_use_only_the_tenant_visible_closure() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -184,6 +177,7 @@ async def test_all_four_foundational_datasets_use_the_selected_tenant_closure() 
         assert "WITH RECURSIVE requested_tenant AS" in query
         assert "connection_value" not in query
         assert parameters == (7, 2, 3)
+
 
 @pytest.mark.asyncio
 async def test_each_object_dataset_uses_its_backend_selected_zone() -> None:
@@ -304,9 +298,7 @@ async def test_dataset_input_cannot_select_a_table_or_query() -> None:
 
 
 @pytest.mark.asyncio
-async def test_attribute_datasets_project_only_visible_objects_and_exposed_filters() -> (
-    None
-):
+async def test_attribute_datasets_project_only_visible_objects_and_exposed_filters() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -344,18 +336,13 @@ async def test_attribute_datasets_project_only_visible_objects_and_exposed_filte
         offset=0,
     )
     filtered_query, parameters = filtered_transaction.queries[0]
-    assert (
-        "lower(btrim(attribute.attribute_name)) IS NOT DISTINCT FROM %s"
-        in filtered_query
-    )
+    assert "lower(btrim(attribute.attribute_name)) IS NOT DISTINCT FROM %s" in filtered_query
     assert "attribute.is_natural_key IS NOT DISTINCT FROM %s" in filtered_query
     assert parameters == (7, "bronze", "customer_id", True, 5, 0)
 
 
 @pytest.mark.asyncio
-async def test_ingestion_mapping_datasets_require_both_objects_in_tenant_visibility() -> (
-    None
-):
+async def test_ingestion_mapping_datasets_require_both_objects_in_tenant_visibility() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -382,14 +369,8 @@ async def test_ingestion_mapping_datasets_require_both_objects_in_tenant_visibil
     object_query, object_parameters = transaction.queries[0]
     assert "JOIN visible_objects AS source_visible" in object_query
     assert "JOIN visible_objects AS target_visible" in object_query
-    assert (
-        "lower(btrim(source_system.system_code)) IS NOT DISTINCT FROM %s"
-        in object_query
-    )
-    assert (
-        "lower(btrim(target_object.object_name)) IS NOT DISTINCT FROM %s"
-        in object_query
-    )
+    assert "lower(btrim(source_system.system_code)) IS NOT DISTINCT FROM %s" in object_query
+    assert "lower(btrim(target_object.object_name)) IS NOT DISTINCT FROM %s" in object_query
     assert object_parameters == (7, "crm", "customer_bronze", 8, 2)
 
     attribute_query, attribute_parameters = transaction.queries[1]
@@ -399,9 +380,7 @@ async def test_ingestion_mapping_datasets_require_both_objects_in_tenant_visibil
 
 
 @pytest.mark.asyncio
-async def test_copy_configuration_datasets_are_scoped_through_their_owning_tenant() -> (
-    None
-):
+async def test_copy_configuration_datasets_are_scoped_through_their_owning_tenant() -> None:
     transaction = RecordingTransaction()
     repository = PostgresMetadataRepository()
 
@@ -433,12 +412,8 @@ async def test_copy_configuration_datasets_are_scoped_through_their_owning_tenan
     copy_query, copy_parameters = transaction.queries[3]
     assert "JOIN visible_objects AS source_visible" in copy_query
     assert "JOIN visible_objects AS target_visible" in copy_query
-    assert (
-        "copy_group.tenant_id = (SELECT tenant_id FROM requested_tenant)" in copy_query
-    )
-    assert (
-        "copy.copy_source_record_limit::TEXT AS copy_source_record_limit" in copy_query
-    )
+    assert "copy_group.tenant_id = (SELECT tenant_id FROM requested_tenant)" in copy_query
+    assert "copy.copy_source_record_limit::TEXT AS copy_source_record_limit" in copy_query
     assert "copy.copy_source_order IS NOT DISTINCT FROM %s" in copy_query
     assert "copy.is_active IS NOT DISTINCT FROM %s" in copy_query
     assert copy_parameters == (7, 1, True, 12, 5)
@@ -475,10 +450,7 @@ async def test_process_datasets_are_scoped_through_their_owning_process_group() 
 
     process_query, process_parameters = transaction.queries[1]
     assert "JOIN visible_objects" in process_query
-    assert (
-        "process_group.tenant_id = (SELECT tenant_id FROM requested_tenant)"
-        in process_query
-    )
+    assert "process_group.tenant_id = (SELECT tenant_id FROM requested_tenant)" in process_query
     assert "object_tenant.tenant_code AS object_tenant_code" in process_query
     assert "process.process_execution_order IS NOT DISTINCT FROM %s" in process_query
     assert "process.process_location IS NOT DISTINCT FROM %s" in process_query
@@ -491,6 +463,8 @@ async def test_object_list_is_tenant_visible_filtered_and_bounded() -> None:
         rows=[
             {
                 "object_id": 101,
+                "review_revision": "a" * 64,
+                "is_locked": False,
                 "object_schema": "sales",
                 "object_name": "CustomerSilver",
                 "object_type_code": "TABLE",
@@ -551,6 +525,7 @@ async def test_object_detail_rechecks_visibility_and_bounds_attributes() -> None
     transaction = RecordingTransaction(
         one_row={
             "object_id": 101,
+            "review_revision": "a" * 64,
             "object_schema": "sales",
             "object_name": "CustomerSilver",
             "object_type_code": "TABLE",
@@ -574,10 +549,13 @@ async def test_object_detail_rechecks_visibility_and_bounds_attributes() -> None
         rows=[
             {
                 "attribute_id": 501,
+                "review_revision": "b" * 64,
                 "attribute_name": "CustomerId",
                 "attribute_ordinal_position": 1,
                 "attribute_description": "Customer key",
                 "attribute_data_type": "BIGINT",
+                "attribute_inferred_data_type": None,
+                "is_locked": False,
                 "attribute_nullability": False,
                 "is_surrogate_key": True,
                 "is_natural_key": False,
@@ -669,9 +647,7 @@ async def test_all_repository_queries_execute_with_the_web_role(
                     offset=0,
                 )
                 for row in rows:
-                    DATASETS_BY_NAME[dataset].row_model.model_validate(
-                        dict(row), strict=True
-                    )
+                    DATASETS_BY_NAME[dataset].row_model.model_validate(dict(row), strict=True)
                     assert "connection_value" not in row
             assert (
                 await repository.list_objects(
@@ -706,9 +682,7 @@ async def test_gds_object_tenant_comes_only_from_source_tenant_id(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -835,26 +809,18 @@ async def test_gds_object_tenant_comes_only_from_source_tenant_id(
         assert objects
         assert detail is not None
         assert {row["tenant_code"] for row in bronze_objects} == {"DEMO_GDS_TENANT"}
-        assert {row["tenant_code"] for row in bronze_attributes} == {
-            "DEMO_GDS_TENANT"
-        }
+        assert {row["tenant_code"] for row in bronze_attributes} == {"DEMO_GDS_TENANT"}
         assert {row["source_tenant_code"] for row in object_mappings} == {
             "DEMO_TENANT",
             "DEMO_GDS_TENANT",
         }
-        assert {row["target_tenant_code"] for row in object_mappings} == {
-            "DEMO_GDS_TENANT"
-        }
+        assert {row["target_tenant_code"] for row in object_mappings} == {"DEMO_GDS_TENANT"}
         assert {row["source_tenant_code"] for row in copies} == {"DEMO_TENANT"}
         assert {row["target_tenant_code"] for row in copies} == {"DEMO_GDS_TENANT"}
-        assert {row["object_tenant_code"] for row in processes} == {
-            "DEMO_GDS_TENANT"
-        }
+        assert {row["object_tenant_code"] for row in processes} == {"DEMO_GDS_TENANT"}
         assert {row.source_tenant_code for row in objects} == {"DEMO_TENANT"}
         assert detail.source_tenant_code == "DEMO_TENANT"
-        assert unassigned_object_name not in {
-            str(row["object_name"]) for row in bronze_objects
-        }
+        assert unassigned_object_name not in {str(row["object_name"]) for row in bronze_objects}
     finally:
         await database.close()
 
@@ -872,9 +838,7 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -985,13 +949,9 @@ async def test_all_metadata_rows_and_object_details_match_shared_contracts(
                     assert "connection_value" not in document
                     assert not any(column.endswith("_id") for column in document)
                 if dataset == "source_object":
-                    assert hidden_object_name not in {
-                        str(row["object_name"]) for row in rows
-                    }
+                    assert hidden_object_name not in {str(row["object_name"]) for row in rows}
                 if dataset == "tenant":
-                    assert hidden_tenant_code not in {
-                        str(row["tenant_code"]) for row in rows
-                    }
+                    assert hidden_tenant_code not in {str(row["tenant_code"]) for row in rows}
                 if dataset == "connection":
                     assert hidden_connection_code not in {
                         str(row["connection_code"]) for row in rows

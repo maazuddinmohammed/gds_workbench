@@ -1047,3 +1047,42 @@ strong {
   color: #d6dee5;
   background: #3b4956;
 }
+.physical-metadata-workspace > * { min-width: 0; }
+.physical-review-access, .physical-review-notice { font-size: 0.65rem; margin: 0.65rem 0; }
+.physical-review-notice { color: var(--green); }
+.physical-catalog-filters { grid-template-columns: repeat(4, minmax(7rem, 1fr)) auto; }
+.physical-catalog-filters label { font-size: 0.65rem; color: var(--muted); font-weight: 700; }
+.physical-review-actions, .physical-page-controls, .physical-attribute-heading {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+.physical-review-actions > span, .physical-page-controls > span { font-size: 0.62rem; margin-right: auto; }
+.physical-catalog-scroll, .physical-attribute-scroll { border: 1px solid var(--line); max-height: 34rem; }
+.physical-catalog-scroll table { min-width: 48rem; }
+.physical-attribute-scroll table { min-width: 50rem; }
+.physical-catalog-scroll th, .physical-catalog-scroll td,
+.physical-attribute-scroll th, .physical-attribute-scroll td { text-align: left; vertical-align: top; padding: 0.6rem; font-size: 0.62rem; }
+.physical-catalog-scroll thead th, .physical-attribute-scroll thead th { position: sticky; top: 0; background: var(--soft); z-index: 1; }
+.physical-catalog-scroll td:last-child { text-align: right; }
+.physical-catalog-scroll :is(th, td):first-child,
+.physical-attribute-scroll :is(th, td):first-child { width: 2rem; }
+.physical-catalog-scroll tbody th,
+.physical-attribute-scroll tbody th { text-transform: none; letter-spacing: normal; background: transparent; }
+.physical-attribute-scroll details { min-width: 12rem; max-width: 24rem; }
+.physical-attribute-scroll summary { cursor: pointer; }
+.physical-metadata-workspace .physical-object-inspector { width: 100%; max-height: none; position: static; margin-top: 1.5rem; }
+.physical-object-inspector h2 { overflow-wrap: anywhere; }
+.physical-description { white-space: pre-wrap; overflow-wrap: anywhere; }
+.physical-attribute-heading { justify-content: space-between; }
+.physical-attribute-heading h3 { font-size: 0.8rem; margin: 0; }
+.physical-attribute-heading label { font-size: 0.6rem; display: grid; gap: 0.25rem; }
+.physical-attribute-heading select { min-height: 2rem; min-width: 7rem; padding: 0.3rem 0.5rem; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); font: inherit; }
+.physical-object-inspector section > p { font-size: 0.65rem; }
+@media (max-width: 65rem) {
+  .physical-catalog-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+@media (max-width: 42rem) {
+  .physical-review-actions > span, .physical-page-controls > span { flex-basis: 100%; }
+  .physical-catalog-filters { display: grid; grid-template-columns: 1fr; }
+  .physical-object-inspector { padding: 0.75rem; }
+}

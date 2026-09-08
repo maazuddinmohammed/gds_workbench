@@ -5,7 +5,9 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
+from collections import Counter
 from collections.abc import Mapping
 from datetime import datetime
 from typing import TYPE_CHECKING, Annotated, Any, Literal, LiteralString, cast
@@ -16,11 +18,14 @@ from pydantic import Field, ValidationError
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.contracts import (
+    MAX_AGENT_VALIDATION_ERROR_EXAMPLES,
     MAX_STAGE_CHUNK_BYTES,
     MAX_STAGE_CHUNK_RECORDS,
     MAX_STAGE_CHUNKS,
     SHA256_PATTERN,
     ChangeSetContractModel,
+    ChangeSetValidationErrorGroup,
+    bounded_validation_outcome,
     canonical_records_sha256,
 )
 from gds_etl_workbench.application.change_sets.metadata_validation import (
@@ -30,6 +35,7 @@ from gds_etl_workbench.application.change_sets.metadata_validation import (
 )
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
+    AttributeLockedError,
     AuthorizationDeniedError,
     CandidateDigestConflictError,
     DraftRevisionConflictError,
@@ -320,6 +326,27 @@ class GetMetadataChangeSetResult(ContractModel):
     terminal_at: datetime | None
 
 
+class MetadataChangeSetDatasetFingerprint(ContractModel):
+    dataset: ChangeSetDataset
+    record_count: int = Field(ge=0)
+    sha256: str = Field(pattern=SHA256_PATTERN)
+
+
+class GetMetadataChangeSetFingerprintResult(ContractModel):
+    schema_version: Literal["1.0"] = "1.0"
+    fingerprint_version: Literal["1.0"] = "1.0"
+    area: Literal["metadata"] = "metadata"
+    tenant_id: int = Field(gt=0, le=9_223_372_036_854_775_807)
+    metadata_change_set_id: UUID
+    status: Literal["active", "validated", "applied", "expired", "archived", "superseded"]
+    draft_revision: int = Field(gt=0)
+    dataset_count: int = Field(ge=0)
+    record_count: int = Field(ge=0)
+    datasets: list[MetadataChangeSetDatasetFingerprint]
+    fingerprint: str = Field(pattern=SHA256_PATTERN)
+    expires_at: datetime
+
+
 class MetadataChangeSetValidationError(ContractModel):
     code: str
     dataset: str
@@ -355,7 +382,9 @@ class ValidateMetadataChangeSetResult(ContractModel):
     candidate_digest: str | None
     staged_record_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
+    error_groups: list[ChangeSetValidationErrorGroup]
     errors: list[MetadataChangeSetValidationError]
+    errors_truncated: bool
     action_review: list[MetadataChangeSetActionReview]
     validated_at: datetime | None
     expires_at: datetime
@@ -374,7 +403,9 @@ class ApplyMetadataChangeSetResult(ContractModel):
     staged_record_count: int = Field(ge=0)
     action_count: int = Field(ge=0)
     error_count: int = Field(ge=0)
+    error_groups: list[ChangeSetValidationErrorGroup]
     errors: list[MetadataChangeSetValidationError]
+    errors_truncated: bool
     action_review: list[MetadataChangeSetActionReview]
     applied_at: datetime | None
 
@@ -404,9 +435,10 @@ def register_metadata_change_set_tools(
     from mcp.server.mcpserver import Context as McpContext
 
     from gds_etl_workbench.adapters.auth.identity import AuthenticationError
-    from gds_etl_workbench.adapters.mcp.annotations import change_set_annotations
+    from gds_etl_workbench.adapters.mcp.annotations import (
+        closed_world_annotations as _annotations,
+    )
 
-    _annotations = change_set_annotations
     globals()["Context"] = McpContext
 
     @server.tool(
@@ -645,7 +677,7 @@ def register_metadata_change_set_tools(
     @server.tool(
         description=(
             "Store one ordered Metadata batch chunk: 1-5,000 complete records and at most 450 "
-            "KiB after schema normalization. chunk_sha256 covers the canonical normalized list. "
+            "KiB after schema normalization. chunk_sha256 covers the exact canonical request list. "
             "An identical retry is safe; Put does not change the draft revision."
         ),
         annotations=_annotations(read_only=False, destructive=False, idempotent=True),
@@ -679,7 +711,7 @@ def register_metadata_change_set_tools(
             str,
             Field(
                 pattern=SHA256_PATTERN,
-                description="SHA-256 of this chunk's normalized record list.",
+                description="SHA-256 of this chunk's exact canonical request record list.",
             ),
         ],
         schema_version: Literal["1.0"] = "1.0",
@@ -695,9 +727,9 @@ def register_metadata_change_set_tools(
             ).encode("utf-8")
             if len(encoded) > MAX_STAGE_CHUNK_BYTES:
                 raise InvalidRequestError("The Stage chunk exceeds the bounded byte limit.")
-            if canonical_records_sha256(normalized) != chunk_sha256:
+            if canonical_records_sha256(records) != chunk_sha256:
                 raise InvalidRequestError(
-                    "The Stage chunk SHA-256 does not match its normalized records."
+                    "The Stage chunk SHA-256 does not match its request records."
                 )
             principal = identity_provider.request_principal(ctx.request_context.request)
             async with database.write_transaction() as transaction:
@@ -867,7 +899,7 @@ def register_metadata_change_set_tools(
                 status=row["metadata_change_set_status"],
                 draft_revision=row["draft_revision"],
                 candidate_digest=row["candidate_digest"],
-                validation_outcome=row["validation_outcome"],
+                validation_outcome=bounded_validation_outcome(row["validation_outcome"]),
                 dataset_counts=counts,
                 dataset=dataset,
                 records=records,
@@ -895,6 +927,90 @@ def register_metadata_change_set_tools(
             "tenant_id",
             "metadata_change_set_id",
             "dataset",
+            "schema_version",
+        },
+        tenant_argument="tenant_id",
+    )
+
+    @server.tool(
+        description=(
+            "Return bounded counts and SHA-256 fingerprints for the caller's exact Metadata "
+            "Change Set revision without returning pending records. Use this to verify Stage "
+            "transport, including active drafts that failed validation."
+        ),
+        annotations=_annotations(read_only=True, destructive=False, idempotent=True),
+        meta={"gds/toolPolicy": READ_POLICY.value},
+        structured_output=True,
+    )
+    async def get_metadata_change_set_fingerprint(
+        ctx: Context[None],
+        tenant_id: Annotated[int, Field(gt=0, le=9_223_372_036_854_775_807)],
+        metadata_change_set_id: UUID,
+        schema_version: Literal["1.0"] = "1.0",
+    ) -> GetMetadataChangeSetFingerprintResult:
+        del schema_version
+        try:
+            principal = identity_provider.request_principal(ctx.request_context.request)
+            async with database.write_transaction() as transaction:
+                row = await transaction.fetch_one(
+                    _GET_SQL,
+                    (
+                        *_identity_arguments(principal),
+                        tenant_id,
+                        metadata_change_set_id,
+                    ),
+                )
+            _raise_governed_denial(row)
+            assert row is not None
+            datasets = [
+                MetadataChangeSetDatasetFingerprint(
+                    dataset=name,
+                    record_count=len(records),
+                    sha256=canonical_records_sha256(records),
+                )
+                for name in CHANGE_SET_DATASETS
+                for records in [_read_document(row, name)]
+            ]
+            fingerprint_document = {
+                "area": "metadata",
+                "datasets": [item.model_dump(mode="json") for item in datasets],
+                "fingerprint_version": "1.0",
+            }
+            fingerprint = hashlib.sha256(
+                json.dumps(
+                    fingerprint_document,
+                    ensure_ascii=False,
+                    separators=(",", ":"),
+                    sort_keys=True,
+                ).encode("utf-8")
+            ).hexdigest()
+            return GetMetadataChangeSetFingerprintResult(
+                tenant_id=tenant_id,
+                metadata_change_set_id=metadata_change_set_id,
+                status=row["metadata_change_set_status"],
+                draft_revision=row["draft_revision"],
+                dataset_count=len(datasets),
+                record_count=sum(item.record_count for item in datasets),
+                datasets=datasets,
+                fingerprint=fingerprint,
+                expires_at=row["expires_time"],
+            )
+        except AuthenticationError as error:
+            raise MetadataChangeSetToolError(f"{error.public_code}: {error.message}") from None
+        except WorkbenchError as error:
+            raise MetadataChangeSetToolError(f"{error.code}: {error.message}") from None
+        except Exception:
+            raise MetadataChangeSetToolError(
+                "internal_error: The operation could not be completed."
+            ) from None
+
+    audit.register_tool(
+        "get_metadata_change_set_fingerprint",
+        policy=READ_POLICY,
+        summarize_input=_tenant_audit,
+        retain_arguments={
+            "tenant_id",
+            "metadata_change_set_id",
             "schema_version",
         },
         tenant_argument="tenant_id",
@@ -940,16 +1056,9 @@ def register_metadata_change_set_tools(
                 candidate_digest=persisted["candidate_digest"],
                 staged_record_count=validation.staged_record_count,
                 error_count=len(validation.issues),
-                errors=[
-                    MetadataChangeSetValidationError(
-                        code=issue.code,
-                        dataset=issue.dataset,
-                        record_number=issue.record_number,
-                        fields=list(issue.fields),
-                        message=issue.message,
-                    )
-                    for issue in validation.issues
-                ],
+                error_groups=_metadata_error_groups(validation),
+                errors=_metadata_error_examples(validation),
+                errors_truncated=(len(validation.issues) > MAX_AGENT_VALIDATION_ERROR_EXAMPLES),
                 action_review=_action_review(validation),
                 validated_at=persisted["validated_time"],
                 expires_at=persisted["expires_time"],
@@ -1034,16 +1143,9 @@ def register_metadata_change_set_tools(
                 staged_record_count=validation.staged_record_count,
                 action_count=int(applied_row["action_count"]) if applied_row else 0,
                 error_count=len(validation.issues),
-                errors=[
-                    MetadataChangeSetValidationError(
-                        code=issue.code,
-                        dataset=issue.dataset,
-                        record_number=issue.record_number,
-                        fields=list(issue.fields),
-                        message=issue.message,
-                    )
-                    for issue in validation.issues
-                ],
+                error_groups=_metadata_error_groups(validation),
+                errors=_metadata_error_examples(validation),
+                errors_truncated=(len(validation.issues) > MAX_AGENT_VALIDATION_ERROR_EXAMPLES),
                 action_review=_action_review(validation),
                 applied_at=applied_row["applied_time"] if applied_row else None,
             )
@@ -1161,6 +1263,31 @@ def _action_review(
     ]
 
 
+def _metadata_error_groups(
+    validation: MetadataChangeSetValidation,
+) -> list[ChangeSetValidationErrorGroup]:
+    groups = Counter((issue.dataset, issue.code) for issue in validation.issues)
+    return [
+        ChangeSetValidationErrorGroup(dataset=dataset, code=code, count=count)
+        for (dataset, code), count in sorted(groups.items())
+    ]
+
+
+def _metadata_error_examples(
+    validation: MetadataChangeSetValidation,
+) -> list[MetadataChangeSetValidationError]:
+    return [
+        MetadataChangeSetValidationError(
+            code=issue.code,
+            dataset=issue.dataset,
+            record_number=issue.record_number,
+            fields=list(issue.fields),
+            message=issue.message,
+        )
+        for issue in validation.issues[:MAX_AGENT_VALIDATION_ERROR_EXAMPLES]
+    ]
+
+
 async def _validate_and_persist(
     transaction: WriteTransaction,
     *,
@@ -1233,6 +1360,8 @@ def _raise_governed_denial(row: Mapping[str, Any] | None) -> None:
         raise MetadataChangeSetNotValidatedError()
     if denial_code == "object_locked":
         raise ObjectLockedError()
+    if denial_code == "attribute_locked":
+        raise AttributeLockedError()
     if denial_code == "candidate_digest_conflict":
         raise CandidateDigestConflictError()
     if denial_code == "stage_batch_conflict":

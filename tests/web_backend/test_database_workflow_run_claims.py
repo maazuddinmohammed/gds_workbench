@@ -9,23 +9,23 @@ from uuid import UUID, uuid4
 
 import psycopg
 import pytest
+from gds_workbench_api.database import WebPostgresDatabase
+from gds_workbench_api.features.workflows.execution import (
+    DatabaseWorkflowClaimRepository,
+)
 from psycopg.errors import (
     InsufficientPrivilege,
     ObjectNotInPrerequisiteState,
     RaiseException,
 )
 from psycopg.rows import dict_row
+
 from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_workflow_run_lifecycle import (
     CREATE_WORKFLOW_RUN_SQL,
     WorkflowContext,
     create_workflow_run_parameters,
     seed_workflow_context,
-)
-
-from gds_workbench_api.database import WebPostgresDatabase
-from gds_workbench_api.features.workflows.execution import (
-    DatabaseWorkflowClaimRepository,
 )
 
 if TYPE_CHECKING:
@@ -161,10 +161,7 @@ async def test_worker_repository_uses_the_exact_claim_renew_and_release_contract
             lease_duration_seconds=60,
         )
         assert renewed.workflow_run_id == workflow_run_id
-        assert (
-            renewed.workflow_run_claim_expires_time
-            > renewed.workflow_run_claim_heartbeat_time
-        )
+        assert renewed.workflow_run_claim_expires_time > renewed.workflow_run_claim_heartbeat_time
 
         assert await repository.release(
             workflow_run_id=workflow_run_id,
@@ -194,9 +191,7 @@ def test_web_worker_claims_the_oldest_running_run_without_persisting_raw_token(
     ) as connection:
         connection.execute("SET ROLE gds_web_write")
         with pytest.raises(RaiseException, match="between 1 and 300"):
-            connection.execute(
-                "SELECT * FROM application.claim_next_workflow_run(0)"
-            ).fetchone()
+            connection.execute("SELECT * FROM application.claim_next_workflow_run(0)").fetchone()
         claimed = require_row(
             connection.execute(
                 "SELECT * FROM application.claim_next_workflow_run(%s::INTEGER)",
@@ -471,9 +466,7 @@ def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         assert (
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             is None
         )
 
@@ -498,9 +491,7 @@ def test_claim_terminalizes_inactive_actor_or_exact_identity_once(
                 )
 
         assert (
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             is None
         )
 
@@ -611,9 +602,7 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         assert (
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             is None
         )
 
@@ -628,9 +617,7 @@ def test_ambiguous_nullable_actor_identity_terminalizes_once(
             )
 
         assert (
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             is None
         )
 
@@ -740,9 +727,7 @@ def test_claim_renewal_and_release_require_the_exact_token(
     ) as connection:
         connection.execute("SET ROLE gds_web_write")
         claimed = require_row(
-            connection.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            connection.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
         )
         claim_token = claimed["workflow_run_claim_token"]
         assert isinstance(claim_token, UUID)
@@ -859,9 +844,7 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
     ) as worker:
         worker.execute("SET ROLE gds_web_write")
         first = require_row(
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
         )
         current_token = first["workflow_run_claim_token"]
         assert isinstance(current_token, UUID)
@@ -891,9 +874,7 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
                 ).fetchone()
 
             recovered = require_row(
-                worker.execute(
-                    "SELECT * FROM application.claim_next_workflow_run(30)"
-                ).fetchone()
+                worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             )
             rotated_token = recovered["workflow_run_claim_token"]
             assert isinstance(rotated_token, UUID)
@@ -923,9 +904,7 @@ def test_expired_claim_recovery_is_bounded_and_fenced_by_the_rotated_token(
             _expire_claim(owner, workflow_run_id)
 
         assert (
-            worker.execute(
-                "SELECT * FROM application.claim_next_workflow_run(30)"
-            ).fetchone()
+            worker.execute("SELECT * FROM application.claim_next_workflow_run(30)").fetchone()
             is None
         )
         with pytest.raises(RaiseException, match="claim is unavailable"):

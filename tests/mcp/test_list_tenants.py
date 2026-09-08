@@ -23,12 +23,8 @@ from gds_etl_workbench.tools.tenants.list_tenants import ListTenantsResult
 @dataclass
 class RecordingDatabase:
     records: list[dict[str, Any]]
-    calls: list[tuple[int, int]] = field(
-        default_factory=lambda: list[tuple[int, int]]()
-    )
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    calls: list[tuple[int, int]] = field(default_factory=lambda: list[tuple[int, int]]())
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
     audit_records: list[ToolCallLogRecord] = field(
         default_factory=lambda: list[ToolCallLogRecord]()
     )
@@ -84,9 +80,7 @@ def settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
-                "https://snapshot.blob.core.windows.net"
-            ),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )

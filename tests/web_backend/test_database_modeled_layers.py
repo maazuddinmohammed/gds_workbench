@@ -7,8 +7,6 @@ from uuid import uuid4
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from psycopg import Connection
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.dimensional import (
     DatabaseDimensionalService,
@@ -26,6 +24,7 @@ from gds_workbench_api.features.logical import (
     LogicalRelationshipFilters,
     ModeledFilters,
 )
+from psycopg import Connection
 
 
 class DisposablePostgresFixture(Protocol):
@@ -630,28 +629,18 @@ async def test_logical_and_dimensional_reads_round_trip_through_web_role(
     assert logical_entity.workflow_run_id is None
     assert logical_entity.submodels[0].logical_submodel_id == logical_submodel_id
     assert isinstance(logical_entity.sources[0], LogicalAssertionSource)
-    assert logical_entity.sources[0].assertion_record.modeling_assertion_record_id == (
-        assertion_id
-    )
+    assert logical_entity.sources[0].assertion_record.modeling_assertion_record_id == (assertion_id)
     assert logical_attributes.items[0].logical_attribute_id == customer_attribute_id
     assert isinstance(logical_attribute.sources[0], LogicalAttributeAssertionSource)
-    assert logical_relationships.items[0].logical_relationship_id == (
-        logical_relationship_id
-    )
+    assert logical_relationships.items[0].logical_relationship_id == (logical_relationship_id)
     assert logical_relationship.to_logical_entity_id == customer_id
     assert logical_submodels.items[0].entity_count == 1
     assert logical_submodel.entities[0].logical_entity_id == customer_id
 
-    assert [item.dimensional_entity_id for item in dimensional_objects.items] == [
-        fact_id
-    ]
-    assert dimensional_object.submodels[0].dimensional_submodel_id == (
-        dimensional_submodel_id
-    )
+    assert [item.dimensional_entity_id for item in dimensional_objects.items] == [fact_id]
+    assert dimensional_object.submodels[0].dimensional_submodel_id == (dimensional_submodel_id)
     assert isinstance(dimensional_object.sources[0], DimensionalAssertionSource)
-    assert dimensional_attributes.items[0].dimensional_attribute_id == (
-        fact_customer_key_id
-    )
+    assert dimensional_attributes.items[0].dimensional_attribute_id == (fact_customer_key_id)
     assert isinstance(
         dimensional_attribute.sources[0],
         DimensionalAttributeAssertionSource,

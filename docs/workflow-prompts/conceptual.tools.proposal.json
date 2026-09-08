@@ -1,0 +1,1477 @@
+{
+  "workflow": "conceptual",
+  "stage": "candidate_authoring",
+  "mode": "tool_assisted",
+  "status": "approved_design; implementation_deferred",
+  "contract_reuse": "The first six entries reference exact accepted reader definitions to avoid maintaining duplicate contracts. They are separate Conceptual-local registrations against this run's eleven variables, not a global prompt-variable catalog. Resolve referenced schemas using the definitions in their source document. The new readers' output schemas use this document's definitions.",
+  "tools": [
+    {
+      "name": "get_source_context",
+      "variable": "source_context",
+      "description": "Return the same source_context value as the Conceptual prompt variable: contributing Source Connections and their business/type context for this frozen run. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/0",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_gds_context",
+      "variable": "gds_context",
+      "description": "Return the same gds_context value as the Conceptual prompt variable: actual GDS placements for scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/1",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_objects",
+      "variable": "object_context",
+      "description": "Return scoped physical Objects associated with a complete Source Connection natural key. Bronze matches follow registered ingestion mappings and retain GDS natural keys; Source matches retain Source keys. Omit the filter to return all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/2",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_object_details",
+      "variable": "object_attribute_context",
+      "description": "Return Attribute metadata and saved Profiles grouped under requested in-scope physical Object keys, using the object_attribute_context structure. Omitted/empty object_keys returns all scoped groups. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/3",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_object_relationships",
+      "variable": "object_relationship_context",
+      "description": "Return existing incoming and outgoing relationships grouped under requested physical Object keys, in the same shape as object_relationship_context. Omitted/empty keys returns groups for all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/4",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_modeling_assertions",
+      "variable": "modeling_assertions",
+      "description": "Read authorized, active, Conceptual-applicable Modeling Assertions from the frozen run. Omitted/empty assertion_keys selects all; supplied nominal record keys narrow the result. Returns the same seven-field records as modeling_assertions. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "analysis.context-and-tools.json#/tools/5",
+      "reuse_rule": "Reuse the exact input/output schemas, default selections, natural-key rules, paging, and error behavior from this accepted reader contract. Instantiate it for the current Conceptual run and corresponding Conceptual-local variable; do not run Analysis or read a different run.",
+      "applicability_override": "Select Conceptual-applicable Assertion Records."
+    },
+    {
+      "name": "list_conceptual_objects",
+      "variable": "conceptual_object_list",
+      "description": "List compact existing Conceptual objects: natural-key fields only, matching conceptual_object_list. Optionally filter by supporting physical object_keys; omitted/empty returns all. Use the corresponding get reader for full records.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "object_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PhysicalObjectKey"
+            },
+            "default": [],
+            "description": "Optional complete in-scope physical Object keys copied from object_context/get_objects. Match this record's own Object supports. Omitted/empty selects all existing Conceptual identities, including Assertion-only records."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "object_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualObjectKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read the frozen authorized Conceptual run context only. No live discovery, SQL, measurements, writes, or scope changes.",
+        "Normalize identity comparisons with existing Model key rules and preserve saved spelling. Repeated selection keys return each record identity once. Unknown or unauthorized keys are errors, never an all-record fallback.",
+        "An unavailable applied Conceptual section uses the tool-error path; it is not a successful empty list. A known empty selection returns a complete empty page.",
+        "Use the accepted page envelope and existing response/cumulative/execution budgets. Each nonfinal successful page makes progress. Continue with only cursor. Repeating a cursor yields the same page; do not append it twice.",
+        "incomplete_object_key is always null for these four readers. Directory identities and full Conceptual records are emitted whole. Never silently truncate fields or supports. A single indivisible entry exceeding the response budget produces an explicit size error.",
+        "Filter each record by its own support_source_type=object references, matching any requested complete physical Object key. Keep each natural identity once, including when several requested Objects support it.",
+        "Use actual physical placement: Source keys for Source Objects, GDS keys for Bronze. Do not translate this filter through ingestion mappings or accept bare Object names.",
+        "No source filter means all known eligible identities, including Assertion-only and inactive/deprecated history. Filtered results may include historical support matches; details determine effective status and actual coverage.",
+        "A compact entry contains identity only. It does not certify meaning, completeness, confidence, active status, or lock state. A known physical Object with no direct matching supports yields an empty directory."
+      ],
+      "example_input": {},
+      "example_output": {
+        "items": [
+          {
+            "conceptual_object_name": "Customer"
+          },
+          {
+            "conceptual_object_name": "Order"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "object_keys": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_conceptual_objects",
+      "variable": "conceptual_objects",
+      "description": "Get full existing Conceptual objects matching conceptual_objects, including supports, confidence, status, and locks. Optionally supply exact nominal keys; omitted/empty keys returns all eligible full records in the frozen run. Continue later pages with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "conceptual_object_names": {
+            "type": "array",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Conceptual Object Name",
+              "type": "string"
+            },
+            "description": "Optional nominal record keys copied from the matching compact directory or a supplied full record. Omitted/empty selects all eligible detailed records in this frozen run. This reader does not accept physical source Object filters.",
+            "default": []
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "conceptual_object_names": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualObjectRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read the frozen authorized Conceptual run context only. No live discovery, SQL, measurements, writes, or scope changes.",
+        "Normalize identity comparisons with existing Model key rules and preserve saved spelling. Repeated selection keys return each record identity once. Unknown or unauthorized keys are errors, never an all-record fallback.",
+        "An unavailable applied Conceptual section uses the tool-error path; it is not a successful empty list. A known empty selection returns a complete empty page.",
+        "Use the accepted page envelope and existing response/cumulative/execution budgets. Each nonfinal successful page makes progress. Continue with only cursor. Repeating a cursor yields the same page; do not append it twice.",
+        "incomplete_object_key is always null for these four readers. Directory identities and full Conceptual records are emitted whole. Never silently truncate fields or supports. A single indivisible entry exceeding the response budget produces an explicit size error.",
+        "Omitted or empty nominal keys on an initial call select all eligible full records in the frozen run. Supplied keys narrow that selection; this reader has no physical supporting-Object selector.",
+        "Read any matching authorized identity in the same frozen context; a preceding list call is not mandatory when the compact variable or another supplied record already provides its key.",
+        "Return full records with all their stored supports, not only the supports responsible for a previous source-filtered directory match. Preserve confidence, history, status, and locks."
+      ],
+      "example_input": {
+        "conceptual_object_names": [
+          "Customer"
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "conceptual_object_name": "Customer",
+            "conceptual_object_definition": "A party that purchases goods from the business.",
+            "conceptual_object_type": "business_entity",
+            "conceptual_object_grain": "One purchasing party.",
+            "conceptual_object_aliases": [
+              "Buyer"
+            ],
+            "conceptual_object_confidence": "high",
+            "conceptual_object_status": "active",
+            "conceptual_object_is_locked": true,
+            "supports": [
+              {
+                "support_source_type": "object",
+                "source_object": {
+                  "tenant_code": "GDS",
+                  "system_code": "WAREHOUSE",
+                  "connection_code": "MAIN",
+                  "object_schema": "bronze",
+                  "object_name": "Customers"
+                },
+                "support_role": "business_basis",
+                "support_reason_detail": null,
+                "support_confidence": "high",
+                "support_status": "active",
+                "support_is_locked": true,
+                "support_reason": "The scoped Customers Object describes parties purchasing from the business."
+              }
+            ]
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "conceptual_object_names": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "list_conceptual_relationships",
+      "variable": "conceptual_relationship_list",
+      "description": "List compact existing Conceptual relationships: natural-key fields only, matching conceptual_relationship_list. Optionally filter by supporting physical object_keys; omitted/empty returns all. Use the corresponding get reader for full records.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "object_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PhysicalObjectKey"
+            },
+            "default": [],
+            "description": "Optional complete in-scope physical Object keys copied from object_context/get_objects. Match this record's own Object supports. Omitted/empty selects all existing Conceptual identities, including Assertion-only records."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "object_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualRelationshipKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read the frozen authorized Conceptual run context only. No live discovery, SQL, measurements, writes, or scope changes.",
+        "Normalize identity comparisons with existing Model key rules and preserve saved spelling. Repeated selection keys return each record identity once. Unknown or unauthorized keys are errors, never an all-record fallback.",
+        "An unavailable applied Conceptual section uses the tool-error path; it is not a successful empty list. A known empty selection returns a complete empty page.",
+        "Use the accepted page envelope and existing response/cumulative/execution budgets. Each nonfinal successful page makes progress. Continue with only cursor. Repeating a cursor yields the same page; do not append it twice.",
+        "incomplete_object_key is always null for these four readers. Directory identities and full Conceptual records are emitted whole. Never silently truncate fields or supports. A single indivisible entry exceeding the response budget produces an explicit size error.",
+        "Filter each record by its own support_source_type=object references, matching any requested complete physical Object key. Keep each natural identity once, including when several requested Objects support it.",
+        "Use actual physical placement: Source keys for Source Objects, GDS keys for Bronze. Do not translate this filter through ingestion mappings or accept bare Object names.",
+        "No source filter means all known eligible identities, including Assertion-only and inactive/deprecated history. Filtered results may include historical support matches; details determine effective status and actual coverage.",
+        "A compact entry contains identity only. It does not certify meaning, completeness, confidence, active status, or lock state. A known physical Object with no direct matching supports yields an empty directory.",
+        "Match the relationship's own physical supports, not the supports of its endpoint concepts. An endpoint association does not prove direct physical support. Without a source filter, the compact triples can be inspected for endpoint names before requesting exact relationship details."
+      ],
+      "example_input": {},
+      "example_output": {
+        "items": [
+          {
+            "from_conceptual_object_name": "Customer",
+            "to_conceptual_object_name": "Order",
+            "conceptual_relationship_name": "places"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "object_keys": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_conceptual_relationships",
+      "variable": "conceptual_relationships",
+      "description": "Get full existing Conceptual relationships matching conceptual_relationships, including supports, confidence, status, and locks. Optionally supply exact nominal keys; omitted/empty keys returns all eligible full records in the frozen run. Continue later pages with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "relationship_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualRelationshipKey"
+            },
+            "description": "Optional nominal record keys copied from the matching compact directory or a supplied full record. Omitted/empty selects all eligible detailed records in this frozen run. This reader does not accept physical source Object filters.",
+            "default": []
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "relationship_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/ConceptualRelationshipRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read the frozen authorized Conceptual run context only. No live discovery, SQL, measurements, writes, or scope changes.",
+        "Normalize identity comparisons with existing Model key rules and preserve saved spelling. Repeated selection keys return each record identity once. Unknown or unauthorized keys are errors, never an all-record fallback.",
+        "An unavailable applied Conceptual section uses the tool-error path; it is not a successful empty list. A known empty selection returns a complete empty page.",
+        "Use the accepted page envelope and existing response/cumulative/execution budgets. Each nonfinal successful page makes progress. Continue with only cursor. Repeating a cursor yields the same page; do not append it twice.",
+        "incomplete_object_key is always null for these four readers. Directory identities and full Conceptual records are emitted whole. Never silently truncate fields or supports. A single indivisible entry exceeding the response budget produces an explicit size error.",
+        "Omitted or empty nominal keys on an initial call select all eligible full records in the frozen run. Supplied keys narrow that selection; this reader has no physical supporting-Object selector.",
+        "Read any matching authorized identity in the same frozen context; a preceding list call is not mandatory when the compact variable or another supplied record already provides its key.",
+        "Return full records with all their stored supports, not only the supports responsible for a previous source-filtered directory match. Preserve confidence, history, status, and locks.",
+        "Relationship identity is from_conceptual_object_name + to_conceptual_object_name + conceptual_relationship_name. A relationship name alone or an endpoint concept-name filter is not accepted."
+      ],
+      "example_input": {
+        "relationship_keys": [
+          {
+            "from_conceptual_object_name": "Customer",
+            "to_conceptual_object_name": "Order",
+            "conceptual_relationship_name": "places"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "from_conceptual_object_name": "Customer",
+            "to_conceptual_object_name": "Order",
+            "conceptual_relationship_name": "places",
+            "conceptual_relationship_type": "business_association",
+            "conceptual_relationship_definition": "A customer places an order with the business.",
+            "conceptual_relationship_cardinality": "unknown",
+            "conceptual_relationship_basis": "The Object descriptions and order_customer_reference assertion connect orders to their ordering customers.",
+            "conceptual_relationship_cardinality_basis": "The available evidence does not establish business cardinality across all relevant cases.",
+            "conceptual_relationship_confidence": "high",
+            "conceptual_relationship_status": "active",
+            "conceptual_relationship_is_locked": false,
+            "supports": [
+              {
+                "support_source_type": "assertion",
+                "assertion_record": {
+                  "modeling_assertion_record_key": "order_customer_reference"
+                },
+                "support_role": "business_basis",
+                "support_reason_detail": null,
+                "support_confidence": "high",
+                "support_status": "active",
+                "support_is_locked": false,
+                "support_reason": "The applicable assertion states that an order references its ordering customer."
+              }
+            ]
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "relationship_keys": [],
+        "cursor": null
+      }
+    }
+  ],
+  "$defs": {
+    "AssertionRecordKey": {
+      "additionalProperties": false,
+      "properties": {
+        "modeling_assertion_record_key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+          "title": "Modeling Assertion Record Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "modeling_assertion_record_key"
+      ],
+      "title": "AssertionRecordKey",
+      "type": "object"
+    },
+    "AssertionSupportRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "assertion",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "assertion_record": {
+          "$ref": "#/$defs/AssertionRecordKey"
+        },
+        "support_role": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Role"
+        },
+        "support_reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Support Reason",
+          "type": "string"
+        },
+        "support_reason_detail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Reason Detail"
+        },
+        "support_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Support Confidence",
+          "type": "string"
+        },
+        "support_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Support Status",
+          "type": "string"
+        },
+        "support_is_locked": {
+          "title": "Support Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "assertion_record",
+        "support_role",
+        "support_reason",
+        "support_reason_detail",
+        "support_confidence",
+        "support_status",
+        "support_is_locked"
+      ],
+      "title": "AssertionSupportRecord",
+      "type": "object"
+    },
+    "ConceptualObjectRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Object Name",
+          "type": "string"
+        },
+        "conceptual_object_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Object Definition",
+          "type": "string"
+        },
+        "conceptual_object_type": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Object Type",
+          "type": "string"
+        },
+        "conceptual_object_grain": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Object Grain",
+          "type": "string"
+        },
+        "conceptual_object_aliases": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Conceptual Object Aliases",
+          "type": "array"
+        },
+        "conceptual_object_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Conceptual Object Confidence",
+          "type": "string"
+        },
+        "conceptual_object_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Conceptual Object Status",
+          "type": "string"
+        },
+        "conceptual_object_is_locked": {
+          "title": "Conceptual Object Is Locked",
+          "type": "boolean"
+        },
+        "supports": {
+          "items": {
+            "$ref": "#/$defs/SupportRecord"
+          },
+          "title": "Supports",
+          "type": "array"
+        }
+      },
+      "required": [
+        "conceptual_object_name",
+        "conceptual_object_definition",
+        "conceptual_object_type",
+        "conceptual_object_grain",
+        "conceptual_object_aliases",
+        "conceptual_object_confidence",
+        "conceptual_object_status",
+        "conceptual_object_is_locked",
+        "supports"
+      ],
+      "title": "ConceptualObjectRecord",
+      "type": "object"
+    },
+    "ObjectSupportRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "object",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "source_object": {
+          "$ref": "#/$defs/PhysicalObjectKey"
+        },
+        "support_role": {
+          "anyOf": [
+            {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Role"
+        },
+        "support_reason": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Support Reason",
+          "type": "string"
+        },
+        "support_reason_detail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Support Reason Detail"
+        },
+        "support_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Support Confidence",
+          "type": "string"
+        },
+        "support_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Support Status",
+          "type": "string"
+        },
+        "support_is_locked": {
+          "title": "Support Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "source_object",
+        "support_role",
+        "support_reason",
+        "support_reason_detail",
+        "support_confidence",
+        "support_status",
+        "support_is_locked"
+      ],
+      "title": "ObjectSupportRecord",
+      "type": "object"
+    },
+    "PhysicalObjectKey": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Tenant Code",
+          "type": "string"
+        },
+        "system_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "System Code",
+          "type": "string"
+        },
+        "connection_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Connection Code",
+          "type": "string"
+        },
+        "object_schema": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Schema",
+          "type": "string"
+        },
+        "object_name": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name"
+      ],
+      "title": "PhysicalObjectKey",
+      "type": "object"
+    },
+    "SupportRecord": {
+      "discriminator": {
+        "mapping": {
+          "assertion": "#/$defs/AssertionSupportRecord",
+          "object": "#/$defs/ObjectSupportRecord"
+        },
+        "propertyName": "support_source_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/ObjectSupportRecord"
+        },
+        {
+          "$ref": "#/$defs/AssertionSupportRecord"
+        }
+      ]
+    },
+    "ConceptualRelationshipRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "from_conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Conceptual Object Name",
+          "type": "string"
+        },
+        "to_conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Conceptual Object Name",
+          "type": "string"
+        },
+        "conceptual_relationship_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Name",
+          "type": "string"
+        },
+        "conceptual_relationship_type": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Type",
+          "type": "string"
+        },
+        "conceptual_relationship_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Definition",
+          "type": "string"
+        },
+        "conceptual_relationship_cardinality": {
+          "anyOf": [
+            {
+              "enum": [
+                "one_to_one",
+                "one_to_many",
+                "many_to_one",
+                "many_to_many"
+              ],
+              "type": "string"
+            },
+            {
+              "const": "unknown",
+              "type": "string"
+            }
+          ],
+          "title": "Conceptual Relationship Cardinality"
+        },
+        "conceptual_relationship_basis": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Basis",
+          "type": "string"
+        },
+        "conceptual_relationship_cardinality_basis": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Cardinality Basis",
+          "type": "string"
+        },
+        "conceptual_relationship_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Conceptual Relationship Confidence",
+          "type": "string"
+        },
+        "conceptual_relationship_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Conceptual Relationship Status",
+          "type": "string"
+        },
+        "conceptual_relationship_is_locked": {
+          "title": "Conceptual Relationship Is Locked",
+          "type": "boolean"
+        },
+        "supports": {
+          "items": {
+            "$ref": "#/$defs/SupportRecord"
+          },
+          "title": "Supports",
+          "type": "array"
+        }
+      },
+      "required": [
+        "from_conceptual_object_name",
+        "to_conceptual_object_name",
+        "conceptual_relationship_name",
+        "conceptual_relationship_type",
+        "conceptual_relationship_definition",
+        "conceptual_relationship_cardinality",
+        "conceptual_relationship_basis",
+        "conceptual_relationship_cardinality_basis",
+        "conceptual_relationship_confidence",
+        "conceptual_relationship_status",
+        "conceptual_relationship_is_locked",
+        "supports"
+      ],
+      "title": "ConceptualRelationshipRecord",
+      "type": "object"
+    },
+    "ConceptualObjectKey": {
+      "type": "object",
+      "properties": {
+        "conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Object Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "conceptual_object_name"
+      ],
+      "additionalProperties": false
+    },
+    "ConceptualRelationshipKey": {
+      "type": "object",
+      "properties": {
+        "from_conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Conceptual Object Name",
+          "type": "string"
+        },
+        "to_conceptual_object_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Conceptual Object Name",
+          "type": "string"
+        },
+        "conceptual_relationship_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Conceptual Relationship Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_conceptual_object_name",
+        "to_conceptual_object_name",
+        "conceptual_relationship_name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "paging": {
+    "shared_contract_reference": "analysis.context-and-tools.json#/paging_contract",
+    "existing_six": "Preserve their accepted paging contracts, including marked continuation within physical Object detail/relationship groups.",
+    "conceptual_directories": "Page complete natural-key entries. A compact directory can be retrieved even when a corresponding full record would exceed the detail response budget.",
+    "conceptual_details": "Page complete detailed Conceptual records including supports. incomplete_object_key remains null. A single oversized full record returns an explicit size error; no partial-Conceptual-record format."
+  },
+  "review_state": {
+    "variables": "eleven; compact directories plus unchanged detailed and foundational forms",
+    "list_detail_separation": "accepted_user_direction",
+    "list_filters": "optional physical object_keys; omitted/empty lists all; direct supporting-Object lookup",
+    "detail_filters": "accepted_optional_nominal_keys; omitted_or_empty_returns_all_eligible_details",
+    "previous_dual_selector_proposal": "superseded; no reader accepts both physical supporting keys and conceptual identity keys",
+    "whole_conceptual_record_paging": "approved; oversized indivisible records return explicit size errors",
+    "tool_assisted_default": "approved_ingestion_mapping_inline_and_ten_optional_readers",
+    "conceptual_confidence_policy": "approved_supported_high_and_medium_authoring; speculative_low_changes_omitted",
+    "complete_tool_assisted_prompt_pair": "approved_complete_system_and_instruction_pair",
+    "no_argument_calls": "All ten readers accept an initial call without selection arguments and return all eligible records for their own result type, using existing paging."
+  },
+  "usage_examples": [
+    {
+      "scenario": "Find concepts supported by scoped Bronze Customers, then read Customer details.",
+      "calls": [
+        {
+          "name": "list_conceptual_objects",
+          "arguments": {
+            "object_keys": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers"
+              }
+            ]
+          },
+          "expected_items": [
+            {
+              "conceptual_object_name": "Customer"
+            }
+          ]
+        },
+        {
+          "name": "get_conceptual_objects",
+          "arguments": {
+            "conceptual_object_names": [
+              "Customer"
+            ]
+          },
+          "expected_items": [
+            {
+              "conceptual_object_name": "Customer",
+              "conceptual_object_definition": "A party that purchases goods from the business.",
+              "conceptual_object_type": "business_entity",
+              "conceptual_object_grain": "One purchasing party.",
+              "conceptual_object_aliases": [
+                "Buyer"
+              ],
+              "conceptual_object_confidence": "high",
+              "conceptual_object_status": "active",
+              "conceptual_object_is_locked": true,
+              "supports": [
+                {
+                  "support_source_type": "object",
+                  "source_object": {
+                    "tenant_code": "GDS",
+                    "system_code": "WAREHOUSE",
+                    "connection_code": "MAIN",
+                    "object_schema": "bronze",
+                    "object_name": "Customers"
+                  },
+                  "support_role": "business_basis",
+                  "support_reason_detail": null,
+                  "support_confidence": "high",
+                  "support_status": "active",
+                  "support_is_locked": true,
+                  "support_reason": "The scoped Customers Object describes parties purchasing from the business."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "Read the compact complete business relationship directory, then fetch one exact relationship.",
+      "calls": [
+        {
+          "name": "list_conceptual_relationships",
+          "arguments": {},
+          "expected_items": [
+            {
+              "from_conceptual_object_name": "Customer",
+              "to_conceptual_object_name": "Order",
+              "conceptual_relationship_name": "places"
+            }
+          ]
+        },
+        {
+          "name": "get_conceptual_relationships",
+          "arguments": {
+            "relationship_keys": [
+              {
+                "from_conceptual_object_name": "Customer",
+                "to_conceptual_object_name": "Order",
+                "conceptual_relationship_name": "places"
+              }
+            ]
+          },
+          "expected_items": [
+            {
+              "from_conceptual_object_name": "Customer",
+              "to_conceptual_object_name": "Order",
+              "conceptual_relationship_name": "places",
+              "conceptual_relationship_type": "business_association",
+              "conceptual_relationship_definition": "A customer places an order with the business.",
+              "conceptual_relationship_cardinality": "unknown",
+              "conceptual_relationship_basis": "The Object descriptions and order_customer_reference assertion connect orders to their ordering customers.",
+              "conceptual_relationship_cardinality_basis": "The available evidence does not establish business cardinality across all relevant cases.",
+              "conceptual_relationship_confidence": "high",
+              "conceptual_relationship_status": "active",
+              "conceptual_relationship_is_locked": false,
+              "supports": [
+                {
+                  "support_source_type": "assertion",
+                  "assertion_record": {
+                    "modeling_assertion_record_key": "order_customer_reference"
+                  },
+                  "support_role": "business_basis",
+                  "support_reason_detail": null,
+                  "support_confidence": "high",
+                  "support_status": "active",
+                  "support_is_locked": false,
+                  "support_reason": "The applicable assertion states that an order references its ordering customer."
+                }
+              ]
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "scenario": "The example relationship has Assertion-only support. A direct Customers support filter does not find it; the unfiltered relationship directory still does.",
+      "call": {
+        "name": "list_conceptual_relationships",
+        "arguments": {
+          "object_keys": [
+            {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Customers"
+            }
+          ]
+        }
+      },
+      "expected_output": {
+        "items": [],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      }
+    },
+    {
+      "scenario": "Continue a detail read using only its returned cursor.",
+      "call": {
+        "name": "get_conceptual_objects",
+        "arguments": {
+          "cursor": "example-returned-cursor"
+        }
+      },
+      "note": "Synthetic cursor example. Use the actual returned cursor from this same reader and frozen run."
+    },
+    {
+      "scenario": "Call get_conceptual_objects without inputs to retrieve all eligible full records; use returned cursors when paged.",
+      "call": {
+        "name": "get_conceptual_objects",
+        "arguments": {}
+      },
+      "expected_items_across_all_pages": [
+        {
+          "conceptual_object_name": "Customer",
+          "conceptual_object_definition": "A party that purchases goods from the business.",
+          "conceptual_object_type": "business_entity",
+          "conceptual_object_grain": "One purchasing party.",
+          "conceptual_object_aliases": [
+            "Buyer"
+          ],
+          "conceptual_object_confidence": "high",
+          "conceptual_object_status": "active",
+          "conceptual_object_is_locked": true,
+          "supports": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers"
+              },
+              "support_role": "business_basis",
+              "support_reason_detail": null,
+              "support_confidence": "high",
+              "support_status": "active",
+              "support_is_locked": true,
+              "support_reason": "The scoped Customers Object describes parties purchasing from the business."
+            }
+          ]
+        },
+        {
+          "conceptual_object_name": "Order",
+          "conceptual_object_definition": "A request by a customer to purchase goods.",
+          "conceptual_object_type": "business_event",
+          "conceptual_object_grain": "One customer sales order.",
+          "conceptual_object_aliases": [
+            "Sales Order"
+          ],
+          "conceptual_object_confidence": "high",
+          "conceptual_object_status": "active",
+          "conceptual_object_is_locked": false,
+          "supports": [
+            {
+              "support_source_type": "object",
+              "source_object": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders"
+              },
+              "support_role": "business_basis",
+              "support_reason_detail": null,
+              "support_confidence": "high",
+              "support_status": "active",
+              "support_is_locked": false,
+              "support_reason": "The scoped Orders Object describes sales orders placed by customers."
+            }
+          ]
+        }
+      ],
+      "equivalent_initial_arguments": {
+        "conceptual_object_names": []
+      }
+    },
+    {
+      "scenario": "Call get_conceptual_relationships without inputs to retrieve all eligible full records; use returned cursors when paged.",
+      "call": {
+        "name": "get_conceptual_relationships",
+        "arguments": {}
+      },
+      "expected_items_across_all_pages": [
+        {
+          "from_conceptual_object_name": "Customer",
+          "to_conceptual_object_name": "Order",
+          "conceptual_relationship_name": "places",
+          "conceptual_relationship_type": "business_association",
+          "conceptual_relationship_definition": "A customer places an order with the business.",
+          "conceptual_relationship_cardinality": "unknown",
+          "conceptual_relationship_basis": "The Object descriptions and order_customer_reference assertion connect orders to their ordering customers.",
+          "conceptual_relationship_cardinality_basis": "The available evidence does not establish business cardinality across all relevant cases.",
+          "conceptual_relationship_confidence": "high",
+          "conceptual_relationship_status": "active",
+          "conceptual_relationship_is_locked": false,
+          "supports": [
+            {
+              "support_source_type": "assertion",
+              "assertion_record": {
+                "modeling_assertion_record_key": "order_customer_reference"
+              },
+              "support_role": "business_basis",
+              "support_reason_detail": null,
+              "support_confidence": "high",
+              "support_status": "active",
+              "support_is_locked": false,
+              "support_reason": "The applicable assertion states that an order references its ordering customer."
+            }
+          ]
+        }
+      ],
+      "equivalent_initial_arguments": {
+        "relationship_keys": []
+      }
+    }
+  ],
+  "tool_availability": "Tools are optional per saved template and available only when enabled for the run. The agent need not call every enabled reader. Calling an enabled reader with no selection arguments requests all eligible records of that reader in the frozen authorized run, not unrestricted database records. Cursor continuation resumes its original selection.",
+  "default_delivery": {
+    "inline_variables": [
+      "ingestion_mapping"
+    ],
+    "selected_tools": [
+      "get_source_context",
+      "get_gds_context",
+      "get_objects",
+      "get_object_details",
+      "get_object_relationships",
+      "get_modeling_assertions",
+      "list_conceptual_objects",
+      "get_conceptual_objects",
+      "list_conceptual_relationships",
+      "get_conceptual_relationships"
+    ],
+    "author_control": "All eleven variables remain available for inline use/projection, and authors select permitted readers per saved template. The approved default uses ingestion_mapping inline and ten optional readers. Compact directories can be supplied inline instead of listing again. No ingestion-mapping tool or hidden full-evidence append.",
+    "status": "approved"
+  }
+}

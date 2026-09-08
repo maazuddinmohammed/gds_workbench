@@ -9,6 +9,8 @@ from dataclasses import dataclass, field
 from hashlib import sha256
 from typing import Any, Literal, LiteralString, cast
 
+from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
+from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
 from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.errors import WorkbenchError
@@ -25,23 +27,34 @@ from gds_etl_workbench.domain.snapshots.model import (
     DimensionalSection,
     LogicalSection,
     MappingSection,
+    ModelDataset,
     ModelSnapshot,
+    model_snapshot_records,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue
 
 from gds_workbench_api.features.assertions.contracts import validate_safe_json
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentContextToolRequestError,
     AgentContextToolResultTooLargeError,
     LocalAgentToolDefinition,
 )
+from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    registered_tool_definitions,
+)
 
+from .context_inputs import project_context_inputs
+from .context_readers import FrozenContextReaders
 from .plan import AgentRunPlan, ModelWorkflow, WorkflowExecutionMode
 from .repair import AgentContextTooLargeError, load_default_agent_context_policy
 
 type SnapshotLoader = Callable[
     [ReadTransaction, ModelReadContext],
     Awaitable[ModelSnapshot],
+]
+type PhysicalScopeLoader = Callable[
+    [ReadTransaction, ModelReadContext], Awaitable[PhysicalModelCatalog]
 ]
 type PhysicalObjectKey = tuple[str, str, str, str, str]
 
@@ -193,6 +206,7 @@ SELECT selected.selection_order,
        attribute.attribute_ordinal_position,
        attribute.attribute_description,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.attribute_custom_code,
        attribute.is_surrogate_key,
@@ -201,6 +215,7 @@ SELECT selected.selection_order,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
+       attribute.is_locked,
        attribute.is_active
   FROM selected
   JOIN eligible_attributes AS eligibility
@@ -227,19 +242,80 @@ SELECT selected.selection_order,
 """
 
 
+_PROMPT_SOURCE_CONTEXT_SQL: LiteralString = """
+SELECT target.object_id,
+       zone.zone_description,
+       source.object_schema AS source_object_schema,
+       source.object_name AS source_object_name,
+       source.object_description AS source_object_description,
+       source_tenant.tenant_code,
+       source_tenant.tenant_description,
+       source_system.system_code,
+       source_system.system_description,
+       system_type.system_type_code,
+       system_type.system_type_description,
+       source_connection.connection_code,
+       source_connection.connection_description,
+       connection_type.connection_type_code,
+       connection_type.connection_type_description,
+       source_zone.zone_description AS source_zone_description
+  FROM core.object AS target
+  JOIN reference.zone AS zone ON zone.zone_id = target.zone_id
+  LEFT JOIN LATERAL (
+      SELECT target.object_id AS source_object_id WHERE zone.zone_code = 'source'
+      UNION
+      SELECT mapping.source_object_id
+        FROM core.ingestion_object_mapping AS mapping
+       WHERE mapping.target_object_id = target.object_id
+         AND mapping.is_active AND zone.zone_code = 'bronze'
+  ) AS origin ON TRUE
+  LEFT JOIN core.object AS source
+    ON source.object_id = origin.source_object_id
+   AND source.is_active AND source.source_tenant_id = target.source_tenant_id
+  LEFT JOIN core.connection AS source_connection
+    ON source_connection.connection_id = source.connection_id
+   AND source_connection.tenant_id = target.source_tenant_id AND source_connection.is_active
+  LEFT JOIN core.tenant AS source_tenant
+    ON source_tenant.tenant_id = source_connection.tenant_id AND source_tenant.is_active
+  LEFT JOIN core.system AS source_system
+    ON source_system.system_id = source_connection.system_id AND source_system.is_active
+  LEFT JOIN reference.system_type AS system_type
+    ON system_type.system_type_id = source_system.system_type_id
+  LEFT JOIN reference.connection_type AS connection_type
+    ON connection_type.connection_type_id = source_connection.connection_type_id
+  LEFT JOIN reference.zone AS source_zone
+    ON source_zone.zone_id = source.zone_id AND source_zone.zone_code = 'source'
+ WHERE target.object_id = ANY(%s::BIGINT[]) AND target.source_tenant_id = %s
+ ORDER BY target.object_id, source.object_id
+"""
+
+_PROFILE_PROVENANCE_SQL: LiteralString = """
+SELECT tenant.tenant_code, system.system_code, connection.connection_code,
+       object_record.object_schema, object_record.object_name, attribute.attribute_name,
+       profile.updated_time AS profiled_at,
+       CASE WHEN run.workflow_run_id IS NULL THEN NULL
+            WHEN run.requested_batch_id IS NULL THEN 'all_rows' ELSE 'batch' END AS row_scope,
+       NULL::TEXT AS batch_attribute_name,
+       run.requested_batch_id AS batch_id
+  FROM workflow.attribute_profile AS profile
+  JOIN core.object AS object_record ON object_record.object_id = profile.object_id
+  JOIN core.attribute AS attribute ON attribute.attribute_id = profile.attribute_id
+  JOIN core.connection AS connection ON connection.connection_id = object_record.connection_id
+  JOIN core.tenant AS tenant ON tenant.tenant_id = connection.tenant_id
+  JOIN core.system AS system ON system.system_id = connection.system_id
+  LEFT JOIN application.workflow_run AS run
+    ON run.workflow_run_id = profile.workflow_run_id AND run.model_id = profile.model_id
+   AND run.model_workflow = 'profiling'
+ WHERE profile.model_id = %s AND profile.object_id = ANY(%s::BIGINT[])
+ ORDER BY profile.object_id, profile.attribute_id
+"""
+
+
 class AgentContextUnavailableError(WorkbenchError):
     def __init__(self) -> None:
         super().__init__(
             code="agent_context_unavailable",
             message="The revision-fenced agent context is unavailable or incomplete.",
-        )
-
-
-class AgentContextToolRequestError(WorkbenchError):
-    def __init__(self) -> None:
-        super().__init__(
-            code="agent_context_tool_request_invalid",
-            message="The local agent context tool request is invalid.",
         )
 
 
@@ -291,6 +367,15 @@ class ApplicableAppliedRecords(BaseModel):
     mapping: MappingSection | None = Field(default=None, repr=False)
 
 
+class AgentModelDependency(BaseModel):
+    """Read-only dependency identity and state, without generated code or Mapping bodies."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    dataset: ModelDataset
+    record: dict[str, JsonValue] = Field(repr=False)
+
+
 class AgentAuthoringContext(BaseModel):
     """Safe typed content only; no prompts, secrets, physical rows, or tool output."""
 
@@ -311,6 +396,12 @@ class AgentAuthoringContext(BaseModel):
     analysis_relationships: tuple[AnalysisResultRecord, ...] = Field(repr=False)
     assertion: AssertionSection = Field(repr=False)
     applied: ApplicableAppliedRecords = Field(repr=False)
+    read_only_dependencies: tuple[AgentModelDependency, ...] = Field(default=(), repr=False)
+    source_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
+    gds_context: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
+    ingestion_mapping: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
+    profile_provenance: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
+    logical_bindings: tuple[dict[str, JsonValue], ...] = Field(default=(), repr=False)
 
 
 class InMemoryAgentContextToolCatalog:
@@ -342,45 +433,15 @@ class InMemoryAgentContextToolCatalog:
             raw_datasets,
             max_result_bytes=max_result_bytes,
         )
-        self._definitions = (
-            LocalAgentToolDefinition(
-                name="get_agent_context_manifest",
-                description="Return the immutable manifest for this Workflow Run context.",
-                input_schema={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False,
-                },
-            ),
-            LocalAgentToolDefinition(
-                name="get_agent_context_dataset",
-                description=(
-                    "Return one byte-bounded page from an immutable Workflow Run context "
-                    "dataset. A page may contain fewer items than limit; continue only from its "
-                    "returned next_offset. A large record is returned as ordered canonical-JSON "
-                    "fragments; concatenate json_text by fragment_index and parse the complete "
-                    "JSON."
-                ),
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "dataset": {"type": "string"},
-                        "offset": {
-                            "type": "integer",
-                            "minimum": 0,
-                            "description": "Zero-based retrieval-item offset.",
-                        },
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": max_page_records,
-                            "description": "Maximum retrieval items; a byte cap may return fewer.",
-                        },
-                    },
-                    "required": ["dataset", "offset", "limit"],
-                    "additionalProperties": False,
-                },
-            ),
+        self._readers = FrozenContextReaders(
+            workflow=context.model_workflow,
+            values=project_context_inputs(context.model_dump(mode="json")),
+            max_result_bytes=max_result_bytes,
+            max_page_records=max_page_records,
+            max_cumulative_result_bytes=cumulative_result_bytes,
+        )
+        self._definitions = registered_tool_definitions(
+            context.model_workflow, max_page_records=max_page_records
         )
         self._manifest = _context_manifest(
             context,
@@ -398,11 +459,16 @@ class InMemoryAgentContextToolCatalog:
                 {
                     "manifest": self._manifest,
                     "datasets": {name: list(rows) for name, rows in self._datasets.items()},
+                    "prompt_values": self._readers.prompt_values,
                 },
             )
         )
         if self._serialized_size_bytes > max_catalog_bytes:
             raise AgentContextTooLargeError()
+
+    @property
+    def prompt_values(self) -> dict[str, Any]:
+        return self._readers.prompt_values
 
     @property
     def manifest(self) -> JsonValue:
@@ -433,6 +499,8 @@ class InMemoryAgentContextToolCatalog:
         tool_name: str,
         arguments: Mapping[str, JsonValue],
     ) -> JsonValue:
+        if tool_name in self.allowed_tool_names:
+            return self._readers.invoke(tool_name, arguments)
         if tool_name == "get_agent_context_manifest":
             if arguments:
                 raise AgentContextToolRequestError()
@@ -507,6 +575,8 @@ class AgentContextBundle:
     context: AgentAuthoringContext = field(repr=False)
     embedded_context: JsonValue = field(repr=False)
     tool_catalog: InMemoryAgentContextToolCatalog | None = field(default=None, repr=False)
+    snapshot: ModelSnapshot | None = field(default=None, repr=False)
+    physical_scope: PhysicalModelCatalog | None = field(default=None, repr=False)
 
     def __repr__(self) -> str:
         return (
@@ -523,9 +593,11 @@ class PostgresAgentContextRepository:
         self,
         *,
         snapshot_loader: SnapshotLoader = build_model_snapshot,
+        physical_scope_loader: PhysicalScopeLoader = load_model_physical_scope,
         limits: AgentContextLimits | None = None,
     ) -> None:
         self._snapshot_loader = snapshot_loader
+        self._physical_scope_loader = physical_scope_loader
         self._limits = limits or load_default_agent_context_limits()
 
     async def load(
@@ -572,11 +644,29 @@ class PostgresAgentContextRepository:
                 attribute_rows=attribute_rows,
             )
             snapshot = await self._snapshot_loader(transaction, model)
+            physical_scope = (
+                await self._physical_scope_loader(transaction, model)
+                if plan.model_workflow in {"conceptual", "logical", "dimensional"}
+                else None
+            )
             context = _assemble_context(
                 plan=plan,
                 model=model,
                 selected=selected,
                 snapshot=snapshot,
+            )
+            source_rows = await transaction.fetch_all(
+                _PROMPT_SOURCE_CONTEXT_SQL, (list(plan.selected_object_ids), tenant_id)
+            )
+            provenance_rows = await transaction.fetch_all(
+                _PROFILE_PROVENANCE_SQL, (plan.model_id, list(plan.selected_object_ids))
+            )
+            context = _with_prompt_evidence(
+                context,
+                plan=plan,
+                snapshot=snapshot,
+                source_rows=source_rows,
+                provenance_rows=provenance_rows,
             )
             if _context_record_count(context) > self._limits.max_total_records:
                 raise AgentContextTooLargeError()
@@ -603,9 +693,6 @@ class PostgresAgentContextRepository:
                     max_page_records=self._limits.max_tool_page_records,
                 )
                 embedded = tool_catalog.manifest
-            elif plan.workflow_execution_mode == "detailed_coverage":
-                # Detailed executors derive and bound each provider stage separately.
-                embedded = None
             else:
                 embedded = full_context
             if (
@@ -635,11 +722,31 @@ class PostgresAgentContextRepository:
                 context=context,
                 embedded_context=embedded,
                 tool_catalog=tool_catalog,
+                snapshot=snapshot,
+                physical_scope=physical_scope,
             )
         except (AgentContextTooLargeError, AgentContextUnavailableError):
             raise
         except Exception:
             raise AgentContextUnavailableError() from None
+
+
+async def load_frozen_model_graph(
+    transaction: ReadTransaction,
+    *,
+    tenant_id: int,
+    plan: AgentRunPlan,
+) -> tuple[ModelSnapshot, PhysicalModelCatalog]:
+    """Load backend-only validation evidence inside an authorized repeatable-read context."""
+    row = await transaction.fetch_one(
+        _MODEL_FENCE_SQL, (tenant_id, plan.model_id, plan.model_revision)
+    )
+    if row is None:
+        raise AgentContextUnavailableError()
+    model = _model_context(row, tenant_id=tenant_id, plan=plan)
+    return await build_model_snapshot(transaction, model), await load_model_physical_scope(
+        transaction, model
+    )
 
 
 def _model_context(
@@ -845,6 +952,160 @@ def _assemble_context(
             records=assertion_records,
         ),
         applied=applied,
+        read_only_dependencies=(
+            modeled_layer_dependencies(
+                snapshot,
+                modeled_entity_type=(
+                    "logical_entity" if plan.model_workflow == "logical" else "dimensional_entity"
+                ),
+            )
+            if plan.model_workflow in {"logical", "dimensional"}
+            else ()
+        ),
+    )
+
+
+def _with_prompt_evidence(
+    context: AgentAuthoringContext,
+    *,
+    plan: AgentRunPlan,
+    snapshot: ModelSnapshot,
+    source_rows: list[dict[str, Any]],
+    provenance_rows: list[dict[str, Any]],
+) -> AgentAuthoringContext:
+    from .context_inputs import OBJECT_FIELDS, natural_key
+
+    selected = dict(zip(plan.selected_object_ids, context.selected_objects, strict=True))
+    sources: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
+    placements: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
+    mappings: dict[tuple[Any, ...], dict[str, JsonValue]] = {}
+    for row in source_rows:
+        if row["object_id"] not in selected:
+            raise AgentContextUnavailableError()
+        obj = selected[row["object_id"]].object.model_dump(mode="json")
+        key = {name: obj[name] for name in OBJECT_FIELDS}
+        if obj["zone_code"] != "source":
+            placement = {name: obj[name] for name in (*OBJECT_FIELDS[:3], "zone_code")}
+            placement["zone_description"] = row["zone_description"]
+            placements[(*natural_key(obj, OBJECT_FIELDS[:3]), obj["zone_code"])] = placement
+        if row["tenant_code"] is None or row["source_object_name"] is None:
+            continue
+        source = {
+            name: row[name]
+            for name in (
+                "tenant_code",
+                "tenant_description",
+                "system_code",
+                "system_description",
+                "system_type_code",
+                "system_type_description",
+                "connection_code",
+                "connection_description",
+                "connection_type_code",
+                "connection_type_description",
+            )
+        }
+        source.update(zone_code="source", zone_description=row["source_zone_description"])
+        sources[natural_key(source, OBJECT_FIELDS[:3])] = source
+        if obj["zone_code"] == "bronze":
+            source_key = {name: row[name] for name in OBJECT_FIELDS[:3]}
+            source_key.update(
+                object_schema=row["source_object_schema"],
+                object_name=row["source_object_name"],
+                object_description=row["source_object_description"],
+            )
+            mappings[(*natural_key(source_key), *natural_key(key))] = {
+                "source": source_key,
+                "target": key,
+            }
+    provenance: list[dict[str, Any]] = []
+    for row in provenance_rows:
+        value = dict(row)
+        value["profiled_at"] = (
+            row["profiled_at"].isoformat() if row["profiled_at"] is not None else None
+        )
+        provenance.append(value)
+    bindings: list[dict[str, Any]] = []
+    if plan.model_workflow == "dimensional":
+        for selected_object in context.selected_objects:
+            key = _physical_key(selected_object.object)
+            matches = [
+                b
+                for b in snapshot.model_binding.objects
+                if b.modeled_entity_type == "logical_entity"
+                and b.model_object_binding_status == "active"
+                and _physical_key(b) == key
+            ]
+            if len(matches) != 1:
+                raise AgentContextUnavailableError()
+            binding = matches[0]
+            attrs: list[dict[str, str]] = []
+            for attr in selected_object.attributes:
+                candidates = [
+                    a
+                    for a in snapshot.model_binding.attributes
+                    if a.modeled_entity_type == "logical_entity"
+                    and a.model_attribute_binding_status == "active"
+                    and normalize_model_key_value(a.modeled_entity_name)
+                    == normalize_model_key_value(binding.modeled_entity_name)
+                    and normalize_model_key_value(a.attribute_name)
+                    == normalize_model_key_value(attr.attribute_name)
+                ]
+                if len(candidates) != 1:
+                    raise AgentContextUnavailableError()
+                attrs.append(
+                    {
+                        "attribute_name": attr.attribute_name,
+                        "logical_attribute_name": candidates[0].modeled_attribute_name,
+                    }
+                )
+            bindings.append(
+                {
+                    **{f: getattr(binding, f) for f in OBJECT_FIELDS},
+                    "logical_entity_name": binding.modeled_entity_name,
+                    "attributes": attrs,
+                }
+            )
+    return context.model_copy(
+        update={
+            "source_context": tuple(sources.values()),
+            "gds_context": tuple(placements.values()),
+            "ingestion_mapping": tuple(mappings.values()),
+            "profile_provenance": tuple(provenance),
+            "logical_bindings": tuple(bindings),
+        }
+    )
+
+
+def modeled_layer_dependencies(
+    snapshot: ModelSnapshot, *, modeled_entity_type: Literal["logical_entity", "dimensional_entity"]
+) -> tuple[AgentModelDependency, ...]:
+    """Preserve direct downstream references for authoring and repair of either modeled layer."""
+
+    records = model_snapshot_records(snapshot)
+    return tuple(
+        AgentModelDependency(
+            dataset=dataset,
+            record=record.model_dump(
+                mode="json",
+                exclude={
+                    "mapping_transformation_document",
+                    "attribute_mapping_transformation_document",
+                    "generated_code_content",
+                },
+            ),
+        )
+        for dataset in (
+            "model_object_binding",
+            "model_attribute_binding",
+            "mapping_dependency",
+            "mapping_object",
+            "mapping_attribute",
+            "generated_code",
+            "generated_code_source_system",
+        )
+        for record in records[dataset]
+        if getattr(record, "modeled_entity_type", None) == modeled_entity_type
     )
 
 
@@ -986,6 +1247,7 @@ def reject_forbidden_provider_json(
                     normalized_key in _FORBIDDEN_PROVIDER_JSON_KEYS
                     or (
                         not allow_identity_keys
+                        and normalized_key != "batch_id"
                         and (normalized_key.endswith("_id") or normalized_key.endswith("_ids"))
                     )
                     or any(
@@ -1079,6 +1341,10 @@ def _context_datasets(
         datasets["mapping_dependency"] = _dump_records(mapping.dependencies)
         datasets["mapping_object"] = _dump_records(mapping.objects)
         datasets["mapping_attribute"] = _dump_records(mapping.attributes)
+    dependencies: dict[str, list[JsonValue]] = {}
+    for dependency in context.read_only_dependencies:
+        dependencies.setdefault(f"read_only_{dependency.dataset}", []).append(dependency.record)
+    datasets.update({name: tuple(records) for name, records in dependencies.items()})
     return datasets
 
 

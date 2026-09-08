@@ -24,6 +24,16 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.configuration import AuthMode, Environment, RuntimeSettings
 from gds_etl_workbench.domain.errors import DependencyUnavailableError
+from gds_etl_workbench.domain.snapshots.description import (
+    compact_authoring_schema,
+)
+from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+from gds_etl_workbench.domain.snapshots.model import (
+    CHANGE_SET_DATASETS_BY_NAME,
+)
+from gds_etl_workbench.domain.snapshots.model import (
+    DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
+)
 from gds_etl_workbench.infrastructure.postgres import (
     ReadinessRecord,
     ReadIsolation,
@@ -38,20 +48,12 @@ from gds_etl_workbench.runtime import (
 from gds_etl_workbench.tools.snapshots.metadata import (
     get_metadata_snapshot as metadata_snapshot_module,
 )
-from gds_etl_workbench.domain.snapshots.description import (
-    compact_authoring_schema,
-)
 from gds_etl_workbench.tools.snapshots.metadata.archive import (
     SnapshotArchive,
     build_dataset_document,
 )
-from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     ReadyMetadataSnapshot,
-)
-from gds_etl_workbench.domain.snapshots.model import (
-    CHANGE_SET_DATASETS_BY_NAME,
-    DATASETS_BY_NAME as MODEL_DATASETS_BY_NAME,
 )
 
 if TYPE_CHECKING:
@@ -66,9 +68,7 @@ class FakeReadTransaction:
         self, query: LiteralString, parameters: tuple[Any, ...] = ()
     ) -> dict[str, Any] | None:
         if self._database.resolved_principal is None:
-            raise AssertionError(
-                "development mode must not resolve a production Principal"
-            )
+            raise AssertionError("development mode must not resolve a production Principal")
         return self._database.resolved_principal
 
     async def fetch_all(
@@ -162,9 +162,7 @@ class FakeSnapshotStore:
         created_at: datetime,
         available_until: datetime,
     ) -> None:
-        raise AssertionError(
-            "tool orchestration is replaced in this HTTP contract test"
-        )
+        raise AssertionError("tool orchestration is replaced in this HTTP contract test")
 
     async def create_read_url(
         self,
@@ -192,9 +190,7 @@ def development_settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": ("33333333-3333-3333-3333-333333333333"),
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
-                "https://snapshot.blob.core.windows.net"
-            ),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -246,6 +242,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "put_metadata_stage_chunk",
         "commit_metadata_stage_batch",
         "get_metadata_change_set",
+        "get_metadata_change_set_fingerprint",
         "validate_metadata_change_set",
         "apply_metadata_change_set",
         "archive_metadata_change_set",
@@ -255,6 +252,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
         "put_model_stage_chunk",
         "commit_model_stage_batch",
         "get_model_change_set",
+        "get_model_change_set_fingerprint",
         "validate_model_change_set",
         "apply_model_change_set",
         "archive_model_change_set",
@@ -274,15 +272,11 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
     assert section_reader.annotations.destructive_hint is False
     assert section_reader.annotations.idempotent_hint is True
     assert tools_by_name["validate_model_change_set"].annotations is not None
-    assert (
-        tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
-    )
+    assert tools_by_name["validate_model_change_set"].annotations.idempotent_hint is False
     assert tools_by_name["apply_model_change_set"].annotations is not None
     assert tools_by_name["apply_model_change_set"].annotations.destructive_hint is True
     assert tools_by_name["archive_model_change_set"].annotations is not None
-    assert (
-        tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
-    )
+    assert tools_by_name["archive_model_change_set"].annotations.destructive_hint is True
     assert tools_by_name["create_model_snapshot"].annotations is not None
     assert tools_by_name["create_model_snapshot"].annotations.idempotent_hint is False
     assert tools_by_name["export_model_dbml"].annotations is not None
@@ -318,6 +312,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
                 or tool.name
                 in {
                     "get_metadata_change_set",
+                    "get_metadata_change_set_fingerprint",
                     "archive_metadata_change_set",
                 }
                 else "tenant_read"
@@ -351,9 +346,7 @@ async def test_mcp_inventory_and_list_tenants_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes() -> (
-    None
-):
+async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes() -> None:
     settings = development_settings()
     server = create_mcp_server(
         settings,
@@ -368,22 +361,11 @@ async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes()
     schemas = {name: tool.input_schema for name, tool in tools.items()}
     expected = list(MODEL_DATASETS_BY_NAME)
     writable = list(CHANGE_SET_DATASETS_BY_NAME)
-    assert (
-        schemas["stage_model_change_set"]["$defs"]["ModelChangeSetDataset"]["enum"]
-        == writable
-    )
-    assert (
-        schemas["begin_model_stage_batch"]["$defs"]["ModelChangeSetDataset"]["enum"]
-        == writable
-    )
-    assert (
-        schemas["put_model_stage_chunk"]["$defs"]["ModelChangeSetDataset"]["enum"]
-        == writable
-    )
+    assert schemas["stage_model_change_set"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
+    assert schemas["begin_model_stage_batch"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
+    assert schemas["put_model_stage_chunk"]["$defs"]["ModelChangeSetDataset"]["enum"] == writable
     assert schemas["get_model_change_set"]["$defs"]["ModelDataset"]["enum"] == expected
-    assert (
-        schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
-    )
+    assert schemas["describe_model_dataset"]["$defs"]["ModelDataset"]["enum"] == expected
     assert schemas["describe_model_dataset"]["properties"]["dataset"] == {
         "$ref": "#/$defs/ModelDataset"
     }
@@ -396,9 +378,7 @@ async def test_model_dataset_tool_inputs_separate_reads_from_change_set_writes()
         "apply_model_change_set",
     ):
         tool = tools[tool_name]
-        schemas_text = json.dumps(
-            {"input": tool.input_schema, "output": tool.output_schema}
-        )
+        schemas_text = json.dumps({"input": tool.input_schema, "output": tool.output_schema})
         assert '"model_scope"' not in schemas_text, tool_name
 
 
@@ -420,10 +400,7 @@ async def test_describe_model_input_scope_is_change_set_eligible() -> None:
     assert result.is_error is False
     assert result.structured_content is not None
     assert result.structured_content["change_set_eligible"] is True
-    assert (
-        result.structured_content["authoring_schema"]["x-gds-change-set-eligible"]
-        is True
-    )
+    assert result.structured_content["authoring_schema"]["x-gds-change-set-eligible"] is True
     assert result.structured_content["detail"] == "compact"
     assert result.structured_content["columns"] is None
     assert result.structured_content["record_schema"] is None
@@ -504,9 +481,7 @@ async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_htt
     }
     store = FakeSnapshotStore()
 
-    async def fake_create_metadata_snapshot(
-        *_args: Any, **kwargs: Any
-    ) -> ReadyMetadataSnapshot:
+    async def fake_create_metadata_snapshot(*_args: Any, **kwargs: Any) -> ReadyMetadataSnapshot:
         assert kwargs["tenant_id"] == 123
         return ReadyMetadataSnapshot(
             snapshot_id=snapshot_id,
@@ -582,9 +557,7 @@ async def test_create_metadata_snapshot_returns_only_bounded_descriptor_over_htt
     assert len(store.read_url_calls) == 1
     assert store.read_url_calls[0][0:2] == (123, snapshot_id)
     assert store.read_url_calls[0][3] == 900
-    assert download_available_until == store.read_url_calls[0][2] + timedelta(
-        seconds=900
-    )
+    assert download_available_until == store.read_url_calls[0][2] + timedelta(seconds=900)
 
 
 @pytest.mark.asyncio
@@ -627,7 +600,7 @@ def test_health_routes_are_anonymous() -> None:
     ready_body = ready.json()
     assert ready_body["status"] == "ready"
     assert ready_body["mcp_server_version"] == "0.2.0"
-    assert ready_body["tool_count"] == 35
+    assert ready_body["tool_count"] == 37
     assert "tool_contract_sha256" not in ready_body
 
 
@@ -995,14 +968,11 @@ async def test_local_super_admin_reads_locks_and_writes_through_postgres(
     )
     assert returned_tenant["tenant_code"] == "LOCAL_RUNTIME"
     assert all(
-        tenant["effective_role"] == "super_admin"
-        for tenant in result.structured_content["tenants"]
+        tenant["effective_role"] == "super_admin" for tenant in result.structured_content["tenants"]
     )
     assert lock_result.is_error is False
     assert lock_result.structured_content is not None
-    assert lock_result.structured_content["lock"]["owner_display_name"] == (
-        "Local Developer"
-    )
+    assert lock_result.structured_content["lock"]["owner_display_name"] == ("Local Developer")
     assert change_set_result.is_error is False
     assert change_set_result.structured_content is not None
     assert change_set_result.structured_content["created"] is True
@@ -1112,9 +1082,7 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
 
     class CapturingSnapshotStore(FakeSnapshotStore):
         def __init__(self) -> None:
-            super().__init__(
-                "https://snapshot.example.test/metadata/local.zip?read-only=true"
-            )
+            super().__init__("https://snapshot.example.test/metadata/local.zip?read-only=true")
             self.archive_bytes = b""
             self.archive_path = None
 
@@ -1161,10 +1129,7 @@ async def test_local_application_builds_metadata_snapshot_end_to_end(
     assert result.structured_content["tenant_id"] == tenant["tenant_id"]
     assert result.structured_content["download_url"] == store.read_url
     assert result.structured_content["size_bytes"] == len(store.archive_bytes)
-    assert (
-        result.structured_content["sha256"]
-        == hashlib.sha256(store.archive_bytes).hexdigest()
-    )
+    assert result.structured_content["sha256"] == hashlib.sha256(store.archive_bytes).hexdigest()
     assert store.archive_path is not None and not store.archive_path.exists()
     assert store.closed is True
     with zipfile.ZipFile(BytesIO(store.archive_bytes)) as archive:

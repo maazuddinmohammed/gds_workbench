@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
@@ -25,6 +25,8 @@ export function ProfilingObjectDetailPage({
   returnSearch: ProfilingRouteSearch;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
+  const reviewButton = useRef<HTMLButtonElement | null>(null);
+  const [selectedAttributeId, setSelectedAttributeId] = useState<number | null>(null);
   const detailQuery = useQuery({
     queryKey: profilingQueryKeys.result(tenantId, modelId, objectId),
     queryFn: () => api.readProfilingObject(tenantId, modelId, objectId),
@@ -51,6 +53,11 @@ export function ProfilingObjectDetailPage({
 
   const detail = detailQuery.data;
   const returnedProfileCount = detail.attribute_profiles.length;
+  const selectedProfile = detail.attribute_profiles.find((profile) => profile.attribute_id === selectedAttributeId);
+  function closeProfile() {
+    setSelectedAttributeId(null);
+    reviewButton.current?.focus();
+  }
   return (
     <article className="workflow-detail-page profiling-detail-page page-enter">
       <header className="workflow-detail-header">
@@ -75,19 +82,14 @@ export function ProfilingObjectDetailPage({
       <section className="detail-section" aria-labelledby="profiled-object-context-heading">
         <header><h2 id="profiled-object-context-heading">Profiled Object context</h2></header>
         <dl className="detail-fact-grid profiling-object-facts">
-          <Fact label="Object ID" value={String(detail.object_id)} />
-          <Fact label="Model ID" value={String(detail.model_id)} />
           <Fact label="Model revision" value={`r${detail.model_revision}`} />
           <Fact label="Object" value={`${detail.object_schema}.${detail.object_name}`} />
           <Fact
             label="Source Tenant"
             value={`${detail.source_tenant_name} (${detail.source_tenant_code})`}
           />
-          <Fact label="Source Tenant ID" value={String(detail.source_tenant_id)} />
           <Fact label="System" value={`${detail.system_name} (${detail.system_code})`} />
-          <Fact label="System ID" value={String(detail.system_id)} />
           <Fact label="Connection" value={detail.connection_code} />
-          <Fact label="Connection ID" value={String(detail.connection_id)} />
           <Fact label="Profiles returned" value={String(returnedProfileCount)} />
           <Fact label="Last profiled" value={formatDateTime(detail.last_profiled_at)} />
         </dl>
@@ -114,41 +116,29 @@ export function ProfilingObjectDetailPage({
             <table className="profile-evidence-table">
               <caption className="sr-only">Attribute profiles</caption>
               <thead>
-                <tr className="profile-evidence-groups">
-                  <th scope="col" rowSpan={2}>Attribute name</th>
-                  <th scope="colgroup" colSpan={3}>Identity</th>
-                  <th scope="colgroup" colSpan={5}>Counts</th>
-                  <th scope="colgroup" colSpan={3}>Data lengths</th>
-                  <th scope="colgroup" colSpan={5}>Percentages</th>
-                  <th scope="colgroup" colSpan={5}>Provenance</th>
-                </tr>
                 <tr>
-                  <th scope="col">Attribute ID</th>
-                  <th scope="col">Ordinal position</th>
-                  <th scope="col">Data type</th>
+                  <th scope="col">Attribute</th>
+                  <th scope="col">Catalog type</th>
                   <th scope="col">Rows</th>
-                  <th scope="col">Non-null rows</th>
-                  <th scope="col">Null rows</th>
-                  <th scope="col">Blank rows</th>
-                  <th scope="col">Distinct values</th>
-                  <th scope="col">Minimum length</th>
-                  <th scope="col">Maximum length</th>
-                  <th scope="col">Average length</th>
                   <th scope="col">Populated</th>
-                  <th scope="col">Duplicate rate</th>
-                  <th scope="col">Null rate</th>
-                  <th scope="col">Blank rate</th>
-                  <th scope="col">Distinct rate</th>
-                  <th scope="col">Workflow run</th>
-                  <th scope="col">Agent run</th>
-                  <th scope="col">Created</th>
-                  <th scope="col">Updated</th>
-                  <th scope="col">Source context digest</th>
+                  <th scope="col">Distinct</th>
+                  <th scope="col">Duplicates</th>
+                  <th scope="col">Null</th>
+                  <th scope="col">Blank</th>
+                  <th scope="col">Review</th>
                 </tr>
               </thead>
               <tbody>
                 {detail.attribute_profiles.map((profile) => (
-                  <AttributeProfileRow key={profile.attribute_id} profile={profile} />
+                  <AttributeProfileRow
+                    key={profile.attribute_id}
+                    profile={profile}
+                    selected={selectedAttributeId === profile.attribute_id}
+                    onReview={(button) => {
+                      reviewButton.current = button;
+                      setSelectedAttributeId(profile.attribute_id);
+                    }}
+                  />
                 ))}
               </tbody>
             </table>
@@ -157,42 +147,89 @@ export function ProfilingObjectDetailPage({
           <p className="detail-empty">No Attribute profiles were returned.</p>
         )}
       </section>
+      {selectedProfile ? <AttributeProfileInspector profile={selectedProfile} onClose={closeProfile} /> : null}
+      <details className="profile-record-details">
+        <summary>Object record details</summary>
+        <dl className="detail-fact-grid">
+          <Fact label="Object ID" value={String(detail.object_id)} />
+          <Fact label="Model ID" value={String(detail.model_id)} />
+          <Fact label="Source Tenant ID" value={String(detail.source_tenant_id)} />
+          <Fact label="System ID" value={String(detail.system_id)} />
+          <Fact label="Connection ID" value={String(detail.connection_id)} />
+        </dl>
+      </details>
     </article>
   );
 }
 
-function AttributeProfileRow({ profile }: { profile: AttributeProfile }) {
+function AttributeProfileRow({ profile, selected, onReview }: {
+  profile: AttributeProfile;
+  selected: boolean;
+  onReview: (button: HTMLButtonElement) => void;
+}) {
   return (
-    <tr>
+    <tr className={selected ? "is-active" : undefined}>
       <th scope="row" className="profile-evidence-name">{profile.attribute_name}</th>
-      <td>{profile.attribute_id}</td>
-      <td>{profile.attribute_ordinal_position}</td>
       <td className="profile-evidence-wrap">{profile.attribute_data_type}</td>
       <td>{formatMetric(profile.row_count)}</td>
-      <td>{formatMetric(profile.non_null_count)}</td>
-      <td>{formatMetric(profile.null_count)}</td>
-      <td>{formatMetric(profile.blank_count)}</td>
-      <td>{formatMetric(profile.distinct_count)}</td>
-      <td>{formatMetric(profile.min_data_length)}</td>
-      <td>{formatMetric(profile.max_data_length)}</td>
-      <td>{formatMetric(profile.avg_data_length)}</td>
       <td>{formatPercent(profile.percent_populated)}</td>
+      <td>{formatPercent(profile.percent_distinct)}</td>
       <td>{formatPercent(profile.percent_duplicates)}</td>
       <td>{formatPercent(profile.percent_null)}</td>
       <td>{formatPercent(profile.percent_blank)}</td>
-      <td>{formatPercent(profile.percent_distinct)}</td>
-      <td>
-        {profile.provenance.workflow_run_id === null
-          ? "Not recorded"
-          : `Run ${profile.provenance.workflow_run_id}`}
+      <td className="profile-evidence-actions">
+        <button type="button" className="text-action" aria-label={`Review ${profile.attribute_name}`}
+          aria-expanded={selected} aria-controls="attribute-profile-inspector"
+          onClick={(event) => onReview(event.currentTarget)}>Review</button>
       </td>
-      <td className="profile-evidence-wrap">
-        {profile.provenance.agent_run_id ?? "Not recorded"}
-      </td>
-      <td>{formatDateTime(profile.created_at)}</td>
-      <td>{formatDateTime(profile.updated_at)}</td>
-      <td className="profile-evidence-digest"><code>{profile.source_context_digest}</code></td>
     </tr>
+  );
+}
+
+function AttributeProfileInspector({ profile, onClose }: { profile: AttributeProfile; onClose: () => void }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), [profile.attribute_id]);
+  return (
+    <section className="detail-section profile-inspector" id="attribute-profile-inspector"
+      aria-labelledby="attribute-profile-inspector-heading"
+      onKeyDown={(event) => { if (event.key === "Escape") { event.preventDefault(); onClose(); } }}>
+      <header>
+        <h2 id="attribute-profile-inspector-heading" ref={heading} tabIndex={-1}>{profile.attribute_name}</h2>
+        <button type="button" className="text-action" onClick={onClose} aria-label="Close Attribute profile">Close</button>
+      </header>
+      <dl className="detail-fact-grid">
+        <Fact label="Catalog type" value={profile.attribute_data_type} />
+        <Fact label="Ordinal position" value={String(profile.attribute_ordinal_position)} />
+        <Fact label="Attribute ID" value={String(profile.attribute_id)} />
+      </dl>
+      <h3>Recorded counts and lengths</h3>
+      <dl className="detail-fact-grid">
+        <Fact label="Rows" value={formatMetric(profile.row_count)} />
+        <Fact label="Non-null rows" value={formatMetric(profile.non_null_count)} />
+        <Fact label="Null rows" value={formatMetric(profile.null_count)} />
+        <Fact label="Blank rows" value={formatMetric(profile.blank_count)} />
+        <Fact label="Distinct values" value={formatMetric(profile.distinct_count)} />
+        <Fact label="Minimum length" value={formatMetric(profile.min_data_length)} />
+        <Fact label="Maximum length" value={formatMetric(profile.max_data_length)} />
+        <Fact label="Average length" value={formatMetric(profile.avg_data_length)} />
+      </dl>
+      <h3>Recorded percentages</h3>
+      <dl className="detail-fact-grid">
+        <Fact label="Populated" value={formatPercent(profile.percent_populated)} />
+        <Fact label="Distinct" value={formatPercent(profile.percent_distinct)} />
+        <Fact label="Duplicates" value={formatPercent(profile.percent_duplicates)} />
+        <Fact label="Null" value={formatPercent(profile.percent_null)} />
+        <Fact label="Blank" value={formatPercent(profile.percent_blank)} />
+      </dl>
+      <h3>Provenance</h3>
+      <dl className="detail-fact-grid">
+        <Fact label="Workflow run" value={profile.provenance.workflow_run_id === null ? "Not recorded" : `Run ${profile.provenance.workflow_run_id}`} />
+        <Fact label="Agent run" value={profile.provenance.agent_run_id ?? "Not recorded"} />
+        <Fact label="Created" value={formatDateTime(profile.created_at)} />
+        <Fact label="Updated" value={formatDateTime(profile.updated_at)} />
+        <Fact label="Source context digest" value={profile.source_context_digest} code />
+      </dl>
+    </section>
   );
 }
 

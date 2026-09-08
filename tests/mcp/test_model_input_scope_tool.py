@@ -138,9 +138,7 @@ async def test_get_model_input_scope_returns_source_ownership_and_placement() ->
     database = FakeDatabase(
         rows=[
             scope_row(total=2),
-            scope_row(
-                object_id=12, object_name="orders_bronze", zone_code="bronze", total=2
-            ),
+            scope_row(object_id=12, object_name="orders_bronze", zone_code="bronze", total=2),
         ]
     )
 
@@ -240,11 +238,7 @@ async def test_get_model_input_scope_advertises_bounded_inputs() -> None:
     async with Client(server(FakeDatabase(rows=[]))) as client:
         tools = await client.list_tools()
 
-    schema = next(
-        tool.input_schema
-        for tool in tools.tools
-        if tool.name == "get_model_input_scope"
-    )
+    schema = next(tool.input_schema for tool in tools.tools if tool.name == "get_model_input_scope")
     assert schema["properties"]["page_size"] == {
         "default": 2000,
         "maximum": 2000,

@@ -4,7 +4,6 @@ import ast
 import importlib.util
 from pathlib import Path
 
-
 _REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 _PACKAGE_ROOT = _REPOSITORY_ROOT / "web_app" / "backend" / "gds_workbench_api"
 _PACKAGE_NAME = "gds_workbench_api"
@@ -36,6 +35,7 @@ _REMOVED_MODULES = (
 )
 _WORKFLOW_COMPOSITION_MODULE = "gds_workbench_api.features.workflows.execution.assembly"
 _AGENT_PORT_MODULE = "gds_workbench_api.features.workflows.authoring.agent_execution"
+_USAGE_PORT_MODULE = "gds_workbench_api.features.workflows.usage.contracts"
 
 
 def _module_identity(source: Path) -> tuple[str, bool]:
@@ -113,8 +113,8 @@ def test_backend_modular_architecture_deletion_contract() -> None:
         for relative_path in _REMOVED_MODULES
         if (_PACKAGE_ROOT / relative_path).exists()
     ]
-    assert not restored_modules, (
-        "Retired backend modules must stay deleted: " + ", ".join(restored_modules)
+    assert not restored_modules, "Retired backend modules must stay deleted: " + ", ".join(
+        restored_modules
     )
 
     module_sources: dict[str, Path] = {}
@@ -168,11 +168,13 @@ def test_backend_modular_architecture_deletion_contract() -> None:
         for module_name in agent_adapter_modules
         for imported in imports_by_module[module_name]
         if imported.startswith(f"{_PACKAGE_NAME}.features.")
-        and imported != _AGENT_PORT_MODULE
-        and not imported.startswith(f"{_AGENT_PORT_MODULE}.")
+        and not any(
+            imported == port or imported.startswith(f"{port}.")
+            for port in (_AGENT_PORT_MODULE, _USAGE_PORT_MODULE)
+        )
     )
     assert not agent_feature_import_violations, (
-        "Agent provider adapters may depend only on their workflow-owned port: "
+        "Agent provider adapters may depend only on workflow-owned execution and usage contracts: "
         f"{agent_feature_import_violations}"
     )
     assert any(

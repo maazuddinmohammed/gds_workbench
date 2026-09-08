@@ -5,6 +5,7 @@ from __future__ import annotations
 import json
 import re
 from collections.abc import Collection, Mapping
+from contextlib import suppress
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any, cast
@@ -24,6 +25,7 @@ from gds_workbench_api.capabilities import (
 from .errors import NotebookConfigurationError
 
 _WORKFLOWS = {
+    "metadata_enrichment",
     "profiling",
     "analysis_inference",
     "analysis_validation",
@@ -35,6 +37,7 @@ _WORKFLOWS = {
     "validation",
 }
 _AGENT_WORKFLOWS = {
+    "metadata_enrichment",
     "analysis_inference",
     "conceptual",
     "logical",
@@ -74,11 +77,9 @@ class NotebookWorkflowRequest:
 @dataclass(frozen=True)
 class _NotebookAgentCapabilities:
     registry: AgentCapabilityRegistry
-    default_sdk: str
     default_model: str
     default_mode: str
     default_reasoning_effort: str
-    sdk_codes: tuple[str, ...]
     model_codes: tuple[str, ...]
     mode_codes: tuple[str, ...]
     reasoning_effort_codes: tuple[str, ...]
@@ -178,18 +179,6 @@ def widget_specs(
         specs.extend(
             (
                 WidgetSpec(
-                    "AgentSDK",
-                    agent_capabilities.default_sdk,
-                    "Agent SDK",
-                    agent_capabilities.sdk_codes,
-                ),
-                WidgetSpec(
-                    "AgentProvider",
-                    "databricks",
-                    "Agent provider",
-                    ("databricks",),
-                ),
-                WidgetSpec(
                     "AgentModel",
                     agent_capabilities.default_model,
                     "Agent model code",
@@ -200,16 +189,6 @@ def widget_specs(
                     agent_capabilities.default_reasoning_effort,
                     "Reasoning effort (`default` omits the setting)",
                     agent_capabilities.reasoning_effort_codes,
-                ),
-                WidgetSpec(
-                    "MaxTurns",
-                    str(agent_capabilities.registry.max_turns.default),
-                    "Maximum agent turns",
-                ),
-                WidgetSpec(
-                    "ValidationRetryCount",
-                    str(agent_capabilities.registry.validation_retries.default),
-                    "Validation retry count",
                 ),
                 WidgetSpec(
                     "PromptOverridesJSON",
@@ -227,6 +206,7 @@ def _load_notebook_agent_capabilities(
     configured_model_codes: Collection[str] | None = None,
 ) -> _NotebookAgentCapabilities:
     fixed_execution_mode = {
+        "metadata_enrichment": "one_shot",
         "code_generation": CODE_GENERATION_AGENT_EXECUTION_MODE,
         "validation": VALIDATION_AGENT_EXECUTION_MODE,
     }.get(workflow)
@@ -237,12 +217,12 @@ def _load_notebook_agent_capabilities(
     configured_models = tuple(
         (model.provider_code, model.code)
         for model in complete_registry.models
-        if model.provider_code == "databricks"
+        if model.provider_code == "microsoft_foundry"
         and (available_model_codes is None or model.code in available_model_codes)
     )
     if not configured_models:
         raise NotebookConfigurationError(
-            "The Agent registry has no Databricks model deployment for this notebook."
+            "The Agent registry has no Microsoft Foundry model deployment for this notebook."
         )
     try:
         registry = select_agent_runtime_capabilities(
@@ -251,17 +231,18 @@ def _load_notebook_agent_capabilities(
         )
     except ValueError:
         raise NotebookConfigurationError(
-            "The selected Databricks model deployment does not match the Agent registry."
+            "The selected Microsoft Foundry model deployment does not match the Agent registry."
         ) from None
     profiles = [
         (model, profile)
         for model in registry.models
         for profile in model.execution_profiles
-        if fixed_execution_mode is None or profile.execution_mode == fixed_execution_mode
+        if profile.sdk_code == "openai_agents_sdk"
+        and (fixed_execution_mode is None or profile.execution_mode == fixed_execution_mode)
     ]
     if not profiles:
         raise NotebookConfigurationError(
-            "The Databricks Agent registry has no compatible profile for this notebook."
+            "The Microsoft Foundry Agent registry has no compatible profile for this notebook."
         )
 
     default_model, default_profile = next(
@@ -272,11 +253,6 @@ def _load_notebook_agent_capabilities(
         ),
         profiles[0],
     )
-    sdk_codes = tuple(
-        sdk.code
-        for sdk in registry.sdks
-        if any(profile.sdk_code == sdk.code for _, profile in profiles)
-    )
     model_codes = tuple(
         model.code
         for model in registry.models
@@ -284,7 +260,7 @@ def _load_notebook_agent_capabilities(
     )
     mode_codes = tuple(
         mode
-        for mode in ("one_shot", "tool_assisted", "detailed_coverage")
+        for mode in ("one_shot", "tool_assisted")
         if any(profile.execution_mode == mode for _, profile in profiles)
     )
     reasoning_effort_codes = tuple(
@@ -294,11 +270,9 @@ def _load_notebook_agent_capabilities(
     )
     return _NotebookAgentCapabilities(
         registry=registry,
-        default_sdk=default_profile.sdk_code,
         default_model=default_model.code,
         default_mode=default_profile.execution_mode,
         default_reasoning_effort=default_profile.reasoning_effort_codes[0],
-        sdk_codes=sdk_codes,
         model_codes=model_codes,
         mode_codes=mode_codes,
         reasoning_effort_codes=reasoning_effort_codes,
@@ -334,7 +308,7 @@ def build_notebook_request(
         if workflow in _AGENT_WORKFLOWS
         else None
     )
-    execution_mode: str | None = None
+    execution_mode: str | None = "one_shot" if workflow == "metadata_enrichment" else None
     if workflow in _CONFIGURABLE_MODE_WORKFLOWS:
         assert agent_capabilities is not None
         execution_mode = _choice(
@@ -419,15 +393,16 @@ def build_notebook_request(
     elif not selected_ids:
         raise NotebookConfigurationError("SelectedObjectIDsJSON must contain at least one ID.")
 
+    if workflow == "metadata_enrichment" and len(selected_ids) > 200:
+        raise NotebookConfigurationError(
+            "Metadata Enrichment accepts at most 200 selected Source or Bronze Object IDs."
+        )
+
     if workflow in _AGENT_WORKFLOWS:
         assert agent_capabilities is not None
         selection = AgentRunSelection(
-            sdk_code=_choice(
-                values,
-                "AgentSDK",
-                set(agent_capabilities.sdk_codes),
-            ),
-            provider_code=_choice(values, "AgentProvider", {"databricks"}),
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
             model_code=_choice(
                 values,
                 "AgentModel",
@@ -438,18 +413,8 @@ def build_notebook_request(
                 "ReasoningEffort",
                 set(agent_capabilities.reasoning_effort_codes),
             ),
-            max_turns=_bounded_int(
-                values,
-                "MaxTurns",
-                minimum=agent_capabilities.registry.max_turns.minimum,
-                maximum=agent_capabilities.registry.max_turns.maximum,
-            ),
-            validation_retry_count=_bounded_int(
-                values,
-                "ValidationRetryCount",
-                minimum=agent_capabilities.registry.validation_retries.minimum,
-                maximum=agent_capabilities.registry.validation_retries.maximum,
-            ),
+            max_turns=agent_capabilities.registry.max_turns.default,
+            validation_retry_count=agent_capabilities.registry.validation_retries.default,
         )
         if workflow == "code_generation":
             effective_execution_mode = CODE_GENERATION_AGENT_EXECUTION_MODE
@@ -467,7 +432,7 @@ def build_notebook_request(
             )
         except InvalidRequestError:
             raise NotebookConfigurationError(
-                "The selected Agent SDK, model, execution mode, and reasoning effort "
+                "The selected model, execution mode, and reasoning effort "
                 "combination is unavailable."
             ) from None
         payload["agent"] = selection.model_dump(mode="python")
@@ -493,6 +458,11 @@ def create_workflow_widgets(
     """Create the visible widget bar for one workflow notebook."""
     _validate_workflow(workflow)
     del uploaded_root
+    # Widget values persist across imports; remove only retired runtime controls.
+    for name in ("AgentSDK", "AgentProvider", "MaxTurns", "ValidationRetryCount"):
+        # Databricks raises when the widget does not exist.
+        with suppress(Exception):
+            dbutils.widgets.remove(name)
     for spec in widget_specs(workflow):
         if spec.choices:
             dbutils.widgets.dropdown(spec.name, spec.default, list(spec.choices), spec.label)

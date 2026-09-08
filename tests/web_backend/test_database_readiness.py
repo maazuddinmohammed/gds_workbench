@@ -8,11 +8,11 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.infrastructure.postgres import ReadinessRecord
+from gds_workbench_api.database import WebPostgresDatabase
 from psycopg import sql
 from psycopg.errors import InsufficientPrivilege
-from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 
-from gds_workbench_api.database import WebPostgresDatabase
+from tests.mcp.conftest import DisposablePostgres, disposable_postgres
 
 APPLICATION_REFERENCE_SEED = (
     Path(__file__).parents[2] / "database" / "seed" / "04_application_reference.sql"
@@ -154,6 +154,28 @@ async def test_readiness_rejects_a_missing_workflow_eligibility_grant(
             )
 
     assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
+
+
+@pytest.mark.asyncio
+async def test_readiness_requires_governed_model_review_function(
+    readiness_postgres: DisposablePostgres,
+) -> None:
+    assert (await _readiness(readiness_postgres)).ready
+    with readiness_postgres.connect_owner() as connection:
+        connection.execute(
+            "REVOKE EXECUTE ON FUNCTION application.authorize_model_record_review("
+            "UUID,UUID,VARCHAR,BIGINT,BIGINT) FROM gds_web_write"
+        )
+    try:
+        readiness = await _readiness(readiness_postgres)
+        assert readiness == ReadinessRecord(ready=False, code="database_role_invalid")
+    finally:
+        with readiness_postgres.connect_owner() as connection:
+            connection.execute(
+                "GRANT EXECUTE ON FUNCTION application.authorize_model_record_review("
+                "UUID,UUID,VARCHAR,BIGINT,BIGINT) TO gds_web_write"
+            )
+    assert (await _readiness(readiness_postgres)).ready
 
 
 @pytest.mark.asyncio

@@ -1,0 +1,78 @@
+{
+  "object_relationship_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "bronze",
+      "object_name": "Orders",
+      "incoming_relationships": [],
+      "outgoing_relationships": [
+        {
+          "from_tenant_code": "GDS",
+          "from_system_code": "WAREHOUSE",
+          "from_connection_code": "MAIN",
+          "from_object_schema": "bronze",
+          "from_object_name": "Orders",
+          "from_attribute_name": "CustomerCode",
+          "to_tenant_code": "GDS",
+          "to_system_code": "WAREHOUSE",
+          "to_connection_code": "MAIN",
+          "to_object_schema": "bronze",
+          "to_object_name": "Customers",
+          "to_attribute_name": "CustomerCode",
+          "relationship_kind": "reference",
+          "relationship_confidence": "high",
+          "relationship_basis": "Saved Attribute descriptions and assertion order_customer_reference identify the ordering customer and its ERP customer identifier.",
+          "analysis_result_status": "active",
+          "analysis_result_is_locked": true
+        }
+      ]
+    },
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "bronze",
+      "object_name": "Customers",
+      "incoming_relationships": [
+        {
+          "from_tenant_code": "GDS",
+          "from_system_code": "WAREHOUSE",
+          "from_connection_code": "MAIN",
+          "from_object_schema": "bronze",
+          "from_object_name": "Orders",
+          "from_attribute_name": "CustomerCode",
+          "to_tenant_code": "GDS",
+          "to_system_code": "WAREHOUSE",
+          "to_connection_code": "MAIN",
+          "to_object_schema": "bronze",
+          "to_object_name": "Customers",
+          "to_attribute_name": "CustomerCode",
+          "relationship_kind": "reference",
+          "relationship_confidence": "high",
+          "relationship_basis": "Saved Attribute descriptions and assertion order_customer_reference identify the ordering customer and its ERP customer identifier.",
+          "analysis_result_status": "active",
+          "analysis_result_is_locked": true
+        }
+      ],
+      "outgoing_relationships": []
+    }
+  ],
+  "modeling_assertions": [
+    {
+      "modeling_assertion_record_key": "order_customer_reference",
+      "modeling_assertion_document_name": "ERP relationship notes",
+      "modeling_assertion_record_type": "relationship",
+      "modeling_assertion_text": "Within this ERP source, Orders.CustomerCode references the customer account identified by Customers.CustomerCode.",
+      "modeling_assertion_details": {
+        "identifier_scope": "ERP customer accounts",
+        "cross_system_identity": false
+      },
+      "modeling_assertion_source_location": {
+        "section": "Orders and customers"
+      },
+      "modeling_assertion_confidence": "high"
+    }
+  ]
+}

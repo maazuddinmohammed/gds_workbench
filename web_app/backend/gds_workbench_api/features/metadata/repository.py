@@ -278,6 +278,7 @@ SELECT placement_tenant.tenant_code,
        attribute.attribute_ordinal_position,
        attribute.attribute_description,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.attribute_custom_code,
        attribute.is_surrogate_key,
@@ -286,6 +287,7 @@ SELECT placement_tenant.tenant_code,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
+       attribute.is_locked,
        attribute.is_active
   FROM core.attribute AS attribute
   JOIN core.object AS object
@@ -573,6 +575,7 @@ SELECT tenant.tenant_code,
 _OBJECT_LIST_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT object.object_id,
+       application.metadata_object_review_revision(object) AS review_revision,
        object.object_schema,
        object.object_name,
        object_type.object_type_code,
@@ -591,6 +594,7 @@ SELECT object.object_id,
             WHERE attribute.object_id = object.object_id
        ) AS attribute_count,
        object.batch_attribute_name,
+       object.is_locked,
        object.is_active
   FROM visible_objects
   JOIN core.object AS object
@@ -616,6 +620,7 @@ LIMIT %s OFFSET %s
 _OBJECT_DETAIL_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT object.object_id,
+       application.metadata_object_review_revision(object) AS review_revision,
        object.object_schema,
        object.object_name,
        object_type.object_type_code,
@@ -658,10 +663,13 @@ SELECT object.object_id,
 _OBJECT_ATTRIBUTES_SQL: LiteralString = f"""
 {VISIBLE_OBJECTS_CTE}
 SELECT attribute.attribute_id,
+       application.metadata_attribute_review_revision(attribute, object) AS review_revision,
        attribute.attribute_name,
        attribute.attribute_ordinal_position,
        left(attribute.attribute_description, 2000) AS attribute_description,
+       coalesce(length(attribute.attribute_description) > 2000, FALSE) AS description_truncated,
        attribute.attribute_data_type,
+       attribute.attribute_inferred_data_type,
        attribute.attribute_nullability,
        attribute.is_surrogate_key,
        attribute.is_natural_key,
@@ -669,10 +677,13 @@ SELECT attribute.attribute_id,
        attribute.is_masking_required,
        attribute.is_mapped,
        attribute.is_purge,
+       attribute.is_locked,
        attribute.is_active
   FROM visible_objects
   JOIN core.attribute AS attribute
     ON attribute.object_id = visible_objects.object_id
+  JOIN core.object AS object
+    ON object.object_id = attribute.object_id
  WHERE visible_objects.object_id = %s
  ORDER BY attribute.attribute_ordinal_position,
           attribute.attribute_id
@@ -699,6 +710,8 @@ _ATTRIBUTE_FILTER_EXPRESSIONS: dict[str, LiteralString] = {
     "object_name": "lower(btrim(object.object_name))",
     "attribute_name": "lower(btrim(attribute.attribute_name))",
     "attribute_data_type": "attribute.attribute_data_type",
+    "attribute_inferred_data_type": "attribute.attribute_inferred_data_type",
+    "is_locked": "attribute.is_locked",
     "is_natural_key": "attribute.is_natural_key",
     "is_active": "attribute.is_active",
 }

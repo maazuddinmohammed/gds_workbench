@@ -1,0 +1,2658 @@
+{
+  "workflow": "logical",
+  "stage": "candidate_authoring",
+  "mode": "tool_assisted",
+  "status": "approved_design; implementation_deferred",
+  "contract_reuse": "First ten reference the approved foundational/Conceptual readers; eight Logical readers reuse exact approved result shapes. All are Logical-local against one frozen snapshot. These are design artifacts, not runtime registrations.",
+  "tools": [
+    {
+      "name": "get_source_context",
+      "variable": "source_context",
+      "description": "Return the same source_context value as the Logical-local prompt variable: contributing Source Connections and their business/type context for this frozen run. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/0",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_gds_context",
+      "variable": "gds_context",
+      "description": "Return the same gds_context value as the Logical-local prompt variable: actual GDS placements for scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/1",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_objects",
+      "variable": "object_context",
+      "description": "Return scoped physical Objects associated with a complete Source Connection natural key. Bronze matches follow registered ingestion mappings and retain GDS natural keys; Source matches retain Source keys. Omit the filter to return all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/2",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_object_details",
+      "variable": "object_attribute_context",
+      "description": "Return Attribute metadata and saved Profiles grouped under requested in-scope physical Object keys, using the object_attribute_context structure. Omitted/empty object_keys returns all scoped groups. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/3",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_object_relationships",
+      "variable": "object_relationship_context",
+      "description": "Return existing incoming and outgoing relationships grouped under requested physical Object keys, in the same shape as object_relationship_context. Omitted/empty keys returns groups for all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/4",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_modeling_assertions",
+      "variable": "modeling_assertions",
+      "description": "Read authorized, active, Logical-applicable Modeling Assertions from the frozen run. Omitted/empty assertion_keys selects all; supplied nominal record keys narrow the result. Returns the same seven-field records as modeling_assertions. Results use the shared page envelope; follow next_cursor until complete.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/5",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": "Logical-applicable active Assertion Records from active Documents."
+    },
+    {
+      "name": "list_conceptual_objects",
+      "variable": "conceptual_object_list",
+      "description": "List compact existing Conceptual objects: natural-key fields only, matching conceptual_object_list. Optionally filter by supporting physical object_keys; omitted/empty returns all. Use the corresponding get reader for full records.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/6",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_conceptual_objects",
+      "variable": "conceptual_objects",
+      "description": "Get full existing Conceptual objects matching conceptual_objects, including supports, confidence, status, and locks. Optionally supply exact nominal keys; omitted/empty keys returns all eligible full records in the frozen run. Continue later pages with only cursor.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/7",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "list_conceptual_relationships",
+      "variable": "conceptual_relationship_list",
+      "description": "List compact existing Conceptual relationships: natural-key fields only, matching conceptual_relationship_list. Optionally filter by supporting physical object_keys; omitted/empty returns all. Use the corresponding get reader for full records.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/8",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "get_conceptual_relationships",
+      "variable": "conceptual_relationships",
+      "description": "Get full existing Conceptual relationships matching conceptual_relationships, including supports, confidence, status, and locks. Optionally supply exact nominal keys; omitted/empty keys returns all eligible full records in the frozen run. Continue later pages with only cursor.",
+      "contract_reference": "conceptual.tools.proposal.json#/tools/9",
+      "reuse_rule": "Reuse exact existing input/output schemas, selection semantics, keys, limits, and paging. Bind to this frozen authorized Logical run. References describe shape reuse only; no global variable catalog or execution of another workflow.",
+      "applicability_override": null
+    },
+    {
+      "name": "list_logical_submodels",
+      "variable": "logical_submodel_list",
+      "description": "List compact natural keys matching logical_submodel_list. No selection filter: return all known Submodel identities. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalSubmodelKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return the complete compact business-capability directory. Submodels have no own physical sources; no source filter is invented. Entity memberships already provide exact Submodel names when a targeted get is sufficient."
+      ],
+      "example_input": {},
+      "example_output": {
+        "items": [
+          {
+            "logical_submodel_name": "Sales"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_logical_submodels",
+      "variable": "logical_submodels",
+      "description": "Get complete saved records matching logical_submodels. Optional exact Submodel names from the compact directory or Entity memberships. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "logical_submodel_names": {
+            "type": "array",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Logical Submodel Name",
+              "type": "string"
+            },
+            "default": [],
+            "description": "Optional exact Submodel names from the compact directory or Entity memberships."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "logical_submodel_names": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalSubmodelRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return only complete existing Submodel records; do not attach Entity copies or derived support lists. A preceding list call is unnecessary when a supplied membership already gives the key."
+      ],
+      "example_input": {
+        "logical_submodel_names": [
+          "Sales"
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_submodel_name": "Sales",
+            "logical_submodel_definition": "Customer and order management.",
+            "logical_submodel_status": "active",
+            "logical_submodel_is_locked": false
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "logical_submodel_names": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "list_logical_entities",
+      "variable": "logical_entity_list",
+      "description": "List compact natural keys matching logical_entity_list. Optional complete in-scope physical Object keys from get_objects; match the Entity's own Object sources. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "object_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/PhysicalObjectKey"
+            },
+            "default": [],
+            "description": "Optional complete in-scope physical Object keys from get_objects; match the Entity's own Object sources."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "object_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalEntityKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Match source entries with support_source_type=object directly on each Entity. Do not infer Entity matches through Attribute sources, Assertions, Conceptual support, relationships, or ingestion mappings.",
+        "For Bronze use actual GDS keys; for Source use actual Source keys. Historical source matches remain visible; inspect detail status. Source-filtered absence is not proof of absent Entity meaning or absent Attribute contributions."
+      ],
+      "example_input": {
+        "object_keys": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_entity_name": "Order"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "object_keys": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_logical_entities",
+      "variable": "logical_entities",
+      "description": "Get complete saved records matching logical_entities. Optional exact Logical Entity names from a compact directory or supplied record. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "logical_entity_names": {
+            "type": "array",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Logical Entity Name",
+              "type": "string"
+            },
+            "default": [],
+            "description": "Optional exact Logical Entity names from a compact directory or supplied record."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "logical_entity_names": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalEntityRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return full Entities with all sources and memberships, including those unrelated to an earlier Object filter. Attributes remain in the separate approved logical_attributes structure. No physical Object selector on this detail reader."
+      ],
+      "example_input": {
+        "logical_entity_names": [
+          "Order"
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_entity_name": "Order",
+            "logical_entity_definition": "A recorded business order.",
+            "logical_entity_type": "transaction",
+            "logical_entity_type_detail": null,
+            "logical_entity_grain": "One row per order.",
+            "logical_entity_dependency_order": 1,
+            "logical_entity_confidence": "high",
+            "logical_entity_status": "active",
+            "logical_entity_is_locked": false,
+            "submodels": [
+              {
+                "submodel_name": "Sales",
+                "membership_status": "active",
+                "membership_is_locked": false
+              }
+            ],
+            "sources": [
+              {
+                "support_source_type": "object",
+                "source_object": {
+                  "tenant_code": "GDS",
+                  "system_code": "WAREHOUSE",
+                  "connection_code": "MAIN",
+                  "object_schema": "bronze",
+                  "object_name": "Orders"
+                },
+                "source_order": 1,
+                "rationale": "Registered physical source for this Entity.",
+                "status": "active",
+                "is_locked": false
+              },
+              {
+                "support_source_type": "assertion",
+                "assertion_record": {
+                  "modeling_assertion_record_key": "order_customer_reference"
+                },
+                "source_order": 2,
+                "rationale": "Approved rule defines each Order as belonging to one Customer.",
+                "status": "active",
+                "is_locked": false
+              }
+            ]
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "logical_entity_names": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "list_logical_attributes",
+      "variable": "logical_attribute_list",
+      "description": "List compact natural keys matching logical_attribute_list. Optional exact Logical Entity names; list Attribute keys belonging to any selected Entity. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "logical_entity_names": {
+            "type": "array",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Logical Entity Name",
+              "type": "string"
+            },
+            "default": [],
+            "description": "Optional exact Logical Entity names; list Attribute keys belonging to any selected Entity."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "logical_entity_names": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalAttributeKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Match logical_entity_name on each Attribute. Keep the Entity/Attribute pair intact. This is modeled-parent navigation, not physical-source filtering. Include existing audit, source-free, and historical Attributes when matched; detail establishes meaning and lifecycle.",
+        "Validate supplied names against existing Logical Entities even if an Entity currently has no Attributes. A known parent without Attributes yields an empty page; an unknown name is an error."
+      ],
+      "example_input": {
+        "logical_entity_names": [
+          "Order"
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_entity_name": "Order",
+            "logical_attribute_name": "OrderId"
+          },
+          {
+            "logical_entity_name": "Order",
+            "logical_attribute_name": "CustomerId"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "logical_entity_names": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_logical_attributes",
+      "variable": "logical_attributes",
+      "description": "Get complete saved records matching logical_attributes. Optional full keys containing logical_entity_name and logical_attribute_name. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "attribute_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalAttributeKey"
+            },
+            "default": [],
+            "description": "Optional full keys containing logical_entity_name and logical_attribute_name."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "attribute_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalAttributeRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return full Attribute records and all their sources. Do not interpret a bare Attribute name as a key. Saved audit Attributes are valid input evidence, although the Logical AI candidate cannot author them."
+      ],
+      "example_input": {
+        "attribute_keys": [
+          {
+            "logical_entity_name": "Order",
+            "logical_attribute_name": "CustomerId"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_entity_name": "Order",
+            "logical_attribute_name": "CustomerId",
+            "logical_attribute_definition": "CustomerId recorded for this Order.",
+            "logical_attribute_data_type": "bigint",
+            "logical_attribute_is_nullable": false,
+            "logical_attribute_is_primary_key": false,
+            "logical_attribute_is_natural_key": false,
+            "logical_attribute_is_surrogate_key": false,
+            "logical_attribute_ordinal_position": 2,
+            "logical_attribute_is_audit_column": false,
+            "logical_attribute_status": "active",
+            "logical_attribute_is_locked": false,
+            "sources": [
+              {
+                "support_source_type": "attribute",
+                "source_attribute": {
+                  "tenant_code": "GDS",
+                  "system_code": "WAREHOUSE",
+                  "connection_code": "MAIN",
+                  "object_schema": "bronze",
+                  "object_name": "Orders",
+                  "attribute_name": "customer_id"
+                },
+                "source_order": 1,
+                "rationale": "Recorded source for this Attribute.",
+                "status": "active",
+                "is_locked": false
+              },
+              {
+                "support_source_type": "assertion",
+                "assertion_record": {
+                  "modeling_assertion_record_key": "order_customer_reference"
+                },
+                "source_order": 2,
+                "rationale": "Approved rule defines each Order as belonging to one Customer.",
+                "status": "active",
+                "is_locked": false
+              }
+            ]
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "attribute_keys": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "list_logical_relationships",
+      "variable": "logical_relationship_list",
+      "description": "List compact natural keys matching logical_relationship_list. Optional exact Logical Entity names; match either the from-Entity or to-Entity endpoint. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "logical_entity_names": {
+            "type": "array",
+            "items": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Logical Entity Name",
+              "type": "string"
+            },
+            "default": [],
+            "description": "Optional exact Logical Entity names; match either the from-Entity or to-Entity endpoint."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "logical_entity_names": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalRelationshipKey"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return each complete five-field relationship key once when either endpoint Entity matches. Self-Entity relationships between distinct Attributes remain one result. No incoming/outgoing duplicates or physical Object filter.",
+        "Logical relationships have no own sources/supports list. Source-based exploration must first discover relevant Logical Entities, then inspect their incident relationships. Endpoint navigation is not evidence of direct source support or a measured join.",
+        "Validate supplied names against existing Logical Entities. A known Entity with no incident relationships returns an empty page. Detail readers then resolve exact five-field keys."
+      ],
+      "example_input": {
+        "logical_entity_names": [
+          "Customer",
+          "Order"
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "from_logical_entity_name": "Order",
+            "from_logical_attribute_name": "CustomerId",
+            "to_logical_entity_name": "Customer",
+            "to_logical_attribute_name": "CustomerId",
+            "logical_relationship_name": "OrderCustomer"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "logical_entity_names": [],
+        "cursor": null
+      }
+    },
+    {
+      "name": "get_logical_relationships",
+      "variable": "logical_relationships",
+      "description": "Get complete saved records matching logical_relationships. Optional complete keys with from/to Logical Entity and Attribute names plus logical_relationship_name. Omitted/empty selection returns all eligible records, paged; continue with only cursor.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "relationship_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalRelationshipKey"
+            },
+            "default": [],
+            "description": "Optional complete keys with from/to Logical Entity and Attribute names plus logical_relationship_name."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor from this same reader/run. Omitted/null starts a request. Continue with only cursor; the frozen selection is restored."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "relationship_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/LogicalRelationshipRecord"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "semantics": [
+        "Read only the precomputed authorized Logical run snapshot. No live discovery, SQL, measurements, mutations, scope changes, or dependency-context reads.",
+        "Readers contain saved frozen records only. Names introduced in the current un-applied candidate are not queryable reader keys; use their candidate definitions directly and retain backend reference checks.",
+        "Initial omitted/empty selection returns all eligible records of this reader. Supplied keys narrow that selection. All list filters match any requested key; return each natural identity once.",
+        "Normalize key comparisons with existing Model natural-key rules and preserve saved spelling. Repeated requested keys deduplicate. Unknown or unauthorized supplied keys are errors; never treat them as all-record requests.",
+        "No filter includes active, inactive, and deprecated records and source-free/Assertion-only records where applicable. A compact key proves no meaning, confidence, status, lock, or complete source coverage; inspect full details.",
+        "Use the common page envelope and existing response/cumulative/execution limits. Continue the same reader with only cursor; it restores the frozen selection. Default empty selector values alongside a cursor are harmless; changed nondefault selectors are errors.",
+        "Each nonfinal successful page makes progress. Repeating a cursor returns the same page; never append it twice. No silent truncation. An incomplete read cannot establish absence.",
+        "Logical directory entries and full Logical records stay whole, including all nested sources and memberships. incomplete_object_key is always null. An indivisible record over the response budget returns an explicit size error; do not split it or invent a partial-record format.",
+        "An unavailable applied Logical section is a tool error, not a successful empty result. Known empty collections or valid filters with no matches return a complete empty page.",
+        "Return existing full relationship records exactly once. Do not attach inferred supports, use a relationship name alone, or mix an Entity filter with exact relationship keys."
+      ],
+      "example_input": {
+        "relationship_keys": [
+          {
+            "from_logical_entity_name": "Order",
+            "from_logical_attribute_name": "CustomerId",
+            "to_logical_entity_name": "Customer",
+            "to_logical_attribute_name": "CustomerId",
+            "logical_relationship_name": "OrderCustomer"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "logical_relationship_name": "OrderCustomer",
+            "logical_relationship_definition": "An Order belongs to one Customer; a Customer may have many Orders.",
+            "from_logical_entity_name": "Order",
+            "from_logical_attribute_name": "CustomerId",
+            "to_logical_entity_name": "Customer",
+            "to_logical_attribute_name": "CustomerId",
+            "logical_relationship_cardinality": "many_to_one",
+            "logical_relationship_confidence": "high",
+            "logical_relationship_basis": "The saved business rule identifies the Order customer reference.",
+            "logical_relationship_cardinality_basis": "The rule requires one Customer per Order and permits many Orders per Customer.",
+            "logical_relationship_status": "active",
+            "logical_relationship_is_locked": false
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "defaults": {
+        "relationship_keys": [],
+        "cursor": null
+      }
+    }
+  ],
+  "$defs": {
+    "PhysicalObjectKey": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Tenant Code",
+          "type": "string"
+        },
+        "system_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "System Code",
+          "type": "string"
+        },
+        "connection_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Connection Code",
+          "type": "string"
+        },
+        "object_schema": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Schema",
+          "type": "string"
+        },
+        "object_name": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name"
+      ],
+      "title": "PhysicalObjectKey",
+      "type": "object"
+    },
+    "LogicalSubmodelRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_submodel_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Submodel Name",
+          "type": "string"
+        },
+        "logical_submodel_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Submodel Definition",
+          "type": "string"
+        },
+        "logical_submodel_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Logical Submodel Status",
+          "type": "string"
+        },
+        "logical_submodel_is_locked": {
+          "title": "Logical Submodel Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "logical_submodel_name",
+        "logical_submodel_definition",
+        "logical_submodel_status",
+        "logical_submodel_is_locked"
+      ],
+      "title": "LogicalSubmodelRecord",
+      "type": "object"
+    },
+    "LogicalSubmodelKey": {
+      "type": "object",
+      "properties": {
+        "logical_submodel_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Submodel Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_submodel_name"
+      ],
+      "additionalProperties": false
+    },
+    "AssertionRecordKey": {
+      "additionalProperties": false,
+      "properties": {
+        "modeling_assertion_record_key": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+          "title": "Modeling Assertion Record Key",
+          "type": "string"
+        }
+      },
+      "required": [
+        "modeling_assertion_record_key"
+      ],
+      "title": "AssertionRecordKey",
+      "type": "object"
+    },
+    "LogicalAssertionSourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "assertion",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "assertion_record": {
+          "$ref": "#/$defs/AssertionRecordKey"
+        },
+        "source_order": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Order"
+        },
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "is_locked": {
+          "title": "Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "assertion_record",
+        "rationale",
+        "status",
+        "is_locked"
+      ],
+      "title": "LogicalAssertionSourceRecord",
+      "type": "object"
+    },
+    "LogicalEntityRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Name",
+          "type": "string"
+        },
+        "logical_entity_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Definition",
+          "type": "string"
+        },
+        "logical_entity_type": {
+          "enum": [
+            "core",
+            "reference",
+            "transaction",
+            "event",
+            "bridge",
+            "history",
+            "snapshot",
+            "association",
+            "aggregate",
+            "other"
+          ],
+          "title": "Logical Entity Type",
+          "type": "string"
+        },
+        "logical_entity_type_detail": {
+          "anyOf": [
+            {
+              "minLength": 1,
+              "pattern": "\\S",
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "title": "Logical Entity Type Detail"
+        },
+        "logical_entity_grain": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Grain",
+          "type": "string"
+        },
+        "logical_entity_dependency_order": {
+          "minimum": 0,
+          "title": "Logical Entity Dependency Order",
+          "type": "integer"
+        },
+        "logical_entity_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Logical Entity Confidence",
+          "type": "string"
+        },
+        "logical_entity_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Logical Entity Status",
+          "type": "string"
+        },
+        "logical_entity_is_locked": {
+          "title": "Logical Entity Is Locked",
+          "type": "boolean"
+        },
+        "submodels": {
+          "items": {
+            "$ref": "#/$defs/SubmodelMembershipRecord"
+          },
+          "title": "Submodels",
+          "type": "array"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/LogicalEntitySourceRecord"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "logical_entity_name",
+        "logical_entity_definition",
+        "logical_entity_type",
+        "logical_entity_type_detail",
+        "logical_entity_grain",
+        "logical_entity_dependency_order",
+        "logical_entity_confidence",
+        "logical_entity_status",
+        "logical_entity_is_locked",
+        "submodels",
+        "sources"
+      ],
+      "title": "LogicalEntityRecord",
+      "type": "object"
+    },
+    "LogicalEntitySourceRecord": {
+      "discriminator": {
+        "mapping": {
+          "assertion": "#/$defs/LogicalAssertionSourceRecord",
+          "object": "#/$defs/LogicalObjectSourceRecord"
+        },
+        "propertyName": "support_source_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/LogicalObjectSourceRecord"
+        },
+        {
+          "$ref": "#/$defs/LogicalAssertionSourceRecord"
+        }
+      ]
+    },
+    "LogicalObjectSourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "object",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "source_object": {
+          "$ref": "#/$defs/PhysicalObjectKey"
+        },
+        "source_order": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Order"
+        },
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "is_locked": {
+          "title": "Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "source_object",
+        "rationale",
+        "status",
+        "is_locked"
+      ],
+      "title": "LogicalObjectSourceRecord",
+      "type": "object"
+    },
+    "SubmodelMembershipRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "submodel_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Submodel Name",
+          "type": "string"
+        },
+        "membership_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Membership Status",
+          "type": "string"
+        },
+        "membership_is_locked": {
+          "title": "Membership Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "submodel_name",
+        "membership_status",
+        "membership_is_locked"
+      ],
+      "title": "SubmodelMembershipRecord",
+      "type": "object"
+    },
+    "LogicalEntityKey": {
+      "type": "object",
+      "properties": {
+        "logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_entity_name"
+      ],
+      "additionalProperties": false
+    },
+    "AttributeAssertionSourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "assertion",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "assertion_record": {
+          "$ref": "#/$defs/AssertionRecordKey"
+        },
+        "source_order": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Order"
+        },
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "is_locked": {
+          "title": "Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "assertion_record",
+        "rationale",
+        "status",
+        "is_locked"
+      ],
+      "title": "AttributeAssertionSourceRecord",
+      "type": "object"
+    },
+    "AttributePhysicalSourceRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "support_source_type": {
+          "const": "attribute",
+          "title": "Support Source Type",
+          "type": "string"
+        },
+        "source_attribute": {
+          "$ref": "#/$defs/PhysicalAttributeKey"
+        },
+        "source_order": {
+          "anyOf": [
+            {
+              "exclusiveMinimum": 0,
+              "type": "integer"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null,
+          "title": "Source Order"
+        },
+        "rationale": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Rationale",
+          "type": "string"
+        },
+        "status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Status",
+          "type": "string"
+        },
+        "is_locked": {
+          "title": "Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "support_source_type",
+        "source_attribute",
+        "rationale",
+        "status",
+        "is_locked"
+      ],
+      "title": "AttributePhysicalSourceRecord",
+      "type": "object"
+    },
+    "AttributeSourceRecord": {
+      "discriminator": {
+        "mapping": {
+          "assertion": "#/$defs/AttributeAssertionSourceRecord",
+          "attribute": "#/$defs/AttributePhysicalSourceRecord"
+        },
+        "propertyName": "support_source_type"
+      },
+      "oneOf": [
+        {
+          "$ref": "#/$defs/AttributePhysicalSourceRecord"
+        },
+        {
+          "$ref": "#/$defs/AttributeAssertionSourceRecord"
+        }
+      ]
+    },
+    "LogicalAttributeRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Name",
+          "type": "string"
+        },
+        "logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Attribute Name",
+          "type": "string"
+        },
+        "logical_attribute_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Attribute Definition",
+          "type": "string"
+        },
+        "logical_attribute_data_type": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Attribute Data Type",
+          "type": "string"
+        },
+        "logical_attribute_is_nullable": {
+          "title": "Logical Attribute Is Nullable",
+          "type": "boolean"
+        },
+        "logical_attribute_is_primary_key": {
+          "title": "Logical Attribute Is Primary Key",
+          "type": "boolean"
+        },
+        "logical_attribute_is_natural_key": {
+          "title": "Logical Attribute Is Natural Key",
+          "type": "boolean"
+        },
+        "logical_attribute_is_surrogate_key": {
+          "title": "Logical Attribute Is Surrogate Key",
+          "type": "boolean"
+        },
+        "logical_attribute_ordinal_position": {
+          "exclusiveMinimum": 0,
+          "title": "Logical Attribute Ordinal Position",
+          "type": "integer"
+        },
+        "logical_attribute_is_audit_column": {
+          "title": "Logical Attribute Is Audit Column",
+          "type": "boolean"
+        },
+        "logical_attribute_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Logical Attribute Status",
+          "type": "string"
+        },
+        "logical_attribute_is_locked": {
+          "title": "Logical Attribute Is Locked",
+          "type": "boolean"
+        },
+        "sources": {
+          "items": {
+            "$ref": "#/$defs/AttributeSourceRecord"
+          },
+          "title": "Sources",
+          "type": "array"
+        }
+      },
+      "required": [
+        "logical_entity_name",
+        "logical_attribute_name",
+        "logical_attribute_definition",
+        "logical_attribute_data_type",
+        "logical_attribute_is_nullable",
+        "logical_attribute_is_primary_key",
+        "logical_attribute_is_natural_key",
+        "logical_attribute_is_surrogate_key",
+        "logical_attribute_ordinal_position",
+        "logical_attribute_is_audit_column",
+        "logical_attribute_status",
+        "logical_attribute_is_locked",
+        "sources"
+      ],
+      "title": "LogicalAttributeRecord",
+      "type": "object"
+    },
+    "PhysicalAttributeKey": {
+      "additionalProperties": false,
+      "properties": {
+        "tenant_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Tenant Code",
+          "type": "string"
+        },
+        "system_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "System Code",
+          "type": "string"
+        },
+        "connection_code": {
+          "maxLength": 100,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Connection Code",
+          "type": "string"
+        },
+        "object_schema": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Schema",
+          "type": "string"
+        },
+        "object_name": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Object Name",
+          "type": "string"
+        },
+        "attribute_name": {
+          "maxLength": 400,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Attribute Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+        "attribute_name"
+      ],
+      "title": "PhysicalAttributeKey",
+      "type": "object"
+    },
+    "LogicalAttributeKey": {
+      "type": "object",
+      "properties": {
+        "logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Entity Name",
+          "type": "string"
+        },
+        "logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Attribute Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "logical_entity_name",
+        "logical_attribute_name"
+      ],
+      "additionalProperties": false
+    },
+    "LogicalRelationshipRecord": {
+      "additionalProperties": false,
+      "properties": {
+        "logical_relationship_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Relationship Name",
+          "type": "string"
+        },
+        "logical_relationship_definition": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Relationship Definition",
+          "type": "string"
+        },
+        "from_logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Logical Entity Name",
+          "type": "string"
+        },
+        "from_logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Logical Attribute Name",
+          "type": "string"
+        },
+        "to_logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Logical Entity Name",
+          "type": "string"
+        },
+        "to_logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Logical Attribute Name",
+          "type": "string"
+        },
+        "logical_relationship_cardinality": {
+          "enum": [
+            "one_to_one",
+            "one_to_many",
+            "many_to_one",
+            "many_to_many"
+          ],
+          "title": "Logical Relationship Cardinality",
+          "type": "string"
+        },
+        "logical_relationship_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ],
+          "title": "Logical Relationship Confidence",
+          "type": "string"
+        },
+        "logical_relationship_basis": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Relationship Basis",
+          "type": "string"
+        },
+        "logical_relationship_cardinality_basis": {
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Relationship Cardinality Basis",
+          "type": "string"
+        },
+        "logical_relationship_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ],
+          "title": "Logical Relationship Status",
+          "type": "string"
+        },
+        "logical_relationship_is_locked": {
+          "title": "Logical Relationship Is Locked",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "logical_relationship_name",
+        "logical_relationship_definition",
+        "from_logical_entity_name",
+        "from_logical_attribute_name",
+        "to_logical_entity_name",
+        "to_logical_attribute_name",
+        "logical_relationship_cardinality",
+        "logical_relationship_confidence",
+        "logical_relationship_basis",
+        "logical_relationship_cardinality_basis",
+        "logical_relationship_status",
+        "logical_relationship_is_locked"
+      ],
+      "title": "LogicalRelationshipRecord",
+      "type": "object"
+    },
+    "LogicalRelationshipKey": {
+      "type": "object",
+      "properties": {
+        "from_logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Logical Entity Name",
+          "type": "string"
+        },
+        "from_logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "From Logical Attribute Name",
+          "type": "string"
+        },
+        "to_logical_entity_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Logical Entity Name",
+          "type": "string"
+        },
+        "to_logical_attribute_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "To Logical Attribute Name",
+          "type": "string"
+        },
+        "logical_relationship_name": {
+          "maxLength": 255,
+          "minLength": 1,
+          "pattern": "\\S",
+          "title": "Logical Relationship Name",
+          "type": "string"
+        }
+      },
+      "required": [
+        "from_logical_entity_name",
+        "from_logical_attribute_name",
+        "to_logical_entity_name",
+        "to_logical_attribute_name",
+        "logical_relationship_name"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "paging": {
+    "shared_contract_reference": "analysis.context-and-tools.json#/paging_contract",
+    "physical": "Preserve accepted continuation of the last physical Object details/relationship group.",
+    "conceptual": "Preserve approved whole-record paging and explicit indivisible-record size errors.",
+    "logical": "Use the approved whole-record rule for all eight Logical readers. Page between complete keys/records including nested sources and memberships; incomplete_object_key is always null. An oversized single record returns an explicit size error."
+  },
+  "tool_availability": "Optional per saved template and optional to call. All eighteen support initial no-input calls. Complete inline values can replace matching reads. Omitted/empty selection means all eligible records of that type, with paging; cursor-only calls restore the original selection.",
+  "usage_examples": [
+    {
+      "purpose": "Discover a physical contribution, then navigate the Logical Model.",
+      "calls": [
+        {
+          "tool": "list_logical_entities",
+          "input": {
+            "object_keys": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders"
+              }
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Order"
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_logical_entities",
+          "input": {
+            "logical_entity_names": [
+              "Order"
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Order",
+                "logical_entity_definition": "A recorded business order.",
+                "logical_entity_type": "transaction",
+                "logical_entity_type_detail": null,
+                "logical_entity_grain": "One row per order.",
+                "logical_entity_dependency_order": 1,
+                "logical_entity_confidence": "high",
+                "logical_entity_status": "active",
+                "logical_entity_is_locked": false,
+                "submodels": [
+                  {
+                    "submodel_name": "Sales",
+                    "membership_status": "active",
+                    "membership_is_locked": false
+                  }
+                ],
+                "sources": [
+                  {
+                    "support_source_type": "object",
+                    "source_object": {
+                      "tenant_code": "GDS",
+                      "system_code": "WAREHOUSE",
+                      "connection_code": "MAIN",
+                      "object_schema": "bronze",
+                      "object_name": "Orders"
+                    },
+                    "source_order": 1,
+                    "rationale": "Registered physical source for this Entity.",
+                    "status": "active",
+                    "is_locked": false
+                  },
+                  {
+                    "support_source_type": "assertion",
+                    "assertion_record": {
+                      "modeling_assertion_record_key": "order_customer_reference"
+                    },
+                    "source_order": 2,
+                    "rationale": "Approved rule defines each Order as belonging to one Customer.",
+                    "status": "active",
+                    "is_locked": false
+                  }
+                ]
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "list_logical_attributes",
+          "input": {
+            "logical_entity_names": [
+              "Order"
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "OrderId"
+              },
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "CustomerId"
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_logical_attributes",
+          "input": {
+            "attribute_keys": [
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "OrderId"
+              },
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "CustomerId"
+              }
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "OrderId",
+                "logical_attribute_definition": "OrderId recorded for this Order.",
+                "logical_attribute_data_type": "bigint",
+                "logical_attribute_is_nullable": false,
+                "logical_attribute_is_primary_key": true,
+                "logical_attribute_is_natural_key": true,
+                "logical_attribute_is_surrogate_key": false,
+                "logical_attribute_ordinal_position": 1,
+                "logical_attribute_is_audit_column": false,
+                "logical_attribute_status": "active",
+                "logical_attribute_is_locked": false,
+                "sources": [
+                  {
+                    "support_source_type": "attribute",
+                    "source_attribute": {
+                      "tenant_code": "GDS",
+                      "system_code": "WAREHOUSE",
+                      "connection_code": "MAIN",
+                      "object_schema": "bronze",
+                      "object_name": "Orders",
+                      "attribute_name": "order_id"
+                    },
+                    "source_order": 1,
+                    "rationale": "Recorded source for this Attribute.",
+                    "status": "active",
+                    "is_locked": false
+                  }
+                ]
+              },
+              {
+                "logical_entity_name": "Order",
+                "logical_attribute_name": "CustomerId",
+                "logical_attribute_definition": "CustomerId recorded for this Order.",
+                "logical_attribute_data_type": "bigint",
+                "logical_attribute_is_nullable": false,
+                "logical_attribute_is_primary_key": false,
+                "logical_attribute_is_natural_key": false,
+                "logical_attribute_is_surrogate_key": false,
+                "logical_attribute_ordinal_position": 2,
+                "logical_attribute_is_audit_column": false,
+                "logical_attribute_status": "active",
+                "logical_attribute_is_locked": false,
+                "sources": [
+                  {
+                    "support_source_type": "attribute",
+                    "source_attribute": {
+                      "tenant_code": "GDS",
+                      "system_code": "WAREHOUSE",
+                      "connection_code": "MAIN",
+                      "object_schema": "bronze",
+                      "object_name": "Orders",
+                      "attribute_name": "customer_id"
+                    },
+                    "source_order": 1,
+                    "rationale": "Recorded source for this Attribute.",
+                    "status": "active",
+                    "is_locked": false
+                  },
+                  {
+                    "support_source_type": "assertion",
+                    "assertion_record": {
+                      "modeling_assertion_record_key": "order_customer_reference"
+                    },
+                    "source_order": 2,
+                    "rationale": "Approved rule defines each Order as belonging to one Customer.",
+                    "status": "active",
+                    "is_locked": false
+                  }
+                ]
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "list_logical_relationships",
+          "input": {
+            "logical_entity_names": [
+              "Order"
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "from_logical_entity_name": "Order",
+                "from_logical_attribute_name": "CustomerId",
+                "to_logical_entity_name": "Customer",
+                "to_logical_attribute_name": "CustomerId",
+                "logical_relationship_name": "OrderCustomer"
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_logical_relationships",
+          "input": {
+            "relationship_keys": [
+              {
+                "from_logical_entity_name": "Order",
+                "from_logical_attribute_name": "CustomerId",
+                "to_logical_entity_name": "Customer",
+                "to_logical_attribute_name": "CustomerId",
+                "logical_relationship_name": "OrderCustomer"
+              }
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_relationship_name": "OrderCustomer",
+                "logical_relationship_definition": "An Order belongs to one Customer; a Customer may have many Orders.",
+                "from_logical_entity_name": "Order",
+                "from_logical_attribute_name": "CustomerId",
+                "to_logical_entity_name": "Customer",
+                "to_logical_attribute_name": "CustomerId",
+                "logical_relationship_cardinality": "many_to_one",
+                "logical_relationship_confidence": "high",
+                "logical_relationship_basis": "The saved business rule identifies the Order customer reference.",
+                "logical_relationship_cardinality_basis": "The rule requires one Customer per Order and permits many Orders per Customer.",
+                "logical_relationship_status": "active",
+                "logical_relationship_is_locked": false
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ]
+    },
+    {
+      "purpose": "Follow an Entity membership directly; list is optional.",
+      "calls": [
+        {
+          "tool": "get_logical_submodels",
+          "input": {
+            "logical_submodel_names": [
+              "Sales"
+            ]
+          },
+          "output": {
+            "items": [
+              {
+                "logical_submodel_name": "Sales",
+                "logical_submodel_definition": "Customer and order management.",
+                "logical_submodel_status": "active",
+                "logical_submodel_is_locked": false
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ]
+    },
+    {
+      "purpose": "No-input detail calls return all full records; continuation preserves selection.",
+      "calls": [
+        {
+          "tool": "get_logical_entities",
+          "input": {},
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Customer",
+                "logical_entity_definition": "A recorded business customer.",
+                "logical_entity_type": "core",
+                "logical_entity_type_detail": null,
+                "logical_entity_grain": "One row per customer.",
+                "logical_entity_dependency_order": 0,
+                "logical_entity_confidence": "high",
+                "logical_entity_status": "active",
+                "logical_entity_is_locked": true,
+                "submodels": [
+                  {
+                    "submodel_name": "Sales",
+                    "membership_status": "active",
+                    "membership_is_locked": false
+                  }
+                ],
+                "sources": [
+                  {
+                    "support_source_type": "object",
+                    "source_object": {
+                      "tenant_code": "GDS",
+                      "system_code": "WAREHOUSE",
+                      "connection_code": "MAIN",
+                      "object_schema": "bronze",
+                      "object_name": "Customers"
+                    },
+                    "source_order": 1,
+                    "rationale": "Registered physical source for this Entity.",
+                    "status": "active",
+                    "is_locked": false
+                  }
+                ]
+              }
+            ],
+            "next_cursor": "opaque-logical-entity-page-2",
+            "is_complete": false,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_logical_entities",
+          "input": {
+            "cursor": "opaque-logical-entity-page-2"
+          },
+          "output": {
+            "items": [
+              {
+                "logical_entity_name": "Order",
+                "logical_entity_definition": "A recorded business order.",
+                "logical_entity_type": "transaction",
+                "logical_entity_type_detail": null,
+                "logical_entity_grain": "One row per order.",
+                "logical_entity_dependency_order": 1,
+                "logical_entity_confidence": "high",
+                "logical_entity_status": "active",
+                "logical_entity_is_locked": false,
+                "submodels": [
+                  {
+                    "submodel_name": "Sales",
+                    "membership_status": "active",
+                    "membership_is_locked": false
+                  }
+                ],
+                "sources": [
+                  {
+                    "support_source_type": "object",
+                    "source_object": {
+                      "tenant_code": "GDS",
+                      "system_code": "WAREHOUSE",
+                      "connection_code": "MAIN",
+                      "object_schema": "bronze",
+                      "object_name": "Orders"
+                    },
+                    "source_order": 1,
+                    "rationale": "Registered physical source for this Entity.",
+                    "status": "active",
+                    "is_locked": false
+                  },
+                  {
+                    "support_source_type": "assertion",
+                    "assertion_record": {
+                      "modeling_assertion_record_key": "order_customer_reference"
+                    },
+                    "source_order": 2,
+                    "rationale": "Approved rule defines each Order as belonging to one Customer.",
+                    "status": "active",
+                    "is_locked": false
+                  }
+                ]
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ]
+    },
+    {
+      "purpose": "Known empty is explicit, not a fabricated record.",
+      "fixture_note": "Separate valid frozen Model with no saved Logical relationships.",
+      "calls": [
+        {
+          "tool": "list_logical_relationships",
+          "input": {},
+          "output": {
+            "items": [],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ]
+    }
+  ],
+  "default_delivery": {
+    "inline_variables": [
+      "naming_instructions",
+      "audit_columns",
+      "ingestion_mapping"
+    ],
+    "selected_tools": [
+      "get_source_context",
+      "get_gds_context",
+      "get_objects",
+      "get_object_details",
+      "get_object_relationships",
+      "get_modeling_assertions",
+      "list_conceptual_objects",
+      "get_conceptual_objects",
+      "list_conceptual_relationships",
+      "get_conceptual_relationships",
+      "list_logical_submodels",
+      "get_logical_submodels",
+      "list_logical_entities",
+      "get_logical_entities",
+      "list_logical_attributes",
+      "get_logical_attributes",
+      "list_logical_relationships",
+      "get_logical_relationships"
+    ],
+    "author_control": "All twenty-one variables remain available, including full and compact forms. Authors select variables/projections and enabled readers. Do not add ingestion-mapping, naming/audit, or dependency-context readers; small approved settings/mapping are inline in this default. No hidden context append.",
+    "status": "approved"
+  },
+  "accepted_decisions": [
+    "Use direct physical Object sources for Entity discovery, modeled Entity names for Attribute/relationship discovery, and exact nominal keys for details; Submodel list is unfiltered.",
+    "Use whole Logical records under existing paging/size limits, matching approved Conceptual reader behavior.",
+    "Approved three inline variables, eighteen optional readers, and the complete Tool-assisted pair with the existing approved Logical quality/output rules."
+  ]
+}

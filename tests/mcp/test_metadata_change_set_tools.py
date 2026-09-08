@@ -15,15 +15,6 @@ from psycopg.types.json import Jsonb
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from gds_etl_workbench.infrastructure.postgres import (
-    ReadinessRecord,
-    ReadIsolation,
-    ReadTransaction,
-    ToolCallLogRecord,
-    WriteTransaction,
-)
 from gds_etl_workbench.application.change_sets.contracts import (
     canonical_records_sha256,
     stage_batch_sha256,
@@ -31,8 +22,17 @@ from gds_etl_workbench.application.change_sets.contracts import (
 from gds_etl_workbench.application.change_sets.metadata import (
     register_metadata_change_set_tools,
 )
-from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
+from gds_etl_workbench.configuration import AuthMode
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.snapshots.metadata import DATASETS_BY_NAME
+from gds_etl_workbench.infrastructure.postgres import (
+    ReadinessRecord,
+    ReadIsolation,
+    ReadTransaction,
+    ToolCallLogRecord,
+    WriteTransaction,
+)
+from gds_etl_workbench.tools.snapshots.metadata.archive import encode_dataset
 from gds_etl_workbench.tools.snapshots.metadata.get_metadata_snapshot import (
     SelectedMetadataSnapshot,
 )
@@ -304,9 +304,7 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
     )
 
     async with Client(_server(database)) as client:
-        result = await client.call_tool(
-            "create_metadata_change_set", {"tenant_id": 123}
-        )
+        result = await client.call_tool("create_metadata_change_set", {"tenant_id": 123})
 
     assert result.is_error is False
     assert result.structured_content == {
@@ -327,9 +325,7 @@ async def test_create_metadata_change_set_returns_new_or_existing_draft(
 
 
 @pytest.mark.asyncio
-async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> (
-    None
-):
+async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revision() -> None:
     database = FakeDatabase(
         stage_row={
             "staged": True,
@@ -405,9 +401,7 @@ async def test_stage_metadata_change_set_stages_multiple_datasets_with_one_revis
 
 
 @pytest.mark.asyncio
-async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes() -> (
-    None
-):
+async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes() -> None:
     database = FakeDatabase(
         stage_row={
             "staged": True,
@@ -435,9 +429,7 @@ async def test_stage_metadata_change_set_accepts_strict_json_dates_and_datetimes
                                 "copy_group_name": "CUSTOMERS",
                                 "member_group_name": None,
                                 "copy_group_control_initial_load_date": "2026-08-24",
-                                "copy_group_control_last_run_time": (
-                                    "2026-08-24T10:42:00Z"
-                                ),
+                                "copy_group_control_last_run_time": ("2026-08-24T10:42:00Z"),
                                 "copy_group_control_last_run_value": "1048",
                             }
                         ],
@@ -496,9 +488,7 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
     async with Client(_server(FakeDatabase())) as client:
         tools = await client.list_tools()
 
-    stage = next(
-        tool for tool in tools.tools if tool.name == "stage_metadata_change_set"
-    )
+    stage = next(tool for tool in tools.tools if tool.name == "stage_metadata_change_set")
     definitions = stage.input_schema["$defs"]
     stage_change = definitions["StageChange"]
     assert stage_change["properties"]["records"]["items"] == {
@@ -509,9 +499,7 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
         field not in str(stage.input_schema)
         for field in ("copy_group_name", "process_executable", "attribute_data_type")
     )
-    put_chunk = next(
-        tool for tool in tools.tools if tool.name == "put_metadata_stage_chunk"
-    )
+    put_chunk = next(tool for tool in tools.tools if tool.name == "put_metadata_stage_chunk")
     assert put_chunk.input_schema["properties"]["records"]["items"] == {
         "additionalProperties": True,
         "type": "object",
@@ -521,9 +509,7 @@ async def test_stage_metadata_change_set_input_schema_stays_compact() -> None:
 
 
 @pytest.mark.asyncio
-async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement() -> (
-    None
-):
+async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement() -> None:
     first: dict[str, object] = {
         "tenant_code": "DEMO",
         "system_code": "CRM",
@@ -617,18 +603,12 @@ async def test_metadata_stage_batch_tools_begin_put_and_commit_one_replacement()
     assert committed.structured_content["record_count"] == 2
     assert committed.structured_content["draft_revision"] == 2
     assert database.write_transaction_count == 3
-    assert all(
-        "records" not in record.input_metadata for record in database.audit_records
-    )
-    assert "CUSTOMERS" not in str(
-        [record.input_metadata for record in database.audit_records]
-    )
+    assert all("records" not in record.input_metadata for record in database.audit_records)
+    assert "CUSTOMERS" not in str([record.input_metadata for record in database.audit_records])
 
 
 @pytest.mark.asyncio
-async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_write() -> (
-    None
-):
+async def test_metadata_stage_chunk_rejects_a_digest_mismatch_before_database_write() -> None:
     record = {
         "tenant_code": "DEMO",
         "system_code": "CRM",
@@ -740,6 +720,91 @@ async def test_get_metadata_change_set_returns_counts_or_one_dataset(
 
 
 @pytest.mark.asyncio
+async def test_get_metadata_change_set_fingerprint_verifies_the_draft_without_records() -> None:
+    documents: dict[str, list[dict[str, object]]] = {
+        f"{name}_document": []
+        for name in (
+            "source_object",
+            "source_attribute",
+            "bronze_object",
+            "bronze_attribute",
+            "silver_object",
+            "silver_attribute",
+            "gold_object",
+            "gold_attribute",
+            "ingestion_object_mapping",
+            "ingestion_attribute_mapping",
+            "copy_group",
+            "member_group",
+            "copy_group_control",
+            "copy",
+            "process_group",
+            "process",
+        )
+    }
+    documents["copy_group_document"] = [
+        {
+            "tenant_code": "DEMO",
+            "system_code": "CRM",
+            "copy_group_name": "CUSTOMERS",
+            "copy_group_description": None,
+            "is_member_group_required": False,
+            "is_active": True,
+        }
+    ]
+    database = FakeDatabase(
+        get_row={
+            "found": True,
+            "denial_code": None,
+            "metadata_change_set_status": "active",
+            "draft_revision": 2,
+            "candidate_digest": None,
+            "validation_outcome": None,
+            **documents,
+            "created_time": datetime(2026, 8, 13, 15, 0, tzinfo=UTC),
+            "last_activity_time": datetime(2026, 8, 13, 15, 30, tzinfo=UTC),
+            "expires_time": datetime(2026, 8, 13, 19, 30, tzinfo=UTC),
+            "validated_time": None,
+            "applied_time": None,
+            "terminal_time": None,
+        }
+    )
+
+    async with Client(_server(database)) as client:
+        result = await client.call_tool(
+            "get_metadata_change_set_fingerprint",
+            {
+                "tenant_id": 123,
+                "metadata_change_set_id": str(CHANGE_SET_ID),
+            },
+        )
+
+    assert result.is_error is False
+    assert result.structured_content is not None
+    output = result.structured_content
+    assert output["status"] == "active"
+    assert output["draft_revision"] == 2
+    assert output["dataset_count"] == 16
+    assert output["record_count"] == 1
+    assert len(output["fingerprint"]) == 64
+    assert len(output["datasets"]) == 16
+    copy_group = next(item for item in output["datasets"] if item["dataset"] == "copy_group")
+    assert copy_group == {
+        "dataset": "copy_group",
+        "record_count": 1,
+        "sha256": canonical_records_sha256(documents["copy_group_document"]),
+    }
+    serialized = str(output)
+    assert "records" not in output
+    assert "CUSTOMERS" not in serialized
+    assert database.audit_records[0].input_metadata == {
+        "schema_version": "1.0",
+        "tenant_id": 123,
+        "metadata_change_set_id": str(CHANGE_SET_ID),
+    }
+
+
+@pytest.mark.asyncio
 async def test_validate_metadata_change_set_persists_bounded_result(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
@@ -845,14 +910,11 @@ async def test_validate_metadata_change_set_persists_bounded_result(
         ],
     }
 
-    async def select_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(
             tenant_code="DEMO",
             datasets=tuple(
-                encode_dataset(DATASETS_BY_NAME[name], rows)
-                for name, rows in foundation.items()
+                encode_dataset(DATASETS_BY_NAME[name], rows) for name, rows in foundation.items()
             ),
         )
 
@@ -954,9 +1016,7 @@ async def test_apply_metadata_change_set_revalidates_then_applies(
         },
     )
 
-    async def select_empty_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(
@@ -1036,9 +1096,7 @@ async def test_apply_metadata_change_set_returns_safe_locked_object_error(
         },
     )
 
-    async def select_empty_snapshot(
-        *_args: object, **_kwargs: object
-    ) -> SelectedMetadataSnapshot:
+    async def select_empty_snapshot(*_args: object, **_kwargs: object) -> SelectedMetadataSnapshot:
         return SelectedMetadataSnapshot(tenant_code="DEMO", datasets=())
 
     monkeypatch.setattr(

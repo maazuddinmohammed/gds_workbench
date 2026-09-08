@@ -180,10 +180,10 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
         4,
         "mapping",
         "tool_assisted",
-        "langchain_create_agent",
-        "databricks",
-        "databricks-primary",
-        "default",
+        "openai_agents_sdk",
+        "microsoft_foundry",
+        "foundry-primary",
+        "none",
         10,
         2,
         [11],
@@ -374,3 +374,20 @@ def test_create_reports_missing_prompt_assignment_without_raw_database_details()
     assert "Workflow Stage 31" not in str(captured.value)
     assert "fixture-password" not in str(captured.value)
     assert "fixture-token" not in str(captured.value)
+
+
+def test_metadata_enrichment_create_and_claim_preserve_fixed_mode() -> None:
+    request = build_notebook_request("metadata_enrichment", _values("metadata_enrichment"))
+    create_row = _create_row()
+    create_row["model_workflow"] = "metadata_enrichment"
+    claim_row = _claim_row()
+    claim_row.update(model_workflow="metadata_enrichment", workflow_execution_mode="one_shot")
+    connection = FakeConnection(create_row, claim_row)
+    client = NotebookWorkflowControlClient(connection)
+    created = client.create_workflow_run(request)
+    claim = client.start_and_claim_workflow_run(request, created, lease_duration_seconds=30)
+    assert claim is not None
+    assert claim.workflow == "metadata_enrichment"
+    assert claim.workflow_execution_mode == "one_shot"
+    assert "metadata_enrichment" in connection.calls[0][1]
+    assert "one_shot" in connection.calls[0][1]

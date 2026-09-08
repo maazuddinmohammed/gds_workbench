@@ -5,10 +5,16 @@ from typing import Any, Literal, LiteralString, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.application.change_sets.model_validation import (
+    PhysicalModelCatalog,
+)
+from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
+    GeneratedCodeRecord,
     MappingDependencyRecord,
     MappingObjectRecord,
+    ModelAttributeBindingRecord,
     ModelObjectBindingRecord,
     ObjectSupportRecord,
 )
@@ -29,10 +35,8 @@ from gds_workbench_api.prompt_rendering import PromptComponentTemplates
 
 def _plan(
     *,
-    execution_mode: Literal[
-        "one_shot", "tool_assisted", "detailed_coverage"
-    ] = "one_shot",
-    model_workflow: Literal["conceptual", "dimensional"] = "conceptual",
+    execution_mode: Literal["one_shot", "tool_assisted"] = "one_shot",
+    model_workflow: Literal["conceptual", "logical", "dimensional"] = "conceptual",
     selected_object_ids: tuple[int, ...] = (501,),
     max_turns: int = 8,
 ) -> AgentRunPlan:
@@ -48,9 +52,9 @@ def _plan(
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": selected_object_ids,
             "selection": AgentRunSelection(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
-                model_code="databricks-primary",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 reasoning_effort_code="medium",
                 max_turns=max_turns,
                 validation_retry_count=2,
@@ -258,9 +262,7 @@ def _snapshot_with_large_assertion(text: str) -> ModelSnapshot:
     assertion = snapshot.assertion.model_copy(
         update={
             "records": (
-                snapshot.assertion.records[0].model_copy(
-                    update={"modeling_assertion_text": text}
-                ),
+                snapshot.assertion.records[0].model_copy(update={"modeling_assertion_text": text}),
             )
         }
     )
@@ -306,12 +308,45 @@ def _dimensional_snapshot() -> ModelSnapshot:
     return snapshot.model_copy(
         update={
             "model_binding": snapshot.model_binding.model_copy(
-                update={"objects": (silver_binding,)}
+                update={
+                    "objects": (silver_binding,),
+                    "attributes": (
+                        ModelAttributeBindingRecord(
+                            modeled_entity_type="logical_entity",
+                            modeled_entity_name="Customer",
+                            modeled_attribute_name="CustomerID",
+                            attribute_name="customer_id",
+                            model_attribute_binding_status="active",
+                            model_attribute_binding_is_locked=False,
+                        ),
+                    ),
+                }
             ),
             "mapping": snapshot.mapping.model_copy(
                 update={"dependencies": (dependency,), "objects": (mapping,)}
             ),
         }
+    )
+
+
+async def _load_physical_scope(
+    transaction: object, model: ModelReadContext
+) -> PhysicalModelCatalog:
+    del transaction
+    assert model.model_id == 18 and model.model_revision == 7
+    return PhysicalModelCatalog(
+        model_tenant_code="SOURCE",
+        active_system_codes=frozenset({"ERP"}),
+        objects=frozenset(),
+        attributes=frozenset(),
+        model_input_objects=frozenset(),
+        model_input_attributes=frozenset(),
+        dimensional_source_objects=frozenset(),
+        dimensional_source_attributes=frozenset(),
+        logical_mapping_target_objects=frozenset(),
+        logical_mapping_target_attributes=frozenset(),
+        dimensional_mapping_target_objects=frozenset(),
+        dimensional_mapping_target_attributes=frozenset(),
     )
 
 
@@ -335,6 +370,31 @@ class ContextTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        if "source_zone_description" in query:
+            assert parameters == ([501], 7)
+            return [
+                {
+                    "object_id": 501,
+                    "zone_description": "Bronze",
+                    "source_object_schema": "sales",
+                    "source_object_name": "customers",
+                    "source_object_description": "Source customers",
+                    "tenant_code": "SOURCE",
+                    "tenant_description": None,
+                    "system_code": "ERP",
+                    "system_description": None,
+                    "system_type_code": "erp",
+                    "system_type_description": None,
+                    "connection_code": "SOURCE",
+                    "connection_description": "Source application",
+                    "connection_type_code": "sql",
+                    "connection_type_description": None,
+                    "source_zone_description": "Source",
+                }
+            ]
+        if "profile.updated_time AS profiled_at" in query:
+            assert parameters == (18, [501])
+            return []
         if "attribute_ordinal_position" not in query:
             assert parameters == ([501], 18, "conceptual")
             return [
@@ -365,6 +425,8 @@ class ContextTransaction:
                 "attribute_ordinal_position": 1,
                 "attribute_description": "Customer identifier.",
                 "attribute_data_type": "bigint",
+                "attribute_inferred_data_type": None,
+                "is_locked": False,
                 "attribute_nullability": False,
                 "attribute_custom_code": None,
                 "is_surrogate_key": False,
@@ -389,6 +451,19 @@ class DimensionalContextTransaction(ContextTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        if "source_zone_description" in query:
+            assert parameters == ([701], 7)
+            return [
+                {
+                    "object_id": 701,
+                    "zone_description": "Silver",
+                    "tenant_code": None,
+                    "source_object_name": None,
+                }
+            ]
+        if "profile.updated_time AS profiled_at" in query:
+            assert parameters == (18, [701])
+            return []
         compact_query = " ".join(query.split())
         dimensional_filter = (
             "WHERE %s <> 'dimensional' OR eligibility.is_dimensional_source_eligible"
@@ -421,11 +496,9 @@ class DimensionalContextTransaction(ContextTransaction):
                 }
             ]
 
-        self.attribute_query_filtered = (
-            dimensional_filter in compact_query
-            and compact_query.index(dimensional_filter)
-            < compact_query.index("LIMIT %s")
-        )
+        self.attribute_query_filtered = dimensional_filter in compact_query and compact_query.index(
+            dimensional_filter
+        ) < compact_query.index("LIMIT %s")
         expected_parameters = ([701], 18, "dimensional", 2)
         if self.attribute_query_filtered:
             assert parameters == expected_parameters
@@ -439,6 +512,8 @@ class DimensionalContextTransaction(ContextTransaction):
             "fc_attribute_name": None,
             "attribute_description": None,
             "attribute_data_type": "bigint",
+            "attribute_inferred_data_type": None,
+            "is_locked": False,
             "attribute_nullability": False,
             "attribute_custom_code": None,
             "is_surrogate_key": False,
@@ -465,6 +540,186 @@ class DimensionalContextTransaction(ContextTransaction):
         return [mapped] if self.attribute_query_filtered else [mapped, unmapped]
 
 
+class LogicalContextTransaction(ContextTransaction):
+    async def fetch_all(
+        self,
+        query: LiteralString,
+        parameters: tuple[Any, ...] = (),
+    ) -> list[dict[str, Any]]:
+        if len(parameters) == 2:
+            return await super().fetch_all(query, parameters)
+        assert parameters[2] == "logical"
+        return await super().fetch_all(query, (*parameters[:2], "conceptual", *parameters[3:]))
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("model_workflow", ("conceptual", "logical"))
+@pytest.mark.parametrize("execution_mode", ("one_shot", "tool_assisted"))
+async def test_full_validation_state_stays_private_while_dependencies_are_readable(
+    model_workflow: Literal["conceptual", "logical"],
+    execution_mode: Literal["one_shot", "tool_assisted"],
+) -> None:
+    snapshot = _dimensional_snapshot()
+    bindings = snapshot.model_binding.objects
+    snapshot = snapshot.model_copy(
+        update={
+            "model_tenant_code": "PRIVATE_CATALOG_TENANT",
+            "model_binding": snapshot.model_binding.model_copy(
+                update={
+                    "objects": (
+                        *bindings,
+                        bindings[0].model_copy(
+                            update={
+                                "modeled_entity_name": "Customer History",
+                                "object_name": "history",
+                            }
+                        ),
+                    )
+                }
+            ),
+            "mapping": snapshot.mapping.model_copy(
+                update={
+                    "objects": (
+                        snapshot.mapping.objects[0].model_copy(
+                            update={
+                                "mapping_transformation_document": {
+                                    "expression": "PRIVATE_MAPPING_BODY"
+                                },
+                            }
+                        ),
+                    )
+                }
+            ),
+            "code_generation": snapshot.code_generation.model_copy(
+                update={
+                    "artifacts": (
+                        GeneratedCodeRecord(
+                            generated_code_is_locked=False,
+                            modeled_entity_type="logical_entity",
+                            modeled_entity_name="Customer",
+                            artifact_name="customers.sql",
+                            artifact_type="sql_file",
+                            generated_code_content="SELECT 'PRIVATE_CODE_BODY'",
+                            generated_code_status="active",
+                        ),
+                    )
+                }
+            ),
+        }
+    )
+    physical_scope = PhysicalModelCatalog(
+        model_tenant_code="PRIVATE_CATALOG_TENANT",
+        active_system_codes=frozenset({"ERP"}),
+        objects=frozenset(),
+        attributes=frozenset(),
+        model_input_objects=frozenset(),
+        model_input_attributes=frozenset(),
+        dimensional_source_objects=frozenset(),
+        dimensional_source_attributes=frozenset(),
+        logical_mapping_target_objects=frozenset(),
+        logical_mapping_target_attributes=frozenset(),
+        dimensional_mapping_target_objects=frozenset(),
+        dimensional_mapping_target_attributes=frozenset(),
+    )
+    transaction = (
+        LogicalContextTransaction() if model_workflow == "logical" else ContextTransaction()
+    )
+    loaded: list[str] = []
+
+    async def load_snapshot(actual_transaction: object, model: ModelReadContext) -> ModelSnapshot:
+        assert actual_transaction is transaction
+        assert model.model_revision == 7
+        loaded.append("snapshot")
+        return snapshot
+
+    async def load_physical_scope(
+        actual_transaction: object,
+        model: ModelReadContext,
+    ) -> PhysicalModelCatalog:
+        assert actual_transaction is transaction
+        assert model.model_revision == 7
+        loaded.append("physical_scope")
+        return physical_scope
+
+    result = await PostgresAgentContextRepository(
+        snapshot_loader=load_snapshot,
+        physical_scope_loader=load_physical_scope,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=1_000,
+            one_shot_max_context_bytes=1_000_000,
+            stage_max_context_bytes=1_000_000,
+            max_tool_result_bytes=1_000_000,
+            max_tool_page_records=1,
+        ),
+    ).load(
+        transaction,
+        tenant_id=7,
+        plan=_plan(
+            model_workflow=model_workflow,
+            execution_mode=execution_mode,
+        ),
+    )
+
+    assert result.snapshot is snapshot
+    assert result.snapshot is not None
+    assert len(result.snapshot.model_input_scope.objects) == 2
+    assert len(result.context.selected_objects) == 1
+    assert result.physical_scope is physical_scope
+    assert loaded == ["snapshot", "physical_scope"]
+    provider_text = json.dumps(result.context.model_dump(mode="json")) + json.dumps(
+        result.embedded_context
+    )
+    assert "PRIVATE_CATALOG_TENANT" not in provider_text + repr(result)
+    assert "PRIVATE_MAPPING_BODY" not in provider_text + repr(result)
+    assert "PRIVATE_CODE_BODY" not in provider_text + repr(result)
+    if model_workflow == "logical":
+        assert {item.dataset for item in result.context.read_only_dependencies} == {
+            "model_object_binding",
+            "model_attribute_binding",
+            "mapping_dependency",
+            "mapping_object",
+            "generated_code",
+        }
+        if execution_mode == "tool_assisted":
+            catalog = result.tool_catalog
+            assert catalog is not None
+            first = catalog.invoke(
+                "get_agent_context_dataset",
+                {
+                    "dataset": "read_only_model_object_binding",
+                    "offset": 0,
+                    "limit": 1,
+                },
+            )
+            assert isinstance(first, dict)
+            assert first["next_offset"] == 1
+            second = catalog.invoke(
+                "get_agent_context_dataset",
+                {
+                    "dataset": "read_only_model_object_binding",
+                    "offset": 1,
+                    "limit": 1,
+                },
+            )
+            assert isinstance(second, dict)
+            assert second["next_offset"] is None
+            assert first["items"] != second["items"]
+            code = catalog.invoke(
+                "get_agent_context_dataset",
+                {
+                    "dataset": "read_only_generated_code",
+                    "offset": 0,
+                    "limit": 1,
+                },
+            )
+            assert "customers.sql" in json.dumps(code)
+            assert "PRIVATE_CODE_BODY" not in json.dumps(code)
+    else:
+        assert result.context.read_only_dependencies == ()
+
+
 async def _load_snapshot(*_: object) -> ModelSnapshot:
     return _snapshot()
 
@@ -474,9 +729,7 @@ def _snapshot_with_policy_json(value: dict[str, object]) -> ModelSnapshot:
     details = snapshot.model_input_scope.details.model_copy(
         update={"silver_model_audit_columns_template": value}
     )
-    model_input_scope = snapshot.model_input_scope.model_copy(
-        update={"details": details}
-    )
+    model_input_scope = snapshot.model_input_scope.model_copy(update={"details": details})
     return snapshot.model_copy(update={"model_input_scope": model_input_scope})
 
 
@@ -498,12 +751,8 @@ def _snapshot_with_nested_supports(count: int) -> ModelSnapshot:
         )
         for index in range(count)
     )
-    conceptual_object = snapshot.conceptual.objects[0].model_copy(
-        update={"supports": supports}
-    )
-    conceptual = snapshot.conceptual.model_copy(
-        update={"objects": (conceptual_object,)}
-    )
+    conceptual_object = snapshot.conceptual.objects[0].model_copy(update={"supports": supports})
+    conceptual = snapshot.conceptual.model_copy(update={"objects": (conceptual_object,)})
     return snapshot.model_copy(update={"conceptual": conceptual})
 
 
@@ -511,9 +760,7 @@ def _json_keys(value: object) -> set[str]:
     if isinstance(value, dict):
         mapping = cast(dict[str, object], value)
         return set(mapping) | {
-            nested_key
-            for nested in mapping.values()
-            for nested_key in _json_keys(nested)
+            nested_key for nested in mapping.values() for nested_key in _json_keys(nested)
         }
     if isinstance(value, list):
         items = cast(list[object], value)
@@ -522,10 +769,9 @@ def _json_keys(value: object) -> set[str]:
 
 
 @pytest.mark.asyncio
-async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> (
-    None
-):
+async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseline() -> None:
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -538,18 +784,16 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     ).load(ContextTransaction(), tenant_id=7, plan=_plan())
 
     context = result.context
-    assert [item.object.object_name for item in context.selected_objects] == [
-        "customers"
-    ]
+    assert [item.object.object_name for item in context.selected_objects] == ["customers"]
     assert context.selected_objects[0].object.tenant_code == "SOURCE"
     assert [item.attribute_name for item in context.selected_objects[0].attributes] == [
         "customer_id"
     ]
     assert [item.object_name for item in context.profiles] == ["customers"]
     assert len(context.analysis_relationships) == 1
-    assert [
-        item.modeling_assertion_record_key for item in context.assertion.records
-    ] == ["customer-meaning"]
+    assert [item.modeling_assertion_record_key for item in context.assertion.records] == [
+        "customer-meaning"
+    ]
     assert context.applied.conceptual is not None
     assert context.applied.conceptual.objects[0].conceptual_object_status == "inactive"
     assert context.applied.conceptual.objects[0].conceptual_object_is_locked is True
@@ -559,23 +803,44 @@ async def test_load_builds_selected_canonical_evidence_and_reconciliation_baseli
     assert result.embedded_context["model_revision"] == 7
     assert "workflow_run_id" not in result.embedded_context
     assert "model_id" not in result.embedded_context
-    assert not {
-        key for key in _json_keys(result.embedded_context) if key.endswith("_id")
-    }
+    assert not {key for key in _json_keys(result.embedded_context) if key.endswith("_id")}
     assert "sensitive physical description" not in repr(result)
     assert "private system prompt" not in repr(result)
 
 
 @pytest.mark.asyncio
-async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes() -> (
-    None
-):
+async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes() -> None:
     transaction = DimensionalContextTransaction()
+    snapshot = _dimensional_snapshot()
+    physical_scope: PhysicalModelCatalog | None = None
+    bound = snapshot.model_binding.objects[0].model_copy(
+        update={
+            "modeled_entity_type": "dimensional_entity",
+            "modeled_entity_name": "Customer Dimension",
+        }
+    )
+    snapshot = snapshot.model_copy(
+        update={
+            "model_binding": snapshot.model_binding.model_copy(
+                update={"objects": (*snapshot.model_binding.objects, bound)}
+            )
+        }
+    )
+    scope_loaded = False
 
     async def load_dimensional_snapshot(*_: object) -> ModelSnapshot:
-        return _dimensional_snapshot()
+        return snapshot
+
+    async def load_dimensional_scope(
+        transaction: object, model: ModelReadContext
+    ) -> PhysicalModelCatalog:
+        nonlocal scope_loaded, physical_scope
+        scope_loaded = True
+        physical_scope = await _load_physical_scope(transaction, model)
+        return physical_scope
 
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=load_dimensional_scope,
         snapshot_loader=load_dimensional_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -595,10 +860,13 @@ async def test_dimensional_context_keeps_only_eligible_mapped_silver_attributes(
     assert transaction.attribute_query_filtered is True
     assert result.context.selected_objects[0].object.zone_code == "silver"
     assert [
-        attribute.attribute_name
-        for attribute in result.context.selected_objects[0].attributes
+        attribute.attribute_name for attribute in result.context.selected_objects[0].attributes
     ] == ["customer_id"]
     assert result.context.selected_objects[0].attributes[0].is_mapped is True
+    assert scope_loaded and result.snapshot is snapshot and result.physical_scope is physical_scope
+    assert [(item.dataset, item.record) for item in result.context.read_only_dependencies] == [
+        ("model_object_binding", bound.model_dump(mode="json")),
+    ]
 
 
 @pytest.mark.asyncio
@@ -610,6 +878,7 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_ineligible_dimensional_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -630,10 +899,9 @@ async def test_dimensional_context_rejects_an_ineligible_selected_object() -> No
 
 
 @pytest.mark.asyncio
-async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> (
-    None
-):
+async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records() -> None:
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -667,18 +935,9 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
     assert "profiles" not in manifest
     assert "workflow_run_id" not in manifest
     assert "model_id" not in manifest
-    assert result.tool_catalog.allowed_tool_names == (
-        "get_agent_context_manifest",
-        "get_agent_context_dataset",
-    )
-    dataset_definition = result.tool_catalog.definitions[1]
-    properties = cast(dict[str, object], dataset_definition.input_schema["properties"])
-    assert properties["limit"] == {
-        "type": "integer",
-        "minimum": 1,
-        "maximum": 1,
-        "description": "Maximum retrieval items; a byte cap may return fewer.",
-    }
+    assert len(result.tool_catalog.allowed_tool_names) == 10
+    assert "get_object_details" in result.tool_catalog.allowed_tool_names
+    assert "get_agent_context_dataset" not in result.tool_catalog.allowed_tool_names
 
     page = result.tool_catalog.invoke(
         "get_agent_context_dataset",
@@ -697,6 +956,7 @@ async def test_tool_assisted_mode_embeds_manifest_and_pages_only_local_records()
 @pytest.mark.asyncio
 async def test_tool_result_budget_reserves_half_the_stage_for_all_turns() -> None:
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -732,10 +992,9 @@ async def test_tool_result_budget_reserves_half_the_stage_for_all_turns() -> Non
 
 
 @pytest.mark.asyncio
-async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bound() -> (
-    None
-):
+async def test_tool_manifest_compacts_selected_objects_to_stay_within_result_bound() -> None:
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -794,6 +1053,7 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
         return _snapshot_with_large_assertion(assertion_text)
 
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=load_large_snapshot,
         limits=AgentContextLimits(
             max_selected_objects=10,
@@ -867,27 +1127,21 @@ async def test_tool_pages_byte_pack_and_reassemble_one_oversized_record() -> Non
         assert items
         next_offset = page["next_offset"]
         expected_next = offset + len(items)
-        assert next_offset == (
-            expected_next if expected_next < page_counts[dataset] else None
-        )
+        assert next_offset == (expected_next if expected_next < page_counts[dataset] else None)
         if first_page:
             assert len(items) < requested_limit
             first_page = False
         fragments.extend(items)
         offset = expected_next
 
-    metadata = [
-        cast(dict[str, object], item["__gds_context_fragment__"]) for item in fragments
-    ]
+    metadata = [cast(dict[str, object], item["__gds_context_fragment__"]) for item in fragments]
     assert [item["fragment_index"] for item in metadata] == list(range(len(fragments)))
     assert {item["fragment_count"] for item in metadata} == {len(fragments)}
     assert {item["encoding"] for item in metadata} == {"canonical_json"}
-    reconstructed = json.loads(
-        "".join(cast(str, item["json_text"]) for item in fragments)
-    )
-    assert reconstructed == _snapshot_with_large_assertion(
-        assertion_text
-    ).assertion.records[0].model_dump(mode="json")
+    reconstructed = json.loads("".join(cast(str, item["json_text"]) for item in fragments))
+    assert reconstructed == _snapshot_with_large_assertion(assertion_text).assertion.records[
+        0
+    ].model_dump(mode="json")
 
 
 class UnavailableFenceTransaction(ContextTransaction):
@@ -913,13 +1167,13 @@ class UnavailableFenceTransaction(ContextTransaction):
 
 
 @pytest.mark.asyncio
-async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> (
-    None
-):
+async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read() -> None:
     transaction = UnavailableFenceTransaction()
 
     with pytest.raises(WorkbenchError) as captured:
-        await PostgresAgentContextRepository(snapshot_loader=_load_snapshot).load(
+        await PostgresAgentContextRepository(
+            snapshot_loader=_load_snapshot, physical_scope_loader=_load_physical_scope
+        ).load(
             transaction,
             tenant_id=999,
             plan=_plan(),
@@ -933,6 +1187,7 @@ async def test_revision_or_tenant_fence_fails_before_any_context_rows_are_read()
 async def test_embedded_mode_fails_on_json_bound_without_tool_fallback() -> None:
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -948,44 +1203,10 @@ async def test_embedded_mode_fails_on_json_bound_without_tool_fallback() -> None
 
 
 @pytest.mark.asyncio
-async def test_detailed_mode_keeps_full_context_internal_until_each_stage() -> None:
-    result = await PostgresAgentContextRepository(
-        snapshot_loader=_load_snapshot,
-        limits=AgentContextLimits(
-            max_selected_objects=10,
-            max_selected_attributes=100,
-            max_total_records=1_000,
-            one_shot_max_context_bytes=100,
-            stage_max_context_bytes=100,
-            max_tool_result_bytes=1_000_000,
-        ),
-    ).load(
-        ContextTransaction(),
-        tenant_id=7,
-        plan=_plan(execution_mode="detailed_coverage"),
-    )
-
-    full_context_bytes = len(
-        json.dumps(
-            result.context.model_dump(
-                mode="json",
-                exclude={"workflow_run_id", "model_id"},
-            ),
-            ensure_ascii=False,
-            allow_nan=False,
-            separators=(",", ":"),
-            sort_keys=True,
-        ).encode("utf-8")
-    )
-    assert full_context_bytes > 100
-    assert result.embedded_context is None
-    assert result.tool_catalog is None
-
-
-@pytest.mark.asyncio
 async def test_tool_mode_rejects_a_bound_too_small_for_its_manifest() -> None:
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -1021,6 +1242,7 @@ async def test_provider_projection_rejects_unsafe_nested_json(
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_unsafe_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -1043,6 +1265,7 @@ async def test_nested_authored_records_count_toward_hard_record_bound() -> None:
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=load_nested_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -1069,6 +1292,7 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
         max_tool_catalog_bytes=1_000_000,
     )
     result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
         snapshot_loader=_load_snapshot,
         limits=generous,
     ).load(
@@ -1081,6 +1305,7 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
     expected_payload = {
         "manifest": result.tool_catalog.manifest,
         "datasets": {},
+        "prompt_values": result.tool_catalog.prompt_values,
     }
     datasets = cast(dict[str, object], expected_payload["datasets"])
     manifest = cast(dict[str, object], result.tool_catalog.manifest)
@@ -1104,10 +1329,9 @@ async def test_tool_catalog_cap_measures_the_exact_stored_projection() -> None:
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
-            limits=generous.model_copy(
-                update={"max_tool_catalog_bytes": expected_bytes - 1}
-            ),
+            limits=generous.model_copy(update={"max_tool_catalog_bytes": expected_bytes - 1}),
         ).load(
             ContextTransaction(),
             tenant_id=7,
@@ -1138,6 +1362,7 @@ async def test_read_committed_revision_change_fails_the_final_fence() -> None:
 
     with pytest.raises(WorkbenchError) as captured:
         await PostgresAgentContextRepository(
+            physical_scope_loader=_load_physical_scope,
             snapshot_loader=_load_snapshot,
             limits=AgentContextLimits(
                 max_selected_objects=10,
@@ -1155,3 +1380,41 @@ async def test_read_committed_revision_change_fails_the_final_fence() -> None:
 
     assert captured.value.code == "agent_context_unavailable"
     assert transaction.fence_read_count == 2
+
+
+@pytest.mark.asyncio
+async def test_projected_inputs_keep_actual_keys_profiles_and_scoped_relationships() -> None:
+    from gds_workbench_api.features.workflows.authoring.context_contracts import (
+        workflow_input_contracts,
+    )
+    from gds_workbench_api.features.workflows.authoring.context_inputs import (
+        project_context_inputs,
+    )
+    from jsonschema import Draft202012Validator
+
+    result = await PostgresAgentContextRepository(
+        physical_scope_loader=_load_physical_scope,
+        snapshot_loader=_load_snapshot,
+        limits=AgentContextLimits(
+            max_selected_objects=10,
+            max_selected_attributes=100,
+            max_total_records=1_000,
+            one_shot_max_context_bytes=1_000_000,
+            stage_max_context_bytes=1_000_000,
+            max_tool_result_bytes=1_000_000,
+        ),
+    ).load(ContextTransaction(), tenant_id=7, plan=_plan())
+    values = project_context_inputs(result.context.model_dump(mode="json"))
+    for name, spec in workflow_input_contracts("conceptual").items():
+        assert cast(Any, Draft202012Validator(spec["schema"])).is_valid(values[name])
+    assert values["source_context"][0]["connection_description"] == "Source application"
+    assert values["object_context"][0]["connection_code"] == "GDS"
+    assert values["ingestion_mapping"][0]["source"]["connection_code"] == "SOURCE"
+    group = values["object_attribute_context"][0]
+    assert group["selected_attribute_names"] == ["customer_id"]
+    assert group["attributes"][0]["profile"]["row_count"] == 10
+    assert group["attributes"][0]["profile"]["avg_data_length"] == 3.0
+    assert group["attributes"][0]["profile"]["profiled_at"] is None
+    # The saved endpoint outside this run's selection cannot enter the agent's result context.
+    assert values["object_relationship_context"][0]["outgoing_relationships"] == []
+    assert "read_only_dependencies" not in values

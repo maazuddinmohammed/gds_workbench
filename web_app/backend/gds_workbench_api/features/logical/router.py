@@ -15,7 +15,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 class ExecuteLogicalRunRequest(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    execution_mode: Literal["one_shot", "tool_assisted", "detailed_coverage"]
+    execution_mode: Literal["one_shot", "tool_assisted"]
     expected_model_revision: int = Field(gt=0)
 
 
@@ -30,7 +30,6 @@ class LogicalWorkflowService(Protocol):
         expected_execution_mode: Literal[
             "one_shot",
             "tool_assisted",
-            "detailed_coverage",
         ],
         expected_model_revision: int,
     ) -> AgentWorkflowRunStart: ...

@@ -6,11 +6,18 @@ import json
 import logging
 from contextlib import AbstractAsyncContextManager
 from hashlib import sha256
-from typing import Protocol, cast
+from typing import Any, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model import (
+    StageModelChange,
+    validate_model_stage_changes,
+)
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_future_graph,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from gds_etl_workbench.infrastructure.postgres import (
@@ -18,12 +25,17 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
-from pydantic import JsonValue
+from pydantic import JsonValue, ValidationError
 
 from gds_workbench_api.capabilities import VALIDATION_AGENT_EXECUTION_MODE
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
+    WorkflowChangeSetValidationError,
+)
+from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+    build_downstream_readers,
+    project_downstream_inputs,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -45,9 +57,13 @@ from gds_workbench_api.features.workflows.authoring.progress import (
     intermediate_progress_points,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidation,
+    AgentCandidateValidationError,
     AgentContextPolicy,
     AgentExecutor,
+    AgentValidationIssue,
     load_default_agent_context_policy,
+    model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
 
@@ -91,6 +107,22 @@ class ValidationContextRepository(Protocol):
 
 
 class ValidationChangeSetHandoff(Protocol):
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> object: ...
+
     async def finalize(
         self,
         principal: RequestPrincipal,
@@ -250,9 +282,10 @@ class DatabaseValidationExecutor:
         self._authorizer = authorizer
         self._plan_repository = plan_repository or PostgresAgentRunPlanRepository()
         self._context_repository = context_repository or PostgresValidationContextRepository()
+        self._context_policy = context_policy or load_default_agent_context_policy()
         self._stage_runner = AgentStageRunner(
             executor=agent_executor,
-            policy=context_policy or load_default_agent_context_policy(),
+            policy=self._context_policy,
         )
         self._handoff = handoff
         self._no_op = no_op
@@ -269,6 +302,9 @@ class DatabaseValidationExecutor:
         workflow_run_claim_token: UUID,
     ) -> ValidationExecutionResult:
         finalization_attempted = False
+        changes: tuple[StageModelChange, ...] = ()
+        rejected_changes: tuple[StageModelChange, ...] = ()
+        rejected_issues: tuple[ModelValidationIssue, ...] = ()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -297,6 +333,9 @@ class DatabaseValidationExecutor:
                     plan=plan,
                 )
 
+            snapshot, physical_scope = context.snapshot, context.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Validation graph context is unavailable.")
             system_count = len(context.systems)
             progress = AgentWorkflowProgress(
                 lifecycle=self._lifecycle,
@@ -324,6 +363,63 @@ class DatabaseValidationExecutor:
             warning_seen = False
             for position, system in enumerate(context.systems, start=1):
                 validator = ValidationSystemCandidateValidator(context=system)
+                prompt_values = project_downstream_inputs(
+                    "validation", cast(dict[str, Any], system.agent_context)
+                )
+                prompt_context = cast(
+                    JsonValue,
+                    {
+                        "__gds_downstream_inputs__": "validation",
+                        "values": prompt_values,
+                    },
+                )
+                result_budget = max(1, self._context_policy.stage_max_context_bytes // 2)
+                readers = build_downstream_readers(
+                    "validation",
+                    prompt_values,
+                    max_result_bytes=min(
+                        2 * 1024 * 1024, max(1, result_budget // stage_plan.selection.max_turns)
+                    ),
+                    max_page_records=200,
+                    max_cumulative_result_bytes=result_budget,
+                )
+
+                async def validate_complete_candidate(
+                    value: JsonValue,
+                    validator: ValidationSystemCandidateValidator = validator,
+                    position: int = position,
+                ) -> AgentCandidateValidation:
+                    nonlocal rejected_changes, rejected_issues
+                    try:
+                        candidate_changes = reconcile_validation_candidates(
+                            context=context.model_copy(
+                                update={"systems": context.systems[:position]}
+                            ),
+                            candidates=(*candidates, validator.parse_validated(value)),
+                        )
+                        validate_model_stage_changes(list(candidate_changes))
+                    except (InvalidRequestError, ValidationError):
+                        return AgentCandidateValidation(
+                            issues=(
+                                AgentValidationIssue(
+                                    code="candidate.change_set_bounds",
+                                    path=(),
+                                    message=(
+                                        "Combined Validation exceeds Model Change Set limits. "
+                                        "Reduce redundant checks while preserving System coverage."
+                                    ),
+                                ),
+                            )
+                        )
+                    checked = validate_future_graph(
+                        snapshot=snapshot,
+                        physical_scope=physical_scope,
+                        staged_documents={c.dataset: c.records for c in candidate_changes},
+                    )
+                    if checked.issues and position == system_count:
+                        rejected_changes, rejected_issues = candidate_changes, checked.issues
+                    return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+
                 outcome = await self._stage_runner.run(
                     plan=stage_plan,
                     stage_code="validation_generation",
@@ -333,10 +429,12 @@ class DatabaseValidationExecutor:
                         ),
                         "workflow.validation_failures": [],
                     },
-                    context=system.agent_context,
+                    context=prompt_context,
                     output_schema=validator.output_schema(),
-                    allowed_tool_names=(),
+                    allowed_tool_names=readers.allowed_tool_names,
+                    local_tool_catalog=readers,
                     validator=validator,
+                    final_validation=validate_complete_candidate,
                 )
                 candidates.append(validator.parse_validated(outcome.candidate))
                 highest_attempt = max(highest_attempt, outcome.attempt_count)
@@ -410,6 +508,38 @@ class DatabaseValidationExecutor:
             )
             return finalized.handoff
         except Exception as error:
+            retention_issues = (
+                error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
+            )
+            if isinstance(error, AgentCandidateValidationError) and rejected_changes:
+                changes, retention_issues = rejected_changes, rejected_issues
+            if retention_issues and changes and isinstance(error, WorkbenchError):
+                try:
+                    await self._handoff.retain_failed_candidate(
+                        principal,
+                        tenant_id=tenant_id,
+                        model_id=model_id,
+                        workflow_run_id=workflow_run_id,
+                        expected_workflow="validation",
+                        expected_model_revision=expected_model_revision,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        changes=changes,
+                        issues=retention_issues,
+                        failure_code=error.code,
+                        safe_failure_message=(
+                            "Validation failed. A rejected draft was retained for review."
+                        ),
+                    )
+                except Exception as retention_error:
+                    _logger.warning(
+                        "Rejected Workflow draft retention remains pending.",
+                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                    )
+                    raise _safe_execution_error(
+                        retention_error,
+                        finalization_attempted=True,
+                    ) from None
+                raise error from None
             safe_error = _safe_execution_error(
                 error,
                 finalization_attempted=finalization_attempted,
@@ -483,7 +613,7 @@ def _system_context_manifest(system_ref: str, context: JsonValue) -> JsonValue:
         JsonValue,
         {
             "system_ref": system_ref,
-            "system_context_delivery": "request_context_original_context",
+            "system_context_delivery": "workflow_variables_and_optional_readers",
             "system_context_sha256": sha256(encoded).hexdigest(),
             "system_context_byte_count": len(encoded),
         },

@@ -12,16 +12,17 @@ import pytest
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds"
+STAGE_RUNNER_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds-stage-runner"
 BUILDER = REPOSITORY_ROOT / "plugins" / "build_gds_v2_plugin_zip.py"
-PLUGIN_VERSION = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))[
+PLUGIN_VERSION = json.loads((PLUGIN_ROOT / "plugin.json").read_text(encoding="utf-8"))["version"]
+DIST_ARCHIVE = (
+    REPOSITORY_ROOT / "plugins" / "v2" / "dist" / f"gds-agent-plugin-{PLUGIN_VERSION}.zip"
+)
+STAGE_RUNNER_VERSION = json.loads((STAGE_RUNNER_ROOT / "package.json").read_text(encoding="utf-8"))[
     "version"
 ]
-DIST_ARCHIVE = (
-    REPOSITORY_ROOT
-    / "plugins"
-    / "v2"
-    / "dist"
-    / f"gds-agent-plugin-{PLUGIN_VERSION}.zip"
+DIST_VSIX = (
+    REPOSITORY_ROOT / "plugins" / "v2" / "dist" / f"gds-stage-runner-{STAGE_RUNNER_VERSION}.vsix"
 )
 
 
@@ -52,9 +53,7 @@ def write_builder_fixture(
             plugin_manifest
             if plugin_manifest is not None
             else {
-                "$schema": (
-                    "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-                ),
+                "$schema": ("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"),
                 "name": "gds",
                 "version": "0.2.0",
             }
@@ -109,10 +108,7 @@ def test_builder_creates_deterministic_complete_archive(tmp_path: Path) -> None:
         for source, archive_name in zip(source_files, expected_names, strict=True):
             assert archive.read(archive_name) == source.read_bytes()
         assert all(not info.is_dir() for info in archive.infolist())
-        assert all(
-            (info.external_attr >> 16) & 0o170000 != 0o120000
-            for info in archive.infolist()
-        )
+        assert all((info.external_attr >> 16) & 0o170000 != 0o120000 for info in archive.infolist())
 
 
 def test_checked_in_archive_is_the_current_deterministic_build(tmp_path: Path) -> None:
@@ -125,6 +121,47 @@ def test_checked_in_archive_is_the_current_deterministic_build(tmp_path: Path) -
     with zipfile.ZipFile(DIST_ARCHIVE) as archive:
         assert "gds/tool-contract.json" not in archive.namelist()
         assert "gds/docs/USER_GUIDE.md" in archive.namelist()
+
+
+def test_stage_runner_vsix_contains_only_the_bundled_runtime_and_docs() -> None:
+    assert DIST_VSIX.is_file()
+    with zipfile.ZipFile(DIST_VSIX) as archive:
+        names = set(archive.namelist())
+        assert {
+            "extension.vsixmanifest",
+            "[Content_Types].xml",
+            "extension/package.json",
+            "extension/readme.md",
+            "extension/dist/extension.cjs",
+        } <= names
+        assert (
+            archive.read("extension/dist/extension.cjs")
+            == (STAGE_RUNNER_ROOT / "dist" / "extension.cjs").read_bytes()
+        )
+        packaged = json.loads(archive.read("extension/package.json"))
+        assert packaged["version"] == STAGE_RUNNER_VERSION
+        assert packaged["contributes"]["languageModelTools"][0]["name"] == (
+            "gds_stageApprovedManifest"
+        )
+        assert packaged["capabilities"]["untrustedWorkspaces"] == {
+            "supported": False,
+            "description": "Stage requires a trusted GDS workspace.",
+        }
+        settings = packaged["contributes"]["configuration"]["properties"]
+        assert settings["gds.stageRunner.profile"]["scope"] == "machine"
+        assert settings["gds.stageRunner.localUrl"]["scope"] == "machine"
+        assert not any(
+            name.startswith("extension/src/")
+            or name.startswith("extension/test/")
+            or name.startswith("extension/node_modules/")
+            or name.endswith(".map")
+            or name
+            in {
+                "extension/esbuild.mjs",
+                "extension/package-lock.json",
+            }
+            for name in names
+        )
 
 
 def test_mcp_override_changes_archive_only(tmp_path: Path) -> None:
@@ -230,9 +267,7 @@ def test_builder_validates_the_default_mcp_manifest(
         ),
         (
             {
-                "$schema": (
-                    "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-                ),
+                "$schema": ("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"),
                 "name": "gds",
                 "version": "0.2.0",
                 "skills": "./skills",
@@ -241,9 +276,7 @@ def test_builder_validates_the_default_mcp_manifest(
         ),
         (
             {
-                "$schema": (
-                    "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-                ),
+                "$schema": ("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"),
                 "name": "gds",
                 "version": "0.2.0",
                 "author": "GDS Workbench",

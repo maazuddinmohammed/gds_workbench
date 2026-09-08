@@ -11,13 +11,12 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.workflows.overview import (
     DatabaseWorkflowOverviewService,
     ModelWorkflowOverview,
     WorkflowLedgerEntry,
 )
+from gds_workbench_api.main import create_app
 
 
 class StaticWorkflowOverviewService:
@@ -249,7 +248,5 @@ async def test_overview_states_are_results_driven_and_prerequisites_only_warn() 
     assert overview.items[2].state == "results_available"
     assert overview.items[4].state == "not_started"
     assert overview.items[4].quality_warning_codes == ()
-    assert overview.items[5].quality_warning_codes == (
-        "conceptual_results_unavailable",
-    )
+    assert overview.items[5].quality_warning_codes == ("conceptual_results_unavailable",)
     assert overview.items[6].quality_warning_codes == ("logical_results_unavailable",)

@@ -1,6 +1,5 @@
 from __future__ import annotations
 
-import json
 from collections.abc import Mapping
 from typing import cast
 from uuid import UUID
@@ -8,13 +7,9 @@ from uuid import UUID
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.modeling_records import (
-    LogicalEntityRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
 )
-from pydantic import JsonValue, SecretStr
-from mapping_fixtures import mapping_preparation as _mapping_preparation
-
 from gds_workbench_api.capabilities import (
     AgentModelExecutionProfile,
     AgentRunSelection,
@@ -23,36 +18,7 @@ from gds_workbench_api.capabilities import (
 from gds_workbench_api.features.dimensional.candidate import (
     DimensionalCandidateValidator,
 )
-from gds_workbench_api.features.dimensional.detailed import (
-    DetailedDimensionalEntityDetail,
-    DetailedDimensionalEntityDetailValidator,
-    DetailedDimensionalReconciliationReceiptValidator,
-    DetailedDimensionalReconciliationValidator,
-    DetailedDimensionalTopologyContribution,
-    DetailedDimensionalTopologyContributionValidator,
-    DetailedDimensionalTopologyReconciliationValidator,
-    DetailedDimensionalValidationLeadValidator,
-    DetailedDimensionalValidationWorkerResult,
-    DetailedDimensionalValidationWorkerValidator,
-    build_dimensional_draft_manifest,
-    build_dimensional_relationship_signal_ledger,
-    build_dimensional_validation_packages,
-    materialize_dimensional_reviewed_candidate,
-)
 from gds_workbench_api.features.logical.candidate import LogicalCandidateValidator
-from gds_workbench_api.features.logical.detailed import (
-    DetailedLogicalEntityDetailValidator,
-    DetailedLogicalReconciliationValidator,
-    DetailedLogicalTopologyContributionValidator,
-    DetailedLogicalTopologyReconciliationValidator,
-    DetailedLogicalValidationFinding,
-    DetailedLogicalValidationLeadValidator,
-    DetailedLogicalValidationPackage,
-    DetailedLogicalValidationRecord,
-    DetailedLogicalValidationWorkerResult,
-    DetailedLogicalValidationWorkerValidator,
-    build_logical_relationship_signal_ledger,
-)
 from gds_workbench_api.features.mapping.complete_candidate import (
     CompleteMappingCandidateValidator,
 )
@@ -64,22 +30,24 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     LocalAgentToolCatalog,
     LocalAgentToolDefinition,
 )
+from gds_workbench_api.integrations.agents import (
+    create_agent_execution_router,
+)
 from gds_workbench_api.integrations.agents.configuration import (
     AgentProviderConnection,
     AgentRuntimeConfiguration,
     FoundryClientCredentials,
 )
-from gds_workbench_api.integrations.agents import (
-    create_agent_execution_router,
-)
+from mapping_fixtures import mapping_preparation as _mapping_preparation
+from pydantic import JsonValue, SecretStr
 
 
 def _selection(*, sdk_code: str) -> AgentRunSelection:
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code="databricks",
-        model_code="databricks-primary",
-        reasoning_effort_code="medium",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
+        reasoning_effort_code="none",
         max_turns=8,
         validation_retry_count=2,
     )
@@ -114,14 +82,14 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
 ):
     registry = load_default_agent_capabilities()
     databricks_model = next(
-        model for model in registry.models if model.code == "databricks-primary"
+        model for model in registry.models if model.code == "foundry-primary"
     )
     restricted = databricks_model.model_copy(
         update={
             "execution_profiles": (
                 AgentModelExecutionProfile(
-                    sdk_code="langchain_create_agent",
-                    execution_mode="detailed_coverage",
+                    sdk_code="openai_agents_sdk",
+                    execution_mode="tool_assisted",
                     reasoning_effort_codes=("medium",),
                 ),
             )
@@ -145,7 +113,7 @@ async def test_agent_router_rejects_a_model_profile_for_the_wrong_execution_mode
     )
 
     with pytest.raises(WorkbenchError, match="incompatible"):
-        await router.execute(_request(sdk_code="langchain_create_agent"))
+        await router.execute(_request(sdk_code="openai_agents_sdk"))
 
 
 def _mapping_request(
@@ -728,69 +696,9 @@ def _dimensional_validator(
     )
 
 
-def _detailed_conceptual_request(
-    *,
-    sdk_code: str,
-    stage: str,
-    context: JsonValue,
-) -> AgentExecutionRequest:
-    return AgentExecutionRequest(
-        workflow_run_id=1048,
-        workflow="conceptual",
-        stage=stage,
-        execution_mode="detailed_coverage",
-        selection=_selection(sdk_code=sdk_code),
-        system_prompt="private system prompt",
-        instruction_prompt="private instruction prompt",
-        context={"original_context": context, "repair": None},
-        output_schema={"type": "object"},
-        allowed_tool_names=(),
-    )
-
-
-def _detailed_logical_request(
-    *,
-    sdk_code: str,
-    stage: str,
-    context: JsonValue,
-) -> AgentExecutionRequest:
-    return AgentExecutionRequest(
-        workflow_run_id=1048,
-        workflow="logical",
-        stage=stage,
-        execution_mode="detailed_coverage",
-        selection=_selection(sdk_code=sdk_code),
-        system_prompt="private system prompt",
-        instruction_prompt="private instruction prompt",
-        context={"original_context": context, "repair": None},
-        output_schema={"type": "object"},
-        allowed_tool_names=(),
-    )
-
-
-def _detailed_dimensional_request(
-    *,
-    sdk_code: str,
-    stage: str,
-    context: JsonValue,
-) -> AgentExecutionRequest:
-    return AgentExecutionRequest(
-        workflow_run_id=1048,
-        workflow="dimensional",
-        stage=stage,
-        execution_mode="detailed_coverage",
-        selection=_selection(sdk_code=sdk_code),
-        system_prompt="private system prompt",
-        instruction_prompt="private instruction prompt",
-        context={"original_context": context, "repair": None},
-        output_schema={"type": "object"},
-        allowed_tool_names=(),
-    )
-
-
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_one_complete_valid_mapping_candidate(
     sdk_code: str,
@@ -817,7 +725,7 @@ async def test_local_fake_returns_one_complete_valid_mapping_candidate(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
     sdk_code: str,
@@ -837,85 +745,25 @@ async def test_local_fake_uses_local_tools_for_one_complete_mapping_candidate(
     assert (await validator.validate(result.candidate)).issues == ()
     assert result.tool_call_count > 0
     assert "private system prompt" not in repr(result.candidate)
-    retrieved_datasets = {
-        cast(str, arguments["dataset"])
-        for tool_name, arguments in catalog.calls
-        if tool_name == "get_mapping_context_dataset"
-    }
-    assert retrieved_datasets >= {
-        "target_attribute",
-        "source_attribute",
-        "modeled_attribute",
-        "existing_mapping_attribute",
-    }
-    for dataset, nested_field in (
-        ("target", "attributes"),
-        ("header", "attribute_mappings"),
+    assert "get_existing_mapping" in {name for name, _ in catalog.calls}
+    for tool, nested_field in (
+        ("get_mapping_target", "attributes"),
+        ("get_existing_mapping", "attribute_mappings"),
     ):
-        page = cast(
-            dict[str, JsonValue],
-            catalog.delegate.invoke(
-                "get_mapping_context_dataset",
-                {"dataset": dataset, "offset": 0, "limit": 1},
-            ),
-        )
+        page = cast(dict[str, JsonValue], catalog.delegate.invoke(tool, {}))
         parent = cast(list[dict[str, JsonValue]], page["items"])[0]
-        assert parent[nested_field] == []
-    source_page = cast(
-        dict[str, JsonValue],
-        catalog.delegate.invoke(
-            "get_mapping_context_dataset",
-            {"dataset": "source", "offset": 0, "limit": 1},
-        ),
+        assert parent[nested_field]
+        assert "object_id" not in parent
+    page = cast(
+        dict[str, JsonValue], catalog.delegate.invoke("get_mapping_sources", {})
     )
-    source_parent = cast(list[dict[str, JsonValue]], source_page["items"])[0]
-    assert cast(dict[str, JsonValue], source_parent["object"])["attributes"] == []
+    source = cast(list[dict[str, JsonValue]], page["items"])[0]
+    assert cast(dict[str, JsonValue], source["object"])["attributes"]
 
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_supports_complete_detailed_mapping_sequence(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    preparation = _mapping_preparation(execution_mode="detailed_coverage")
-    context = build_mapping_execution_context(
-        preparation=preparation,
-        execution_mode="detailed_coverage",
-    )
-    validator = CompleteMappingCandidateValidator(preparation=preparation)
-    result = await router.execute(
-        AgentExecutionRequest(
-            workflow_run_id=1048,
-            workflow="mapping",
-            stage="mapping_authoring",
-            execution_mode="detailed_coverage",
-            selection=_selection(sdk_code=sdk_code),
-            system_prompt="private system prompt",
-            instruction_prompt="private instruction prompt",
-            context={"original_context": context.embedded_context, "repair": None},
-            output_schema=validator.output_schema(),
-            allowed_tool_names=(),
-        )
-    )
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    assert result.tool_call_count == 0
-    assert "private system prompt" not in repr(result.candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_exact_code_generation_target_coverage(
     sdk_code: str,
@@ -945,136 +793,7 @@ async def test_local_fake_returns_exact_code_generation_target_coverage(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_supports_detailed_conceptual_stage_contracts(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    selected_object: dict[str, JsonValue] = {
-        "selection_order": 1,
-        "object": {
-            "tenant_code": "NWA",
-            "source_tenant_code": "NWA",
-            "system_code": "CRM",
-            "connection_code": "SOURCE",
-            "object_schema": "bronze",
-            "object_name": "customer_raw",
-            "fc_object_schema": None,
-            "fc_object_name": None,
-            "object_transformation": None,
-            "object_description": "Customer metadata.",
-            "batch_attribute_name": "batch_id",
-            "object_type_code": "table",
-            "zone_code": "bronze",
-            "is_locked": False,
-            "is_active": True,
-        },
-        "attributes": [],
-    }
-    contribution = await router.execute(
-        _detailed_conceptual_request(
-            sdk_code=sdk_code,
-            stage="object_contribution",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "Customer 360"},
-                    "contribution_ref": "object_1",
-                    "selected_object": selected_object,
-                    "profiles": [],
-                    "analysis_relationships": [],
-                    "assertions": {"documents": [], "records": []},
-                    "applied_conceptual": None,
-                },
-            ),
-        )
-    )
-    consolidation = await router.execute(
-        _detailed_conceptual_request(
-            sdk_code=sdk_code,
-            stage="entity_consolidation",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "Customer 360"},
-                    "contributions": [contribution.candidate],
-                },
-            ),
-        )
-    )
-    consolidation_candidate = cast(
-        dict[str, JsonValue],
-        consolidation.candidate,
-    )
-    consolidated_entities = cast(
-        list[dict[str, JsonValue]],
-        consolidation_candidate["entities"],
-    )
-    detail = await router.execute(
-        _detailed_conceptual_request(
-            sdk_code=sdk_code,
-            stage="entity_attribute_detail",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "Customer 360"},
-                    "entity": consolidated_entities[0],
-                    "contributions": [contribution.candidate],
-                    "selected_objects": [selected_object],
-                },
-            ),
-        )
-    )
-    reconciled = await router.execute(
-        _detailed_conceptual_request(
-            sdk_code=sdk_code,
-            stage="whole_model_reconciliation",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "Customer 360"},
-                    "consolidation": consolidation.candidate,
-                    "entity_details": [detail.candidate],
-                    "relationship_packages": [],
-                    "relationship_refinements": [],
-                    "applied_conceptual": None,
-                    "required_applied_record_refs": [],
-                    "required_input_contribution_refs": ["object_1"],
-                },
-            ),
-        )
-    )
-
-    assert cast(dict[str, JsonValue], contribution.candidate)["contribution_ref"] == (
-        "object_1"
-    )
-    assert len(consolidated_entities) == 1
-    assert cast(dict[str, JsonValue], detail.candidate)["canonical_entity_ref"] == (
-        "business_concept"
-    )
-    assert (
-        cast(dict[str, JsonValue], reconciled.candidate)[
-            "reviewed_relationship_package_refs"
-        ]
-        == []
-    )
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_bounded_conceptual_candidate(
     sdk_code: str,
@@ -1108,7 +827,7 @@ async def test_local_fake_returns_bounded_conceptual_candidate(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_deterministic_valid_logical_candidate(
     sdk_code: str,
@@ -1138,7 +857,7 @@ async def test_local_fake_returns_deterministic_valid_logical_candidate(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_deterministic_valid_dimensional_business_candidate(
     sdk_code: str,
@@ -1182,798 +901,7 @@ async def test_local_fake_returns_deterministic_valid_dimensional_business_candi
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_builds_valid_logical_topology_contribution(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    source_object = PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="CRM",
-        connection_code="SOURCE",
-        object_schema="bronze",
-        object_name="customer_raw",
-    )
-    source_attribute = PhysicalAttributeKey(
-        **source_object.model_dump(),
-        attribute_name="customer_id",
-    )
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="topology_builder",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "contribution_ref": "object_00001",
-                    "selected_object": {
-                        "selection_order": 1,
-                        "object": {
-                            **source_object.model_dump(mode="json"),
-                            "object_description": "private object context",
-                        },
-                        "attributes": [
-                            {
-                                **source_attribute.model_dump(mode="json"),
-                                "attribute_description": "private attribute context",
-                            }
-                        ],
-                    },
-                    "profiles": [],
-                    "analysis_relationships": [],
-                    "assertions": {"documents": [], "records": []},
-                    "applied_logical": None,
-                },
-            ),
-        )
-    )
-    validator = DetailedLogicalTopologyContributionValidator(
-        contribution_ref="object_00001",
-        source_object=source_object,
-        source_attributes=(source_attribute,),
-    )
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    assert "private" not in repr(result.candidate)
-    assert result.tool_call_count == 0
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_reconciles_complete_logical_topology(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    source_object = PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="CRM",
-        connection_code="SOURCE",
-        object_schema="bronze",
-        object_name="customer_raw",
-    )
-    source_attribute = PhysicalAttributeKey(
-        **source_object.model_dump(),
-        attribute_name="customer_id",
-    )
-    contribution_validator = DetailedLogicalTopologyContributionValidator(
-        contribution_ref="object_00001",
-        source_object=source_object,
-        source_attributes=(source_attribute,),
-    )
-    contribution = contribution_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="topology_builder",
-                    context=cast(
-                        JsonValue,
-                        {
-                            "contribution_ref": "object_00001",
-                            "selected_object": {
-                                "object": source_object.model_dump(mode="json"),
-                                "attributes": [
-                                    source_attribute.model_dump(mode="json")
-                                ],
-                            },
-                        },
-                    ),
-                )
-            )
-        ).candidate
-    )
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="topology_reconciler",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "contributions": [contribution.model_dump(mode="json")],
-                    "applied_logical": None,
-                },
-            ),
-        )
-    )
-    validator = DetailedLogicalTopologyReconciliationValidator(
-        contributions=(contribution,)
-    )
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    assert "private" not in repr(result.candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_builds_valid_logical_entity_detail(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    source_object = PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="CRM",
-        connection_code="SOURCE",
-        object_schema="bronze",
-        object_name="customer_raw",
-    )
-    source_attribute = PhysicalAttributeKey(
-        **source_object.model_dump(),
-        attribute_name="customer_id",
-    )
-    contribution_validator = DetailedLogicalTopologyContributionValidator(
-        contribution_ref="object_00001",
-        source_object=source_object,
-        source_attributes=(source_attribute,),
-    )
-    contribution = contribution_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="topology_builder",
-                    context=cast(
-                        JsonValue,
-                        {
-                            "contribution_ref": "object_00001",
-                            "selected_object": {
-                                "object": source_object.model_dump(mode="json"),
-                                "attributes": [
-                                    source_attribute.model_dump(mode="json")
-                                ],
-                            },
-                        },
-                    ),
-                )
-            )
-        ).candidate
-    )
-    topology_validator = DetailedLogicalTopologyReconciliationValidator(
-        contributions=(contribution,)
-    )
-    topology = topology_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="topology_reconciler",
-                    context=cast(
-                        JsonValue,
-                        {"contributions": [contribution.model_dump(mode="json")]},
-                    ),
-                )
-            )
-        ).candidate
-    )
-    entity = topology.entities[0]
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="entity_detail_builder",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "topology": topology.model_dump(mode="json"),
-                    "entity": entity.model_dump(mode="json"),
-                    "contributions": [contribution.model_dump(mode="json")],
-                    "selected_objects": [
-                        {
-                            "object": {
-                                **source_object.model_dump(mode="json"),
-                                "object_description": "private object context",
-                            },
-                            "attributes": [
-                                {
-                                    **source_attribute.model_dump(mode="json"),
-                                    "attribute_description": "private attribute context",
-                                }
-                            ],
-                        }
-                    ],
-                },
-            ),
-        )
-    )
-    validator = DetailedLogicalEntityDetailValidator(
-        entity=entity,
-        topology=topology,
-        contributions=(contribution,),
-    )
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    assert "private" not in repr(result.candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_reconciles_valid_complete_logical_model(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    source_object = PhysicalObjectKey(
-        tenant_code="NWA",
-        system_code="CRM",
-        connection_code="SOURCE",
-        object_schema="bronze",
-        object_name="customer_raw",
-    )
-    source_attribute = PhysicalAttributeKey(
-        **source_object.model_dump(),
-        attribute_name="customer_id",
-    )
-    contribution_validator = DetailedLogicalTopologyContributionValidator(
-        contribution_ref="object_00001",
-        source_object=source_object,
-        source_attributes=(source_attribute,),
-    )
-    contribution = contribution_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="topology_builder",
-                    context=cast(
-                        JsonValue,
-                        {
-                            "contribution_ref": "object_00001",
-                            "selected_object": {
-                                "object": source_object.model_dump(mode="json"),
-                                "attributes": [
-                                    source_attribute.model_dump(mode="json")
-                                ],
-                            },
-                        },
-                    ),
-                )
-            )
-        ).candidate
-    )
-    topology_validator = DetailedLogicalTopologyReconciliationValidator(
-        contributions=(contribution,)
-    )
-    topology = topology_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="topology_reconciler",
-                    context=cast(
-                        JsonValue,
-                        {"contributions": [contribution.model_dump(mode="json")]},
-                    ),
-                )
-            )
-        ).candidate
-    )
-    detail_validator = DetailedLogicalEntityDetailValidator(
-        entity=topology.entities[0],
-        topology=topology,
-        contributions=(contribution,),
-    )
-    detail = detail_validator.parse_validated(
-        (
-            await router.execute(
-                _detailed_logical_request(
-                    sdk_code=sdk_code,
-                    stage="entity_detail_builder",
-                    context=cast(
-                        JsonValue,
-                        {
-                            "topology": topology.model_dump(mode="json"),
-                            "entity": topology.entities[0].model_dump(mode="json"),
-                            "contributions": [contribution.model_dump(mode="json")],
-                        },
-                    ),
-                )
-            )
-        ).candidate
-    )
-    relationship_ledger = build_logical_relationship_signal_ledger(
-        entity_details=(detail,),
-        max_signals=100,
-    )
-    final_validator = LogicalCandidateValidator(
-        selected_object_keys=(source_object,),
-        selected_attribute_keys=(source_attribute,),
-        assertion_record_keys=(),
-        applied=None,
-    )
-    validator = DetailedLogicalReconciliationValidator(
-        topology=topology,
-        entity_details=(detail,),
-        relationship_signal_refs=relationship_ledger.signal_refs,
-        applied_record_refs=(),
-        final_validator=final_validator,
-    )
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="whole_model_reconciliation",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "topology": topology.model_dump(mode="json"),
-                    "entity_details": [detail.model_dump(mode="json")],
-                    "relationship_signal_ledger": relationship_ledger.model_dump(
-                        mode="json"
-                    ),
-                    "applied_logical": None,
-                    "required_applied_record_refs": [],
-                },
-            ),
-        )
-    )
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    materialized = validator.materialize_validated(result.candidate)
-    assert (await final_validator.validate(materialized)).issues == ()
-    assert "private" not in repr(result.candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_supports_all_dimensional_detailed_stage_contracts(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    source_objects = tuple(
-        PhysicalObjectKey(
-            tenant_code="NWA",
-            system_code="CRM",
-            connection_code="CURATED",
-            object_schema="silver",
-            object_name=object_name,
-        )
-        for object_name in ("customer_curated", "order_curated")
-    )
-    source_attributes = tuple(
-        PhysicalAttributeKey(
-            **source_object.model_dump(),
-            attribute_name="customer_id",
-        )
-        for source_object in source_objects
-    )
-
-    contributions: list[DetailedDimensionalTopologyContribution] = []
-    for position, (source_object, source_attribute) in enumerate(
-        zip(source_objects, source_attributes, strict=True),
-        start=1,
-    ):
-        validator = DetailedDimensionalTopologyContributionValidator(
-            contribution_ref=f"object_{position:05d}",
-            source_object=source_object,
-            source_attributes=(source_attribute,),
-        )
-        outcome = await router.execute(
-            _detailed_dimensional_request(
-                sdk_code=sdk_code,
-                stage="topology_builder",
-                context=cast(
-                    JsonValue,
-                    {
-                        "schema_version": "1.0",
-                        "model": {"model_name": "private model context"},
-                        "contribution_ref": f"object_{position:05d}",
-                        "selected_object": {
-                            "selection_order": position,
-                            "object": {
-                                **source_object.model_dump(mode="json"),
-                                "object_description": "private object context",
-                            },
-                            "attributes": [
-                                {
-                                    **source_attribute.model_dump(mode="json"),
-                                    "attribute_description": "private attribute context",
-                                }
-                            ],
-                        },
-                    },
-                ),
-            )
-        )
-        assert (await validator.validate(outcome.candidate)).issues == ()
-        contributions.append(validator.parse_validated(outcome.candidate))
-
-    topology_validator = DetailedDimensionalTopologyReconciliationValidator(
-        contributions=tuple(contributions)
-    )
-    topology_outcome = await router.execute(
-        _detailed_dimensional_request(
-            sdk_code=sdk_code,
-            stage="topology_reconciler",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "contributions": [
-                        item.model_dump(mode="json") for item in contributions
-                    ],
-                    "applied_dimensional": None,
-                },
-            ),
-        )
-    )
-    assert (await topology_validator.validate(topology_outcome.candidate)).issues == ()
-    topology = topology_validator.parse_validated(topology_outcome.candidate)
-
-    details: list[DetailedDimensionalEntityDetail] = []
-    contribution_by_ref = {item.contribution_ref: item for item in contributions}
-    for entity in topology.entities:
-        relevant = tuple(
-            contribution_by_ref[reference.split(".", maxsplit=1)[0]]
-            for reference in entity.contribution_refs
-        )
-        detail_validator = DetailedDimensionalEntityDetailValidator(
-            entity=entity,
-            topology=topology,
-            contributions=tuple(contributions),
-        )
-        detail_outcome = await router.execute(
-            _detailed_dimensional_request(
-                sdk_code=sdk_code,
-                stage="entity_detail_builder",
-                context=cast(
-                    JsonValue,
-                    {
-                        "schema_version": "1.0",
-                        "model": {"model_name": "private model context"},
-                        "topology": topology.model_dump(mode="json"),
-                        "entity": entity.model_dump(mode="json"),
-                        "contributions": [
-                            item.model_dump(mode="json") for item in relevant
-                        ],
-                        "selected_objects": [],
-                        "assertions": {"records": []},
-                    },
-                ),
-            )
-        )
-        assert (await detail_validator.validate(detail_outcome.candidate)).issues == ()
-        details.append(detail_validator.parse_validated(detail_outcome.candidate))
-
-    relationship_ledger = build_dimensional_relationship_signal_ledger(
-        entity_details=tuple(details),
-        max_signals=100,
-    )
-    assert len(relationship_ledger.signals) == 1
-    final_validator = _dimensional_validator(
-        source_objects=source_objects,
-        source_attributes=source_attributes,
-    )
-    manifest = build_dimensional_draft_manifest(
-        topology=topology,
-        entity_details=tuple(details),
-        relationship_ledger=relationship_ledger,
-        applied_record_refs=(),
-    )
-    receipt_validator = DetailedDimensionalReconciliationReceiptValidator(
-        partition_ref="reconciliation_00001",
-        manifest=manifest,
-        relationship_signals=relationship_ledger.signals,
-    )
-    receipt_outcome = await router.execute(
-        _detailed_dimensional_request(
-            sdk_code=sdk_code,
-            stage="whole_model_reconciliation",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "partition_ref": "reconciliation_00001",
-                    "review_manifest": manifest.model_dump(mode="json"),
-                    "relationship_signals": [
-                        item.model_dump(mode="json")
-                        for item in relationship_ledger.signals
-                    ],
-                    "validation_failure_summary": {
-                        "finding_count": 0,
-                        "findings_digest": "0" * 64,
-                        "included_finding_count": 0,
-                        "included_findings": [],
-                        "is_complete": True,
-                    },
-                },
-            ),
-        )
-    )
-    assert (await receipt_validator.validate(receipt_outcome.candidate)).issues == ()
-    receipt = receipt_validator.parse_validated(receipt_outcome.candidate)
-    receipt_materialized = materialize_dimensional_reviewed_candidate(
-        topology=topology,
-        entity_details=tuple(details),
-        relationship_ledger=relationship_ledger,
-        manifest=manifest,
-        receipts=(receipt,),
-        applied_record_refs=(),
-    )
-    assert (await final_validator.validate(receipt_materialized)).issues == ()
-
-    reconciliation_validator = DetailedDimensionalReconciliationValidator(
-        topology=topology,
-        entity_details=tuple(details),
-        relationship_signal_refs=relationship_ledger.signal_refs,
-        applied_record_refs=(),
-        final_validator=final_validator,
-    )
-    reconciliation_outcome = await router.execute(
-        _detailed_dimensional_request(
-            sdk_code=sdk_code,
-            stage="whole_model_reconciliation",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "topology": topology.model_dump(mode="json"),
-                    "entity_details": [
-                        item.model_dump(mode="json") for item in details
-                    ],
-                    "relationship_signal_ledger": relationship_ledger.model_dump(
-                        mode="json"
-                    ),
-                    "applied_dimensional": None,
-                    "required_applied_record_refs": [],
-                },
-            ),
-        )
-    )
-    assert (
-        await reconciliation_validator.validate(reconciliation_outcome.candidate)
-    ).issues == ()
-    reconciliation = reconciliation_validator.parse_validated(
-        reconciliation_outcome.candidate
-    )
-    materialized = reconciliation_validator.materialize_validated(
-        reconciliation_outcome.candidate
-    )
-    assert (await final_validator.validate(materialized)).issues == ()
-    candidate = cast(dict[str, JsonValue], materialized)
-    relationships = cast(list[dict[str, JsonValue]], candidate["relationships"])
-    assert relationships[0]["dimensional_relationship_is_optional"] is True
-    for attribute in cast(list[dict[str, JsonValue]], candidate["attributes"]):
-        assert attribute["dimensional_attribute_role"] not in ("technical", "audit")
-        assert attribute["dimensional_attribute_key_role"] not in (
-            "surrogate",
-            "foreign",
-        )
-
-    packages = build_dimensional_validation_packages(
-        candidate=reconciliation,
-        package_size=100,
-        max_packages=100,
-    )
-    worker_results: list[DetailedDimensionalValidationWorkerResult] = []
-    for package in packages:
-        worker_validator = DetailedDimensionalValidationWorkerValidator(package=package)
-        worker_outcome = await router.execute(
-            _detailed_dimensional_request(
-                sdk_code=sdk_code,
-                stage="validator_worker",
-                context=cast(
-                    JsonValue,
-                    {
-                        "schema_version": "1.0",
-                        "model": {"model_name": "private model context"},
-                        "validation_package": package.model_dump(mode="json"),
-                    },
-                ),
-            )
-        )
-        assert (await worker_validator.validate(worker_outcome.candidate)).issues == ()
-        worker_results.append(
-            worker_validator.parse_validated(worker_outcome.candidate)
-        )
-
-    lead_validator = DetailedDimensionalValidationLeadValidator(
-        worker_results=tuple(worker_results)
-    )
-    lead_outcome = await router.execute(
-        _detailed_dimensional_request(
-            sdk_code=sdk_code,
-            stage="validator_lead",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "worker_results": [
-                        item.model_dump(mode="json") for item in worker_results
-                    ],
-                },
-            ),
-        )
-    )
-    assert (await lead_validator.validate(lead_outcome.candidate)).issues == ()
-    assert "private" not in repr(
-        (
-            topology_outcome.candidate,
-            reconciliation_outcome.candidate,
-            lead_outcome.candidate,
-        )
-    )
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_logical_validator_worker_covers_package(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    authored = cast(
-        dict[str, JsonValue],
-        (await router.execute(_logical_request(sdk_code=sdk_code))).candidate,
-    )
-    raw_entity = cast(list[JsonValue], authored["entities"])[0]
-    entity = LogicalEntityRecord.model_validate_json(
-        json.dumps(raw_entity), strict=True
-    )
-    package = DetailedLogicalValidationPackage(
-        package_ref="validation_00001",
-        records=(
-            DetailedLogicalValidationRecord(
-                record_ref="entity:logical entity 1",
-                dataset="logical_entity",
-                record=entity,
-            ),
-        ),
-    )
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="validator_worker",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "validation_package": package.model_dump(mode="json"),
-                },
-            ),
-        )
-    )
-    validator = DetailedLogicalValidationWorkerValidator(package=package)
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    candidate = cast(dict[str, JsonValue], result.candidate)
-    assert candidate["findings"] == []
-    assert "private" not in repr(candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
-)
-async def test_local_fake_logical_validator_lead_reconciles_findings(
-    sdk_code: str,
-) -> None:
-    router = create_agent_execution_router(
-        configuration=AgentRuntimeConfiguration(
-            mode="fake",
-            timeout_seconds=120,
-            connections=(),
-        ),
-        capabilities=load_default_agent_capabilities(),
-    )
-    worker_result = DetailedLogicalValidationWorkerResult(
-        package_ref="validation_00001",
-        reviewed_record_refs=("entity:logical entity 1",),
-        findings=(
-            DetailedLogicalValidationFinding(
-                finding_ref="validation_00001.finding_00001",
-                severity="error",
-                code="logical.private_finding",
-                message="private worker finding context",
-                record_refs=("entity:logical entity 1",),
-            ),
-        ),
-    )
-    result = await router.execute(
-        _detailed_logical_request(
-            sdk_code=sdk_code,
-            stage="validator_lead",
-            context=cast(
-                JsonValue,
-                {
-                    "schema_version": "1.0",
-                    "model": {"model_name": "private model context"},
-                    "worker_results": [worker_result.model_dump(mode="json")],
-                },
-            ),
-        )
-    )
-    validator = DetailedLogicalValidationLeadValidator(worker_results=(worker_result,))
-
-    assert (await validator.validate(result.candidate)).issues == ()
-    candidate = cast(dict[str, JsonValue], result.candidate)
-    assert candidate["blocking_finding_refs"] == ["validation_00001.finding_00001"]
-    assert "private" not in repr(candidate)
-
-
-@pytest.mark.parametrize(
-    "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_uses_only_the_tool_assisted_catalog(
     sdk_code: str,
@@ -2000,7 +928,7 @@ async def test_local_fake_uses_only_the_tool_assisted_catalog(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_uses_logical_tool_catalog_without_context_echo(
     sdk_code: str,
@@ -2023,7 +951,7 @@ async def test_local_fake_uses_logical_tool_catalog_without_context_echo(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
     sdk_code: str,
@@ -2080,7 +1008,7 @@ async def test_local_fake_pages_dimensional_tool_catalog_and_preserves_sources(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_returns_bounded_analysis_inference_candidate(
     sdk_code: str,
@@ -2124,7 +1052,7 @@ async def test_local_fake_returns_bounded_analysis_inference_candidate(
 
 @pytest.mark.parametrize(
     "sdk_code",
-    ("langchain_create_agent", "openai_agents_sdk"),
+    ("openai_agents_sdk",),
 )
 async def test_local_fake_pages_tool_assisted_analysis_context(
     sdk_code: str,
@@ -2185,40 +1113,16 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
         ),
         capabilities=load_default_agent_capabilities(),
     )
-    unsupported = _request(sdk_code="langchain_create_agent").model_copy(
+    unsupported = _request(sdk_code="openai_agents_sdk").model_copy(
         update={"workflow": "logical"}
     )
-    malformed = _request(sdk_code="langchain_create_agent").model_copy(
+    malformed = _request(sdk_code="openai_agents_sdk").model_copy(
         update={"context": {"original_context": {}, "repair": None}}
-    )
-    unsupported_dimensional = _detailed_dimensional_request(
-        sdk_code="langchain_create_agent",
-        stage="unsupported_stage",
-        context={},
-    )
-    malformed_dimensional = _detailed_dimensional_request(
-        sdk_code="langchain_create_agent",
-        stage="entity_detail_builder",
-        context=cast(
-            JsonValue,
-            {
-                "topology": {"submodels": []},
-                "entity": {
-                    "canonical_entity_ref": "entity_00001",
-                    "dimensional_entity_name": "Dimensional Entity 1",
-                    "contribution_refs": [[]],
-                    "submodel_refs": [],
-                },
-                "contributions": [{}],
-            },
-        ),
     )
 
     for request in (
         unsupported,
         malformed,
-        unsupported_dimensional,
-        malformed_dimensional,
     ):
         with pytest.raises(WorkbenchError) as captured:
             await router.execute(request)
@@ -2227,9 +1131,11 @@ async def test_local_fake_rejects_unsupported_path_or_malformed_context() -> Non
 
 async def test_remote_runtime_constructs_without_contacting_a_provider() -> None:
     connection = AgentProviderConnection(
-        provider_code="databricks",
-        model_code="databricks-primary",
-        model_endpoint="databricks-gpt-oss-120b",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
+        model_endpoint="gpt-5.6-sol",
+        openai_base_url="https://fixture.services.ai.azure.com/openai/v1/",
+        foundry_api_key=SecretStr("fixture-key"),
         timeout_seconds=90,
     )
 
@@ -2242,13 +1148,13 @@ async def test_remote_runtime_constructs_without_contacting_a_provider() -> None
         capabilities=load_default_agent_capabilities(),
     )
 
-    request = _request(sdk_code="langchain_create_agent").model_copy(
+    request = _request(sdk_code="openai_agents_sdk").model_copy(
         update={
             "selection": AgentRunSelection(
-                sdk_code="langchain_create_agent",
+                sdk_code="openai_agents_sdk",
                 provider_code="openai",
-                model_code="databricks-primary",
-                reasoning_effort_code="medium",
+                model_code="foundry-primary",
+                reasoning_effort_code="none",
                 max_turns=8,
                 validation_retry_count=2,
             )
@@ -2285,7 +1191,7 @@ async def test_remote_foundry_runtime_constructs_without_provider_io() -> None:
     )
 
     with pytest.raises(WorkbenchError) as captured:
-        await router.execute(_request(sdk_code="langchain_create_agent"))
+        await router.execute(_request(sdk_code="unsupported_sdk"))
 
     assert captured.value.code == "invalid_request"
     assert "never-log-this-foundry-client-secret" not in repr(router)
@@ -2311,7 +1217,7 @@ async def test_remote_foundry_api_key_runtime_constructs_without_provider_io() -
     )
 
     with pytest.raises(WorkbenchError) as captured:
-        await router.execute(_request(sdk_code="langchain_create_agent"))
+        await router.execute(_request(sdk_code="unsupported_sdk"))
 
     assert captured.value.code == "invalid_request"
     assert "never-log-this-foundry-api-key" not in repr(router)

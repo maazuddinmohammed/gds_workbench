@@ -12,8 +12,10 @@ from typing import Literal, Protocol, Self
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import TenantAuthorization
+from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import WorkbenchError
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
@@ -105,15 +107,17 @@ class MappingPhysicalAttribute(_FrozenModel):
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=400)
     attribute_data_type: str = Field(min_length=1, max_length=100)
+    attribute_inferred_data_type: str | None = Field(min_length=1, max_length=100)
     attribute_nullability: bool
     attribute_ordinal_position: int = Field(gt=0)
-    attribute_description: str | None = Field(default=None, max_length=2_000)
+    attribute_description: str | None = None
     is_active: bool
 
 
 class MappingPhysicalObject(_FrozenModel):
     object_id: int = Field(gt=0)
     tenant_id: int = Field(gt=0)
+    source_tenant_id: int = Field(gt=0)
     tenant_code: str = Field(min_length=1, max_length=100)
     tenant_catalog: str = Field(min_length=1, max_length=255)
     tenant_is_active: bool
@@ -126,7 +130,7 @@ class MappingPhysicalObject(_FrozenModel):
     is_global_data_store: bool
     object_schema: str = Field(min_length=1, max_length=400)
     object_name: str = Field(min_length=1, max_length=400)
-    object_description: str | None = Field(default=None, max_length=2_000)
+    object_description: str | None = None
     batch_attribute_name: str | None = Field(default=None, max_length=400)
     zone_code: Literal["source", "bronze", "silver", "gold"]
     scope_is_locked: bool
@@ -148,7 +152,7 @@ class MappingSourceSystem(_FrozenModel):
     system_id: int = Field(gt=0)
     system_code: str = Field(min_length=1, max_length=100)
     system_name: str = Field(min_length=1, max_length=200)
-    system_description: str | None = Field(default=None, max_length=2_000)
+    system_description: str | None = None
     is_active: bool
 
 
@@ -234,7 +238,7 @@ class MappingOutputTemplateInventory(_FrozenModel):
 class MappingModeledAttribute(_FrozenModel):
     attribute_id: int = Field(gt=0)
     attribute_name: str = Field(min_length=1, max_length=255)
-    attribute_definition: str = Field(min_length=1, max_length=2_000)
+    attribute_definition: str = Field(min_length=1)
     attribute_data_type: str = Field(min_length=1, max_length=100)
     is_nullable: bool
     ordinal_position: int = Field(gt=0)
@@ -246,9 +250,9 @@ class MappingModeledAttribute(_FrozenModel):
 class MappingModeledEntity(_FrozenModel):
     entity_id: int = Field(gt=0)
     entity_name: str = Field(min_length=1, max_length=255)
-    entity_definition: str = Field(min_length=1, max_length=2_000)
+    entity_definition: str = Field(min_length=1)
     entity_kind: str = Field(min_length=1, max_length=50)
-    grain: str | None = Field(default=None, max_length=2_000)
+    grain: str | None = None
     dependency_order: int = Field(ge=0)
     status: LifecycleStatus
     is_locked: bool
@@ -380,6 +384,8 @@ class MappingPreparation(_FrozenModel):
     plan: MappingRunPlan
     context: MappingRunContext = Field(repr=False)
     readiness: MappingReadiness
+    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
 
 
 class MappingPreparationDatabase(Protocol):

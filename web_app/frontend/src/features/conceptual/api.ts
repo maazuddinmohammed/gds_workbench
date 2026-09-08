@@ -6,6 +6,7 @@ import type {
 } from "../../shared/contracts";
 import type { ModelInputScopeApi } from "../model_input_scope/api";
 import type { WorkflowsApi } from "../workflows/api";
+import type { ModelRecordReviewApi } from "../model_record_review/api";
 
 export type ConceptualStatus = ReviewStatus;
 export type ConceptualConfidence = ModelingConfidence;
@@ -147,6 +148,7 @@ export interface ConceptualTransport {
 }
 
 export type ConceptualApi = ConceptualTransport
+  & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

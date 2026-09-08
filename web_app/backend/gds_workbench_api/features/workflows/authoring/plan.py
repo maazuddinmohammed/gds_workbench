@@ -7,13 +7,15 @@ from typing import Any, Literal, LiteralString, Protocol, cast
 from uuid import UUID
 
 from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, TypeAdapter, model_validator
 
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+
+from .tool_configuration import AgentToolName
 
 type ModelWorkflow = Literal[
     "analysis",
@@ -23,11 +25,12 @@ type ModelWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
 ]
+
 type WorkflowExecutionMode = Literal[
     "one_shot",
     "tool_assisted",
-    "detailed_coverage",
 ]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
 
@@ -61,6 +64,7 @@ SELECT run.workflow_run_id,
        run.max_turns,
        run.validation_retry_count,
        stage.workflow_stage_id,
+       stage.model_workflow AS prompt_workflow,
        stage.workflow_stage_code,
        stage.workflow_stage_order,
        version.prompt_template_version_id,
@@ -68,6 +72,7 @@ SELECT run.workflow_run_id,
        version.system_prompt_template,
        version.instruction_prompt_template,
        version.tool_instruction_prompt_template,
+       version.agent_tool_names,
        (
            SELECT count(*)::INTEGER
              FROM application.workflow_run_prompt_snapshot AS expected_snapshot
@@ -94,7 +99,10 @@ SELECT run.workflow_run_id,
    AND version.prompt_template_digest = snapshot.prompt_template_digest
   JOIN application.workflow_stage AS stage
     ON stage.workflow_stage_id = snapshot.workflow_stage_id
-   AND stage.model_workflow = run.model_workflow
+   AND (stage.model_workflow = run.model_workflow OR (
+       run.model_workflow = 'metadata_enrichment' AND stage.model_workflow IN
+       ('metadata_enrichment_object', 'metadata_enrichment_attribute')
+   ))
    AND stage.workflow_stage_is_agentic
    AND (
        stage.workflow_execution_mode = run.workflow_execution_mode
@@ -165,12 +173,14 @@ class FrozenAgentStage(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     workflow_stage_id: int = Field(gt=0)
+    prompt_workflow: str | None = None
     stage_code: str = Field(pattern=r"^[a-z][a-z0-9_]{0,99}$")
     stage_order: int = Field(gt=0)
     prompt_template_version_id: int = Field(gt=0)
     prompt_template_digest: str = Field(pattern=r"^[0-9a-f]{64}$")
     templates: PromptComponentTemplates = Field(repr=False)
     variables: tuple[PromptVariableDefinition, ...] = Field(max_length=100)
+    agent_tool_names: tuple[AgentToolName, ...] | None = Field(default=None, max_length=100)
 
     @model_validator(mode="after")
     def validate_variables(self) -> FrozenAgentStage:
@@ -212,6 +222,10 @@ class AgentRunPlan(BaseModel):
 
     @model_validator(mode="after")
     def validate_plan(self) -> AgentRunPlan:
+        if self.model_workflow == "metadata_enrichment" and (
+            self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Metadata enrichment requires one-shot execution")
         code_generation_snapshot = (
             self.code_generation_coverage_mode,
             self.sql_generation_guide_id,
@@ -351,6 +365,7 @@ def _assemble_plan(
     for stage_rows in grouped.values():
         stage_first = stage_rows[0]
         stage_identity_keys = (
+            "prompt_workflow",
             "workflow_stage_code",
             "workflow_stage_order",
             "prompt_template_version_id",
@@ -358,6 +373,7 @@ def _assemble_plan(
             "system_prompt_template",
             "instruction_prompt_template",
             "tool_instruction_prompt_template",
+            "agent_tool_names",
         )
         if any(
             row.get(key) != stage_first.get(key)
@@ -397,9 +413,20 @@ def _assemble_plan(
         if variable_orders and variable_orders != sorted(variable_orders):
             raise AgentRunPlanUnavailableError()
 
+        raw_tools = stage_first.get("agent_tool_names")
+        selected_tools = (
+            TypeAdapter(tuple[AgentToolName, ...]).validate_python(
+                tuple(cast(Sequence[object], raw_tools)), strict=True
+            )
+            if isinstance(raw_tools, (list, tuple))
+            else None
+        )
+        if raw_tools is not None and selected_tools is None:
+            raise AgentRunPlanUnavailableError()
         stages.append(
             FrozenAgentStage(
                 workflow_stage_id=_required_int(stage_first, "workflow_stage_id"),
+                prompt_workflow=stage_first.get("prompt_workflow"),
                 stage_code=_required_str(stage_first, "workflow_stage_code"),
                 stage_order=_required_int(stage_first, "workflow_stage_order"),
                 prompt_template_version_id=_required_int(
@@ -422,6 +449,7 @@ def _assemble_plan(
                     ),
                 ),
                 variables=tuple(variables),
+                agent_tool_names=selected_tools,
             )
         )
     stages.sort(key=lambda stage: (stage.stage_order, stage.workflow_stage_id))

@@ -7,8 +7,6 @@ from typing import cast
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
@@ -26,6 +24,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     load_default_agent_context_policy,
     parse_pydantic_candidate,
 )
+from pydantic import BaseModel, ConfigDict, JsonValue, model_validator
 
 
 class _LeakyCrossFieldCandidate(BaseModel):
@@ -48,9 +47,9 @@ def _request(*, retries: int = 2, context: JsonValue | None = None) -> AgentExec
         stage="candidate_authoring",
         execution_mode="one_shot",
         selection=AgentRunSelection(
-            sdk_code="langchain_create_agent",
-            provider_code="databricks",
-            model_code="databricks-primary",
+            sdk_code="openai_agents_sdk",
+            provider_code="microsoft_foundry",
+            model_code="foundry-primary",
             reasoning_effort_code="medium",
             max_turns=6,
             validation_retry_count=retries,
@@ -124,7 +123,7 @@ def test_default_agent_context_policy_is_bounded_and_validated() -> None:
     policy = load_default_agent_context_policy()
 
     assert policy.schema_version == "1.0"
-    assert policy.one_shot_max_context_bytes < policy.stage_max_context_bytes
+    assert policy.one_shot_max_context_bytes <= policy.stage_max_context_bytes
     assert policy.max_candidate_bytes <= 10 * 1024 * 1024
     assert policy.max_validation_issues <= 200
 
@@ -164,6 +163,43 @@ async def test_valid_candidate_returns_without_a_repair_attempt() -> None:
         "original_context": {"scope": [1, 2]},
         "repair": None,
     }
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("failure_phase", ["schema", "local", "complete"])
+async def test_exhaustion_keeps_only_private_complete_candidate(
+    failure_phase: str,
+) -> None:
+    candidate: JsonValue = (
+        "incomplete-provider-output"
+        if failure_phase == "schema"
+        else {"entities": [{"name": "private-candidate-name"}]}
+    )
+    issue = AgentValidationIssue(
+        code="candidate.reference_not_found",
+        path=("logical_entity",),
+        message="Referenced Entity is unavailable.",
+    )
+    validator = FakeValidator(outcomes=[(issue,) if failure_phase == "local" else ()])
+    final_calls: list[JsonValue] = []
+
+    async def final_validation(value: JsonValue) -> AgentCandidateValidation:
+        final_calls.append(value)
+        return AgentCandidateValidation(issues=(issue,))
+
+    with pytest.raises(AgentCandidateValidationError) as raised:
+        await ValidationRepairRunner(
+            executor=FakeExecutor(candidates=[candidate]), policy=_policy()
+        ).run(
+            request=_request(retries=0),
+            validator=validator,
+            final_validation=final_validation,
+        )
+    assert raised.value.candidate == (candidate if failure_phase == "complete" else None)
+    assert raised.value.issues == ((issue,) if failure_phase == "complete" else ())
+    assert len(final_calls) == int(failure_phase == "complete")
+    assert "private-candidate-name" not in repr(raised.value)
+    assert "incomplete-provider-output" not in repr(raised.value)
 
 
 @pytest.mark.asyncio
@@ -354,7 +390,7 @@ async def test_output_schema_bound_issues_are_value_free() -> None:
         assert candidate_value not in serialized_issues
 
 
-def test_agent_envelope_budget_counts_the_shared_output_contract_instruction() -> None:
+def test_agent_envelope_budget_counts_output_instruction_schema_and_json_format() -> None:
     request = _request()
     envelope = cast(
         JsonValue,
@@ -365,6 +401,7 @@ def test_agent_envelope_budget_counts_the_shared_output_contract_instruction() -
                 "context": request.context,
                 "required_output_schema": request.output_schema,
             },
+            "response_format": {"type": "json_object"},
             "tools": [],
         },
     )
@@ -440,6 +477,8 @@ async def test_prompt_and_output_schema_count_toward_the_provider_limit() -> Non
 
 @pytest.mark.asyncio
 async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
+    request = _request(retries=1)
+    budget = agent_request_envelope_bytes(request.model_copy(update={"context": None})) + 450
     issue = AgentValidationIssue(
         code="missing_entity_name",
         path=("entities", 0, "name"),
@@ -454,9 +493,9 @@ async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
 
     result = await ValidationRepairRunner(
         executor=executor,
-        policy=_policy(one_shot_bytes=1000),
+        policy=_policy(one_shot_bytes=budget),
     ).run(
-        request=_request(retries=1),
+        request=request,
         validator=FakeValidator(outcomes=[(issue,), ()]),
     )
 
@@ -467,6 +506,7 @@ async def test_large_previous_candidate_uses_a_bounded_repair_summary() -> None:
     assert repair["previous_candidate_omitted"] is True
     assert len(cast(str, repair["previous_candidate_digest"])) == 64
     assert repair["validation_issues"] == [issue.model_dump(mode="json")]
+    assert all(agent_request_envelope_bytes(item) <= budget for item in executor.requests)
 
 
 @pytest.mark.asyncio
@@ -534,23 +574,29 @@ async def test_oversized_one_shot_context_fails_without_implicit_mode_fallback()
 
 
 @pytest.mark.asyncio
-async def test_too_many_validation_issues_fails_safely() -> None:
+@pytest.mark.parametrize("issue_count", (21, 201))
+async def test_large_validation_feedback_is_bounded_and_repaired(
+    issue_count: int,
+) -> None:
     issues = tuple(
         AgentValidationIssue(
             code=f"issue_{index}",
             path=(),
             message="Candidate validation failed.",
         )
-        for index in range(21)
+        for index in range(issue_count)
     )
-    executor = FakeExecutor(candidates=[{}])
-    validator = FakeValidator(outcomes=[issues])
+    executor = FakeExecutor(candidates=[{}, {"repaired": True}])
+    validator = FakeValidator(outcomes=[issues, ()])
 
-    with pytest.raises(WorkbenchError) as captured:
-        await ValidationRepairRunner(
-            executor=executor,
-            policy=_policy(),
-        ).run(request=_request(), validator=validator)
+    result = await ValidationRepairRunner(
+        executor=executor,
+        policy=_policy(one_shot_bytes=16_384),
+    ).run(request=_request(), validator=validator)
 
-    assert captured.value.code == "agent_candidate_validation_failed"
-    assert "issue_20" not in str(captured.value)
+    assert result.candidate == {"repaired": True}
+    assert result.attempt_count == 2
+    assert len(validator.candidates) == 2
+    repair = cast(dict[str, JsonValue], executor.requests[1].context)["repair"]
+    assert isinstance(repair, dict)
+    assert repair["validation_issues"] == [issue.model_dump(mode="json") for issue in issues[:20]]

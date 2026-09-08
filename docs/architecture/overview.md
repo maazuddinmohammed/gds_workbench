@@ -11,7 +11,7 @@ Databricks notebooks ----------------------------> PostgreSQL
 
 The Agent Plugin is the primary developer experience. The web application runs
 equivalent workflows for users who do not use the plugin. Databricks notebooks
-may use different models through Microsoft Foundry or Databricks; they share the
+use OpenAI Agents SDK with Microsoft Foundry deployments; they share the
 same in-process workflow implementation with the web App. Neither the web App
 nor notebooks call the MCP server.
 
@@ -35,7 +35,7 @@ Azure Easy Auth validates tokens. PostgreSQL resolves the Principal, Tenant
 access, Tenant Lock, Model ownership, revision, and permissions for every
 sensitive operation.
 
-The public surface is intentionally narrow: exactly 35 governed MCP tools and
+The public surface is intentionally narrow: exactly 37 governed MCP tools and
 no MCP prompts or resources. The plugin owns interaction behavior; the server
 instructions contain only shared safety and dependency rules.
 

@@ -5,6 +5,7 @@
 
 .workflow-commandbar {
   display: flex;
+  flex-wrap: wrap;
   min-height: 5.6rem;
   align-items: stretch;
   justify-content: space-between;
@@ -20,10 +21,13 @@
 
 .workflow-command-context {
   min-width: 0;
+  flex-wrap: wrap;
   gap: 1.5rem;
 }
 
 .workflow-command-actions {
+  flex-shrink: 0;
+  flex-wrap: wrap;
   gap: 0.55rem;
 }
 
@@ -55,11 +59,15 @@
 
 .workflow-tabs {
   display: flex;
+  min-width: 0;
+  min-height: 3rem;
+  flex-wrap: wrap;
   align-self: stretch;
 }
 
 .workflow-tabs button {
   position: relative;
+  min-height: 3rem;
   min-width: 5.3rem;
   padding: 0 0.9rem;
   border: 0;
@@ -97,6 +105,8 @@
 
 .workflow-surface {
   min-width: 0;
+  container-type: inline-size;
+  container-name: workflow-surface;
 }
 
 .workflow-filterbar {
@@ -167,6 +177,16 @@
 
 .workflow-table-scroll table {
   min-width: 58rem;
+  table-layout: auto;
+}
+
+.workflow-table-scroll :is(th, td) {
+  max-width: 22rem;
+  overflow-wrap: anywhere;
+}
+
+.workflow-table-scroll th {
+  white-space: nowrap;
 }
 
 .workflow-table-scroll th {
@@ -351,17 +371,11 @@
   border-right: 0;
 }
 
-.profile-evidence-groups th {
-  color: var(--ink-2);
-  background: var(--soft);
-  text-align: center;
-}
-
-.profile-evidence-groups th:first-child {
+.profile-evidence-table thead th:first-child {
   position: sticky;
   z-index: 2;
   left: 0;
-  text-align: left;
+  background: var(--soft);
 }
 
 .profile-evidence-table tbody th {
@@ -377,12 +391,24 @@
 }
 
 .profile-evidence-table tbody tr:hover th {
-  background: #fafbfc;
+  background: var(--soft);
 }
 
+.profile-evidence-table tbody tr.is-active > * {
+  background: var(--blue-soft);
+}
+
+.profile-evidence-actions { text-align: right; }
+
+.profile-inspector h2 { overflow-wrap: anywhere; }
+.profile-inspector h3 { margin: 1.25rem 0 0.65rem; font-size: 0.85rem; }
+.profile-inspector code { overflow-wrap: anywhere; word-break: break-all; }
+.profile-record-details { margin-top: 1.5rem; }
+.profile-record-details summary { cursor: pointer; color: var(--muted); }
+
+
 .profile-evidence-name,
-.profile-evidence-wrap,
-.profile-evidence-digest {
+.profile-evidence-wrap {
   min-width: 10rem;
   max-width: 22rem;
   white-space: normal !important;
@@ -394,13 +420,7 @@
   min-width: 12rem;
 }
 
-.profile-evidence-digest code {
-  white-space: normal;
-  font-size: 0.65rem;
-  font-weight: 600;
-  overflow-wrap: anywhere;
-  word-break: break-all;
-}
+
 
 .drawer-footnote,
 .drawer-warning {
@@ -798,6 +818,29 @@
 
   .dialog-actions .button {
     flex: 1;
+  }
+}
+
+/* Filters follow the space left by both navigation rails. */
+@container workflow-surface (max-width: 48rem) {
+  .workflow-surface .workflow-filterbar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .workflow-surface .workflow-filterbar .workflow-filter-actions {
+    grid-column: 1 / -1;
+    justify-self: end;
+  }
+}
+
+@container workflow-surface (max-width: 24rem) {
+  .workflow-surface .workflow-filterbar {
+    grid-template-columns: 1fr;
+  }
+
+  .workflow-surface .workflow-filterbar .workflow-filter-actions {
+    justify-self: stretch;
+    flex-wrap: wrap;
   }
 }
 

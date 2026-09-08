@@ -5,6 +5,20 @@ import type { WorkflowsApi } from "../workflows/api";
 
 export type AnalysisValidationState = "validated" | "unvalidated";
 export type AnalysisValidationResult = "supported" | "inconclusive" | "unsupported";
+export type AnalysisReviewAction = "lock" | "unlock" | "deactivate" | "reactivate";
+
+export interface AnalysisReviewCommand {
+  record_ids: number[];
+  action: AnalysisReviewAction;
+  expected_model_revision: number;
+}
+
+export interface AnalysisReviewResult {
+  model_id: number;
+  model_change_set_id: string;
+  model_revision: number;
+  action_count: number;
+}
 
 export interface AnalysisFilters {
   objectId?: number;
@@ -39,6 +53,7 @@ export interface AnalysisFinding {
   relationship_confidence: "low" | "medium" | "high";
   validation_state: AnalysisValidationState;
   validation_result: AnalysisValidationResult | null;
+  observed_cardinality?: "one_to_one" | "one_to_many" | "many_to_one" | "many_to_many" | null;
   status: ReviewStatus;
   is_locked: boolean;
   updated_at: string;
@@ -89,6 +104,12 @@ export interface AnalysisTransport {
     modelId: number,
     analysisResultId: number,
   ) => Promise<AnalysisFindingDetail>;
+  reviewAnalysisFindings: (
+    tenantId: number,
+    modelId: number,
+    command: AnalysisReviewCommand,
+    idempotencyKey: string,
+  ) => Promise<AnalysisReviewResult>;
 }
 
 export type AnalysisApi = AnalysisTransport
@@ -124,6 +145,15 @@ export function createAnalysisApi(request: HttpRequest): AnalysisTransport {
     readAnalysisFinding: (tenantId, modelId, analysisResultId) =>
       request<AnalysisFindingDetail>(
         `/api/v1/tenants/${tenantId}/models/${modelId}/analysis/${analysisResultId}`,
+      ),
+    reviewAnalysisFindings: (tenantId, modelId, command, idempotencyKey) =>
+      request<AnalysisReviewResult>(
+        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/review`,
+        {
+          method: "POST",
+          headers: { "content-type": "application/json", "Idempotency-Key": idempotencyKey },
+          body: JSON.stringify({ dataset: "analysis_result", ...command }),
+        },
       ),
   };
 }

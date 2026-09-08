@@ -35,12 +35,15 @@ def test_static_instruction_footprint_proxy_stays_bounded() -> None:
         V2_ROOT / "skills/gds/references/workflows/analysis.md",
         V2_ROOT / "skills/gds/references/workflows/conceptual.md",
         V2_ROOT / "skills/gds/references/workflows/assertions.md",
+        V2_ROOT / "skills/gds/references/examples/modeling-decisions.md",
     ]
 
     assert v2_router_words <= 600
     assert max(map(word_count, v2_markdown)) <= 700
-    assert v2_markdown_words <= 6_500
-    assert sum(map(word_count, logical_path)) <= 3_700
+    # Worked examples and exact handoff/recovery steps remain lazy-loaded.
+    # The router and each individual guide retain their original tight bounds.
+    assert v2_markdown_words <= 10_300
+    assert sum(map(word_count, logical_path)) <= 5_400
 
 
 def test_router_requires_progressive_reference_loading() -> None:

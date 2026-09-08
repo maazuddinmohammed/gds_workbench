@@ -5,6 +5,7 @@ import { ApiError } from "../../core/http";
 import type { ModelDetail } from "../models/api";
 import { conceptualQueryKeys, type ConceptualApi, type ConceptualFilters } from "./api";
 import { ConceptualObjectsLedger, ConceptualRelationshipsLedger } from "./ConceptualLedgers";
+import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { WorkflowRunDialog } from "../workflows/WorkflowRunDialog";
 import { WorkflowRunMonitor } from "../workflows/WorkflowRunMonitor";
 
@@ -22,6 +23,7 @@ export function ConceptualScreen({
   hasTenantLock: boolean;
 }) {
   const queryClient = useQueryClient();
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [view, setView] = useState<ConceptualView>("objects");
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
@@ -88,7 +90,7 @@ export function ConceptualScreen({
               className={view === "objects" ? "is-active" : ""}
               type="button"
               aria-pressed={view === "objects"}
-              onClick={() => setView("objects")}
+              onClick={() => { setSelectedIds(new Set()); setView("objects"); }}
             >
               Objects
             </button>
@@ -96,7 +98,7 @@ export function ConceptualScreen({
               className={view === "relationships" ? "is-active" : ""}
               type="button"
               aria-pressed={view === "relationships"}
-              onClick={() => setView("relationships")}
+              onClick={() => { setSelectedIds(new Set()); setView("relationships"); }}
             >
               Relationships
             </button>
@@ -129,6 +131,27 @@ export function ConceptualScreen({
         onApplied={invalidateLedgers}
       />
 
+      <ModelRecordReview
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset={view === "objects" ? "conceptual_object" : "conceptual_relationship"}
+        selectedIds={selectedIds} hasTenantLock={hasTenantLock}
+        disabled={(view === "objects" ? objectsQuery : relationshipsQuery).isPending
+          || (view === "objects" ? objectsQuery : relationshipsQuery).isError
+          || (view === "objects" ? objectsQuery : relationshipsQuery).data?.pages.some(
+            (page) => page.model_revision !== model.model_revision,
+          ) === true}
+        onApplied={async () => {
+          setSelectedIds(new Set());
+          await Promise.all([
+            invalidateLedgers(),
+            ...["conceptual-object", "conceptual-relationship", "model", "model-overview"].map(
+              (key) => queryClient.invalidateQueries({ queryKey: [key, tenantId, model.model_id] }),
+            ),
+            queryClient.invalidateQueries({ queryKey: ["tenant-home", tenantId] }),
+          ]);
+        }}
+      />
+
       {view === "objects" ? (
         <ConceptualObjectsLedger
           tenantId={tenantId}
@@ -144,7 +167,9 @@ export function ConceptualScreen({
             hasMore: objectsQuery.hasNextPage,
             isLoadingMore: objectsQuery.isFetchingNextPage,
           }}
-          onApplyFilters={setObjectFilters}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          onApplyFilters={(filters) => { setSelectedIds(new Set()); setObjectFilters(filters); }}
           onLoadMore={() => void objectsQuery.fetchNextPage()}
         />
       ) : (
@@ -165,7 +190,9 @@ export function ConceptualScreen({
             hasMore: relationshipsQuery.hasNextPage,
             isLoadingMore: relationshipsQuery.isFetchingNextPage,
           }}
-          onApplyFilters={setRelationshipFilters}
+          selectedIds={selectedIds}
+          onSelectionChange={setSelectedIds}
+          onApplyFilters={(filters) => { setSelectedIds(new Set()); setRelationshipFilters(filters); }}
           onLoadMore={() => void relationshipsQuery.fetchNextPage()}
         />
       )}

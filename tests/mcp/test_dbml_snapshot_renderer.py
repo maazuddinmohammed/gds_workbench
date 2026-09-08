@@ -79,9 +79,7 @@ def test_dbml_adds_default_file_only_for_unassigned_entities() -> None:
         "logical_default.dbml",
         "logical_sales.dbml",
     ]
-    default = next(
-        document for document in documents if document.path == "logical_default.dbml"
-    )
+    default = next(document for document in documents if document.path == "logical_default.dbml")
     assert default.table_count == 1
     assert default.relationship_count == 0
     assert 'Table "Order"' in default.content.decode()

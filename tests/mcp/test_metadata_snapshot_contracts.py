@@ -173,44 +173,34 @@ def test_metadata_snapshot_registry_has_exact_dataset_contract() -> None:
     assert PHYSICAL_TABLE_COUNT == 22
 
     foundational = tuple(
-        dataset
-        for dataset in DATASETS
-        if dataset.section is SnapshotSection.FOUNDATIONAL
+        dataset for dataset in DATASETS if dataset.section is SnapshotSection.FOUNDATIONAL
     )
     reference = tuple(
         dataset for dataset in DATASETS if dataset.section is SnapshotSection.REFERENCE
     )
     operational = tuple(
-        dataset
-        for dataset in DATASETS
-        if dataset.section is SnapshotSection.OPERATIONAL
+        dataset for dataset in DATASETS if dataset.section is SnapshotSection.OPERATIONAL
     )
     assert len(foundational) == 4
     assert len(reference) == 8
     assert len(operational) == 16
-    assert all(
-        not dataset.change_set_eligible for dataset in (*foundational, *reference)
-    )
+    assert all(not dataset.change_set_eligible for dataset in (*foundational, *reference))
     assert all(dataset.change_set_eligible for dataset in operational)
 
 
 def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> None:
     rows_paths = {dataset.rows_path for dataset in DATASETS}
     schema_paths = {dataset.schema_path for dataset in DATASETS}
-    lookup_paths = {
-        dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None
-    }
+    lookup_paths = {dataset.lookup_path for dataset in DATASETS if dataset.lookup_path is not None}
 
     assert len(rows_paths) == 28
     assert len(schema_paths) == 28
     assert len(lookup_paths) == 10
-    assert next(
-        dataset for dataset in DATASETS if dataset.name == "project"
-    ).rows_path == ("data/foundational/project/rows.jsonl")
+    assert next(dataset for dataset in DATASETS if dataset.name == "project").rows_path == (
+        "data/foundational/project/rows.jsonl"
+    )
     assert (
-        next(
-            dataset for dataset in DATASETS if dataset.name == "source_object"
-        ).lookup_path
+        next(dataset for dataset in DATASETS if dataset.name == "source_object").lookup_path
         == "data/operational/source_object/lookup.jsonl"
     )
     assert (
@@ -218,14 +208,9 @@ def test_registry_uses_flat_rows_per_dataset_schemas_and_selective_lookups() -> 
         == "data/reference/system_type/rows.jsonl"
     )
     assert (
-        next(
-            dataset for dataset in DATASETS if dataset.name == "system_type"
-        ).lookup_path
-        is None
+        next(dataset for dataset in DATASETS if dataset.name == "system_type").lookup_path is None
     )
-    assert all(
-        ".." not in path.split("/") and not path.startswith("/") for path in rows_paths
-    )
+    assert all(".." not in path.split("/") and not path.startswith("/") for path in rows_paths)
 
 
 def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
@@ -233,9 +218,7 @@ def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
         fields = set(dataset.row_model.model_fields)
         assert not any(field == "id" or field.endswith("_id") for field in fields)
         assert set(dataset.canonical_key) <= fields
-        assert all(
-            set(constraint) <= fields for constraint in dataset.unique_constraints
-        )
+        assert all(set(constraint) <= fields for constraint in dataset.unique_constraints)
         assert set(dataset.lookup_fields) <= fields
         for reference in dataset.references:
             assert set(reference.columns) <= fields
@@ -243,9 +226,7 @@ def test_all_row_models_are_id_free_and_keys_are_real_fields() -> None:
 
 
 def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
-    object_datasets = tuple(
-        dataset for dataset in DATASETS if dataset.record_type == "object"
-    )
+    object_datasets = tuple(dataset for dataset in DATASETS if dataset.record_type == "object")
     attribute_datasets = tuple(
         dataset for dataset in DATASETS if dataset.record_type == "attribute"
     )
@@ -264,13 +245,14 @@ def test_zone_datasets_share_record_models_without_nested_attributes() -> None:
     )
     assert "attributes" not in object_datasets[0].row_model.model_fields
     assert "is_locked" in object_datasets[0].row_model.model_fields
-    assert "is_locked" not in attribute_datasets[0].row_model.model_fields
+    for dataset in attribute_datasets:
+        fields = dataset.row_model.model_fields
+        assert fields["is_locked"].is_required()
+        assert fields["attribute_inferred_data_type"].is_required()
 
 
 def test_dataset_schema_exposes_enforced_fields_keys_and_references() -> None:
-    source_object = next(
-        dataset for dataset in DATASETS if dataset.name == "source_object"
-    )
+    source_object = next(dataset for dataset in DATASETS if dataset.name == "source_object")
     schema = build_dataset_document(source_object).schema
 
     assert schema["$schema"] == "https://json-schema.org/draft/2020-12/schema"
@@ -335,9 +317,7 @@ def test_all_dataset_columns_publish_complete_authoring_guidance() -> None:
         schema = build_dataset_document(dataset).schema
         properties = _object_value(schema, "properties")
         columns = _object_list_value(schema, "x-gds-columns")
-        assert [column["name"] for column in columns] == list(
-            dataset.row_model.model_fields
-        )
+        assert [column["name"] for column in columns] == list(dataset.row_model.model_fields)
         assert schema["x-gds-population-rules"]
 
         for column in columns:
@@ -377,8 +357,7 @@ def test_column_guidance_distinguishes_value_sources_and_constraints() -> None:
         "constraints": {},
     }
     assert (
-        _object_value(source_columns["object_type_code"], "accepted_values")["kind"]
-        == "reference"
+        _object_value(source_columns["object_type_code"], "accepted_values")["kind"] == "reference"
     )
     assert _object_value(source_columns["is_active"], "accepted_values")["values"] == [
         False,
@@ -389,9 +368,7 @@ def test_column_guidance_distinguishes_value_sources_and_constraints() -> None:
         next(dataset for dataset in DATASETS if dataset.name == "tenant")
     ).schema
     tenant_columns = _columns_by_name(tenant)
-    assert _object_value(tenant_columns["tenant_visibility"], "accepted_values")[
-        "values"
-    ] == [
+    assert _object_value(tenant_columns["tenant_visibility"], "accepted_values")["values"] == [
         "global",
         "private",
     ]

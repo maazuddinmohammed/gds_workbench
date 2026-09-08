@@ -7,6 +7,40 @@ import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
 
 describe("Model Conceptual", () => {
+  it("reviews exact IDs from both ledgers and clears selection when switching or filtering", async () => {
+    const fetcher = conceptualFetchStub();
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
+    await screen.findByRole("table", { name: "Conceptual Objects" });
+    expect(screen.getByRole("button", { name: "Unlock selected" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Select Conceptual Object 41" }));
+    await user.click(screen.getByRole("button", { name: "Unlock selected" }));
+    expect(await screen.findByRole("dialog", { name: "Review unlock" })).toBeVisible();
+    await screen.findByRole("button", { name: "Apply this change" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/change-sets/review/preview?page=1",
+      expect.objectContaining({ body: JSON.stringify({
+        dataset: "conceptual_object", record_ids: [41], action: "unlock", expected_model_revision: 18,
+      }) }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Relationships" }));
+    await screen.findByRole("table", { name: "Conceptual Relationships" });
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Select Conceptual Relationship 51" }));
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+    await screen.findByRole("button", { name: "Apply this change" });
+    expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/change-sets/review/preview?page=1",
+      expect.objectContaining({ body: JSON.stringify({
+        dataset: "conceptual_relationship", record_ids: [51], action: "lock", expected_model_revision: 18,
+      }) }),
+    );
+    await user.click(screen.getByRole("button", { name: "Cancel" }));
+    await user.click(screen.getByRole("button", { name: "Apply Relationship filters" }));
+    expect(screen.getByRole("button", { name: "Lock selected" })).toBeDisabled();
+  });
+
   it("filters Conceptual Objects and opens full support evidence", async () => {
     const fetcher = conceptualFetchStub();
     const user = userEvent.setup();
@@ -31,13 +65,18 @@ describe("Model Conceptual", () => {
     expect(screen.getByText("One recognized customer identity.")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Support evidence" })).toBeVisible();
     expect(screen.getByText("GRDM · CRM · crm-prod")).toBeVisible();
-    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(2);
+    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
     expect(screen.getByText("Customer identity remains stable across CRM and ERP.")).toBeVisible();
     const physical = screen.getByRole("article", { name: "Support 61" });
+    expect(within(physical).getByText("Object 501")).not.toBeVisible();
+    expect(within(physical).getByText("Locked")).toBeVisible();
+    await user.click(within(physical).getByText("Record details"));
     expect(within(physical).getByText("Object 501")).toBeVisible();
     expect(within(physical).getByText("No workflow provenance")).toBeVisible();
     expect(within(physical).getByText("Locked")).toBeVisible();
     const assertion = screen.getByRole("article", { name: "Support 62" });
+    expect(within(assertion).getByText("Assertion 91")).not.toBeVisible();
+    await user.click(within(assertion).getByText("Record details"));
     expect(within(assertion).getByText("Assertion 91")).toBeVisible();
     expect(within(assertion).getByText("Workflow run 1048")).toBeVisible();
 
@@ -57,8 +96,8 @@ describe("Model Conceptual", () => {
     await user.click(screen.getByRole("link", { name: "Open Conceptual Relationship 51" }));
 
     expect(await screen.findByRole("heading", { name: "customer places order" })).toBeVisible();
-    expect(screen.getByText("Customer")).toBeVisible();
-    expect(screen.getByText("Order")).toBeVisible();
+    expect(screen.getByText("customer_account")).toBeVisible();
+    expect(screen.getByText("order_header")).toBeVisible();
     expect(screen.getByText("Customer activity establishes order ownership.")).toBeVisible();
     expect(screen.getByRole("article", { name: "Support 61" })).toBeVisible();
   });
@@ -242,8 +281,19 @@ function conceptualFetchStub(options: {
   executeGate?: Promise<void>;
 } = {}) {
   let executeAttempts = 0;
-  return vi.fn<typeof fetch>(async (input) => {
+  return vi.fn<typeof fetch>(async (input, init) => {
     const url = String(input);
+    if (url.includes("/change-sets/review/preview?")) {
+      const command = JSON.parse(String(init?.body));
+      return jsonResponse({
+        model_id: 18, model_revision: 18, plan_digest: "a".repeat(64), can_apply: true,
+        action_count: 1, additional_change_count: 0, total_record_count: 1,
+        items: [{ dataset: command.dataset, record_id: command.record_ids[0], label: "Selected record",
+          selected: true, reason: "Selected record.", status: "active", desired_status: "active",
+          is_locked: command.action === "unlock", desired_locked: command.action === "lock", changed: true }],
+        issues: [], issue_count: 0, page: 1, next_page: null,
+      });
+    }
     if (url === "/api/v1/tenants/7/home") return jsonResponse({
       ...tenantHomePayload,
       lock: {
@@ -448,9 +498,9 @@ const conceptualRelationshipPayload = {
   conceptual_relationship_id: 51,
   workflow_run_id: 1048,
   from_conceptual_object_id: 41,
-  from_conceptual_object_name: "customer",
+  from_conceptual_object_name: "customer_account",
   to_conceptual_object_id: 42,
-  to_conceptual_object_name: "order",
+  to_conceptual_object_name: "order_header",
   conceptual_relationship_name: "customer places order",
   conceptual_relationship_type: "ownership",
   conceptual_relationship_cardinality: "one_to_many",
@@ -494,15 +544,15 @@ const conceptualScopeObjectPayload = {
 
 const agentCapabilitiesPayload = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
-    execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
-      sdk_code: "openai_agents",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
+    execution_profiles: ["one_shot", "tool_assisted"].map((execution_mode) => ({
+      sdk_code: "openai_agents_sdk",
       execution_mode,
       reasoning_effort_codes: ["medium"],
     })),

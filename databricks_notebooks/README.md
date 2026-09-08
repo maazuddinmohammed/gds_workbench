@@ -12,7 +12,8 @@ not call the Databricks App, its HTTP API, or an MCP server. Each notebook:
 
 The App can be deployed separately, or not at all. The notebook path needs no
 App configuration or App authorization. PostgreSQL authentication, Tenant
-Locks, revision checks, and Databricks model-serving authorization still apply.
+Locks, revision checks, Microsoft Foundry authorization, and Databricks SQL
+authorization still apply.
 
 ## Required runtime
 
@@ -23,8 +24,9 @@ only identifies the selected DBR image. See the official
 and [Workspace files documentation](https://learn.microsoft.com/en-us/azure/databricks/files/workspace).
 
 Use an access-controlled single-user or otherwise approved compute policy. The
-compute identity must be able to use Databricks unified authentication and
-query the configured Model Serving endpoint.
+compute identity must be able to use Databricks unified authentication for SQL
+evidence. Agent workflows use the OpenAI Agents SDK with separately configured
+Microsoft Foundry authentication.
 
 ## Database prerequisites
 
@@ -122,6 +124,7 @@ gds-workbench-notebooks/
 └── notebooks/
     ├── 00_tenant_lock.py
     ├── 01_runtime_preflight.py
+    ├── metadata_enrichment.py
     ├── profiling.py
     ├── analysis_inference.py
     ├── analysis_validation.py
@@ -209,12 +212,57 @@ GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS=10
 GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS=120
 ```
 
-Databricks model endpoint names do not belong in `.env`. Add each selectable
-Databricks model and its exact `deployment_name` to
-`src/gds_workbench_api/config/agent_capabilities.json`, then upload that registry
-with the notebooks. The same JSON defines SDK, mode, and reasoning compatibility.
-The checked-in choices are `databricks-primary` (served by
-`databricks-gpt-oss-120b`) and `databricks-claude-opus-5`.
+Agent workflows also require Foundry configuration. Use an approved official
+Azure OpenAI v1 URL and one authentication method:
+
+```dotenv
+GDS_NOTEBOOK_FOUNDRY_OPENAI_BASE_URL=https://<resource>.openai.azure.com/openai/v1/
+GDS_NOTEBOOK_FOUNDRY_API_KEY=<foundry-api-key>
+```
+
+For Entra application authentication, leave `GDS_NOTEBOOK_FOUNDRY_API_KEY` blank
+and add all three fields instead:
+
+```dotenv
+GDS_NOTEBOOK_FOUNDRY_ENTRA_TENANT_ID=<entra-tenant-uuid>
+GDS_NOTEBOOK_FOUNDRY_CLIENT_ID=<entra-application-uuid>
+GDS_NOTEBOOK_FOUNDRY_CLIENT_SECRET=<entra-client-secret>
+```
+
+The client application must already have access to the configured Foundry
+resource. Incomplete or mixed authentication is rejected without printing its
+values. Foundry settings are optional for Tenant Lock, Profiling, Analysis
+Validation, and reading existing results. Agent execution requires them before
+taking a Run claim. A completed Run can be replayed without Foundry settings.
+
+Every workflow result includes `token_usage` and its nested `cost_estimate`.
+This covers all model calls, tool turns and repairs, including failed Runs.
+Replay reads the saved totals; it does not call Foundry again. Missing provider
+usage remains unknown, and older Runs without tracking remain unavailable.
+
+Cost stays Unpriced until confirmed USD rates are supplied in the optional
+`GDS_NOTEBOOK_FOUNDRY_PRICING_JSON` environment value. Use one JSON line keyed
+by registered model code. Each model needs a plain `basis` label and four decimal
+rates per million tokens: `input_usd_per_million`,
+`cached_input_usd_per_million`, `cache_write_input_usd_per_million`, and
+`output_usd_per_million`. Optional `valid_from` and `valid_until` require a time
+zone; `max_input_tokens` limits the applicable context size. Null means no such
+restriction. Rates must be 0–1,000,000 with at most eight decimal places.
+See the [configuration example](../web_app/DEPLOYMENT_GUIDE.md#run-tokens-and-estimated-model-cost).
+
+Rates are saved before each request. Later configuration changes do not rewrite
+earlier estimates. Missing usage, unsupported token categories and inapplicable
+rates stay unpriced; a partial estimate includes priced requests only. Estimates
+cover model tokens, excluding provisioned capacity, billing adjustments and
+Databricks compute. Leave pricing blank when the deployment's billing basis is
+unknown or does not use token rates.
+
+Model deployment names belong in
+`src/gds_workbench_api/config/agent_capabilities.json`. Upload the registry with
+the notebooks; its `deployment_name` must match the actual Foundry deployment.
+The same registry defines each model's valid execution modes and reasoning
+choices. Notebook credentials come only from this root `.env`, never App
+configuration, widgets, or inherited process environment.
 
 | Field | Meaning |
 |---|---|
@@ -244,15 +292,16 @@ security boundary.
 
 1. Run `01_runtime_preflight.py`. It checks Python 3.12, the `.env`, database
    readiness, the fixed Super Admin binding, shared source imports, and
-   Databricks unified authentication/model endpoint readiness.
+   Databricks SQL unified authentication. It reports whether Foundry is configured;
+   it does not invoke a model or verify deployment access.
 2. Run `00_tenant_lock.py` with `Action=check`, then `Action=acquire` for the
    intended `TenantID`. Supply a bounded reason and duration. The numeric file
    prefix groups lock management first in the tree, but running preflight before
    acquire avoids holding a lock while setup is broken. A simple lock check may
    also be run before preflight when diagnosing database access.
 3. Open one workflow notebook. Run its first cell to create that notebook's
-   widget bar. For an Agent workflow, this cell reads the root `.env` for runtime
-   settings and offers only Databricks models registered in the packaged JSON.
+   widget bar. Agent model choices come from the packaged Foundry registry; the
+   execution cell reads and validates the root `.env`.
    Fill the widgets, then run the second cell to execute. Use a new nonzero UUID
    for `IdempotencyKey`; reuse it only when retrying identical inputs. `Run all`
    with blank required widgets is expected to stop validation.
@@ -267,7 +316,7 @@ security boundary.
    normal dependency order:
 
    ```text
-   profiling -> analysis_inference -> apply -> analysis_validation
+   optional metadata_enrichment -> profiling -> analysis_inference -> apply -> analysis_validation
    -> conceptual -> apply -> logical -> apply
    -> logical mapping -> apply -> optional logical code_generation
    -> apply -> optional dimensional -> apply -> dimensional mapping
@@ -289,7 +338,12 @@ security boundary.
 
 Drafts are durable PostgreSQL data in `mcp.model_change_set` and related
 change-set tables. Here `mcp` is a PostgreSQL schema name, not evidence that an
-MCP server is running. Profiling does not create an Apply draft; a no-op
+MCP server is running. Metadata Enrichment saves missing descriptions and inferred
+types directly on shared physical Objects and Attributes, protecting existing
+values and locked records. It reports field counts and evidence outcomes, uses
+bounded Source/Bronze inspection, and never prints samples. It does not change
+physical storage types or Model revision. Metadata Enrichment and Profiling do
+not create an Apply draft; a no-op
 authoring run also has nothing to apply.
 
 Only one workflow may run for a Tenant at a time. A conflict or expired claim
@@ -304,6 +358,7 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 
 | Notebook | Additional widgets |
 |---|---|
+| `metadata_enrichment` | Agent widgets; fixed `one_shot`. Select 1–200 active Source or Bronze Objects from Model Input Scope. |
 | `profiling` | Optional `RequestedBatchID`. |
 | `analysis_inference` | Optional `RequestedBatchID`, `ExecutionMode`, and agent widgets. |
 | `analysis_validation` | Optional `RequestedBatchID`. |
@@ -312,35 +367,29 @@ Selected IDs are a unique positive-integer JSON array such as `[101,102]`.
 | `code_generation` | Modeled entity type, selected/all-eligible coverage, optional SQL Guide Version ID, and agent widgets. |
 | `validation` | `SelectedSystemCodesJSON` plus agent widgets. Object selection must be `[]`; System Codes must be a nonempty JSON array unique ignoring case. |
 
-Agent widget choices come from the packaged shared registry at
-`src/gds_workbench_api/config/agent_capabilities.json`, filtered to Databricks
-models and their exact execution profiles. Databricks widget dropdowns cannot
-cascade, so each dropdown can show the union of registered choices. The
-notebook rejects any SDK, model, execution-mode, and reasoning-effort
-combination that is not present in one exact profile. The `default` reasoning
-value omits the provider setting. The separate `none` value explicitly disables
-reasoning on models that support that value. `default` is first in the shipped
-profiles, so it is the current notebook default. Narrow the Databricks profile
-to the values verified for the exact endpoint model; for example, GPT OSS uses
-`low`, `medium`, or `high`. Claude Opus 5 currently exposes `default` only
-because these adapters do not translate its separate thinking-token controls.
+Agent controls contain **AgentModel** and **ReasoningEffort**. SDK and provider
+are fixed to OpenAI Agents SDK and Microsoft Foundry. Maximum turns and
+validation retries use shared registry defaults. Prompt overrides remain a
+separate optional workflow setting. Recreating widgets removes the retired SDK,
+provider, turns, and retry controls while preserving scope selections.
 
-The provider remains fixed to Databricks. The packaged JSON registry supplies
-the physical Databricks Model Serving endpoint for each selectable model code.
-If only a secondary Databricks model is registered, it is the model widget's
-only choice and default. A registry without any Databricks model stops the first
-cell before creating Agent widgets. Foundry App settings are not used by these
-independent notebooks. Maximum turns and validation-retry
-defaults and bounds also come from the shared registry. PostgreSQL and the
-shared runtime revalidate every widget; a widget never selects the acting
-identity or Databricks environment.
+Choices come from `src/gds_workbench_api/config/agent_capabilities.json`.
+Databricks dropdowns cannot cascade, so reasoning choices show the union of
+registered profiles. The notebook validates the exact selected model, execution
+mode, and effort before creating a Run. `default` omits the provider setting;
+`none` explicitly disables reasoning when the selected profile supports it.
+The default follows the selected default profile. An unavailable combination
+requires a compatible choice; no effort is silently substituted.
 
-Agentic authoring `ExecutionMode` widgets offer `one_shot`, `tool_assisted`, and
-`detailed_coverage`; they default to `tool_assisted` so larger scopes use the
+The registry provides the exact Foundry deployment for each model code.
+PostgreSQL and the shared runtime revalidate each command. Widgets never
+select the acting identity, credentials, or Databricks SQL environment.
+
+Agentic authoring `ExecutionMode` widgets offer `one_shot` and `tool_assisted`; they default to `tool_assisted` so larger scopes use the
 bounded local context tools instead of embedding the complete context. If the
 registry has no compatible `tool_assisted` profile, the notebook selects the
 first compatible registered mode. Code Generation and Validation have no mode widget
-and use only registered `detailed_coverage` profiles. Their persisted execution
+and use only registered `one_shot` profiles. Their persisted execution
 mode remains `NULL` because that fixed internal agent mode is not user input.
 
 The Tenant Lock and draft apply notebooks use the same two-cell pattern:

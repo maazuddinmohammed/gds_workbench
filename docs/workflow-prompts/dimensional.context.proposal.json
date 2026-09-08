@@ -1,0 +1,1657 @@
+{
+  "workflow": "dimensional",
+  "stage": "candidate_authoring",
+  "modes": [
+    "one_shot",
+    "tool_assisted"
+  ],
+  "status": "twenty_four_variables_approved; one_shot_prompt_proposed; implementation_deferred",
+  "scope": "Approved: all twenty-four Dimensional-local variables, compact binding lineage, excluded Source/Bronze/raw Mapping catalog inputs, and existing Gold policy ownership. One-shot prompt/default/quality review follows; tools remain undecided.",
+  "selection": "All variables are Dimensional-local author choices; availability does not imply default inclusion. Do not automatically repeat compact/full forms. Variables have no tool arguments or page envelopes.",
+  "physical_input_rule": "Existing runtime requires selected physical inputs to be eligible Silver contributions through active Logical Bindings and applied active Logical Mapping. Preserve actual physical keys; original Source/Bronze support under Logical records does not become a direct Dimensional source.",
+  "applied_section_rule": "Each family projects one authorized frozen applied section. [] is known empty; null is unavailable. Preserve history, source-free/Assertion-only records, saved technical/audit fields, and locks as input evidence.",
+  "preserved_output": {
+    "submodels": [],
+    "entities": [],
+    "attributes": [],
+    "relationships": []
+  },
+  "variables": {
+    "logical_submodel_list": {
+      "description": "Compact existing Logical submodel identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_submodel_list",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_submodels": {
+      "description": "Complete existing LogicalSubmodelRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_submodels",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_entity_list": {
+      "description": "Compact existing Logical entity identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_entity_list",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_entities": {
+      "description": "Complete existing LogicalEntityRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_entities",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_attribute_list": {
+      "description": "Compact existing Logical attribute identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_attribute_list",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_attributes": {
+      "description": "Complete existing LogicalAttributeRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_attributes",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_relationship_list": {
+      "description": "Compact existing Logical relationship identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_relationship_list",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "logical_relationships": {
+      "description": "Complete existing LogicalRelationshipRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "shape_reference": "logical.context.proposal.json#/variables/logical_relationships",
+      "binding": "Approved Dimensional-local upstream Logical evidence from the authorized frozen Model. Read-only; it does not make every Logical Entity or its original Source/Bronze sources eligible as Dimensional physical input. Resolve references within their owning document."
+    },
+    "dimensional_submodel_list": {
+      "description": "Compact existing Dimensional submodel identities only. Retain complete natural keys, including nullable role for relationship identity. Read details to interpret meaning, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_submodel_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dimensional_submodel_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Dimensional Submodel Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dimensional_submodel_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "dimensional_submodels": {
+      "description": "Complete existing DimensionalSubmodelRecord entries. Preserve all fields, nested sources/memberships, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_submodel_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "DimensionalSubmodelRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "dimensional_submodel_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Submodel Name",
+                "type": "string"
+              },
+              "dimensional_submodel_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Submodel Definition",
+                "type": "string"
+              },
+              "dimensional_submodel_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Dimensional Submodel Status",
+                "type": "string"
+              },
+              "dimensional_submodel_is_locked": {
+                "title": "Dimensional Submodel Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "dimensional_submodel_name",
+              "dimensional_submodel_definition",
+              "dimensional_submodel_status",
+              "dimensional_submodel_is_locked"
+            ],
+            "title": "DimensionalSubmodelRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/DimensionalSubmodelRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#DimensionalSubmodelRecord"
+    },
+    "dimensional_entity_list": {
+      "description": "Compact existing Dimensional entity identities only. Retain complete natural keys, including nullable role for relationship identity. Read details to interpret meaning, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_entity_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dimensional_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Dimensional Entity Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dimensional_entity_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "dimensional_entities": {
+      "description": "Complete existing DimensionalEntityRecord entries. Preserve all fields, nested sources/memberships, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_entity_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "DimensionalAssertionSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "source_role": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Source Role",
+                "type": "string"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "rationale",
+              "status",
+              "is_locked",
+              "source_role"
+            ],
+            "title": "DimensionalAssertionSourceRecord",
+            "type": "object"
+          },
+          "DimensionalEntityRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "dimensional_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Entity Name",
+                "type": "string"
+              },
+              "dimensional_entity_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Entity Definition",
+                "type": "string"
+              },
+              "dimensional_entity_type": {
+                "enum": [
+                  "fact",
+                  "dimension",
+                  "bridge"
+                ],
+                "title": "Dimensional Entity Type",
+                "type": "string"
+              },
+              "dimensional_fact_type": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "transaction",
+                      "periodic_snapshot",
+                      "accumulating_snapshot",
+                      "factless"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Fact Type"
+              },
+              "dimensional_entity_grain_definition": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Entity Grain Definition"
+              },
+              "dimensional_entity_dependency_order": {
+                "minimum": 0,
+                "title": "Dimensional Entity Dependency Order",
+                "type": "integer"
+              },
+              "dimensional_entity_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Dimensional Entity Confidence",
+                "type": "string"
+              },
+              "dimensional_entity_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Dimensional Entity Status",
+                "type": "string"
+              },
+              "dimensional_entity_is_locked": {
+                "title": "Dimensional Entity Is Locked",
+                "type": "boolean"
+              },
+              "submodels": {
+                "items": {
+                  "$ref": "#/$defs/SubmodelMembershipRecord"
+                },
+                "title": "Submodels",
+                "type": "array"
+              },
+              "sources": {
+                "items": {
+                  "$ref": "#/$defs/DimensionalEntitySourceRecord"
+                },
+                "title": "Sources",
+                "type": "array"
+              }
+            },
+            "required": [
+              "dimensional_entity_name",
+              "dimensional_entity_definition",
+              "dimensional_entity_type",
+              "dimensional_fact_type",
+              "dimensional_entity_grain_definition",
+              "dimensional_entity_dependency_order",
+              "dimensional_entity_confidence",
+              "dimensional_entity_status",
+              "dimensional_entity_is_locked",
+              "submodels",
+              "sources"
+            ],
+            "title": "DimensionalEntityRecord",
+            "type": "object"
+          },
+          "DimensionalEntitySourceRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/DimensionalAssertionSourceRecord",
+                "object": "#/$defs/DimensionalObjectSourceRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/DimensionalObjectSourceRecord"
+              },
+              {
+                "$ref": "#/$defs/DimensionalAssertionSourceRecord"
+              }
+            ]
+          },
+          "DimensionalObjectSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "object",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_object": {
+                "$ref": "#/$defs/PhysicalObjectKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "source_role": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Source Role",
+                "type": "string"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_object",
+              "rationale",
+              "status",
+              "is_locked",
+              "source_role"
+            ],
+            "title": "DimensionalObjectSourceRecord",
+            "type": "object"
+          },
+          "PhysicalObjectKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name"
+            ],
+            "title": "PhysicalObjectKey",
+            "type": "object"
+          },
+          "SubmodelMembershipRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "submodel_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Submodel Name",
+                "type": "string"
+              },
+              "membership_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Membership Status",
+                "type": "string"
+              },
+              "membership_is_locked": {
+                "title": "Membership Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "submodel_name",
+              "membership_status",
+              "membership_is_locked"
+            ],
+            "title": "SubmodelMembershipRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/DimensionalEntityRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#DimensionalEntityRecord"
+    },
+    "dimensional_attribute_list": {
+      "description": "Compact existing Dimensional attribute identities only. Retain complete natural keys, including nullable role for relationship identity. Read details to interpret meaning, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_entity_name",
+        "dimensional_attribute_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "dimensional_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Dimensional Entity Name",
+                  "type": "string"
+                },
+                "dimensional_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Dimensional Attribute Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "dimensional_entity_name",
+                "dimensional_attribute_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "dimensional_attributes": {
+      "description": "Complete existing DimensionalAttributeRecord entries. Preserve all fields, nested sources/memberships, lifecycle, and locks.",
+      "natural_key": [
+        "dimensional_entity_name",
+        "dimensional_attribute_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "AttributeAssertionSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "AttributeAssertionSourceRecord",
+            "type": "object"
+          },
+          "AttributePhysicalSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "attribute",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_attribute": {
+                "$ref": "#/$defs/PhysicalAttributeKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_attribute",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "AttributePhysicalSourceRecord",
+            "type": "object"
+          },
+          "AttributeSourceRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                "attribute": "#/$defs/AttributePhysicalSourceRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AttributePhysicalSourceRecord"
+              },
+              {
+                "$ref": "#/$defs/AttributeAssertionSourceRecord"
+              }
+            ]
+          },
+          "DimensionalAttributeRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "dimensional_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Entity Name",
+                "type": "string"
+              },
+              "dimensional_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Attribute Name",
+                "type": "string"
+              },
+              "dimensional_attribute_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Attribute Definition",
+                "type": "string"
+              },
+              "dimensional_attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Attribute Data Type",
+                "type": "string"
+              },
+              "dimensional_attribute_is_nullable": {
+                "title": "Dimensional Attribute Is Nullable",
+                "type": "boolean"
+              },
+              "dimensional_attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Dimensional Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "dimensional_attribute_role": {
+                "enum": [
+                  "key",
+                  "descriptor",
+                  "measure",
+                  "degenerate_dimension",
+                  "bridge_weight",
+                  "technical",
+                  "audit"
+                ],
+                "title": "Dimensional Attribute Role",
+                "type": "string"
+              },
+              "dimensional_attribute_key_role": {
+                "enum": [
+                  "none",
+                  "surrogate",
+                  "business",
+                  "foreign"
+                ],
+                "title": "Dimensional Attribute Key Role",
+                "type": "string"
+              },
+              "dimensional_attribute_is_grain_component": {
+                "title": "Dimensional Attribute Is Grain Component",
+                "type": "boolean"
+              },
+              "dimensional_attribute_additivity": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "additive",
+                      "semi_additive",
+                      "non_additive"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Attribute Additivity"
+              },
+              "dimensional_attribute_default_aggregation": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Attribute Default Aggregation"
+              },
+              "dimensional_attribute_aggregation_basis": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Attribute Aggregation Basis"
+              },
+              "dimensional_attribute_change_behavior": {
+                "anyOf": [
+                  {
+                    "enum": [
+                      "fixed",
+                      "overwrite",
+                      "historize"
+                    ],
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Attribute Change Behavior"
+              },
+              "dimensional_attribute_is_audit_column": {
+                "title": "Dimensional Attribute Is Audit Column",
+                "type": "boolean"
+              },
+              "dimensional_attribute_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Dimensional Attribute Confidence",
+                "type": "string"
+              },
+              "dimensional_attribute_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Dimensional Attribute Status",
+                "type": "string"
+              },
+              "dimensional_attribute_is_locked": {
+                "title": "Dimensional Attribute Is Locked",
+                "type": "boolean"
+              },
+              "sources": {
+                "items": {
+                  "$ref": "#/$defs/AttributeSourceRecord"
+                },
+                "title": "Sources",
+                "type": "array"
+              }
+            },
+            "required": [
+              "dimensional_entity_name",
+              "dimensional_attribute_name",
+              "dimensional_attribute_definition",
+              "dimensional_attribute_data_type",
+              "dimensional_attribute_is_nullable",
+              "dimensional_attribute_ordinal_position",
+              "dimensional_attribute_role",
+              "dimensional_attribute_key_role",
+              "dimensional_attribute_is_grain_component",
+              "dimensional_attribute_additivity",
+              "dimensional_attribute_default_aggregation",
+              "dimensional_attribute_aggregation_basis",
+              "dimensional_attribute_change_behavior",
+              "dimensional_attribute_is_audit_column",
+              "dimensional_attribute_confidence",
+              "dimensional_attribute_status",
+              "dimensional_attribute_is_locked",
+              "sources"
+            ],
+            "title": "DimensionalAttributeRecord",
+            "type": "object"
+          },
+          "PhysicalAttributeKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              },
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Attribute Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "attribute_name"
+            ],
+            "title": "PhysicalAttributeKey",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/DimensionalAttributeRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#DimensionalAttributeRecord"
+    },
+    "dimensional_relationship_list": {
+      "description": "Compact existing Dimensional relationship identities only. Retain complete natural keys, including nullable role for relationship identity. Read details to interpret meaning, lifecycle, and locks.",
+      "natural_key": [
+        "from_dimensional_entity_name",
+        "from_dimensional_attribute_name",
+        "to_dimensional_entity_name",
+        "to_dimensional_attribute_name",
+        "dimensional_relationship_kind",
+        "dimensional_relationship_role_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from_dimensional_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "From Dimensional Entity Name",
+                  "type": "string"
+                },
+                "from_dimensional_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "From Dimensional Attribute Name",
+                  "type": "string"
+                },
+                "to_dimensional_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "To Dimensional Entity Name",
+                  "type": "string"
+                },
+                "to_dimensional_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "To Dimensional Attribute Name",
+                  "type": "string"
+                },
+                "dimensional_relationship_kind": {
+                  "maxLength": 50,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Dimensional Relationship Kind",
+                  "type": "string"
+                },
+                "dimensional_relationship_role_name": {
+                  "anyOf": [
+                    {
+                      "maxLength": 255,
+                      "minLength": 1,
+                      "pattern": "\\S",
+                      "type": "string"
+                    },
+                    {
+                      "type": "null"
+                    }
+                  ],
+                  "title": "Dimensional Relationship Role Name"
+                }
+              },
+              "required": [
+                "from_dimensional_entity_name",
+                "from_dimensional_attribute_name",
+                "to_dimensional_entity_name",
+                "to_dimensional_attribute_name",
+                "dimensional_relationship_kind",
+                "dimensional_relationship_role_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "dimensional_relationships": {
+      "description": "Complete existing DimensionalRelationshipRecord entries. Preserve all fields, nested sources/memberships, lifecycle, and locks.",
+      "natural_key": [
+        "from_dimensional_entity_name",
+        "from_dimensional_attribute_name",
+        "to_dimensional_entity_name",
+        "to_dimensional_attribute_name",
+        "dimensional_relationship_kind",
+        "dimensional_relationship_role_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "DimensionalRelationshipRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "dimensional_relationship_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Relationship Name",
+                "type": "string"
+              },
+              "dimensional_relationship_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Relationship Definition",
+                "type": "string"
+              },
+              "from_dimensional_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Dimensional Entity Name",
+                "type": "string"
+              },
+              "from_dimensional_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Dimensional Attribute Name",
+                "type": "string"
+              },
+              "to_dimensional_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Dimensional Entity Name",
+                "type": "string"
+              },
+              "to_dimensional_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Dimensional Attribute Name",
+                "type": "string"
+              },
+              "dimensional_relationship_kind": {
+                "maxLength": 50,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Relationship Kind",
+                "type": "string"
+              },
+              "dimensional_relationship_cardinality": {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many"
+                ],
+                "title": "Dimensional Relationship Cardinality",
+                "type": "string"
+              },
+              "dimensional_relationship_is_optional": {
+                "title": "Dimensional Relationship Is Optional",
+                "type": "boolean"
+              },
+              "dimensional_relationship_role_name": {
+                "anyOf": [
+                  {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Dimensional Relationship Role Name"
+              },
+              "dimensional_relationship_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Dimensional Relationship Confidence",
+                "type": "string"
+              },
+              "dimensional_relationship_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Relationship Basis",
+                "type": "string"
+              },
+              "dimensional_relationship_cardinality_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Dimensional Relationship Cardinality Basis",
+                "type": "string"
+              },
+              "dimensional_relationship_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Dimensional Relationship Status",
+                "type": "string"
+              },
+              "dimensional_relationship_is_locked": {
+                "title": "Dimensional Relationship Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "dimensional_relationship_name",
+              "dimensional_relationship_definition",
+              "from_dimensional_entity_name",
+              "from_dimensional_attribute_name",
+              "to_dimensional_entity_name",
+              "to_dimensional_attribute_name",
+              "dimensional_relationship_kind",
+              "dimensional_relationship_cardinality",
+              "dimensional_relationship_is_optional",
+              "dimensional_relationship_role_name",
+              "dimensional_relationship_confidence",
+              "dimensional_relationship_basis",
+              "dimensional_relationship_cardinality_basis",
+              "dimensional_relationship_status",
+              "dimensional_relationship_is_locked"
+            ],
+            "title": "DimensionalRelationshipRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/DimensionalRelationshipRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#DimensionalRelationshipRecord"
+    },
+    "gds_context": {
+      "description": "Unique actual GDS Connection/zone placements for the selected eligible Silver Objects. Same five-field entry shape as before, with zone_code=silver.",
+      "shape_reference": "analysis.context-and-tools.json#/variables/gds_context/value_schema",
+      "binding": "Dimensional-local binding to this authorized frozen run. Follow the reference using definitions in its owning file; no global catalog or execution of Analysis."
+    },
+    "object_context": {
+      "description": "Selected eligible physical Silver Object keys, current saved descriptions, and zone. Keys describe actual physical placement, not Logical names.",
+      "shape_reference": "analysis.context-and-tools.json#/variables/object_context/value_schema",
+      "binding": "Dimensional-local binding to this authorized frozen run. Follow the reference using definitions in its owning file; no global catalog or execution of Analysis."
+    },
+    "object_attribute_context": {
+      "description": "Eligible selected Silver Attributes grouped under their actual Object key, with existing descriptions, registered/inferred types, flags, selected_attribute_names, and saved Profiles matching those exact Silver keys. Missing Profile is null; never substitute Source/Bronze Profiles.",
+      "shape_reference": "analysis.context-and-tools.json#/variables/object_attribute_context/value_schema",
+      "binding": "Dimensional-local binding to this authorized frozen run. Follow the reference using definitions in its owning file; no global catalog or execution of Analysis."
+    },
+    "modeling_assertions": {
+      "description": "The same seven-field projection of active authorized Dimensional-applicable Assertion Records from active Documents.",
+      "shape_reference": "analysis.context-and-tools.json#/variables/modeling_assertions/value_schema",
+      "binding": "Dimensional-local binding to this authorized frozen run. Follow the reference using definitions in its owning file; no global catalog or execution of Analysis."
+    },
+    "logical_bindings": {
+      "description": "Compact active upstream binding projection: one selected eligible Silver Object key, its Logical Entity name, and eligible selected physical-to-Logical Attribute name pairs. Identity link only; no repeated Logical definitions, Mapping bodies, downstream dependency records, or IDs.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "type": "object",
+          "properties": {
+            "tenant_code": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Tenant Code",
+              "type": "string"
+            },
+            "system_code": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "System Code",
+              "type": "string"
+            },
+            "connection_code": {
+              "maxLength": 100,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Connection Code",
+              "type": "string"
+            },
+            "object_schema": {
+              "maxLength": 400,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Object Schema",
+              "type": "string"
+            },
+            "object_name": {
+              "maxLength": 400,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Object Name",
+              "type": "string"
+            },
+            "logical_entity_name": {
+              "maxLength": 255,
+              "minLength": 1,
+              "pattern": "\\S",
+              "title": "Logical Entity Name",
+              "type": "string"
+            },
+            "attributes": {
+              "type": "array",
+              "items": {
+                "type": "object",
+                "properties": {
+                  "attribute_name": {
+                    "maxLength": 400,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Attribute Name",
+                    "type": "string"
+                  },
+                  "logical_attribute_name": {
+                    "maxLength": 255,
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "title": "Logical Attribute Name",
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "attribute_name",
+                  "logical_attribute_name"
+                ],
+                "additionalProperties": false
+              }
+            }
+          },
+          "required": [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+            "logical_entity_name",
+            "attributes"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "field_provenance": {
+        "tenant_code/system_code/connection_code/object_schema/object_name": "Existing ModelObjectBindingRecord physical key.",
+        "logical_entity_name": "Existing active Logical ModelObjectBindingRecord.modeled_entity_name, also LogicalEntityRecord.logical_entity_name.",
+        "attributes[].attribute_name": "Existing active ModelAttributeBindingRecord.attribute_name; parent physical Object inherited from Object Binding.",
+        "attributes[].logical_attribute_name": "Existing ModelAttributeBindingRecord.modeled_attribute_name, also LogicalAttributeRecord.logical_attribute_name."
+      },
+      "selection_rule": "Use recorded active logical_entity Object/Attribute Bindings for the selected Silver scope after existing Object/Attribute Mapping eligibility checks. One Object group per selected Object; include each selected eligible Attribute pair once. Do not infer matches by spelling, assume all Logical records are eligible, or turn a missing/broken expected binding into an empty/synthetic link.",
+      "interpretation": "Join physical Object metadata by all five actual keys. Join Logical Entities by logical_entity_name, and Logical Attributes by that Entity name plus logical_attribute_name. [] means known empty; source rows outside the selected eligible Silver scope are excluded."
+    },
+    "naming_instructions": {
+      "description": "Effective Gold naming override, otherwise the existing Dimensional default: PascalCase names and key Attributes ending in Key. Preserve existing identities.",
+      "source": "model_details.gold_model_naming_instructions through effective_naming_instructions(dimensional, override)",
+      "value_schema": {
+        "maxLength": 32768,
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
+      }
+    },
+    "audit_columns": {
+      "description": "Exact required Gold audit template. Same schema_version/ordered columns layout as Logical audit settings. Each column has semantic_name, data_type, nullable, definition. Gold requires this template before model execution.",
+      "source": "model_details.gold_model_audit_columns_template",
+      "value_schema": {
+        "$defs": {
+          "GoldPolicyColumn": {
+            "additionalProperties": false,
+            "properties": {
+              "semantic_name": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "data_type": {
+                "$ref": "#/$defs/_Nonblank100"
+              },
+              "nullable": {
+                "title": "Nullable",
+                "type": "boolean"
+              },
+              "definition": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_Nonblank2000"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "semantic_name",
+              "data_type",
+              "nullable",
+              "definition"
+            ],
+            "title": "GoldPolicyColumn",
+            "type": "object"
+          },
+          "_Nonblank100": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank2000": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank255": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "columns": {
+            "items": {
+              "$ref": "#/$defs/GoldPolicyColumn"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Columns",
+            "type": "array"
+          }
+        },
+        "required": [
+          "columns"
+        ],
+        "title": "GoldAuditPolicy",
+        "type": "object"
+      }
+    },
+    "technical_columns": {
+      "description": "Exact required GoldTechnicalPolicy: schema_version, dimension_surrogate_key, fact_bridge_foreign_key, type_2. Do not add guessed policy fields. The current backend projects technical/surrogate/foreign-key/audit Attributes.",
+      "source": "model_details.gold_model_technical_columns_template",
+      "value_schema": {
+        "$defs": {
+          "GoldPolicyColumn": {
+            "additionalProperties": false,
+            "properties": {
+              "semantic_name": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "data_type": {
+                "$ref": "#/$defs/_Nonblank100"
+              },
+              "nullable": {
+                "title": "Nullable",
+                "type": "boolean"
+              },
+              "definition": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_Nonblank2000"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "semantic_name",
+              "data_type",
+              "nullable",
+              "definition"
+            ],
+            "title": "GoldPolicyColumn",
+            "type": "object"
+          },
+          "_DimensionSurrogateKey": {
+            "additionalProperties": false,
+            "properties": {
+              "semantic_name_template": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "data_type": {
+                "$ref": "#/$defs/_Nonblank100"
+              },
+              "nullable": {
+                "const": false,
+                "title": "Nullable",
+                "type": "boolean"
+              },
+              "definition_template": {
+                "$ref": "#/$defs/_Nonblank2000"
+              }
+            },
+            "required": [
+              "semantic_name_template",
+              "data_type",
+              "nullable",
+              "definition_template"
+            ],
+            "title": "_DimensionSurrogateKey",
+            "type": "object"
+          },
+          "_FactBridgeForeignKey": {
+            "additionalProperties": false,
+            "properties": {
+              "with_role_semantic_name_template": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "without_role_semantic_name_template": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "definition_template": {
+                "$ref": "#/$defs/_Nonblank2000"
+              }
+            },
+            "required": [
+              "with_role_semantic_name_template",
+              "without_role_semantic_name_template",
+              "definition_template"
+            ],
+            "title": "_FactBridgeForeignKey",
+            "type": "object"
+          },
+          "_Nonblank100": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank2000": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank255": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Type2Policy": {
+            "additionalProperties": false,
+            "properties": {
+              "effective_from": {
+                "$ref": "#/$defs/GoldPolicyColumn"
+              },
+              "effective_to": {
+                "$ref": "#/$defs/GoldPolicyColumn"
+              },
+              "is_current": {
+                "$ref": "#/$defs/GoldPolicyColumn"
+              }
+            },
+            "required": [
+              "effective_from",
+              "effective_to",
+              "is_current"
+            ],
+            "title": "_Type2Policy",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "schema_version": {
+            "const": "1.0",
+            "default": "1.0",
+            "title": "Schema Version",
+            "type": "string"
+          },
+          "dimension_surrogate_key": {
+            "$ref": "#/$defs/_DimensionSurrogateKey"
+          },
+          "fact_bridge_foreign_key": {
+            "$ref": "#/$defs/_FactBridgeForeignKey"
+          },
+          "type_2": {
+            "$ref": "#/$defs/_Type2Policy"
+          }
+        },
+        "required": [
+          "dimension_surrogate_key",
+          "fact_bridge_foreign_key",
+          "type_2"
+        ],
+        "title": "GoldTechnicalPolicy",
+        "type": "object"
+      },
+      "rendering": "Policy strings containing {entity_name} or {role_name} stay literal JSON string values during prompt rendering. Existing backend Gold policy formatting resolves them later; no second prompt-rendering pass."
+    }
+  },
+  "examples_file": "dimensional.result-variables.example.json",
+  "example_note": "Synthetic saved input, not an AI candidate or complete production mart. Silver keys are assumed eligible through Logical Mapping/Bindings. sales_order_count is an eligible active Dimensional Assertion confirming the one-order grain and count. Saved keys/technical fields and true locks are context. Example high values do not settle a confidence threshold.",
+  "identity_note": "Existing snapshot/candidate relationship key is from Entity/Attribute + to Entity/Attribute + kind + role_name (nullable). relationship_name remains in full details but does not replace kind/role. SQL uniqueness applies to active relationships; preserve existing snapshot/candidate identity rules.",
+  "source_note": "Entity sources add source_role to Object/Assertion variants. Role describes a contribution, not an additional source identity. Attribute sources retain existing Attribute/Assertion variants. Relationships have no independent sources/supports.",
+  "excluded_context": "No downstream read-only dependency context. Use approved compact logical_bindings for upstream identity links; preserve backend eligibility and dependency checks.",
+  "open_items": [
+    "Review complete One-shot System/Instruction prompts, default inclusion, quality policy, and simple validation list together.",
+    "Then define optional reader contracts and the complete Tool-assisted prompt pair.",
+    "Preserve the current nonempty Dimensional candidate rule; empty abstention fails bounded validation, unless separately redesigned."
+  ],
+  "additional_example_file": "dimensional.silver-and-gold.example.json",
+  "gold_policy_note": "Preserve current pre-model validation: effective naming plus both configured technical and audit templates are required. Authors can omit a prompt variable, but cannot bypass backend policy. AI candidates cannot author technical/audit/surrogate/foreign-key Attributes; current backend projection owns those.",
+  "catalog_note": "Twenty-four Dimensional-local variables are available; default prompt inclusion and tool access remain undecided.",
+  "excluded_from_catalog": {
+    "source_context": "Use actual Silver GDS placement and bound upstream Logical meaning; no repeated original Source Connection context included.",
+    "ingestion_mapping": "Earlier Object-only ingestion links describe Source-to-Bronze ingestion. Approved logical_bindings links eligible Silver directly to its modeled Logical definitions.",
+    "object_relationship_context": "Use upstream Logical relationships joined through recorded bindings; do not relabel Bronze Analysis findings as Silver physical joins.",
+    "raw_mapping_documents": "Use binding identity links rather than full arbitrary Mapping transformation JSON for this catalog. They do not explain filters/calculations; rely on supplied Silver/Logical descriptions and Assertions, and treat missing semantics as unknown."
+  },
+  "proposed_defaults": {
+    "one_shot": {
+      "inline_variables": [
+        "gds_context",
+        "object_context",
+        "object_attribute_context",
+        "modeling_assertions",
+        "logical_bindings",
+        "logical_submodels",
+        "logical_entities",
+        "logical_attributes",
+        "logical_relationships",
+        "dimensional_submodels",
+        "dimensional_entities",
+        "dimensional_attributes",
+        "dimensional_relationships",
+        "naming_instructions",
+        "audit_columns",
+        "technical_columns"
+      ],
+      "tools": [],
+      "reason": "Sixteen full-detail/evidence/settings values; omit the eight compact directories because full records already include keys."
+    }
+  }
+}

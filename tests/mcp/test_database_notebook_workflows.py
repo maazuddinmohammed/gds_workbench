@@ -13,6 +13,7 @@ from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 
 from tests.mcp.database_test_support import require_row
+from tests.mcp.test_database_mapping_output_template_seed import seed_mapping_output_templates
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     _seed_code_generation_target,
@@ -128,13 +129,9 @@ NOTEBOOK_WORKFLOW_SHAPES = (
     NotebookWorkflowShape("analysis_inference", "analysis", "one_shot", "bronze", True),
     NotebookWorkflowShape("conceptual", "conceptual", "one_shot", "bronze", True),
     NotebookWorkflowShape("logical", "logical", "one_shot", "bronze", True),
-    NotebookWorkflowShape(
-        "dimensional", "dimensional", "one_shot", "mapped_silver", True
-    ),
+    NotebookWorkflowShape("dimensional", "dimensional", "one_shot", "mapped_silver", True),
     NotebookWorkflowShape("mapping", "mapping", "one_shot", "mapped_silver", True),
-    NotebookWorkflowShape(
-        "code_generation", "code_generation", None, "mapped_silver", True
-    ),
+    NotebookWorkflowShape("code_generation", "code_generation", None, "mapped_silver", True),
     NotebookWorkflowShape("validation", "validation", None, "mapped_system", True),
 )
 
@@ -833,9 +830,7 @@ def test_notebook_exact_claim_terminalizes_only_its_invalid_or_exhausted_target_
         assert claim["workflow_run_recovery_count"] == 0
         for expected_recovery_count in range(1, 6):
             _expire_claim(notebook_actor, workflow_run_id)
-            claim = require_row(
-                _start_and_claim(notebook_actor, context, workflow_run_id)
-            )
+            claim = require_row(_start_and_claim(notebook_actor, context, workflow_run_id))
             assert claim["workflow_run_recovery_count"] == expected_recovery_count
         _expire_claim(notebook_actor, workflow_run_id)
 
@@ -882,9 +877,7 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
     selected_system_codes: list[str] = []
     modeled_entity_type = None
     requested_batch_id = (
-        f"{shape.entrypoint}-batch"
-        if shape.workflow in {"profiling", "analysis"}
-        else None
+        f"{shape.entrypoint}-batch" if shape.workflow in {"profiling", "analysis"} else None
     )
     mapping_operation = None
     mapping_coverage_mode = None
@@ -896,6 +889,7 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
         target_id = _seed_code_generation_target(notebook_actor.database, context)
         selected_object_ids = [target_id]
         if shape.workflow == "mapping":
+            seed_mapping_output_templates(notebook_actor.database)
             with notebook_actor.database.connect_owner() as connection:
                 mapping_source_system_id = require_row(
                     connection.execute(
@@ -1011,9 +1005,7 @@ def test_notebook_create_and_exact_claim_accept_every_entrypoint_shape(
     assert created["workflow_run_state"] == "queued"
     assert created["correlation_id"] == correlation_id
     expected_scope_count = (
-        len(selected_system_codes)
-        if shape.workflow == "validation"
-        else len(selected_object_ids)
+        len(selected_system_codes) if shape.workflow == "validation" else len(selected_object_ids)
     )
     assert created["selected_scope_count"] == expected_scope_count
     assert (created["prompt_snapshot_count"] > 0) is shape.is_agentic
@@ -1108,7 +1100,7 @@ def test_notebook_workflow_acl_is_wrapper_only_and_verified(
         "character varying,character varying,character varying,character varying,integer,"
         "integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,"
         "character varying,"
-        "character varying,bigint,bigint,bigint,character varying,bigint)",
+        "character varying,bigint,bigint,bigint,character varying,bigint,jsonb)",
         "application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)",
         "application.claim_next_workflow_run(integer)",
         "application.claim_workflow_run_exact(bigint,character varying,integer)",

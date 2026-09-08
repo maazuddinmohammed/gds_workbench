@@ -180,6 +180,7 @@ SELECT jsonb_build_object(
 _MAPPING_TARGET_CONTEXT_SQL: LiteralString = """
 SELECT jsonb_build_object(
            'object_id', target_object.object_id,
+           'source_tenant_id', target_object.source_tenant_id,
            'tenant_id', target_tenant.tenant_id,
            'tenant_code', target_tenant.tenant_code,
            'tenant_catalog', target_tenant.tenant_catalog,
@@ -224,6 +225,7 @@ SELECT jsonb_build_object(
                           'attribute_id', attribute.attribute_id,
                           'attribute_name', attribute.attribute_name,
                           'attribute_data_type', attribute.attribute_data_type,
+                          'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
                           'attribute_nullability', attribute.attribute_nullability,
                           'attribute_ordinal_position', attribute.attribute_ordinal_position,
                           'attribute_description', attribute.attribute_description,
@@ -238,6 +240,7 @@ SELECT jsonb_build_object(
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s
    AND target_model.model_revision = %s
+   AND target_object.source_tenant_id = target_model.tenant_id
    AND target_model.is_active
 """
 
@@ -406,45 +409,9 @@ SELECT jsonb_build_object(
   ) AS mapping_attributes
 """
 
+# Input Scope contains Source/Bronze. Silver sources instead require an applied
+# Logical binding and Mapping; Source Tenant owns either independently of placement.
 _MAPPING_SOURCE_CONTEXT_SQL: LiteralString = """
-WITH selected_binding AS MATERIALIZED (
-    SELECT binding.*
-      FROM workflow.model_object_binding AS binding
-     WHERE binding.model_id = %s
-       AND binding.object_id = %s
-       AND binding.modeled_entity_type = %s
-       AND binding.model_object_binding_status = 'active'
-), source_reference AS MATERIALIZED (
-    SELECT source.logical_entity_source_mapping_id AS source_mapping_id,
-           source.logical_entity_id AS modeled_entity_id,
-           'support'::TEXT AS role,
-           source.logical_entity_source_mapping_rationale AS rationale,
-           source.logical_entity_source_mapping_order AS mapping_order,
-           source.logical_entity_source_mapping_is_locked AS is_locked,
-           source.source_object_id
-      FROM selected_binding AS binding
-      JOIN workflow.logical_entity_source_mapping AS source
-        ON binding.modeled_entity_type = 'logical_entity'
-       AND source.model_id = binding.model_id
-       AND source.logical_entity_id = binding.logical_entity_id
-       AND source.support_source_type = 'object'
-       AND source.logical_entity_source_mapping_status = 'active'
-     UNION ALL
-    SELECT source.dimensional_entity_source_mapping_id,
-           source.dimensional_entity_id,
-           source.dimensional_entity_source_role,
-           source.dimensional_entity_source_mapping_rationale,
-           source.dimensional_entity_source_mapping_order,
-           source.dimensional_entity_source_mapping_is_locked,
-           source.source_object_id
-      FROM selected_binding AS binding
-      JOIN workflow.dimensional_entity_source_mapping AS source
-        ON binding.modeled_entity_type = 'dimensional_entity'
-       AND source.model_id = binding.model_id
-       AND source.dimensional_entity_id = binding.dimensional_entity_id
-       AND source.support_source_type = 'object'
-       AND source.dimensional_entity_source_mapping_status = 'active'
-)
 SELECT jsonb_build_object(
            'source_mapping_id', source.source_mapping_id,
            'modeled_entity_id', source.modeled_entity_id,
@@ -454,6 +421,7 @@ SELECT jsonb_build_object(
            'is_locked', source.is_locked,
            'object', jsonb_build_object(
                'object_id', source_object.object_id,
+               'source_tenant_id', source_object.source_tenant_id,
                'tenant_id', source_placement_tenant.tenant_id,
                'tenant_code', source_placement_tenant.tenant_code,
                'tenant_catalog', source_placement_tenant.tenant_catalog,
@@ -470,19 +438,16 @@ SELECT jsonb_build_object(
                'object_description', source_object.object_description,
                'batch_attribute_name', source_object.batch_attribute_name,
                'zone_code', lower(btrim(source_zone.zone_code)),
-               'scope_is_locked', source_scope.model_input_scope_is_locked,
-               'scope_is_active', source_scope.is_active,
+               'scope_is_locked', source.scope_is_locked,
+               'scope_is_active', source.scope_is_active,
                'is_locked', source_object.is_locked,
                'is_active', source_object.is_active,
                'attributes', attributes.items
            )
        ) AS source
-  FROM source_reference AS source
+  FROM workflow.list_mapping_source_objects(%s, %s, %s, %s) AS source
   JOIN core.object AS source_object
     ON source_object.object_id = source.source_object_id
-  JOIN model.model_input_scope AS source_scope
-    ON source_scope.model_id = %s
-   AND source_scope.object_id = source_object.object_id
   JOIN core.connection AS source_connection
     ON source_connection.connection_id = source_object.connection_id
   JOIN core.tenant AS source_placement_tenant
@@ -498,6 +463,7 @@ SELECT jsonb_build_object(
                           'attribute_id', attribute.attribute_id,
                           'attribute_name', attribute.attribute_name,
                           'attribute_data_type', attribute.attribute_data_type,
+                          'attribute_inferred_data_type', attribute.attribute_inferred_data_type,
                           'attribute_nullability', attribute.attribute_nullability,
                           'attribute_ordinal_position', attribute.attribute_ordinal_position,
                           'attribute_description', attribute.attribute_description,
@@ -509,24 +475,6 @@ SELECT jsonb_build_object(
          FROM core.attribute AS attribute
         WHERE attribute.object_id = source_object.object_id
   ) AS attributes
- WHERE (
-           lower(btrim(source_zone.zone_code)) = 'source'
-           AND source_connection.system_id = %s
-       )
-    OR (
-           lower(btrim(source_zone.zone_code)) = 'bronze'
-           AND EXISTS (
-               SELECT 1
-                 FROM core.ingestion_object_mapping AS ingestion
-                 JOIN core.object AS original
-                   ON original.object_id = ingestion.source_object_id
-                 JOIN core.connection AS original_connection
-                   ON original_connection.connection_id = original.connection_id
-                WHERE ingestion.target_object_id = source_object.object_id
-                  AND ingestion.is_active
-                  AND original_connection.system_id = %s
-           )
-       )
  ORDER BY source.mapping_order NULLS LAST, source.source_mapping_id
  LIMIT 129
 """
@@ -723,8 +671,6 @@ class PostgresMappingRunContextRepository:
                 plan.model_id,
                 plan.pair.target_object_id,
                 plan.modeled_entity_type,
-                plan.model_id,
-                plan.pair.source_system_id,
                 plan.pair.source_system_id,
             ),
         )
@@ -798,8 +744,8 @@ class PostgresMappingRunContextRepository:
                 },
                 strict=False,
             )
-            if context.target.tenant_id != tenant_id or any(
-                source.object.tenant_id != tenant_id for source in context.sources
+            if context.target.source_tenant_id != tenant_id or any(
+                source.object.source_tenant_id != tenant_id for source in context.sources
             ):
                 raise MappingRunContextUnavailableError()
             return context

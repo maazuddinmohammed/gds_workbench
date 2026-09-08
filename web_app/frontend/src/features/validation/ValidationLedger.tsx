@@ -1,15 +1,18 @@
-import { useState } from "react";
+import type { ModelReviewSelection } from "../model_record_review/selection";
+import { useEffect, useRef, useState } from "react";
 
 import { ApiError } from "../../core/http";
 import type { ValidationValidationCheck, ValidationValidationGroup } from "./api";
 
 export function ValidationLedger({
+  selection,
   groups,
   modelRevision,
   loadedModelRevision,
   isLoading,
   error,
 }: {
+  selection?: ModelReviewSelection & { dataset: "validation_group" | "validation_check" };
   groups: ValidationValidationGroup[];
   modelRevision: number;
   loadedModelRevision: number | undefined;
@@ -17,6 +20,7 @@ export function ValidationLedger({
   error: Error | null;
 }) {
   const [expandedGroupIds, setExpandedGroupIds] = useState<Set<number>>(() => new Set());
+  const reviewButton = useRef<HTMLButtonElement | null>(null);
   const [selectedCheckId, setSelectedCheckId] = useState<number | null>(null);
   const checkCount = groups.reduce((total, group) => total + group.checks.length, 0);
   const revisionMismatch = loadedModelRevision !== undefined
@@ -26,11 +30,12 @@ export function ValidationLedger({
     <section className="workflow-surface validation-surface" aria-labelledby="validation-ledger-heading">
       <header className="validation-ledger-heading">
         <div>
-          <p className="eyebrow">Applied Validation ledger</p>
+          <p className="eyebrow">Applied check definitions</p>
           <h2 id="validation-ledger-heading">Validation Groups and Checks</h2>
         </div>
         <span>{groups.length} Groups · {checkCount} Checks</span>
       </header>
+      <p className="detail-empty-note">Authored checks · execution results are not recorded here.</p>
       {isLoading ? (
         <div className="surface-state" aria-busy="true">Loading applied Validation definitions…</div>
       ) : error instanceof ApiError && error.status === 403 ? (
@@ -53,15 +58,25 @@ export function ValidationLedger({
         <div className="validation-group-ledger">
           {groups.map((group) => {
             const expanded = expandedGroupIds.has(group.validation_group_id);
+            const selected = group.checks.find((check) => check.validation_check_id === selectedCheckId);
             const panelId = `validation-group-${group.validation_group_id}-checks`;
             return (
               <article className="validation-group" key={group.validation_group_id}>
                 <header className="validation-group-summary">
+                  {selection?.dataset === "validation_group" ? <input type="checkbox"
+                    aria-label={`Select Validation Group ${group.validation_group_id}`}
+                    checked={selection.selectedIds.has(group.validation_group_id)}
+                    onChange={(event) => {
+                      const ids = new Set(selection.selectedIds);
+                      if (event.target.checked) ids.add(group.validation_group_id); else ids.delete(group.validation_group_id);
+                      selection.onSelectionChange(ids);
+                    }} /> : null}
                   <button
                     type="button"
                     aria-expanded={expanded}
                     aria-controls={panelId}
                     onClick={() => {
+                      if (expanded && selected) setSelectedCheckId(null);
                       setExpandedGroupIds((current) => {
                         const next = new Set(current);
                         if (expanded) next.delete(group.validation_group_id);
@@ -77,8 +92,9 @@ export function ValidationLedger({
                     </span>
                   </button>
                   <div className="validation-group-statuses" aria-label={`${group.validation_group_name} status`}>
+                    <StateBadge value={group.is_locked ? "Locked" : "Open"} tone="neutral" />
                     <StateBadge value={group.is_active ? "Active" : "Inactive"} tone={group.is_active ? "success" : "neutral"} />
-                    <StateBadge value={group.validation_group_is_current ? "Current" : "Stale"} tone={group.validation_group_is_current ? "success" : "stale"} />
+                    <StateBadge value={group.validation_group_is_current ? "Definition current" : "Definition stale"} tone={group.validation_group_is_current ? "success" : "stale"} />
                     <StateBadge
                       value={group.mapping_context_is_current
                         ? "Mapping current"
@@ -100,6 +116,7 @@ export function ValidationLedger({
                         <table aria-label={`${group.validation_group_name} Validation Checks`}>
                           <thead>
                             <tr>
+                              {selection?.dataset === "validation_check" ? <th>Select</th> : null}
                               <th>Validation Check</th>
                               <th>Category</th>
                               <th>Severity</th>
@@ -111,6 +128,14 @@ export function ValidationLedger({
                           <tbody>
                             {group.checks.map((check) => (
                               <tr key={check.validation_check_id}>
+                                {selection?.dataset === "validation_check" ? <td>{selection?.dataset === "validation_check" ? <input type="checkbox"
+                    aria-label={`Select Validation Check ${check.validation_check_id}`}
+                    checked={selection.selectedIds.has(check.validation_check_id)}
+                    onChange={(event) => {
+                      const ids = new Set(selection.selectedIds);
+                      if (event.target.checked) ids.add(check.validation_check_id); else ids.delete(check.validation_check_id);
+                      selection.onSelectionChange(ids);
+                    }} /> : null}</td> : null}
                                 <td>
                                   <span className="validation-check-name">
                                     <strong>{check.validation_check_name}</strong>
@@ -120,17 +145,17 @@ export function ValidationLedger({
                                 <td><code>{check.validation_category_code}</code></td>
                                 <td><SeverityBadge severity={check.validation_severity} /></td>
                                 <td>{assertionLabel(check)}</td>
-                                <td><StateBadge value={check.is_active ? "Active" : "Inactive"} tone={check.is_active ? "success" : "neutral"} /></td>
+                                <td><StateBadge value={check.is_locked ? "Locked" : "Open"} tone="neutral" /><StateBadge value={check.is_active ? "Active" : "Inactive"} tone={check.is_active ? "success" : "neutral"} /></td>
                                 <td>
                                   <button
                                     className="generation-text-action"
                                     type="button"
                                     aria-expanded={selectedCheckId === check.validation_check_id}
-                                    onClick={() => setSelectedCheckId((current) => (
-                                      current === check.validation_check_id
-                                        ? null
-                                        : check.validation_check_id
-                                    ))}
+                                    aria-controls={`validation-check-${check.validation_check_id}-detail`}
+                                    onClick={(event) => {
+                                      reviewButton.current = event.currentTarget;
+                                      setSelectedCheckId((current) => current === check.validation_check_id ? null : check.validation_check_id);
+                                    }}
                                   >
                                     {selectedCheckId === check.validation_check_id ? "Hide details" : "Show details"}
                                   </button>
@@ -141,8 +166,11 @@ export function ValidationLedger({
                         </table>
                       </div>
                     )}
-                    {selectedCheck(group.checks, selectedCheckId) ? (
-                      <CheckDetail check={selectedCheck(group.checks, selectedCheckId)!} />
+                    {selected ? (
+                      <CheckDetail check={selected} onClose={() => {
+                        setSelectedCheckId(null);
+                        reviewButton.current?.focus();
+                      }} />
                     ) : null}
                   </div>
                 ) : null}
@@ -173,16 +201,25 @@ function codeContextBadge(group: ValidationValidationGroup): {
     : { value: "Code stale", tone: "stale" };
 }
 
-function CheckDetail({ check }: { check: ValidationValidationCheck }) {
+function CheckDetail({ check, onClose }: { check: ValidationValidationCheck; onClose: () => void }) {
+  const heading = useRef<HTMLHeadingElement>(null);
+  useEffect(() => heading.current?.focus(), [check.validation_check_id]);
   return (
-    <section className="validation-check-detail" aria-label={`${check.validation_check_name} details`}>
+    <section className="validation-check-detail" id={`validation-check-${check.validation_check_id}-detail`}
+      aria-label={`${check.validation_check_name} details`}
+      onKeyDown={(event) => {
+        if (event.key === "Escape") { event.preventDefault(); event.stopPropagation(); onClose(); }
+      }}
+    >
       <header>
         <div>
-          <small>Deterministic assertion</small>
-          <h4>{check.validation_check_name}</h4>
+          <small>Applied check definition</small>
+          <h4 ref={heading} tabIndex={-1}>{check.validation_check_name}</h4>
         </div>
-        <span>{assertionLabel(check)}</span>
+        <button type="button" className="text-action" onClick={onClose}>Close check details</button>
       </header>
+      <p className="validation-assertion-summary"><strong>Expected:</strong> Query A {assertionLabel(check)}</p>
+
       <div className="validation-query-grid">
         <div>
           <strong>Query A</strong>
@@ -195,17 +232,19 @@ function CheckDetail({ check }: { check: ValidationValidationCheck }) {
           </div>
         ) : null}
       </div>
+      <details className="support-record-details"><summary>Comparison details</summary>
       <dl className="validation-check-facts">
-        <div><dt>Result type</dt><dd>{check.validation_result_data_type ?? "Not applicable"}</dd></div>
-        <div><dt>Operand type</dt><dd>{humanize(check.validation_comparison_value_type)}</dd></div>
-        <div><dt>Comparison value</dt><dd><code>{comparisonValue(check.validation_comparison_value)}</code></dd></div>
+        <div><dt>Operator</dt><dd><code>{check.validation_comparison_operator}</code></dd></div>
+        <div><dt>Query result type</dt><dd>{check.validation_result_data_type ?? "Not recorded"}</dd></div>
+        <div><dt>Operand type</dt><dd><code>{check.validation_comparison_value_type}</code></dd></div>
+        {check.validation_comparison_value_type === "literal" || check.validation_comparison_value_type === "literal_list" ? (
+          <div><dt>Comparison value</dt><dd><code>{comparisonValue(check.validation_comparison_value)}</code></dd></div>
+        ) : null}
       </dl>
+      </details>
+
     </section>
   );
-}
-
-function selectedCheck(checks: ValidationValidationCheck[], checkId: number | null) {
-  return checks.find((check) => check.validation_check_id === checkId);
 }
 
 function assertionLabel(check: ValidationValidationCheck): string {
@@ -221,8 +260,8 @@ function assertionLabel(check: ValidationValidationCheck): string {
 }
 
 function comparisonValue(value: unknown): string {
-  if (value === null || value === undefined) return "Not applicable";
-  if (typeof value === "string") return value;
+  if (value === undefined) return "Not recorded";
+  if (typeof value === "string") return value === "" ? '""' : value;
   return JSON.stringify(value);
 }
 

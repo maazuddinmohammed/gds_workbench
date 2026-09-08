@@ -7,6 +7,11 @@ from uuid import UUID, uuid4
 
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
+from gds_etl_workbench.application.change_sets.contracts import (
+    canonical_records_sha256,
+    stage_batch_sha256,
+)
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import (
     CandidateDigestConflictError,
@@ -14,14 +19,6 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     TenantLockRequiredError,
 )
-from gds_etl_workbench.application.change_sets.contracts import (
-    canonical_records_sha256,
-    stage_batch_sha256,
-)
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from psycopg import Connection
-from psycopg.types.json import Jsonb
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis.service import (
     AnalysisInferenceWorkflow,
@@ -71,6 +68,8 @@ from gds_workbench_api.features.workflows.execution.repository import (
 )
 from gds_workbench_api.features.workflows.runs import DatabaseWorkflowRunService
 from gds_workbench_api.integrations.agents import LocalFakeAgentAdapter
+from psycopg import Connection
+from psycopg.types.json import Jsonb
 
 
 class DisposablePostgresFixture(Protocol):
@@ -1562,6 +1561,8 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
             idempotency_key=uuid4(),
         )
         assert validated.valid is True
+        assert validated.error_groups == ()
+        assert validated.errors_truncated is False
         applied = await service.apply(
             principal,
             tenant_id=tenant_id,
@@ -1573,6 +1574,7 @@ async def test_web_change_set_requires_lock_and_applies_with_null_provenance(
 
         code_content = "SELECT 'café' AS label;\nSELECT 1 AS result;"
         code_record: dict[str, object] = {
+            "generated_code_is_locked": False,
             "modeled_entity_type": "logical_entity",
             "modeled_entity_name": "Customer",
             "artifact_name": "fragmented_code.sql",

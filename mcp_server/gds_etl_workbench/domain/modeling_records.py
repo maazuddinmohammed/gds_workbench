@@ -897,6 +897,7 @@ class GeneratedCodeRecord(ModelingRecord):
     artifact_type: Literal["sql_file", "python_file", "python_notebook"]
     generated_code_content: NonblankText
     generated_code_status: Status
+    generated_code_is_locked: bool
 
     @model_validator(mode="after")
     def validate_content(self) -> GeneratedCodeRecord:
@@ -923,6 +924,7 @@ class GeneratedCodeSourceSystemRecord(ModelingRecord):
     artifact_name: Name400
     source_system_code: Code100
     generated_code_source_system_status: Status
+    generated_code_source_system_is_locked: bool
 
 
 class ValidationGroupRecord(ModelingRecord):
@@ -934,6 +936,7 @@ class ValidationGroupRecord(ModelingRecord):
     ]
     validation_group_description: NonblankText | None
     is_active: bool
+    is_locked: bool
 
     @field_validator("validation_group_description")
     @classmethod
@@ -993,6 +996,7 @@ class ValidationCheckRecord(ModelingRecord):
     ]
     validation_comparison_value: ValidationLiteral | tuple[ValidationLiteral, ...] | None
     is_active: bool
+    is_locked: bool
 
     @field_validator("validation_check_description")
     @classmethod

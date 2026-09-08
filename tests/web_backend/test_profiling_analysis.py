@@ -15,8 +15,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from psycopg import Connection
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.analysis import (
     AnalysisEndpoint,
@@ -29,6 +27,9 @@ from gds_workbench_api.features.analysis import (
     DatabaseAnalysisReviewService,
     create_analysis_review_router,
 )
+from gds_workbench_api.features.analysis.read_service import (
+    _normalize_analysis_summary,  # pyright: ignore[reportPrivateUsage]
+)
 from gds_workbench_api.features.profiling import (
     AttributeProfile,
     DatabaseProfilingReviewService,
@@ -39,6 +40,7 @@ from gds_workbench_api.features.profiling import (
     ProfilingObjectPage,
     create_profiling_router,
 )
+from psycopg import Connection
 
 
 class DisposablePostgres(Protocol):
@@ -293,9 +295,7 @@ def test_profiling_ledger_is_object_level_and_normalizes_filters() -> None:
     assert "attribute_profiles" not in payload["items"][0]
 
 
-def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> (
-    None
-):
+def test_profiling_object_detail_returns_normalized_profiles_with_nullable_provenance() -> None:
     app = FastAPI()
     app.include_router(
         create_profiling_router(
@@ -862,9 +862,7 @@ async def test_database_analysis_ledger_applies_directional_review_filters() -> 
 
 
 @pytest.mark.asyncio
-async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> (
-    None
-):
+async def test_database_analysis_detail_normalizes_evidence_and_nullable_provenance() -> None:
     service = DatabaseAnalysisReviewService(
         database=ReviewDatabase(),
         authorizer=AuthorizationService(),
@@ -892,6 +890,45 @@ async def test_database_analysis_detail_normalizes_evidence_and_nullable_provena
     )
     assert detail.from_endpoint.object_id == 501
     assert detail.to_endpoint.object_id == 502
+    assert detail.observed_cardinality == "many_to_one"
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("source_count", "source_distinct", "target_count", "target_distinct", "validated", "expected"),
+    [
+        (3, 3, 3, 3, True, "one_to_one"),
+        (99, 3, 3, 3, True, "many_to_one"),
+        (3, 3, 99, 3, True, "one_to_many"),
+        (99, 3, 99, 3, True, "many_to_many"),
+        (0, 0, 3, 3, True, None),
+        (3, 3, 0, 0, True, None),
+        (None, None, 3, 3, True, None),
+        (99, 3, 3, 3, False, None),
+    ],
+)
+async def test_analysis_cardinality_requires_recorded_nonempty_evidence(
+    source_count: int | None,
+    source_distinct: int | None,
+    target_count: int,
+    target_distinct: int,
+    validated: bool,
+    expected: str | None,
+) -> None:
+    row = await ReviewTransaction().fetch_one(
+        "SELECT * FROM workflow.analysis_result WHERE target_model.tenant_id = %s",
+        (7, 7, 18, 701),
+    )
+    assert row is not None
+    row.update(
+        validation_source_non_null_count=source_count,
+        validation_source_distinct_count=source_distinct,
+        validation_target_non_null_count=target_count,
+        validation_target_distinct_count=target_distinct,
+        validation_state="validated" if validated else "unvalidated",
+        validation_result="supported" if validated else None,
+    )
+    assert _normalize_analysis_summary(row).observed_cardinality == expected
 
 
 @pytest.mark.asyncio
@@ -904,9 +941,7 @@ async def test_database_review_labels_objects_from_source_tenant(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -1120,9 +1155,7 @@ async def test_database_review_labels_objects_from_source_tenant(
     assert [item.object_id for item in profile_page.items] == [bronze["object_id"]]
     assert profile_page.items[0].source_tenant_code == "DEMO_TENANT"
     assert profile_detail.source_tenant_code == "DEMO_TENANT"
-    assert [item.analysis_result_id for item in finding_page.items] == [
-        valid_finding_id
-    ]
+    assert [item.analysis_result_id for item in finding_page.items] == [valid_finding_id]
     assert finding_page.items[0].from_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_page.items[0].to_endpoint.source_tenant_code == "DEMO_TENANT"
     assert finding_detail.from_endpoint.source_tenant_code == "DEMO_TENANT"

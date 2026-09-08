@@ -177,6 +177,39 @@
       objectSet.has(core.stableStringify(JSON.parse(key).slice(0, 5)))));
   }
 
+  function retainsPhysicalReferences(previous, changed) {
+    if (core.stableStringify(previous) === core.stableStringify(changed)) return true;
+    if (!previous || !changed || typeof previous !== "object" || typeof changed !== "object" ||
+        Array.isArray(previous) || Array.isArray(changed) ||
+        !sameSet(new Set(Object.keys(previous)), new Set(Object.keys(changed)))) return false;
+    return Object.keys(previous).every((field) => {
+      const before = previous[field];
+      const after = changed[field];
+      if (core.stableStringify(before) === core.stableStringify(after)) return true;
+      if ((field === "is_locked" || field.endsWith("_is_locked")) &&
+          typeof before === "boolean" && typeof after === "boolean") return true;
+      if (field === "is_active" && before === true && after === false) return true;
+      if ((field === "status" || field.endsWith("_status")) &&
+          before === "active" && after === "inactive") return true;
+      return ["supports", "sources", "submodels"].includes(field) &&
+        Array.isArray(before) && Array.isArray(after) && before.length === after.length &&
+        before.every((item, index) => retainsPhysicalReferences(item, after[index]));
+    });
+  }
+
+  function historicalRecords(model) {
+    const retained = new Map();
+    for (const [name, value] of model) {
+      const baseline = new Map((value.baseline || []).map((record) => [
+        core.stableStringify(core.key("model", value.definition, record)), record,
+      ]));
+      retained.set(name, new Set((value.records || []).filter((record) =>
+        retainsPhysicalReferences(baseline.get(
+          core.stableStringify(core.key("model", value.definition, record))), record))));
+    }
+    return retained;
+  }
+
   function buildPhysicalCatalog(model, metadata, context) {
     if (!(metadata instanceof Map) || typeof context?.tenantCode !== "string") return null;
     const objects = [];
@@ -185,21 +218,27 @@
     for (const value of metadata.values()) {
       const type = recordType(value);
       const source = value.records || value.effective || value.baseline || [];
-      if (type === "object") objects.push(...source.filter((record) => record.is_active !== false));
-      else if (type === "attribute") attributes.push(...source.filter((record) => record.is_active !== false));
+      if (type === "object") objects.push(...source.filter((record) =>
+        normalized(record.source_tenant_code) === normalized(context.tenantCode)));
+      else if (type === "attribute") attributes.push(...source);
       else if (type === "system") systems.push(...source.filter((record) => record.is_active !== false));
     }
     const objectKeys = new Set(objects.map((record) => physicalKey(record)));
+    const activeObjectKeys = new Set(objects.filter((record) => record.is_active !== false)
+      .map((record) => physicalKey(record)));
     const attributeKeys = new Set(attributes
       .filter((record) => objectKeys.has(physicalKey(record)))
       .map((record) => physicalKey(record, true)));
+    const activeAttributeKeys = new Set(attributes.filter((record) => record.is_active !== false &&
+      activeObjectKeys.has(physicalKey(record))).map((record) => physicalKey(record, true)));
     const byZone = (zone) => new Set(objects
-      .filter((record) => normalized(record.zone_code) === zone)
+      .filter((record) => record.is_active !== false && normalized(record.zone_code) === zone)
       .map((record) => physicalKey(record)));
     const logicalTargets = byZone("silver");
     const dimensionalTargets = byZone("gold");
     const inputObjects = new Set(objects
-      .filter((record) => ["source", "bronze"].includes(normalized(record.zone_code)))
+      .filter((record) => record.is_active !== false &&
+        ["source", "bronze"].includes(normalized(record.zone_code)))
       .map((record) => physicalKey(record)));
 
     const baseline = (name) => records(model, name, "baseline");
@@ -211,7 +250,7 @@
       .map((record) => tuple([record.modeled_entity_type, record.source_system_code])));
     const activeObjectBindings = new Map(baseline("model_object_binding")
       .filter((record) => record.modeled_entity_type === "logical_entity" &&
-        active(record, "model_object_binding_status"))
+        active(record, "model_object_binding_status") && logicalTargets.has(physicalKey(record)))
       .map((record) => [entityKey(record), physicalKey(record)]));
     const activeMappingObjects = baseline("mapping_object").filter((record) =>
       record.modeled_entity_type === "logical_entity" && active(record, "object_mapping_status") &&
@@ -227,7 +266,7 @@
       .map((record) => {
         const object = activeObjectBindings.get(entityKey(record));
         return [attributeKey(record), object ? tuple([...JSON.parse(object), record.attribute_name]) : null];
-      }).filter(([, target]) => target));
+      }).filter(([, target]) => target && activeAttributeKeys.has(target)));
     const mappedAttributes = new Set(baseline("mapping_attribute")
       .filter((record) => active(record, "attribute_mapping_status") &&
         record.attribute_mapping_transformation_document !== null &&
@@ -243,13 +282,13 @@
       objects: objectKeys,
       attributes: attributeKeys,
       inputObjects,
-      inputAttributes: attributesFor(attributeKeys, inputObjects),
+      inputAttributes: attributesFor(activeAttributeKeys, inputObjects),
       dimensionalSourceObjects,
       dimensionalSourceAttributes,
       logicalTargets,
-      logicalTargetAttributes: attributesFor(attributeKeys, logicalTargets),
+      logicalTargetAttributes: attributesFor(activeAttributeKeys, logicalTargets),
       dimensionalTargets,
-      dimensionalTargetAttributes: attributesFor(attributeKeys, dimensionalTargets),
+      dimensionalTargetAttributes: attributesFor(activeAttributeKeys, dimensionalTargets),
     };
   }
 
@@ -271,14 +310,18 @@
     return left.size === right.size && [...left].every((value) => right.has(value));
   }
 
-  function validateBindings(model, catalog, issues) {
+  function validateBindings(model, catalog, issues, historical) {
     const entityTargets = new Map();
     const allEntityTargets = new Map();
+    const retainedEntities = new Set();
+    const retainedAttributes = new Set();
     const usedObjects = new Set();
     for (const record of records(model, "model_object_binding")) {
       const entity = entityKey(record);
       const target = physicalKey(record);
-      const eligible = record.modeled_entity_type === "logical_entity"
+      const retained = historical.get("model_object_binding")?.has(record);
+      if (retained) retainedEntities.add(entity);
+      const eligible = retained ? catalog.objects : record.modeled_entity_type === "logical_entity"
         ? catalog.logicalTargets : catalog.dimensionalTargets;
       if (!eligible.has(target)) scopeIssue(issues, "model_object_binding", "object_name",
         "Bound target Object is not eligible for its modeled layer.");
@@ -291,6 +334,7 @@
       entityTargets.set(entity, target);
     }
     const attributeTargets = new Map();
+    const allAttributeTargets = new Map();
     const usedAttributes = new Set();
     for (const record of records(model, "model_attribute_binding")) {
       const entity = entityKey(record);
@@ -301,7 +345,10 @@
         continue;
       }
       const target = tuple([...JSON.parse(object), record.attribute_name]);
-      const eligible = record.modeled_entity_type === "logical_entity"
+      allAttributeTargets.set(attributeKey(record), target);
+      const retained = historical.get("model_attribute_binding")?.has(record) &&
+        retainedEntities.has(entity);
+      const eligible = retained ? catalog.attributes : record.modeled_entity_type === "logical_entity"
         ? catalog.logicalTargetAttributes : catalog.dimensionalTargetAttributes;
       if (!eligible.has(target)) scopeIssue(issues, "model_attribute_binding", "attribute_name",
         "Bound target Attribute is not eligible for its modeled layer.");
@@ -316,6 +363,7 @@
         "An active physical Attribute can bind to only one modeled Attribute.");
       usedAttributes.add(target);
       attributeTargets.set(attributeKey(record), target);
+      if (retained && catalog.attributes.has(target)) retainedAttributes.add(target);
     }
     const activeAttributes = new Set([
       ...records(model, "logical_attribute")
@@ -336,13 +384,15 @@
         ? catalog.logicalTargetAttributes : catalog.dimensionalTargetAttributes;
       const expectedPhysical = new Set([...eligible].filter((key) =>
         core.stableStringify(JSON.parse(key).slice(0, 5)) === object));
+      for (const target of retainedAttributes) if (
+        core.stableStringify(JSON.parse(target).slice(0, 5)) === object) expectedPhysical.add(target);
       const boundPhysical = new Set([...attributeTargets]
         .filter(([key]) => belongs(key)).map(([, target]) => target));
       if (!sameSet(boundPhysical, expectedPhysical)) issue(issues, "binding_coverage_missing",
         "model_attribute_binding", "attribute_name",
         "An active Object Binding requires one active Binding for every active physical Attribute.");
     }
-    return { entityTargets, attributeTargets };
+    return { entityTargets, attributeTargets, allEntityTargets, allAttributeTargets };
   }
 
   function splitSql(sql) {
@@ -521,6 +571,8 @@
 
   function validatePhysicalScope(model, catalog) {
     const issues = [];
+    const historical = historicalRecords(model);
+    const retained = (dataset, record) => historical.get(dataset)?.has(record) === true;
     const details = records(model, "model_details");
     if (details.length !== 1) issue(issues, "model_details_invalid", "model_details", null,
       "The future Model must contain exactly one Model details record.");
@@ -532,17 +584,20 @@
       const key = physicalKey(record);
       if (!catalog.objects.has(key)) scopeIssue(issues, "model_input_scope", "object_name",
         "Referenced physical Object is not available to this Model Tenant.");
-      else if (!catalog.inputObjects.has(key)) scopeIssue(issues, "model_input_scope", "object_name",
+      else if (!retained("model_input_scope", record) && !catalog.inputObjects.has(key))
+        scopeIssue(issues, "model_input_scope", "object_name",
         "Model Input Scope accepts only Source or Bronze Objects.");
-      else if (record.is_active) activeInputs.add(key);
+      else if (record.is_active && catalog.inputObjects.has(key)) activeInputs.add(key);
     }
     const activeInputAttributes = attributesFor(catalog.inputAttributes, activeInputs);
     for (const record of records(model, "profiling_profile"))
-      if (!activeInputAttributes.has(physicalKey(record, true))) scopeIssue(issues,
+      if (!(retained("profiling_profile", record) ? catalog.attributes : activeInputAttributes)
+        .has(physicalKey(record, true))) scopeIssue(issues,
         "profiling_profile", "attribute_name", "Profile Attribute is not in active Model Input Scope.");
     for (const record of records(model, "analysis_result"))
       for (const endpoint of ["from", "to"])
-        if (!activeInputAttributes.has(prefixedPhysicalKey(record, endpoint, true))) scopeIssue(
+        if (!(retained("analysis_result", record) ? catalog.attributes : activeInputAttributes)
+          .has(prefixedPhysicalKey(record, endpoint, true))) scopeIssue(
           issues, "analysis_result", `${endpoint}_attribute_name`,
           "Analysis Attribute is not in active Model Input Scope.");
     for (const record of records(model, "modeling_assertion_document")) {
@@ -561,34 +616,56 @@
     };
     for (const name of ["conceptual_object", "conceptual_relationship"])
       for (const record of records(model, name))
-        for (const source of record.supports || []) requireSource(source, name, activeInputs,
-          activeInputAttributes, "Physical support is not in active Model Input Scope.");
+        for (const source of record.supports || []) requireSource(source, name,
+          retained(name, record) ? catalog.objects : activeInputs,
+          retained(name, record) ? catalog.attributes : activeInputAttributes,
+          "Physical support is not in active Model Input Scope.");
     for (const name of ["logical_entity", "logical_attribute"])
       for (const record of records(model, name))
-        for (const source of record.sources || []) requireSource(source, name, activeInputs,
-          activeInputAttributes, name === "logical_entity"
+        for (const source of record.sources || []) requireSource(source, name,
+          retained(name, record) ? catalog.objects : activeInputs,
+          retained(name, record) ? catalog.attributes : activeInputAttributes,
+          name === "logical_entity"
             ? "Logical source Object is not in active Model Input Scope."
             : "Logical source Attribute is not in active Model Input Scope.");
 
-    const bindings = validateBindings(model, catalog, issues);
+    const bindings = validateBindings(model, catalog, issues, historical);
+    for (const name of ["mapping_object", "mapping_attribute", "generated_code",
+      "generated_code_source_system"]) {
+      for (const record of records(model, name)) {
+        if (retained(name, record)) continue;
+        const isAttribute = name === "mapping_attribute";
+        const target = isAttribute ? bindings.allAttributeTargets.get(attributeKey(record)) :
+          bindings.allEntityTargets.get(entityKey(record));
+        const eligible = record.modeled_entity_type === "logical_entity"
+          ? (isAttribute ? catalog.logicalTargetAttributes : catalog.logicalTargets)
+          : (isAttribute ? catalog.dimensionalTargetAttributes : catalog.dimensionalTargets);
+        if (target && !eligible.has(target)) scopeIssue(issues, name,
+          isAttribute ? "model_attribute_binding" : "model_object_binding",
+          `New or changed authoring requires an eligible active physical target ${
+            isAttribute ? "Attribute" : "Object"}.`);
+      }
+    }
     const dimensionalObjects = new Set(catalog.dimensionalSourceObjects);
     const dimensionalAttributes = new Set(catalog.dimensionalSourceAttributes);
     for (const record of records(model, "mapping_object")) {
       if (active(record, "object_mapping_status") && record.modeled_entity_type === "logical_entity") {
         const target = bindings.entityTargets.get(entityKey(record));
-        if (target) dimensionalObjects.add(target);
+        if (target && catalog.logicalTargets.has(target)) dimensionalObjects.add(target);
       }
     }
     for (const record of records(model, "mapping_attribute")) {
       if (active(record, "attribute_mapping_status") && record.modeled_entity_type === "logical_entity") {
         const target = bindings.attributeTargets.get(attributeKey(record));
-        if (target) dimensionalAttributes.add(target);
+        if (target && catalog.logicalTargetAttributes.has(target)) dimensionalAttributes.add(target);
       }
     }
     for (const name of ["dimensional_entity", "dimensional_attribute"])
       for (const record of records(model, name))
-        for (const source of record.sources || []) requireSource(source, name, dimensionalObjects,
-          dimensionalAttributes, "Dimensional source requires an active Silver Logical contribution.");
+        for (const source of record.sources || []) requireSource(source, name,
+          retained(name, record) ? catalog.objects : dimensionalObjects,
+          retained(name, record) ? catalog.attributes : dimensionalAttributes,
+          "Dimensional source requires an active Silver Logical contribution.");
 
     for (const name of ["mapping_dependency", "mapping_object", "mapping_attribute",
       "generated_code_source_system"])
@@ -760,6 +837,36 @@
       ...records(model, "dimensional_attribute").filter((record) =>
         active(record, "dimensional_attribute_status")).map(attributeKey),
     ]);
+    const activeConcepts = new Set(records(model, "conceptual_object")
+      .filter((record) => active(record, "conceptual_object_status"))
+      .map((record) => normalized(record.conceptual_object_name)));
+    for (const record of records(model, "conceptual_relationship")) {
+      if (active(record, "conceptual_relationship_status") &&
+          [record.from_conceptual_object_name, record.to_conceptual_object_name]
+            .some((name) => !activeConcepts.has(normalized(name)))) invalid(
+        "conceptual_relationship", "conceptual_object_name",
+        "Active Conceptual Relationship requires active endpoint Objects.");
+    }
+    for (const layer of ["logical", "dimensional"]) {
+      const label = layer === "logical" ? "Logical" : "Dimensional";
+      for (const record of records(model, `${layer}_attribute`)) {
+        if (active(record, `${layer}_attribute_status`) &&
+            !activeEntities.has(entityKey(record))) invalid(
+          `${layer}_attribute`, `${layer}_entity_name`,
+          `Active ${label} Attribute requires an active parent Entity.`);
+      }
+      for (const record of records(model, `${layer}_relationship`)) {
+        if (!active(record, `${layer}_relationship_status`)) continue;
+        if (["from", "to"].some((prefix) => {
+          const entity = record[`${prefix}_${layer}_entity_name`];
+          return !activeEntities.has(tuple([`${layer}_entity`, entity])) ||
+            !activeAttributes.has(tuple([
+              `${layer}_entity`, entity, record[`${prefix}_${layer}_attribute_name`],
+            ]));
+        })) invalid(`${layer}_relationship`, `${layer}_attribute_name`,
+          `Active ${label} Relationship requires active endpoint Attributes and Entities.`);
+      }
+    }
     const objectBindings = new Set(records(model, "model_object_binding")
       .filter((record) => active(record, "model_object_binding_status")).map(entityKey));
     const attributeBindings = new Set(records(model, "model_attribute_binding")
@@ -819,6 +926,8 @@
       .filter((record) => active(record, "generated_code_status"))
       .map((record) => [artifactKey(record), record]));
     const assignments = new Map();
+    const codeAuthoringEntities = new Set(["generated_code", "generated_code_source_system"]
+      .flatMap((dataset) => records(model, dataset, "pending")).map(entityKey));
     for (const record of artifacts.values()) if (!objectBindings.has(entityKey(record))) invalid(
       "generated_code", "model_object_binding",
       "Active Code artifact requires an active Object Binding.");
@@ -836,10 +945,13 @@
     }
     for (const [entity, systems] of mappingSystems) {
       if (![...artifacts.values()].some((record) => entityKey(record) === entity)) continue;
-      for (const system of systems)
-        if (assignments.get(tuple([...JSON.parse(entity), system])) !== 1) invalid(
+      for (const system of systems) {
+        // Mapping can make unchanged Code stale; newly authored Code needs exact coverage.
+        const count = assignments.get(tuple([...JSON.parse(entity), system])) || 0;
+        if (count > 1 || (count === 0 && codeAuthoringEntities.has(entity))) invalid(
           "generated_code_source_system", "source_system_code",
           "Each mapped source System must be assigned to exactly one active artifact.");
+      }
     }
     const groups = new Set(records(model, "validation_group")
       .filter((record) => record.is_active).map(validationGroupKey));
@@ -878,5 +990,6 @@
     validatePhysicalScope,
     validateReferences,
     validateReadSql,
+    retainsPhysicalReferences,
   };
 });

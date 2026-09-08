@@ -89,6 +89,7 @@ def test_combined_image_context_excludes_local_and_generated_content() -> None:
         "**/.pytest_cache",
         "**/.ruff_cache",
         "**/.venv",
+        ".venv-notebooks",
         "**/dist",
         "**/node_modules",
         "database",
@@ -172,9 +173,13 @@ def test_database_initializer_uses_exact_canonical_order_and_no_destructive_sql(
     assert "03_local_super_admin.template.sql" in initializer
     assert "04_application_reference.sql" in initializer
     assert "05_global_prompt_defaults.template.sql" in initializer
+    assert "07_global_mapping_output_templates.template.sql" in initializer
     assert initializer.index("03_local_super_admin.template.sql") < initializer.index(
         "05_global_prompt_defaults.template.sql"
     )
+    assert initializer.index(
+        "05_global_prompt_defaults.template.sql"
+    ) < initializer.index("07_global_mapping_output_templates.template.sql")
     assert not re.search(r"\b(?:DROP|TRUNCATE|RESET)\b", initializer, re.IGNORECASE)
 
 
@@ -198,12 +203,16 @@ def test_documented_fresh_install_matches_the_exact_canonical_database_release()
     assert "\\password gds_web_runtime" in guide
     assert "database/seed/04_application_reference.sql" in guide
     assert "database/seed/05_global_prompt_defaults.template.sql" in guide
+    assert "database/seed/07_global_mapping_output_templates.template.sql" in guide
     assert guide.index("database/20_verify_install.sql") < guide.index(
         "database/seed/04_application_reference.sql"
     )
     assert guide.index("database/seed/04_application_reference.sql") < guide.index(
         "database/seed/05_global_prompt_defaults.template.sql"
     )
+    assert guide.index(
+        "database/seed/05_global_prompt_defaults.template.sql"
+    ) < guide.index("database/seed/07_global_mapping_output_templates.template.sql")
 
 
 def test_mcp_runbook_recovers_from_a_locked_windows_azure_cli_profile() -> None:
@@ -286,7 +295,7 @@ def test_current_architecture_counts_match_checked_in_contracts() -> None:
     assert "defines three non-login, non-superuser group roles" in database_architecture
     assert "`ChangeSetsFeature` draft-expiry worker" not in database_architecture
     assert "post-lock PostgreSQL wall-clock" in database_architecture
-    assert "exactly 35 governed MCP tools" in mcp_architecture
+    assert "exactly 37 governed MCP tools" in mcp_architecture
     assert "tool-contract" not in mcp_architecture
     assert "Ten read-only MCP tools" not in mcp_architecture
     assert "No write or Tenant Lock MCP tool is registered" not in mcp_architecture

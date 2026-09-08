@@ -6,6 +6,60 @@ import { MetadataRowEditor } from "./MetadataRowSurface";
 import type { MetadataDatasetDescription, MetadataRowSchema } from "./api";
 
 describe("Metadata row editor", () => {
+  it.each([
+    { inferredType: "bigint", locked: true },
+    { inferredType: null, locked: false },
+  ])("preserves inferred type $inferredType and lock $locked when staging another field", async ({ inferredType, locked }) => {
+    const user = userEvent.setup();
+    const onStage = vi.fn(async () => undefined);
+    const baseRow = {
+      tenant_code: "NWA",
+      zone_code: "source",
+      attribute_name: "customer_id",
+      attribute_description: "Customer identifier",
+      attribute_data_type: "string",
+      attribute_inferred_data_type: inferredType,
+      is_locked: locked,
+      is_active: true,
+      is_masking_required: false,
+      is_natural_key: true,
+    };
+    const columns = Object.keys(baseRow);
+    render(
+      <MetadataRowEditor
+        mode="edit"
+        descriptor={{ ...descriptor, dataset: "source_attribute", label: "Source Attributes",
+          columns, natural_key: ["tenant_code", "attribute_name"] }}
+        rowSchema={{
+          type: "object",
+          additionalProperties: false,
+          properties: Object.fromEntries(columns.map((field) => [field,
+            field === "attribute_inferred_data_type"
+              ? { anyOf: [{ type: "string", maxLength: 100 }, { type: "null" }] }
+              : field.startsWith("is_") ? { type: "boolean" } : { type: "string" },
+          ])),
+          required: columns,
+        }}
+        fixedValues={{ zone_code: "source" }}
+        baseRow={baseRow}
+        isSaving={false}
+        onClose={() => undefined}
+        onStage={onStage}
+      />,
+    );
+    expect(screen.getByLabelText("Storage type")).toHaveValue("string");
+    expect(screen.getByLabelText("Inferred type")).toHaveValue(inferredType ?? "");
+    expect(screen.getByLabelText("Is Locked")).toHaveValue(String(locked));
+    expect(screen.getByLabelText("Zone Code")).toBeDisabled();
+    if (inferredType === null) expect(screen.getByLabelText("Set Inferred type to null")).toBeChecked();
+    await user.clear(screen.getByLabelText("Attribute Description"));
+    await user.type(screen.getByLabelText("Attribute Description"), "Identifier supplied by CRM");
+    await user.click(screen.getByRole("button", { name: "Stage complete row" }));
+    expect(onStage).toHaveBeenCalledWith({
+      ...baseRow, attribute_description: "Identifier supplied by CRM",
+    }, '["NWA","customer_id"]');
+  });
+
   it("stages a valid multi-character value from a JSON Schema search pattern", async () => {
     const onStage = vi.fn(async () => undefined);
     const user = userEvent.setup();

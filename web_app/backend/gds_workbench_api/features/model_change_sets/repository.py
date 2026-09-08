@@ -8,6 +8,244 @@ from uuid import UUID
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
 from psycopg.types.json import Jsonb
 
+_AUTHORIZE_RECORD_REVIEW_SQL: LiteralString = """
+SELECT denial_code, principal_id, model_id, tenant_id, model_name, model_revision
+  FROM application.authorize_model_record_review(%s, %s, 'user', %s, %s)
+"""
+
+_REVIEW_ANALYSIS_SQL: LiteralString = """
+SELECT result.*,
+       from_tenant.tenant_code AS from_tenant_code,
+       from_system.system_code AS from_system_code,
+       from_connection.connection_code AS from_connection_code,
+       from_object.object_schema AS from_object_schema,
+       from_object.object_name AS from_object_name,
+       from_attribute.attribute_name AS from_attribute_name,
+       to_tenant.tenant_code AS to_tenant_code,
+       to_system.system_code AS to_system_code,
+       to_connection.connection_code AS to_connection_code,
+       to_object.object_schema AS to_object_schema,
+       to_object.object_name AS to_object_name,
+       to_attribute.attribute_name AS to_attribute_name
+  FROM workflow.analysis_result AS result
+  JOIN core.object AS from_object ON from_object.object_id = result.from_object_id
+  JOIN core.connection AS from_connection
+    ON from_connection.connection_id = from_object.connection_id
+  JOIN core.tenant AS from_tenant ON from_tenant.tenant_id = from_connection.tenant_id
+  JOIN core.system AS from_system ON from_system.system_id = from_connection.system_id
+  JOIN core.attribute AS from_attribute
+    ON from_attribute.attribute_id = result.from_attribute_id
+   AND from_attribute.object_id = result.from_object_id
+  JOIN core.object AS to_object ON to_object.object_id = result.to_object_id
+  JOIN core.connection AS to_connection
+    ON to_connection.connection_id = to_object.connection_id
+  JOIN core.tenant AS to_tenant ON to_tenant.tenant_id = to_connection.tenant_id
+  JOIN core.system AS to_system ON to_system.system_id = to_connection.system_id
+  JOIN core.attribute AS to_attribute
+    ON to_attribute.attribute_id = result.to_attribute_id
+   AND to_attribute.object_id = result.to_object_id
+ WHERE result.model_id = %s AND result.analysis_result_id = ANY(%s::BIGINT[])
+ ORDER BY result.analysis_result_id
+ FOR UPDATE OF result
+"""
+
+_APPLY_ANALYSIS_REVIEW_SQL: LiteralString = """
+UPDATE workflow.analysis_result
+   SET analysis_result_is_locked = %s,
+       analysis_result_status = %s,
+       updated_time = CURRENT_TIMESTAMP,
+       updated_by = %s
+ WHERE model_id = %s AND analysis_result_id = %s
+RETURNING analysis_result_id
+"""
+
+_APPLY_CONCEPTUAL_OBJECT_REVIEW_SQL: LiteralString = """
+UPDATE workflow.conceptual_object
+   SET conceptual_object_is_locked = %s, conceptual_object_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE model_id = %s AND conceptual_object_id = %s
+RETURNING conceptual_object_id
+"""
+
+_APPLY_CONCEPTUAL_RELATIONSHIP_REVIEW_SQL: LiteralString = """
+UPDATE workflow.conceptual_relationship
+   SET conceptual_relationship_is_locked = %s, conceptual_relationship_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE model_id = %s AND conceptual_relationship_id = %s
+RETURNING conceptual_relationship_id
+"""
+
+_APPLY_OTHER_REVIEWS_SQL: dict[str, LiteralString] = {
+    "logical_submodel": """
+UPDATE workflow.logical_submodel AS target
+   SET logical_submodel_is_locked = %s, logical_submodel_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.logical_submodel_id = %s
+RETURNING target.logical_submodel_id
+""",
+    "logical_entity": """
+UPDATE workflow.logical_entity AS target
+   SET logical_entity_is_locked = %s, logical_entity_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.logical_entity_id = %s
+RETURNING target.logical_entity_id
+""",
+    "logical_attribute": """
+UPDATE workflow.logical_attribute AS target
+   SET logical_attribute_is_locked = %s, logical_attribute_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.logical_attribute_id = %s
+RETURNING target.logical_attribute_id
+""",
+    "logical_relationship": """
+UPDATE workflow.logical_relationship AS target
+   SET logical_relationship_is_locked = %s, logical_relationship_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.logical_relationship_id = %s
+RETURNING target.logical_relationship_id
+""",
+    "dimensional_submodel": """
+UPDATE workflow.dimensional_submodel AS target
+   SET dimensional_submodel_is_locked = %s, dimensional_submodel_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.dimensional_submodel_id = %s
+RETURNING target.dimensional_submodel_id
+""",
+    "dimensional_entity": """
+UPDATE workflow.dimensional_entity AS target
+   SET dimensional_entity_is_locked = %s, dimensional_entity_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.dimensional_entity_id = %s
+RETURNING target.dimensional_entity_id
+""",
+    "dimensional_attribute": """
+UPDATE workflow.dimensional_attribute AS target
+   SET dimensional_attribute_is_locked = %s, dimensional_attribute_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.dimensional_attribute_id = %s
+RETURNING target.dimensional_attribute_id
+""",
+    "dimensional_relationship": """
+UPDATE workflow.dimensional_relationship AS target
+   SET dimensional_relationship_is_locked = %s, dimensional_relationship_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.dimensional_relationship_id = %s
+RETURNING target.dimensional_relationship_id
+""",
+    "model_object_binding": """
+UPDATE workflow.model_object_binding AS target
+   SET model_object_binding_is_locked = %s, model_object_binding_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.model_object_binding_id = %s
+RETURNING target.model_object_binding_id
+""",
+    "model_attribute_binding": """
+UPDATE workflow.model_attribute_binding AS target
+   SET model_attribute_binding_is_locked = %s, model_attribute_binding_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE EXISTS (SELECT 1 FROM workflow.model_object_binding b
+       WHERE b.model_object_binding_id = target.model_object_binding_id
+         AND b.model_id = %s)
+   AND target.model_attribute_binding_id = %s
+RETURNING target.model_attribute_binding_id
+""",
+    "mapping_dependency": """
+UPDATE workflow.mapping_source_system_dependency AS target
+   SET mapping_source_system_dependency_is_locked = %s,
+       mapping_source_system_dependency_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.mapping_source_system_dependency_id = %s
+RETURNING target.mapping_source_system_dependency_id
+""",
+    "mapping_object": """
+UPDATE workflow.mapping_object AS target
+   SET object_mapping_is_locked = %s, object_mapping_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.mapping_object_id = %s
+RETURNING target.mapping_object_id
+""",
+    "mapping_attribute": """
+UPDATE workflow.mapping_attribute AS target
+   SET attribute_mapping_is_locked = %s, attribute_mapping_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE EXISTS (SELECT 1 FROM workflow.mapping_object m
+       WHERE m.mapping_object_id = target.mapping_object_id
+         AND m.model_id = %s)
+   AND target.mapping_attribute_id = %s
+RETURNING target.mapping_attribute_id
+""",
+    "generated_code": """
+UPDATE workflow.generated_code AS target
+   SET generated_code_is_locked = %s, generated_code_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE EXISTS (SELECT 1 FROM workflow.model_object_binding b
+       WHERE b.model_object_binding_id = target.model_object_binding_id
+         AND b.model_id = %s)
+   AND target.generated_code_id = %s
+RETURNING target.generated_code_id
+""",
+    "generated_code_source_system": """
+UPDATE workflow.generated_code_source_system AS target
+   SET generated_code_source_system_is_locked = %s, generated_code_source_system_status = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE EXISTS (SELECT 1 FROM workflow.generated_code c
+        JOIN workflow.model_object_binding b
+          ON b.model_object_binding_id = c.model_object_binding_id
+       WHERE c.generated_code_id = target.generated_code_id
+         AND b.model_id = %s)
+   AND target.generated_code_source_system_id = %s
+RETURNING target.generated_code_source_system_id
+""",
+    "validation_group": """
+UPDATE workflow.validation_group AS target
+   SET is_locked = %s, is_active = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE target.model_id = %s
+   AND target.validation_group_id = %s
+RETURNING target.validation_group_id
+""",
+    "validation_check": """
+UPDATE workflow.validation_check AS target
+   SET is_locked = %s, is_active = %s,
+       updated_time = CURRENT_TIMESTAMP, updated_by = %s
+ WHERE EXISTS (SELECT 1 FROM workflow.validation_group g
+       WHERE g.validation_group_id = target.validation_group_id
+         AND g.model_id = %s)
+   AND target.validation_check_id = %s
+RETURNING target.validation_check_id
+""",
+}
+
+_REPLAY_REVIEW_SQL: LiteralString = """
+SELECT change_set.model_change_set_id, event.action_count, event.event_metadata
+  FROM mcp.model_change_set AS change_set
+  JOIN mcp.model_change_set_event AS event
+    ON event.model_change_set_id = change_set.model_change_set_id
+   AND event.event_type = 'applied'
+   AND event.outcome IN ('review_applied', 'bindings_applied', 'scope_added')
+ WHERE change_set.model_id = %s
+   AND change_set.created_by_principal_id = %s
+   AND change_set.correlation_id = %s
+   AND change_set.model_change_set_status = 'applied'
+"""
+
+_RUNNING_TENANT_WORKFLOW_SQL: LiteralString = """
+SELECT workflow_run_id FROM application.workflow_run
+ WHERE tenant_id = %s AND workflow_run_state = 'running'
+ LIMIT 1
+"""
+
 _MODEL_CONTEXT_SQL: LiteralString = """
 SELECT target_model.model_id,
        target_model.tenant_id,
@@ -171,12 +409,14 @@ _GET_CHANGE_SET_FOR_UPDATE_SQL: LiteralString = _GET_CHANGE_SET_SQL + " FOR UPDA
 
 _STAGE_SQL: LiteralString = """
 UPDATE mcp.model_change_set
-   SET profiling_document = %s,
+   SET model_input_scope_document = %s,
+       profiling_document = %s,
        analysis_document = %s,
        assertion_document = %s,
        conceptual_document = %s,
        logical_document = %s,
        dimensional_document = %s,
+       model_binding_document = %s,
        mapping_document = %s,
        code_generation_document = %s,
        validation_document = %s,
@@ -403,6 +643,59 @@ class PostgresModelChangeSetRepository:
     async def get_model(self, *, tenant_id: int, model_id: int) -> dict[str, Any] | None:
         return await self._transaction.fetch_one(_MODEL_CONTEXT_SQL, (tenant_id, model_id))
 
+    async def authorize_record_review(
+        self,
+        *,
+        entra_tenant_id: UUID,
+        entra_object_id: UUID,
+        tenant_id: int,
+        model_id: int,
+    ) -> dict[str, Any] | None:
+        return await self._transaction.fetch_one(
+            _AUTHORIZE_RECORD_REVIEW_SQL,
+            (entra_tenant_id, entra_object_id, tenant_id, model_id),
+        )
+
+    async def read_analysis_review_records(
+        self, *, model_id: int, record_ids: list[int]
+    ) -> list[dict[str, Any]]:
+        return await self._transaction.fetch_all(_REVIEW_ANALYSIS_SQL, (model_id, record_ids))
+
+    async def apply_record_review(
+        self, *, dataset: str, model_id: int, record_id: int, locked: bool, status: str, actor: str
+    ) -> dict[str, Any] | None:
+        queries: dict[str, LiteralString] = {
+            **_APPLY_OTHER_REVIEWS_SQL,
+            "analysis_result": _APPLY_ANALYSIS_REVIEW_SQL,
+            "conceptual_object": _APPLY_CONCEPTUAL_OBJECT_REVIEW_SQL,
+            "conceptual_relationship": _APPLY_CONCEPTUAL_RELATIONSHIP_REVIEW_SQL,
+        }
+        return await self._transaction.fetch_one(
+            queries[dataset],
+            (
+                locked,
+                status == "active"
+                if dataset in {"validation_group", "validation_check"}
+                else status,
+                actor,
+                model_id,
+                record_id,
+            ),
+        )
+
+    async def replay_review(
+        self, *, model_id: int, principal_id: int, correlation_id: UUID
+    ) -> dict[str, Any] | None:
+        return await self._transaction.fetch_one(
+            _REPLAY_REVIEW_SQL, (model_id, principal_id, correlation_id)
+        )
+
+    async def has_running_tenant_workflow(self, *, tenant_id: int) -> bool:
+        return (
+            await self._transaction.fetch_one(_RUNNING_TENANT_WORKFLOW_SQL, (tenant_id,))
+            is not None
+        )
+
     async def get_model_for_update(
         self,
         *,
@@ -526,12 +819,14 @@ class PostgresModelChangeSetRepository:
                 *(
                     Jsonb(dict(documents[section]))
                     for section in (
+                        "model_input_scope",
                         "profiling",
                         "analysis",
                         "assertion",
                         "conceptual",
                         "logical",
                         "dimensional",
+                        "model_binding",
                         "mapping",
                         "code_generation",
                         "validation",

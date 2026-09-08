@@ -8,6 +8,7 @@ import pytest
 from psycopg.errors import RaiseException
 
 from tests.mcp.database_test_support import require_row
+from tests.mcp.test_database_mapping_output_template_seed import seed_mapping_output_templates
 from tests.mcp.test_database_workflow_run_lifecycle import (
     WorkflowContext,
     seed_workflow_context,
@@ -192,7 +193,10 @@ def _seed_mapping_prompt(
 
 def _seed_mapping_context(
     postgres_database: DisposablePostgres,
+    *,
+    dimensional: bool = False,
 ) -> MappingRunContext:
+    seed_mapping_output_templates(postgres_database)
     workflow = seed_workflow_context(postgres_database)
     suffix = uuid4().hex
     with postgres_database.connect_owner() as connection:
@@ -211,17 +215,21 @@ def _seed_mapping_context(
                 (workflow.selected_object_ids[0],),
             ).fetchone()
         )
+        zone_code = "gold" if dimensional else "silver"
+        entity_type = "dimensional_entity" if dimensional else "logical_entity"
         zone = connection.execute(
-            "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = 'silver'"
+            "SELECT zone_id FROM reference.zone WHERE lower(btrim(zone_code)) = %s",
+            (zone_code,),
         ).fetchone()
         if zone is None:
             zone = require_row(
                 connection.execute(
                     """
                     INSERT INTO reference.zone (zone_code, zone_name)
-                    VALUES ('silver', 'Silver')
+                    VALUES (%s, %s)
                     RETURNING zone_id
-                    """
+                    """,
+                    (zone_code, zone_code.title()),
                 ).fetchone()
             )
         target_object_id = require_row(
@@ -243,6 +251,20 @@ def _seed_mapping_context(
                 ),
             ).fetchone()
         )["object_id"]
+        dimensional_entity_id: int | None = None
+        if dimensional:
+            dimensional_entity_id = require_row(
+                connection.execute(
+                    """
+                    INSERT INTO workflow.dimensional_entity (
+                        model_id, dimensional_entity_name, dimensional_entity_definition,
+                        dimensional_entity_type, dimensional_entity_grain_definition
+                    ) VALUES (%s, %s, 'Mapping Entity.', 'dimension', 'One row')
+                    RETURNING dimensional_entity_id
+                    """,
+                    (workflow.model_id, f"MappingEntity{suffix}"),
+                ).fetchone()
+            )["dimensional_entity_id"]
         entity_id = require_row(
             connection.execute(
                 """
@@ -259,20 +281,27 @@ def _seed_mapping_context(
             connection.execute(
                 """
                 INSERT INTO workflow.model_object_binding (
-                    model_id, object_id, modeled_entity_type, logical_entity_id
-                ) VALUES (%s, %s, 'logical_entity', %s)
+                    model_id, object_id, modeled_entity_type,
+                    logical_entity_id, dimensional_entity_id
+                ) VALUES (%s, %s, %s, %s, %s)
                 RETURNING model_object_binding_id
                 """,
-                (workflow.model_id, target_object_id, entity_id),
+                (
+                    workflow.model_id,
+                    target_object_id,
+                    entity_type,
+                    None if dimensional else entity_id,
+                    dimensional_entity_id if dimensional else None,
+                ),
             ).fetchone()
         )["model_object_binding_id"]
         connection.execute(
             """
             INSERT INTO workflow.mapping_source_system_dependency (
                 model_id, modeled_entity_type, source_system_id
-            ) VALUES (%s, 'logical_entity', %s)
+            ) VALUES (%s, %s, %s)
             """,
-            (workflow.model_id, physical["system_id"]),
+            (workflow.model_id, entity_type, physical["system_id"]),
         )
         _seed_mapping_prompt(connection, workflow)
 
@@ -376,9 +405,7 @@ def test_mapping_run_freezes_independent_advisory_templates(
     context = _seed_mapping_context(postgres_database)
     with postgres_database.connect_owner() as connection:
         object_template = _seed_output_template(connection, context, "mapping_object")
-        attribute_template = _seed_output_template(
-            connection, context, "mapping_attribute"
-        )
+        attribute_template = _seed_output_template(connection, context, "mapping_attribute")
         created = require_row(
             connection.execute(
                 CREATE_MAPPING_RUN_SQL,
@@ -503,7 +530,10 @@ def test_mapping_run_rejects_invalid_binding_atomically(
     with postgres_database.connect_owner() as connection:
         count = require_row(
             connection.execute(
-                "SELECT count(*)::INTEGER AS count FROM application.workflow_run WHERE correlation_id = %s",
+                """
+                SELECT count(*)::INTEGER AS count
+                  FROM application.workflow_run WHERE correlation_id = %s
+                """,
                 (correlation_id,),
             ).fetchone()
         )["count"]

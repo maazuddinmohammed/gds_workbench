@@ -1,6 +1,6 @@
 # Workflow targets
 
-Choose one target and Full/Selected scope per task:
+These are governed execution boundaries, not a requirement to run every target. Choose the requested outcome and Full/Selected scope; queue missing prerequisites only. Read-only reviews can span layers without creating tasks. Choose one target per authoring task:
 
 1. **Metadata Authoring** — Source, Bronze, ingestion, and Copy metadata.
 2. **Model Input Scope Authoring** — select active Source and/or Bronze inputs for one Model.
@@ -16,12 +16,14 @@ Choose one target and Full/Selected scope per task:
 12. **Dimensional Code Generation** — artifact from applied Mapping.
 13. **Validation Authoring** — Logical or Dimensional Validation Groups and Checks from Mapping and optional Code.
 14. **Process Registration** — later Metadata from user-supplied artifact paths.
+15. **Metadata Enrichment** — generated physical Object/Attribute descriptions and missing inferred Attribute types within one Model's active Source/Bronze Input Scope; replace only unlocked descriptions and add no locks.
 
 Profiling, relationship Analysis, and Conceptual are required phases inside Logical Build, not separate targets. Assertions are supporting records authored only from user-confirmed business evidence. Grill With Docs is an interaction mode, never a target.
 
 Load only the active guide:
 
 - Metadata: `workflows/metadata-authoring.md`
+- Metadata Enrichment: `workflows/metadata-enrichment.md`; local target `metadata-enrichment`
 - Model Input Scope: `workflows/model-input-scope.md`
 - Profiling/Assertions/Analysis/Conceptual: their named guide
 - Logical/Dimensional: `workflows/logical-build.md`, `workflows/dimensional-build.md`

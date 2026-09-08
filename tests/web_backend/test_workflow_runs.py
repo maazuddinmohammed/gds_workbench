@@ -6,8 +6,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.workflows.runs import (
     ModelWorkflow,
     RunEventCollection,
@@ -17,6 +15,10 @@ from gds_workbench_api.features.workflows.runs import (
     WorkflowRunDetail,
     WorkflowRunLedgerRecord,
 )
+from gds_workbench_api.features.workflows.usage.read_service import (
+    WorkflowTokenUsageSummary,
+)
+from gds_workbench_api.main import create_app
 
 
 class StaticWorkflowRunService:
@@ -148,9 +150,7 @@ def _app() -> TestClient:
 
 def test_run_ledger_is_filtered_by_workflow() -> None:
     with _app() as client:
-        response = client.get(
-            "/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=25"
-        )
+        response = client.get("/api/v1/tenants/7/models/18/runs?workflow=profiling&page_size=25")
 
     assert response.status_code == 200
     assert response.json()["items"][0]["workflow_run_id"] == 1048
@@ -166,11 +166,10 @@ def test_run_detail_and_incremental_events_are_separate_bounded_reads() -> None:
 
     assert detail.status_code == 200
     assert detail.json()["correlation_id"] == "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"
-    assert detail.json()["model_change_set_id"] == (
-        "bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb"
-    )
+    assert detail.json()["model_change_set_id"] == ("bbbbbbbb-bbbb-bbbb-bbbb-bbbbbbbbbbbb")
     assert detail.json()["model_change_set_status"] == "validated"
     assert detail.json()["draft_revision"] == 2
+    assert detail.json()["token_usage"] == WorkflowTokenUsageSummary().model_dump(mode="json")
     assert events.status_code == 200
     assert events.json() == {
         "items": [

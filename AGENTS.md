@@ -60,3 +60,68 @@ Single-context: root `CONTEXT.md`, with ADRs under `docs/adr/`. See
 
 Before frontend work, read `docs/design-system.md` and preserve its interaction,
 accessibility, and visual rules.
+
+## Code map and simplification
+
+- MCP: `mcp_server/gds_etl_workbench/runtime.py` wires authentication, tools,
+  auditing, and PostgreSQL. `tools/` and `adapters/mcp/` own transport;
+  `application/`, `domain/`, and `infrastructure/` hold shared rules and storage.
+- Backend: `web_app/backend/gds_workbench_api/main.py` mounts feature routers.
+  Workflow assembly lives in `features/workflows/execution/assembly.py`;
+  shared candidate parsing and diagnostics live in `features/workflows/authoring/repair.py`.
+- Notebooks: `databricks_notebooks/src/gds_workbench_notebooks/` calls the same
+  in-process workflow assembly. Preserve Python 3.12 compatibility.
+- Plugin: `plugins/v2/gds/skills/gds/` contains local helpers and Workbench.
+  `workbench/core.js` owns shared JavaScript normalization and stable serialization.
+- VS Code extension: `plugins/v2/gds-stage-runner/src/extension.ts` exposes the
+  local Stage tool; `stage-runner.ts` verifies approval digests and stages chunks.
+  Reuse Workbench serialization: chunk hashes must match Python's JSON encoding.
+- Frontend: `web_app/frontend/src/features/` owns screens; reuse matching
+  components from `shared/ui.tsx` and formatters from `shared/presentation.ts`.
+- SQL: `database/00_preflight.sql`, ordered install files `01`–`19`, then
+  `20_verify_install.sql`. Never turn this fresh-install sequence into migrations.
+- Packaging: `deployment/databricks_ui/build_uploads.py`,
+  `plugins/build_gds_v2_plugin_zip.py`, and `mcp_server/build_zip.py`.
+  Shared source is copied into independent artifacts;
+  see `docs/adr/005-independent-deployments-with-shared-source.md`.
+- Before deleting code, check imports, registrations, dynamic references, tests,
+  and packaged consumers. Similar names do not prove identical behavior.
+- Reuse existing helpers when semantics match. Keep authorization, byte limits,
+  Unicode normalization, revision checks, and Windows fallback behavior intact.
+- Explain major architecture changes before starting them. Make and verify one
+  cohesive simplification at a time. See `docs/architecture/simplification-audit.md`.
+
+## Local verification
+
+Run from the repository root. Use installed project environments. Source
+`PYTHONPATH` entries below prevent tests from exercising stale installed copies.
+Database tests require local Docker and the disposable fixtures above; never
+substitute an existing database. Keep captured database output hidden.
+
+```bash
+# MCP, backend, SQL contracts, plugin helpers, and packaging.
+PYTHONPATH=mcp_server:web_app/backend:. web_app/backend/.venv/bin/python -m pytest -c web_app/backend/pyproject.toml tests/mcp tests/web_backend tests/web_packaging tests/plugin_v2 --tb=no --show-capture=no -q
+
+# Notebook source and shared workflows on Python 3.12.
+PYTHONPATH=databricks_notebooks/src:mcp_server:web_app/backend .venv-notebooks/bin/python -m pytest databricks_notebooks/tests --tb=no --show-capture=no -q
+
+# Frontend tests, types, and production build.
+npm --prefix web_app/frontend run check
+
+# Plugin Workbench JavaScript tests (root npm dependencies required).
+node --test tests/plugin_v2/*.test.mjs
+
+# VS Code extension tests, types, and bundle.
+npm --prefix plugins/v2/gds-stage-runner test
+npm --prefix plugins/v2/gds-stage-runner run compile
+```
+
+Use each Python project's Ruff and Pyright settings. When calling Pyright from
+the root, pass both `--project` and that project's `--pythonpath`; otherwise it
+may use the wrong interpreter. `.github/workflows/web-app.yml` also lists the
+three extracted-notebook artifact probes to run with Python 3.12.
+PowerShell fallback execution requires Windows PowerShell 5.1; preserve the
+checks in `.github/workflows/plugin-windows.yml`.
+After changing plugin or extension source, rebuild its matching local ZIP/VSIX
+and generated bundle; packaging tests compare them with source. Rebuilding does
+not authorize publishing.

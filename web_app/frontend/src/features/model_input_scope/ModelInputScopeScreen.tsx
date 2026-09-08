@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useForm } from "@tanstack/react-form";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient, useInfiniteQuery } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 import {
   flexRender,
   getCoreRowModel,
@@ -11,6 +12,7 @@ import {
 import { TenantWorkspace } from "../../app/TenantWorkspace";
 import { zoneLabel } from "../../shared/presentation";
 import { ErrorPage, LoadingPage } from "../../shared/ui";
+import { validTenantModelIds } from "../models/ModelRouteFrame";
 import { ModelWorkspaceShell } from "../models/ModelWorkspaceShell";
 import type { ModelsApi } from "../models/api";
 import type { TenantsApi } from "../tenants/api";
@@ -20,6 +22,7 @@ import type {
   ModelInputScopeFilters,
   ModelInputScopeObject,
 } from "./api";
+import { AddScopeDialog } from "./AddScopeDialog";
 
 type ModelInputScopeScreenApi = Pick<TenantsApi, "readTenantHome">
   & Pick<ModelsApi, "readModel">
@@ -35,6 +38,8 @@ export function ModelInputScopeScreen({
   modelId: number;
 }) {
   const validIds = validTenantModelIds(tenantId, modelId);
+  const queryClient = useQueryClient();
+  const [addOpen, setAddOpen] = useState(false);
   const [filters, setFilters] = useState<ModelInputScopeFilters>({});
   const [detailObjectId, setDetailObjectId] = useState<number | null>(null);
   const focusReturnObjectIdRef = useRef<number | null>(null);
@@ -55,9 +60,11 @@ export function ModelInputScopeScreen({
     queryFn: () => api.readModel(tenantId, modelId),
     enabled: validIds,
   });
-  const scopeQuery = useQuery({
+  const scopeQuery = useInfiniteQuery({
     queryKey: ["model-input-scope", tenantId, modelId, filters],
-    queryFn: () => api.listModelInputScope(tenantId, modelId, filters),
+    queryFn: ({ pageParam }) => api.listModelInputScope(tenantId, modelId, filters, 200, pageParam),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (page) => page.next_cursor ?? undefined,
     enabled: validIds,
   });
   const detailQuery = useQuery({
@@ -76,8 +83,11 @@ export function ModelInputScopeScreen({
     <TenantWorkspace home={homeQuery.data} activeNav="models" model={modelQuery.data}>
       <ModelWorkspaceShell model={modelQuery.data} activeStage="scope">
         <ScopeView
+          tenantId={tenantId}
           modelInputScopeObjectCount={modelQuery.data.model_input_scope_object_count}
-          objects={scopeQuery.data?.items ?? []}
+          objects={scopeQuery.data?.pages.flatMap((page) => page.items) ?? []}
+          onAdd={() => setAddOpen(true)}
+          onRefresh={() => void Promise.all([scopeQuery.refetch(), modelQuery.refetch(), homeQuery.refetch()])}
           isLoading={scopeQuery.isPending}
           isError={scopeQuery.isError}
           selectedObjectId={detailObjectId}
@@ -94,19 +104,23 @@ export function ModelInputScopeScreen({
             setFilters(nextFilters);
           }}
         />
+        {scopeQuery.hasNextPage ? <button className="button button-secondary" type="button" disabled={scopeQuery.isFetching} onClick={() => void scopeQuery.fetchNextPage()}>Load more Objects</button> : null}
+        {addOpen ? <AddScopeDialog api={api} tenantId={tenantId} modelId={modelId} modelRevision={modelQuery.data.model_revision}
+          hasTenantLock={Boolean(homeQuery.data.lock.is_locked && homeQuery.data.lock.owned_by_current_principal)} onClose={() => setAddOpen(false)}
+          onAdded={async () => { await Promise.all([
+            queryClient.invalidateQueries({ queryKey: ["model-input-scope", tenantId, modelId] }),
+            queryClient.invalidateQueries({ queryKey: ["model", tenantId, modelId] }),
+            queryClient.invalidateQueries({ queryKey: ["model-overview", tenantId, modelId] }),
+            queryClient.invalidateQueries({ queryKey: ["scope-candidates", tenantId, modelId] }),
+            queryClient.invalidateQueries({ queryKey: ["scope-search-options", tenantId, modelId] }),
+          ]); }} /> : null}
       </ModelWorkspaceShell>
     </TenantWorkspace>
   );
 }
 
-function validTenantModelIds(tenantId: number, modelId: number): boolean {
-  return Number.isSafeInteger(tenantId)
-    && tenantId > 0
-    && Number.isSafeInteger(modelId)
-    && modelId > 0;
-}
-
 function ScopeView({
+  tenantId,
   modelInputScopeObjectCount,
   objects,
   isLoading,
@@ -118,7 +132,10 @@ function ScopeView({
   onShowDetails,
   onCloseDetails,
   onFiltersChange,
+  onAdd,
+  onRefresh,
 }: {
+  tenantId: number;
   modelInputScopeObjectCount: number;
   objects: ModelInputScopeObject[];
   isLoading: boolean;
@@ -130,15 +147,17 @@ function ScopeView({
   onShowDetails: (objectId: number) => void;
   onCloseDetails: () => void;
   onFiltersChange: (filters: ModelInputScopeFilters) => void;
+  onAdd: () => void;
+  onRefresh: () => void;
 }) {
   const columns = useMemo<ColumnDef<ModelInputScopeObject>[]>(() => [
+    { accessorKey: "object_schema", header: "Schema" },
     {
       accessorKey: "object_name",
       header: "Object",
       cell: ({ row }) => (
         <span className="scope-object-name">
           <strong>{row.original.object_name}</strong>
-          <span>{row.original.object_schema}</span>
         </span>
       ),
     },
@@ -186,7 +205,7 @@ function ScopeView({
           aria-controls={selectedObjectId === row.original.object_id ? "scope-object-detail" : undefined}
           onClick={() => onShowDetails(row.original.object_id)}
         >
-          Show details
+          Details
         </button>
       ),
     },
@@ -201,10 +220,12 @@ function ScopeView({
     <div className="scope-page page-enter">
       <header className="section-bar">
         <div>
-          <p className="eyebrow">Model Input Scope</p>
-          <h1>Active Model Input Scope</h1>
+          <h1>Input Scope</h1>
         </div>
-        <span>{objects.length} of {modelInputScopeObjectCount} Objects shown</span>
+        <div className="workflow-command-actions"><span>{objects.length} of {modelInputScopeObjectCount} Objects</span>
+          <button className="button button-secondary button-small" type="button" onClick={onRefresh}>Refresh</button>
+          <button className="button button-primary button-small" type="button" onClick={onAdd}>Add Objects</button>
+        </div>
       </header>
       <ScopeFilterForm onApply={onFiltersChange} />
       <div className={`scope-data-layout${selectedObjectId ? " has-inspector" : ""}`}>
@@ -216,7 +237,7 @@ function ScopeView({
               Active Model Input Scope could not be loaded.
             </div>
           ) : (
-            <div className="table-scroll">
+            <div className="workflow-table-scroll table-scroll">
               <table aria-label="Active Model Input Scope">
                 <thead>
                   {table.getHeaderGroups().map((headerGroup) => (
@@ -254,6 +275,7 @@ function ScopeView({
         </section>
         {selectedObjectId ? (
           <ScopeDetailDrawer
+            tenantId={tenantId}
             detail={detail}
             fallback={objects.find((item) => item.object_id === selectedObjectId)}
             isLoading={isDetailLoading}
@@ -267,12 +289,14 @@ function ScopeView({
 }
 
 function ScopeDetailDrawer({
+  tenantId,
   detail,
   fallback,
   isLoading,
   isError,
   onClose,
 }: {
+  tenantId: number;
   detail: ModelInputScopeDetail | undefined;
   fallback: ModelInputScopeObject | undefined;
   isLoading: boolean;
@@ -328,6 +352,7 @@ function ScopeDetailDrawer({
       ) : (
         <>
           <p>{detail.object_schema}.{detail.object_name}</p>
+          <Link className="text-action" to="/tenants/$tenantId/metadata/objects" params={{ tenantId: String(tenantId) }} search={{ objectId: detail.object_id }}>Review physical metadata</Link>
           <dl className="object-facts">
             <div><dt>System</dt><dd>{detail.system_code}</dd></div>
             <div><dt>Source Tenant</dt><dd>{detail.source_tenant_code}</dd></div>
@@ -355,15 +380,24 @@ function ScopeDetailDrawer({
             <div className="attribute-scroll">
               <table aria-label={`Attributes for ${detail.object_name}`}>
                 <thead>
-                  <tr><th>Name</th><th>Type</th><th>Nullable</th><th>Natural key</th></tr>
+                  <tr>
+                    <th scope="col">Name</th>
+                    <th scope="col">Storage type</th>
+                    <th scope="col">Inferred type</th>
+                    <th scope="col">Nullable</th>
+                    <th scope="col">Natural key</th>
+                    <th scope="col">Lock</th>
+                  </tr>
                 </thead>
                 <tbody>
                   {detail.attributes.map((attribute) => (
                     <tr key={attribute.attribute_id}>
                       <td><strong>{attribute.attribute_name}</strong></td>
                       <td>{attribute.attribute_data_type}</td>
+                      <td>{attribute.attribute_inferred_data_type ?? "Not inferred"}</td>
                       <td>{attribute.attribute_nullability ? "Yes" : "No"}</td>
                       <td>{attribute.is_natural_key ? "Yes" : "No"}</td>
+                      <td>{attribute.is_locked ? "Locked" : "Open"}</td>
                     </tr>
                   ))}
                 </tbody>

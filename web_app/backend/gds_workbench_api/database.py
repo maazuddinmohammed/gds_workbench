@@ -22,6 +22,38 @@ type QueryParameters = tuple[Any, ...]
 _READINESS_SQL = """
 SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
        to_regclass('application.workflow_run') IS NOT NULL
+       AND to_regclass('application.metadata_review_event') IS NOT NULL
+       AND EXISTS (SELECT 1 FROM pg_catalog.pg_trigger
+                    WHERE tgrelid = to_regclass('application.metadata_review_event')
+                      AND tgname = 'guard_metadata_review_event' AND tgenabled = 'O')
+       AND EXISTS (SELECT 1 FROM pg_catalog.pg_constraint
+                    WHERE conrelid = to_regclass('application.metadata_review_event')
+                      AND conname = 'uq_metadata_review_request' AND contype = 'u')
+       AND to_regclass('application.workflow_run_model_request') IS NOT NULL
+       AND (SELECT count(*) = 3 FROM information_schema.columns
+             WHERE table_schema = 'application' AND table_name = 'workflow_run'
+               AND (column_name, data_type) IN (
+                   ('usage_tracking_version', 'smallint'),
+                   ('usage_tracked_recovery_count', 'integer'),
+                   ('usage_history_incomplete', 'boolean')
+               ))
+       AND (SELECT count(*) = 8 FROM information_schema.columns
+             WHERE table_schema = 'application' AND table_name = 'workflow_run_model_request'
+               AND ((column_name, data_type) IN (
+                   ('pricing_basis', 'character varying'),
+                   ('pricing_valid_from', 'timestamp with time zone'),
+                   ('pricing_valid_until', 'timestamp with time zone'),
+                   ('pricing_max_input_tokens', 'bigint')
+               ) OR (column_name IN ('pricing_input_usd_per_million',
+                   'pricing_cached_input_usd_per_million',
+                   'pricing_cache_write_input_usd_per_million',
+                   'pricing_output_usd_per_million')
+                   AND data_type = 'numeric' AND numeric_precision = 15 AND numeric_scale = 8)))
+       AND EXISTS (SELECT 1 FROM pg_catalog.pg_proc
+                    WHERE oid = to_regprocedure(
+                        'application.begin_workflow_run_usage('
+                        'uuid,uuid,character varying,bigint,bigint,uuid)'
+                    ) AND prorettype = 'character varying'::REGTYPE)
        AND to_regclass('application.workflow_stage') IS NOT NULL
        AND to_regclass('application.workflow_stage_variable') IS NOT NULL
        AND to_regclass('application.prompt_template') IS NOT NULL
@@ -62,6 +94,41 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
            'application.workflow_run',
            'SELECT'
        )
+       AND NOT has_table_privilege(
+           'gds_web_write', 'application.workflow_run_model_request', 'INSERT,UPDATE,DELETE'
+       )
+       AND NOT has_table_privilege(
+           'gds_web_write', 'application.metadata_review_event',
+           'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER'
+       )
+       AND NOT EXISTS (
+           SELECT 1 FROM unnest(ARRAY[
+               'application.metadata_object_review_revision(core.object)',
+               'application.metadata_attribute_review_revision(core.attribute,core.object)',
+               'application.authorize_model_record_review('
+               'uuid,uuid,character varying,bigint,bigint)',
+               'application.review_metadata_records(uuid,uuid,character varying,bigint,'
+               'character varying,character varying,jsonb,uuid)'
+           ]) AS required_review_function(signature)
+           WHERE NOT coalesce(has_function_privilege(
+               'gds_web_write', to_regprocedure(required_review_function.signature), 'EXECUTE'
+           ), FALSE)
+       )
+       AND NOT EXISTS (
+           SELECT 1 FROM unnest(ARRAY[
+               'application.begin_workflow_run_usage('
+               'uuid,uuid,character varying,bigint,bigint,uuid)',
+               'application.begin_workflow_run_model_request('
+               'uuid,uuid,character varying,bigint,bigint,uuid,uuid,uuid,'
+               'character varying,integer,integer,jsonb)',
+               'application.complete_workflow_run_model_request('
+               'uuid,uuid,character varying,bigint,bigint,uuid,uuid,'
+               'bigint,bigint,bigint,bigint,bigint,bigint,boolean)'
+           ]) AS required_usage_function(signature)
+           WHERE NOT coalesce(has_function_privilege(
+               'gds_web_write', to_regprocedure(required_usage_function.signature), 'EXECUTE'
+           ), FALSE)
+       )
        AND has_function_privilege(
            'gds_web_write',
            'application.create_model(uuid,uuid,character varying,bigint,'
@@ -95,6 +162,12 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
                'EXECUTE'
            ),
            FALSE
+       )
+       AND has_function_privilege(
+           'gds_web_write',
+           'workflow.list_mapping_source_objects('
+           'bigint,bigint,character varying,bigint)',
+           'EXECUTE'
        )
        AND has_function_privilege(
            'gds_web_write',
@@ -259,15 +332,20 @@ SELECT current_setting('server_version_num')::INTEGER / 10000 AS postgres_major,
               AND function_record.prosrc LIKE
                   '%uq_workflow_run_running_tenant%'
               AND function_record.prosrc LIKE '%tenant_workflow_conflict%'
+       )
+       AND EXISTS (
+           SELECT 1 FROM information_schema.columns
+            WHERE table_schema = 'application' AND table_name = 'prompt_template_version'
+              AND column_name = 'agent_tool_names' AND udt_name = '_text'
        ) AS workflow_guard_ready,
-       (SELECT count(*) = 49
+       (SELECT count(*) = 26
           FROM application.workflow_stage)
-       AND (SELECT count(*) = 49
+       AND (SELECT count(*) = 26
               FROM application.workflow_stage
              WHERE is_active)
-       AND (SELECT count(*) = 80
+       AND (SELECT count(*) = 169
               FROM application.workflow_stage_variable)
-       AND (SELECT count(*) = 80
+       AND (SELECT count(*) = 169
               FROM application.workflow_stage_variable
              WHERE is_active) AS application_reference_ready
 """

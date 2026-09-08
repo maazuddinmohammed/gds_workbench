@@ -85,6 +85,7 @@ class StoredSqlArtifactSummary(ContractModel):
     workflow_run_id: int | None = Field(default=None, gt=0)
     generated_at: datetime
     generated_code_status: Literal["active", "inactive", "deprecated"]
+    generated_code_is_locked: bool
     source_system_codes: tuple[str, ...] = Field(max_length=200)
     artifact_is_current: bool
 
@@ -176,6 +177,7 @@ class GeneratedSqlArtifactDetail(ContractModel):
     mapping_supports_truncated: bool
     artifact_is_current: bool
     generated_code_status: Literal["active", "inactive", "deprecated"]
+    generated_code_is_locked: bool
     guide: SqlGenerationGuideProvenance | None
     workflow_run_id: int | None = Field(default=None, gt=0)
     generator: SqlGeneratorProvenance | None

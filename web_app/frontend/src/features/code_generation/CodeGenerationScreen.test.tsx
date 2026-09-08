@@ -1,3 +1,4 @@
+import { withRecordReview } from "../../test/modelRecordReview";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -81,6 +82,9 @@ describe("Code Generation journey", () => {
 
     const heading = await screen.findByRole("heading", { name: "customer.sql" });
     expect(heading).toHaveFocus();
+    expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toBeVisible();
+    expect(screen.getByText("Customer CRM")).not.toBeVisible();
+    for (const label of ["Target Object", "Contributing source Systems", "Applied Mapping provenance", "Generation provenance"]) await userEvent.setup().click(screen.getByRole("heading", { name: label }));
     expect(screen.getByRole("heading", { name: "Contributing source Systems" })).toBeVisible();
     expect(screen.getByText("Customer CRM")).toBeVisible();
     expect(screen.getByRole("table", { name: "Applied Mapping supports" })).toBeVisible();
@@ -92,6 +96,13 @@ describe("Code Generation journey", () => {
       "SELECT '<script>not executable</script>' AS literal;",
     );
     expect(container.querySelector("script")).toBeNull();
+    expect(screen.getAllByRole("heading", { level: 2 }).map((item) => item.textContent)).toEqual([
+      "Stored SQL", "Target Object", "Contributing source Systems", "Applied Mapping provenance", "Generation provenance",
+    ]);
+    expect(screen.getByRole("link", { name: "Object Mapping 81" })).toHaveAttribute(
+      "href", "/tenants/7/mapping/models/18/objects/81",
+    );
+    expect(screen.getByText(/This record does not report SQL execution results/)).toBeVisible();
     expect(screen.getByRole("link", { name: "Download .sql" })).toHaveAttribute(
       "href",
       "/api/v1/tenants/7/models/18/code-generation/artifacts/501/download.sql",
@@ -107,11 +118,30 @@ describe("Code Generation journey", () => {
     })} />);
 
     await screen.findByRole("heading", { name: "customer.sql" });
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Generation provenance" }));
     expect(screen.getByText("No legacy guide provenance")).toBeVisible();
     expect(screen.getByText("No legacy generator provenance")).toBeVisible();
     expect(screen.getByLabelText("Stored SQL for silver_nwa.customer")).toHaveTextContent(
       "SELECT '<script>not executable</script>' AS literal;",
     );
+  });
+
+  it.each([false, true])("keeps stored SQL available with stale or bounded supports (%s)", async (truncated) => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(codeGenerationFetchStub({ stale: !truncated, truncated })),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18/artifacts/501"] }),
+    })} />);
+    await screen.findByRole("heading", { name: "customer.sql" });
+    expect(screen.getByLabelText("Stored SQL for silver_nwa.customer").textContent).toBe(generatedSqlDetail.generated_sql);
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Applied Mapping provenance" }));
+    await userEvent.setup().click(screen.getByRole("heading", { name: "Contributing source Systems" }));
+    if (truncated) {
+      expect(screen.getByText("Showing 1 of 3 Mapping supports.")).toBeVisible();
+    } else {
+      expect(screen.getByText("Stale")).toBeVisible();
+      expect(screen.getByText("Current Mapping support is unavailable for this stale artifact.")).toBeVisible();
+      expect(screen.getByText("Current contributing Systems are unavailable for this stale artifact.")).toBeVisible();
+    }
   });
 
   it("gates generation, then explicitly creates and executes selected and all coverage", async () => {
@@ -158,9 +188,9 @@ describe("Code Generation journey", () => {
       modeled_entity_type: "logical_entity",
       requested_batch_id: null,
       agent: {
-        sdk_code: "openai_agents",
-        provider_code: "databricks",
-        model_code: "databricks-primary",
+        sdk_code: "openai_agents_sdk",
+        provider_code: "microsoft_foundry",
+        model_code: "foundry-primary",
         reasoning_effort_code: "medium",
         max_turns: 8,
         validation_retry_count: 1,
@@ -190,6 +220,43 @@ describe("Code Generation journey", () => {
       code_generation_coverage_mode: "all_eligible_targets",
     }));
     expect(JSON.stringify(createCalls(fetcher))).not.toContain("claim_token");
+  });
+
+  it.each(["network", "server"] as const)("retries an ambiguous Code Generation %s create with the original command and key", async (failure) => {
+    const success = codeGenerationFetchStub();
+    let attempts = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST" && ++attempts === 1) {
+        if (failure === "network") throw new TypeError("Synthetic network failure");
+        return jsonResponse({ error: { code: "unavailable" } }, 503);
+      }
+      return success(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+    })} />);
+    await screen.findByRole("table", { name: "Code Generation target Objects" });
+    await user.click(screen.getByRole("checkbox", { name: "Select silver_nwa.customer" }));
+    await user.click(screen.getByRole("button", { name: "Generate selected" }));
+    const submit = await screen.findByRole("button", { name: "Regenerate stored SQL" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    await user.click(submit);
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Model")).toBeEnabled();
+    await user.click(submit);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const creates = fetcher.mock.calls.filter(([input, init]) =>
+      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.[1]?.body).toBe(creates[0]?.[1]?.body);
+    const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
+    expect(firstKey).toMatch(/^[a-f0-9-]{36}$/);
+    expect(new Headers(creates[1]?.[1]?.headers).get("Idempotency-Key")).toBe(firstKey);
   });
 
   it("retries a conflicted Code Generation start without creating another run", async () => {
@@ -291,6 +358,8 @@ function codeGenerationFetchStub(options: {
   executeConflictOnce?: boolean;
   executePending?: boolean;
   nullableProvenance?: boolean;
+  stale?: boolean;
+  truncated?: boolean;
 } = {}) {
   let executeAttempts = 0;
   return vi.fn<typeof fetch>(async (input, init) => {
@@ -322,9 +391,12 @@ function codeGenerationFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/models/18/code-generation/artifacts/501") {
-      return jsonResponse(options.nullableProvenance
-        ? { ...generatedSqlDetail, guide: null, generator: null }
-        : generatedSqlDetail);
+      return jsonResponse({
+        ...generatedSqlDetail,
+        ...(options.nullableProvenance ? { guide: null, generator: null } : {}),
+        ...(options.stale ? { artifact_is_current: false, mapping_supports: [], mapping_support_count: 0, source_systems: [], source_system_count: 0 } : {}),
+        ...(options.truncated ? { mapping_supports_truncated: true, mapping_support_count: 3 } : {}),
+      });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
     if (url === "/api/v1/tenants/7/models/18/runs?workflow=code_generation&page_size=5") {
@@ -521,15 +593,15 @@ const generatedSqlDetail = {
 
 const agentCapabilities = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
-    execution_profiles: ["detailed_coverage"].map((execution_mode) => ({
-      sdk_code: "openai_agents",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
+    execution_profiles: ["tool_assisted"].map((execution_mode) => ({
+      sdk_code: "openai_agents_sdk",
       execution_mode,
       reasoning_effort_codes: ["medium"],
     })),
@@ -538,3 +610,23 @@ const agentCapabilities = {
   max_turns: { minimum: 1, default: 8, maximum: 50 },
   validation_retries: { minimum: 0, default: 1, maximum: 5 },
 };
+
+
+it("finds and reactivates inactive Code without an eligible generation target", async () => {
+  const { fetcher, commands } = withRecordReview(codeGenerationFetchStub({ empty: true }), {
+    model_id: 18, model_revision: 18, dataset: "generated_code", next_page: null,
+    items: [{ record_id: 501, label: "Customer · customer.sql", status: "inactive", is_locked: false }],
+  });
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/code-generation/models/18"] }),
+  })} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: "Applied Code" }));
+  const table = await screen.findByRole("table", { name: "Applied Code" });
+  expect(within(table).getByText("inactive")).toBeVisible();
+  expect(within(table).getByRole("link", { name: "Show SQL details" })).toHaveAttribute("href", "/tenants/7/code-generation/models/18/artifacts/501");
+  await user.click(screen.getByRole("checkbox", { name: "Select Applied Code 501" }));
+  await user.click(screen.getByRole("button", { name: "Reactivate selected" }));
+  await user.click(await screen.findByRole("button", { name: "Apply this change" }));
+  expect(commands[0]).toEqual({ dataset: "generated_code", record_ids: [501], action: "reactivate", expected_model_revision: 18 });
+});

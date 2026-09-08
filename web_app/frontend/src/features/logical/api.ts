@@ -1,3 +1,5 @@
+import type { ModelTargetsTransport } from "../model_targets/api";
+import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   ModelingCardinality,
@@ -289,7 +291,7 @@ export interface LogicalTransport {
   ) => Promise<LogicalSubmodelDetail>;
 }
 
-export type LogicalApi = LogicalTransport
+export type LogicalApi = LogicalTransport & Pick<ModelTargetsTransport, "readTargetOptions" | "exportModelTargets"> & ModelRecordReviewApi
   & Pick<
     WorkflowsApi,
     | "applyWorkflowDraft"

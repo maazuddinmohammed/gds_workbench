@@ -7,8 +7,6 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationCheckRecord,
     ValidationGroupRecord,
 )
-from pydantic import JsonValue
-
 from gds_workbench_api.features.validation.candidate import (
     ValidationSystemCandidateValidator,
     reconcile_validation_candidates,
@@ -17,10 +15,12 @@ from gds_workbench_api.features.validation.context import (
     ValidationExecutionContext,
     ValidationSystemAuthoringContext,
 )
+from pydantic import JsonValue
 
 
 def _group(*, active: bool = True) -> ValidationGroupRecord:
     return ValidationGroupRecord(
+        is_locked=False,
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
@@ -31,6 +31,7 @@ def _group(*, active: bool = True) -> ValidationGroupRecord:
 
 def _check(*, active: bool = True) -> ValidationCheckRecord:
     return ValidationCheckRecord(
+        is_locked=False,
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
@@ -220,8 +221,7 @@ async def test_candidate_rejects_unsafe_or_non_row_comparison_sql() -> None:
     non_row = await validator.validate(
         _candidate(
             query=(
-                "CREATE TEMP VIEW validation_customer AS "
-                "SELECT * FROM catalog.gold.dim_customer"
+                "CREATE TEMP VIEW validation_customer AS SELECT * FROM catalog.gold.dim_customer"
             )
         )
     )
@@ -283,3 +283,42 @@ def test_reconciliation_uses_inactive_tombstones_for_omitted_applied_validation(
     ]
     assert any(record["is_active"] is False for record in changes[0].records)
     assert any(record["is_active"] is False for record in changes[1].records)
+
+
+@pytest.mark.parametrize("active", [False, True])
+def test_reconciliation_preserves_locked_validation_values_and_status(
+    active: bool,
+) -> None:
+    group = _group(active=active).model_copy(update={"is_locked": True})
+    check = _check().model_copy(update={"is_locked": True, "is_active": active})
+    system = _context(groups=(group,), checks=(check,))
+    candidate = ValidationSystemCandidateValidator(context=system).parse_validated(
+        _candidate(query="SELECT 42 FROM catalog.gold.dim_customer")
+    )
+    changes = reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)),
+        candidates=(candidate,),
+    )
+    assert changes == ()
+
+
+def test_reconciliation_does_not_retire_omitted_locked_definitions() -> None:
+    group = _group().model_copy(
+        update={"validation_group_name": "legacy", "is_locked": True}
+    )
+    check = _check().model_copy(
+        update={"validation_group_name": "legacy", "is_locked": True}
+    )
+    system = _context(groups=(group,), checks=(check,))
+    candidate = ValidationSystemCandidateValidator(context=system).parse_validated(
+        _candidate()
+    )
+    changes = reconcile_validation_candidates(
+        context=ValidationExecutionContext(systems=(system,)),
+        candidates=(candidate,),
+    )
+    assert all(
+        row["validation_group_name"] != "legacy"
+        for change in changes
+        for row in change.records
+    )

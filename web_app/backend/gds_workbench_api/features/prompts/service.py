@@ -47,10 +47,35 @@ from gds_workbench_api.features.prompts.contracts import (
     SetModelPromptAssignmentRequest,
     UpdatePromptTemplateRequest,
 )
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import get_prompt_input_contract
+from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    registered_tool_definitions,
+)
 
 _MAX_STAGE_VARIABLE_ROWS = 2000
 _MAX_STAGE_VARIABLES = 100
 _MAX_TEMPLATE_VERSIONS = 200
+
+
+def _documented_variable(
+    stage: Mapping[str, Any], variable: PromptStageVariable
+) -> PromptStageVariable:
+    descriptor = get_prompt_input_contract(
+        model_workflow=stage["model_workflow"],
+        workflow_execution_mode=stage["workflow_execution_mode"],
+        stage_code=stage["workflow_stage_code"],
+        resolver_key=variable.resolver_key,
+    )
+    if (
+        descriptor is None
+        or descriptor.name != variable.name
+        or descriptor.data_type != variable.data_type
+    ):
+        return variable
+    return variable.model_copy(
+        update=descriptor.model_dump(exclude={"name", "resolver_key", "data_type"})
+    )
+
 
 _STAGE_CATALOG_SQL = """
 SELECT stage.workflow_stage_id,
@@ -213,6 +238,7 @@ SELECT version.prompt_template_version_id,
        version.system_prompt_template,
        version.instruction_prompt_template,
        version.tool_instruction_prompt_template,
+       version.agent_tool_names,
        version.prompt_template_digest,
        version.prompt_template_version_status,
        version.published_time AS published_at,
@@ -281,6 +307,7 @@ SELECT saved.prompt_template_version_id,
        saved.system_prompt_template,
        saved.instruction_prompt_template,
        saved.tool_instruction_prompt_template,
+       saved.agent_tool_names,
        saved.prompt_template_digest,
        saved.prompt_template_version_status,
        saved.published_time AS published_at,
@@ -296,7 +323,8 @@ SELECT saved.prompt_template_version_id,
        %s::TEXT,
        %s::TEXT,
        %s::TEXT,
-       %s::TIMESTAMPTZ
+       %s::TIMESTAMPTZ,
+       %s::TEXT[]
   ) AS saved
 """
 
@@ -316,6 +344,7 @@ SELECT saved.prompt_template_version_id,
        saved.system_prompt_template,
        saved.instruction_prompt_template,
        saved.tool_instruction_prompt_template,
+       saved.agent_tool_names,
        saved.prompt_template_digest,
        saved.prompt_template_version_status,
        saved.published_time AS published_at,
@@ -558,14 +587,17 @@ class DatabasePromptService:
                 stage_rows[stage_id] = current
             if row["variable_name"] is not None:
                 current[1].append(
-                    PromptStageVariable(
-                        name=row["variable_name"],
-                        resolver_key=row["variable_resolver_key"],
-                        data_type=row["variable_data_type"],
-                        is_required=row["variable_is_required"],
-                        description=row["variable_description"],
-                        example=row["variable_example"],
-                        order=row["variable_order"],
+                    _documented_variable(
+                        row,
+                        PromptStageVariable(
+                            name=row["variable_name"],
+                            resolver_key=row["variable_resolver_key"],
+                            data_type=row["variable_data_type"],
+                            is_required=row["variable_is_required"],
+                            description=row["variable_description"],
+                            example=row["variable_example"],
+                            order=row["variable_order"],
+                        ),
                     )
                 )
         for row, variables in stage_rows.values():
@@ -684,9 +716,16 @@ class DatabasePromptService:
             tenant_id=tenant_id,
             template=PromptTemplateSummary.model_validate(template_row),
             allowed_variables=tuple(
-                PromptStageVariable.model_validate(row) for row in variable_rows
+                _documented_variable(template_row, PromptStageVariable.model_validate(row))
+                for row in variable_rows
             ),
             versions=tuple(PromptTemplateVersion.model_validate(row) for row in version_rows),
+            available_tools=(
+                registered_tool_definitions(template_row["model_workflow"])
+                if template_row["workflow_execution_mode"] == "tool_assisted"
+                or template_row["model_workflow"] in ("code_generation", "validation")
+                else ()
+            ),
         )
 
     async def create_template(
@@ -785,6 +824,7 @@ class DatabasePromptService:
                     body.instruction_prompt_template,
                     body.tool_instruction_prompt_template,
                     body.expected_updated_at,
+                    body.agent_tool_names,
                 ),
             )
         if row is None:

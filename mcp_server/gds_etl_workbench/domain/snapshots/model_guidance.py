@@ -142,13 +142,13 @@ _DATASET_RULES: dict[str, tuple[str, ...]] = {
     "generated_code": (
         "Code Generation decides whether Systems share one file or use separate files.",
         "artifact_name is a file name only; Process metadata owns deployment paths.",
-        "Preflight SQL locally when possible; do not persist execution results.",
+        "Review SQL against Mapping first; execute a preflight only under the user's SQL policy.",
     ),
     "generated_code_source_system": (
         "List every source System covered by the named Code Artifact.",
     ),
     "validation_group": (
-        "Store Validation definitions only; preflight execution results stay local.",
+        "Store Validation definitions only; never persist preflight execution results.",
     ),
     "validation_check": (
         (

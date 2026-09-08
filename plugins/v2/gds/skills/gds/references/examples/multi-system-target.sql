@@ -1,39 +1,32 @@
--- Illustrative GDS/Julius layout for one target Object with two source Systems.
--- Replace names and expressions only from Mapping/Process/user evidence.
+-- Fictional example; names and rules below are illustrative, never live defaults.
+-- Applied Mapping defines CustomerSourceRecord at grain
+-- (SourceSystemCode, CustomerCode), with three STRING target columns in this order.
+-- All referenced source columns are STRING too.
+-- Each source has unique, non-null, nonblank customer codes; copy codes unchanged.
+-- SourceSystemCode literals ERP/CRM are confirmed lineage values. Their distinct
+-- values make the composite target keys disjoint across branches.
+-- Names are optional: trim surrounding spaces and map empty names to null.
+-- No filtering, joins, lookups, batching, deduplication or parameters apply here.
+-- A unified business Customer requires an evidenced identity/reconciliation
+-- Mapping before SQL generation; source-specific keys alone do not unify customers.
 
-CREATE OR REPLACE TEMPORARY VIEW temp_system_a_target AS
+CREATE OR REPLACE TEMPORARY VIEW temp_erp_customer AS
 SELECT
-  operating.OperatingEntityID,
-  trim(source.NaturalKey) AS TargetNaturalKey,
-  coalesce(trim(prior.BusinessName), trim(source.Description)) AS BusinessName,
-  source_system.SourceSystemID
-FROM catalog_name.bronze.system_a_source AS source
-LEFT JOIN catalog_name.meta.source_system AS source_system
-  ON lower(trim(source_system.SourceSystemCode)) = 'system_a'
-LEFT JOIN catalog_name.common.operating_entity AS operating
-  ON lower(trim(operating.OperatingEntityName)) = 'system_a_entity'
-LEFT JOIN catalog_name.silver.target_object AS prior
-  ON trim(source.NaturalKey) = trim(prior.TargetNaturalKey)
- AND trim(operating.OperatingEntityID) = trim(prior.OperatingEntityID)
-WHERE source.gds_batch_id = wid_GDSBatchID;
+  'ERP' AS SourceSystemCode,
+  c.customer_code AS CustomerCode,
+  NULLIF(TRIM(c.customer_name), '') AS CustomerName
+FROM example.bronze.erp_customer AS c;
 
-CREATE OR REPLACE TEMPORARY VIEW temp_system_b_target AS
+CREATE OR REPLACE TEMPORARY VIEW temp_crm_customer AS
 SELECT
-  operating.OperatingEntityID,
-  trim(source.ReferenceCode) AS TargetNaturalKey,
-  coalesce(trim(prior.BusinessName), trim(source.ReferenceName)) AS BusinessName,
-  source_system.SourceSystemID
-FROM catalog_name.bronze.system_b_source AS source
-LEFT JOIN catalog_name.meta.source_system AS source_system
-  ON lower(trim(source_system.SourceSystemCode)) = 'system_b'
-LEFT JOIN catalog_name.common.operating_entity AS operating
-  ON lower(trim(operating.OperatingEntityName)) = 'system_b_entity'
-LEFT JOIN catalog_name.silver.target_object AS prior
-  ON trim(source.ReferenceCode) = trim(prior.TargetNaturalKey)
- AND trim(operating.OperatingEntityID) = trim(prior.OperatingEntityID)
-WHERE source.gds_batch_id = wid_GDSBatchID;
+  'CRM' AS SourceSystemCode,
+  c.customer_reference AS CustomerCode,
+  NULLIF(TRIM(c.display_name), '') AS CustomerName
+FROM example.bronze.crm_customer AS c;
 
--- Final statement only: exact target shape. The runtime performs the natural-key merge.
-SELECT * FROM temp_system_a_target
+-- Final statement: exact bound shape. Runtime performs the natural-key merge.
+SELECT SourceSystemCode, CustomerCode, CustomerName
+FROM temp_erp_customer
 UNION ALL
-SELECT * FROM temp_system_b_target;
+SELECT SourceSystemCode, CustomerCode, CustomerName
+FROM temp_crm_customer;

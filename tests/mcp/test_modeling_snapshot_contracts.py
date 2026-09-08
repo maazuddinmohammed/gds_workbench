@@ -27,6 +27,7 @@ from gds_etl_workbench.domain.snapshots.model import (
     DATASETS,
     DATASETS_BY_NAME,
     MODEL_SECTIONS,
+    ModelChangeSetDataset,
     build_model_dataset_schema,
     model_snapshot_records,
 )
@@ -104,7 +105,6 @@ def test_model_schemas_forbid_removed_authoring_metadata() -> None:
         "mapping_context_digest",
         "source_context_digest",
         "generated_code_digest",
-        "generated_code_is_locked",
         "is_logged",
         "execution_result",
     }
@@ -127,9 +127,10 @@ def test_every_custom_model_record_validator_is_exported_for_local_parity() -> N
 
     assert set(MODEL_RECORD_VALIDATIONS) == custom
     for dataset, rules in MODEL_RECORD_VALIDATIONS.items():
-        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])[
-            "x-gds-record-validation"
-        ] == {"version": "1.0", "rules": list(rules)}
+        assert build_model_dataset_schema(DATASETS_BY_NAME[dataset])["x-gds-record-validation"] == {
+            "version": "1.0",
+            "rules": list(rules),
+        }
 
 
 def test_model_schema_accepts_every_decimal_representation_accepted_at_stage() -> None:
@@ -157,9 +158,7 @@ def test_status_contract_has_only_applied_lifecycle_values() -> None:
     ):
         schema = build_model_dataset_schema(DATASETS_BY_NAME[dataset])
         status_property = next(
-            value
-            for name, value in schema["properties"].items()
-            if name.endswith("_status")
+            value for name, value in schema["properties"].items() if name.endswith("_status")
         )
         assert status_property["enum"] == ["active", "inactive", "deprecated"]
 
@@ -173,21 +172,15 @@ def test_logical_entity_schema_exports_server_type_detail_rule() -> None:
                 "properties": {"logical_entity_type": {"const": "other"}},
                 "required": ["logical_entity_type"],
             },
-            "then": {
-                "properties": {"logical_entity_type_detail": {"type": "string"}}
-            },
-            "else": {
-                "properties": {"logical_entity_type_detail": {"type": "null"}}
-            },
+            "then": {"properties": {"logical_entity_type_detail": {"type": "string"}}},
+            "else": {"properties": {"logical_entity_type_detail": {"type": "null"}}},
         }
     ]
 
 
 def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
     generated = build_model_dataset_schema(DATASETS_BY_NAME["generated_code"])
-    source_system = build_model_dataset_schema(
-        DATASETS_BY_NAME["generated_code_source_system"]
-    )
+    source_system = build_model_dataset_schema(DATASETS_BY_NAME["generated_code_source_system"])
     group = build_model_dataset_schema(DATASETS_BY_NAME["validation_group"])
 
     assert set(generated["properties"]) == {
@@ -197,6 +190,7 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
         "artifact_type",
         "generated_code_content",
         "generated_code_status",
+        "generated_code_is_locked",
     }
     assert set(source_system["properties"]) == {
         "modeled_entity_type",
@@ -204,6 +198,7 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
         "artifact_name",
         "source_system_code",
         "generated_code_source_system_status",
+        "generated_code_source_system_is_locked",
     }
     assert set(group["properties"]) == {
         "tenant_code",
@@ -211,19 +206,38 @@ def test_generated_code_and_validation_public_shapes_are_minimal() -> None:
         "validation_group_name",
         "validation_group_description",
         "is_active",
+        "is_locked",
     }
+
+
+@pytest.mark.parametrize(
+    "dataset,lock_field",
+    [
+        ("generated_code", "generated_code_is_locked"),
+        ("generated_code_source_system", "generated_code_source_system_is_locked"),
+        ("validation_group", "is_locked"),
+        ("validation_check", "is_locked"),
+    ],
+)
+def test_code_validation_locks_are_required_in_portable_records(
+    dataset: ModelChangeSetDataset, lock_field: str
+) -> None:
+    definition = DATASETS_BY_NAME[dataset]
+    schema = build_model_dataset_schema(definition)
+    assert lock_field in schema["required"]
+    assert schema["properties"][lock_field]["type"] == "boolean"
+    record = deepcopy(complete_model_graph()[dataset][0])
+    del record[lock_field]
+    with pytest.raises(ValidationError):
+        definition.row_model.model_validate(record, strict=False)
 
 
 def test_records_reject_database_or_removed_fields() -> None:
     graph = complete_model_graph()
 
-    assert ProfilingProfileRecord.model_validate(
-        graph["profiling_profile"][0], strict=False
-    )
+    assert ProfilingProfileRecord.model_validate(graph["profiling_profile"][0], strict=False)
     assert GeneratedCodeRecord.model_validate(graph["generated_code"][0], strict=False)
-    assert ValidationCheckRecord.model_validate(
-        graph["validation_check"][0], strict=False
-    )
+    assert ValidationCheckRecord.model_validate(graph["validation_check"][0], strict=False)
 
     for model, record, extra in (
         (ProfilingProfileRecord, graph["profiling_profile"][0], {"attribute_id": 1}),
@@ -256,8 +270,7 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     graph = complete_model_graph()
     graph["conceptual_object"].reverse()
     encoded = {
-        item.definition.name: item
-        for item in encode_model_snapshot(snapshot_from_graph(graph))
+        item.definition.name: item for item in encode_model_snapshot(snapshot_from_graph(graph))
     }
     rows = encoded["conceptual_object"].rows_jsonl.decode().splitlines()
     assert [json.loads(row)["conceptual_object_name"] for row in rows] == [
@@ -266,19 +279,19 @@ def test_snapshot_encoding_sorts_rows_and_rejects_duplicate_keys() -> None:
     ]
 
     duplicate = deepcopy(graph["conceptual_object"][0])
-    duplicate["conceptual_object_name"] = (
-        f" {duplicate['conceptual_object_name'].upper()} "
-    )
+    duplicate["conceptual_object_name"] = f" {duplicate['conceptual_object_name'].upper()} "
     graph["conceptual_object"].append(duplicate)
     with pytest.raises(SnapshotContractError, match="duplicate canonical key"):
         encode_model_snapshot(snapshot_from_graph(graph))
 
 
 def test_snapshot_archive_catalogs_all_sections_and_datasets(tmp_path: Path) -> None:
-    snapshot = snapshot_from_graph(complete_model_graph()).model_copy(update={
-        "model_tenant_code": "TENANT_A",
-        "other_active_model_names": ("Legacy Model", "Other Model"),
-    })
+    snapshot = snapshot_from_graph(complete_model_graph()).model_copy(
+        update={
+            "model_tenant_code": "TENANT_A",
+            "other_active_model_names": ("Legacy Model", "Other Model"),
+        }
+    )
     created_at = datetime(2026, 9, 1, tzinfo=UTC)
     output = tmp_path / "model-snapshot.zip"
 

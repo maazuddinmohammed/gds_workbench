@@ -4,8 +4,6 @@ from collections.abc import Mapping
 from uuid import UUID
 
 import pytest
-from pydantic import SecretStr
-
 from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     load_default_agent_capabilities,
@@ -19,6 +17,7 @@ from gds_workbench_api.integrations.agents.configuration import (
     AgentRuntimeConfiguration,
     FoundryClientCredentials,
 )
+from pydantic import SecretStr
 
 
 class InjectedAuthentication:
@@ -28,7 +27,7 @@ class InjectedAuthentication:
     async def authenticate(self) -> OpenAIProviderCredentials:
         return OpenAIProviderCredentials(
             api_key=SecretStr("never-log-this-injected-token"),
-            base_url="https://fixture.azuredatabricks.net/serving-endpoints",
+            base_url="https://fixture.openai.azure.com/openai/v1/",
         )
 
     async def close(self) -> None:
@@ -41,9 +40,9 @@ def _remote_configuration() -> AgentRuntimeConfiguration:
         timeout_seconds=90,
         connections=(
             AgentProviderConnection(
-                provider_code="databricks",
-                model_code="databricks-primary",
-                model_endpoint="databricks-gpt-oss-120b",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
+                model_endpoint="gpt-5.6-sol",
                 timeout_seconds=90,
             ),
         ),
@@ -59,8 +58,8 @@ def _multi_remote_configuration() -> AgentRuntimeConfiguration:
             primary,
             primary.model_copy(
                 update={
-                    "model_code": "databricks-secondary",
-                    "model_endpoint": "databricks-secondary",
+                    "model_code": "foundry-secondary",
+                    "model_endpoint": "foundry-secondary",
                 }
             ),
         ),
@@ -69,13 +68,8 @@ def _multi_remote_configuration() -> AgentRuntimeConfiguration:
 
 def _capabilities_with_secondary(provider_code: str) -> AgentCapabilityRegistry:
     registry = load_default_agent_capabilities()
-    primary = next(
-        model for model in registry.models if model.provider_code == provider_code
-    )
-    if provider_code == "databricks":
-        model_code = "databricks-secondary"
-    else:
-        model_code = "foundry-secondary"
+    primary = next(model for model in registry.models if model.provider_code == provider_code)
+    model_code = "foundry-secondary"
     secondary = primary.model_copy(
         update={
             "code": model_code,
@@ -87,22 +81,10 @@ def _capabilities_with_secondary(provider_code: str) -> AgentCapabilityRegistry:
 
 
 @pytest.mark.asyncio
-async def test_injected_authentication_reaches_both_sdks_and_closes_once(
+async def test_injected_authentication_reaches_openai_sdk_and_closes_once(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     captured: dict[str, Mapping[str, object]] = {}
-
-    class FakeLangChainAdapter:
-        sdk_code = "langchain_create_agent"
-
-        def __init__(
-            self,
-            *,
-            connections: tuple[AgentProviderConnection, ...],
-            model_authentications: Mapping[str, object],
-        ) -> None:
-            assert len(connections) == 1
-            captured[self.sdk_code] = model_authentications
 
     class FakeOpenAIAdapter:
         sdk_code = "openai_agents_sdk"
@@ -118,11 +100,6 @@ async def test_injected_authentication_reaches_both_sdks_and_closes_once(
 
     monkeypatch.setattr(
         agent_composition,
-        "LangChainCreateAgentAdapter",
-        FakeLangChainAdapter,
-    )
-    monkeypatch.setattr(
-        agent_composition,
         "OpenAIAgentsSdkAdapter",
         FakeOpenAIAdapter,
     )
@@ -131,12 +108,12 @@ async def test_injected_authentication_reaches_both_sdks_and_closes_once(
     router = agent_composition.create_agent_execution_router(
         configuration=_remote_configuration(),
         capabilities=load_default_agent_capabilities(),
-        provider_authentications={"databricks": authentication},
+        provider_authentications={"microsoft_foundry": authentication},
     )
 
-    assert set(captured) == {"langchain_create_agent", "openai_agents_sdk"}
+    assert set(captured) == {"openai_agents_sdk"}
     assert all(
-        authentications["databricks"] is authentication
+        authentications["microsoft_foundry"] is authentication
         for authentications in captured.values()
     )
     await router.close()
@@ -148,9 +125,7 @@ def test_remote_router_constructs_only_sdks_registered_for_the_bound_model(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     registry = load_default_agent_capabilities()
-    primary = next(
-        model for model in registry.models if model.code == "databricks-primary"
-    )
+    primary = next(model for model in registry.models if model.code == "foundry-primary")
     openai_only = primary.model_copy(
         update={
             "execution_profiles": tuple(
@@ -170,23 +145,12 @@ def test_remote_router_constructs_only_sdks_registered_for_the_bound_model(
     )
     constructed: list[str] = []
 
-    class ForbiddenLangChainAdapter:
-        sdk_code = "langchain_create_agent"
-
-        def __init__(self, **_: object) -> None:
-            raise AssertionError("An unregistered SDK adapter was constructed")
-
     class FakeOpenAIAdapter:
         sdk_code = "openai_agents_sdk"
 
         def __init__(self, **_: object) -> None:
             constructed.append(self.sdk_code)
 
-    monkeypatch.setattr(
-        agent_composition,
-        "LangChainCreateAgentAdapter",
-        ForbiddenLangChainAdapter,
-    )
     monkeypatch.setattr(
         agent_composition,
         "OpenAIAgentsSdkAdapter",
@@ -196,7 +160,7 @@ def test_remote_router_constructs_only_sdks_registered_for_the_bound_model(
     agent_composition.create_agent_execution_router(
         configuration=_remote_configuration(),
         capabilities=registry,
-        provider_authentications={"databricks": InjectedAuthentication()},
+        provider_authentications={"microsoft_foundry": InjectedAuthentication()},
     )
 
     assert constructed == ["openai_agents_sdk"]
@@ -216,19 +180,11 @@ async def test_multiple_models_share_one_provider_authentication_and_cleanup(
             model_authentications: Mapping[str, object],
         ) -> None:
             captured_connections.append(connections)
-            assert set(model_authentications) == {"databricks"}
-
-    class FakeLangChainAdapter(FakeAdapter):
-        sdk_code = "langchain_create_agent"
+            assert set(model_authentications) == {"microsoft_foundry"}
 
     class FakeOpenAIAdapter(FakeAdapter):
         sdk_code = "openai_agents_sdk"
 
-    monkeypatch.setattr(
-        agent_composition,
-        "LangChainCreateAgentAdapter",
-        FakeLangChainAdapter,
-    )
     monkeypatch.setattr(
         agent_composition,
         "OpenAIAgentsSdkAdapter",
@@ -238,11 +194,11 @@ async def test_multiple_models_share_one_provider_authentication_and_cleanup(
 
     router = agent_composition.create_agent_execution_router(
         configuration=_multi_remote_configuration(),
-        capabilities=_capabilities_with_secondary("databricks"),
-        provider_authentications={"databricks": authentication},
+        capabilities=_capabilities_with_secondary("microsoft_foundry"),
+        provider_authentications={"microsoft_foundry": authentication},
     )
 
-    assert len(captured_connections) == 2
+    assert len(captured_connections) == 1
     assert all(len(connections) == 2 for connections in captured_connections)
     await router.close()
     await router.close()
@@ -251,14 +207,12 @@ async def test_multiple_models_share_one_provider_authentication_and_cleanup(
 
 @pytest.mark.parametrize(
     "provider_codes",
-    ((), ("other",), ("databricks", "other")),
+    ((), ("other",), ("microsoft_foundry", "other")),
 )
 def test_injected_authentication_requires_exact_provider_coverage(
     provider_codes: tuple[str, ...],
 ) -> None:
-    authentications = {
-        provider_code: InjectedAuthentication() for provider_code in provider_codes
-    }
+    authentications = {provider_code: InjectedAuthentication() for provider_code in provider_codes}
 
     with pytest.raises(
         ValueError,
@@ -290,7 +244,7 @@ def test_remote_router_rejects_unregistered_model_binding_at_startup() -> None:
         agent_composition.create_agent_execution_router(
             configuration=configuration,
             capabilities=load_default_agent_capabilities(),
-            provider_authentications={"databricks": InjectedAuthentication()},
+            provider_authentications={"microsoft_foundry": InjectedAuthentication()},
         )
 
 
@@ -300,9 +254,7 @@ def test_remote_router_rejects_a_deployment_name_outside_the_registry() -> None:
         mode="remote",
         timeout_seconds=90,
         connections=(
-            primary.model_copy(
-                update={"model_endpoint": "environment-overridden-endpoint"}
-            ),
+            primary.model_copy(update={"model_endpoint": "environment-overridden-endpoint"}),
         ),
     )
 
@@ -310,7 +262,7 @@ def test_remote_router_rejects_a_deployment_name_outside_the_registry() -> None:
         agent_composition.create_agent_execution_router(
             configuration=configuration,
             capabilities=load_default_agent_capabilities(),
-            provider_authentications={"databricks": InjectedAuthentication()},
+            provider_authentications={"microsoft_foundry": InjectedAuthentication()},
         )
 
 
@@ -328,9 +280,6 @@ async def test_multiple_foundry_models_create_and_close_one_shared_authenticatio
     class FakeAdapter:
         def __init__(self, **_: object) -> None: ...
 
-    class FakeLangChainAdapter(FakeAdapter):
-        sdk_code = "langchain_create_agent"
-
     class FakeOpenAIAdapter(FakeAdapter):
         sdk_code = "openai_agents_sdk"
 
@@ -338,11 +287,6 @@ async def test_multiple_foundry_models_create_and_close_one_shared_authenticatio
         agent_composition,
         "FoundryModelAuthentication",
         fake_authentication,
-    )
-    monkeypatch.setattr(
-        agent_composition,
-        "LangChainCreateAgentAdapter",
-        FakeLangChainAdapter,
     )
     monkeypatch.setattr(
         agent_composition,

@@ -416,7 +416,9 @@ DATASETS = (
                 references=(_reference(OBJECT_KEY, "object", OBJECT_KEY),),
                 lookup_fields=(
                     "attribute_data_type",
+                    "attribute_inferred_data_type",
                     "is_natural_key",
+                    "is_locked",
                     "is_active",
                 ),
             ),

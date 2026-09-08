@@ -13,6 +13,7 @@ from gds_etl_workbench.infrastructure.postgres import (
     ReadTransaction,
     WriteTransaction,
 )
+from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from gds_workbench_api.capabilities import AgentCapabilityRegistry
 from gds_workbench_api.features.analysis import (
@@ -41,6 +42,10 @@ from gds_workbench_api.features.mapping import (
     PostgresMappingRunContextRepository,
     PostgresMappingRunPlanRepository,
 )
+from gds_workbench_api.features.metadata_enrichment.repository import MetadataEnrichmentRepository
+from gds_workbench_api.features.metadata_enrichment.service import (
+    DatabaseMetadataEnrichmentExecutor,
+)
 from gds_workbench_api.features.profiling import DatabaseProfilingWorkflowRepository
 from gds_workbench_api.features.validation import DatabaseValidationExecutor, ValidationWorkflow
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
@@ -55,8 +60,8 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
 from gds_workbench_api.features.workflows.authoring.no_op import (
     DatabaseAuthoringNoOpService,
 )
+from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
 from gds_workbench_api.integrations.databricks import DatabricksExecutionAdapters
-from gds_workbench_runtime.profiling.workflow import ProfilingWorkflowOrchestrator
 
 from .dispatcher import WorkflowExecutionServices
 
@@ -85,6 +90,7 @@ class WorkflowRuntimeDatabase(Protocol):
 
 @dataclass(frozen=True, slots=True)
 class WorkflowRuntimeServices:
+    usage_recorder: DatabaseWorkflowUsageRecorder
     agent_executor: AgentExecutionRouter
     profiling: ProfilingWorkflowOrchestrator
     analysis_inference: AnalysisInferenceWorkflow
@@ -95,12 +101,14 @@ class WorkflowRuntimeServices:
     mapping: MappingWorkflow
     code_generation: CodeGenerationWorkflow
     validation: ValidationWorkflow
+    metadata_enrichment: DatabaseMetadataEnrichmentExecutor
 
     async def close(self) -> None:
         await self.agent_executor.close()
 
     def execution_services(self) -> WorkflowExecutionServices:
         return WorkflowExecutionServices(
+            usage_recorder=self.usage_recorder,
             profiling=self.profiling,
             analysis_inference=self.analysis_inference,
             analysis_validation=self.analysis_validation,
@@ -110,6 +118,7 @@ class WorkflowRuntimeServices:
             mapping=self.mapping,
             code_generation=self.code_generation,
             validation=self.validation,
+            metadata_enrichment=self.metadata_enrichment,
         )
 
 
@@ -126,7 +135,16 @@ def create_workflow_runtime_services(
     """Assemble one cohesive executor graph shared by both process types."""
     from gds_workbench_api.integrations.agents import create_agent_execution_router
 
+    usage_recorder = DatabaseWorkflowUsageRecorder(
+        database=database,
+        pricing_by_model={
+            connection.model_code: connection.pricing
+            for connection in agent_runtime.connections
+            if connection.pricing is not None
+        },
+    )
     agent_executor = create_agent_execution_router(
+        usage_recorder=usage_recorder,
         configuration=agent_runtime,
         capabilities=agent_capability_registry,
         provider_authentications=provider_authentications,
@@ -197,6 +215,7 @@ def create_workflow_runtime_services(
     )
 
     return WorkflowRuntimeServices(
+        usage_recorder=usage_recorder,
         agent_executor=agent_executor,
         profiling=ProfilingWorkflowOrchestrator(
             repository=DatabaseProfilingWorkflowRepository(
@@ -226,6 +245,14 @@ def create_workflow_runtime_services(
             executor=code_generation_executor,
         ),
         validation=ValidationWorkflow(lifecycle=lifecycle, executor=validation_executor),
+        metadata_enrichment=DatabaseMetadataEnrichmentExecutor(
+            repository=MetadataEnrichmentRepository(
+                database, environment_code=databricks_environment_code
+            ),
+            agent_executor=agent_executor,
+            lifecycle=lifecycle,
+            sql_executor=databricks_execution.metadata_enrichment_sql,
+        ),
     )
 
 

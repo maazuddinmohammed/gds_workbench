@@ -25,12 +25,17 @@ DECLARE
         'application.release_notebook_workflow_run_claim(bigint,uuid)'
     ];
     v_application_web_function_signatures TEXT[] := ARRAY[
+        'application.metadata_object_review_revision(core.object)',
+        'application.metadata_attribute_review_revision(core.attribute,core.object)',
+        'application.authorize_model_record_review(uuid,uuid,character varying,bigint,bigint)',
+        'application.add_model_input_scope_objects(uuid,uuid,bigint,bigint,bigint,bigint[])',
+        'application.review_metadata_records(uuid,uuid,character varying,bigint,character varying,character varying,jsonb,uuid)',
         'application.archive_model(uuid,uuid,character varying,bigint,bigint)',
         'application.set_principal_last_tenant(uuid,uuid,character varying,bigint)',
         'application.create_model(uuid,uuid,character varying,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
         'application.update_model(uuid,uuid,character varying,bigint,bigint,character varying,character varying,text,jsonb,text,jsonb,jsonb,character varying,character varying,character varying,character varying,integer,integer)',
         'application.save_prompt_template(uuid,uuid,character varying,bigint,bigint,character varying,bigint,character varying,character varying,text,boolean,timestamp with time zone)',
-        'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone)',
+        'application.save_prompt_template_draft(uuid,uuid,character varying,bigint,bigint,text,text,text,timestamp with time zone,text[])',
         'application.transition_prompt_template_version(uuid,uuid,character varying,bigint,character varying,character varying)',
         'application.set_prompt_assignment(uuid,uuid,character varying,bigint,character varying,bigint,bigint,bigint)',
         'application.create_output_template(uuid,uuid,character varying,character varying,character varying,character varying,character varying,jsonb)',
@@ -38,16 +43,23 @@ DECLARE
         'application.save_sql_generation_guide(uuid,uuid,character varying,bigint,character varying,character varying,character varying,boolean,boolean,timestamp with time zone)',
         'application.save_sql_generation_guide_draft(uuid,uuid,character varying,bigint,bigint,text,timestamp with time zone)',
         'application.transition_sql_generation_guide_version(uuid,uuid,character varying,bigint,character varying,character varying)',
-        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint)',
+        'application.create_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying,character varying,character varying,character varying,character varying,integer,integer,bigint[],character varying[],character varying,character varying,uuid,jsonb,character varying,character varying,bigint,bigint,bigint,character varying,bigint,jsonb)',
         'application.start_workflow_run(uuid,uuid,character varying,bigint,bigint)',
         'application.claim_next_workflow_run(integer)',
         'application.renew_workflow_run_claim(bigint,uuid,integer)',
         'application.release_workflow_run_claim(bigint,uuid)',
         'application.assert_workflow_run_claim(bigint,uuid)',
+        'application.begin_workflow_run_usage(uuid,uuid,character varying,bigint,bigint,uuid)',
+        'application.begin_workflow_run_model_request(uuid,uuid,character varying,bigint,bigint,uuid,uuid,uuid,character varying,integer,integer,jsonb)',
+        'application.complete_workflow_run_model_request(uuid,uuid,character varying,bigint,bigint,uuid,uuid,bigint,bigint,bigint,bigint,bigint,bigint,boolean)',
         'application.append_workflow_run_event(uuid,uuid,character varying,bigint,bigint,bigint,integer,character varying,character varying,character varying,integer,integer,integer)',
         'application.complete_authoring_workflow_run_no_op(uuid,uuid,character varying,bigint,bigint,bigint,character varying,character varying,uuid,bigint,character,bigint,integer,character varying,character varying,character varying,integer,integer,integer)',
         'application.complete_workflow_run(uuid,uuid,character varying,bigint,bigint,integer)',
         'application.fail_workflow_run(uuid,uuid,character varying,bigint,bigint,character varying,character varying)',
+        'application.get_metadata_enrichment_execution_context(uuid,uuid,character varying,bigint,bigint)',
+        'application.get_metadata_enrichment_connection_values(uuid,uuid,character varying,bigint,bigint,bigint,character varying)',
+        'application.complete_metadata_enrichment(uuid,uuid,character varying,bigint,bigint,uuid,character,jsonb)',
+        'application.get_metadata_enrichment_results(uuid,uuid,character varying,bigint,integer,integer)',
         'application.get_profiling_execution_context(uuid,uuid,character varying,bigint,bigint)',
         'application.get_profiling_connection_values(uuid,uuid,character varying,bigint,bigint,character varying)',
         'application.get_analysis_validation_execution_context(uuid,uuid,character varying,bigint,bigint,character varying)',
@@ -57,6 +69,15 @@ DECLARE
         'application.persist_profiling_results(uuid,uuid,character varying,bigint,bigint,jsonb)'
     ];
 BEGIN
+    IF to_regclass('application.metadata_enrichment_result') IS NULL OR NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'application' AND table_name = 'workflow_run'
+           AND column_name = 'metadata_enrichment_receipt_digest'
+           AND data_type = 'character' AND character_maximum_length = 64
+    ) THEN
+        RAISE EXCEPTION 'Metadata enrichment durable result contract is invalid';
+    END IF;
+
     IF current_setting('server_version_num')::INTEGER / 10000 <> 18 THEN
         RAISE EXCEPTION 'PostgreSQL 18 is required';
     END IF;
@@ -218,6 +239,14 @@ BEGIN
         RAISE EXCEPTION 'Workflow Run claim column contract is invalid';
     END IF;
 
+    IF NOT EXISTS (
+        SELECT 1 FROM information_schema.columns
+         WHERE table_schema = 'application' AND table_name = 'prompt_template_version'
+           AND column_name = 'agent_tool_names' AND udt_name = '_text'
+    ) THEN
+        RAISE EXCEPTION 'Prompt tool configuration column is missing';
+    END IF;
+
     SELECT count(*)
       INTO v_application_table_count
       FROM information_schema.tables AS table_record
@@ -238,10 +267,13 @@ BEGIN
                'workflow_run_object_selection',
                'workflow_run_system_selection',
                'workflow_run_mapping_target_selection',
-               'workflow_run_prompt_snapshot'
+               'workflow_run_prompt_snapshot',
+               'metadata_enrichment_result',
+               'workflow_run_model_request',
+               'metadata_review_event'
            );
 
-    IF v_application_table_count <> 15 OR EXISTS (
+    IF v_application_table_count <> 18 OR EXISTS (
         SELECT 1
           FROM information_schema.tables AS table_record
          WHERE table_record.table_schema = 'application'
@@ -261,7 +293,10 @@ BEGIN
                    'workflow_run_object_selection',
                    'workflow_run_system_selection',
                    'workflow_run_mapping_target_selection',
-                   'workflow_run_prompt_snapshot'
+                   'workflow_run_prompt_snapshot',
+               'metadata_enrichment_result',
+               'workflow_run_model_request',
+               'metadata_review_event'
                )
     ) THEN
         RAISE EXCEPTION 'application table contract is invalid';
@@ -329,6 +364,19 @@ BEGIN
            AND oidvectortypes(function_record.proargtypes) =
                'bigint, character varying, character varying'
            AND function_record.pronargdefaults = 1
+           AND function_record.provolatile = 's'
+           AND NOT function_record.prosecdef
+           AND function_record.proconfig =
+               ARRAY['search_path=pg_catalog']::TEXT[]
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM pg_catalog.pg_proc AS function_record
+          JOIN pg_catalog.pg_namespace AS namespace_record
+            ON namespace_record.oid = function_record.pronamespace
+         WHERE namespace_record.nspname = 'workflow'
+           AND function_record.proname = 'list_mapping_source_objects'
+           AND oidvectortypes(function_record.proargtypes) =
+               'bigint, bigint, character varying, bigint'
            AND function_record.provolatile = 's'
            AND NOT function_record.prosecdef
            AND function_record.proconfig =
@@ -738,6 +786,26 @@ BEGIN
         RAISE EXCEPTION 'workflow.mapping_attribute identifier is invalid';
     END IF;
 
+    IF EXISTS (
+        SELECT 1
+          FROM (VALUES
+                   ('generated_code', 'generated_code_is_locked'),
+                   ('generated_code_source_system', 'generated_code_source_system_is_locked'),
+                   ('validation_group', 'is_locked'),
+                   ('validation_check', 'is_locked')
+               ) AS required(table_name, column_name)
+         WHERE NOT EXISTS (
+             SELECT 1 FROM information_schema.columns AS column_record
+              WHERE column_record.table_schema = 'workflow'
+                AND column_record.table_name = required.table_name
+                AND column_record.column_name = required.column_name
+                AND column_record.data_type = 'boolean'
+                AND column_record.is_nullable = 'NO'
+         )
+    ) THEN
+        RAISE EXCEPTION 'Code and Validation review lock fields are invalid';
+    END IF;
+
     IF (
         SELECT count(*)
           FROM pg_catalog.pg_constraint AS constraint_record
@@ -812,14 +880,25 @@ BEGIN
          WHERE column_record.table_schema = 'core'
            AND column_record.table_name = 'object'
            AND column_record.column_name = 'is_locked'
-    ) OR EXISTS (
+    ) OR NOT EXISTS (
         SELECT 1
           FROM information_schema.columns AS column_record
          WHERE column_record.table_schema = 'core'
            AND column_record.table_name = 'attribute'
            AND column_record.column_name = 'is_locked'
+           AND column_record.data_type = 'boolean'
+           AND column_record.is_nullable = 'NO'
+    ) OR NOT EXISTS (
+        SELECT 1
+          FROM information_schema.columns AS column_record
+         WHERE column_record.table_schema = 'core'
+           AND column_record.table_name = 'attribute'
+           AND column_record.column_name = 'attribute_inferred_data_type'
+           AND column_record.data_type = 'character varying'
+           AND column_record.character_maximum_length = 100
+           AND column_record.is_nullable = 'YES'
     ) THEN
-        RAISE EXCEPTION 'Object lock source is invalid';
+        RAISE EXCEPTION 'Physical metadata enrichment columns are invalid';
     END IF;
 
     IF NOT EXISTS (
@@ -1409,9 +1488,10 @@ BEGIN
             WHERE namespace_record.nspname = 'application'
               AND application_table.relkind IN ('r', 'p')
               AND (
-                  NOT has_table_privilege(
+                  has_table_privilege(
                       'gds_web_write', application_table.oid, 'SELECT'
-                  )
+                  ) IS DISTINCT FROM (application_table.relname NOT IN (
+                      'metadata_enrichment_result', 'metadata_review_event'))
                   OR EXISTS (
                       SELECT 1
                         FROM unnest(ARRAY[
@@ -1518,7 +1598,11 @@ BEGIN
            AS expected_function(signature)
      JOIN pg_catalog.pg_proc AS application_function
         ON application_function.oid = to_regprocedure(expected_function.signature)
-     WHERE application_function.prosecdef
+     WHERE application_function.prosecdef = (application_function.proname NOT IN (
+               'metadata_object_review_revision', 'metadata_attribute_review_revision'))
+       AND (application_function.proname NOT IN (
+               'metadata_object_review_revision', 'metadata_attribute_review_revision')
+            OR (application_function.provolatile = 'i' AND application_function.proisstrict))
        AND application_function.proconfig =
            ARRAY['search_path=pg_catalog']::TEXT[]
        AND has_function_privilege(
@@ -1638,6 +1722,7 @@ BEGIN
                    'workflow.list_tenant_visible_objects(bigint)',
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
+                   'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)'
                ]) AS web_workflow_function(signature)
          WHERE NOT has_function_privilege(
@@ -1732,6 +1817,71 @@ BEGIN
     END IF;
 END;
 $verify_install$;
+
+DO $verify_workflow_usage$
+BEGIN
+    IF to_regclass('application.workflow_run_model_request') IS NULL
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_constraint
+            WHERE conrelid = 'application.workflow_run_model_request'::REGCLASS
+              AND conname = 'ck_workflow_run_model_request_pricing'
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_proc
+            WHERE oid = to_regprocedure(
+                'application.begin_workflow_run_usage(uuid,uuid,character varying,bigint,bigint,uuid)'
+            ) AND prorettype = 'character varying'::REGTYPE
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_constraint
+            WHERE conrelid = 'application.workflow_run'::REGCLASS
+              AND conname = 'ck_workflow_run_usage_tracking'
+       )
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_trigger
+            WHERE tgrelid = 'application.workflow_run_model_request'::REGCLASS
+              AND tgname = 'guard_workflow_run_model_request' AND tgenabled = 'O'
+       )
+       OR has_table_privilege('gds_web_write',
+           'application.workflow_run_model_request', 'INSERT,UPDATE,DELETE')
+       OR has_table_privilege('gds_app_write',
+           'application.workflow_run_model_request', 'SELECT,INSERT,UPDATE,DELETE')
+       OR EXISTS (
+           SELECT 1 FROM unnest(ARRAY[
+               'application.begin_workflow_run_usage(uuid,uuid,character varying,bigint,bigint,uuid)',
+               'application.begin_workflow_run_model_request(uuid,uuid,character varying,bigint,bigint,uuid,uuid,uuid,character varying,integer,integer,jsonb)',
+               'application.complete_workflow_run_model_request(uuid,uuid,character varying,bigint,bigint,uuid,uuid,bigint,bigint,bigint,bigint,bigint,bigint,boolean)'
+           ]) AS required(signature)
+           WHERE to_regprocedure(required.signature) IS NULL
+              OR NOT has_function_privilege('gds_web_write', required.signature, 'EXECUTE')
+              OR has_function_privilege('gds_app_write', required.signature, 'EXECUTE')
+              OR has_function_privilege('gds_notebook_runtime', required.signature, 'EXECUTE')
+       ) THEN
+        RAISE EXCEPTION 'Workflow usage schema or privileges are invalid';
+    END IF;
+END;
+$verify_workflow_usage$;
+
+DO $verify_metadata_review$
+BEGIN
+    IF to_regclass('application.metadata_review_event') IS NULL
+       OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_trigger
+            WHERE tgrelid = 'application.metadata_review_event'::REGCLASS
+              AND tgname = 'guard_metadata_review_event' AND tgenabled = 'O'
+       ) OR NOT EXISTS (
+           SELECT 1 FROM pg_catalog.pg_constraint
+            WHERE conrelid = 'application.metadata_review_event'::REGCLASS
+              AND conname = 'uq_metadata_review_request' AND contype = 'u'
+       ) OR EXISTS (
+           SELECT 1 FROM unnest(ARRAY['gds_web_write', 'gds_app_write', 'gds_notebook_runtime']) AS runtime(name)
+            WHERE has_table_privilege(runtime.name, 'application.metadata_review_event',
+                'SELECT,INSERT,UPDATE,DELETE,TRUNCATE,REFERENCES,TRIGGER')
+       ) THEN
+        RAISE EXCEPTION 'Metadata review schema or privileges are invalid';
+    END IF;
+END;
+$verify_metadata_review$;
 
 SELECT '1.0.0' AS schema_version,
        'gds_mcp_runtime' AS runtime_login,

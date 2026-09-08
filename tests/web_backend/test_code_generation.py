@@ -15,7 +15,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.code_generation import (
     CodeGenerationTargetFilters,
     CodeGenerationTargetObjectReference,
@@ -109,6 +108,7 @@ class StaticCodeGenerationService:
                     source_system_count=2,
                     artifacts=(
                         StoredSqlArtifactSummary(
+                            generated_code_is_locked=False,
                             generated_sql_artifact_id=901,
                             artifact_name="customer.sql",
                             workflow_run_id=None,
@@ -146,6 +146,7 @@ class StaticCodeGenerationService:
         ).items[0]
         sql = "SELECT customer_id\nFROM silver_crm.customer;\n"
         return GeneratedSqlArtifactDetail(
+            generated_code_is_locked=False,
             generated_sql_artifact_id=901,
             artifact_name="customer.sql",
             model_id=18,
@@ -199,9 +200,7 @@ class StaticCodeGenerationService:
             model_id=model_id,
             generated_sql_artifact_id=901,
         )
-        second_target = detail.target.model_copy(
-            update={"object_id": 502, "object_name": "order"}
-        )
+        second_target = detail.target.model_copy(update={"object_id": 502, "object_name": "order"})
         second_sql = "SELECT order_id\nFROM silver_crm.order;\n"
         return (
             SqlArtifactDownload(
@@ -296,9 +295,7 @@ def test_code_generation_targets_are_target_object_first_and_filterable() -> Non
     assert item["artifact_count"] == 1
 
 
-def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenance() -> (
-    None
-):
+def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenance() -> None:
     app = FastAPI()
     app.include_router(
         create_code_generation_router(
@@ -308,9 +305,7 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
     )
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/artifacts/901"
-        )
+        response = client.get("/api/v1/tenants/7/models/18/code-generation/artifacts/901")
 
     assert response.status_code == 200
     payload = response.json()
@@ -329,9 +324,7 @@ def test_generated_sql_artifact_detail_returns_only_stored_sql_and_safe_provenan
         "generated_by_display_name": "Maaz",
     }
     assert payload["workflow_run_id"] is None
-    assert payload["generated_sql"] == (
-        "SELECT customer_id\nFROM silver_crm.customer;\n"
-    )
+    assert payload["generated_sql"] == ("SELECT customer_id\nFROM silver_crm.customer;\n")
     detail = GeneratedSqlArtifactDetail.model_validate(payload, strict=False)
     assert "SELECT customer_id" not in repr(detail)
     assert "created_by" not in payload
@@ -371,9 +364,7 @@ def test_generated_sql_artifact_detail_allows_missing_workflow_provenance() -> N
     )
 
     with TestClient(app) as client:
-        response = client.get(
-            "/api/v1/tenants/7/models/18/code-generation/artifacts/901"
-        )
+        response = client.get("/api/v1/tenants/7/models/18/code-generation/artifacts/901")
 
     assert response.status_code == 200
     assert response.json()["guide"] is None
@@ -398,9 +389,7 @@ def test_individual_sql_download_has_safe_filename_and_content_headers() -> None
     assert response.status_code == 200
     assert response.content == b"SELECT customer_id\nFROM silver_crm.customer;\n"
     assert response.headers["content-type"] == "application/sql"
-    assert response.headers["content-disposition"] == (
-        'attachment; filename="customer.sql"'
-    )
+    assert response.headers["content-disposition"] == ('attachment; filename="customer.sql"')
     assert "\r" not in response.headers["content-disposition"]
     assert "\n" not in response.headers["content-disposition"]
     assert response.headers["cache-control"] == "no-store"
@@ -439,13 +428,8 @@ def test_selected_sql_zip_is_stored_bounded_and_path_safe() -> None:
             "order.sql",
         ]
         assert all(member.compress_type == ZIP_STORED for member in members)
-        assert all(
-            "/" not in member.filename and "\\" not in member.filename
-            for member in members
-        )
-        assert archive.read(members[0]) == (
-            b"SELECT customer_id\nFROM silver_crm.customer;\n"
-        )
+        assert all("/" not in member.filename and "\\" not in member.filename for member in members)
+        assert archive.read(members[0]) == (b"SELECT customer_id\nFROM silver_crm.customer;\n")
         assert archive.read(members[1]) == b"SELECT order_id\nFROM silver_crm.order;\n"
 
 
@@ -500,9 +484,7 @@ def test_selected_sql_zip_sanitizes_hostile_target_names() -> None:
         names = archive.namelist()
     assert names[0] == "customer.sql"
     assert all(
-        separator not in name
-        for name in names
-        for separator in ("/", "\\", "\r", "\n", "..")
+        separator not in name for name in names for separator in ("/", "\\", "\r", "\n", "..")
     )
 
 
@@ -544,9 +526,7 @@ def test_stored_sql_routes_expose_no_generation_or_execution_mutation() -> None:
             "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/"
             "artifacts/{generated_sql_artifact_id}/download.sql"
         ),
-        (
-            "/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/downloads/selected.zip"
-        ),
+        ("/api/v1/tenants/{tenant_id}/models/{model_id}/code-generation/downloads/selected.zip"),
     ):
         methods = {method for method in paths[path] if method != "parameters"}
         assert methods == {"get"}
@@ -663,6 +643,7 @@ class CodeTargetTransaction:
                         "workflow_run_id": None,
                         "generated_at": datetime(2026, 8, 24, 14, 0, tzinfo=UTC),
                         "generated_code_status": "active",
+                        "generated_code_is_locked": False,
                         "source_system_codes": ["CRM", "ERP"],
                         "artifact_is_current": True,
                     }
@@ -734,10 +715,7 @@ class SqlArtifactTransaction:
             assert "application.store_generated_sql_artifact" not in query
             assert "application.sql_generation_guide_version" in query
             assert "LEFT JOIN application.workflow_run AS generating_run" in query
-            assert (
-                "LEFT JOIN LATERAL workflow.list_code_generation_target_context"
-                in query
-            )
+            assert "LEFT JOIN LATERAL workflow.list_code_generation_target_context" in query
             assert "target_model.is_active" not in query
             assert "AND guide.is_active" not in query
             assert "sql_generation_guide_version_status = 'published'" not in query
@@ -752,6 +730,7 @@ class SqlArtifactTransaction:
             assert parameters == (7, 18, 901)
             sql = "SELECT customer_id\nFROM silver_crm.customer;\n"
             return {
+                "generated_code_is_locked": False,
                 "generated_sql_artifact_id": 901,
                 "artifact_name": "customer.sql",
                 "model_id": 18,
@@ -1035,9 +1014,7 @@ class StaleSqlArtifactDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_sql_artifact_remains_readable_when_context_and_guide_are_stale() -> (
-    None
-):
+async def test_database_sql_artifact_remains_readable_when_context_and_guide_are_stale() -> None:
     service = DatabaseCodeGenerationService(
         database=StaleSqlArtifactDatabase(),
         authorizer=AuthorizationService(),
@@ -1179,9 +1156,7 @@ async def test_database_selected_sql_download_reads_exact_persisted_artifacts() 
 
 
 @pytest.mark.asyncio
-async def test_database_selected_sql_download_rejects_duplicate_ids_before_query() -> (
-    None
-):
+async def test_database_selected_sql_download_rejects_duplicate_ids_before_query() -> None:
     service = DatabaseCodeGenerationService(
         database=SqlDownloadDatabase(),
         authorizer=AuthorizationService(),
@@ -1233,9 +1208,7 @@ class OversizeSqlDownloadDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_selected_sql_download_rejects_total_before_loading_sql() -> (
-    None
-):
+async def test_database_selected_sql_download_rejects_total_before_loading_sql() -> None:
     service = DatabaseCodeGenerationService(
         database=OversizeSqlDownloadDatabase(),
         authorizer=AuthorizationService(),

@@ -17,7 +17,6 @@ from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.sql_generation_guides import (
     DatabaseSqlGenerationGuideService,
     SaveSqlGenerationGuideDraftRequest,
@@ -112,9 +111,7 @@ class GuideListDatabase:
 
 
 @pytest.mark.asyncio
-async def test_guide_list_is_tenant_authorized_content_free_and_signed_page_bounded() -> (
-    None
-):
+async def test_guide_list_is_tenant_authorized_content_free_and_signed_page_bounded() -> None:
     database = GuideListDatabase()
     service = DatabaseSqlGenerationGuideService(
         database=cast(SqlGenerationGuideDatabase, database),
@@ -456,9 +453,7 @@ class TransitionVersionDatabase:
 
 
 @pytest.mark.asyncio
-async def test_super_admin_publishes_path_bound_draft_through_governed_function() -> (
-    None
-):
+async def test_super_admin_publishes_path_bound_draft_through_governed_function() -> None:
     database = TransitionVersionDatabase(
         expected_status="draft",
         target_status="published",
@@ -518,9 +513,7 @@ class GuideRouterService:
         return SqlGenerationGuidePage(
             tenant_id=tenant_id,
             items=(
-                SqlGenerationGuideSummary.model_validate(
-                    _guide_summary_row(101, "default_sql")
-                ),
+                SqlGenerationGuideSummary.model_validate(_guide_summary_row(101, "default_sql")),
             ),
             next_cursor=None,
         )

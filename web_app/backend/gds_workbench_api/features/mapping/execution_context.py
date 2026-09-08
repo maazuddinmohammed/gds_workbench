@@ -19,12 +19,20 @@ from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextToolRequestError,
     reject_forbidden_provider_json,
 )
+from gds_workbench_api.features.workflows.authoring.downstream_inputs import (
+    DownstreamContextReaders,
+    build_downstream_readers,
+    project_downstream_inputs,
+)
 from gds_workbench_api.features.workflows.authoring.plan import (
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentContextTooLargeError,
     load_default_agent_context_policy,
+)
+from gds_workbench_api.features.workflows.authoring.tool_configuration import (
+    registered_tool_definitions,
 )
 
 from .preparation_contracts import MappingPreparation
@@ -89,39 +97,8 @@ class InMemoryMappingContextToolCatalog:
             raw_datasets,
             max_result_bytes=self._max_result_bytes,
         )
-        self._definitions = (
-            LocalAgentToolDefinition(
-                name="get_mapping_context_manifest",
-                description="Return the immutable manifest for this Mapping Run context.",
-                input_schema={
-                    "type": "object",
-                    "properties": {},
-                    "additionalProperties": False,
-                },
-            ),
-            LocalAgentToolDefinition(
-                name="get_mapping_context_dataset",
-                description=(
-                    "Return one byte-bounded page from the immutable Mapping context. "
-                    "Continue only from next_offset. A large record is returned as ordered "
-                    "canonical-JSON fragments; concatenate json_text by fragment_index, "
-                    "verify record_sha256, then parse the complete JSON."
-                ),
-                input_schema={
-                    "type": "object",
-                    "properties": {
-                        "dataset": {"type": "string"},
-                        "offset": {"type": "integer", "minimum": 0},
-                        "limit": {
-                            "type": "integer",
-                            "minimum": 1,
-                            "maximum": limits.max_tool_page_records,
-                        },
-                    },
-                    "required": ["dataset", "offset", "limit"],
-                    "additionalProperties": False,
-                },
-            ),
+        self._definitions = registered_tool_definitions(
+            "mapping", max_page_records=limits.max_tool_page_records
         )
         self._manifest = _mapping_context_manifest(
             preparation,
@@ -247,7 +224,7 @@ class InMemoryMappingContextToolCatalog:
 @dataclass(frozen=True, slots=True)
 class MappingExecutionContext:
     embedded_context: JsonValue = field(repr=False)
-    tool_catalog: InMemoryMappingContextToolCatalog | None = field(
+    tool_catalog: InMemoryMappingContextToolCatalog | DownstreamContextReaders | None = field(
         default=None,
         repr=False,
     )
@@ -259,20 +236,35 @@ def build_mapping_execution_context(
     execution_mode: WorkflowExecutionMode,
     limits: MappingExecutionContextLimits | None = None,
 ) -> MappingExecutionContext:
-    """Build complete embedded context or an explicit tool-assisted manifest."""
+    """Prepare author-selected natural-key values and optional frozen readers."""
 
     selected_limits = limits or load_default_mapping_execution_context_limits()
+    raw = cast(dict[str, JsonValue], _mapping_provider_context(preparation))
+    values = project_downstream_inputs("mapping", raw)
+    if _json_size(cast(JsonValue, values)) > selected_limits.max_tool_catalog_bytes:
+        raise AgentContextTooLargeError()
+    embedded = cast(JsonValue, {"__gds_downstream_inputs__": "mapping", "values": values})
     if execution_mode == "tool_assisted":
-        catalog = InMemoryMappingContextToolCatalog(
-            preparation=preparation,
-            limits=selected_limits,
+        catalog = build_downstream_readers(
+            "mapping",
+            values,
+            max_result_bytes=min(
+                selected_limits.max_tool_result_bytes,
+                max(
+                    1,
+                    selected_limits.max_tool_transcript_bytes
+                    // preparation.plan.agent_plan.selection.max_turns,
+                ),
+            ),
+            max_page_records=selected_limits.max_tool_page_records,
+            max_cumulative_result_bytes=selected_limits.max_tool_transcript_bytes,
         )
         return MappingExecutionContext(
-            embedded_context=catalog.manifest,
+            embedded_context=embedded,
             tool_catalog=catalog,
         )
     return MappingExecutionContext(
-        embedded_context=_mapping_provider_context(preparation),
+        embedded_context=embedded,
     )
 
 

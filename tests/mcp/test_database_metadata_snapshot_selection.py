@@ -56,9 +56,7 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
     encoded = selected.datasets
     build_root_documents(encoded)
     assert selected.tenant_code == seed.tenant_code
-    rows_by_dataset = {
-        dataset.definition.name: _decode_rows(dataset) for dataset in encoded
-    }
+    rows_by_dataset = {dataset.definition.name: _decode_rows(dataset) for dataset in encoded}
 
     assert list(rows_by_dataset) == [dataset.name for dataset in DATASETS]
     forbidden_columns = {"created_time", "created_by", "updated_time", "updated_by"}
@@ -69,9 +67,7 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
         for row in rows
     )
     assert len(rows_by_dataset["project"]) == 1
-    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {
-        seed.tenant_code
-    }
+    assert {row["tenant_code"] for row in rows_by_dataset["tenant"]} >= {seed.tenant_code}
     assert len(rows_by_dataset["system"]) == 1
     assert len(rows_by_dataset["connection"]) == 2
     for dataset_name in (
@@ -118,9 +114,7 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
         seed.tenant_code,
         seed.global_tenant_code,
     }
-    assert {row["target_tenant_code"] for row in mapping_rows} == {
-        seed.global_tenant_code
-    }
+    assert {row["target_tenant_code"] for row in mapping_rows} == {seed.global_tenant_code}
     assert [row["is_active"] for row in mapping_rows].count(True) == 2
     assert [row["is_active"] for row in mapping_rows].count(False) == 2
     assert len(attribute_mapping_rows) == 2
@@ -145,9 +139,7 @@ async def test_selection_uses_source_tenant_ownership_and_relational_closure(
     assert rows_by_dataset["copy"][0]["is_active"] is False
     assert rows_by_dataset["process_group"][0]["tenant_code"] == seed.tenant_code
     assert rows_by_dataset["process_group"][0]["is_active"] is False
-    assert (
-        rows_by_dataset["process"][0]["object_tenant_code"] == seed.global_tenant_code
-    )
+    assert rows_by_dataset["process"][0]["object_tenant_code"] == seed.global_tenant_code
     assert rows_by_dataset["process"][0]["is_active"] is False
 
 
@@ -581,9 +573,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (list(object_ids.values()),),
     ).fetchall()
-    attribute_id_by_object_id = {
-        row["object_id"]: row["attribute_id"] for row in attribute_rows
-    }
+    attribute_id_by_object_id = {row["object_id"]: row["attribute_id"] for row in attribute_rows}
     first_mapping = connection.execute(
         """
         INSERT INTO core.ingestion_object_mapping (
@@ -652,11 +642,7 @@ def _seed_selection_graph(connection: Connection[Any]) -> SelectionSeed:
         """,
         (object_ids["mapped_silver"], object_ids["unrelated_bronze"]),
     ).fetchone()
-    assert (
-        first_mapping is not None
-        and second_mapping is not None
-        and copy_mapping is not None
-    )
+    assert first_mapping is not None and second_mapping is not None and copy_mapping is not None
     assert inactive_unreferenced_mapping is not None and unrelated_mapping is not None
     assert unassigned_branch_mapping is not None
     connection.execute(

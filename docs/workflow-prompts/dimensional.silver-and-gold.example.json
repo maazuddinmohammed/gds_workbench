@@ -1,0 +1,138 @@
+{
+  "gds_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "zone_code": "silver",
+      "zone_description": "Modeled operational data populated through Logical Mapping."
+    }
+  ],
+  "object_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "silver",
+      "object_name": "sales_order",
+      "object_description": "One governed sales order, populated from the applied Logical Order Mapping.",
+      "zone_code": "silver"
+    }
+  ],
+  "object_attribute_context": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "silver",
+      "object_name": "sales_order",
+      "attributes": [
+        {
+          "attribute_name": "order_id",
+          "attribute_description": "Identifier of one governed sales order.",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "is_natural_key": true,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": null
+        },
+        {
+          "attribute_name": "customer_id",
+          "attribute_description": "Customer reference recorded on the order.",
+          "attribute_data_type": "BIGINT",
+          "attribute_inferred_data_type": "BIGINT",
+          "attribute_nullability": false,
+          "is_natural_key": false,
+          "is_surrogate_key": false,
+          "is_masking_required": false,
+          "is_meta_data": false,
+          "profile": null
+        }
+      ],
+      "selected_attribute_names": [
+        "order_id",
+        "customer_id"
+      ]
+    }
+  ],
+  "modeling_assertions": [
+    {
+      "modeling_assertion_record_key": "sales_order_count",
+      "modeling_assertion_document_name": "Sales analytics rules",
+      "modeling_assertion_record_type": "business_rule",
+      "modeling_assertion_text": "One fact row represents one governed order. OrderCount is one for that row. Sum counts orders only across compatible aggregation levels.",
+      "modeling_assertion_details": {},
+      "modeling_assertion_source_location": null,
+      "modeling_assertion_confidence": "high"
+    }
+  ],
+  "logical_bindings": [
+    {
+      "tenant_code": "GDS",
+      "system_code": "WAREHOUSE",
+      "connection_code": "MAIN",
+      "object_schema": "silver",
+      "object_name": "sales_order",
+      "logical_entity_name": "Order",
+      "attributes": [
+        {
+          "attribute_name": "order_id",
+          "logical_attribute_name": "OrderID"
+        },
+        {
+          "attribute_name": "customer_id",
+          "logical_attribute_name": "CustomerID"
+        }
+      ]
+    }
+  ],
+  "naming_instructions": "Use PascalCase for Dimensional submodel, entity, attribute, and relationship names. Dimensional key Attribute names end with Key.",
+  "audit_columns": {
+    "schema_version": "1.0",
+    "columns": [
+      {
+        "semantic_name": "LoadedAt",
+        "data_type": "TIMESTAMP",
+        "nullable": false,
+        "definition": "Warehouse load time."
+      }
+    ]
+  },
+  "technical_columns": {
+    "schema_version": "1.0",
+    "dimension_surrogate_key": {
+      "semantic_name_template": "{entity_name}Key",
+      "data_type": "BIGINT",
+      "nullable": false,
+      "definition_template": "Surrogate key for {entity_name}."
+    },
+    "fact_bridge_foreign_key": {
+      "with_role_semantic_name_template": "{role_name}Key",
+      "without_role_semantic_name_template": "{entity_name}Key",
+      "definition_template": "Foreign key to {entity_name} for {role_name}."
+    },
+    "type_2": {
+      "effective_from": {
+        "semantic_name": "EffectiveFrom",
+        "data_type": "TIMESTAMP",
+        "nullable": false,
+        "definition": "Start of this version validity."
+      },
+      "effective_to": {
+        "semantic_name": "EffectiveTo",
+        "data_type": "TIMESTAMP",
+        "nullable": true,
+        "definition": "End of validity; null for current version."
+      },
+      "is_current": {
+        "semantic_name": "IsCurrent",
+        "data_type": "BOOLEAN",
+        "nullable": false,
+        "definition": "Whether this is the current version."
+      }
+    }
+  }
+}

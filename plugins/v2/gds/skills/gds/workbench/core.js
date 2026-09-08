@@ -9,10 +9,21 @@
   "use strict";
 
   function stableStringify(value) {
+    // Match Python json.dumps after the MCP request's JSON decoding.
+    if (typeof value === "number" && value !== 0 && Math.abs(value) < 0.0001) {
+      return value.toExponential().replace(/e-(\d)$/, "e-0$1");
+    }
     if (value === null || typeof value !== "object") return JSON.stringify(value);
     if (Array.isArray(value)) return `[${value.map(stableStringify).join(",")}]`;
     return `{${Object.keys(value)
-      .sort()
+      .sort((left, right) => {
+        const a = [...left], b = [...right];
+        for (let index = 0; index < Math.min(a.length, b.length); index += 1) {
+          const difference = a[index].codePointAt(0) - b[index].codePointAt(0);
+          if (difference) return difference;
+        }
+        return a.length - b.length;
+      })
       .map((key) => `${JSON.stringify(key)}:${stableStringify(value[key])}`)
       .join(",")}}`;
   }

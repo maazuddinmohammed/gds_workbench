@@ -18,9 +18,6 @@ from gds_etl_workbench.domain.errors import (
     DependencyUnavailableError,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-from psycopg import Connection
-from pydantic import ValidationError
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.prompts import (
     CreatePromptTemplateRequest,
@@ -36,6 +33,8 @@ from gds_workbench_api.features.prompts import (
     UpdatePromptTemplateRequest,
     create_prompts_router,
 )
+from psycopg import Connection
+from pydantic import ValidationError
 
 
 class DisposablePostgres(Protocol):
@@ -711,6 +710,7 @@ class SaveDraftTransaction(UpdateTemplateTransaction):
             "Analyze {{stage_context}}",
             None,
             NOW,
+            None,
         )
         return {
             "prompt_template_version_id": 1101,
@@ -1266,6 +1266,10 @@ def test_single_authenticated_router_exposes_bounded_prompt_library_surface() ->
             "PUT",
         ),
         (
+            "/api/v1/tenants/{tenant_id}/prompts/templates/{prompt_template_id}/preview",
+            "POST",
+        ),
+        (
             "/api/v1/tenants/{tenant_id}/prompts/templates/{prompt_template_id}/versions/"
             "{prompt_template_version_id}/publish",
             "POST",
@@ -1606,3 +1610,49 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
     assert cleared.effective_source == "none"
     assert retired.prompt_template_version_status == "retired"
     assert updated.is_active is False
+
+
+def test_prompt_preview_uses_synthetic_examples_and_never_saves() -> None:
+    from gds_etl_workbench.domain.errors import WorkbenchError
+    from gds_workbench_api.errors import workbench_error_response
+
+    database = TemplateDetailDatabase()
+    service = DatabasePromptService(
+        database=cast(PromptDatabase, database),
+        authorizer=AuthorizationService(),
+        cursor_signing_key=b"development-only-key-32-bytes-long",
+    )
+    app = FastAPI()
+    app.add_exception_handler(WorkbenchError, workbench_error_response)
+    app.include_router(
+        create_prompts_router(
+            identity_provider=IdentityProvider(
+                AuthMode.DEV,
+                local_tenant_id=PRINCIPAL.entra_tenant_id,
+                local_principal_object_id=PRINCIPAL.entra_object_id,
+            ),
+            service=service,
+        )
+    )
+    with TestClient(app) as client:
+        body = {
+            "system_prompt_template": "Use supplied evidence",
+            "instruction_prompt_template": "{{stage_context}}",
+        }
+        response = client.post(
+            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
+        )
+        assert response.status_code == 200
+        assert response.json()["rendered_instruction_prompt"] == "null"
+        assert "RAW_SYSTEM_SENTINEL" not in response.text
+        body["instruction_prompt_template"] = "{{not_registered}}"
+        invalid = client.post(
+            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
+        )
+        assert invalid.status_code == 422
+        assert invalid.json()["error"]["code"] == "invalid_request"
+        assert "not_registered" not in invalid.text
+    assert (
+        database.transaction.calls
+        == ["authorize", "header", "variables", "versions"] * 2
+    )

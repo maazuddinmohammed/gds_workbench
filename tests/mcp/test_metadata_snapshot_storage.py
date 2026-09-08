@@ -182,9 +182,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
     def fake_blob_service_client(**_kwargs: object) -> FakeBlobService:
         return service
 
-    monkeypatch.setattr(
-        storage_module, "DefaultAzureCredential", fake_default_azure_credential
-    )
+    monkeypatch.setattr(storage_module, "DefaultAzureCredential", fake_default_azure_credential)
     monkeypatch.setattr(storage_module, "BlobServiceClient", fake_blob_service_client)
 
     def fake_generate_blob_sas(**kwargs: Any) -> str:
@@ -241,9 +239,7 @@ async def test_azure_store_uploads_create_only_and_mints_read_only_sas(
         size=7,
         content_settings=SimpleNamespace(
             content_type="application/zip",
-            content_disposition=(
-                f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'
-            ),
+            content_disposition=(f'attachment; filename="metadata-snapshot-123-{SNAPSHOT_ID}.zip"'),
         ),
     )
     read_url = await store.create_read_url(

@@ -182,7 +182,7 @@ SELECT submodel.{config.submodel_id},
     )
 
 
-def entities_sql(config: LayerConfig) -> LiteralString:
+def entities_sql(config: LayerConfig, *, historical: bool = False) -> LiteralString:
     selected = _select_fields("entity", config.entity_fields)
     eligibility_field = (
         "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
@@ -192,6 +192,24 @@ def entities_sql(config: LayerConfig) -> LiteralString:
         if config.entity_source_role_column is not None
         else ""
     )
+    # Snapshot evidence requires ownership and existence, independent of authoring eligibility.
+    object_scope = (
+        """
+    SELECT model.model_id, object.object_id,
+           TRUE AS is_model_input_eligible, TRUE AS is_dimensional_source_eligible
+      FROM requested_model
+      JOIN model.model AS model USING (model_id)
+      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+"""
+        if historical
+        else """
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+"""
+    )
     return cast(
         LiteralString,
         f"""
@@ -199,11 +217,7 @@ WITH requested_model AS (
     SELECT %s::BIGINT AS model_id
 ),
 eligible_objects AS MATERIALIZED (
-    SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_object_eligibility(
-          requested_model.model_id
-      ) AS eligibility
+    {object_scope}
 )
 SELECT entity.{config.entity_id},
        {selected},
@@ -329,10 +343,28 @@ SELECT entity.{config.entity_id},
     )
 
 
-def attributes_sql(config: LayerConfig) -> LiteralString:
+def attributes_sql(config: LayerConfig, *, historical: bool = False) -> LiteralString:
     selected = _select_fields("attribute", config.attribute_fields)
     eligibility_field = (
         "is_model_input_eligible" if config.layer == "logical" else "is_dimensional_source_eligible"
+    )
+    attribute_scope = (
+        """
+    SELECT model.model_id, object.object_id, attribute.attribute_id,
+           TRUE AS is_model_input_eligible, TRUE AS is_dimensional_source_eligible
+      FROM requested_model
+      JOIN model.model AS model USING (model_id)
+      JOIN core.object AS object ON object.source_tenant_id = model.tenant_id
+      JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
+"""
+        if historical
+        else """
+    SELECT eligibility.*
+      FROM requested_model
+      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
+          requested_model.model_id
+      ) AS eligibility
+"""
     )
     return cast(
         LiteralString,
@@ -341,11 +373,7 @@ WITH requested_model AS (
     SELECT %s::BIGINT AS model_id
 ),
 eligible_attributes AS MATERIALIZED (
-    SELECT eligibility.*
-      FROM requested_model
-      CROSS JOIN LATERAL workflow.list_model_attribute_eligibility(
-          requested_model.model_id
-      ) AS eligibility
+    {attribute_scope}
 )
 SELECT attribute.{config.attribute_id},
        attribute.{config.entity_id},

@@ -10,6 +10,7 @@ from gds_workbench_api.features.model_input_scope.contracts import (
     ModelInputScopeDetail,
     ModelInputScopePage,
     ModelInputScopeQuery,
+    ScopeSearchOptions,
 )
 from gds_workbench_api.features.model_input_scope.service import ModelInputScopeService
 
@@ -65,10 +66,24 @@ def create_input_scope_router(
         response_model=ModelInputScopePage,
     )
 
+    async def search_options(
+        request: Request,
+        tenant_id: int,
+        model_id: int,
+    ) -> ScopeSearchOptions:
+        return await service.search_options(
+            identity_provider.authenticate(request.headers), tenant_id=tenant_id, model_id=model_id
+        )
+
+    router.add_api_route(
+        "/options", search_options, methods=["GET"], response_model=ScopeSearchOptions
+    )
+
     async def list_candidates(
         request: Request,
         tenant_id: int,
         model_id: int,
+        placement_tenant_id: Annotated[int | None, Query(gt=0)] = None,
         zone: Annotated[str | None, Query(max_length=30)] = None,
         system_code: Annotated[str | None, Query(max_length=100)] = None,
         source_tenant_code: Annotated[str | None, Query(max_length=100)] = None,
@@ -97,6 +112,7 @@ def create_input_scope_router(
             object_name=query.object_name,
             page_size=query.page_size,
             cursor=query.cursor,
+            placement_tenant_id=placement_tenant_id,
         )
 
     router.add_api_route(

@@ -1,3 +1,4 @@
+import { withRecordReview } from "../../test/modelRecordReview";
 import { render, screen, waitFor, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -38,7 +39,7 @@ describe("Validation journey", () => {
 
     expect(await screen.findByRole("region", { name: "Validation recent runs" })).toBeVisible();
     expect(await screen.findByText("Order reconciliation")).toBeVisible();
-    expect(screen.getAllByText("Current")).not.toHaveLength(0);
+    expect(screen.getAllByText("Definition current")).not.toHaveLength(0);
     expect(screen.getByText("Mapping current")).toBeVisible();
     expect(screen.getByText("Code current")).toBeVisible();
 
@@ -48,10 +49,23 @@ describe("Validation journey", () => {
     });
     expect(within(checks).getByText("Source and target counts match")).toBeVisible();
     expect(within(checks).getByText("Equal Query B")).toBeVisible();
-    await user.click(within(checks).getByRole("button", { name: "Show details" }));
+    const review = within(checks).getByRole("button", { name: "Show details" });
+    review.focus();
+    await user.keyboard("{Enter}");
     const detail = screen.getByRole("region", { name: "Source and target counts match details" });
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM bronze.orders");
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM silver.orders");
+    expect(within(detail).getByRole("heading", { name: "Source and target counts match" })).toHaveFocus();
+    expect(review).toHaveAttribute("aria-controls", detail.id);
+    expect(within(detail).getByText("Query A").compareDocumentPosition(within(detail).getByText("Operator")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByText("Applied check definitions")).toBeVisible();
+    expect(screen.getByText(/execution results are not recorded here/)).toBeVisible();
+    await user.keyboard("{Escape}");
+    expect(screen.queryByRole("region", { name: "Source and target counts match details" })).not.toBeInTheDocument();
+    expect(review).toHaveFocus();
+    await user.keyboard(" ");
+    await user.click(screen.getByRole("button", { name: "Close check details" }));
+    expect(review).toHaveFocus();
   });
 
   it("distinguishes stale and current Code and Mapping", () => {
@@ -99,6 +113,21 @@ describe("Validation journey", () => {
     expect(within(missingMapping).getByText("Mapping stale")).toBeVisible();
   });
 
+  it.each([0, false, "", [0, false, ""]])("preserves literal operands (%j) before SQL", async (value) => {
+    const user = userEvent.setup();
+    const base = validationGroups[0]!;
+    const group = { ...base, checks: [{ ...base.checks[0]!, validation_comparison_value_type: Array.isArray(value) ? "literal_list" : "literal", validation_comparison_value: value, validation_comparison_query_sql: null }] } as ValidationValidationGroup;
+    render(<ValidationLedger groups={[group]} modelRevision={18} loadedModelRevision={18} isLoading={false} error={null} />);
+    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
+    await user.click(screen.getByRole("button", { name: "Show details" }));
+    const detail = screen.getByRole("region", { name: "Source and target counts match details" });
+    expect(within(detail).getByText("Comparison value").nextElementSibling?.textContent).toBe(JSON.stringify(value));
+    expect(within(detail).queryByText("Query B")).not.toBeInTheDocument();
+    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
+    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
+    expect(screen.queryByRole("region", { name: "Source and target counts match details" })).not.toBeInTheDocument();
+  });
+
   it("selects exact Systems and starts fixed-profile Validation through a governed draft run", async () => {
     const fetcher = validationFetchStub();
     const user = userEvent.setup();
@@ -111,7 +140,7 @@ describe("Validation journey", () => {
     await user.click(runButton);
     const dialog = await screen.findByRole("dialog", { name: "Configure Validation run" });
     expect(within(dialog).getByRole("button", { name: "Close Configure Validation run" })).toHaveFocus();
-    expect(within(dialog).getByText("Detailed coverage · fixed")).toBeVisible();
+    expect(within(dialog).getByText("The prompt template configures the available context tools.")).toBeVisible();
     const submit = within(dialog).getByRole("button", { name: "Create and start Validation" });
     expect(submit).toBeDisabled();
 
@@ -134,9 +163,9 @@ describe("Validation journey", () => {
       modeled_entity_type: null,
       requested_batch_id: null,
       agent: {
-        sdk_code: "openai_agents",
-        provider_code: "databricks",
-        model_code: "databricks-primary",
+        sdk_code: "openai_agents_sdk",
+        provider_code: "microsoft_foundry",
+        model_code: "foundry-primary",
         reasoning_effort_code: "medium",
         max_turns: 8,
         validation_retry_count: 1,
@@ -150,6 +179,84 @@ describe("Validation journey", () => {
         body: JSON.stringify({ expected_model_revision: 18 }),
       }),
     );
+  });
+
+  it.each(["network", "server"] as const)("retries an ambiguous Validation %s create with the original command and key", async (failure) => {
+    const success = validationFetchStub();
+    let attempts = 0;
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST" && ++attempts === 1) {
+        if (failure === "network") throw new TypeError("Synthetic network failure");
+        return jsonResponse({ error: { code: "unavailable" } }, 503);
+      }
+      return success(input, init);
+    });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+    })} />);
+    await screen.findByRole("button", { name: "Run Validation" });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run Validation" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Run Validation" }));
+    await screen.findByRole("dialog", { name: "Configure Validation run" });
+    await user.click(screen.getByRole("checkbox", { name: /Customer CRM/ }));
+    const submit = await screen.findByRole("button", { name: "Create and start Validation" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    for (const label of ["Agent SDK", "Provider", "Maximum turns", "Validation retries"]) {
+      expect(screen.queryByLabelText(label)).not.toBeInTheDocument();
+    }
+    await user.click(submit);
+    await screen.findByRole("alert");
+    expect(screen.getByLabelText("Model")).toBeEnabled();
+    await user.click(submit);
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const creates = fetcher.mock.calls.filter(([input, init]) =>
+      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+    expect(creates).toHaveLength(2);
+    expect(creates[1]?.[1]?.body).toBe(creates[0]?.[1]?.body);
+    const firstKey = new Headers(creates[0]?.[1]?.headers).get("Idempotency-Key");
+    expect(firstKey).toMatch(/^[a-f0-9-]{36}$/);
+    expect(new Headers(creates[1]?.[1]?.headers).get("Idempotency-Key")).toBe(firstKey);
+  });
+
+  it("uses tool-supported model and reasoning profiles while keeping the public mode unset", async () => {
+    const success = validationFetchStub();
+    const fetcher = vi.fn<typeof fetch>(async (input, init) => {
+      if (String(input) === "/api/v1/config/agent-capabilities") return jsonResponse({
+        ...agentCapabilities,
+        models: [...agentCapabilities.models, { ...agentCapabilities.models[0],
+          code: "foundry-alternate", name: "Alternate Foundry model",
+          execution_profiles: [
+            { sdk_code: "openai_agents_sdk", execution_mode: "one_shot", reasoning_effort_codes: ["medium"] },
+            { sdk_code: "openai_agents_sdk", execution_mode: "tool_assisted", reasoning_effort_codes: ["high"] },
+          ],
+        }],
+        reasoning_efforts: [...agentCapabilities.reasoning_efforts, { code: "high", name: "High" }],
+      });
+      return success(input, init);
+    });
+    const user = userEvent.setup();
+    renderValidation(fetcher);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run Validation" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Run Validation" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Validation run" });
+    await waitFor(() => expect(within(dialog).getByLabelText("Model")).toHaveValue("foundry-primary"));
+    await user.selectOptions(within(dialog).getByLabelText("Model"), "foundry-alternate");
+    expect(within(within(dialog).getByLabelText("Reasoning effort")).queryByRole("option", { name: "Medium" })).not.toBeInTheDocument();
+    await user.selectOptions(within(dialog).getByLabelText("Reasoning effort"), "high");
+    expect(within(dialog).queryByLabelText("Execution mode")).not.toBeInTheDocument();
+    await user.click(within(dialog).getByRole("checkbox", { name: /Customer CRM/ }));
+    await user.click(within(dialog).getByRole("button", { name: "Create and start Validation" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).not.toBeInTheDocument());
+    const create = fetcher.mock.calls.find(([input, init]) =>
+      String(input) === "/api/v1/tenants/7/models/18/runs" && init?.method === "POST");
+    expect(JSON.parse(String(create?.[1]?.body))).toMatchObject({
+      workflow_execution_mode: null, selected_system_codes: ["CRM"], agent: {
+        sdk_code: "openai_agents_sdk", provider_code: "microsoft_foundry",
+        model_code: "foundry-alternate", reasoning_effort_code: "high",
+      },
+    });
   });
 
   it("traps focus, closes with Escape, and restores the Validation trigger", async () => {
@@ -386,16 +493,16 @@ const validationGroups = [{
 
 const agentCapabilities = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
     execution_profiles: [{
-      sdk_code: "openai_agents",
-      execution_mode: "detailed_coverage",
+      sdk_code: "openai_agents_sdk",
+      execution_mode: "tool_assisted",
       reasoning_effort_codes: ["medium"],
     }],
   }],
@@ -407,7 +514,7 @@ const agentCapabilities = {
 const runningRun = {
   workflow_run_id: 2251,
   model_workflow: "validation",
-  workflow_execution_mode: "detailed_coverage",
+  workflow_execution_mode: "one_shot",
   modeled_entity_type: null,
   selected_scope_count: 1,
   requested_batch_id: null,
@@ -431,3 +538,21 @@ const runningRun = {
   candidate_digest: null,
   validated_at: null,
 };
+
+
+it.each([["Groups", "validation_group", 91], ["Checks", "validation_check", 301]] as const)(
+  "reviews selected Validation %s", async (kind, dataset, id) => {
+    const { fetcher, commands } = withRecordReview(validationFetchStub());
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+    })} />);
+    const user = userEvent.setup();
+    await user.selectOptions(await screen.findByRole("combobox", { name: "Review selection" }), dataset);
+    if (kind === "Checks") await user.click(await screen.findByRole("button", { name: /Order reconciliation/ }));
+    await user.click(await screen.findByRole("checkbox", { name: `Select Validation ${kind === "Groups" ? "Group" : "Check"} ${id}` }));
+    await user.click(screen.getByRole("button", { name: "Lock selected" }));
+    await user.click(await screen.findByRole("button", { name: "Apply this change" }));
+    expect(commands[0]).toEqual({ dataset, record_ids: [id], action: "lock", expected_model_revision: 18 });
+    expect(commands[1]?.expected_plan_digest).toBe("c".repeat(64));
+  },
+);

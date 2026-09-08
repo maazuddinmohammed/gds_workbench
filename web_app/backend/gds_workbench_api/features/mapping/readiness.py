@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+from gds_etl_workbench.application.change_sets.model import load_model_physical_scope
+from gds_etl_workbench.application.model_read import ModelReadContext
+from gds_etl_workbench.application.model_snapshot import build_model_snapshot
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import AuthorizationDeniedError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
@@ -71,10 +74,20 @@ class MappingReadinessService:
                 tenant_id=tenant_id,
                 plan=plan,
             )
+            model = ModelReadContext(
+                tenant_id=tenant_id,
+                model_id=plan.model_id,
+                model_name=context.authoring.model_name,
+                model_revision=plan.model_revision,
+            )
+            snapshot = await build_model_snapshot(transaction, model)
+            physical_scope = await load_model_physical_scope(transaction, model)
         return MappingPreparation(
             plan=plan,
             context=context,
             readiness=assess_mapping_readiness(plan=plan, context=context),
+            snapshot=snapshot,
+            physical_scope=physical_scope,
         )
 
 
@@ -137,6 +150,14 @@ def assess_mapping_readiness(
         for source in context.sources
     ):
         issue("source.objects_unavailable", "An executable source is inactive or incomplete.")
+    expected_source_zones = (
+        {"source", "bronze"} if plan.route == "logical_to_silver" else {"silver"}
+    )
+    if any(source.object.zone_code not in expected_source_zones for source in context.sources):
+        issue(
+            "source.zone_invalid",
+            "An executable source is in the wrong zone for this Mapping route.",
+        )
 
     header = context.headers[0]
     modeled_attributes = {

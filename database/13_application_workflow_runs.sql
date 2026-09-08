@@ -36,12 +36,17 @@ CREATE TABLE application.workflow_run (
     workflow_run_claim_heartbeat_time TIMESTAMPTZ,
     workflow_run_claim_expires_time TIMESTAMPTZ,
     workflow_run_recovery_count INTEGER NOT NULL DEFAULT 0,
+    usage_tracking_version SMALLINT,
+    usage_tracked_recovery_count INTEGER,
+    usage_history_incomplete BOOLEAN NOT NULL DEFAULT FALSE,
     correlation_id UUID NOT NULL,
     workflow_run_request_digest CHAR(64),
     started_time TIMESTAMPTZ,
     completed_time TIMESTAMPTZ,
     failure_code VARCHAR(100),
     failure_message VARCHAR(2000),
+    metadata_enrichment_receipt_digest CHAR(64),
+    metadata_enrichment_description_targets JSONB,
     authoring_no_op_base_model_revision BIGINT,
     authoring_no_op_candidate_digest CHAR(64),
     authoring_no_op_model_event_log_id BIGINT,
@@ -49,6 +54,21 @@ CREATE TABLE application.workflow_run (
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
     updated_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     updated_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
+    CONSTRAINT ck_workflow_run_usage_tracking CHECK (
+        (usage_tracking_version IS NULL AND usage_tracked_recovery_count IS NULL
+            AND NOT usage_history_incomplete)
+        OR (usage_tracking_version IS NOT NULL AND usage_tracking_version = 1
+            AND usage_tracked_recovery_count IS NOT NULL AND usage_tracked_recovery_count BETWEEN 0 AND 5
+            AND usage_tracked_recovery_count <= workflow_run_recovery_count)
+    ),
+    CONSTRAINT ck_workflow_run_description_targets CHECK (
+        metadata_enrichment_description_targets IS NULL OR (
+            model_workflow = 'metadata_enrichment'
+            AND jsonb_typeof(metadata_enrichment_description_targets) = 'array'
+            AND jsonb_array_length(metadata_enrichment_description_targets) BETWEEN 1 AND 5000
+            AND octet_length(metadata_enrichment_description_targets::TEXT) <= 1048576
+        )
+    ),
     CONSTRAINT fk_workflow_run_model FOREIGN KEY (model_id, tenant_id)
         REFERENCES model.model (model_id, tenant_id) ON DELETE NO ACTION,
     CONSTRAINT fk_workflow_run_actor FOREIGN KEY (actor_principal_id)
@@ -95,8 +115,14 @@ CREATE TABLE application.workflow_run (
     CONSTRAINT ck_workflow_run_workflow CHECK (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual', 'logical',
-            'dimensional', 'mapping', 'code_generation', 'validation'
+            'dimensional', 'mapping', 'code_generation', 'validation',
+            'metadata_enrichment'
         )
+    ),
+    CONSTRAINT ck_workflow_run_metadata_enrichment_receipt CHECK (
+        metadata_enrichment_receipt_digest IS NULL
+        OR (model_workflow = 'metadata_enrichment'
+            AND metadata_enrichment_receipt_digest ~ '^[0-9a-f]{64}$')
     ),
     CONSTRAINT ck_workflow_run_model_revision CHECK (
         model_revision > 0
@@ -109,12 +135,15 @@ CREATE TABLE application.workflow_run (
             )
         ) OR (
             workflow_execution_mode IN (
-                'one_shot', 'tool_assisted', 'detailed_coverage'
+                'one_shot', 'tool_assisted'
             )
             AND model_workflow IN (
                 'analysis', 'conceptual', 'logical',
                 'dimensional', 'mapping'
             )
+        ) OR (
+            model_workflow = 'metadata_enrichment'
+            AND workflow_execution_mode IS NOT DISTINCT FROM 'one_shot'
         )
     ),
     CONSTRAINT ck_workflow_run_agent_configuration CHECK (
@@ -552,6 +581,7 @@ BEGIN
         NEW.selected_scope_count,
         NEW.correlation_id,
         NEW.workflow_run_request_digest,
+        NEW.metadata_enrichment_description_targets,
         NEW.created_time,
         NEW.created_by
     ) IS DISTINCT FROM ROW(
@@ -585,10 +615,17 @@ BEGIN
         OLD.selected_scope_count,
         OLD.correlation_id,
         OLD.workflow_run_request_digest,
+        OLD.metadata_enrichment_description_targets,
         OLD.created_time,
         OLD.created_by
     ) THEN
         RAISE EXCEPTION 'workflow run identity is immutable' USING ERRCODE = '55000';
+    END IF;
+
+    IF OLD.metadata_enrichment_receipt_digest IS NOT NULL
+       AND NEW.metadata_enrichment_receipt_digest IS DISTINCT FROM
+           OLD.metadata_enrichment_receipt_digest THEN
+        RAISE EXCEPTION 'Metadata enrichment receipt is immutable';
     END IF;
 
     IF OLD.workflow_run_state IN (
@@ -935,6 +972,7 @@ BEGIN
            run.model_id,
            run.model_workflow,
            run.workflow_execution_mode,
+           run.metadata_enrichment_description_targets,
            model.tenant_id
       INTO v_run
       FROM application.workflow_run AS run
@@ -959,7 +997,17 @@ BEGIN
     FOR v_stage IN
         SELECT stage.workflow_stage_id
           FROM application.workflow_stage AS stage
-         WHERE stage.model_workflow = v_run.model_workflow
+         WHERE (
+             (v_run.model_workflow <> 'metadata_enrichment' AND stage.model_workflow = v_run.model_workflow)
+             OR (v_run.model_workflow = 'metadata_enrichment' AND (
+                 (stage.model_workflow = 'metadata_enrichment_object' AND
+                     (v_run.metadata_enrichment_description_targets IS NULL OR
+                      v_run.metadata_enrichment_description_targets->0->>'attribute_id' IS NULL))
+                 OR (stage.model_workflow = 'metadata_enrichment_attribute' AND
+                     (v_run.metadata_enrichment_description_targets IS NULL OR
+                      v_run.metadata_enrichment_description_targets->0->>'attribute_id' IS NOT NULL))
+             ))
+         )
            AND stage.workflow_execution_mode IS NOT DISTINCT FROM
                v_run.workflow_execution_mode
            AND stage.workflow_stage_is_agentic
@@ -1088,7 +1136,8 @@ CREATE FUNCTION application.create_workflow_run(
     p_mapping_object_output_template_id BIGINT DEFAULT NULL,
     p_mapping_attribute_output_template_id BIGINT DEFAULT NULL,
     p_code_generation_coverage_mode VARCHAR(30) DEFAULT NULL,
-    p_sql_generation_guide_version_id BIGINT DEFAULT NULL
+    p_sql_generation_guide_version_id BIGINT DEFAULT NULL,
+    p_metadata_enrichment_description_targets JSONB DEFAULT NULL
 )
 RETURNS TABLE (
     created BOOLEAN,
@@ -1153,6 +1202,48 @@ DECLARE
 BEGIN
     IF p_correlation_id IS NULL THEN
         RAISE EXCEPTION 'Workflow Run correlation ID is required';
+    END IF;
+    IF p_metadata_enrichment_description_targets IS NOT NULL THEN
+        IF p_model_workflow IS DISTINCT FROM 'metadata_enrichment'
+           OR p_expected_principal_type IS DISTINCT FROM 'user'
+           OR jsonb_typeof(p_metadata_enrichment_description_targets) IS DISTINCT FROM 'array'
+           OR octet_length(p_metadata_enrichment_description_targets::TEXT) > 1048576 THEN
+            RAISE EXCEPTION 'Invalid description regeneration selection';
+        END IF;
+        IF jsonb_array_length(p_metadata_enrichment_description_targets) NOT BETWEEN 1 AND 5000
+           OR EXISTS (SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
+               WHERE jsonb_typeof(target) IS DISTINCT FROM 'object'
+                  OR NOT target ?& ARRAY['object_id', 'attribute_id', 'expected_revision']
+                  OR target - ARRAY['object_id', 'attribute_id', 'expected_revision'] <> '{}'::JSONB
+                  OR jsonb_typeof(target->'object_id') IS DISTINCT FROM 'number'
+                  OR (target->>'object_id') !~ '^[1-9][0-9]{0,17}$'
+                  OR jsonb_typeof(target->'attribute_id') NOT IN ('number', 'null')
+                  OR (target->>'attribute_id') !~ '^[1-9][0-9]{0,17}$'
+                  OR jsonb_typeof(target->'expected_revision') IS DISTINCT FROM 'string'
+                  OR (target->>'expected_revision') !~ '^[0-9a-f]{64}$') THEN
+            RAISE EXCEPTION 'Invalid description regeneration selection';
+        END IF;
+        IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
+            GROUP BY target->>'object_id', target->>'attribute_id' HAVING count(*) > 1)
+           OR (SELECT count(DISTINCT (target->>'attribute_id' IS NULL)) FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target) <> 1
+           OR ((p_metadata_enrichment_description_targets->0->>'attribute_id') IS NOT NULL
+               AND (SELECT count(DISTINCT target->>'object_id') FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target) <> 1)
+           OR ARRAY(SELECT DISTINCT (target->>'object_id')::BIGINT FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target ORDER BY 1)
+              IS DISTINCT FROM ARRAY(SELECT DISTINCT id FROM unnest(p_selected_object_ids) AS id ORDER BY 1) THEN
+            RAISE EXCEPTION 'Invalid description regeneration selection';
+        END IF;
+        SELECT jsonb_agg(target ORDER BY (target->>'object_id')::BIGINT, (target->>'attribute_id')::BIGINT)
+          INTO p_metadata_enrichment_description_targets FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target;
+    END IF;
+    IF p_model_workflow = 'metadata_enrichment'
+       AND p_workflow_execution_mode IS DISTINCT FROM 'one_shot' THEN
+        RAISE EXCEPTION
+            'Metadata Enrichment requires one_shot execution mode';
+    END IF;
+    IF p_model_workflow = 'metadata_enrichment'
+       AND cardinality(p_selected_object_ids) NOT BETWEEN 1 AND 200 THEN
+        RAISE EXCEPTION
+            'Metadata Enrichment requires between 1 and 200 selected Objects';
     END IF;
     IF p_selected_object_ids IS NULL OR p_selected_system_codes IS NULL THEN
         RAISE EXCEPTION 'Selected Scope is required';
@@ -1477,6 +1568,7 @@ BEGIN
                     'selected_scope_count', v_caller_selected_scope_count,
                     'selected_system_codes', v_caller_selected_system_codes,
                     'prompt_overrides', p_prompt_overrides
+                    , 'description_targets', p_metadata_enrichment_description_targets
                 )::TEXT,
                 'UTF8'
             )
@@ -1520,6 +1612,47 @@ BEGIN
             v_existing.sql_generation_guide_version_id,
             v_existing.sql_generation_guide_digest;
         RETURN;
+    END IF;
+
+    -- Resolve default selections only for new runs. The request digest above
+    -- retains the caller's null selectors, so retries reuse frozen selections.
+    IF p_model_workflow = 'mapping' THEN
+        IF p_mapping_object_output_template_id IS NULL THEN
+            SELECT template.output_template_id,
+                   template.output_template_schema_digest
+              INTO p_mapping_object_output_template_id,
+                   v_mapping_object_output_template_schema_digest
+              FROM application.output_template AS template
+             WHERE lower(template.output_template_code) = 'mapping_object_default'
+               AND template.output_template_target_type = 'mapping_object'
+               AND template.is_active
+               AND EXISTS (
+                   SELECT 1 FROM application.output_template_field AS field
+                    WHERE field.output_template_id = template.output_template_id
+               )
+             FOR SHARE OF template;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Global default Mapping Object output template is unavailable';
+            END IF;
+        END IF;
+        IF p_mapping_attribute_output_template_id IS NULL THEN
+            SELECT template.output_template_id,
+                   template.output_template_schema_digest
+              INTO p_mapping_attribute_output_template_id,
+                   v_mapping_attribute_output_template_schema_digest
+              FROM application.output_template AS template
+             WHERE lower(template.output_template_code) = 'mapping_attribute_default'
+               AND template.output_template_target_type = 'mapping_attribute'
+               AND template.is_active
+               AND EXISTS (
+                   SELECT 1 FROM application.output_template_field AS field
+                    WHERE field.output_template_id = template.output_template_id
+               )
+             FOR SHARE OF template;
+            IF NOT FOUND THEN
+                RAISE EXCEPTION 'Global default Mapping Attribute output template is unavailable';
+            END IF;
+        END IF;
     END IF;
 
     IF p_expected_model_revision IS NULL
@@ -1796,6 +1929,15 @@ BEGIN
                    WHEN p_model_workflow IN (
                        'profiling', 'analysis', 'conceptual', 'logical'
                    ) THEN eligible.is_model_input_eligible
+                   WHEN p_model_workflow = 'metadata_enrichment' THEN
+                       eligible.is_model_input_eligible
+                       AND EXISTS (
+                           SELECT 1
+                             FROM model.model_input_scope AS scope
+                            WHERE scope.model_id = p_model_id
+                              AND scope.object_id = eligible.object_id
+                              AND scope.is_active
+                       )
                    WHEN p_model_workflow = 'dimensional' THEN
                        eligible.is_dimensional_source_eligible
                    WHEN p_model_workflow = 'mapping'
@@ -1828,6 +1970,29 @@ BEGIN
             RAISE EXCEPTION
                 'Requested batch ID requires Selected Scope from one System';
         END IF;
+    END IF;
+
+    IF p_metadata_enrichment_description_targets IS NOT NULL THEN
+        SELECT * INTO v_decision FROM security.authorize_tenant_operation(
+            p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+            v_model.tenant_id, 'tenant_metadata_write');
+        IF NOT coalesce(v_decision.authorized, FALSE) THEN
+            RAISE EXCEPTION 'Workflow Run creation denied: authorization_denied';
+        END IF;
+        IF EXISTS (
+            SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
+            WHERE NOT EXISTS (
+                SELECT 1 FROM core.object AS object
+                LEFT JOIN core.attribute AS attribute ON attribute.object_id = object.object_id
+                    AND attribute.attribute_id = (target->>'attribute_id')::BIGINT
+                WHERE object.object_id = (target->>'object_id')::BIGINT
+                  AND object.source_tenant_id = v_model.tenant_id AND object.is_active AND NOT object.is_locked
+                  AND CASE WHEN target->>'attribute_id' IS NULL
+                      THEN application.metadata_object_review_revision(object) = target->>'expected_revision'
+                      ELSE attribute.is_active AND NOT attribute.is_locked
+                          AND application.metadata_attribute_review_revision(attribute, object) = target->>'expected_revision' END
+            )
+        ) THEN RAISE EXCEPTION 'metadata_description_conflict'; END IF;
     END IF;
 
     v_is_agentic := p_model_workflow IN ('code_generation', 'validation')
@@ -1908,7 +2073,8 @@ BEGIN
         selected_scope_digest,
         selected_scope_count,
         correlation_id,
-        workflow_run_request_digest
+        workflow_run_request_digest,
+        metadata_enrichment_description_targets
     ) VALUES (
         v_model.tenant_id,
         p_model_id,
@@ -1939,7 +2105,8 @@ BEGIN
         v_selected_scope_digest,
         v_selected_scope_count,
         p_correlation_id,
-        v_request_digest
+        v_request_digest,
+        p_metadata_enrichment_description_targets
     )
     RETURNING run.* INTO v_created;
 
@@ -2041,7 +2208,8 @@ REVOKE ALL ON FUNCTION application.create_workflow_run(
     BIGINT,
     BIGINT,
     VARCHAR,
-    BIGINT
+    BIGINT,
+    JSONB
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.lock_authoring_workflow_run(
@@ -2592,7 +2760,8 @@ BEGIN
     IF p_expected_model_workflow IS NULL
        OR p_expected_model_workflow NOT IN (
            'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'validation'
+           'dimensional', 'mapping', 'code_generation', 'validation',
+           'metadata_enrichment'
        ) THEN
         RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
     END IF;
@@ -3117,7 +3286,8 @@ BEGIN
     IF p_expected_model_workflow IS NULL
        OR p_expected_model_workflow NOT IN (
            'profiling', 'analysis', 'conceptual', 'logical',
-           'dimensional', 'mapping', 'code_generation', 'validation'
+           'dimensional', 'mapping', 'code_generation', 'validation',
+           'metadata_enrichment'
        ) THEN
         RAISE EXCEPTION 'Workflow Run claim Workflow is invalid';
     END IF;
@@ -3515,6 +3685,7 @@ BEGIN
            run.correlation_id,
            run.model_workflow,
            run.authoring_no_op_candidate_digest,
+           run.metadata_enrichment_receipt_digest,
            run.completed_time,
            target_model.tenant_id,
            target_model.model_revision
@@ -3548,6 +3719,11 @@ BEGIN
     IF p_expected_model_revision IS NULL
        OR v_run.model_revision <> p_expected_model_revision THEN
         RAISE EXCEPTION 'stale_model_revision';
+    END IF;
+
+    IF v_run.model_workflow = 'metadata_enrichment'
+       AND v_run.metadata_enrichment_receipt_digest IS NULL THEN
+        RAISE EXCEPTION 'Metadata enrichment requires a durable completion receipt';
     END IF;
 
     IF v_run.authoring_no_op_candidate_digest IS NOT NULL THEN
@@ -3716,7 +3892,7 @@ BEGIN
         AND (
             p_expected_execution_mode IS NULL
             OR p_expected_execution_mode NOT IN (
-                'one_shot', 'tool_assisted', 'detailed_coverage'
+                'one_shot', 'tool_assisted'
             )
         )
     ) THEN
@@ -4052,6 +4228,7 @@ BEGIN
            run.failure_code,
            run.failure_message,
            run.authoring_no_op_candidate_digest,
+           run.metadata_enrichment_receipt_digest,
            run.completed_time,
            target_model.tenant_id,
            target_model.model_revision
@@ -4087,7 +4264,8 @@ BEGIN
         RAISE EXCEPTION 'stale_model_revision';
     END IF;
 
-    IF v_run.authoring_no_op_candidate_digest IS NOT NULL
+    IF v_run.metadata_enrichment_receipt_digest IS NOT NULL
+       OR v_run.authoring_no_op_candidate_digest IS NOT NULL
        OR EXISTS (
            SELECT 1
              FROM mcp.model_change_set AS change_set
@@ -4173,4 +4351,433 @@ REVOKE ALL ON FUNCTION application.fail_workflow_run(
     BIGINT,
     VARCHAR,
     VARCHAR
+) FROM PUBLIC;
+
+-- Bounded safe evidence only; physical sample values never enter this table.
+CREATE TABLE application.metadata_enrichment_result (
+    result_id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+    workflow_run_id BIGINT NOT NULL REFERENCES application.workflow_run (workflow_run_id),
+    object_id BIGINT NOT NULL REFERENCES core.object (object_id),
+    attribute_id BIGINT,
+    field_name VARCHAR(40) NOT NULL,
+    status VARCHAR(20) NOT NULL,
+    evidence_method VARCHAR(30) NOT NULL,
+    applied_value TEXT,
+    sample_count INTEGER NOT NULL,
+    created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    CONSTRAINT fk_metadata_enrichment_attribute FOREIGN KEY (attribute_id, object_id)
+        REFERENCES core.attribute (attribute_id, object_id),
+    CONSTRAINT uq_metadata_enrichment_field UNIQUE NULLS NOT DISTINCT (
+        workflow_run_id, object_id, attribute_id, field_name
+    ),
+    CONSTRAINT ck_metadata_enrichment_field CHECK (
+        (field_name = 'object_description' AND attribute_id IS NULL)
+        OR (field_name IN ('attribute_description', 'attribute_inferred_data_type')
+            AND attribute_id IS NOT NULL)
+    ),
+    CONSTRAINT ck_metadata_enrichment_status CHECK (
+        status IN ('applied', 'existing', 'locked', 'inactive', 'changed',
+                   'unavailable', 'inconclusive')
+    ),
+    CONSTRAINT ck_metadata_enrichment_evidence CHECK (
+        evidence_method IN ('agent_description', 'source_comment', 'registered_type',
+            'source_schema', 'bronze_schema', 'source_sample', 'bronze_sample', 'none')
+    ),
+    CONSTRAINT ck_metadata_enrichment_value CHECK (
+        (status <> 'applied' AND applied_value IS NULL)
+        OR (status = 'applied' AND (
+            (field_name <> 'attribute_inferred_data_type' AND applied_value IS NULL)
+            OR (reference.is_nonblank(applied_value)
+            AND CASE WHEN field_name = 'attribute_inferred_data_type'
+                THEN length(applied_value) <= 100 ELSE octet_length(applied_value) <= 2000 END)))
+    ),
+    CONSTRAINT ck_metadata_enrichment_sample_count CHECK (sample_count BETWEEN 0 AND 50)
+);
+
+CREATE FUNCTION application.guard_metadata_enrichment_result()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = pg_catalog
+AS $guard_metadata_enrichment_result$
+BEGIN
+    RAISE EXCEPTION 'Metadata enrichment results are immutable';
+END;
+$guard_metadata_enrichment_result$;
+
+CREATE TRIGGER guard_metadata_enrichment_result
+BEFORE UPDATE OR DELETE ON application.metadata_enrichment_result
+FOR EACH ROW EXECUTE FUNCTION application.guard_metadata_enrichment_result();
+REVOKE ALL ON application.metadata_enrichment_result FROM PUBLIC;
+
+-- Numeric-only provider request receipts. No credentials, prompts, messages,
+-- response bodies, provider request identifiers, or tool results belong here.
+CREATE TABLE application.workflow_run_model_request (
+    request_id UUID PRIMARY KEY,
+    workflow_run_id BIGINT NOT NULL REFERENCES application.workflow_run (workflow_run_id),
+    invocation_id UUID NOT NULL,
+    stage_code VARCHAR(100) NOT NULL,
+    authoring_attempt INTEGER NOT NULL,
+    request_ordinal INTEGER NOT NULL,
+    workflow_run_recovery_count INTEGER NOT NULL,
+    claim_token_digest CHAR(64) NOT NULL,
+    started_time TIMESTAMPTZ NOT NULL DEFAULT clock_timestamp(),
+    completed_time TIMESTAMPTZ,
+    input_tokens BIGINT,
+    output_tokens BIGINT,
+    total_tokens BIGINT,
+    cached_input_tokens BIGINT,
+    cache_write_input_tokens BIGINT,
+    reasoning_output_tokens BIGINT,
+    other_token_types BOOLEAN NOT NULL DEFAULT FALSE,
+    pricing_basis VARCHAR(80),
+    pricing_input_usd_per_million NUMERIC(15,8),
+    pricing_cached_input_usd_per_million NUMERIC(15,8),
+    pricing_cache_write_input_usd_per_million NUMERIC(15,8),
+    pricing_output_usd_per_million NUMERIC(15,8),
+    pricing_valid_from TIMESTAMPTZ,
+    pricing_valid_until TIMESTAMPTZ,
+    pricing_max_input_tokens BIGINT,
+    CONSTRAINT uq_workflow_run_model_request_ordinal UNIQUE (
+        workflow_run_id, invocation_id, authoring_attempt, request_ordinal
+    ),
+    CONSTRAINT ck_workflow_run_model_request_identity CHECK (
+        stage_code ~ '^[a-z][a-z0-9_]{0,99}$'
+        AND authoring_attempt BETWEEN 1 AND 6
+        AND request_ordinal BETWEEN 1 AND 150
+        AND workflow_run_recovery_count BETWEEN 0 AND 5
+        AND claim_token_digest ~ '^[0-9a-f]{64}$'
+    ),
+    CONSTRAINT ck_workflow_run_model_request_counts CHECK (
+        (input_tokens IS NULL OR input_tokens BETWEEN 0 AND 1000000000000)
+        AND (output_tokens IS NULL OR output_tokens BETWEEN 0 AND 1000000000000)
+        AND (total_tokens IS NULL OR total_tokens BETWEEN 0 AND 1000000000000)
+        AND (cached_input_tokens IS NULL OR cached_input_tokens BETWEEN 0 AND 1000000000000)
+        AND (cache_write_input_tokens IS NULL OR cache_write_input_tokens BETWEEN 0 AND 1000000000000)
+        AND (reasoning_output_tokens IS NULL OR reasoning_output_tokens BETWEEN 0 AND 1000000000000)
+        AND (input_tokens IS NULL OR cached_input_tokens IS NULL OR cached_input_tokens <= input_tokens)
+        AND (input_tokens IS NULL OR cache_write_input_tokens IS NULL OR cache_write_input_tokens <= input_tokens)
+        AND (input_tokens IS NULL OR cached_input_tokens IS NULL OR cache_write_input_tokens IS NULL
+            OR cached_input_tokens + cache_write_input_tokens <= input_tokens)
+        AND (output_tokens IS NULL OR reasoning_output_tokens IS NULL OR reasoning_output_tokens <= output_tokens)
+        AND (input_tokens IS NULL OR output_tokens IS NULL OR total_tokens IS NULL
+            OR input_tokens + output_tokens = total_tokens)
+    ),
+    CONSTRAINT ck_workflow_run_model_request_completion CHECK (
+        (completed_time IS NULL AND input_tokens IS NULL AND output_tokens IS NULL
+            AND total_tokens IS NULL AND cached_input_tokens IS NULL
+            AND cache_write_input_tokens IS NULL AND reasoning_output_tokens IS NULL
+            AND NOT other_token_types)
+        OR (completed_time IS NOT NULL AND completed_time >= started_time)
+    ),
+    CONSTRAINT ck_workflow_run_model_request_pricing CHECK (
+        (pricing_basis IS NULL AND pricing_input_usd_per_million IS NULL
+            AND pricing_cached_input_usd_per_million IS NULL
+            AND pricing_cache_write_input_usd_per_million IS NULL
+            AND pricing_output_usd_per_million IS NULL
+            AND pricing_valid_from IS NULL AND pricing_valid_until IS NULL
+            AND pricing_max_input_tokens IS NULL)
+        OR (pricing_basis IS NOT NULL AND pricing_basis ~ '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$'
+            AND pricing_input_usd_per_million IS NOT NULL
+            AND pricing_input_usd_per_million BETWEEN 0 AND 1000000
+            AND pricing_cached_input_usd_per_million IS NOT NULL
+            AND pricing_cached_input_usd_per_million BETWEEN 0 AND 1000000
+            AND pricing_cache_write_input_usd_per_million IS NOT NULL
+            AND pricing_cache_write_input_usd_per_million BETWEEN 0 AND 1000000
+            AND pricing_output_usd_per_million IS NOT NULL
+            AND pricing_output_usd_per_million BETWEEN 0 AND 1000000
+            AND (pricing_valid_from IS NULL OR isfinite(pricing_valid_from))
+            AND (pricing_valid_until IS NULL OR isfinite(pricing_valid_until))
+            AND (pricing_valid_from IS NULL OR pricing_valid_until IS NULL
+                OR pricing_valid_from < pricing_valid_until)
+            AND (pricing_max_input_tokens IS NULL
+                OR pricing_max_input_tokens BETWEEN 1 AND 1000000000000))
+    )
+);
+
+CREATE FUNCTION application.guard_workflow_run_model_request()
+RETURNS TRIGGER LANGUAGE plpgsql SET search_path = pg_catalog
+AS $guard_workflow_run_model_request$
+BEGIN
+    IF TG_OP = 'DELETE' OR OLD.completed_time IS NOT NULL THEN
+        RAISE EXCEPTION 'Model request receipts are immutable';
+    END IF;
+    IF ROW(NEW.request_id, NEW.workflow_run_id, NEW.invocation_id, NEW.stage_code,
+           NEW.authoring_attempt, NEW.request_ordinal, NEW.workflow_run_recovery_count,
+           NEW.claim_token_digest, NEW.started_time, NEW.pricing_basis,
+           NEW.pricing_input_usd_per_million, NEW.pricing_cached_input_usd_per_million,
+           NEW.pricing_cache_write_input_usd_per_million, NEW.pricing_output_usd_per_million,
+           NEW.pricing_valid_from, NEW.pricing_valid_until, NEW.pricing_max_input_tokens)
+       IS DISTINCT FROM
+       ROW(OLD.request_id, OLD.workflow_run_id, OLD.invocation_id, OLD.stage_code,
+           OLD.authoring_attempt, OLD.request_ordinal, OLD.workflow_run_recovery_count,
+           OLD.claim_token_digest, OLD.started_time, OLD.pricing_basis,
+           OLD.pricing_input_usd_per_million, OLD.pricing_cached_input_usd_per_million,
+           OLD.pricing_cache_write_input_usd_per_million, OLD.pricing_output_usd_per_million,
+           OLD.pricing_valid_from, OLD.pricing_valid_until, OLD.pricing_max_input_tokens)
+       OR NEW.completed_time IS NULL THEN
+        RAISE EXCEPTION 'Model request receipt identity is immutable';
+    END IF;
+    RETURN NEW;
+END;
+$guard_workflow_run_model_request$;
+CREATE TRIGGER guard_workflow_run_model_request
+BEFORE UPDATE OR DELETE ON application.workflow_run_model_request
+FOR EACH ROW EXECUTE FUNCTION application.guard_workflow_run_model_request();
+REVOKE ALL ON application.workflow_run_model_request FROM PUBLIC;
+
+CREATE FUNCTION application.assert_workflow_run_usage_binding(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
+    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID
+)
+RETURNS application.workflow_run
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $assert_workflow_run_usage_binding$
+DECLARE
+    v_run application.workflow_run%ROWTYPE;
+    v_decision RECORD;
+    v_revision BIGINT;
+BEGIN
+    PERFORM application.assert_workflow_run_claim(p_workflow_run_id, p_claim_token);
+    SELECT run.* INTO v_run FROM application.workflow_run AS run
+     WHERE run.workflow_run_id = p_workflow_run_id;
+    SELECT target.model_revision INTO v_revision FROM model.model AS target
+     WHERE target.model_id = v_run.model_id AND target.tenant_id = v_run.tenant_id
+       AND target.is_active FOR SHARE OF target;
+    IF NOT FOUND OR p_expected_model_revision IS NULL
+       OR v_revision <> p_expected_model_revision
+       OR v_run.model_revision <> p_expected_model_revision THEN
+        RAISE EXCEPTION 'Workflow usage revision is unavailable';
+    END IF;
+    SELECT * INTO v_decision FROM security.authorize_tenant_operation(
+        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+        v_run.tenant_id, 'tenant_model_write'
+    );
+    IF NOT FOUND OR NOT v_decision.authorized
+       OR v_decision.principal_id <> v_run.actor_principal_id THEN
+        RAISE EXCEPTION 'Workflow usage authorization denied';
+    END IF;
+    RETURN v_run;
+END;
+$assert_workflow_run_usage_binding$;
+REVOKE ALL ON FUNCTION application.assert_workflow_run_usage_binding(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID
+) FROM PUBLIC;
+
+CREATE FUNCTION application.begin_workflow_run_usage(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
+    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID
+)
+RETURNS VARCHAR
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $begin_workflow_run_usage$
+DECLARE v_run application.workflow_run%ROWTYPE;
+BEGIN
+    v_run := application.assert_workflow_run_usage_binding(
+        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+        p_workflow_run_id, p_expected_model_revision, p_claim_token
+    );
+    IF v_run.usage_tracking_version = 1
+       AND v_run.usage_tracked_recovery_count = v_run.workflow_run_recovery_count THEN
+        RETURN v_run.agent_model_code;
+    END IF;
+    UPDATE application.workflow_run SET
+        usage_tracking_version = 1,
+        usage_tracked_recovery_count = v_run.workflow_run_recovery_count,
+        usage_history_incomplete = v_run.usage_history_incomplete
+            OR (v_run.usage_tracking_version IS NULL AND v_run.workflow_run_recovery_count > 0)
+            OR (v_run.usage_tracking_version IS NOT NULL
+                AND v_run.workflow_run_recovery_count > v_run.usage_tracked_recovery_count + 1)
+      WHERE workflow_run_id = p_workflow_run_id;
+    RETURN v_run.agent_model_code;
+END;
+$begin_workflow_run_usage$;
+REVOKE ALL ON FUNCTION application.begin_workflow_run_usage(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID
+) FROM PUBLIC;
+
+CREATE FUNCTION application.begin_workflow_run_model_request(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
+    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID,
+    p_request_id UUID, p_invocation_id UUID, p_stage_code VARCHAR,
+    p_authoring_attempt INTEGER, p_request_ordinal INTEGER, p_pricing JSONB DEFAULT NULL
+)
+RETURNS UUID
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $begin_workflow_run_model_request$
+DECLARE
+    v_run application.workflow_run%ROWTYPE;
+    v_existing application.workflow_run_model_request%ROWTYPE;
+    v_pricing application.workflow_run_model_request%ROWTYPE;
+    v_rates NUMERIC[];
+BEGIN
+    v_run := application.assert_workflow_run_usage_binding(
+        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+        p_workflow_run_id, p_expected_model_revision, p_claim_token
+    );
+    IF v_run.usage_tracking_version IS DISTINCT FROM 1
+       OR v_run.usage_tracked_recovery_count IS DISTINCT FROM v_run.workflow_run_recovery_count
+       OR v_run.agent_sdk_code IS NULL
+       OR p_request_id IS NULL OR p_invocation_id IS NULL
+       OR p_authoring_attempt IS NULL OR p_authoring_attempt NOT BETWEEN 1 AND 6
+       OR p_authoring_attempt > v_run.validation_retry_count + 1
+       OR p_request_ordinal IS NULL OR p_request_ordinal NOT BETWEEN 1 AND 150
+       OR NOT EXISTS (
+           SELECT 1 FROM application.workflow_run_prompt_snapshot AS snapshot
+           JOIN application.workflow_stage AS stage USING (workflow_stage_id)
+            WHERE snapshot.workflow_run_id = p_workflow_run_id
+              AND stage.workflow_stage_code = p_stage_code
+       ) THEN
+        RAISE EXCEPTION 'Workflow model request binding is unavailable';
+    END IF;
+    IF p_pricing IS NOT NULL THEN
+        -- Validate before assigning NUMERIC(15,8), which would otherwise round.
+        -- Only normalized rates/applicability survive; the JSON is never stored.
+        BEGIN
+            IF jsonb_typeof(p_pricing) <> 'object' OR octet_length(p_pricing::TEXT) > 65536
+               OR NOT p_pricing ?& ARRAY['basis', 'input_usd_per_million',
+                   'cached_input_usd_per_million', 'cache_write_input_usd_per_million',
+                   'output_usd_per_million']
+               OR (p_pricing - ARRAY['basis', 'input_usd_per_million',
+                   'cached_input_usd_per_million', 'cache_write_input_usd_per_million',
+                   'output_usd_per_million', 'valid_from', 'valid_until', 'max_input_tokens']) <> '{}'::JSONB
+               OR jsonb_typeof(p_pricing->'basis') <> 'string'
+               OR (p_pricing->>'basis') !~ '^[A-Za-z0-9][A-Za-z0-9 ._-]{0,79}$'
+               OR EXISTS (
+                   SELECT 1 FROM unnest(ARRAY['input_usd_per_million',
+                       'cached_input_usd_per_million', 'cache_write_input_usd_per_million',
+                       'output_usd_per_million']) AS rate(name)
+                    WHERE jsonb_typeof(p_pricing->rate.name) NOT IN ('number', 'string')
+               ) THEN
+                RAISE EXCEPTION 'Invalid pricing';
+            END IF;
+            v_rates := ARRAY[
+                (p_pricing->>'input_usd_per_million')::NUMERIC,
+                (p_pricing->>'cached_input_usd_per_million')::NUMERIC,
+                (p_pricing->>'cache_write_input_usd_per_million')::NUMERIC,
+                (p_pricing->>'output_usd_per_million')::NUMERIC
+            ];
+            IF EXISTS (SELECT 1 FROM unnest(v_rates) AS rate(value)
+                       WHERE rate.value NOT BETWEEN 0 AND 1000000
+                          OR rate.value <> round(rate.value, 8))
+               OR EXISTS (
+                   SELECT 1 FROM unnest(ARRAY['valid_from', 'valid_until']) AS bound(name)
+                    WHERE p_pricing->bound.name IS NOT NULL
+                      AND p_pricing->bound.name <> 'null'::JSONB
+                      AND (jsonb_typeof(p_pricing->bound.name) <> 'string'
+                          OR (p_pricing->>bound.name) !~ '^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}(\.[0-9]+)?(Z|[+-][0-9]{2}:[0-9]{2})$')
+               ) OR (p_pricing->'max_input_tokens' IS NOT NULL
+                   AND p_pricing->'max_input_tokens' <> 'null'::JSONB
+                   AND (jsonb_typeof(p_pricing->'max_input_tokens') <> 'number'
+                       OR (p_pricing->>'max_input_tokens') !~ '^[0-9]{1,13}$')) THEN
+                RAISE EXCEPTION 'Invalid pricing';
+            END IF;
+            v_pricing.pricing_basis := p_pricing->>'basis';
+            v_pricing.pricing_input_usd_per_million := v_rates[1];
+            v_pricing.pricing_cached_input_usd_per_million := v_rates[2];
+            v_pricing.pricing_cache_write_input_usd_per_million := v_rates[3];
+            v_pricing.pricing_output_usd_per_million := v_rates[4];
+            v_pricing.pricing_valid_from := (p_pricing->>'valid_from')::TIMESTAMPTZ;
+            v_pricing.pricing_valid_until := (p_pricing->>'valid_until')::TIMESTAMPTZ;
+            v_pricing.pricing_max_input_tokens := (p_pricing->>'max_input_tokens')::BIGINT;
+            IF v_pricing.pricing_valid_from >= v_pricing.pricing_valid_until
+               OR v_pricing.pricing_max_input_tokens NOT BETWEEN 1 AND 1000000000000 THEN
+                RAISE EXCEPTION 'Invalid pricing';
+            END IF;
+        EXCEPTION WHEN OTHERS THEN
+            RAISE EXCEPTION 'Workflow model request pricing is invalid';
+        END;
+    END IF;
+    SELECT * INTO v_existing FROM application.workflow_run_model_request
+     WHERE request_id = p_request_id;
+    IF FOUND THEN
+        IF ROW(v_existing.workflow_run_id, v_existing.invocation_id, v_existing.stage_code,
+               v_existing.authoring_attempt, v_existing.request_ordinal,
+               v_existing.workflow_run_recovery_count, v_existing.claim_token_digest,
+               v_existing.pricing_basis, v_existing.pricing_input_usd_per_million,
+               v_existing.pricing_cached_input_usd_per_million,
+               v_existing.pricing_cache_write_input_usd_per_million,
+               v_existing.pricing_output_usd_per_million, v_existing.pricing_valid_from,
+               v_existing.pricing_valid_until, v_existing.pricing_max_input_tokens)
+           IS DISTINCT FROM
+           ROW(p_workflow_run_id, p_invocation_id, p_stage_code, p_authoring_attempt,
+               p_request_ordinal, v_run.workflow_run_recovery_count,
+               v_run.workflow_run_claim_token_digest,
+               v_pricing.pricing_basis, v_pricing.pricing_input_usd_per_million,
+               v_pricing.pricing_cached_input_usd_per_million,
+               v_pricing.pricing_cache_write_input_usd_per_million,
+               v_pricing.pricing_output_usd_per_million, v_pricing.pricing_valid_from,
+               v_pricing.pricing_valid_until, v_pricing.pricing_max_input_tokens) THEN
+            RAISE EXCEPTION 'Workflow model request identity conflict';
+        END IF;
+        RETURN v_existing.request_id;
+    END IF;
+    INSERT INTO application.workflow_run_model_request (
+        request_id, workflow_run_id, invocation_id, stage_code, authoring_attempt,
+        request_ordinal, workflow_run_recovery_count, claim_token_digest,
+        pricing_basis, pricing_input_usd_per_million, pricing_cached_input_usd_per_million,
+        pricing_cache_write_input_usd_per_million, pricing_output_usd_per_million,
+        pricing_valid_from, pricing_valid_until, pricing_max_input_tokens
+    ) VALUES (
+        p_request_id, p_workflow_run_id, p_invocation_id, p_stage_code, p_authoring_attempt,
+        p_request_ordinal, v_run.workflow_run_recovery_count, v_run.workflow_run_claim_token_digest,
+        v_pricing.pricing_basis, v_pricing.pricing_input_usd_per_million,
+        v_pricing.pricing_cached_input_usd_per_million,
+        v_pricing.pricing_cache_write_input_usd_per_million,
+        v_pricing.pricing_output_usd_per_million, v_pricing.pricing_valid_from,
+        v_pricing.pricing_valid_until, v_pricing.pricing_max_input_tokens
+    );
+    RETURN p_request_id;
+END;
+$begin_workflow_run_model_request$;
+REVOKE ALL ON FUNCTION application.begin_workflow_run_model_request(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, UUID, UUID, VARCHAR, INTEGER, INTEGER, JSONB
+) FROM PUBLIC;
+
+CREATE FUNCTION application.complete_workflow_run_model_request(
+    p_entra_tenant_id UUID, p_entra_object_id UUID, p_expected_principal_type VARCHAR,
+    p_workflow_run_id BIGINT, p_expected_model_revision BIGINT, p_claim_token UUID,
+    p_request_id UUID, p_input_tokens BIGINT, p_output_tokens BIGINT, p_total_tokens BIGINT,
+    p_cached_input_tokens BIGINT, p_cache_write_input_tokens BIGINT,
+    p_reasoning_output_tokens BIGINT, p_other_token_types BOOLEAN
+)
+RETURNS VOID
+LANGUAGE plpgsql VOLATILE SECURITY DEFINER SET search_path = pg_catalog
+AS $complete_workflow_run_model_request$
+DECLARE
+    v_run application.workflow_run%ROWTYPE;
+    v_existing application.workflow_run_model_request%ROWTYPE;
+BEGIN
+    v_run := application.assert_workflow_run_usage_binding(
+        p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+        p_workflow_run_id, p_expected_model_revision, p_claim_token
+    );
+    SELECT * INTO v_existing FROM application.workflow_run_model_request
+     WHERE request_id = p_request_id AND workflow_run_id = p_workflow_run_id
+       AND workflow_run_recovery_count = v_run.workflow_run_recovery_count
+       AND claim_token_digest = v_run.workflow_run_claim_token_digest FOR UPDATE;
+    IF NOT FOUND THEN
+        RAISE EXCEPTION 'Workflow model request is unavailable';
+    END IF;
+    IF v_existing.completed_time IS NOT NULL THEN
+        IF ROW(v_existing.input_tokens, v_existing.output_tokens, v_existing.total_tokens,
+               v_existing.cached_input_tokens, v_existing.cache_write_input_tokens,
+               v_existing.reasoning_output_tokens, v_existing.other_token_types)
+           IS DISTINCT FROM
+           ROW(p_input_tokens, p_output_tokens, p_total_tokens, p_cached_input_tokens,
+               p_cache_write_input_tokens, p_reasoning_output_tokens, p_other_token_types) THEN
+            RAISE EXCEPTION 'Workflow model request completion conflict';
+        END IF;
+        RETURN;
+    END IF;
+    UPDATE application.workflow_run_model_request SET
+        completed_time = clock_timestamp(), input_tokens = p_input_tokens,
+        output_tokens = p_output_tokens, total_tokens = p_total_tokens,
+        cached_input_tokens = p_cached_input_tokens,
+        cache_write_input_tokens = p_cache_write_input_tokens,
+        reasoning_output_tokens = p_reasoning_output_tokens,
+        other_token_types = p_other_token_types
+      WHERE request_id = p_request_id;
+END;
+$complete_workflow_run_model_request$;
+REVOKE ALL ON FUNCTION application.complete_workflow_run_model_request(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, UUID, BIGINT, BIGINT, BIGINT,
+    BIGINT, BIGINT, BIGINT, BOOLEAN
 ) FROM PUBLIC;

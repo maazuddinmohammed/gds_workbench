@@ -8,7 +8,6 @@ from typing import cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -33,6 +32,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
     enrich_agent_output_model_definitions,
+    model_validation_issues,
     parse_pydantic_candidate,
 )
 
@@ -198,17 +198,31 @@ class LogicalCandidateValidator:
         raw_entities: list[dict[str, object]] = []
         for index, record in enumerate(parsed.entities):
             _validate_entity_authority(record, index=index, issues=issues)
-            self._validate_entity_evidence(record, index=index, issues=issues)
-            raw_entities.append(
-                _merge_entity(record, self._applied_entities.get(_entity_key(record)))
+            existing = self._applied_entities.get(_entity_key(record))
+            merged = _merge_entity(record, existing)
+            self._validate_entity_evidence(
+                record,
+                unchanged_applied=(
+                    existing is not None and merged == existing.model_dump(mode="json")
+                ),
+                index=index,
+                issues=issues,
             )
+            raw_entities.append(merged)
         raw_attributes: list[dict[str, object]] = []
         for index, record in enumerate(parsed.attributes):
             _validate_attribute_authority(record, index=index, issues=issues)
-            self._validate_attribute_evidence(record, index=index, issues=issues)
-            raw_attributes.append(
-                _merge_attribute(record, self._applied_attributes.get(_attribute_key(record)))
+            existing = self._applied_attributes.get(_attribute_key(record))
+            merged = _merge_attribute(record, existing)
+            self._validate_attribute_evidence(
+                record,
+                unchanged_applied=(
+                    existing is not None and merged == existing.model_dump(mode="json")
+                ),
+                index=index,
+                issues=issues,
             )
+            raw_attributes.append(merged)
         raw_relationships: list[dict[str, object]] = []
         for index, record in enumerate(parsed.relationships):
             if record.logical_relationship_is_locked:
@@ -227,7 +241,9 @@ class LogicalCandidateValidator:
             "logical_relationship", raw_relationships
         )
         issues.extend(
-            _model_issues(submodel_issues + entity_issues + attribute_issues + relationship_issues)
+            model_validation_issues(
+                submodel_issues + entity_issues + attribute_issues + relationship_issues
+            )
         )
         typed_submodels = cast(tuple[LogicalSubmodelRecord, ...], submodels)
         typed_entities = cast(tuple[LogicalEntityRecord, ...], entities)
@@ -260,12 +276,16 @@ class LogicalCandidateValidator:
         self,
         record: LogicalEntityRecord,
         *,
+        unchanged_applied: bool,
         index: int,
         issues: list[AgentValidationIssue],
     ) -> None:
         for source_index, source in enumerate(record.sources):
             if isinstance(source, LogicalObjectSourceRecord):
-                valid = _physical_object_key(source.source_object) in self._selected_object_keys
+                valid = (
+                    unchanged_applied
+                    or _physical_object_key(source.source_object) in self._selected_object_keys
+                )
                 code = "candidate.source_outside_selection"
                 message = "Physical Object source must belong to this immutable run selection."
             else:
@@ -288,13 +308,15 @@ class LogicalCandidateValidator:
         self,
         record: LogicalAttributeRecord,
         *,
+        unchanged_applied: bool,
         index: int,
         issues: list[AgentValidationIssue],
     ) -> None:
         for source_index, source in enumerate(record.sources):
             if isinstance(source, AttributePhysicalSourceRecord):
                 valid = (
-                    _physical_attribute_key(source.source_attribute)
+                    unchanged_applied
+                    or _physical_attribute_key(source.source_attribute)
                     in self._selected_attribute_keys
                 )
                 code = "candidate.source_outside_selection"
@@ -610,23 +632,6 @@ def _top_lock(record: object) -> bool:
     if isinstance(record, LogicalRelationshipRecord):
         return record.logical_relationship_is_locked
     raise TypeError("Unsupported Logical record")
-
-
-def _model_issues(
-    issues: tuple[ModelValidationIssue, ...],
-) -> tuple[AgentValidationIssue, ...]:
-    return tuple(
-        AgentValidationIssue(
-            code=f"candidate.{issue.code}",
-            path=(
-                issue.dataset,
-                *((issue.record_number - 1,) if issue.record_number is not None else ()),
-                *issue.fields,
-            ),
-            message=issue.message,
-        )
-        for issue in issues
-    )
 
 
 def _submodel_key(record: LogicalSubmodelRecord) -> str:

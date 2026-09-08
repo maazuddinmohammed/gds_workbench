@@ -4,12 +4,12 @@ from uuid import uuid4
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-from psycopg import Connection
-from psycopg.types.json import Jsonb
-from tests.mcp.conftest import DisposablePostgres
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.output_templates import DatabaseOutputTemplateService
+from psycopg import Connection
+from psycopg.types.json import Jsonb
+
+from tests.mcp.conftest import DisposablePostgres
 
 
 def _required_id(row: Mapping[str, object] | None, field: str) -> int:
@@ -185,9 +185,7 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
                     "output_template_field_description": "Transformation logic.",
                     "output_template_field_data_type": "string",
                     "output_template_field_array_item_type": None,
-                    "output_template_field_example": {
-                        "secret_token": "MUST_NOT_LEAVE_DATABASE"
-                    },
+                    "output_template_field_example": {"secret_token": "MUST_NOT_LEAVE_DATABASE"},
                     "output_template_field_is_required": False,
                     "output_template_field_order": 10,
                 },
@@ -275,16 +273,11 @@ async def test_output_template_catalog_round_trips_through_the_web_runtime_role(
         await database.close()
 
     object_summary = next(
-        item
-        for item in active_objects.items
-        if item.output_template_code == object_code
+        item for item in active_objects.items if item.output_template_code == object_code
     )
     assert object_summary.output_template_schema_digest_is_valid is True
     assert object_summary.field_count == 2
-    assert any(
-        item.output_template_code == attribute_code
-        for item in inactive_attributes.items
-    )
+    assert any(item.output_template_code == attribute_code for item in inactive_attributes.items)
     assert [field.output_template_field_order for field in detail.fields] == [2, 10]
     serialized = detail.model_dump_json()
     assert "MUST_NOT_LEAVE_DATABASE" not in serialized

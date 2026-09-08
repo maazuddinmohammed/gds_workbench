@@ -26,6 +26,17 @@ export function LoadingPage({ label }: { label: string }) {
   );
 }
 
+export function DetailState({ label, error = false }: { label: string; error?: boolean }) {
+  return (
+    <div
+      className={`surface-state detail-state${error ? " is-error" : ""}`}
+      {...(error ? { role: "alert" } : { "aria-busy": true })}
+    >
+      {label}
+    </div>
+  );
+}
+
 export function ErrorPage() {
   return (
     <main className="message-page">
@@ -46,6 +57,30 @@ export function StatusBadge({ value }: { value: string | null }) {
       ? "is-danger"
       : "is-neutral";
   return <span className={`status-badge ${tone}`}>{value.replaceAll("_", " ")}</span>;
+}
+
+export function SelectField({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: [string, string][];
+  onChange: (value: string) => void;
+}) {
+  return (
+    <label>
+      <span>{label}</span>
+      <select aria-label={label} value={value} onChange={(event) => onChange(event.target.value)}>
+        <option value="">Select…</option>
+        {options.map(([optionValue, optionLabel]) => (
+          <option key={optionValue} value={optionValue}>{optionLabel}</option>
+        ))}
+      </select>
+    </label>
+  );
 }
 
 export function SearchIcon() {

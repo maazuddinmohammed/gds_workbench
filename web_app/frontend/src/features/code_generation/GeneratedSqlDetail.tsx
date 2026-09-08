@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
+import { DetailState } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import type { ModelDetail } from "../models/api";
@@ -149,24 +150,39 @@ function GeneratedSqlDetailView({
         </p>
       ) : null}
 
-      <section className="detail-section" aria-labelledby="generated-sql-target-heading">
-        <header><h2 id="generated-sql-target-heading">Target Object</h2></header>
+      {!detail.artifact_is_current ? <p className="drawer-warning">Generation context changed. Review this SQL before reuse.</p> : null}
+      <section className="detail-section detail-primary generated-sql-section" aria-labelledby="stored-sql-heading">
+        <header>
+          <h2 id="stored-sql-heading">Stored SQL</h2>
+          <span>{detail.generated_sql_byte_count.toLocaleString()} bytes · Read-only</span>
+        </header>
+        <pre tabIndex={0} aria-label={`Stored SQL for ${title}`}><code>{detail.generated_sql}</code></pre>
+      </section>
+
+      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-target-heading">
+        <summary><h2 id="generated-sql-target-heading">Target Object</h2></summary>
         <dl className="detail-fact-grid">
           <Fact label="Object" value={title} />
-          <Fact label="Object ID" value={String(detail.target.object_id)} />
           <Fact label="Target Tenant" value={`${detail.target.tenant_name} (${detail.target.tenant_code})`} />
           <Fact label="Target System" value={`${detail.target.system_name} (${detail.target.system_code})`} />
           <Fact label="Zone" value={detail.target.zone_code} />
-          <Fact label="Modeled layer" value={layerLabel(detail.entity_type)} />
           <Fact label="Artifact status" value={humanize(detail.generated_code_status)} />
         </dl>
-      </section>
+        <p className="detail-empty-note">
+          {detail.artifact_is_current
+            ? "Current for the recorded generation context."
+            : "The generation context has changed; review the stored SQL before reuse."}
+          {" "}This record does not report SQL execution results.
+        </p>
+      </details>
 
-      <section className="detail-section" aria-labelledby="generated-sql-systems-heading">
-        <header>
+
+
+      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-systems-heading">
+        <summary>
           <h2 id="generated-sql-systems-heading">Contributing source Systems</h2>
           <span>{detail.source_system_count} System{detail.source_system_count === 1 ? "" : "s"}</span>
-        </header>
+        </summary>
         {detail.source_systems.length ? (
           <ul className="code-generation-system-ledger">
             {detail.source_systems.map((system) => (
@@ -179,13 +195,13 @@ function GeneratedSqlDetailView({
         ) : (
           <p className="detail-empty-note">Current contributing Systems are unavailable for this stale artifact.</p>
         )}
-      </section>
+      </details>
 
-      <section className="detail-section" aria-labelledby="generated-sql-mapping-heading">
-        <header>
+      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-mapping-heading">
+        <summary>
           <h2 id="generated-sql-mapping-heading">Applied Mapping provenance</h2>
           <span>{detail.mapping_support_count} support{detail.mapping_support_count === 1 ? "" : "s"}</span>
-        </header>
+        </summary>
         {detail.mapping_supports.length ? (
           <div className="table-scroll code-generation-support-scroll">
             <table aria-label="Applied Mapping supports">
@@ -200,7 +216,15 @@ function GeneratedSqlDetailView({
               <tbody>
                 {detail.mapping_supports.map((support) => (
                   <tr key={support.mapping_object_id}>
-                    <td>Object Mapping {support.mapping_object_id}</td>
+                    <td>
+                      <Link
+                        className="text-action"
+                        to="/tenants/$tenantId/mapping/models/$modelId/objects/$mappingObjectId"
+                        params={{ tenantId: String(tenantId), modelId: String(model.model_id), mappingObjectId: String(support.mapping_object_id) }}
+                      >
+                        Object Mapping {support.mapping_object_id}
+                      </Link>
+                    </td>
                     <td>
                       <span className="endpoint-cell">
                         <strong>{support.source.entity_name}</strong>
@@ -222,10 +246,10 @@ function GeneratedSqlDetailView({
             Showing {detail.mapping_supports.length} of {detail.mapping_support_count} Mapping supports.
           </p>
         ) : null}
-      </section>
+      </details>
 
-      <section className="detail-section" aria-labelledby="generated-sql-provenance-heading">
-        <header><h2 id="generated-sql-provenance-heading">Generation provenance</h2></header>
+      <details className="detail-section detail-disclosure" aria-labelledby="generated-sql-provenance-heading">
+        <summary><h2 id="generated-sql-provenance-heading">Generation provenance</h2></summary>
         <dl className="detail-fact-grid code-generation-provenance-grid">
           {detail.guide ? (
             <>
@@ -258,17 +282,11 @@ function GeneratedSqlDetailView({
             value={detail.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${detail.workflow_run_id}`}
           />
           <Fact label="Generated" value={formatDateTime(detail.generated_at)} />
-          <Fact label="SQL size" value={`${detail.generated_sql_byte_count.toLocaleString()} bytes`} />
+          <Fact label="Target Object ID" value={String(detail.target.object_id)} />
         </dl>
-      </section>
+      </details>
 
-      <section className="detail-section generated-sql-section" aria-labelledby="stored-sql-heading">
-        <header>
-          <h2 id="stored-sql-heading">Stored SQL</h2>
-          <span>Read-only · rendered as literal text</span>
-        </header>
-        <pre tabIndex={0} aria-label={`Stored SQL for ${title}`}><code>{detail.generated_sql}</code></pre>
-      </section>
+
     </article>
   );
 }
@@ -279,17 +297,6 @@ function Fact({ label, value }: { label: string; value: string }) {
 
 function DigestFact({ label, value }: { label: string; value: string }) {
   return <div className="digest-fact"><dt>{label}</dt><dd><code>{value}</code></dd></div>;
-}
-
-function DetailState({ label, error = false }: { label: string; error?: boolean }) {
-  return (
-    <div
-      className={`surface-state detail-state${error ? " is-error" : ""}`}
-      {...(error ? { role: "alert" } : { "aria-busy": true })}
-    >
-      {label}
-    </div>
-  );
 }
 
 function detailError(error: Error): string {
@@ -321,6 +328,7 @@ function targetFromArtifact(detail: GeneratedSqlArtifactDetail): CodeGenerationT
       workflow_run_id: detail.workflow_run_id,
       generated_at: detail.generated_at,
       generated_code_status: detail.generated_code_status,
+      generated_code_is_locked: detail.generated_code_is_locked,
       source_system_codes: detail.source_systems.map((system) => system.system_code),
       artifact_is_current: detail.artifact_is_current,
     }],

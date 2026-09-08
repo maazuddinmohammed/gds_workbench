@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import re
 from pathlib import Path
 from typing import TYPE_CHECKING, LiteralString, cast
@@ -11,7 +12,7 @@ import pytest
 from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
-    from conftest import DisposablePostgres, TestRow
+    from tests.mcp.conftest import DisposablePostgres, TestRow
 
 
 SEED_ROOT = Path(__file__).parents[2] / "database" / "seed"
@@ -24,48 +25,18 @@ type StageIdentity = tuple[str, str | None, str]
 
 EXPECTED_AGENTIC_STAGES: frozenset[StageIdentity] = frozenset(
     {
+        ("metadata_enrichment_object", "one_shot", "candidate_authoring"),
+        ("metadata_enrichment_attribute", "one_shot", "candidate_authoring"),
         ("analysis", "one_shot", "relationship_inference"),
         ("analysis", "tool_assisted", "relationship_inference"),
-        ("analysis", "detailed_coverage", "candidate_finder"),
-        ("analysis", "detailed_coverage", "relationship_resolver"),
-        ("analysis", "detailed_coverage", "whole_slice_reconciler"),
-        ("analysis", "detailed_coverage", "analysis_reviewer"),
         ("conceptual", "one_shot", "candidate_authoring"),
         ("conceptual", "tool_assisted", "candidate_authoring"),
-        ("conceptual", "detailed_coverage", "object_contribution"),
-        ("conceptual", "detailed_coverage", "entity_consolidation"),
-        ("conceptual", "detailed_coverage", "entity_attribute_detail"),
-        (
-            "conceptual",
-            "detailed_coverage",
-            "relationship_cardinality_refinement",
-        ),
-        ("conceptual", "detailed_coverage", "whole_model_reconciliation"),
         ("logical", "one_shot", "candidate_authoring"),
         ("logical", "tool_assisted", "candidate_authoring"),
-        ("logical", "detailed_coverage", "topology_builder"),
-        ("logical", "detailed_coverage", "topology_reconciler"),
-        ("logical", "detailed_coverage", "entity_detail_builder"),
-        ("logical", "detailed_coverage", "whole_model_reconciliation"),
-        ("logical", "detailed_coverage", "validator_worker"),
-        ("logical", "detailed_coverage", "validator_lead"),
         ("dimensional", "one_shot", "candidate_authoring"),
         ("dimensional", "tool_assisted", "candidate_authoring"),
-        ("dimensional", "detailed_coverage", "topology_builder"),
-        ("dimensional", "detailed_coverage", "topology_reconciler"),
-        ("dimensional", "detailed_coverage", "entity_detail_builder"),
-        (
-            "dimensional",
-            "detailed_coverage",
-            "whole_model_reconciliation",
-        ),
-        ("dimensional", "detailed_coverage", "validator_worker"),
-        ("dimensional", "detailed_coverage", "validator_lead"),
         ("mapping", "one_shot", "mapping_authoring"),
         ("mapping", "tool_assisted", "mapping_authoring"),
-        ("mapping", "detailed_coverage", "header_mapper"),
-        ("mapping", "detailed_coverage", "attribute_mapper"),
-        ("mapping", "detailed_coverage", "target_validator"),
         ("code_generation", None, "sql_generation"),
         ("validation", None, "validation_generation"),
     }
@@ -79,12 +50,7 @@ TOOL_ASSISTED_STAGES: frozenset[StageIdentity] = frozenset(
         ("mapping", "tool_assisted", "mapping_authoring"),
     }
 )
-VALIDATION_FAILURE_STAGES: frozenset[StageIdentity] = frozenset(
-    {
-        ("analysis", "detailed_coverage", "whole_slice_reconciler"),
-        ("logical", "detailed_coverage", "whole_model_reconciliation"),
-    }
-)
+VALIDATION_FAILURE_STAGES: frozenset[StageIdentity] = frozenset({*()})
 CODE_GENERATION_STAGE: StageIdentity = (
     "code_generation",
     None,
@@ -202,6 +168,7 @@ def _snapshot(postgres_database: DisposablePostgres) -> list[TestRow]:
                    version.system_prompt_template,
                    version.instruction_prompt_template,
                    version.tool_instruction_prompt_template,
+                   version.agent_tool_names,
                    version.updated_time AS version_updated_time,
                    assignment.prompt_assignment_id,
                    assignment.assigned_by_principal_id,
@@ -249,6 +216,9 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     _apply_sql(postgres_database, rendered)
 
     first = _snapshot(postgres_database)
+    assert all("\n" in str(row["system_prompt_template"]) for row in first)
+    assert all("\\n" not in str(row["system_prompt_template"]) for row in first)
+    assert all("\\n" not in str(row["instruction_prompt_template"]) for row in first)
     stage_identities = [
         (
             row["model_workflow"],
@@ -260,7 +230,7 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     assert len(stage_identities) == len(set(stage_identities))
     assert set(stage_identities) == EXPECTED_AGENTIC_STAGES
     expected_count = len(EXPECTED_AGENTIC_STAGES)
-    assert expected_count == 36
+    assert expected_count == 14
     assert len({row["prompt_template_id"] for row in first}) == expected_count
     assert len({row["prompt_template_version_id"] for row in first}) == expected_count
     assert len({row["prompt_assignment_id"] for row in first}) == expected_count
@@ -274,9 +244,12 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
             row["workflow_stage_code"],
         )
         for row in first
-        if row["tool_instruction_prompt_template"] is not None
+        if row["agent_tool_names"] is not None
     }
-    assert tool_stages == TOOL_ASSISTED_STAGES
+    assert tool_stages == TOOL_ASSISTED_STAGES | {
+        CODE_GENERATION_STAGE,
+        VALIDATION_STAGE,
+    }
 
     with postgres_database.connect_owner() as connection:
         variables = connection.execute(
@@ -345,263 +318,44 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
         for row in variables
     }
     assert set(allowed) == EXPECTED_AGENTIC_STAGES
+    for workflow in ("metadata_enrichment_object", "metadata_enrichment_attribute"):
+        assert allowed[(workflow, "one_shot", "candidate_authoring")] == {
+            "source_context",
+            "gds_context",
+            "object_context",
+            "object_attribute_context",
+            "ingestion_mapping",
+        }
     for variable in variable_contract_rows:
-        identity = (
-            variable["model_workflow"],
-            variable["workflow_execution_mode"],
-            variable["workflow_stage_code"],
+        assert variable["resolver_key"] == (
+            f"workflow.{variable['model_workflow']}.common."
+            f"{variable['workflow_stage_code']}.inputs.{variable['name']}"
         )
-        name = variable["name"]
-        expected = {
-            "stage_context": (
-                "workflow."
-                f"{identity[0]}.{identity[1] or 'common'}.{identity[2]}.context",
-                "json",
-                True,
-            ),
-            "naming_instructions": ("model.naming_instructions", "text", False),
-            "validation_failures": ("workflow.validation_failures", "json", False),
-            "mapping_object_output_template": (
-                "workflow.mapping.object_output_template",
-                "json",
-                False,
-            ),
-            "mapping_attribute_output_template": (
-                "workflow.mapping.attribute_output_template",
-                "json",
-                False,
-            ),
-            "sql_generation_guide": (
-                "workflow.code_generation.sql_generation_guide",
-                "text",
-                True,
-            ),
-            "validation_context": (
-                "workflow.validation.common.validation_context",
-                "json",
-                True,
-            ),
-        }[name]
-        assert (
-            variable["resolver_key"],
-            variable["data_type"],
-            variable["is_required"],
-        ) == expected
-    used_validation_failures: set[StageIdentity] = set()
-    used_sql_generation_guide: set[StageIdentity] = set()
+        assert variable["is_required"] is False
+    prompt_root = SEED_ROOT.parents[1] / "docs" / "workflow-prompts"
     for row in first:
         identity = (
             row["model_workflow"],
             row["workflow_execution_mode"],
             row["workflow_stage_code"],
         )
-        parts = _prompt_parts(row)
-        assert len(parts) == (3 if identity in TOOL_ASSISTED_STAGES else 2)
-        _assert_lean_nonduplicative_prompt(parts)
-        combined = "\n".join(parts)
-        normalized = combined.casefold()
-        for required_boundary in (
-            "top-level instruction",
-            "instruction-like",
-            "business data",
-            "tool results",
-            "required_output_schema",
-            "context.repair.validation_issues",
-            "authoritative",
-        ):
-            assert required_boundary in normalized
-        placeholder_names = PLACEHOLDER.findall(combined)
-        placeholders = set(placeholder_names)
-        assert len(placeholder_names) == len(placeholders)
-        assert placeholders <= allowed[identity]
-        assert "{{" not in PLACEHOLDER.sub("", combined)
-        assert "}}" not in PLACEHOLDER.sub("", combined)
-        assert "stage_context" not in placeholders
-        assert row["prompt_template_code"] == (
-            "global_default."
-            f"{row['model_workflow']}."
-            f"{row['workflow_execution_mode'] or 'common'}."
-            f"{row['workflow_stage_code']}"
+        file_workflow = "code" if identity[0] == "code_generation" else identity[0]
+        file_mode = identity[1] or "tool_assisted"
+        reviewed = json.loads(
+            (prompt_root / f"{file_workflow}.{file_mode}.json").read_text()
         )
-        if "validation_failures" in placeholders:
-            used_validation_failures.add(identity)
-        if "sql_generation_guide" in placeholders:
-            used_sql_generation_guide.add(identity)
+        assert row["system_prompt_template"] == reviewed["system_prompt"]
+        assert row["instruction_prompt_template"] == reviewed["instruction_prompt"]
+        assert row["tool_instruction_prompt_template"] is None
+        assert row["agent_tool_names"] == (
+            sorted(reviewed["tools"]) if file_mode == "tool_assisted" else None
+        )
+        assert set(reviewed["variables"]) <= allowed[identity]
+        assert "stage_context" not in reviewed["variables"]
+        assert row["prompt_template_code"] == (
+            f"global_default.{identity[0]}.{identity[1] or 'common'}.{identity[2]}"
+        )
 
-        if identity in TOOL_ASSISTED_STAGES:
-            tool_prompt = row["tool_instruction_prompt_template"].casefold()
-            for tool_rule in (
-                "manifest first",
-                "smallest",
-                "next_offset is null",
-                "do not guess",
-            ):
-                assert tool_rule in tool_prompt
-
-        if identity == CODE_GENERATION_STAGE:
-            for output_term in ("artifacts", "target_ref", "generated_sql"):
-                assert output_term in normalized
-            assert "raw sql response" not in normalized
-
-        if identity == VALIDATION_STAGE:
-            for scalar_contract_term in (
-                "exactly one row and one column",
-                "query-contract execution error, not an assertion failure",
-                "executes_successfully ignores query a result shape",
-                "catalog.schema.table",
-            ):
-                assert scalar_contract_term in normalized
-
-        if identity == (
-            "conceptual",
-            "detailed_coverage",
-            "relationship_cardinality_refinement",
-        ):
-            assert "relationship basis" in normalized
-            assert "cardinality basis" in normalized
-            assert "optionality" not in normalized
-
-        if identity == ("conceptual", "detailed_coverage", "object_contribution"):
-            for disposition in ("represented", "context_only", "excluded", "blocked"):
-                assert disposition in normalized
-            assert "not_conceptual" not in normalized
-            assert "needs_review" not in normalized
-
-        if identity == ("analysis", "detailed_coverage", "candidate_finder"):
-            for finder_term in (
-                "coverage.slice_ref exactly as assigned",
-                "candidates_found if and only if candidates is nonempty",
-                "slice-prefixed candidate_ref",
-                "two distinct exact physical endpoints",
-            ):
-                assert finder_term in normalized
-
-        if identity == ("analysis", "detailed_coverage", "relationship_resolver"):
-            for resolver_term in (
-                "each supplied candidate_ref exactly once",
-                "relationship requires exactly one supported relationship",
-                "no_relationship and needs_review require relationship to be null",
-            ):
-                assert resolver_term in normalized
-
-        if identity[1] == "detailed_coverage":
-            assert "exact current partition" in normalized
-            assert "never invent omitted content" in normalized
-
-        if identity == ("logical", "detailed_coverage", "topology_builder"):
-            for topology_term in (
-                "batch_manifest and selected_object.attributes",
-                "every supplied source attribute exactly once",
-                "another batch or object",
-            ):
-                assert topology_term in normalized
-
-        if identity == ("logical", "detailed_coverage", "topology_reconciler"):
-            for topology_term in (
-                "batch_manifest and contributions",
-                "every supplied proposal reference exactly once",
-                "another partition",
-            ):
-                assert topology_term in normalized
-
-        if identity == ("logical", "detailed_coverage", "entity_detail_builder"):
-            for detail_term in (
-                "exact bounded logical entity-detail partition",
-                "exactly its required submodel memberships",
-                "every supplied source attribute exactly once",
-                "do not recreate omitted batches",
-            ):
-                assert detail_term in normalized
-
-        if identity == (
-            "logical",
-            "detailed_coverage",
-            "whole_model_reconciliation",
-        ):
-            for reconciliation_term in (
-                "batch_manifest as the exact review boundary",
-                "reviewed_* field",
-                "exact physical object and attribute mappings",
-                "do not recreate omitted partitions",
-            ):
-                assert reconciliation_term in normalized
-
-        if identity == ("dimensional", "detailed_coverage", "topology_builder"):
-            for topology_term in (
-                "batch and selected_object.attributes",
-                "authoritative_selection_manifest",
-                "every supplied source attribute exactly once",
-            ):
-                assert topology_term in normalized
-
-        if identity == ("dimensional", "detailed_coverage", "entity_detail_builder"):
-            for detail_term in (
-                "exact bounded dimensional entity-detail partition",
-                "contribution_manifest, topology, entity, and contributions",
-                "every supplied source attribute exactly once",
-                "do not recreate omitted partitions",
-            ):
-                assert detail_term in normalized
-
-        if identity == ("mapping", "detailed_coverage", "header_mapper"):
-            for mapping_term in (
-                "author",
-                "extend",
-                "preserve",
-                "blocked",
-                "expected_mapping_object_ids",
-                "returned_mapping_object_ids",
-            ):
-                assert mapping_term in normalized
-
-        if identity == ("mapping", "detailed_coverage", "target_validator"):
-            for review_term in (
-                "review_manifest",
-                "unchanged",
-                "coverage-manifest",
-                "batch candidate digests",
-                "do not return or recreate the draft",
-            ):
-                assert review_term in normalized
-            assert "draft_candidate" not in normalized
-
-        if identity == (
-            "dimensional",
-            "detailed_coverage",
-            "whole_model_reconciliation",
-        ):
-            for receipt_term in (
-                "partition_ref unchanged",
-                "review_manifest unchanged into manifest",
-                "reviewed_relationship_signal_refs",
-                "once, in order",
-                "do not return or recreate topology",
-                "never alter the manifest or coverage",
-            ):
-                assert receipt_term in normalized
-            assert "validation_failures" not in placeholders
-
-        if identity[2] == "validator_worker":
-            for worker_term in (
-                "reviewed_record_refs",
-                "blocking invariant",
-                "nonblocking",
-                "error",
-                "warning",
-            ):
-                assert worker_term in normalized
-
-        if identity[2] == "validator_lead":
-            for lead_term in (
-                "reviewed_package_refs",
-                "reviewed_finding_refs",
-                "blocking_finding_refs",
-                "repair_brief",
-                "errors",
-            ):
-                assert lead_term in normalized
-    assert used_validation_failures == VALIDATION_FAILURE_STAGES
-    assert used_sql_generation_guide == {CODE_GENERATION_STAGE}
     assert counts == {
         "template_count": expected_count,
         "version_count": expected_count,
@@ -612,13 +366,23 @@ def test_global_prompt_seed_is_complete_governed_and_replay_safe(
     _apply_sql(postgres_database, rendered)
     assert _snapshot(postgres_database) == first
 
-    changed, replacement_count = re.subn(
-        r"(\$objective\$[^$]+?)(\$objective\$)",
-        r"\1 Apply conservative evidence thresholds.\2",
-        rendered,
-        count=1,
+    match = re.search(
+        r"\$workflow_defaults\$\n(.*?)\n\$workflow_defaults\$", rendered, re.DOTALL
     )
-    assert replacement_count == 1
+    assert match is not None
+    payload = json.loads(match.group(1))
+    target = next(
+        row
+        for row in payload
+        if row["model_workflow"] == "analysis"
+        and row["workflow_execution_mode"] == "one_shot"
+    )
+    target["system_prompt"] += "\nApply conservative evidence thresholds."
+    changed = (
+        rendered[: match.start(1)]
+        + json.dumps(payload, ensure_ascii=False, indent=2)
+        + rendered[match.end(1) :]
+    )
     _apply_sql(postgres_database, changed)
     second = _snapshot(postgres_database)
     assert len(second) == expected_count

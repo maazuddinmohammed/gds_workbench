@@ -47,6 +47,7 @@ _WORKFLOW_STATES = {
     "failed",
 }
 _WORKFLOWS = {
+    "metadata_enrichment",
     "profiling",
     "analysis",
     "conceptual",

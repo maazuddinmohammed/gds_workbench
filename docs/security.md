@@ -48,6 +48,17 @@ The Entra Tenant/Object pair must map to one active
 Principal must also have `is_super_admin=true`; merely obtaining a valid token is
 not enough.
 
+### VS Code Stage Runner
+
+The Marketplace-signed GDS Stage Runner extension is a separate MCP client. It does not reuse or receive VS Code's private MCP connection token. In production it reads the exact protected-resource metadata, requires the pinned MCP resource/scope and tenant-specific Entra authority, then requests that challenge through VS Code's built-in `microsoft` authentication provider. The user's GitHub account is unrelated; the selected Microsoft account must map to an active internal GDS Principal.
+
+VS Code Restricted Mode disables the Stage Runner. It reads manifests and payloads only from a
+trusted active GDS workspace.
+
+The short-lived access token remains only in the extension process and request header. It is never sent to an agent or child process and never written to files, settings, environment variables, command arguments, logs, receipts, or audit metadata. A legitimate 401 permits one VS Code-managed reauthentication attempt. No extension setting accepts a token, secret, tenant ID, client ID, arbitrary production URL, or arbitrary tool name.
+
+The production profile requires authentication. The local profile permits only loopback HTTP `/mcp`. The explicitly selected `azureLocalTest` profile exists only for the temporary unauthenticated Azure test deployment; production Easy Auth rejects that profile. Profile selection is explicit and never inferred from server behavior.
+
 ## Local development mode
 
 `GDS_ENVIRONMENT=local` derives development authentication. It creates the
@@ -198,6 +209,11 @@ physical records are not copied into the tool-call log. Stage Batch tools retain
 only safe Batch/dataset identifiers, payload mode, chunk index, and counts;
 record chunks, decoded or base64 payload-fragment bodies, and hashes are not
 logged.
+Change Set fingerprint tools return only complete dataset names, counts,
+SHA-256 values, revision, and one aggregate fingerprint; they never return
+pending records. Validation responses retain the full error count but expose at
+most 25 bounded examples and bounded grouped/action summaries. Older stored
+validation outcomes are bounded again when read.
 `execute_databricks_sql` records schema version, source Connection ID, Environment
 code, submitted-SQL character count, and a SHA-256 digest. Submitted SQL is never
 copied into the audit record or application logs. Returned rows, host, HTTP path,

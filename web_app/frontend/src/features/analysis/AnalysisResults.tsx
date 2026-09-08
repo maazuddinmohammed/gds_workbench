@@ -11,6 +11,7 @@ import {
 import type {
   AnalysisFilters,
   AnalysisFinding,
+  AnalysisReviewAction,
 } from "./api";
 import type { ModelInputScopeObject } from "../model_input_scope/api";
 
@@ -27,6 +28,12 @@ export function AnalysisResults({
   hasMore,
   isLoadingMore,
   hasTenantLock,
+  reviewPending,
+  reviewRetryable,
+  reviewError,
+  reviewNotice,
+  onReview,
+  onRetryReview,
   onApplyFilters,
   onSelectionChange,
   onLoadMore,
@@ -43,10 +50,17 @@ export function AnalysisResults({
   hasMore: boolean;
   isLoadingMore: boolean;
   hasTenantLock: boolean;
+  reviewPending: boolean;
+  reviewRetryable: boolean;
+  reviewError: string | null;
+  reviewNotice: string;
+  onReview: (action: AnalysisReviewAction) => void;
+  onRetryReview: () => void;
   onApplyFilters: (filters: AnalysisFilters) => void;
   onSelectionChange: (ids: Set<number>) => void;
   onLoadMore: () => void;
 }) {
+  const reviewBusy = reviewPending || reviewRetryable;
   const form = useForm({
     defaultValues: {
       objectId: filters.objectId ? String(filters.objectId) : "",
@@ -70,6 +84,7 @@ export function AnalysisResults({
         <input
           type="checkbox"
           aria-label="Select all visible findings"
+          disabled={reviewBusy}
           checked={allSelected}
           onChange={(event) => onSelectionChange(event.target.checked
             ? new Set(items.map((item) => item.analysis_result_id))
@@ -80,6 +95,7 @@ export function AnalysisResults({
         <input
           type="checkbox"
           aria-label={`Select finding ${row.original.analysis_result_id}`}
+          disabled={reviewBusy}
           checked={selectedIds.has(row.original.analysis_result_id)}
           onChange={(event) => {
             const next = new Set(selectedIds);
@@ -91,20 +107,14 @@ export function AnalysisResults({
       ),
     },
     {
-      id: "from",
-      header: "From Object / attribute",
-      cell: ({ row }) => <EndpointCell endpoint={row.original.from_endpoint} />,
+      id: "from_object", header: "From Object",
+      cell: ({ row }) => row.original.from_endpoint.object_name,
     },
-    {
-      id: "relationship",
-      header: "Relationship",
-      cell: ({ row }) => relationshipLabel(row.original.relationship_kind),
-    },
-    {
-      id: "to",
-      header: "To Object / attribute",
-      cell: ({ row }) => <EndpointCell endpoint={row.original.to_endpoint} />,
-    },
+    { id: "from_attribute", header: "From Attribute", cell: ({ row }) => row.original.from_endpoint.attribute_name },
+    { id: "to_object", header: "To Object", cell: ({ row }) => row.original.to_endpoint.object_name },
+    { id: "to_attribute", header: "To Attribute", cell: ({ row }) => row.original.to_endpoint.attribute_name },
+    { id: "relationship", header: "Relationship", cell: ({ row }) => relationshipLabel(row.original.relationship_kind) },
+    { id: "cardinality", header: () => <span title="Observed endpoint uniqueness from recorded validation counts">Cardinality</span>, cell: ({ row }) => row.original.observed_cardinality ? relationshipLabel(row.original.observed_cardinality) : row.original.validation_result ? "Unavailable" : "Not validated" },
     {
       accessorKey: "relationship_confidence",
       header: "Confidence",
@@ -126,33 +136,33 @@ export function AnalysisResults({
       ),
     },
     {
+      accessorKey: "status",
+      header: "Status",
+      cell: ({ getValue }) => relationshipLabel(getValue<string>()),
+    },
+    {
       id: "lock",
       header: "Lock",
       cell: ({ row }) => row.original.is_locked ? "Locked" : "Open",
     },
-    {
-      id: "actions",
-      header: "",
-      cell: ({ row }) => (
-        <Link
-          className="text-action"
-          aria-label={`Open finding ${row.original.analysis_result_id}`}
-          to="/tenants/$tenantId/models/$modelId/analysis/$findingId"
-          params={{
-            tenantId: String(tenantId),
-            modelId: String(modelId),
-            findingId: String(row.original.analysis_result_id),
-          }}
-        >
-          Show details
-        </Link>
-      ),
-    },
-  ], [allSelected, items, modelId, onSelectionChange, selectedIds, tenantId]);
+    { id: "actions", header: "Actions", cell: ({ row }) => <Link className="text-action" aria-label={`Open finding ${row.original.analysis_result_id}`}
+        to="/tenants/$tenantId/models/$modelId/analysis/$findingId"
+        params={{ tenantId: String(tenantId), modelId: String(modelId), findingId: String(row.original.analysis_result_id) }}>Show details</Link> },
+  ], [allSelected, items, modelId, onSelectionChange, reviewBusy, selectedIds, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
-  const mutationReason = hasTenantLock
-    ? "Review updates are not available from the web API yet."
-    : "Tenant Lock required for review updates.";
+  const mutationReason = !hasTenantLock
+    ? "Tenant Lock required for review updates."
+    : reviewPending
+      ? "Applying selected review…"
+      : reviewRetryable
+        ? "Retry the pending review before changing your selection."
+        : revisionMismatch
+          ? "Refresh before reviewing findings from a different Model revision."
+          : selectedIds.size > 200
+            ? "Select at most 200 findings per review."
+            : "";
+  const canReview = hasTenantLock && selectedIds.size > 0 && selectedIds.size <= 200
+    && !reviewBusy && !revisionMismatch && !isLoading && !isError;
 
   return (
     <section className="workflow-surface" aria-label="Analysis results">
@@ -171,6 +181,7 @@ export function AnalysisResults({
               <span>Object endpoint</span>
               <select
                 aria-label="Object endpoint"
+                disabled={reviewBusy}
                 value={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={(event) => field.handleChange(event.target.value)}
@@ -191,6 +202,7 @@ export function AnalysisResults({
               <span>Validation state</span>
               <select
                 aria-label="Validation state"
+                disabled={reviewBusy}
                 value={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={(event) => field.handleChange(event.target.value)}
@@ -207,6 +219,7 @@ export function AnalysisResults({
             <label className="inline-checkbox">
               <input
                 type="checkbox"
+                disabled={reviewBusy}
                 checked={field.state.value}
                 onBlur={field.handleBlur}
                 onChange={(event) => field.handleChange(event.target.checked)}
@@ -219,6 +232,7 @@ export function AnalysisResults({
           <button
             className="button button-secondary button-small"
             type="button"
+            disabled={reviewBusy}
             onClick={() => {
               form.reset();
               onApplyFilters({});
@@ -226,23 +240,51 @@ export function AnalysisResults({
           >
             Clear
           </button>
-          <button className="button button-secondary button-small" type="submit">
+          <button className="button button-secondary button-small" type="submit" disabled={reviewBusy}>
             Apply finding filters
           </button>
         </div>
       </form>
 
-      <div className="review-selectionbar">
-        <span>{selectedIds.size ? `${selectedIds.size} selected` : "Select findings to review"}</span>
+      <div className="review-selectionbar" aria-busy={reviewPending}>
+        <span>{selectedIds.size ? `${selectedIds.size} selected` : ""}</span>
         <div>
-          {(["Lock selected", "Unlock selected", "Make inactive"] as const).map((label) => (
-            <button key={label} className="button button-secondary button-small" type="button" disabled>
+          {([
+            ["lock", "Lock selected"],
+            ["unlock", "Unlock selected"],
+            ["deactivate", "Make inactive"],
+            ["reactivate", "Make active"],
+          ] as const).map(([action, label]) => (
+            <button
+              key={action}
+              className="button button-secondary button-small"
+              type="button"
+              disabled={!canReview}
+              title={canReview ? undefined : mutationReason}
+              onClick={() => onReview(action)}
+            >
               {label}
             </button>
           ))}
         </div>
         <small>{mutationReason}</small>
       </div>
+      {reviewError ? (
+        <div className="surface-state is-error" role="alert">
+          <p>{reviewError}</p>
+          {reviewRetryable ? (
+            <button
+              className="button button-secondary button-small"
+              type="button"
+              disabled={!hasTenantLock || reviewPending}
+              title={hasTenantLock ? undefined : "Tenant Lock required for review updates"}
+              onClick={onRetryReview}
+            >
+              Retry review
+            </button>
+          ) : null}
+        </div>
+      ) : reviewNotice ? <p role="status">{reviewNotice}</p> : null}
 
       {isLoading ? (
         <div className="surface-state" aria-busy="true">Loading Analysis findings…</div>
@@ -297,15 +339,6 @@ export function AnalysisResults({
         </div>
       )}
     </section>
-  );
-}
-
-function EndpointCell({ endpoint }: { endpoint: AnalysisFinding["from_endpoint"] }) {
-  return (
-    <span className="endpoint-cell">
-      <strong>{endpoint.object_name}</strong>
-      <span>{endpoint.attribute_name}</span>
-    </span>
   );
 }
 

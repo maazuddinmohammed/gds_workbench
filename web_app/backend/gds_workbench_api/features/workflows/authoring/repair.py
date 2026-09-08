@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import json
 import re
-from collections.abc import Iterable
+from collections.abc import Awaitable, Callable, Iterable
 from copy import deepcopy
 from hashlib import sha256
 from importlib.resources import files
@@ -12,6 +12,7 @@ from itertools import islice
 from typing import Literal, Protocol, cast
 
 from gds_etl_workbench.application.change_sets.contracts import MAX_MODEL_STAGE_PAYLOAD_BYTES
+from gds_etl_workbench.application.change_sets.model_validation import ModelValidationIssue
 from gds_etl_workbench.domain.errors import WorkbenchError
 from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
@@ -27,6 +28,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AGENT_OUTPUT_CONTRACT_INSTRUCTION,
     AgentExecutionRequest,
     AgentExecutionResult,
+    agent_input_payload,
 )
 
 
@@ -61,6 +63,17 @@ class AgentCandidateValidation(BaseModel):
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
     issues: tuple[AgentValidationIssue, ...] = Field(max_length=200)
+
+    @field_validator("issues", mode="before")
+    @classmethod
+    def bound_issues(cls, value: object) -> object:
+        # The bound limits feedback, never the number of records validated.
+        if isinstance(value, tuple | list):
+            return cast(tuple[object, ...] | list[object], value)[:200]
+        return value
+
+
+type AgentCandidateFinalValidation = Callable[[JsonValue], Awaitable[AgentCandidateValidation]]
 
 
 _MODEL_RECORD_DATASETS = {
@@ -158,6 +171,23 @@ def parse_pydantic_candidate[CandidateT: BaseModel](
         return None, issues or (_pydantic_fallback_issue(),)
     except (TypeError, ValueError):
         return None, (_pydantic_fallback_issue(),)
+
+
+def model_validation_issues(
+    issues: tuple[ModelValidationIssue, ...],
+) -> tuple[AgentValidationIssue, ...]:
+    return tuple(
+        AgentValidationIssue(
+            code=f"candidate.{issue.code}",
+            path=(
+                issue.dataset,
+                *((issue.record_number - 1,) if issue.record_number is not None else ()),
+                *issue.fields,
+            ),
+            message=issue.message,
+        )
+        for issue in issues
+    )
 
 
 def pydantic_validation_issues(
@@ -285,7 +315,18 @@ class AgentContextTooLargeError(WorkbenchError):
 
 
 class AgentCandidateValidationError(WorkbenchError):
-    def __init__(self) -> None:
+    __slots__ = ("candidate", "issues")
+
+    def __init__(
+        self,
+        *,
+        candidate: JsonValue = None,
+        issues: tuple[AgentValidationIssue, ...] = (),
+    ) -> None:
+        # Only a caller that materialized a complete candidate may attach one.
+        # Exception text/repr and Workflow failure metadata never include its content.
+        self.candidate = deepcopy(candidate)
+        self.issues = issues[:200]
         super().__init__(
             code="agent_candidate_validation_failed",
             message="The agent candidate did not pass complete backend validation.",
@@ -310,6 +351,7 @@ class ValidationRepairRunner:
         request: AgentExecutionRequest,
         validator: AgentCandidateValidator,
         max_candidate_bytes: int | None = None,
+        final_validation: AgentCandidateFinalValidation | None = None,
     ) -> AgentAuthoringResult:
         candidate_byte_limit = (
             self._policy.max_candidate_bytes if max_candidate_bytes is None else max_candidate_bytes
@@ -338,7 +380,9 @@ class ValidationRepairRunner:
                 repair=repair,
                 maximum_bytes=context_budget,
             )
-            attempt_request = request.model_copy(update={"context": attempt_context})
+            attempt_request = request.model_copy(
+                update={"context": attempt_context, "authoring_attempt": attempt_count + 1}
+            )
             if agent_request_envelope_bytes(attempt_request) > context_limit:
                 raise AgentContextTooLargeError()
             execution = await self._executor.execute(attempt_request)
@@ -353,17 +397,19 @@ class ValidationRepairRunner:
                 execution.candidate,
                 maximum_issues=self._policy.max_validation_issues,
             )
+            complete_candidate_rejected = False
             if schema_issues:
                 validation = AgentCandidateValidation(issues=schema_issues)
             else:
                 try:
                     validation = await validator.validate(execution.candidate)
+                    if not validation.issues and final_validation is not None:
+                        validation = await final_validation(execution.candidate)
+                        complete_candidate_rejected = bool(validation.issues)
                 except WorkbenchError:
                     raise
                 except Exception:
                     raise AgentCandidateValidationError() from None
-            if len(validation.issues) > self._policy.max_validation_issues:
-                raise AgentCandidateValidationError()
             if not validation.issues:
                 return AgentAuthoringResult(
                     candidate=execution.candidate,
@@ -373,12 +419,18 @@ class ValidationRepairRunner:
                     tool_call_count=tool_call_count,
                 )
             if attempt_count > request.selection.validation_retry_count:
-                raise AgentCandidateValidationError()
+                raise AgentCandidateValidationError(
+                    candidate=execution.candidate if complete_candidate_rejected else None,
+                    issues=validation.issues if complete_candidate_rejected else (),
+                )
 
             repair = {
                 "attempt": attempt_count,
                 "previous_candidate": execution.candidate,
-                "validation_issues": [issue.model_dump(mode="json") for issue in validation.issues],
+                "validation_issues": [
+                    issue.model_dump(mode="json")
+                    for issue in validation.issues[: self._policy.max_validation_issues]
+                ],
             }
 
 
@@ -395,7 +447,7 @@ def _bounded_attempt_context(
             "repair": deepcopy(repair),
         },
     )
-    if _json_bytes(attempt) <= maximum_bytes:
+    if _json_bytes({"repair": repair}) <= maximum_bytes:
         return attempt
     if repair is None:
         raise AgentContextTooLargeError()
@@ -422,11 +474,11 @@ def _bounded_attempt_context(
     accepted_issues: list[JsonValue] = []
     for issue in raw_issues:
         compact_repair["validation_issues"] = [*accepted_issues, issue]
-        if _json_bytes(compact_attempt) > maximum_bytes:
+        if _json_bytes({"repair": compact_repair}) > maximum_bytes:
             compact_repair["validation_issues"] = accepted_issues
             break
         accepted_issues.append(issue)
-    if not accepted_issues or _json_bytes(compact_attempt) > maximum_bytes:
+    if not accepted_issues or _json_bytes({"repair": compact_repair}) > maximum_bytes:
         raise AgentCandidateValidationError()
     return compact_attempt
 
@@ -454,13 +506,10 @@ def agent_request_envelope_bytes(request: AgentExecutionRequest) -> int:
         JsonValue,
         {
             "system": "\n\n".join(system_sections),
-            "input": {
-                "instruction": request.instruction_prompt,
-                "context": request.context,
-                "required_output_schema": request.output_schema,
-            },
+            "input": agent_input_payload(request),
+            "response_format": {"type": "json_object"},
             "tools": [
-                definition.model_dump(mode="json")
+                definition.model_dump(mode="json", include={"name", "description", "input_schema"})
                 for definition in (
                     ()
                     if request.local_tool_catalog is None

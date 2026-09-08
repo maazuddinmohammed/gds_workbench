@@ -13,13 +13,13 @@ from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.server import create_mcp_server
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
-from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
-from gds_etl_workbench.infrastructure.postgres import Database
 from gds_etl_workbench.application.change_sets.contracts import decode_canonical_base64_fragment
+from gds_etl_workbench.configuration import AuthMode, RuntimeSettings
 from gds_etl_workbench.domain.snapshots.metadata import (
     DATASETS_BY_NAME as METADATA_DATASETS_BY_NAME,
 )
 from gds_etl_workbench.domain.snapshots.model import DATASETS_BY_NAME
+from gds_etl_workbench.infrastructure.postgres import Database
 from gds_etl_workbench.tools.snapshots.model.describe_model_dataset import (
     register_describe_model_dataset_tool,
 )
@@ -40,6 +40,7 @@ EXPECTED_PUBLIC_TOOLS = {
     "put_metadata_stage_chunk",
     "commit_metadata_stage_batch",
     "get_metadata_change_set",
+    "get_metadata_change_set_fingerprint",
     "validate_metadata_change_set",
     "apply_metadata_change_set",
     "archive_metadata_change_set",
@@ -49,6 +50,7 @@ EXPECTED_PUBLIC_TOOLS = {
     "put_model_stage_chunk",
     "commit_model_stage_batch",
     "get_model_change_set",
+    "get_model_change_set_fingerprint",
     "validate_model_change_set",
     "apply_model_change_set",
     "archive_model_change_set",
@@ -87,9 +89,7 @@ def settings() -> RuntimeSettings:
             "GDS_ENTRA_TENANT_ID": "11111111-1111-1111-1111-111111111111",
             "GDS_LOCAL_PRINCIPAL_OBJECT_ID": "33333333-3333-3333-3333-333333333333",
             "GDS_MCP_PUBLIC_URL": "https://testserver/mcp",
-            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": (
-                "https://snapshot.blob.core.windows.net"
-            ),
+            "GDS_METADATA_SNAPSHOT_STORAGE_ACCOUNT_URL": ("https://snapshot.blob.core.windows.net"),
             "GDS_METADATA_SNAPSHOT_STORAGE_CONTAINER": "snapshots",
         }
     )
@@ -127,11 +127,11 @@ def model_description_server() -> MCPServer[None]:
 
 
 @pytest.mark.asyncio
-async def test_public_surface_is_exactly_35_focused_tools() -> None:
+async def test_public_surface_is_exactly_37_focused_tools() -> None:
     names = {tool.name for tool in await list_tools()}
 
     assert names == EXPECTED_PUBLIC_TOOLS
-    assert len(names) == 35
+    assert len(names) == 37
     assert (
         not {
             "get_model",
@@ -172,9 +172,9 @@ async def test_tool_descriptions_and_complex_arguments_are_agent_ready() -> None
     assert execute["environment_code"]["default"] == "dev"
     assert "defaults to lowercase dev" in execute["environment_code"]["description"]
 
-    connection = tools["get_tenant_details"].output_schema["$defs"][
-        "TenantConnectionSummary"
-    ]["properties"]
+    connection = tools["get_tenant_details"].output_schema["$defs"]["TenantConnectionSummary"][
+        "properties"
+    ]
     assert (
         "exact Bronze/Silver/Gold placement"
         in connection["is_tenant_gds_connection"]["description"]
@@ -196,29 +196,21 @@ async def test_change_set_tools_advertise_exact_model_and_metadata_registries() 
         "begin_model_stage_batch",
         "put_model_stage_chunk",
     ):
-        advertised = tools[tool_name].input_schema["$defs"]["ModelChangeSetDataset"][
-            "enum"
-        ]
+        advertised = tools[tool_name].input_schema["$defs"]["ModelChangeSetDataset"]["enum"]
         assert advertised == list(DATASETS_BY_NAME)
     for tool_name in ("get_model_change_set", "describe_model_dataset"):
         advertised = tools[tool_name].input_schema["$defs"]["ModelDataset"]["enum"]
         assert advertised == list(DATASETS_BY_NAME)
 
     metadata = tools["describe_metadata_dataset"].input_schema
-    assert metadata["$defs"]["MetadataDataset"]["enum"] == list(
-        METADATA_DATASETS_BY_NAME
-    )
+    assert metadata["$defs"]["MetadataDataset"]["enum"] == list(METADATA_DATASETS_BY_NAME)
 
 
 @pytest.mark.asyncio
-async def test_focused_model_reader_excludes_broad_code_and_validation_payloads() -> (
-    None
-):
+async def test_focused_model_reader_excludes_broad_code_and_validation_payloads() -> None:
     tools = {tool.name: tool for tool in await list_tools()}
     readable = set(
-        tools["read_model_section"].input_schema["$defs"]["ReadableModelDataset"][
-            "enum"
-        ]
+        tools["read_model_section"].input_schema["$defs"]["ReadableModelDataset"]["enum"]
     )
 
     assert {"model_object_binding", "model_attribute_binding"} <= readable
@@ -252,13 +244,9 @@ async def test_describe_model_dataset_explains_every_public_column() -> None:
         assert document is not None
         schema = document["record_schema"]
         assert document["change_set_eligible"] is True
-        assert [column["name"] for column in document["columns"]] == list(
-            schema["properties"]
-        )
+        assert [column["name"] for column in document["columns"]] == list(schema["properties"])
         assert all(column["description"].strip() for column in document["columns"])
-        assert all(
-            column["population_guidance"].strip() for column in document["columns"]
-        )
+        assert all(column["population_guidance"].strip() for column in document["columns"])
 
     generated = results["generated_code"].structured_content["record_schema"]
     assert "artifact_name" in generated["properties"]

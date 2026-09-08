@@ -3,13 +3,12 @@
 from __future__ import annotations
 
 import asyncio
-import threading
 from collections.abc import Callable, Coroutine
+from concurrent.futures import ThreadPoolExecutor
 from typing import Any
 
 from psycopg.conninfo import make_conninfo
 
-from .errors import NotebookDatabaseError
 from .runtime import NotebookDatabaseSettings
 
 
@@ -44,27 +43,10 @@ def run_coroutine_in_thread[T](
     factory: Callable[[], Coroutine[Any, Any, T]],
 ) -> T:
     """Run async notebook work safely when IPython already owns an event loop."""
-    result: list[T] = []
-    failure: list[BaseException] = []
-
-    def target() -> None:
-        try:
-            result.append(asyncio.run(factory()))
-        except BaseException as error:
-            failure.append(error)
-
-    thread = threading.Thread(
-        target=target,
-        name="gds-workbench-notebook-runtime",
-        daemon=False,
-    )
-    thread.start()
-    thread.join()
-    if failure:
-        raise failure[0]
-    if len(result) != 1:
-        raise NotebookDatabaseError("Notebook runtime returned no result.")
-    return result[0]
+    with ThreadPoolExecutor(
+        max_workers=1, thread_name_prefix="gds-workbench-notebook-runtime"
+    ) as executor:
+        return executor.submit(lambda: asyncio.run(factory())).result()
 
 
 __all__ = [

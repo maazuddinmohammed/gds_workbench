@@ -1,14 +1,20 @@
 from __future__ import annotations
 
+import asyncio
 from contextlib import contextmanager
 from dataclasses import replace
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
+from threading import get_ident
 from types import SimpleNamespace
 from uuid import UUID
 
 import pytest
 from gds_workbench_api.capabilities import load_default_agent_capabilities
+from gds_workbench_api.features.workflows.usage.read_service import (
+    WorkflowCostEstimate,
+    WorkflowTokenUsageSummary,
+)
 
 import gds_workbench_notebooks.workflow_execution as workflow_execution
 from gds_workbench_notebooks.errors import (
@@ -115,6 +121,7 @@ def test_execution_result_is_bounded_and_omits_empty_fields() -> None:
         "state": "completed",
         "created": True,
         "model_revision": 4,
+        "token_usage": WorkflowTokenUsageSummary().model_dump(mode="json"),
         "model_change_set_id": "52345678-1234-4234-8234-123456789abc",
         "model_change_set_status": "validated",
         "draft_revision": 3,
@@ -127,13 +134,15 @@ def test_execution_result_is_bounded_and_omits_empty_fields() -> None:
     assert str(_CLAIM_TOKEN) not in repr(result)
 
 
+@pytest.mark.parametrize("workflow", ["profiling", "metadata_enrichment"])
 def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
     monkeypatch: pytest.MonkeyPatch,
+    workflow: str,
 ) -> None:
     import gds_workbench_api.features.workflows.execution.assembly as assembly
     import gds_workbench_api.features.workflows.runs as runs
 
-    request = _request("profiling")
+    request = _request(workflow)
     principal = NotebookPrincipal(
         display_name="Databricks Notebook Runtime",
         principal_type="service_principal",
@@ -143,7 +152,7 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
     )
     created = WorkflowCreateResult(
         workflow_run_id=71,
-        workflow="profiling",
+        workflow=workflow,
         state="completed",
         created=False,
         correlation_id=_CORRELATION_ID,
@@ -159,6 +168,20 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
         draft_revision=None,
         candidate_digest=None,
         failure_code=None,
+        token_usage=WorkflowTokenUsageSummary(
+            status="complete",
+            request_count=2,
+            reported_request_count=2,
+            input_tokens=120,
+            output_tokens=18,
+            total_tokens=138,
+            cost_estimate=WorkflowCostEstimate(
+                status="estimated",
+                amount="0.00000138",
+                priced_request_count=2,
+                pricing_bases=("Fixture USD schedule",),
+            ),
+        ),
     )
 
     class Database:
@@ -214,6 +237,35 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
     )
     monkeypatch.setattr(runs, "DatabaseWorkflowRunService", RunReader)
 
+    counts = {"applied": 3, "unavailable": 1}
+    field_counts = {
+        "object_description": 1,
+        "attribute_description": 1,
+        "attribute_inferred_data_type": 1,
+    }
+    from gds_workbench_api.features.metadata_enrichment import read_service
+
+    class EnrichmentReader:
+        def __init__(self, *, database, authorizer):
+            assert database is runtime_database
+            assert authorizer is not None
+
+        async def read_results(self, received_principal, **values):
+            assert workflow == "metadata_enrichment"
+            assert received_principal.entra_object_id == _OBJECT_ID
+            assert values == {
+                "tenant_id": 2,
+                "model_id": 3,
+                "workflow_run_id": 71,
+                "limit": 1,
+            }
+            return SimpleNamespace(
+                counts=counts,
+                applied_field_counts=field_counts,
+                results=[{"applied_value": "must not appear in notebook output"}],
+            )
+
+    monkeypatch.setattr(read_service, "DatabaseMetadataEnrichmentReadService", EnrichmentReader)
     result = workflow_execution.execute_notebook_workflow(
         request,
         settings=_settings(),
@@ -221,11 +273,23 @@ def test_terminal_idempotent_replay_returns_the_existing_run_without_claiming(
 
     assert result == NotebookWorkflowExecutionResult(
         workflow_run_id=71,
-        workflow="profiling",
+        workflow=workflow,
         state="completed",
         created=False,
         model_revision=4,
+        token_usage=detail.token_usage,
+        metadata_enrichment_counts=counts if workflow == "metadata_enrichment" else None,
+        metadata_enrichment_applied_field_counts=(
+            field_counts if workflow == "metadata_enrichment" else None
+        ),
     )
+    output = result.as_dict()
+    assert output["token_usage"] == detail.token_usage.model_dump(mode="json")
+    assert "draft_review" not in output
+    assert "must not appear" not in repr(output)
+    if workflow == "metadata_enrichment":
+        assert output["metadata_enrichment"]["applied_fields"] == field_counts
+        assert output["metadata_enrichment"]["outcomes"] == counts
     assert runtime_database.opened is True
     assert runtime_database.closed is True
     assert len(RunReader.calls) == 1
@@ -287,6 +351,11 @@ def test_unavailable_claim_returns_the_refreshed_durable_run(
         draft_revision=None,
         candidate_digest=None,
         failure_code=failure_code,
+        token_usage=WorkflowTokenUsageSummary(
+            status="partial" if durable_state == "failed" else "recording",
+            request_count=1,
+            pending_request_count=1,
+        ),
     )
 
     class Database:
@@ -341,17 +410,21 @@ def test_unavailable_claim_returns_the_refreshed_durable_run(
         created=False,
         model_revision=4,
         failure_code=failure_code,
+        token_usage=detail.token_usage,
     )
+    assert result.as_dict()["token_usage"] == detail.token_usage.model_dump(mode="json")
 
 
+@pytest.mark.parametrize("workflow", ["profiling", "conceptual"])
 def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
     monkeypatch: pytest.MonkeyPatch,
+    workflow: str,
 ) -> None:
     import gds_workbench_api.features.workflows.execution.assembly as assembly
     import gds_workbench_api.features.workflows.runs as runs
     import gds_workbench_api.integrations.databricks as databricks_integration
 
-    request = _request("profiling")
+    request = _request(workflow)
     principal = NotebookPrincipal(
         display_name="Databricks Notebook Runtime",
         principal_type="service_principal",
@@ -361,7 +434,7 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
     )
     created = WorkflowCreateResult(
         workflow_run_id=71,
-        workflow="profiling",
+        workflow=workflow,
         state="queued",
         created=True,
         correlation_id=_CORRELATION_ID,
@@ -370,7 +443,11 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
         prompt_snapshot_count=0,
         created_time=_NOW,
     )
-    claim = _claim()
+    claim = replace(
+        _claim(),
+        workflow=workflow,
+        workflow_execution_mode=request.create_payload["workflow_execution_mode"],
+    )
     change_set_id = UUID("52345678-1234-4234-8234-123456789abc")
     detail = SimpleNamespace(
         workflow_run_state="completed",
@@ -379,6 +456,14 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
         draft_revision=3,
         candidate_digest="a" * 64,
         failure_code=None,
+        token_usage=WorkflowTokenUsageSummary(
+            status="complete",
+            request_count=1,
+            reported_request_count=1,
+            input_tokens=12,
+            output_tokens=5,
+            total_tokens=17,
+        ),
     )
     events: list[str] = []
 
@@ -420,6 +505,7 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
                 dimensional=self.executor,
                 mapping=self.executor,
                 code_generation=self.executor,
+                usage_recorder=None,
             )
 
         async def close(self) -> None:
@@ -479,6 +565,8 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
         lambda mode: adapter_marker if mode == "remote" else pytest.fail("unexpected mode"),
     )
     _settings_instance = _settings()
+    if workflow == "conceptual":
+        _settings_instance = replace(_settings_instance, agent_runtime=_foundry_runtime())
 
     result = workflow_execution.execute_notebook_workflow(
         request,
@@ -487,7 +575,7 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
 
     assert result == NotebookWorkflowExecutionResult(
         workflow_run_id=71,
-        workflow="profiling",
+        workflow=workflow,
         state="completed",
         created=True,
         model_revision=4,
@@ -495,12 +583,20 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
         model_change_set_status="validated",
         draft_revision=3,
         candidate_digest="a" * 64,
+        token_usage=detail.token_usage,
     )
+    assert result.as_dict()["token_usage"] == detail.token_usage.model_dump(mode="json")
     assert claim_values == [(request, created, 30)]
     assert assembly_values["database"] is runtime_database
     assert assembly_values["databricks_environment_code"] == "PROD"
     assert assembly_values["databricks_execution"] is adapter_marker
-    assert assembly_values["agent_runtime"].mode == "fake"
+    assert assembly_values["agent_runtime"].mode == (
+        "remote" if workflow == "conceptual" else "fake"
+    )
+    assert assembly_values["provider_authentications"] is None
+    if workflow == "conceptual":
+        assert len(assembly_values["agent_runtime"].connections) == 1
+        assert assembly_values["agent_runtime"].connections[0].provider_code == "microsoft_foundry"
     assert events == [
         "database_opened",
         "database_ready",
@@ -513,10 +609,31 @@ def test_new_run_is_exactly_claimed_executed_and_returned_after_cleanup(
 
 @pytest.mark.asyncio
 async def test_private_thread_bridge_works_while_an_event_loop_is_running() -> None:
+    caller_thread = get_ident()
+
     async def operation() -> int:
+        assert get_ident() != caller_thread
         return 7
 
     assert run_coroutine_in_thread(operation) == 7
+
+
+@pytest.mark.parametrize("failure", [ValueError("fixture"), asyncio.CancelledError()])
+@pytest.mark.parametrize("fail_in_factory", [False, True])
+def test_private_thread_bridge_propagates_original_failure(
+    failure: BaseException, fail_in_factory: bool
+) -> None:
+    async def operation() -> None:
+        raise failure
+
+    def factory():
+        if fail_in_factory:
+            raise failure
+        return operation()
+
+    with pytest.raises(type(failure)) as caught:
+        run_coroutine_in_thread(factory)
+    assert caught.value is failure
 
 
 @pytest.mark.asyncio
@@ -579,160 +696,102 @@ async def test_claim_lease_calls_only_the_fixed_claim(
         )
 
 
-def test_agent_runtime_uses_registry_deployment_and_databricks_provider_only() -> None:
-    class Connection:
-        def __init__(self, **values) -> None:
-            self.values = values
-            self.provider_code = values["provider_code"]
-            self.model_code = values["model_code"]
+def _foundry_runtime(capabilities=None):
+    from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
 
-    class Configuration:
-        def __init__(self, **values) -> None:
-            self.values = values
-            self.connections = values["connections"]
-
-    class Authentication:
-        def __init__(self, **values) -> None:
-            self.values = values
-
-    request = _request("conceptual")
-    foundry_agent = dict(request.create_payload["agent"])
-    foundry_agent["provider_code"] = "microsoft_foundry"
-    with pytest.raises(NotebookConfigurationError, match="Databricks agent provider only"):
-        workflow_execution._agent_runtime(
-            replace(
-                request,
-                create_payload={**request.create_payload, "agent": foundry_agent},
-            ),
-            _settings(),
-            load_default_agent_capabilities(),
-            lambda capabilities, **_kwargs: capabilities,
-            Connection,
-            Configuration,
-            Authentication,
-        )
-
-    configuration, capabilities, authentications = workflow_execution._agent_runtime(
-        request,
-        _settings(),
-        load_default_agent_capabilities(),
-        lambda capabilities, **kwargs: (f"selected-{capabilities}", kwargs),
-        Connection,
-        Configuration,
-        Authentication,
+    return AgentRuntimeConfiguration.from_environment(
+        {
+            "GDS_WEB_FOUNDRY_OPENAI_BASE_URL": "https://fixture.openai.azure.com/openai/v1/",
+            "GDS_WEB_FOUNDRY_API_KEY": "fixture-foundry-key",
+        },
+        production=True,
+        capabilities=capabilities,
     )
-    assert configuration.values["mode"] == "remote"
-    assert configuration.values["connections"][0].values == {
-        "provider_code": "databricks",
-        "model_code": "databricks-primary",
-        "model_endpoint": "databricks-gpt-oss-120b",
-        "timeout_seconds": 120,
-    }
-    assert capabilities == (
-        f"selected-{load_default_agent_capabilities()}",
-        {"configured_models": {("databricks", "databricks-primary")}},
+
+
+def test_agent_runtime_uses_only_the_selected_registered_foundry_deployment() -> None:
+    registry = load_default_agent_capabilities()
+    primary = next(model for model in registry.models if model.code == "foundry-primary")
+    secondary = primary.model_copy(
+        update={"code": "foundry-secondary", "deployment_name": "gds-secondary"}
     )
-    assert authentications["databricks"].values == {"mode": "notebook"}
-
-
-def test_agent_runtime_uses_the_selected_registered_model_endpoint() -> None:
-    class Connection:
-        def __init__(self, **values) -> None:
-            self.values = values
-            self.provider_code = values["provider_code"]
-            self.model_code = values["model_code"]
-
-    class Configuration:
-        def __init__(self, **values) -> None:
-            self.values = values
-            self.connections = values["connections"]
-
-    class Authentication:
-        def __init__(self, **values) -> None:
-            self.values = values
-
+    registry = registry.model_copy(update={"models": (*registry.models, secondary)})
     request = _request("conceptual")
-    agent = dict(request.create_payload["agent"])
-    agent["model_code"] = "databricks-secondary"
+    agent = {**request.create_payload["agent"], "model_code": "foundry-secondary"}
+    request = replace(request, create_payload={**request.create_payload, "agent": agent})
+    settings = replace(_settings(), agent_runtime=_foundry_runtime(registry))
+
+    configuration, capabilities = workflow_execution._agent_runtime(request, settings, registry)
+
+    assert configuration.mode == "remote"
+    assert len(configuration.connections) == 1
+    connection = configuration.connections[0]
+    assert connection.provider_code == "microsoft_foundry"
+    assert connection.model_code == "foundry-secondary"
+    assert connection.model_endpoint == "gds-secondary"
+    assert connection.foundry_api_key.get_secret_value() == "fixture-foundry-key"
+    assert [model.code for model in capabilities.models] == ["foundry-secondary"]
+    assert "fixture-foundry-key" not in repr(settings)
+
+
+@pytest.mark.parametrize(
+    "changed", [{"provider_code": "databricks"}, {"sdk_code": "langchain_create_agent"}]
+)
+def test_agent_runtime_rejects_retired_integrations(changed) -> None:
+    request = _request("conceptual")
     request = replace(
         request,
-        create_payload={**request.create_payload, "agent": agent},
+        create_payload={
+            **request.create_payload,
+            "agent": {**request.create_payload["agent"], **changed},
+        },
     )
-    registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.code == "databricks-primary")
-    secondary = primary.model_copy(
-        update={
-            "code": "databricks-secondary",
-            "deployment_name": "gds-secondary",
-        }
-    )
-    capabilities_registry = registry.model_copy(update={"models": (*registry.models, secondary)})
-
-    configuration, capabilities, _authentications = workflow_execution._agent_runtime(
-        request,
-        _settings(),
-        capabilities_registry,
-        lambda capabilities, **kwargs: (capabilities, kwargs),
-        Connection,
-        Configuration,
-        Authentication,
-    )
-
-    assert configuration.connections[0].values["model_code"] == "databricks-secondary"
-    assert configuration.connections[0].values["model_endpoint"] == "gds-secondary"
-    assert capabilities == (
-        capabilities_registry,
-        {"configured_models": {("databricks", "databricks-secondary")}},
-    )
+    with pytest.raises(
+        NotebookConfigurationError, match="OpenAI Agents SDK with Microsoft Foundry"
+    ):
+        workflow_execution._agent_runtime(request, _settings(), load_default_agent_capabilities())
 
 
 def test_agent_runtime_rejects_a_selected_model_missing_from_the_registry() -> None:
     request = _request("conceptual")
-    agent = dict(request.create_payload["agent"])
-    agent["model_code"] = "databricks-secondary"
     request = replace(
         request,
-        create_payload={**request.create_payload, "agent": agent},
+        create_payload={
+            **request.create_payload,
+            "agent": {**request.create_payload["agent"], "model_code": "unregistered"},
+        },
     )
-    capabilities = load_default_agent_capabilities()
+    with pytest.raises(NotebookConfigurationError, match="not registered"):
+        workflow_execution._agent_runtime(request, _settings(), load_default_agent_capabilities())
 
-    with pytest.raises(
-        NotebookConfigurationError,
-        match="not registered",
-    ):
+
+def test_agent_runtime_requires_foundry_before_claiming() -> None:
+    with pytest.raises(NotebookConfigurationError, match="Configure Foundry authentication"):
         workflow_execution._agent_runtime(
-            request,
-            _settings(),
-            capabilities,
-            lambda value, **_kwargs: value,
-            object,
-            object,
-            object,
+            _request("conceptual"), _settings(), load_default_agent_capabilities()
+        )
+
+
+def test_agent_runtime_rejects_stale_deployment_configuration() -> None:
+    registry = load_default_agent_capabilities()
+    configured = _foundry_runtime(registry)
+    first = configured.connections[0].model_copy(update={"model_endpoint": "retired-deployment"})
+    configured = configured.model_copy(update={"connections": (first,)})
+    with pytest.raises(NotebookConfigurationError, match="not configured"):
+        workflow_execution._agent_runtime(
+            _request("conceptual"), replace(_settings(), agent_runtime=configured), registry
         )
 
 
 def test_deterministic_runtime_needs_no_model_registry_connection() -> None:
-    class Configuration:
-        def __init__(self, **values) -> None:
-            self.values = values
-
-    configuration, capabilities, authentications = workflow_execution._agent_runtime(
-        _request("profiling"),
-        _settings(),
-        "capabilities",
-        lambda capabilities, **_kwargs: capabilities,
-        object,
-        Configuration,
-        object,
+    registry = load_default_agent_capabilities()
+    configuration, capabilities = workflow_execution._agent_runtime(
+        _request("profiling"), _settings(), registry
     )
-
-    assert configuration.values == {
-        "mode": "fake",
-        "timeout_seconds": 120,
-        "connections": (),
-    }
-    assert capabilities == "capabilities"
-    assert authentications is None
+    assert configuration.mode == "fake"
+    assert configuration.timeout_seconds == 120
+    assert configuration.connections == ()
+    assert capabilities is registry
 
 
 def test_conninfo_is_built_from_explicit_fields_and_not_environment() -> None:
@@ -759,3 +818,30 @@ def test_execution_source_starts_no_app_or_mcp_server() -> None:
         "GDS_WEB_",
     ):
         assert forbidden not in source
+
+
+def test_missing_foundry_configuration_does_not_take_a_run_claim(monkeypatch) -> None:
+    from unittest.mock import AsyncMock
+
+    import gds_workbench_api.features.workflows.runs as runs
+
+    request = _request("conceptual")
+    database = SimpleNamespace(
+        open=AsyncMock(),
+        close=AsyncMock(),
+        readiness=AsyncMock(return_value=SimpleNamespace(ready=True)),
+    )
+    monkeypatch.setattr(workflow_execution, "create_notebook_workflow_database", lambda _: database)
+    monkeypatch.setattr(
+        workflow_execution,
+        "_resolve_principal_and_create",
+        lambda *_: (object(), SimpleNamespace(state="queued")),
+    )
+    monkeypatch.setattr(runs, "DatabaseWorkflowRunService", lambda **_: object())
+    monkeypatch.setattr(
+        workflow_execution, "_claim_created_run", lambda *_: pytest.fail("must not claim")
+    )
+
+    with pytest.raises(NotebookConfigurationError, match="Configure Foundry authentication"):
+        workflow_execution.execute_notebook_workflow(request, settings=_settings())
+    database.close.assert_awaited_once()

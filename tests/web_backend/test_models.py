@@ -11,8 +11,6 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
-from gds_workbench_api.main import create_app
 from gds_workbench_api.features.models import (
     DatabaseModelService,
     ModelCollection,
@@ -20,6 +18,7 @@ from gds_workbench_api.features.models import (
     ModelLedgerRecord,
     ModelStatus,
 )
+from gds_workbench_api.main import create_app
 
 
 class StaticModelService:
@@ -71,9 +70,9 @@ class StaticModelService:
             gold_model_naming_instructions=None,
             gold_model_technical_columns_template=None,
             gold_model_audit_columns_template=None,
-            default_agent_sdk_code="langchain_create_agent",
-            default_agent_provider_code="databricks",
-            default_agent_model_code="databricks-primary",
+            default_agent_sdk_code="openai_agents_sdk",
+            default_agent_provider_code="microsoft_foundry",
+            default_agent_model_code="foundry-primary",
             default_reasoning_effort_code="medium",
             default_max_turns=10,
             default_validation_retry_count=2,
@@ -129,7 +128,7 @@ def test_model_detail_exposes_server_stored_settings_without_raw_prompts() -> No
     assert response.status_code == 200
     detail = response.json()
     assert detail["model_name"] == "Customer 360"
-    assert detail["default_agent_provider_code"] == "databricks"
+    assert detail["default_agent_provider_code"] == "microsoft_foundry"
     assert detail["model_input_scope_object_count"] == 25
     assert "prompt_text" not in detail
 
@@ -231,9 +230,7 @@ class ModelDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_model_ledger_uses_signed_paging_and_tenant_authorization() -> (
-    None
-):
+async def test_database_model_ledger_uses_signed_paging_and_tenant_authorization() -> None:
     database = ModelDatabase()
     service = DatabaseModelService(
         database=database,

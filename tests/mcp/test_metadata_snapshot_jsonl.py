@@ -117,9 +117,7 @@ def test_jsonl_preserves_dates_timestamps_and_bigint_text() -> None:
         "copy_group_control_last_run_time": datetime(2026, 8, 2, tzinfo=UTC),
         "copy_group_control_last_run_value": None,
     }
-    control = json.loads(
-        encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl
-    )
+    control = json.loads(encode_dataset(dataset("copy_group_control"), [control_row]).rows_jsonl)
     assert control["copy_group_control_initial_load_date"] == "2026-08-01"
     assert control["copy_group_control_last_run_time"] == "2026-08-02T00:00:00Z"
 
@@ -137,9 +135,7 @@ def test_jsonl_rejects_schema_drift_invalid_values_and_normalized_duplicates() -
             [valid, project_row(" p1 ", "Duplicate")],
         )
     with pytest.raises(SnapshotContractError, match="fixed dataset values"):
-        encode_dataset(
-            dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}]
-        )
+        encode_dataset(dataset("source_object"), [{**object_row("orders"), "zone_code": "gold"}])
 
 
 def test_jsonl_keeps_identity_natural_key_strings_case_sensitive() -> None:

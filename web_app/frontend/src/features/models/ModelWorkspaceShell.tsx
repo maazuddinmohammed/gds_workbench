@@ -8,12 +8,14 @@ import type { ModelDetail } from "./api";
 export type ModelStage =
   | "overview"
   | "scope"
+  | "metadata-enrichment"
   | "profiling"
   | "analysis"
   | "assertions"
   | "conceptual"
   | "logical"
   | "dimensional"
+  | "targets"
   | "settings-prompts";
 
 export function ModelWorkspaceShell({
@@ -77,13 +79,22 @@ export function ModelWorkspaceShell({
               <i>1</i><span><strong>Input Scope</strong><small>{model.model_input_scope_object_count} Objects</small></span>
             </Link>
             <Link
+              aria-label="Metadata enrichment"
+              className={`model-step${activeStage === "metadata-enrichment" ? " is-active" : ""}`}
+              to="/tenants/$tenantId/models/$modelId/metadata-enrichment"
+              params={{ tenantId, modelId }}
+              title="Metadata enrichment — Descriptions and inferred types"
+            >
+              <i>2</i><span><strong>Enrichment</strong><small>Descriptions and types</small></span>
+            </Link>
+            <Link
               aria-label="Profiling"
               className={`model-step${activeStage === "profiling" ? " is-active" : ""}`}
               to="/tenants/$tenantId/models/$modelId/profiling"
               params={{ tenantId, modelId }}
               title="Profiling — Run evidence"
             >
-              <i>2</i><span><strong>Profiling</strong><small>Run evidence</small></span>
+              <i>3</i><span><strong>Profiling</strong><small>Run evidence</small></span>
             </Link>
             <Link
               aria-label="Analysis"
@@ -92,7 +103,7 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Analysis — Relationship evidence"
             >
-              <i>3</i><span><strong>Analysis</strong><small>Relationship evidence</small></span>
+              <i>4</i><span><strong>Analysis</strong><small>Relationship evidence</small></span>
             </Link>
             <Link
               aria-label="Assertions"
@@ -101,7 +112,7 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Assertions — Modeling assertions"
             >
-              <i>4</i><span><strong>Assertions</strong><small>Modeling assertions</small></span>
+              <i>5</i><span><strong>Assertions</strong><small>Modeling assertions</small></span>
             </Link>
             <Link
               aria-label="Conceptual"
@@ -110,7 +121,7 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Conceptual — Objects and relationships"
             >
-              <i>5</i><span><strong>Conceptual</strong><small>Objects and relationships</small></span>
+              <i>6</i><span><strong>Conceptual</strong><small>Objects and relationships</small></span>
             </Link>
             <Link
               aria-label="Logical"
@@ -119,7 +130,7 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Logical — Normalized model"
             >
-              <i>6</i><span><strong>Logical</strong><small>Normalized model</small></span>
+              <i>7</i><span><strong>Logical</strong><small>Normalized model</small></span>
             </Link>
             <Link
               aria-label="Dimensional"
@@ -128,7 +139,16 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Dimensional — Dimensional records"
             >
-              <i>7</i><span><strong>Dimensional</strong><small>Dimensional records</small></span>
+              <i>8</i><span><strong>Dimensional</strong><small>Dimensional records</small></span>
+            </Link>
+            <Link
+              aria-label="Target Binding"
+              className={`model-step${activeStage === "targets" ? " is-active" : ""}`}
+              to="/tenants/$tenantId/models/$modelId/targets"
+              params={{ tenantId, modelId }} search={{ layer: "logical" }}
+              title="Target Binding — Silver and Gold"
+            >
+              <i>9</i><span><strong>Target Binding</strong><small>Silver and Gold</small></span>
             </Link>
             <Link
               aria-label="Settings"
@@ -137,7 +157,7 @@ export function ModelWorkspaceShell({
               params={{ tenantId, modelId }}
               title="Settings — Prompts"
             >
-              <i>8</i><span><strong>Settings</strong><small>Prompts</small></span>
+              <i>10</i><span><strong>Settings</strong><small>Prompts</small></span>
             </Link>
           </nav>
           <div className="model-rail-note">

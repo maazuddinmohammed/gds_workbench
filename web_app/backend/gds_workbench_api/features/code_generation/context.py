@@ -5,14 +5,18 @@ from __future__ import annotations
 import json
 from typing import Any, LiteralString, Protocol, cast
 
+from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
     GeneratedCodeRecord,
     GeneratedCodeSourceSystemRecord,
 )
+from gds_etl_workbench.domain.snapshots.model import ModelSnapshot
+from gds_etl_workbench.infrastructure.postgres import ReadTransaction
 from pydantic import BaseModel, ConfigDict, Field, JsonValue, TypeAdapter, ValidationError
 
 from gds_workbench_api.features.workflows.authoring.context import (
+    load_frozen_model_graph,
     reject_forbidden_provider_json,
 )
 from gds_workbench_api.features.workflows.authoring.plan import AgentRunPlan
@@ -95,6 +99,7 @@ SELECT target.object_id,
                          'artifact_type', generated.artifact_type,
                          'generated_code_content',
                              generated.generated_code_content,
+                         'generated_code_is_locked', generated.generated_code_is_locked,
                          'generated_code_status',
                              generated.generated_code_status,
                          '_is_current',
@@ -111,6 +116,8 @@ SELECT target.object_id,
                       jsonb_agg(
                           jsonb_build_object(
                               'source_system_code', system.system_code,
+                              'generated_code_source_system_is_locked',
+                                  source.generated_code_source_system_is_locked,
                               'generated_code_source_system_status',
                                   source.generated_code_source_system_status
                           ) ORDER BY lower(btrim(system.system_code)),
@@ -148,6 +155,8 @@ class CodeGenerationExecutionContext(BaseModel):
         max_length=50_000,
     )
     agent_context: JsonValue = Field(repr=False)
+    snapshot: ModelSnapshot | None = Field(default=None, repr=False, exclude=True)
+    physical_scope: PhysicalModelCatalog | None = Field(default=None, repr=False, exclude=True)
 
 
 class PostgresCodeGenerationContextRepository:
@@ -171,7 +180,15 @@ class PostgresCodeGenerationContextRepository:
             ),
         )
         try:
-            return _assemble_context(plan=plan, rows=rows)
+            context = _assemble_context(plan=plan, rows=rows)
+            snapshot, physical_scope = await load_frozen_model_graph(
+                cast(ReadTransaction, transaction),
+                tenant_id=tenant_id,
+                plan=plan,
+            )
+            return context.model_copy(
+                update={"snapshot": snapshot, "physical_scope": physical_scope}
+            )
         except InvalidRequestError:
             raise
         except (TypeError, ValueError, ValidationError):
@@ -367,6 +384,9 @@ def _applied_generated_code(
                         "modeled_entity_name": modeled_entity_name,
                         "artifact_name": artifact.artifact_name,
                         "source_system_code": source.get("source_system_code"),
+                        "generated_code_source_system_is_locked": source.get(
+                            "generated_code_source_system_is_locked"
+                        ),
                         "generated_code_source_system_status": source.get(
                             "generated_code_source_system_status"
                         ),

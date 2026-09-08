@@ -19,6 +19,7 @@ from gds_workbench_api.features.workflows.runs.contracts import (
     WorkflowRunLedgerRecord,
     WorkflowRunNotFoundError,
 )
+from gds_workbench_api.features.workflows.usage.read_service import read_run_token_usage
 
 _MODEL_EXISTS_SQL = """
 SELECT model.model_id
@@ -255,9 +256,17 @@ class DatabaseWorkflowRunService:
                 _RUN_DETAIL_SQL,
                 (tenant_id, model_id, workflow_run_id),
             )
-        if row is None:
-            raise WorkflowRunNotFoundError()
-        return WorkflowRunDetail.model_validate(row)
+            if row is None:
+                raise WorkflowRunNotFoundError()
+            usage = await read_run_token_usage(
+                transaction,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                workflow_run_id=workflow_run_id,
+            )
+            if usage is None:
+                raise WorkflowRunNotFoundError()
+        return WorkflowRunDetail.model_validate({**row, "token_usage": usage})
 
     async def list_events(
         self,

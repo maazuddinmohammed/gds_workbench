@@ -37,15 +37,6 @@ def compile_mapping_output_schema(
     return schema
 
 
-def enrich_mapping_agent_output_schema(schema: dict[str, JsonValue]) -> None:
-    """Compatibility helper for callers that already hold a schema."""
-
-    schema.setdefault(
-        "description",
-        "Return flexible Mapping transformation documents; backend derives identity.",
-    )
-
-
 def _selected_template(
     preparation: MappingPreparation,
     target_type: str,

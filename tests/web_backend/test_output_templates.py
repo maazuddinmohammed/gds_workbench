@@ -13,7 +13,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.output_templates import (
     DatabaseOutputTemplateService,
     OutputTemplateDatabase,
@@ -25,7 +24,6 @@ from gds_workbench_api.features.output_templates import (
     OutputTemplateSummary,
     create_output_templates_router,
 )
-
 
 PRINCIPAL = RequestPrincipal(
     actor_kind=ActorKind.HUMAN,
@@ -85,9 +83,7 @@ class OutputTemplateListTransaction:
         assert "FROM application.output_template AS template" in query
         assert "application.output_template_field" in query
         assert "output_template_field_example AS" not in query
-        target_type, repeated_target_type, active, repeated_active, limit, offset = (
-            parameters
-        )
+        target_type, repeated_target_type, active, repeated_active, limit, offset = parameters
         assert target_type == repeated_target_type == "mapping_object"
         assert active is repeated_active is True
         assert limit == 2
@@ -114,9 +110,7 @@ class OutputTemplateListDatabase:
 
 
 @pytest.mark.asyncio
-async def test_output_template_list_is_authorized_filtered_safe_and_signed_page_bounded() -> (
-    None
-):
+async def test_output_template_list_is_authorized_filtered_safe_and_signed_page_bounded() -> None:
     database = OutputTemplateListDatabase()
     service = DatabaseOutputTemplateService(
         database=cast(OutputTemplateDatabase, database),
@@ -295,11 +289,7 @@ class OutputTemplateRouterService:
         self.list_filter = (target_type, active)
         return OutputTemplatePage(
             tenant_id=tenant_id,
-            items=(
-                OutputTemplateSummary.model_validate(
-                    _template_row(101, "standard_object")
-                ),
-            ),
+            items=(OutputTemplateSummary.model_validate(_template_row(101, "standard_object")),),
             next_cursor=None,
         )
 
@@ -315,9 +305,7 @@ class OutputTemplateRouterService:
         assert output_template_id == 101
         return OutputTemplateDetail(
             tenant_id=tenant_id,
-            template=OutputTemplateSummary.model_validate(
-                _template_row(101, "standard_object")
-            ),
+            template=OutputTemplateSummary.model_validate(_template_row(101, "standard_object")),
             fields=(
                 OutputTemplateField(
                     output_template_field_name="transformation_logic",

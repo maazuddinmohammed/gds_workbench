@@ -1,0 +1,2386 @@
+{
+  "workflow": "analysis",
+  "status": "approved_design; implementation_deferred",
+  "modes": [
+    "one_shot",
+    "tool_assisted"
+  ],
+  "variables": {
+    "source_context": {
+      "description": "Unique contributing source Connections and business context.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/source_context_entry"
+        }
+      }
+    },
+    "gds_context": {
+      "description": "Unique GDS Connection/zone placements for the selected Objects; empty for Source-only scope.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/gds_context_entry"
+        }
+      }
+    },
+    "object_context": {
+      "description": "Selected physical Objects with current saved descriptions.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_context_entry"
+        }
+      }
+    },
+    "object_attribute_context": {
+      "description": "Eligible Attributes grouped by physical Object, with current saved descriptions, types, flags, and Profiles.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_attribute_context_entry"
+        }
+      }
+    },
+    "ingestion_mapping": {
+      "description": "Registered Object-only source-to-selected-target links.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/ingestion_mapping_entry"
+        }
+      }
+    },
+    "object_relationship_context": {
+      "description": "Existing applied relationships grouped by each scoped physical Object. Incoming matches the to-Object; outgoing matches the from-Object. Include groups with empty arrays. Each relationship retains all 17 approved endpoint/kind/confidence/basis/status/lock fields and excludes validation fields.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_relationship_context_entry"
+        }
+      }
+    },
+    "modeling_assertions": {
+      "description": "Active governed Analysis-applicable assertion records from active documents within authorized Model/source scope; includes applicable Model-wide assertions.",
+      "value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/modeling_assertions_entry"
+        }
+      }
+    }
+  },
+  "tools": [
+    {
+      "name": "get_source_context",
+      "description": "Return the same source_context value as the Analysis prompt variable: contributing Source Connections and their business/type context for this frozen run. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/source_context_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "cursor": null
+      },
+      "semantics": [
+        "Takes no selection arguments; the backend supplies authorized run context.",
+        "Source Objects contribute their own Source Connection; Bronze Objects contribute Sources resolved through registered ingestion mappings.",
+        "Copy tenant_code, system_code, and connection_code from one entry to form the source_connection_key for get_objects. These are Source codes, not GDS placement codes.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs."
+      ],
+      "example_input": {},
+      "example_output": {
+        "items": [
+          {
+            "tenant_code": "ACME",
+            "tenant_description": "Wholesale distribution business.",
+            "system_code": "ERP",
+            "system_description": "Manages sales orders and billing.",
+            "system_type_code": "ERP",
+            "system_type_description": "Systems for managing core business operations.",
+            "connection_code": "ERP_SOURCE",
+            "connection_description": null,
+            "connection_type_code": "SQL_SERVER",
+            "connection_type_description": "Connection to a Microsoft SQL Server database.",
+            "zone_code": "source",
+            "zone_description": "Originating source data."
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/source_context_entry"
+        }
+      }
+    },
+    {
+      "name": "get_gds_context",
+      "description": "Return the same gds_context value as the Analysis prompt variable: actual GDS placements for scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/gds_context_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "cursor": null
+      },
+      "semantics": [
+        "Takes no selection arguments. Analysis returns the list of unique GDS placements; A complete Source-only page has items=[].",
+        "Use this to interpret physical placement. Do not pass a GDS placement key as the Source Connection filter to get_objects.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs."
+      ],
+      "example_input": {},
+      "example_output": {
+        "items": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "zone_code": "bronze",
+            "zone_description": "Stores ingested source data."
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/gds_context_entry"
+        }
+      }
+    },
+    {
+      "name": "get_objects",
+      "description": "Return scoped physical Objects associated with a complete Source Connection natural key. Bronze matches follow registered ingestion mappings and retain GDS natural keys; Source matches retain Source keys. Omit the filter to return all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "source_connection_key": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/source_connection_key"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Copy tenant_code, system_code, and connection_code from one source_context entry. Omitted/null means all scoped Objects."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "source_connection_key": {
+                  "const": null
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/object_context_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "source_connection_key": null,
+        "cursor": null
+      },
+      "semantics": [
+        "With source_connection_key omitted or null, select the entire object_context list across pages.",
+        "A supplied Source Connection key must contain tenant_code, system_code, and connection_code from the same frozen source_context entry. A bare Connection code or partial key is invalid.",
+        "The Source key is a filter, never an authorization input. The backend supplies the run scope and Source Tenant and rejects keys outside that authorized context.",
+        "For a scoped Source Object, match its own Source Connection. For a scoped Bronze Object, match a contributing Source Object through registered ingestion Object mappings.",
+        "Intersect every result with the immutable Object scope. Include a Bronze Object if any contributing Source matches; return each physical Object once per response.",
+        "Return actual physical natural keys, object_description, and zone_code, exactly as object_context entries. Never rewrite Bronze keys to Source codes or return out-of-scope Source parents.",
+        "Copy returned physical keys into get_object_details. A Source Object key is valid there only when that Source Object itself is in scope.",
+        "Malformed, unknown, or out-of-scope supplied filters are explicit errors; do not treat them as omitted or return all instead.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs."
+      ],
+      "example_input": {
+        "source_connection_key": {
+          "tenant_code": "ACME",
+          "system_code": "ERP",
+          "connection_code": "ERP_SOURCE"
+        }
+      },
+      "example_output": {
+        "items": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "object_description": "Sales orders; one row represents one order.",
+            "zone_code": "bronze"
+          },
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers",
+            "object_description": "ERP customer accounts; one row per customer account.",
+            "zone_code": "bronze"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_context_entry"
+        }
+      }
+    },
+    {
+      "name": "get_object_details",
+      "description": "Return Attribute metadata and saved Profiles grouped under requested in-scope physical Object keys, using the object_attribute_context structure. Omitted/empty object_keys returns all scoped groups. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "object_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/object_key"
+            },
+            "default": [],
+            "description": "Copy complete physical Object keys from get_objects or object_context. Omitted/empty means all in-scope Object detail groups."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "object_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/object_attribute_context_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/object_key"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "object_keys": [],
+        "cursor": null
+      },
+      "semantics": [
+        "Copy the five-field Object keys from get_objects or object_context without substituting originating Source codes.",
+        "For Bronze Objects use their actual GDS Tenant/System/Connection, schema, and Object name. For scoped Source Objects use their actual Source keys.",
+        "The assembled result has one group per requested Object, retaining all eligible Attributes, selected_attribute_names, and their saved metadata/Profile fields.",
+        "Omitted object_keys or [] means all in-scope Object detail groups; it never expands run scope.",
+        "Reject unknown/out-of-scope Object keys. A mapped but out-of-scope Source parent is not a substitute for its scoped Bronze Object.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs.",
+        "A large Object group may span pages. Append its nested lists by the same physical key until incomplete_object_key clears; empty lists on an unfinished group are not evidence of absence."
+      ],
+      "example_input": {
+        "object_keys": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "attributes": [
+              {
+                "attribute_name": "CustomerCode",
+                "attribute_description": "ERP customer account that placed this order.",
+                "attribute_data_type": "VARCHAR",
+                "attribute_inferred_data_type": "VARCHAR",
+                "attribute_nullability": false,
+                "is_natural_key": false,
+                "is_surrogate_key": false,
+                "is_masking_required": false,
+                "is_meta_data": false,
+                "profile": {
+                  "profiled_at": "2026-09-07T14:30:00Z",
+                  "row_scope": "all_rows",
+                  "batch_attribute_name": null,
+                  "batch_id": null,
+                  "row_count": 1000,
+                  "non_null_count": 1000,
+                  "null_count": 0,
+                  "blank_count": 0,
+                  "distinct_count": 100,
+                  "min_data_length": 6,
+                  "max_data_length": 6,
+                  "avg_data_length": 6,
+                  "percent_populated": 100,
+                  "percent_duplicates": 90,
+                  "percent_null": 0,
+                  "percent_blank": 0,
+                  "percent_distinct": 10
+                }
+              }
+            ],
+            "selected_attribute_names": [
+              "CustomerCode"
+            ]
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_attribute_context_entry"
+        }
+      }
+    },
+    {
+      "name": "get_object_relationships",
+      "description": "Return existing incoming and outgoing relationships grouped under requested physical Object keys, in the same shape as object_relationship_context. Omitted/empty keys returns groups for all scoped Objects. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "object_keys": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/object_key"
+            },
+            "default": [],
+            "description": "Complete physical Object keys from get_objects. Omitted/empty returns relationship groups for all scoped Objects."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "object_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/object_relationship_context_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "anyOf": [
+              {
+                "$ref": "#/$defs/object_key"
+              },
+              {
+                "type": "null"
+              }
+            ]
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "object_keys": [],
+        "cursor": null
+      },
+      "semantics": [
+        "Copy complete physical keys from get_objects or object_context, using GDS keys for Bronze and Source keys for scoped Source Objects.",
+        "Incoming relationships have a to-Object matching the group key; outgoing have a from-Object matching it. Both endpoints must remain in the authorized run scope.",
+        "The assembled result has one group per requested Object, including empty incoming/outgoing arrays when that Object has no eligible saved relationships. Omitted/empty object_keys means all scoped Objects.",
+        "Deduplicate requested Object keys and relationship identities within each direction list. The same edge intentionally appears in the outgoing view of its from-Object and incoming view of its to-Object.",
+        "A relationship between different Attributes of one Object appears in both direction lists of that Object. Repeated views remain one stored relationship identity, not independent evidence or multiple output records.",
+        "Retain complete from/to Attribute keys, kind, confidence, basis, status, and lock in every relationship. Do not include validation fields or split into locked/unlocked lists.",
+        "Locked means immutable, not proven correct; unlocked does not require rewriting. Unchanged records remain output no-ops.",
+        "Unknown/out-of-scope Object keys are errors. Empty arrays are evidence of no saved eligible relationships only for a complete successful response.",
+        "Use the wider Object/Attribute inventory to discover new links, including Objects with no existing relationships. Stored edges never limit candidate discovery.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs.",
+        "A large Object group may span pages. Append its nested lists by the same physical key until incomplete_object_key clears; empty lists on an unfinished group are not evidence of absence."
+      ],
+      "example_input": {
+        "object_keys": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders"
+          },
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers"
+          }
+        ]
+      },
+      "example_output": {
+        "items": [
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Orders",
+            "incoming_relationships": [],
+            "outgoing_relationships": [
+              {
+                "from_tenant_code": "GDS",
+                "from_system_code": "WAREHOUSE",
+                "from_connection_code": "MAIN",
+                "from_object_schema": "bronze",
+                "from_object_name": "Orders",
+                "from_attribute_name": "CustomerCode",
+                "to_tenant_code": "GDS",
+                "to_system_code": "WAREHOUSE",
+                "to_connection_code": "MAIN",
+                "to_object_schema": "bronze",
+                "to_object_name": "Customers",
+                "to_attribute_name": "CustomerCode",
+                "relationship_kind": "reference",
+                "relationship_confidence": "high",
+                "relationship_basis": "Saved Attribute descriptions and assertion order_customer_reference identify the ordering customer and its ERP customer identifier.",
+                "analysis_result_status": "active",
+                "analysis_result_is_locked": true
+              }
+            ]
+          },
+          {
+            "tenant_code": "GDS",
+            "system_code": "WAREHOUSE",
+            "connection_code": "MAIN",
+            "object_schema": "bronze",
+            "object_name": "Customers",
+            "incoming_relationships": [
+              {
+                "from_tenant_code": "GDS",
+                "from_system_code": "WAREHOUSE",
+                "from_connection_code": "MAIN",
+                "from_object_schema": "bronze",
+                "from_object_name": "Orders",
+                "from_attribute_name": "CustomerCode",
+                "to_tenant_code": "GDS",
+                "to_system_code": "WAREHOUSE",
+                "to_connection_code": "MAIN",
+                "to_object_schema": "bronze",
+                "to_object_name": "Customers",
+                "to_attribute_name": "CustomerCode",
+                "relationship_kind": "reference",
+                "relationship_confidence": "high",
+                "relationship_basis": "Saved Attribute descriptions and assertion order_customer_reference identify the ordering customer and its ERP customer identifier.",
+                "analysis_result_status": "active",
+                "analysis_result_is_locked": true
+              }
+            ],
+            "outgoing_relationships": []
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/object_relationship_context_entry"
+        }
+      }
+    },
+    {
+      "name": "get_modeling_assertions",
+      "description": "Read authorized, active, Analysis-applicable Modeling Assertions from the frozen run. Omitted/empty assertion_keys selects all; supplied nominal record keys narrow the result. Returns the same seven-field records as modeling_assertions. Results use the shared page envelope; follow next_cursor until complete.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "assertion_keys": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "description": "Nominal modeling_assertion_record_key values from known assertion records. Omitted/empty selects all authorized active applicable assertions."
+          },
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1,
+            "default": null,
+            "description": "Opaque next_cursor returned by this same tool/run. Omitted/null starts a selection; a continuation restores its frozen filters. Supply only the cursor on continuation (other filters must remain at defaults)."
+          }
+        },
+        "required": [],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "required": [
+                "cursor"
+              ],
+              "properties": {
+                "cursor": {
+                  "type": "string"
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "assertion_keys": {
+                  "const": []
+                }
+              }
+            }
+          }
+        ]
+      },
+      "output_schema": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/$defs/modeling_assertions_entry"
+            }
+          },
+          "next_cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "is_complete": {
+            "type": "boolean"
+          },
+          "incomplete_object_key": {
+            "type": "null"
+          }
+        },
+        "required": [
+          "items",
+          "next_cursor",
+          "is_complete",
+          "incomplete_object_key"
+        ],
+        "additionalProperties": false,
+        "allOf": [
+          {
+            "if": {
+              "properties": {
+                "is_complete": {
+                  "const": true
+                }
+              }
+            },
+            "then": {
+              "properties": {
+                "next_cursor": {
+                  "type": "null"
+                },
+                "incomplete_object_key": {
+                  "type": "null"
+                }
+              }
+            },
+            "else": {
+              "properties": {
+                "next_cursor": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "items": {
+                  "minItems": 1
+                }
+              }
+            }
+          }
+        ]
+      },
+      "defaults": {
+        "assertion_keys": [],
+        "cursor": null
+      },
+      "semantics": [
+        "Read only already prepared authorized active applicable records from active documents; no live document extraction or new assertion authoring.",
+        "Omitted/empty assertion_keys selects all; supplied nominal keys select those records. Repeated keys produce one record; unknown/out-of-scope keys are errors.",
+        "Preserve document name, record key/type/text/details/source location/confidence. No raw documents, record IDs, extra document metadata, or invented structured Object association.",
+        "A complete empty result means no eligible assertions. Failed/incomplete retrieval does not establish absence.",
+        "Assertion confidence is evidence, not an automatic confidence assignment to a relationship; assess applicability, grain, identity boundaries, and contradictory evidence.",
+        "Paging does not narrow selection: all matching records remain selected across continuations. Page controls are transport metadata, not record fields or database IDs."
+      ],
+      "example_input": {
+        "assertion_keys": []
+      },
+      "example_output": {
+        "items": [
+          {
+            "modeling_assertion_record_key": "order_customer_reference",
+            "modeling_assertion_document_name": "ERP relationship notes",
+            "modeling_assertion_record_type": "relationship",
+            "modeling_assertion_text": "Within this ERP source, Orders.CustomerCode references the customer account identified by Customers.CustomerCode.",
+            "modeling_assertion_details": {
+              "from": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attribute_name": "CustomerCode"
+              },
+              "to": {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers",
+                "attribute_name": "CustomerCode"
+              }
+            },
+            "modeling_assertion_source_location": {
+              "section": "Orders and customers"
+            },
+            "modeling_assertion_confidence": "high"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "logical_value_schema": {
+        "type": "array",
+        "items": {
+          "$ref": "#/$defs/modeling_assertions_entry"
+        }
+      }
+    }
+  ],
+  "semantics": {
+    "defaults": "On initial calls, omitted/null Source Connection key selects all scoped Objects; omitted/empty Object keys selects all scoped detail/relationship groups; omitted/empty assertion keys selects all authorized active applicable assertions. Cursor-only continuations restore their original selection.",
+    "scope": "All records are preloaded and frozen. Objects and Attributes are restricted to eligible selected Objects; source evidence is restricted to their contributing registered sources. Only active, applicable authorized assertion records are loaded. Tools never change endpoint eligibility.",
+    "applied_relationships_validation": "No validation_* fields or measured relationship-validation results are included in this evidence variable. Stored validation remains separate backend-owned state and is not deleted by this prompt projection. Existing confidence may be low, medium, or high; high-only generation does not filter prior evidence out.",
+    "assertion_payload": "Only active applicable assertions from active authorized documents are supplied. Text and document/record keys retain their stored nominal identities. modeling_assertion_details is the stored bounded JSON object, with type-dependent keys; {} means no structured details. modeling_assertion_source_location is a stored bounded locator object or null. Their example keys are illustrative, not a new universal assertion schema. No raw document body or document metadata dump is added.",
+    "relationship_locks_and_identity": "Locked and unlocked applied relationships may be referenced. Locked records cannot be overridden by generation. Within a Model, identity is complete from Attribute key plus complete to Attribute key plus normalized relationship_kind. Before persistence, automatically collapse candidate rows that share this identity and identical remaining normalized content. Conflicting content is returned for model correction; never choose arbitrarily. Resolve existing identities to existing records, treating unchanged content as a no-op. Preserve governed updates, status/lock ownership, and SQL uniqueness. Do not merge distinct legitimate kinds/directions or use equivalent renaming/reversal to evade locks.",
+    "candidate_repair": "For correctable output-schema or semantic candidate errors, including conflicting duplicates and broken references, the backend sends bounded structured code/path/message feedback and the previous candidate when it fits, using the same frozen template, selected tools, authorized scope/evidence and output schema. The model returns a corrected complete candidate; backend validation reruns. This applies in both modes and uses the existing configured validation_retry_count. No invalid candidate is applied. Exhaustion fails the run; authorization, lost Tenant Lock, stale revision, infrastructure and unexpected validation-operation failures stop rather than invoking model repair. Runtime repair feedback is control information, not an optional prompt variable or a reason to reattach omitted evidence.",
+    "source_filter": "get_objects accepts one complete originating Source Connection key (tenant_code, system_code, connection_code). Resolve registered ingestion Object mappings before intersecting with scoped physical Objects. Preserve returned physical keys and deduplicate matches by those keys.",
+    "physical_keys": "get_object_details uses complete keys returned by get_objects: GDS keys for Bronze Objects, Source keys for scoped Source Objects. No database IDs or temporary aliases.",
+    "output_shape": "All six readers return the shared page envelope. Reassembling complete entries and marked Object-group slices recovers the selected variable value; paging fields are not added to prompt variable or stored record schemas.",
+    "limits": "Use the accepted paging contract and existing response/cumulative/execution limits. Never silently truncate or split atomic evidence records; an indivisible oversized record is an explicit error.",
+    "errors": "Malformed, partial, unknown or out-of-scope keys, unavailable tools, and exhausted budgets are errors, not successful empty evidence. No error triggers an unfiltered fallback.",
+    "analysis_shape_changes": "Analysis gds_context is a list of the same five-field placement dictionaries; enrichment retains its dictionary/null shape. Other variable structures remain unchanged.",
+    "delivery": "Accepted defaults: One-shot embeds all seven workflow variables. Tool-assisted embeds ingestion_mapping and selects six readers for Source context, GDS context, Objects, Object details, Object relationships, and Modeling Assertions. Template authors can change variable/tool selection. Ingestion mapping has no tool; omitted evidence is never appended automatically.",
+    "source_connection_identity": "The user requires the full Source Connection natural key. Connection code is unique within System and Tenant, not globally (database/02_core.sql, ux_connection_system_tenant_code_ci). No bare-code shortcut or optional qualifier format.",
+    "ingestion_mapping_delivery": "Accepted: ingestion_mapping remains an optional prompt variable. No ingestion-mapping tool will be added.",
+    "relationship_grouping": "Accepted: object_relationship_context replaces the flat applied_relationships variable. One physical Object group has incoming_relationships and outgoing_relationships arrays of the existing 17-field relationship records. Direction is derived; storage and authored output remain flat. Empty groups are retained; duplicate directional views do not create new relationship identities."
+  },
+  "$defs": {
+    "object_key": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_name": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name"
+      ],
+      "additionalProperties": false
+    },
+    "source_context_entry": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "tenant_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_type_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "system_type_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection_type_code": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "connection_type_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "zone_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tenant_code",
+        "tenant_description",
+        "system_code",
+        "system_description",
+        "system_type_code",
+        "system_type_description",
+        "connection_code",
+        "connection_description",
+        "connection_type_code",
+        "connection_type_description",
+        "zone_code",
+        "zone_description"
+      ],
+      "additionalProperties": false
+    },
+    "gds_context_entry": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "zone_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "zone_code",
+        "zone_description"
+      ],
+      "additionalProperties": false
+    },
+    "object_context_entry": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_description": {
+          "type": [
+            "string",
+            "null"
+          ]
+        },
+        "zone_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+        "object_description",
+        "zone_code"
+      ],
+      "additionalProperties": false
+    },
+    "object_attribute_context_entry": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "attributes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "attribute_name": {
+                "type": "string",
+                "minLength": 1
+              },
+              "attribute_description": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_data_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_inferred_data_type": {
+                "type": [
+                  "string",
+                  "null"
+                ]
+              },
+              "attribute_nullability": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_natural_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_surrogate_key": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_masking_required": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "is_meta_data": {
+                "type": [
+                  "boolean",
+                  "null"
+                ]
+              },
+              "profile": {
+                "anyOf": [
+                  {
+                    "type": "object",
+                    "properties": {
+                      "profiled_at": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "row_scope": {
+                        "enum": [
+                          "all_rows",
+                          "batch",
+                          null
+                        ]
+                      },
+                      "batch_attribute_name": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "batch_id": {
+                        "type": [
+                          "string",
+                          "null"
+                        ]
+                      },
+                      "row_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "non_null_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "null_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "blank_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "distinct_count": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "min_data_length": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "max_data_length": {
+                        "type": [
+                          "integer",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "avg_data_length": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0
+                      },
+                      "percent_populated": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "percent_duplicates": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "percent_null": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "percent_blank": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      },
+                      "percent_distinct": {
+                        "type": [
+                          "number",
+                          "null"
+                        ],
+                        "minimum": 0,
+                        "maximum": 100
+                      }
+                    },
+                    "required": [
+                      "profiled_at",
+                      "row_scope",
+                      "batch_attribute_name",
+                      "batch_id",
+                      "row_count",
+                      "non_null_count",
+                      "null_count",
+                      "blank_count",
+                      "distinct_count",
+                      "min_data_length",
+                      "max_data_length",
+                      "avg_data_length",
+                      "percent_populated",
+                      "percent_duplicates",
+                      "percent_null",
+                      "percent_blank",
+                      "percent_distinct"
+                    ],
+                    "additionalProperties": false
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_description",
+              "attribute_data_type",
+              "attribute_inferred_data_type",
+              "attribute_nullability",
+              "is_natural_key",
+              "is_surrogate_key",
+              "is_masking_required",
+              "is_meta_data",
+              "profile"
+            ],
+            "additionalProperties": false
+          }
+        },
+        "selected_attribute_names": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+        "attributes",
+        "selected_attribute_names"
+      ],
+      "additionalProperties": false
+    },
+    "ingestion_mapping_entry": {
+      "type": "object",
+      "properties": {
+        "source": {
+          "type": "object",
+          "properties": {
+            "tenant_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "system_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "connection_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_name": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_description": {
+              "type": [
+                "string",
+                "null"
+              ]
+            }
+          },
+          "required": [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name",
+            "object_description"
+          ],
+          "additionalProperties": false
+        },
+        "target": {
+          "type": "object",
+          "properties": {
+            "tenant_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "system_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "connection_code": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_schema": {
+              "type": "string",
+              "minLength": 1
+            },
+            "object_name": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "required": [
+            "tenant_code",
+            "system_code",
+            "connection_code",
+            "object_schema",
+            "object_name"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "source",
+        "target"
+      ],
+      "additionalProperties": false
+    },
+    "applied_relationships_entry": {
+      "type": "object",
+      "properties": {
+        "from_tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_object_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "from_attribute_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_object_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "to_attribute_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship_kind": {
+          "type": "string",
+          "minLength": 1
+        },
+        "relationship_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high"
+          ]
+        },
+        "relationship_basis": {
+          "type": "string",
+          "minLength": 1
+        },
+        "analysis_result_status": {
+          "enum": [
+            "active",
+            "inactive",
+            "deprecated"
+          ]
+        },
+        "analysis_result_is_locked": {
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "from_tenant_code",
+        "from_system_code",
+        "from_connection_code",
+        "from_object_schema",
+        "from_object_name",
+        "from_attribute_name",
+        "to_tenant_code",
+        "to_system_code",
+        "to_connection_code",
+        "to_object_schema",
+        "to_object_name",
+        "to_attribute_name",
+        "relationship_kind",
+        "relationship_confidence",
+        "relationship_basis",
+        "analysis_result_status",
+        "analysis_result_is_locked"
+      ],
+      "additionalProperties": false
+    },
+    "modeling_assertions_entry": {
+      "type": "object",
+      "properties": {
+        "modeling_assertion_record_key": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modeling_assertion_document_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modeling_assertion_record_type": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modeling_assertion_text": {
+          "type": "string",
+          "minLength": 1
+        },
+        "modeling_assertion_details": {
+          "type": "object"
+        },
+        "modeling_assertion_source_location": {
+          "type": [
+            "object",
+            "null"
+          ]
+        },
+        "modeling_assertion_confidence": {
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            null
+          ]
+        }
+      },
+      "required": [
+        "modeling_assertion_record_key",
+        "modeling_assertion_document_name",
+        "modeling_assertion_record_type",
+        "modeling_assertion_text",
+        "modeling_assertion_details",
+        "modeling_assertion_source_location",
+        "modeling_assertion_confidence"
+      ],
+      "additionalProperties": false
+    },
+    "source_connection_key": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code"
+      ],
+      "additionalProperties": false
+    },
+    "object_relationship_context_entry": {
+      "type": "object",
+      "properties": {
+        "tenant_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "system_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "connection_code": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_schema": {
+          "type": "string",
+          "minLength": 1
+        },
+        "object_name": {
+          "type": "string",
+          "minLength": 1
+        },
+        "incoming_relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/applied_relationships_entry"
+          }
+        },
+        "outgoing_relationships": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/applied_relationships_entry"
+          }
+        }
+      },
+      "required": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name",
+        "incoming_relationships",
+        "outgoing_relationships"
+      ],
+      "additionalProperties": false
+    }
+  },
+  "review_state": {
+    "quality_gate": "accepted",
+    "additional_variable_shapes": "approved; relationship_variable_now_grouped",
+    "tool_contracts": "approved_six_readers_and_exact_paging_contract",
+    "candidate_repair": "accepted",
+    "identical_duplicate_normalization": "implemented_at_analysis_inference_candidate_boundary",
+    "gds_context_list": "accepted",
+    "object_key_identity": "accepted_complete_physical_natural_keys",
+    "large_result_delivery": "accepted_explicit_paging_and_nested_group_continuation",
+    "remaining_context_readers": "none; ingestion_mapping_has_no_tool",
+    "default_prompt_delivery": "accepted_one_shot_all_seven; tool_assisted_ingestion_mapping_inline_and_six_readers",
+    "source_connection_identity": "accepted_complete_source_connection_natural_key",
+    "relationship_grouping": "accepted_object_groups_with_incoming_and_outgoing",
+    "relationship_variable_name": "object_relationship_context",
+    "prompt_pairs": "approved_complete_system_and_instruction_pairs",
+    "implementation": "design_only; no_new_runtime_implementation"
+  },
+  "field_provenance": "field-provenance.json",
+  "validation_contracts": "validation-contracts.json",
+  "usage_examples": [
+    {
+      "scenario": "Bronze Objects are in scope.",
+      "calls": [
+        {
+          "tool": "get_source_context",
+          "arguments": {},
+          "result": {
+            "items": [
+              {
+                "tenant_code": "ACME",
+                "tenant_description": "Wholesale distribution business.",
+                "system_code": "ERP",
+                "system_description": "Manages sales orders and billing.",
+                "system_type_code": "ERP",
+                "system_type_description": "Systems for managing core business operations.",
+                "connection_code": "ERP_SOURCE",
+                "connection_description": null,
+                "connection_type_code": "SQL_SERVER",
+                "connection_type_description": "Connection to a Microsoft SQL Server database.",
+                "zone_code": "source",
+                "zone_description": "Originating source data."
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_objects",
+          "arguments": {
+            "source_connection_key": {
+              "tenant_code": "ACME",
+              "system_code": "ERP",
+              "connection_code": "ERP_SOURCE"
+            }
+          },
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "object_description": "Sales orders; one row represents one order.",
+                "zone_code": "bronze"
+              },
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers",
+                "object_description": "ERP customer accounts; one row per customer account.",
+                "zone_code": "bronze"
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_object_details",
+          "arguments": {
+            "object_keys": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders"
+              }
+            ]
+          },
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attributes": [
+                  {
+                    "attribute_name": "CustomerCode",
+                    "attribute_description": "ERP customer account that placed this order.",
+                    "attribute_data_type": "VARCHAR",
+                    "attribute_inferred_data_type": "VARCHAR",
+                    "attribute_nullability": false,
+                    "is_natural_key": false,
+                    "is_surrogate_key": false,
+                    "is_masking_required": false,
+                    "is_meta_data": false,
+                    "profile": {
+                      "profiled_at": "2026-09-07T14:30:00Z",
+                      "row_scope": "all_rows",
+                      "batch_attribute_name": null,
+                      "batch_id": null,
+                      "row_count": 1000,
+                      "non_null_count": 1000,
+                      "null_count": 0,
+                      "blank_count": 0,
+                      "distinct_count": 100,
+                      "min_data_length": 6,
+                      "max_data_length": 6,
+                      "avg_data_length": 6,
+                      "percent_populated": 100,
+                      "percent_duplicates": 90,
+                      "percent_null": 0,
+                      "percent_blank": 0,
+                      "percent_distinct": 10
+                    }
+                  }
+                ],
+                "selected_attribute_names": [
+                  "CustomerCode"
+                ]
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ]
+    },
+    {
+      "scenario": "The originating Source Object itself is in scope instead.",
+      "tool": "get_objects",
+      "arguments": {
+        "source_connection_key": {
+          "tenant_code": "ACME",
+          "system_code": "ERP",
+          "connection_code": "ERP_SOURCE"
+        }
+      },
+      "result": {
+        "items": [
+          {
+            "tenant_code": "ACME",
+            "system_code": "ERP",
+            "connection_code": "ERP_SOURCE",
+            "object_schema": "sales",
+            "object_name": "SalesOrder",
+            "object_description": "Sales orders created in ERP; one row per order.",
+            "zone_code": "source"
+          }
+        ],
+        "next_cursor": null,
+        "is_complete": true,
+        "incomplete_object_key": null
+      },
+      "next_detail_key": {
+        "tenant_code": "ACME",
+        "system_code": "ERP",
+        "connection_code": "ERP_SOURCE",
+        "object_schema": "sales",
+        "object_name": "SalesOrder"
+      }
+    },
+    {
+      "scenario": "No narrowing requested.",
+      "calls": [
+        {
+          "tool": "get_objects",
+          "arguments": {},
+          "returns": "All object_context entries. Follow continuations when needed to obtain the complete selection."
+        },
+        {
+          "tool": "get_object_details",
+          "arguments": {},
+          "returns": "All object_attribute_context groups. Follow continuations when needed to obtain the complete selection."
+        },
+        {
+          "tool": "get_object_details",
+          "arguments": {
+            "object_keys": []
+          },
+          "returns": "All object_attribute_context groups. Follow continuations when needed to obtain the complete selection."
+        }
+      ]
+    }
+  ],
+  "relationship_quality_review": {
+    "status": "accepted_grouped_view; comparative_model_quality_not_yet_measured",
+    "preferred_view": "Physical Object groups with incoming and outgoing relationship lists, shared by variable and reader.",
+    "fields": "Retain actual existing relationship endpoint/kind/confidence/basis/status/lock fields. No validation fields or database changes.",
+    "lock_presentation": "Keep analysis_result_is_locked on each record; do not create four directional lock buckets. Locks govern mutability, not correctness.",
+    "discovery": "Retain global scoped Object inventory and eligible Attribute evidence; do not discover candidates only by traversing known relationships.",
+    "tradeoff": "Whole-scope groups repeat each relationship under both endpoint Objects. Focused reads limit exposure but do not eliminate the duplication when all groups are included.",
+    "evidence_status": "Expected clarity benefit is a design judgment. No comparative model evaluation has been run.",
+    "later_comparison": [
+      "Supported new relationships found",
+      "False positives",
+      "Missed supported relationships",
+      "Duplicate and locked-change proposals",
+      "Input size"
+    ],
+    "pending": []
+  },
+  "paging_contract": {
+    "status": "approved_exact_paging_contract",
+    "response_fields": {
+      "items": "Complete variable entries, or explicitly unfinished Object-group slices, in stable frozen order.",
+      "next_cursor": "Opaque continuation for this same tool/run/selection, or null when exhausted.",
+      "is_complete": "True exactly when next_cursor is null. Marks completion of the selected result across pages, not completeness of an isolated intermediate page.",
+      "incomplete_object_key": "Physical key of the last Object group when its nested lists continue; otherwise null. Only Object details and Object relationships may set it."
+    },
+    "first_call": "Use the accepted optional selection filters with cursor omitted/null. Existing all-scope defaults apply. No model-supplied page-size knob; the server uses frozen configured record and serialized-response byte caps.",
+    "continuation": "Call the same tool with only cursor=next_cursor. The backend restores the original normalized filters and frozen position. Default-valued filter fields are harmless; any nondefault filter alongside cursor is an error. To change selection, start a new call with cursor=null.",
+    "cursor_binding": "Bind cursors to the authorized frozen run, tool, normalized selection, and immutable paging position. Reject foreign/expired/invalid cursors. Repeating a cursor reproduces the same page; do not append a repeated page twice. A cursor is continuation metadata, not an Object/Attribute/assertion ID.",
+    "flat_records": "Source entries, GDS entries, Object inventory entries, and assertion records are emitted whole. Ordinary pages append items in order; no field-level truncation.",
+    "nested_order": "Process one Object group at a time. Details traverse Attributes in frozen order; relationships traverse incoming records then outgoing records in frozen order. At most the final group in a page can be unfinished, and the next page resumes that same key before later Objects.",
+    "detail_slices": "A detail slice retains the complete physical Object key and complete Attribute/Profile records. selected_attribute_names contains the original selected names among that slice's Attributes. Append attributes and selected names across the same Object key to recover the original variable group.",
+    "relationship_slices": "Retain the complete physical Object key. Append incoming_relationships and outgoing_relationships separately across slices. Each relationship record stays whole with the existing 17 fields. An empty list in an unfinished group may mean its records are still to come.",
+    "completion": "incomplete_object_key identifies the only group requiring more slices after this page. If it is null, groups present on this page are complete when combined with previously read slices, although next_cursor may point to later Objects. Do not finalize an unfinished group as complete or treat its empty lists as absence.",
+    "empty_selection": "Return items=[], next_cursor=null, is_complete=true, incomplete_object_key=null for a complete empty result. An Object with no Attributes or relationships remains an explicit complete Object group with empty lists.",
+    "limits": "Size the entire serialized response including metadata under existing configured result budgets. Also preserve existing total-context, record-count, cumulative-result, and execution limits. Each nonfinal successful page makes progress. No silent truncation, omitted records, or unlimited-budget assumption.",
+    "oversized_atomic_record": "Never split descriptions, basis text, assertion text/details, or an individual Attribute/Profile/relationship/assertion record into raw JSON fragments. If one indivisible record plus its necessary envelope cannot fit, return the existing explicit size-error class. Do not retry indefinitely or pretend the selection was complete.",
+    "errors": "Errors use the existing tool-error path, not a successful empty page. Unknown keys, invalid cursors, changed continuation filters, and exhausted budgets never trigger unfiltered fallback.",
+    "variable_relationship": "Prompt variables retain full list/group values without pagination metadata. Tool pages contain those same fields; only the result envelope and explicitly marked group slicing are added. Reassembled successful pages equal the corresponding selected variable value."
+  },
+  "accepted_final_decisions": [
+    {
+      "group": "modeling_assertions_reader",
+      "decision": "get_modeling_assertions(assertion_keys=[]): omitted/empty returns all authorized active applicable records; supplied nominal keys filter them. Same approved seven-field output. No live document extraction or invented Object associations.",
+      "status": "accepted"
+    },
+    {
+      "group": "large_tool_results",
+      "decision": "Keep existing response byte limits; deliver all matching records across explicit pages rather than silently truncate or rely only on size errors. Page continuation must clearly mark incomplete results; a single large Object may require continuation of its Attribute/relationship lists. Exact page envelope remains pending.",
+      "status": "accepted"
+    },
+    {
+      "group": "default_prompt_delivery",
+      "decision": "One-shot embeds all seven variables. Tool-assisted embeds ingestion_mapping and retrieves the other six through selected dedicated readers. Authors can change variable/tool selection. Review complete final prompt pairs and one example per mode afterward.",
+      "status": "accepted"
+    }
+  ],
+  "paging_examples": [
+    {
+      "scenario": "Two Objects in the inventory, one per illustrative page.",
+      "calls": [
+        {
+          "tool": "get_objects",
+          "arguments": {},
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "object_description": "Sales orders; one row represents one order.",
+                "zone_code": "bronze"
+              }
+            ],
+            "next_cursor": "example_inventory_page_2",
+            "is_complete": false,
+            "incomplete_object_key": null
+          }
+        },
+        {
+          "tool": "get_objects",
+          "arguments": {
+            "cursor": "example_inventory_page_2"
+          },
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Customers",
+                "object_description": "ERP customer accounts; one row per customer account.",
+                "zone_code": "bronze"
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ],
+      "expected_complete_value": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders",
+          "object_description": "Sales orders; one row represents one order.",
+          "zone_code": "bronze"
+        },
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Customers",
+          "object_description": "ERP customer accounts; one row per customer account.",
+          "zone_code": "bronze"
+        }
+      ]
+    },
+    {
+      "scenario": "One Object detail group spans two illustrative pages. Cursor strings are synthetic placeholders; real cursors are opaque.",
+      "calls": [
+        {
+          "tool": "get_object_details",
+          "arguments": {
+            "object_keys": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders"
+              }
+            ]
+          },
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attributes": [
+                  {
+                    "attribute_name": "CustomerCode",
+                    "attribute_description": "ERP customer account that placed this order.",
+                    "attribute_data_type": "VARCHAR",
+                    "attribute_inferred_data_type": "VARCHAR",
+                    "attribute_nullability": false,
+                    "is_natural_key": false,
+                    "is_surrogate_key": false,
+                    "is_masking_required": false,
+                    "is_meta_data": false,
+                    "profile": {
+                      "profiled_at": "2026-09-07T14:30:00Z",
+                      "row_scope": "all_rows",
+                      "batch_attribute_name": null,
+                      "batch_id": null,
+                      "row_count": 1000,
+                      "non_null_count": 1000,
+                      "null_count": 0,
+                      "blank_count": 0,
+                      "distinct_count": 100,
+                      "min_data_length": 6,
+                      "max_data_length": 6,
+                      "avg_data_length": 6,
+                      "percent_populated": 100,
+                      "percent_duplicates": 90,
+                      "percent_null": 0,
+                      "percent_blank": 0,
+                      "percent_distinct": 10
+                    }
+                  }
+                ],
+                "selected_attribute_names": [
+                  "CustomerCode"
+                ]
+              }
+            ],
+            "next_cursor": "example_orders_detail_page_2",
+            "is_complete": false,
+            "incomplete_object_key": {
+              "tenant_code": "GDS",
+              "system_code": "WAREHOUSE",
+              "connection_code": "MAIN",
+              "object_schema": "bronze",
+              "object_name": "Orders"
+            }
+          }
+        },
+        {
+          "tool": "get_object_details",
+          "arguments": {
+            "cursor": "example_orders_detail_page_2"
+          },
+          "result": {
+            "items": [
+              {
+                "tenant_code": "GDS",
+                "system_code": "WAREHOUSE",
+                "connection_code": "MAIN",
+                "object_schema": "bronze",
+                "object_name": "Orders",
+                "attributes": [
+                  {
+                    "attribute_name": "OrderNumber",
+                    "attribute_description": "Order number assigned by ERP.",
+                    "attribute_data_type": "BIGINT",
+                    "attribute_inferred_data_type": "BIGINT",
+                    "attribute_nullability": false,
+                    "is_natural_key": true,
+                    "is_surrogate_key": false,
+                    "is_masking_required": false,
+                    "is_meta_data": false,
+                    "profile": {
+                      "profiled_at": "2026-09-07T14:30:00Z",
+                      "row_scope": "all_rows",
+                      "batch_attribute_name": null,
+                      "batch_id": null,
+                      "row_count": 1000,
+                      "non_null_count": 1000,
+                      "null_count": 0,
+                      "blank_count": null,
+                      "distinct_count": 1000,
+                      "min_data_length": null,
+                      "max_data_length": null,
+                      "avg_data_length": null,
+                      "percent_populated": 100,
+                      "percent_duplicates": 0,
+                      "percent_null": 0,
+                      "percent_blank": null,
+                      "percent_distinct": 100
+                    }
+                  }
+                ],
+                "selected_attribute_names": [
+                  "OrderNumber"
+                ]
+              }
+            ],
+            "next_cursor": null,
+            "is_complete": true,
+            "incomplete_object_key": null
+          }
+        }
+      ],
+      "expected_complete_value": [
+        {
+          "tenant_code": "GDS",
+          "system_code": "WAREHOUSE",
+          "connection_code": "MAIN",
+          "object_schema": "bronze",
+          "object_name": "Orders",
+          "attributes": [
+            {
+              "attribute_name": "CustomerCode",
+              "attribute_description": "ERP customer account that placed this order.",
+              "attribute_data_type": "VARCHAR",
+              "attribute_inferred_data_type": "VARCHAR",
+              "attribute_nullability": false,
+              "is_natural_key": false,
+              "is_surrogate_key": false,
+              "is_masking_required": false,
+              "is_meta_data": false,
+              "profile": {
+                "profiled_at": "2026-09-07T14:30:00Z",
+                "row_scope": "all_rows",
+                "batch_attribute_name": null,
+                "batch_id": null,
+                "row_count": 1000,
+                "non_null_count": 1000,
+                "null_count": 0,
+                "blank_count": 0,
+                "distinct_count": 100,
+                "min_data_length": 6,
+                "max_data_length": 6,
+                "avg_data_length": 6,
+                "percent_populated": 100,
+                "percent_duplicates": 90,
+                "percent_null": 0,
+                "percent_blank": 0,
+                "percent_distinct": 10
+              }
+            },
+            {
+              "attribute_name": "OrderNumber",
+              "attribute_description": "Order number assigned by ERP.",
+              "attribute_data_type": "BIGINT",
+              "attribute_inferred_data_type": "BIGINT",
+              "attribute_nullability": false,
+              "is_natural_key": true,
+              "is_surrogate_key": false,
+              "is_masking_required": false,
+              "is_meta_data": false,
+              "profile": {
+                "profiled_at": "2026-09-07T14:30:00Z",
+                "row_scope": "all_rows",
+                "batch_attribute_name": null,
+                "batch_id": null,
+                "row_count": 1000,
+                "non_null_count": 1000,
+                "null_count": 0,
+                "blank_count": null,
+                "distinct_count": 1000,
+                "min_data_length": null,
+                "max_data_length": null,
+                "avg_data_length": null,
+                "percent_populated": 100,
+                "percent_duplicates": 0,
+                "percent_null": 0,
+                "percent_blank": null,
+                "percent_distinct": 100
+              }
+            }
+          ],
+          "selected_attribute_names": [
+            "CustomerCode",
+            "OrderNumber"
+          ]
+        }
+      ]
+    }
+  ]
+}

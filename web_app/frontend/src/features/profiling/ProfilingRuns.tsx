@@ -24,6 +24,7 @@ import {
   stageLabel,
 } from "./shared";
 import { useProfilingRunEvents } from "./useProfilingRunEvents";
+import { WorkflowTokenUsage } from "../workflows/WorkflowTokenUsage";
 
 export function ProfilingRuns({
   items,
@@ -208,6 +209,7 @@ export function ProfilingRunDrawer({
             <Fact label="Objects" value={String(run.selected_scope_count)} />
             <Fact label="Batch ID" value={run.requested_batch_id ?? "Not used"} />
           </dl>
+          <WorkflowTokenUsage usage={run.token_usage} />
           {run.workflow_run_state === "queued" ? (
             <div className="queued-run-action">
               <p>Creation does not execute Profiling. Start this queued run explicitly.</p>

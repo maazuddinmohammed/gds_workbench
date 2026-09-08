@@ -1,3 +1,4 @@
+import { withRecordReview } from "../../test/modelRecordReview";
 import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
@@ -17,12 +18,22 @@ describe("Model Logical", () => {
 
     await user.click(screen.getByRole("link", { name: "Open Logical Entity 71" }));
 
-    expect(await screen.findByRole("heading", { name: "customer_account" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "customer_account" })).toHaveFocus();
     expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
+    expect(screen.getByText("Customer domain")).not.toBeVisible();
+    expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Submodel membership" }));
+    await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
     expect(screen.getByText("Customer domain")).toBeVisible();
-    expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getByText("GRDM · CRM · crm-prod")).toBeVisible();
-    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(2);
+    expect(screen.getByText("crm-prod")).toBeVisible();
+    expect(screen.getAllByText("bronze.customer_raw")).toHaveLength(1);
+    const sourceHeading = screen.getByRole("heading", { name: "Source mappings" });
+    const membershipHeading = screen.getByRole("heading", { name: "Submodel membership" });
+    expect(sourceHeading.compareDocumentPosition(membershipHeading) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
+    expect(screen.getByRole("table", { name: "Submodel memberships" })).toBeVisible();
+    expect(screen.getByRole("link", { name: "Customer domain" })).toHaveAttribute("href", "/tenants/7/models/18/logical/submodels/91");
+    expect(screen.getAllByText("Source mapping id")[0]).toBeVisible();
+    await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[1]!);
     expect(screen.getByText("Customer identity is governed across systems.")).toBeVisible();
     expect(screen.getAllByText("Workflow run 1048").length).toBeGreaterThan(0);
   });
@@ -40,13 +51,20 @@ describe("Model Logical", () => {
     expect(screen.getByText("customer_account")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Back to Logical" }));
-    await user.click(screen.getByRole("button", { name: "Attributes" }));
-    expect(await screen.findByRole("table", { name: "Logical Attributes" })).toBeVisible();
+    expect(screen.queryByRole("button", { name: "Attributes" })).not.toBeInTheDocument();
+    await user.click(await screen.findByRole("link", { name: "Open Logical Entity 71" }));
+    expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Logical Attribute 81" }));
-    expect(await screen.findByRole("heading", { name: "customer_id" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "customer_id" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Type and nullability" })).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Keys" })).toBeVisible();
+    expect(screen.getByText("Nullable").nextElementSibling).toHaveTextContent("No");
+    expect(screen.getByText("Surrogate key").nextElementSibling).toHaveTextContent("Yes");
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
     expect(screen.getAllByText("bronze.customer_raw.customer_id").length).toBeGreaterThan(0);
 
+    await user.click(screen.getByRole("link", { name: "Back to Entity" }));
+    expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Back to Logical" }));
     await user.click(screen.getByRole("button", { name: "Relationships" }));
     expect(await screen.findByRole("table", { name: "Logical Relationships" })).toBeVisible();
@@ -494,15 +512,15 @@ const scopeObjectPayload = {
 
 const agentCapabilitiesPayload = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
-    execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
-      sdk_code: "openai_agents",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
+    execution_profiles: ["one_shot", "tool_assisted"].map((execution_mode) => ({
+      sdk_code: "openai_agents_sdk",
       execution_mode,
       reasoning_effort_codes: ["medium"],
     })),
@@ -511,3 +529,21 @@ const agentCapabilitiesPayload = {
   max_turns: { minimum: 1, default: 8, maximum: 50 },
   validation_retries: { minimum: 0, default: 1, maximum: 5 },
 };
+
+
+it.each([["Entities", "logical_entity", 71], ["Attributes", "logical_attribute", 81], ["Relationships", "logical_relationship", 101], ["Submodels", "logical_submodel", 91]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
+  const { fetcher, commands } = withRecordReview(logicalFetchStub());
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/logical"] }),
+  })} />);
+  const user = userEvent.setup();
+  if (view === "Attributes") await user.click(await screen.findByRole("link", { name: "Open Logical Entity 71" }));
+  else await user.click(await screen.findByRole("button", { name: view }));
+  const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Logical .* ${recordId}$`) });
+  await user.click(selection);
+  await user.click(screen.getByRole("button", { name: "Lock selected" }));
+  const apply = await screen.findByRole("button", { name: "Apply this change" });
+  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
+  await user.click(apply);
+  expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
+});

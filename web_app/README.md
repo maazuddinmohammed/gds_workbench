@@ -7,7 +7,7 @@ Databricks-authenticated browser
   -> FastAPI serves React and /api/* on one origin
   -> embedded durable workflow worker
   -> existing PostgreSQL and governed Databricks connections
-  -> one direct agent model provider per deployment
+  -> OpenAI Agents SDK and Microsoft Foundry model deployments
 ```
 
 This deploys the web application only. The MCP server remains separate, keeps
@@ -24,9 +24,9 @@ Sections; see the deployment guide before rollout.
   Databricks `current_user.me()`.
 - Existing PostgreSQL Principal, Tenant, role, Tenant Lock, ownership, revision,
   and idempotency rules remain authoritative.
-- The checked-in default uses the app service principal with `CAN_QUERY` on one
-  Databricks Model Serving endpoint. A Foundry deployment instead uses a
-  separate least-privilege Entra service principal. Users receive neither.
+- Agent workflows use Microsoft Foundry through the OpenAI Agents SDK. The
+  checked-in App uses an API-key secret resource; explicit Entra application
+  credentials are also supported. Users receive neither credential.
 - Secrets enter the app only through Databricks App resource references.
 - Existing GDS Databricks SQL connections and MCP authentication are unchanged.
 
@@ -45,7 +45,7 @@ Open <http://127.0.0.1:8080>. Stop with `Ctrl-C`.
 The runner creates random local credentials and a fresh PostgreSQL 18 container,
 loads only local fixtures, uses local identity plus fake Agent and Databricks
 adapters, and disposes the database on exit. It does not call Azure,
-Databricks, Model Serving, MCP, or a persistent database.
+Databricks, Foundry, MCP, or a persistent database.
 
 Optional loopback ports:
 
@@ -76,12 +76,12 @@ image or Azure Container App.
 
 | File | Role |
 |---|---|
-| [`databricks.yml`](../databricks.yml) | Deployment-ready Databricks-model default: app, user permission, secret resources, Model Serving resource, and targets. |
-| [`app.yaml`](../app.yaml) | Starts the combined process, binds resources, and explicitly selects provider `databricks`. |
+| [`databricks.yml`](../databricks.yml) | Databricks App, user permission, six read-only secret resources including Foundry configuration, and targets. |
+| [`app.yaml`](../app.yaml) | Starts the combined process and binds PostgreSQL, Databricks SQL, and Foundry resources. |
 | [`pyproject.toml`](../pyproject.toml) and [`uv.lock`](../uv.lock) | Root Python application dependencies. |
 | [`package.json`](../package.json) and [`package-lock.json`](../package-lock.json) | Root React build and pinned Node dependencies. |
 | [`databricks_notebooks/README.md`](../databricks_notebooks/README.md) | Independent source upload, PostgreSQL configuration, widgets, workflow order, retries, and manual Apply gates for interactive notebooks. |
 
 Use [`DEPLOYMENT_GUIDE.md`](DEPLOYMENT_GUIDE.md) for prerequisites, authentication,
-resource permissions, the Foundry deployment variant, exact operator commands,
-provider-specific data compatibility, production acceptance, and rollback.
+resource permissions, Foundry authentication, exact operator commands, Model
+default compatibility, production acceptance, and rollback.

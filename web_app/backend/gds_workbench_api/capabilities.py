@@ -17,11 +17,10 @@ _MAX_CONFIGURATION_BYTES = 1024 * 1024
 type AgentExecutionModeCode = Literal[
     "one_shot",
     "tool_assisted",
-    "detailed_coverage",
 ]
 
-CODE_GENERATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "detailed_coverage"
-VALIDATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "detailed_coverage"
+CODE_GENERATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "tool_assisted"
+VALIDATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "tool_assisted"
 
 
 class CapabilityModel(BaseModel):
@@ -109,6 +108,8 @@ class AgentCapabilityRegistry(CapabilityModel):
         model_codes = _unique_codes("model", self.models)
         reasoning_codes = _unique_codes("reasoning effort", self.reasoning_efforts)
         del model_codes
+        if sdk_codes != {"openai_agents_sdk"} or provider_codes != {"microsoft_foundry"}:
+            raise ValueError("Agent execution requires OpenAI Agents SDK and Microsoft Foundry")
 
         for sdk in self.sdks:
             if not set(sdk.provider_codes) <= provider_codes:
@@ -199,6 +200,60 @@ class AgentCapabilityRegistry(CapabilityModel):
             <= self.validation_retries.maximum
         ):
             raise InvalidRequestError("The selected agent configuration is incompatible.")
+
+    def resolve_default_selection(
+        self,
+        *,
+        execution_mode: AgentExecutionModeCode,
+        model_code: str | None = None,
+        reasoning_effort_code: str | None = None,
+        max_turns: int | None = None,
+        validation_retry_count: int | None = None,
+    ) -> AgentRunSelection:
+        """Resolve a new Run against available deployments, including retired Model defaults."""
+        for model in sorted(self.models, key=lambda item: item.code != model_code):
+            profile = next(
+                (
+                    item
+                    for item in model.execution_profiles
+                    if item.sdk_code == "openai_agents_sdk"
+                    and item.execution_mode == execution_mode
+                ),
+                None,
+            )
+            if profile is None:
+                continue
+            efforts = profile.reasoning_effort_codes
+            effort = (
+                reasoning_effort_code
+                if reasoning_effort_code in efforts
+                else "default"
+                if "default" in efforts
+                else efforts[0]
+            )
+            selection = AgentRunSelection(
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code=model.code,
+                reasoning_effort_code=effort,
+                max_turns=(
+                    max_turns
+                    if type(max_turns) is int
+                    and self.max_turns.minimum <= max_turns <= self.max_turns.maximum
+                    else self.max_turns.default
+                ),
+                validation_retry_count=(
+                    validation_retry_count
+                    if type(validation_retry_count) is int
+                    and self.validation_retries.minimum
+                    <= validation_retry_count
+                    <= self.validation_retries.maximum
+                    else self.validation_retries.default
+                ),
+            )
+            self.validate_selection(selection, execution_mode=execution_mode)
+            return selection
+        raise InvalidRequestError("No configured Foundry model supports this execution mode.")
 
 
 def load_default_agent_capabilities() -> AgentCapabilityRegistry:

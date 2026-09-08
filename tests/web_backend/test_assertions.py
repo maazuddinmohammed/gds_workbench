@@ -13,7 +13,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.assertions import (
     AssertionDocumentDetail,
     AssertionDocumentFilters,
@@ -333,9 +332,7 @@ def test_assertion_record_ledger_normalizes_review_filters() -> None:
     assert payload["model_revision"] == 4
     assert payload["items"][0]["workflow_run_id"] is None
     assert payload["items"][0]["document"]["source_system"]["system_code"] == "CRM"
-    assert payload["items"][0]["modeling_assertion_record_key"] == (
-        "customer.one_per_party"
-    )
+    assert payload["items"][0]["modeling_assertion_record_key"] == ("customer.one_per_party")
     assert "modeling_assertion_text" not in payload["items"][0]
     assert service.record_filters == AssertionRecordFilters(
         document_id=101,
@@ -364,9 +361,7 @@ def test_assertion_record_detail_returns_full_normalized_assertion() -> None:
     assert response.status_code == 200
     payload = response.json()
     assert payload["workflow_run_id"] is None
-    assert payload["modeling_assertion_text"] == (
-        "A Customer represents one governed party."
-    )
+    assert payload["modeling_assertion_text"] == ("A Customer represents one governed party.")
     assert payload["modeling_assertion_details"] == {
         "subject": "customer",
         "grain": "governed_party",

@@ -1,0 +1,1222 @@
+{
+  "workflow": "logical",
+  "stage": "candidate_authoring",
+  "modes": [
+    "one_shot",
+    "tool_assisted"
+  ],
+  "status": "approved_design; implementation_deferred",
+  "scope": "Approved on 2026-09-07: twenty-one Logical-local variables, both complete prompt pairs, defaults, eighteen optional readers, selectors, and paging. read_only_dependencies stays excluded; backend checks remain. Continue Dimensional design.",
+  "selection": "All variables are workflow-local and optional for template authors. Availability does not imply inclusion. Do not include compact and full copies of the same records by default. Variables have no tool-call inputs or page envelopes.",
+  "applied_logical_rule": "All eight Logical values project one frozen authorized applied Logical section. [] is known empty; null is unavailable. Retain saved lifecycle and locks. Do not filter out Assertion-only records or history merely because they have no direct physical support. These input records are not generated output.",
+  "preserved_output": {
+    "submodels": [],
+    "entities": [],
+    "attributes": [],
+    "relationships": []
+  },
+  "schema_origin": "Exact existing Pydantic ID-free Logical records; compact forms project existing natural-key fields. No database columns or runtime code changed.",
+  "variables": {
+    "source_context": {
+      "description": "Unique contributing source Connections and business context.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/source_context",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "gds_context": {
+      "description": "Unique GDS Connection/zone placements for the selected Objects; empty for Source-only scope.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/gds_context",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "object_context": {
+      "description": "Selected physical Objects with current saved descriptions.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/object_context",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "object_attribute_context": {
+      "description": "Eligible Attributes grouped by physical Object, with current saved descriptions, types, flags, and Profiles.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/object_attribute_context",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "ingestion_mapping": {
+      "description": "Registered Object-only source-to-selected-target links.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/ingestion_mapping",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "object_relationship_context": {
+      "description": "Existing applied relationships grouped by each scoped physical Object. Incoming matches the to-Object; outgoing matches the from-Object. Include groups with empty arrays. Each relationship retains all 17 approved endpoint/kind/confidence/basis/status/lock fields and excludes validation fields.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/object_relationship_context",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "modeling_assertions": {
+      "description": "Active governed Logical-applicable assertion records from active documents within authorized Model/source scope; includes applicable Model-wide assertions.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/modeling_assertions",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file. Select Logical-applicable active Assertion Records from active Documents."
+    },
+    "conceptual_object_list": {
+      "description": "Compact directory of all existing eligible Conceptual record identities in the frozen Model. Natural-key fields only; no descriptions, types, supports, status, or locks. Use the corresponding detail variable or reader to interpret a record. [] means known empty; null means the applied Conceptual section is unavailable.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_object_list",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "conceptual_objects": {
+      "description": "Existing Conceptual objects, retaining all existing record fields and nested Object/Assertion supports, confidence, lifecycle status, and locks. Known empty is []; null means the applied section is unavailable.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_objects",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "conceptual_relationship_list": {
+      "description": "Compact directory of all existing eligible Conceptual record identities in the frozen Model. Natural-key fields only; no descriptions, types, supports, status, or locks. Use the corresponding detail variable or reader to interpret a record. [] means known empty; null means the applied Conceptual section is unavailable.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_relationship_list",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "conceptual_relationships": {
+      "description": "Existing Conceptual relationships, retaining all existing record fields and nested Object/Assertion supports, confidence, lifecycle status, and locks. Known empty is []; null means the applied section is unavailable.",
+      "shape_reference": "conceptual.context.proposal.json#/variables/conceptual_relationships",
+      "binding": "Logical-local value from this authorized frozen run. Follow shape_reference to its value_schema or shape_reference; use definitions from the owning file."
+    },
+    "logical_submodel_list": {
+      "description": "Compact existing Logical submodel identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "natural_key": [
+        "logical_submodel_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "logical_submodel_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Logical Submodel Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "logical_submodel_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "logical_submodels": {
+      "description": "Complete existing LogicalSubmodelRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "natural_key": [
+        "logical_submodel_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "LogicalSubmodelRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "logical_submodel_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Submodel Name",
+                "type": "string"
+              },
+              "logical_submodel_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Submodel Definition",
+                "type": "string"
+              },
+              "logical_submodel_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Logical Submodel Status",
+                "type": "string"
+              },
+              "logical_submodel_is_locked": {
+                "title": "Logical Submodel Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "logical_submodel_name",
+              "logical_submodel_definition",
+              "logical_submodel_status",
+              "logical_submodel_is_locked"
+            ],
+            "title": "LogicalSubmodelRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/LogicalSubmodelRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalSubmodelRecord"
+    },
+    "logical_entity_list": {
+      "description": "Compact existing Logical entity identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "natural_key": [
+        "logical_entity_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "logical_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Logical Entity Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "logical_entity_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "logical_entities": {
+      "description": "Complete existing LogicalEntityRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "natural_key": [
+        "logical_entity_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "LogicalAssertionSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "LogicalAssertionSourceRecord",
+            "type": "object"
+          },
+          "LogicalEntityRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "logical_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Name",
+                "type": "string"
+              },
+              "logical_entity_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Definition",
+                "type": "string"
+              },
+              "logical_entity_type": {
+                "enum": [
+                  "core",
+                  "reference",
+                  "transaction",
+                  "event",
+                  "bridge",
+                  "history",
+                  "snapshot",
+                  "association",
+                  "aggregate",
+                  "other"
+                ],
+                "title": "Logical Entity Type",
+                "type": "string"
+              },
+              "logical_entity_type_detail": {
+                "anyOf": [
+                  {
+                    "minLength": 1,
+                    "pattern": "\\S",
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Logical Entity Type Detail"
+              },
+              "logical_entity_grain": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Grain",
+                "type": "string"
+              },
+              "logical_entity_dependency_order": {
+                "minimum": 0,
+                "title": "Logical Entity Dependency Order",
+                "type": "integer"
+              },
+              "logical_entity_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Logical Entity Confidence",
+                "type": "string"
+              },
+              "logical_entity_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Logical Entity Status",
+                "type": "string"
+              },
+              "logical_entity_is_locked": {
+                "title": "Logical Entity Is Locked",
+                "type": "boolean"
+              },
+              "submodels": {
+                "items": {
+                  "$ref": "#/$defs/SubmodelMembershipRecord"
+                },
+                "title": "Submodels",
+                "type": "array"
+              },
+              "sources": {
+                "items": {
+                  "$ref": "#/$defs/LogicalEntitySourceRecord"
+                },
+                "title": "Sources",
+                "type": "array"
+              }
+            },
+            "required": [
+              "logical_entity_name",
+              "logical_entity_definition",
+              "logical_entity_type",
+              "logical_entity_type_detail",
+              "logical_entity_grain",
+              "logical_entity_dependency_order",
+              "logical_entity_confidence",
+              "logical_entity_status",
+              "logical_entity_is_locked",
+              "submodels",
+              "sources"
+            ],
+            "title": "LogicalEntityRecord",
+            "type": "object"
+          },
+          "LogicalEntitySourceRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/LogicalAssertionSourceRecord",
+                "object": "#/$defs/LogicalObjectSourceRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/LogicalObjectSourceRecord"
+              },
+              {
+                "$ref": "#/$defs/LogicalAssertionSourceRecord"
+              }
+            ]
+          },
+          "LogicalObjectSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "object",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_object": {
+                "$ref": "#/$defs/PhysicalObjectKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_object",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "LogicalObjectSourceRecord",
+            "type": "object"
+          },
+          "PhysicalObjectKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name"
+            ],
+            "title": "PhysicalObjectKey",
+            "type": "object"
+          },
+          "SubmodelMembershipRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "submodel_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Submodel Name",
+                "type": "string"
+              },
+              "membership_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Membership Status",
+                "type": "string"
+              },
+              "membership_is_locked": {
+                "title": "Membership Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "submodel_name",
+              "membership_status",
+              "membership_is_locked"
+            ],
+            "title": "SubmodelMembershipRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/LogicalEntityRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalEntityRecord"
+    },
+    "logical_attribute_list": {
+      "description": "Compact existing Logical attribute identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "natural_key": [
+        "logical_entity_name",
+        "logical_attribute_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "logical_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Logical Entity Name",
+                  "type": "string"
+                },
+                "logical_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Logical Attribute Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "logical_entity_name",
+                "logical_attribute_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "logical_attributes": {
+      "description": "Complete existing LogicalAttributeRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "natural_key": [
+        "logical_entity_name",
+        "logical_attribute_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "AssertionRecordKey": {
+            "additionalProperties": false,
+            "properties": {
+              "modeling_assertion_record_key": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "^[A-Za-z][A-Za-z0-9_.-]{0,99}$",
+                "title": "Modeling Assertion Record Key",
+                "type": "string"
+              }
+            },
+            "required": [
+              "modeling_assertion_record_key"
+            ],
+            "title": "AssertionRecordKey",
+            "type": "object"
+          },
+          "AttributeAssertionSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "assertion",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "assertion_record": {
+                "$ref": "#/$defs/AssertionRecordKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "assertion_record",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "AttributeAssertionSourceRecord",
+            "type": "object"
+          },
+          "AttributePhysicalSourceRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "support_source_type": {
+                "const": "attribute",
+                "title": "Support Source Type",
+                "type": "string"
+              },
+              "source_attribute": {
+                "$ref": "#/$defs/PhysicalAttributeKey"
+              },
+              "source_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Source Order"
+              },
+              "rationale": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Rationale",
+                "type": "string"
+              },
+              "status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Status",
+                "type": "string"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "support_source_type",
+              "source_attribute",
+              "rationale",
+              "status",
+              "is_locked"
+            ],
+            "title": "AttributePhysicalSourceRecord",
+            "type": "object"
+          },
+          "AttributeSourceRecord": {
+            "discriminator": {
+              "mapping": {
+                "assertion": "#/$defs/AttributeAssertionSourceRecord",
+                "attribute": "#/$defs/AttributePhysicalSourceRecord"
+              },
+              "propertyName": "support_source_type"
+            },
+            "oneOf": [
+              {
+                "$ref": "#/$defs/AttributePhysicalSourceRecord"
+              },
+              {
+                "$ref": "#/$defs/AttributeAssertionSourceRecord"
+              }
+            ]
+          },
+          "LogicalAttributeRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "logical_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Entity Name",
+                "type": "string"
+              },
+              "logical_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Attribute Name",
+                "type": "string"
+              },
+              "logical_attribute_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Attribute Definition",
+                "type": "string"
+              },
+              "logical_attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Attribute Data Type",
+                "type": "string"
+              },
+              "logical_attribute_is_nullable": {
+                "title": "Logical Attribute Is Nullable",
+                "type": "boolean"
+              },
+              "logical_attribute_is_primary_key": {
+                "title": "Logical Attribute Is Primary Key",
+                "type": "boolean"
+              },
+              "logical_attribute_is_natural_key": {
+                "title": "Logical Attribute Is Natural Key",
+                "type": "boolean"
+              },
+              "logical_attribute_is_surrogate_key": {
+                "title": "Logical Attribute Is Surrogate Key",
+                "type": "boolean"
+              },
+              "logical_attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Logical Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "logical_attribute_is_audit_column": {
+                "title": "Logical Attribute Is Audit Column",
+                "type": "boolean"
+              },
+              "logical_attribute_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Logical Attribute Status",
+                "type": "string"
+              },
+              "logical_attribute_is_locked": {
+                "title": "Logical Attribute Is Locked",
+                "type": "boolean"
+              },
+              "sources": {
+                "items": {
+                  "$ref": "#/$defs/AttributeSourceRecord"
+                },
+                "title": "Sources",
+                "type": "array"
+              }
+            },
+            "required": [
+              "logical_entity_name",
+              "logical_attribute_name",
+              "logical_attribute_definition",
+              "logical_attribute_data_type",
+              "logical_attribute_is_nullable",
+              "logical_attribute_is_primary_key",
+              "logical_attribute_is_natural_key",
+              "logical_attribute_is_surrogate_key",
+              "logical_attribute_ordinal_position",
+              "logical_attribute_is_audit_column",
+              "logical_attribute_status",
+              "logical_attribute_is_locked",
+              "sources"
+            ],
+            "title": "LogicalAttributeRecord",
+            "type": "object"
+          },
+          "PhysicalAttributeKey": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Object Name",
+                "type": "string"
+              },
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Attribute Name",
+                "type": "string"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "attribute_name"
+            ],
+            "title": "PhysicalAttributeKey",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/LogicalAttributeRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalAttributeRecord"
+    },
+    "logical_relationship_list": {
+      "description": "Compact existing Logical relationship identities only. All authorized applied records, including inactive/deprecated history; obtain details to interpret status, meaning, and locks.",
+      "natural_key": [
+        "from_logical_entity_name",
+        "from_logical_attribute_name",
+        "to_logical_entity_name",
+        "to_logical_attribute_name",
+        "logical_relationship_name"
+      ],
+      "value_schema": {
+        "anyOf": [
+          {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "from_logical_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "From Logical Entity Name",
+                  "type": "string"
+                },
+                "from_logical_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "From Logical Attribute Name",
+                  "type": "string"
+                },
+                "to_logical_entity_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "To Logical Entity Name",
+                  "type": "string"
+                },
+                "to_logical_attribute_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "To Logical Attribute Name",
+                  "type": "string"
+                },
+                "logical_relationship_name": {
+                  "maxLength": 255,
+                  "minLength": 1,
+                  "pattern": "\\S",
+                  "title": "Logical Relationship Name",
+                  "type": "string"
+                }
+              },
+              "required": [
+                "from_logical_entity_name",
+                "from_logical_attribute_name",
+                "to_logical_entity_name",
+                "to_logical_attribute_name",
+                "logical_relationship_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    },
+    "logical_relationships": {
+      "description": "Complete existing LogicalRelationshipRecord entries without added or removed fields. Exact nominal keys; current saved statuses and locks.",
+      "natural_key": [
+        "from_logical_entity_name",
+        "from_logical_attribute_name",
+        "to_logical_entity_name",
+        "to_logical_attribute_name",
+        "logical_relationship_name"
+      ],
+      "value_schema": {
+        "$defs": {
+          "LogicalRelationshipRecord": {
+            "additionalProperties": false,
+            "properties": {
+              "logical_relationship_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Relationship Name",
+                "type": "string"
+              },
+              "logical_relationship_definition": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Relationship Definition",
+                "type": "string"
+              },
+              "from_logical_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Logical Entity Name",
+                "type": "string"
+              },
+              "from_logical_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "From Logical Attribute Name",
+                "type": "string"
+              },
+              "to_logical_entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Logical Entity Name",
+                "type": "string"
+              },
+              "to_logical_attribute_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "To Logical Attribute Name",
+                "type": "string"
+              },
+              "logical_relationship_cardinality": {
+                "enum": [
+                  "one_to_one",
+                  "one_to_many",
+                  "many_to_one",
+                  "many_to_many"
+                ],
+                "title": "Logical Relationship Cardinality",
+                "type": "string"
+              },
+              "logical_relationship_confidence": {
+                "enum": [
+                  "low",
+                  "medium",
+                  "high"
+                ],
+                "title": "Logical Relationship Confidence",
+                "type": "string"
+              },
+              "logical_relationship_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Relationship Basis",
+                "type": "string"
+              },
+              "logical_relationship_cardinality_basis": {
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Logical Relationship Cardinality Basis",
+                "type": "string"
+              },
+              "logical_relationship_status": {
+                "enum": [
+                  "active",
+                  "inactive",
+                  "deprecated"
+                ],
+                "title": "Logical Relationship Status",
+                "type": "string"
+              },
+              "logical_relationship_is_locked": {
+                "title": "Logical Relationship Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "logical_relationship_name",
+              "logical_relationship_definition",
+              "from_logical_entity_name",
+              "from_logical_attribute_name",
+              "to_logical_entity_name",
+              "to_logical_attribute_name",
+              "logical_relationship_cardinality",
+              "logical_relationship_confidence",
+              "logical_relationship_basis",
+              "logical_relationship_cardinality_basis",
+              "logical_relationship_status",
+              "logical_relationship_is_locked"
+            ],
+            "title": "LogicalRelationshipRecord",
+            "type": "object"
+          }
+        },
+        "anyOf": [
+          {
+            "items": {
+              "$ref": "#/$defs/LogicalRelationshipRecord"
+            },
+            "type": "array"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      },
+      "record_source": "../../mcp_server/gds_etl_workbench/domain/modeling_records.py#LogicalRelationshipRecord"
+    },
+    "naming_instructions": {
+      "description": "Effective Logical naming guidance. Use the saved Silver Model override when present, otherwise the existing Logical default. Advisory guidance; preserve saved identities. This is resolved before rendering and remains a Logical-local variable.",
+      "source": "model_details.silver_model_naming_instructions through effective_naming_instructions(logical, override)",
+      "value_schema": {
+        "maxLength": 32768,
+        "minLength": 1,
+        "pattern": "\\S",
+        "type": "string"
+      }
+    },
+    "audit_columns": {
+      "description": "Exact configured Silver audit-column template: schema_version and columns with semantic_name, data_type, nullable, definition. Null means no configured template. Preserve the existing deterministic backend projection and lock/conflict checks. The complete model includes required audit Attributes; do not invent physical sources for configured audit columns.",
+      "source": "model_details.silver_model_audit_columns_template, validated with LogicalAuditPolicy",
+      "value_schema": {
+        "$defs": {
+          "LogicalAuditPolicy": {
+            "additionalProperties": false,
+            "properties": {
+              "schema_version": {
+                "const": "1.0",
+                "default": "1.0",
+                "title": "Schema Version",
+                "type": "string"
+              },
+              "columns": {
+                "items": {
+                  "$ref": "#/$defs/LogicalAuditPolicyColumn"
+                },
+                "maxItems": 32,
+                "minItems": 1,
+                "title": "Columns",
+                "type": "array"
+              }
+            },
+            "required": [
+              "columns"
+            ],
+            "title": "LogicalAuditPolicy",
+            "type": "object"
+          },
+          "LogicalAuditPolicyColumn": {
+            "additionalProperties": false,
+            "properties": {
+              "semantic_name": {
+                "$ref": "#/$defs/_Nonblank255"
+              },
+              "data_type": {
+                "$ref": "#/$defs/_Nonblank100"
+              },
+              "nullable": {
+                "title": "Nullable",
+                "type": "boolean"
+              },
+              "definition": {
+                "anyOf": [
+                  {
+                    "$ref": "#/$defs/_Nonblank2000"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ]
+              }
+            },
+            "required": [
+              "semantic_name",
+              "data_type",
+              "nullable",
+              "definition"
+            ],
+            "title": "LogicalAuditPolicyColumn",
+            "type": "object"
+          },
+          "_Nonblank100": {
+            "maxLength": 100,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank2000": {
+            "maxLength": 2000,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          },
+          "_Nonblank255": {
+            "maxLength": 255,
+            "minLength": 1,
+            "pattern": "\\S",
+            "type": "string"
+          }
+        },
+        "anyOf": [
+          {
+            "$ref": "#/$defs/LogicalAuditPolicy"
+          },
+          {
+            "type": "null"
+          }
+        ]
+      }
+    }
+  },
+  "examples_file": "logical.result-variables.example.json",
+  "open_items": [],
+  "excluded_inputs": [
+    "read_only_dependencies"
+  ],
+  "dependency_decision": "User excluded read-only dependency context from the Logical prompt-variable and reader design. Do not reintroduce it through a hidden append or substitute variable/tool. Preserve existing backend dependency validation and bounded correction. This is a design change only; existing runtime context delivery is not changed here.",
+  "settings_example_file": "logical.settings-and-dependencies.example.json",
+  "settings_example_note": "Legacy filename retained for existing review links; the example now contains only approved naming_instructions and audit_columns."
+}

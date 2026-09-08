@@ -1,13 +1,14 @@
+import { SourceMappings } from "../models/SourceMappings";
+import { EntityAttributes } from "../models/EntityAttributes";
 import { useEffect, useRef } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
 
+import { DetailState } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type {
   DimensionalAttributeDetail,
-  DimensionalAttributeSource,
   DimensionalObjectDetail,
-  DimensionalObjectSource,
   DimensionalRelationshipDetail,
 } from "./api";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
@@ -17,11 +18,15 @@ export function DimensionalObjectDetailPage({
   api,
   tenantId,
   modelId,
+  modelRevision,
+  hasTenantLock,
   entityId,
 }: {
   api: DimensionalApi;
   tenantId: number;
   modelId: number;
+  modelRevision: number;
+  hasTenantLock: boolean;
   entityId: number;
 }) {
   const query = useQuery({
@@ -37,7 +42,7 @@ export function DimensionalObjectDetailPage({
       error
     />;
   }
-  return <DimensionalObjectView tenantId={tenantId} modelId={modelId} object={query.data} />;
+  return <DimensionalObjectView modelRevision={modelRevision} hasTenantLock={hasTenantLock} api={api} tenantId={tenantId} modelId={modelId} object={query.data} />;
 }
 
 export function DimensionalAttributeDetailPage({
@@ -89,13 +94,19 @@ export function DimensionalRelationshipDetailPage({
 }
 
 function DimensionalObjectView({
+  api,
   tenantId,
   modelId,
+  modelRevision,
+  hasTenantLock,
   object,
 }: {
   tenantId: number;
   modelId: number;
+  modelRevision: number;
+  hasTenantLock: boolean;
   object: DimensionalObjectDetail;
+  api: DimensionalApi;
 }) {
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => heading.current?.focus(), []);
@@ -123,105 +134,55 @@ function DimensionalObjectView({
           </span>
         </div>
       </header>
-      <section className="detail-section" aria-labelledby="dimensional-object-overview">
+      <section className="detail-section detail-primary" aria-labelledby="dimensional-object-overview">
         <header><h2 id="dimensional-object-overview">Object definition</h2></header>
         <p className="detail-prose is-prominent">{object.dimensional_entity_definition}</p>
         <dl className="detail-fact-grid">
           <Fact label="Type" value={humanize(object.dimensional_entity_type)} />
-          <Fact label="Fact type" value={object.dimensional_fact_type ? humanize(object.dimensional_fact_type) : "Not applicable"} />
+          {object.dimensional_fact_type !== null ? <Fact label="Fact type" value={humanize(object.dimensional_fact_type)} /> : null}
           <Fact label="Grain" value={object.dimensional_entity_grain_definition ?? "Not specified"} />
           <Fact label="Dependency order" value={String(object.dimensional_entity_dependency_order)} />
           <Fact label="Confidence" value={humanize(object.dimensional_entity_confidence)} />
           <Fact label="Updated" value={formatDateTime(object.updated_at)} />
         </dl>
       </section>
-      <section className="detail-section" aria-labelledby="dimensional-submodel-membership">
-        <header>
+      <EntityAttributes modelRevision={modelRevision} hasTenantLock={hasTenantLock} api={api} layer="dimensional" tenantId={tenantId} modelId={modelId} entityId={object.dimensional_entity_id} />
+      <SourceMappings sources={object.sources} />
+      <details className="detail-section detail-disclosure" aria-labelledby="dimensional-submodel-membership">
+        <summary>
           <h2 id="dimensional-submodel-membership">Submodel membership</h2>
           <span>{object.submodels.length} records</span>
-        </header>
+        </summary>
         {object.submodels.length === 0 ? (
           <p className="detail-empty">No Submodel membership is recorded.</p>
         ) : (
-          <div className="normalized-membership-ledger">
-            {object.submodels.map((membership) => (
-              <article key={membership.dimensional_entity_submodel_id}>
-                <strong>{membership.dimensional_submodel_name}</strong>
-                <dl className="support-facts">
-                  <Fact label="Submodel ID" value={String(membership.dimensional_submodel_id)} />
-                  <Fact label="Status" value={humanize(membership.membership_status)} />
-                  <Fact label="Lock" value={membership.membership_is_locked ? "Locked" : "Open"} />
-                  <Fact label="Workflow" value={membership.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${membership.workflow_run_id}`} />
-                </dl>
-              </article>
-            ))}
+          <div className="table-scroll">
+            <table aria-label="Submodel memberships">
+              <thead><tr><th>Submodel</th><th>ID</th><th>Status</th><th>Lock</th><th>Workflow</th></tr></thead>
+              <tbody>{object.submodels.map((membership) => (
+                <tr key={membership.dimensional_entity_submodel_id}>
+                  <td>{membership.dimensional_submodel_name}</td>
+                  <td>{membership.dimensional_submodel_id}</td>
+                  <td>{humanize(membership.membership_status)}</td>
+                  <td>{membership.membership_is_locked ? "Locked" : "Open"}</td>
+                  <td>{membership.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${membership.workflow_run_id}`}</td>
+                </tr>
+              ))}</tbody>
+            </table>
           </div>
         )}
-      </section>
-      <ObjectSourceMappings sources={object.sources} />
-      <section className="detail-section" aria-labelledby="dimensional-record-provenance">
-        <header><h2 id="dimensional-record-provenance">Provenance</h2></header>
+      </details>
+      <details className="detail-section detail-disclosure" aria-labelledby="dimensional-record-provenance">
+        <summary><h2 id="dimensional-record-provenance">Provenance</h2></summary>
         <dl className="detail-fact-grid">
           <Fact label="Workflow" value={object.workflow_run_id === null ? "No workflow provenance" : `Workflow run ${object.workflow_run_id}`} />
           <Fact label="Created" value={formatDateTime(object.created_at)} />
         </dl>
-      </section>
+      </details>
     </article>
   );
 }
 
-function ObjectSourceMappings({ sources }: { sources: DimensionalObjectSource[] }) {
-  return (
-    <section className="detail-section" aria-labelledby="dimensional-source-mappings">
-      <header>
-        <h2 id="dimensional-source-mappings">Source mappings</h2>
-        <span>{sources.length} records</span>
-      </header>
-      {sources.length === 0 ? (
-        <p className="detail-empty">No source mappings are recorded.</p>
-      ) : (
-        <div className="support-ledger">
-          {sources.map((source, index) => (
-            <article key={source.dimensional_entity_source_mapping_id} className="support-record">
-              <header>
-                <span className="support-index">{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <small>{source.support_source_type === "object" ? "Physical Object" : "Modeling Assertion"}</small>
-                  <strong>{source.support_source_type === "object"
-                    ? `${source.source_object.object_schema}.${source.source_object.object_name}`
-                    : source.assertion_record.modeling_assertion_record_key}</strong>
-                </div>
-                <span className={`status-badge ${statusTone(source.status)}`}>
-                  {humanize(source.status)}
-                </span>
-              </header>
-              <p>{source.rationale}</p>
-              <dl className="support-facts">
-                <Fact label="Role" value={source.source_role} />
-                <Fact label="Order" value={source.source_order === null ? "Not assigned" : String(source.source_order)} />
-                {source.support_source_type === "object" ? (
-                  <>
-                    <Fact label="Source" value={`${source.source_object.tenant_code} · ${source.source_object.system_code} · ${source.source_object.connection_code}`} />
-                    <Fact label="Object" value={`${source.source_object.object_schema}.${source.source_object.object_name}`} />
-                  </>
-                ) : (
-                  <>
-                    <Fact label="Document" value={source.assertion_record.modeling_assertion_document_name} />
-                    <Fact label="Type" value={humanize(source.assertion_record.modeling_assertion_record_type)} />
-                  </>
-                )}
-                <Fact label="Lock" value={source.is_locked ? "Locked" : "Open"} />
-              </dl>
-              {source.support_source_type === "assertion" ? (
-                <p className="assertion-support-detail">{source.assertion_record.modeling_assertion_text}</p>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
 
 function DimensionalAttributeView({
   tenantId,
@@ -242,80 +203,54 @@ function DimensionalAttributeView({
         status={attribute.dimensional_attribute_status}
         locked={attribute.dimensional_attribute_is_locked}
       />
-      <section className="detail-section" aria-labelledby="dimensional-attribute-overview">
+      <section className="detail-section detail-primary" aria-labelledby="dimensional-attribute-overview">
         <header><h2 id="dimensional-attribute-overview">Attribute definition</h2></header>
         <p className="detail-prose is-prominent">{attribute.dimensional_attribute_definition}</p>
         <dl className="detail-fact-grid">
           <Fact label="Object" value={attribute.dimensional_entity_name} />
+          <Fact label="Confidence" value={humanize(attribute.dimensional_attribute_confidence)} />
+        </dl>
+        <h3>Type and role</h3>
+        <dl className="detail-fact-grid">
           <Fact label="Data type" value={attribute.dimensional_attribute_data_type} />
           <Fact label="Ordinal" value={String(attribute.dimensional_attribute_ordinal_position)} />
           <Fact label="Role" value={humanize(attribute.dimensional_attribute_role)} />
-          <Fact label="Key role" value={humanize(attribute.dimensional_attribute_key_role)} />
           <Fact label="Nullable" value={attribute.dimensional_attribute_is_nullable ? "Yes" : "No"} />
-          <Fact label="Grain component" value={attribute.dimensional_attribute_is_grain_component ? "Yes" : "No"} />
-          <Fact label="Additivity" value={attribute.dimensional_attribute_additivity ? humanize(attribute.dimensional_attribute_additivity) : "Not applicable"} />
-          <Fact label="Default aggregation" value={attribute.dimensional_attribute_default_aggregation ?? "Not specified"} />
-          <Fact label="Aggregation basis" value={attribute.dimensional_attribute_aggregation_basis ?? "Not specified"} />
-          <Fact label="Change behavior" value={attribute.dimensional_attribute_change_behavior ? humanize(attribute.dimensional_attribute_change_behavior) : "Not applicable"} />
           <Fact label="Audit column" value={attribute.dimensional_attribute_is_audit_column ? "Yes" : "No"} />
         </dl>
+        <h3>Keys and grain</h3>
+        <dl className="detail-fact-grid">
+          <Fact label="Key role" value={humanize(attribute.dimensional_attribute_key_role)} />
+          <Fact label="Grain component" value={attribute.dimensional_attribute_is_grain_component ? "Yes" : "No"} />
+        </dl>
+        {attribute.dimensional_attribute_role === "measure"
+          || attribute.dimensional_attribute_additivity !== null
+          || attribute.dimensional_attribute_default_aggregation !== null
+          || attribute.dimensional_attribute_aggregation_basis !== null ? (
+          <>
+            <h3>Aggregation</h3>
+            <dl className="detail-fact-grid">
+              <Fact label="Additivity" value={attribute.dimensional_attribute_additivity === null ? "Not recorded" : humanize(attribute.dimensional_attribute_additivity)} />
+              <Fact label="Default aggregation" value={attribute.dimensional_attribute_default_aggregation ?? "Not recorded"} />
+            </dl>
+            <dl className="conceptual-reasoning">
+              <Fact label="Aggregation basis" value={attribute.dimensional_attribute_aggregation_basis ?? "Not recorded"} />
+            </dl>
+          </>
+        ) : <p className="detail-empty-note">No aggregation behavior is recorded.</p>}
+        {attribute.dimensional_attribute_change_behavior !== null ? (
+          <>
+            <h3>Change behavior</h3>
+            <p className="detail-prose">{humanize(attribute.dimensional_attribute_change_behavior)}</p>
+          </>
+        ) : <p className="detail-empty-note">No change behavior is recorded.</p>}
       </section>
-      <AttributeSourceMappings sources={attribute.sources} />
+      <SourceMappings sources={attribute.sources} />
       <DimensionalProvenance workflowRunId={attribute.workflow_run_id} createdAt={attribute.created_at} />
     </article>
   );
 }
 
-function AttributeSourceMappings({ sources }: { sources: DimensionalAttributeSource[] }) {
-  return (
-    <section className="detail-section" aria-labelledby="dimensional-attribute-sources">
-      <header>
-        <h2 id="dimensional-attribute-sources">Source mappings</h2>
-        <span>{sources.length} records</span>
-      </header>
-      {sources.length === 0 ? (
-        <p className="detail-empty">No source mappings are recorded.</p>
-      ) : (
-        <div className="support-ledger">
-          {sources.map((source, index) => (
-            <article key={source.dimensional_attribute_source_mapping_id} className="support-record">
-              <header>
-                <span className="support-index">{String(index + 1).padStart(2, "0")}</span>
-                <div>
-                  <small>{source.support_source_type === "attribute" ? "Physical Attribute" : "Modeling Assertion"}</small>
-                  <strong>{source.support_source_type === "attribute"
-                    ? `${source.source_attribute.object_schema}.${source.source_attribute.object_name}.${source.source_attribute.attribute_name}`
-                    : source.assertion_record.modeling_assertion_record_key}</strong>
-                </div>
-                <span className={`status-badge ${statusTone(source.status)}`}>{humanize(source.status)}</span>
-              </header>
-              <p>{source.rationale}</p>
-              <dl className="support-facts">
-                <Fact label="Order" value={source.source_order === null ? "Not assigned" : String(source.source_order)} />
-                {source.support_source_type === "attribute" ? (
-                  <>
-                    <Fact label="Source" value={`${source.source_attribute.tenant_code} · ${source.source_attribute.system_code} · ${source.source_attribute.connection_code}`} />
-                    <Fact label="Attribute" value={`${source.source_attribute.object_schema}.${source.source_attribute.object_name}.${source.source_attribute.attribute_name}`} />
-                    <Fact label="Object mapping" value={String(source.dimensional_entity_source_mapping_id)} />
-                  </>
-                ) : (
-                  <>
-                    <Fact label="Document" value={source.assertion_record.modeling_assertion_document_name} />
-                    <Fact label="Type" value={humanize(source.assertion_record.modeling_assertion_record_type)} />
-                  </>
-                )}
-                <Fact label="Lock" value={source.is_locked ? "Locked" : "Open"} />
-              </dl>
-              {source.support_source_type === "assertion" ? (
-                <p className="assertion-support-detail">{source.assertion_record.modeling_assertion_text}</p>
-              ) : null}
-            </article>
-          ))}
-        </div>
-      )}
-    </section>
-  );
-}
 
 function DimensionalRelationshipView({
   tenantId,
@@ -336,7 +271,7 @@ function DimensionalRelationshipView({
         status={relationship.dimensional_relationship_status}
         locked={relationship.dimensional_relationship_is_locked}
       />
-      <section className="detail-section" aria-labelledby="dimensional-relationship-overview">
+      <section className="detail-section detail-primary" aria-labelledby="dimensional-relationship-overview">
         <header><h2 id="dimensional-relationship-overview">Relationship definition</h2></header>
         <p className="detail-prose is-prominent">{relationship.dimensional_relationship_definition}</p>
         <div className="conceptual-endpoints" aria-label="Relationship endpoints">
@@ -418,13 +353,13 @@ function DimensionalProvenance({
   createdAt: string;
 }) {
   return (
-    <section className="detail-section" aria-labelledby="dimensional-record-provenance">
-      <header><h2 id="dimensional-record-provenance">Provenance</h2></header>
+    <details className="detail-section detail-disclosure" aria-labelledby="dimensional-record-provenance">
+      <summary><h2 id="dimensional-record-provenance">Provenance</h2></summary>
       <dl className="detail-fact-grid">
         <Fact label="Workflow" value={workflowRunId === null ? "No workflow provenance" : `Workflow run ${workflowRunId}`} />
         <Fact label="Created" value={formatDateTime(createdAt)} />
       </dl>
-    </section>
+    </details>
   );
 }
 
@@ -432,17 +367,6 @@ function detailErrorLabel(error: Error, artifact: "Attribute" | "Relationship"):
   return error instanceof ApiError && error.status === 403
     ? `You do not have permission to view this Dimensional ${artifact}.`
     : `Dimensional ${artifact} details could not be loaded.`;
-}
-
-function DetailState({ label, error = false }: { label: string; error?: boolean }) {
-  return (
-    <div
-      className={`surface-state detail-state${error ? " is-error" : ""}`}
-      {...(error ? { role: "alert" } : { "aria-busy": true })}
-    >
-      {label}
-    </div>
-  );
 }
 
 function Fact({ label, value }: { label: string; value: string }) {

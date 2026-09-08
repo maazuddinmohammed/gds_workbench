@@ -65,9 +65,23 @@ from gds_workbench_api.features.mapping.router import (
     create_mapping_workflow_router,
 )
 from gds_workbench_api.features.metadata import MetadataService, create_metadata_router
+from gds_workbench_api.features.metadata.review import (
+    MetadataReviewService,
+    create_metadata_review_router,
+)
 from gds_workbench_api.features.metadata_change_sets import (
     MetadataChangeSetService,
     create_metadata_change_sets_router,
+)
+from gds_workbench_api.features.metadata_enrichment.read_router import (
+    create_metadata_enrichment_read_router,
+)
+from gds_workbench_api.features.metadata_enrichment.read_service import (
+    MetadataEnrichmentReadService,
+)
+from gds_workbench_api.features.metadata_enrichment.router import (
+    MetadataEnrichmentWorkflowService,
+    create_metadata_enrichment_workflow_router,
 )
 from gds_workbench_api.features.model_change_sets.router import (
     ModelChangeSetService,
@@ -76,6 +90,10 @@ from gds_workbench_api.features.model_change_sets.router import (
 from gds_workbench_api.features.model_input_scope import (
     ModelInputScopeService,
     create_input_scope_router,
+)
+from gds_workbench_api.features.model_targets.router import (
+    ModelTargetsService,
+    create_model_targets_router,
 )
 from gds_workbench_api.features.models import (
     ModelCommandService,
@@ -146,6 +164,9 @@ def create_app(
     agent_capability_registry: AgentCapabilityRegistry | None = None,
     tenant_lock_service: TenantLockService | None = None,
     metadata_service: MetadataService | None = None,
+    metadata_review_service: MetadataReviewService | None = None,
+    metadata_enrichment_read_service: MetadataEnrichmentReadService | None = None,
+    metadata_enrichment_workflow_service: MetadataEnrichmentWorkflowService | None = None,
     metadata_change_set_service: MetadataChangeSetService | None = None,
     output_template_service: OutputTemplateService | None = None,
     prompt_service: PromptService | None = None,
@@ -159,6 +180,7 @@ def create_app(
     conceptual_service: ConceptualService | None = None,
     conceptual_workflow_service: ConceptualWorkflowService | None = None,
     logical_service: LogicalService | None = None,
+    model_targets_service: ModelTargetsService | None = None,
     logical_workflow_service: LogicalWorkflowService | None = None,
     dimensional_service: DimensionalService | None = None,
     dimensional_workflow_service: DimensionalWorkflowService | None = None,
@@ -273,6 +295,13 @@ def create_app(
                 service=tenant_lock_service,
             )
         )
+    if identity_provider is not None and metadata_review_service is not None:
+        app.include_router(
+            create_metadata_review_router(
+                identity_provider=identity_provider,
+                service=metadata_review_service,
+            )
+        )
     if identity_provider is not None and metadata_service is not None:
         app.include_router(
             create_metadata_router(
@@ -367,6 +396,12 @@ def create_app(
                 service=conceptual_workflow_service,
             )
         )
+    if identity_provider is not None and model_targets_service is not None:
+        app.include_router(
+            create_model_targets_router(
+                identity_provider=identity_provider, service=model_targets_service
+            )
+        )
     if identity_provider is not None and logical_service is not None:
         app.include_router(
             create_logical_router(
@@ -428,6 +463,20 @@ def create_app(
             create_validation_read_router(
                 identity_provider=identity_provider,
                 service=validation_read_service,
+            )
+        )
+    if identity_provider is not None and metadata_enrichment_workflow_service is not None:
+        app.include_router(
+            create_metadata_enrichment_workflow_router(
+                identity_provider=identity_provider,
+                service=metadata_enrichment_workflow_service,
+            )
+        )
+    if identity_provider is not None and metadata_enrichment_read_service is not None:
+        app.include_router(
+            create_metadata_enrichment_read_router(
+                identity_provider=identity_provider,
+                service=metadata_enrichment_read_service,
             )
         )
     if identity_provider is not None and validation_workflow_service is not None:

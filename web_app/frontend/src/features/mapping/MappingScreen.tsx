@@ -1,3 +1,4 @@
+import { ModelRecordReview } from "../model_record_review/ModelRecordReview";
 import { useState } from "react";
 import { useInfiniteQuery, useQueryClient } from "@tanstack/react-query";
 import { Link } from "@tanstack/react-router";
@@ -33,6 +34,7 @@ export function MappingScreen({
 }) {
   const queryClient = useQueryClient();
   const [view, setView] = useState<MappingView>(initialView ?? "dependencies");
+  const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [filters, setFilters] = useState<Record<MappingView, MappingFilters>>({
@@ -87,6 +89,7 @@ export function MappingScreen({
       : "Tenant Lock held";
 
   const refresh = async () => {
+    setSelectedIds(new Set());
     await Promise.all([
       activeQuery.refetch(),
       queryClient.invalidateQueries({ queryKey: ["model", tenantId, model.model_id] }),
@@ -94,6 +97,7 @@ export function MappingScreen({
     ]);
   };
   const setViewFilters = (nextFilters: MappingFilters) => {
+    setSelectedIds(new Set());
     setFilters((current) => ({ ...current, [view]: nextFilters }));
   };
   const invalidateLedgers = async () => {
@@ -136,7 +140,7 @@ export function MappingScreen({
                 className={view === nextView ? "is-active" : ""}
                 type="button"
                 aria-pressed={view === nextView}
-                onClick={() => setView(nextView)}
+                onClick={() => { setSelectedIds(new Set()); setView(nextView); }}
               >
                 {label}
               </button>
@@ -160,7 +164,7 @@ export function MappingScreen({
       </header>
       <div className="workflow-context-line mapping-context-line">
         <strong>{model.model_name} · r{model.model_revision}</strong>
-        <span>Logical mappings target eligible Silver Objects. Dimensional mappings target eligible Gold Objects.</span>
+        <Link className="text-action" to="/tenants/$tenantId/models/$modelId/targets" params={{ tenantId: String(tenantId), modelId: String(model.model_id) }} search={{ layer: "logical" }}>Review target bindings</Link>
       </div>
       <WorkflowRunMonitor
         api={api}
@@ -172,8 +176,16 @@ export function MappingScreen({
         focusRunId={recentRunId}
         onApplied={invalidateLedgers}
       />
+      <ModelRecordReview
+        api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
+        dataset={view === "dependencies" ? "mapping_dependency" : view === "objects" ? "mapping_object" : "mapping_attribute"}
+        selectedIds={selectedIds} hasTenantLock={hasTenantLock && hasAppPermission}
+        disabled={activeQuery.isPending || activeQuery.isError || activeQuery.data?.pages.some((page) => page.model_revision !== model.model_revision) === true}
+        onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
+      />
       {view === "dependencies" ? (
         <MappingDependenciesLedger
+          selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
           modelId={model.model_id}
           items={dependencies.data?.pages.flatMap((page) => page.items) ?? []}
@@ -184,6 +196,7 @@ export function MappingScreen({
         />
       ) : view === "objects" ? (
         <MappingObjectsLedger
+          selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
           modelId={model.model_id}
           items={objects.data?.pages.flatMap((page) => page.items) ?? []}
@@ -194,6 +207,7 @@ export function MappingScreen({
         />
       ) : (
         <MappingAttributesLedger
+          selectedIds={selectedIds} onSelectionChange={setSelectedIds}
           tenantId={tenantId}
           modelId={model.model_id}
           items={attributes.data?.pages.flatMap((page) => page.items) ?? []}

@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 from collections.abc import Mapping
+from dataclasses import dataclass, field
 from typing import LiteralString, cast
 
 from gds_etl_workbench.application.model_read import ModelReadContext
 from gds_etl_workbench.application.modeling.assertions import DOCUMENTS_SQL, RECORDS_SQL
 from gds_etl_workbench.application.modeling.conceptual import (
-    CONCEPTUAL_OBJECTS_SQL,
-    CONCEPTUAL_RELATIONSHIPS_SQL,
+    HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
+    HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
 )
 from gds_etl_workbench.application.modeling.modeled_layer import (
     DIMENSIONAL,
@@ -21,8 +22,8 @@ from gds_etl_workbench.application.modeling.modeled_layer import (
     submodels_sql,
 )
 from gds_etl_workbench.application.modeling.profiling_analysis import (
-    ANALYSIS_SQL,
-    PROFILING_SQL,
+    HISTORICAL_ANALYSIS_SQL,
+    HISTORICAL_PROFILING_SQL,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_etl_workbench.domain.modeling_records import (
@@ -284,7 +285,8 @@ SELECT generated.generated_code_id,
        generated.artifact_name,
        generated.artifact_type,
        generated.generated_code_content,
-       generated.generated_code_status
+       generated.generated_code_status,
+       generated.generated_code_is_locked
   FROM workflow.generated_code AS generated
   JOIN workflow.model_object_binding AS binding
     ON binding.model_object_binding_id = generated.model_object_binding_id
@@ -313,7 +315,8 @@ SELECT association.generated_code_source_system_id,
        END AS modeled_entity_name,
        generated.artifact_name,
        system.system_code AS source_system_code,
-       association.generated_code_source_system_status
+       association.generated_code_source_system_status,
+       association.generated_code_source_system_is_locked
   FROM workflow.generated_code_source_system AS association
   JOIN workflow.generated_code AS generated
     ON generated.generated_code_id = association.generated_code_id
@@ -344,7 +347,8 @@ SELECT validation_group.validation_group_id,
        system.system_code,
        validation_group.validation_group_name,
        validation_group.validation_group_description,
-       validation_group.is_active
+       validation_group.is_active,
+       validation_group.is_locked
   FROM workflow.validation_group AS validation_group
   JOIN core.tenant AS tenant
     ON tenant.tenant_id = validation_group.tenant_id
@@ -373,7 +377,8 @@ SELECT validation_check.validation_check_id,
        validation_check.validation_comparison_operator,
        validation_check.validation_comparison_value_type,
        validation_check.validation_comparison_value,
-       validation_check.is_active
+       validation_check.is_active,
+       validation_check.is_locked
   FROM workflow.validation_check AS validation_check
   JOIN workflow.validation_group AS validation_group
     ON validation_group.validation_group_id = validation_check.validation_group_id
@@ -452,10 +457,23 @@ _OPAQUE_JSON_FIELDS = frozenset(
 )
 
 
+@dataclass(frozen=True, slots=True)
+class ModelReviewSnapshot:
+    snapshot: ModelSnapshot = field(repr=False)
+    records_by_id: dict[str, dict[int, ModelingRecord]] = field(repr=False)
+
+
 async def build_model_snapshot(
     transaction: ReadTransaction,
     model: ModelReadContext,
 ) -> ModelSnapshot:
+    return (await read_model_review_snapshot(transaction, model)).snapshot
+
+
+async def read_model_review_snapshot(
+    transaction: ReadTransaction,
+    model: ModelReadContext,
+) -> ModelReviewSnapshot:
     """Select, bound, clean, and validate one complete effective Model."""
     limit = _MAX_DATASET_ROWS + 1
     rows: dict[str, list[dict[str, object]]] = {}
@@ -476,13 +494,13 @@ async def build_model_snapshot(
     rows["profiling_profile"] = await _fetch(
         transaction,
         "profiling_profile",
-        PROFILING_SQL,
+        HISTORICAL_PROFILING_SQL,
         (model.model_id, [], [], limit, 0),
     )
     rows["analysis_result"] = await _fetch(
         transaction,
         "analysis_result",
-        ANALYSIS_SQL,
+        HISTORICAL_ANALYSIS_SQL,
         (model.model_id, [], [], [], limit, 0),
     )
     rows["modeling_assertion_document"] = await _fetch(
@@ -500,13 +518,13 @@ async def build_model_snapshot(
     rows["conceptual_object"] = await _fetch(
         transaction,
         "conceptual_object",
-        CONCEPTUAL_OBJECTS_SQL,
+        HISTORICAL_CONCEPTUAL_OBJECTS_SQL,
         (model.model_id, [], [], limit, 0),
     )
     rows["conceptual_relationship"] = await _fetch(
         transaction,
         "conceptual_relationship",
-        CONCEPTUAL_RELATIONSHIPS_SQL,
+        HISTORICAL_CONCEPTUAL_RELATIONSHIPS_SQL,
         (model.model_id, [], [], [], limit, 0),
     )
     await _fetch_layer(transaction, model.model_id, LOGICAL, rows, limit)
@@ -538,7 +556,7 @@ async def build_model_snapshot(
         raise InvalidRequestError(
             "The Model Snapshot exceeds the bounded row count; use focused reads."
         )
-    return ModelSnapshot.model_validate(
+    snapshot = ModelSnapshot.model_validate(
         {
             "model_id": model.model_id,
             "model_name": model.model_name,
@@ -591,6 +609,60 @@ async def build_model_snapshot(
         }
     )
 
+    # Reuse the same owned, history-preserving selection for lifecycle review.
+    # Numeric IDs stay outside canonical snapshots, agent inputs and MCP exports.
+    records_by_id: dict[str, dict[int, ModelingRecord]] = {}
+    for dataset in (
+        "analysis_result",
+        "conceptual_object",
+        "conceptual_relationship",
+        "logical_submodel",
+        "logical_entity",
+        "logical_attribute",
+        "logical_relationship",
+        "dimensional_submodel",
+        "dimensional_entity",
+        "dimensional_attribute",
+        "dimensional_relationship",
+        "model_object_binding",
+        "model_attribute_binding",
+        "mapping_dependency",
+        "mapping_object",
+        "mapping_attribute",
+        "generated_code",
+        "generated_code_source_system",
+        "validation_group",
+        "validation_check",
+    ):
+        definition = DATASETS_BY_NAME[dataset]
+        by_key = {
+            tuple(
+                normalize_model_key_value(getattr(record, name))
+                for name in definition.canonical_key
+            ): record
+            for record in records[dataset]
+        }
+        id_field = (
+            "mapping_source_system_dependency_id"
+            if dataset == "mapping_dependency"
+            else dataset + "_id"
+        )
+        indexed: dict[int, ModelingRecord] = {}
+        for row in rows[dataset]:
+            record_id = row.get(id_field)
+            key = tuple(normalize_model_key_value(row[name]) for name in definition.canonical_key)
+            if (
+                not isinstance(record_id, int)
+                or isinstance(record_id, bool)
+                or record_id < 1
+                or record_id in indexed
+                or key not in by_key
+            ):
+                raise InvalidRequestError("The Model record identity could not be resolved.")
+            indexed[record_id] = by_key[key]
+        records_by_id[dataset] = indexed
+    return ModelReviewSnapshot(snapshot=snapshot, records_by_id=records_by_id)
+
 
 async def _fetch_layer(
     transaction: ReadTransaction,
@@ -608,13 +680,13 @@ async def _fetch_layer(
     rows[f"{config.layer}_entity"] = await _fetch(
         transaction,
         f"{config.layer}_entity",
-        entities_sql(config),
+        entities_sql(config, historical=True),
         (model_id, [], [], limit, 0),
     )
     rows[f"{config.layer}_attribute"] = await _fetch(
         transaction,
         f"{config.layer}_attribute",
-        attributes_sql(config),
+        attributes_sql(config, historical=True),
         (model_id, [], [], limit, 0),
     )
     rows[f"{config.layer}_relationship"] = await _fetch(

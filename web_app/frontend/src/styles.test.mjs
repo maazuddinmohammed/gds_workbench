@@ -20,6 +20,7 @@ describe("stylesheet Module manifest", () => {
         '@import "./styles/validation.css";',
         '@import "./styles/prompts.css";',
         '@import "./styles/workflow-runs.css";',
+        '@import "./styles/model-targets.css";',
         "",
       ].join("\n"),
     );

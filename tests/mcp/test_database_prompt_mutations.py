@@ -44,7 +44,8 @@ SAVE_PROMPT_TEMPLATE_DRAFT_SQL = """
           %s::TEXT,
           %s::TEXT,
           %s::TEXT,
-          %s::TIMESTAMPTZ
+          %s::TIMESTAMPTZ,
+          %s::TEXT[]
       )
 """
 
@@ -312,6 +313,7 @@ def _save_prompt_template_draft(
     instruction_prompt: str,
     tool_instruction_prompt: str | None,
     expected_updated_time: object | None,
+    agent_tool_names: list[str] | None = None,
 ) -> TestRow:
     with postgres_database.connect_owner() as connection:
         return require_row(
@@ -326,6 +328,7 @@ def _save_prompt_template_draft(
                     instruction_prompt,
                     tool_instruction_prompt,
                     expected_updated_time,
+                    agent_tool_names,
                 ),
             ).fetchone()
         )
@@ -1212,7 +1215,7 @@ def test_prompt_mutators_are_web_only_security_definers_without_direct_dml(
 ) -> None:
     expected_functions = {
         "save_prompt_template": 12,
-        "save_prompt_template_draft": 9,
+        "save_prompt_template_draft": 10,
         "set_prompt_assignment": 8,
         "transition_prompt_template_version": 6,
     }
@@ -1295,3 +1298,95 @@ def test_prompt_mutators_are_web_only_security_definers_without_direct_dml(
         }
         for table_name in sorted(prompt_tables)
     ]
+
+
+def test_prompt_tool_permissions_are_digested_fenced_and_stage_scoped(
+    postgres_database: DisposablePostgres,
+) -> None:
+    context = _seed_prompt_context(postgres_database)
+    prompt = _save_prompt_template(
+        postgres_database,
+        context.architect,
+        prompt_template_id=None,
+        workflow_stage_id=context.workflow_stage_id,
+        ownership_scope="tenant",
+        owner_tenant_id=context.tenant_id,
+        code=f"tool_prompt_{uuid4().hex}",
+        name="Tools",
+    )
+    kwargs = dict(
+        prompt_template_id=prompt["prompt_template_id"],
+        expected_prompt_template_version_id=None,
+        system_prompt="Use evidence.",
+        instruction_prompt="Author a candidate.",
+        tool_instruction_prompt=None,
+        expected_updated_time=None,
+    )
+    with pytest.raises(RaiseException, match="tool selection is invalid"):
+        _save_prompt_template_draft(
+            postgres_database,
+            context.architect,
+            **kwargs,
+            agent_tool_names=["get_object_details"],
+        )
+    with postgres_database.connect_owner() as connection:
+        connection.execute(
+            "UPDATE application.workflow_stage SET workflow_execution_mode = 'tool_assisted' "
+            "WHERE workflow_stage_id = %s",
+            (context.workflow_stage_id,),
+        )
+    initial = _save_prompt_template_draft(
+        postgres_database, context.architect, **kwargs
+    )
+    kwargs["expected_prompt_template_version_id"] = initial[
+        "prompt_template_version_id"
+    ]
+    kwargs["expected_updated_time"] = initial["updated_time"]
+    for invalid in (
+        ["get_agent_context_manifest"],
+        ["get_mapping_context_dataset"],
+        ["get_object_details", "get_object_details"],
+        ["execute_sql"],
+    ):
+        with pytest.raises(RaiseException, match="tool selection is invalid"):
+            _save_prompt_template_draft(
+                postgres_database,
+                context.architect,
+                **kwargs,
+                agent_tool_names=invalid,
+            )
+    no_tools = _save_prompt_template_draft(
+        postgres_database, context.architect, **kwargs, agent_tool_names=[]
+    )
+    assert no_tools["agent_tool_names"] == []
+    assert no_tools["prompt_template_digest"] != initial["prompt_template_digest"]
+    kwargs["expected_updated_time"] = no_tools["updated_time"]
+    changed = _save_prompt_template_draft(
+        postgres_database,
+        context.architect,
+        **kwargs,
+        agent_tool_names=["get_object_details"],
+    )
+    assert changed["agent_tool_names"] == ["get_object_details"]
+    assert changed["prompt_template_digest"] != initial["prompt_template_digest"]
+    replayed = _save_prompt_template_draft(
+        postgres_database,
+        context.architect,
+        **kwargs,
+        agent_tool_names=["get_object_details"],
+    )
+    assert replayed["updated_time"] == changed["updated_time"]
+    _transition_prompt_template_version(
+        postgres_database,
+        context.architect,
+        prompt_template_version_id=changed["prompt_template_version_id"],
+        expected_status="draft",
+        target_status="published",
+    )
+    with pytest.raises(RaiseException):
+        with postgres_database.connect_owner() as connection:
+            connection.execute(
+                "UPDATE application.prompt_template_version SET agent_tool_names = NULL "
+                "WHERE prompt_template_version_id = %s",
+                (changed["prompt_template_version_id"],),
+            )

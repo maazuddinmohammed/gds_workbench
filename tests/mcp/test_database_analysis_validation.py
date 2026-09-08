@@ -306,10 +306,7 @@ def _source_context_digests(
             GET_ANALYSIS_VALIDATION_EXECUTION_CONTEXT_SQL,
             _analysis_execution_parameters(seed.execution),
         ).fetchall()
-    return {
-        int(row["analysis_result_id"]): str(row["source_context_digest"])
-        for row in rows
-    }
+    return {int(row["analysis_result_id"]): str(row["source_context_digest"]) for row in rows}
 
 
 def _persist_validation_parameters(
@@ -325,16 +322,8 @@ def _persist_validation_parameters(
     return (
         context.entra_tenant_id if entra_tenant_id is None else entra_tenant_id,
         context.entra_object_id if entra_object_id is None else entra_object_id,
-        (
-            seed.execution.workflow_run_id
-            if workflow_run_id is None
-            else workflow_run_id
-        ),
-        (
-            context.model_revision
-            if expected_model_revision is None
-            else expected_model_revision
-        ),
+        (seed.execution.workflow_run_id if workflow_run_id is None else workflow_run_id),
+        (context.model_revision if expected_model_revision is None else expected_model_revision),
         seed.execution.environment_code,
         Jsonb(results),
     )
@@ -420,12 +409,8 @@ def test_running_analysis_validation_context_is_safe_exact_and_lock_agnostic(
     assert _digest(connection_row["databricks_host_name"]) == _digest(
         seed.execution.server_hostname
     )
-    assert _digest(connection_row["databricks_http_path"]) == _digest(
-        seed.execution.http_path
-    )
-    assert _digest(connection_row["databricks_token"]) == _digest(
-        seed.execution.access_token
-    )
+    assert _digest(connection_row["databricks_http_path"]) == _digest(seed.execution.http_path)
+    assert _digest(connection_row["databricks_token"]) == _digest(seed.execution.access_token)
 
 
 def test_analysis_validation_context_allows_zero_eligible_relationships(
@@ -778,9 +763,7 @@ def test_analysis_validation_partial_connection_values_return_no_secrets(
         "gds_connection_id": None,
         "environment_code": seed.execution.environment_code,
         "failure_code": "connection_values_missing",
-        "failure_message": (
-            "Analysis validation GDS connection values are incomplete."
-        ),
+        "failure_message": ("Analysis validation GDS connection values are incomplete."),
         "databricks_host_name": None,
         "databricks_http_path": None,
         "databricks_token": None,
@@ -924,9 +907,7 @@ def test_analysis_validation_results_replace_only_validation_fields_and_replay(
         "changed_result_count": 0,
     }
     assert completed["workflow_run_state"] == "completed"
-    assert revision_kinds == [
-        {"change_kind": "web_analysis_validation_results_persist"}
-    ]
+    assert revision_kinds == [{"change_kind": "web_analysis_validation_results_persist"}]
     assert after_replay == [
         {
             "analysis_result_id": row["analysis_result_id"],
@@ -1381,15 +1362,11 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
     target_zero_distinct = {
         **valid[0],
         "validation_target_distinct_count": 0,
-        "validation_duplicate_target_key_count": (
-            valid[0]["validation_target_non_null_count"]
-        ),
+        "validation_duplicate_target_key_count": (valid[0]["validation_target_non_null_count"]),
     }
     source_distinct_too_large = {
         **valid[0],
-        "validation_source_distinct_count": (
-            valid[0]["validation_source_non_null_count"] + 1
-        ),
+        "validation_source_distinct_count": (valid[0]["validation_source_non_null_count"] + 1),
     }
     missing_too_large = {
         **valid[0],
@@ -1399,9 +1376,7 @@ def test_analysis_validation_payload_is_exact_strict_and_atomic(
     }
     unused_too_large = {
         **valid[0],
-        "validation_unused_target_count": (
-            valid[0]["validation_target_distinct_count"] + 1
-        ),
+        "validation_unused_target_count": (valid[0]["validation_target_distinct_count"] + 1),
     }
     duplicate_mismatch = {
         **valid[0],

@@ -92,6 +92,45 @@ The explicit subset of eligible Model Input Scope Objects chosen for one Section
 workflow. It never changes Model Input Scope membership.
 _Avoid_: Model Input Scope, source list
 
+**Attribute Profile**:
+The current saved statistical measurements for one physical Attribute within
+one Model, including known measurement time and all-row or batch scope. Later
+applied Profiling replaces those measurements and their context rather than
+creating selectable historical profile versions.
+_Avoid_: Profiling Run, Type 2 history
+
+**Profiling**:
+Measurement of all eligible active physical Attributes within selected Model
+Input Scope Objects, over all rows or an explicitly selected batch. An explicit
+Run refreshes current Attribute Profiles only when measurements for its entire
+selected scope succeed.
+_Avoid_: Metadata Enrichment, description generation, Profile history selection
+
+**Metadata Enrichment**:
+The family of separate Object Enrichment and Attribute Enrichment workflows
+using physical metadata and Profiling evidence,
+including when initiated from a Model's scope. Description authoring replaces
+selected unlocked physical metadata descriptions with supported text or blank;
+locked descriptions remain unchanged, and generation does not lock its results.
+_Avoid_: Profiling, Model authoring, Target Registration
+
+**Object Enrichment**:
+The Metadata Enrichment workflow that authors descriptions of selected physical
+Objects using their business context, metadata, Attributes, and Profiles.
+_Avoid_: Attribute Enrichment, combined enrichment workflow
+
+**Attribute Enrichment**:
+The Metadata Enrichment workflow that authors selected physical Attribute
+descriptions within their parent Object and completes missing inferred Attribute
+types from independently supported evidence.
+_Avoid_: Object Enrichment, AI-generated type inference
+
+**Ingestion Mapping**:
+The registered links from originating Source Objects and Attributes to the
+Bronze Objects and Attributes they supply. These links establish source
+provenance for Metadata Enrichment.
+_Avoid_: Model Binding, Logical Mapping, name-based source guess
+
 **Modeling Assertion**:
 One Model-owned structured factual statement derived from a document, email,
 meeting note, or direct user input. An applicable Assertion provides governed
@@ -124,6 +163,66 @@ _Avoid_: Tenant Metadata, user-managed lookup values
 The operator-governed Projects, Tenants, Systems, and Connections that establish
 ownership and access context. Workbench users may read it but do not author it.
 _Avoid_: Tenant Metadata, user-editable platform configuration
+
+**Foundational Variables**:
+Workflow-specific Prompt variables providing relevant Tenant, System, and
+Connection identity, business descriptions, and System/Connection type codes
+with their resolved descriptions. Matching names and shapes may be explicitly
+reused by different workflows; availability is never global.
+For Metadata Enrichment and Analysis, they describe the single data-owning
+Source Tenant and all contributing source business contexts, not GDS placement.
+_Avoid_: Complete Model context, Connection values
+
+**Prompt Template**:
+A saved System Prompt and Instruction Prompt for a workflow and execution mode,
+with the chosen permitted tools. Its author chooses which available variables
+to include and how to present their evidence. The workflow's required output
+contract remains independent of that choice.
+_Avoid_: Fixed evidence bundle, workflow output schema
+
+**Default Prompt**:
+A provided Prompt Template expressing recommended instructions and evidence
+choices. A Tenant-specific Prompt Template can supply different choices within
+the same workflow's available capabilities and required output contract.
+_Avoid_: Mandatory variable inclusion, uneditable workflow instructions
+
+**Source Context**:
+The business, type, and zone context of each distinct source Connection
+contributing to the selected Objects, including its data-owning Source Tenant
+and System. It is resolved through registered ingestion lineage and kept
+separate from individual Object Contexts.
+_Avoid_: GDS placement business context, repeated per-Object business context
+
+**GDS Context**:
+The actual GDS Tenant, System, Connection, and zone associated with the selected
+physical Object, with the registered zone description.
+_Avoid_: Source business context, Model Binding target
+
+**Physical Metadata Natural Key**:
+The code-and-name identity of a registered physical record: Tenant, System, and
+Connection codes identify a Connection; schema and Object name extend it to an
+Object; Attribute name extends it to an Attribute. This identity connects
+workflow evidence and results without exposing database IDs.
+_Avoid_: Database ID, display label, unqualified Attribute name
+
+**Object Context**:
+The identity, saved description, and zone context of selected physical
+Objects, shared by Metadata Enrichment and Analysis. Complete natural keys link
+each Object to its Attribute evidence and registered originating Source lineage.
+_Avoid_: Complete Model context, foundational Source Context
+
+**Object Attribute Context**:
+The Attribute evidence associated with an Object Context: each Attribute's
+meaning, types, relevant metadata flags, and available Profile. The containing Object
+and Attribute name together identify the Attribute by its complete natural key.
+_Avoid_: Detached Attribute or Profile lists, name-only Attribute matching
+
+**Object Relationship Context**:
+Existing applied Analysis relationships viewed from each selected physical
+Object as incoming and outgoing findings. Direction follows the relationship's
+endpoints; status and lock remain properties of the same saved finding. Viewing
+one relationship from both Objects does not create separate findings.
+_Avoid_: New relationship candidates, measured relationship validation, separate directional records
 
 **Target Registration**:
 The governed establishment of Silver or Gold Object and Attribute metadata for
@@ -166,6 +265,15 @@ A local, non-persisted hypothesis about possible physical relationships derived
 from Snapshot metadata, profiles, Assertions, and existing Analysis Results. It
 does not claim referential-integrity validation or create an Analysis Result.
 _Avoid_: Analysis Result, validated relationship
+
+**Analysis Result**:
+A Model-owned finding about a relationship between real physical Attributes,
+identified by complete natural keys and described by its kind, confidence, and
+supporting explanation. Separately measured validation evidence can support or
+challenge the finding; inference alone does not prove the relationship.
+Locked and unlocked findings can both provide context for later inference;
+generation cannot override a locked finding.
+_Avoid_: Grain note, normalization note, proven foreign key
 
 **Conceptual Model**:
 A compact business view of the important concepts in scope and their business
@@ -252,8 +360,9 @@ _Avoid_: Only GDS workflow, web replacement
 
 **Web Authoring Path**:
 The non-plugin GDS authoring path for users who need a guided web experience. It
-executes independent durable Workflow Runs using its configured Foundry or
-Databricks models and persists accepted results through governed Change Sets.
+executes independent durable Workflow Runs through OpenAI Agents SDK using
+Microsoft Foundry deployments and persists accepted results through governed
+Change Sets.
 _Avoid_: Simplified workflow, secondary workflow logic
 
 **Authoring Parity**:
@@ -487,3 +596,20 @@ generated from effective Model Sections. An MCP client chooses where to save
 the downloaded bundle; an authorized DBML Workflow Run may publish it only
 beneath the deployment-owned Databricks Volume root.
 _Avoid_: Database dump, server-local export, arbitrary path write
+
+
+Adding a Mapping source System may leave existing Code without that System.
+That Code remains stored and becomes stale through its input digest. Mapping and
+other upstream workflows do not author Code assignments. Whenever Code or its
+source assignments are staged, each mapped System must have exactly one active
+artifact assignment. Duplicate assignments and dangling references are always
+invalid, including on unchanged Code.
+
+Human result lifecycle updates use owned record IDs and change only lock/status
+fields. Preview lists the complete dependent changes; Apply confirms that exact
+plan under Model revision, Tenant Lock and idempotency fences. Status changes
+never implicitly unlock dependencies or invent bindings, transformations, SQL or
+System assignments. Retiring Code retires the target's applied Code bundle;
+reactivation must restore complete System coverage. Lock/unlock may preserve
+stale Code without reauthoring it. Inactive history remains readable even when
+its former Mapping or Binding is no longer eligible for a new workflow run.

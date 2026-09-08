@@ -12,7 +12,6 @@ from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata import ObjectAttribute
 from gds_workbench_api.features.model_input_scope import (
@@ -24,6 +23,7 @@ from gds_workbench_api.features.model_input_scope import (
     ModelInputScopePage,
     ModelInputScopeService,
 )
+from gds_workbench_api.features.model_input_scope.contracts import ScopeSearchOptions
 from gds_workbench_api.main import create_app
 
 
@@ -39,6 +39,11 @@ DEMO_METADATA_SEED = (
 
 
 class StaticModelInputScopeService(ModelInputScopeService):
+    async def search_options(
+        self, principal: RequestPrincipal, *, tenant_id: int, model_id: int
+    ) -> ScopeSearchOptions:
+        return ScopeSearchOptions(model_revision=4, locations=())
+
     async def list_candidates(
         self,
         principal: RequestPrincipal,
@@ -51,6 +56,7 @@ class StaticModelInputScopeService(ModelInputScopeService):
         object_name: str | None,
         page_size: int,
         cursor: str | None,
+        placement_tenant_id: int | None = None,
     ) -> ModelInputScopeCandidatePage:
         assert principal.actor_kind is ActorKind.HUMAN
         assert (
@@ -175,10 +181,13 @@ class StaticModelInputScopeService(ModelInputScopeService):
             attributes=(
                 ObjectAttribute(
                     attribute_id=601,
+                    review_revision="b" * 64,
                     attribute_name="customer_id",
                     attribute_ordinal_position=1,
                     attribute_description="Customer identifier",
                     attribute_data_type="bigint",
+                    attribute_inferred_data_type=None,
+                    is_locked=False,
                     attribute_nullability=False,
                     is_surrogate_key=False,
                     is_natural_key=True,
@@ -192,9 +201,7 @@ class StaticModelInputScopeService(ModelInputScopeService):
         )
 
 
-def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> (
-    None
-):
+def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> None:
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -260,9 +267,7 @@ def test_model_input_scope_candidates_are_exact_filtered_and_read_only() -> None
     assert "model_input_scope_id" not in payload["items"][0]
 
 
-def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> (
-    None
-):
+def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> None:
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -344,10 +349,13 @@ class ScopeTransaction:
             return [
                 {
                     "attribute_id": 601,
+                    "review_revision": "b" * 64,
                     "attribute_name": "customer_id",
                     "attribute_ordinal_position": 1,
                     "attribute_description": "Customer identifier",
                     "attribute_data_type": "bigint",
+                    "attribute_inferred_data_type": None,
+                    "is_locked": False,
                     "attribute_nullability": False,
                     "is_surrogate_key": False,
                     "is_natural_key": True,
@@ -620,9 +628,7 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -816,9 +822,7 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
     finally:
         await database.close()
 
-    candidate_keys = {
-        (item.object_schema, item.object_name) for item in candidates.items
-    }
+    candidate_keys = {(item.object_schema, item.object_name) for item in candidates.items}
     assert ("source_demo", "customer") in candidate_keys
     assert ("bronze_demo", "customer") in candidate_keys
     assert ("silver_demo", "customer") not in candidate_keys

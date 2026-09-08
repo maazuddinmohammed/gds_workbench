@@ -79,6 +79,7 @@ class ConnectionRecord(MetadataRecord):
     system_code: Code100
     connection_code: Code100
     connection_name: Name200
+    connection_description: str | None = None
     connection_type_code: Code100
     has_foreign_catalog: bool
     foreign_catalog: OptionalText255
@@ -173,6 +174,7 @@ class AttributeRecord(MetadataRecord):
         str,
         StringConstraints(min_length=1, max_length=100),
     ]
+    attribute_inferred_data_type: Code100 | None
     attribute_nullability: bool
     attribute_custom_code: str | None
     is_surrogate_key: bool
@@ -181,6 +183,7 @@ class AttributeRecord(MetadataRecord):
     is_masking_required: bool
     is_mapped: bool
     is_purge: bool
+    is_locked: bool
     is_active: bool
 
 

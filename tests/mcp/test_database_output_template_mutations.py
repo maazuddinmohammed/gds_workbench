@@ -479,10 +479,7 @@ def test_update_output_template_changes_only_metadata_with_an_optimistic_fence(
     assert updated["is_active"] is False
     assert updated["created_by_principal_id"] == creator.principal_id
     assert updated["updated_by_principal_id"] == updater.principal_id
-    assert (
-        updated["output_template_schema_digest"]
-        == created["output_template_schema_digest"]
-    )
+    assert updated["output_template_schema_digest"] == created["output_template_schema_digest"]
     assert updated["updated_time"] > created["updated_time"]
     assert fields_after_update == [
         {

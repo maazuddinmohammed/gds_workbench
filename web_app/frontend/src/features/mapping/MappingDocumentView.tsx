@@ -11,55 +11,50 @@ export function MappingDocumentView({
     <section className="detail-section mapping-document-section" aria-label={title}>
       <header>
         <h2>{title}</h2>
-        <span>{document === null ? "Not authored" : `${Object.keys(document).length} sections`}</span>
+        {document === null ? <span>Not authored</span> : null}
       </header>
       {document === null ? (
         <p className="detail-empty">No {title.toLocaleLowerCase()} is stored.</p>
       ) : (
-        <DocumentValue value={document} path={title} />
+        <>
+          <DocumentValue value={document} path={title} />
+          <details className="support-record-details"><summary>Original document</summary><pre className="mapping-original-document" tabIndex={0}><code>{JSON.stringify(document, null, 2)}</code></pre></details>
+        </>
       )}
     </section>
   );
 }
 
 function DocumentValue({ value, path }: { value: JsonValue; path: string }) {
-  if (value === null) return <span className="json-null">Not specified</span>;
+  if (value === null) return <span className="mapping-json-scalar"><span>Not set</span></span>;
   if (Array.isArray(value)) {
-    if (value.length === 0) return <span className="json-null">No entries</span>;
-    const records = value.some((entry) => typeof entry === "object" && entry !== null);
-    return records ? (
-      <div className="mapping-document-list">
+    if (value.length === 0) return <span className="mapping-json-scalar"><span>No items</span></span>;
+    return (
+      <ol className="mapping-value-list" aria-label={path}>
         {value.map((entry, index) => (
-          <article key={`${path}-${index}`} aria-label={`${humanize(lastSegment(path))} ${index + 1}`}>
-            <small>Record {index + 1}</small>
-            <DocumentValue value={entry} path={`${path}.${index}`} />
-          </article>
+          <li key={index}><DocumentValue value={entry} path={`${path}[${index}]`} /></li>
         ))}
-      </div>
-    ) : (
-      <ul className="mapping-value-list">
-        {value.map((entry, index) => <li key={`${path}-${index}`}><DocumentValue value={entry} path={`${path}.${index}`} /></li>)}
-      </ul>
+      </ol>
     );
   }
   if (typeof value === "object") {
+    if (Object.keys(value).length === 0) return <span className="mapping-json-scalar"><span>No fields</span></span>;
     return (
       <dl className="normalized-json mapping-normalized-document">
         {Object.entries(value).map(([key, entry]) => (
-          <div key={`${path}.${key}`}>
-            <dt>{humanize(key)}</dt>
-            <dd><DocumentValue value={entry} path={`${path}.${key}`} /></dd>
+          <div key={key} className={entry !== null && typeof entry === "object" ? "mapping-document-branch" : undefined}>
+            <dt title={key}>{humanize(key) || "Unnamed field"}</dt>
+            <dd><DocumentValue value={entry} path={`${path}[${JSON.stringify(key)}]`} /></dd>
           </div>
         ))}
       </dl>
     );
   }
-  if (typeof value === "boolean") return <span>{value ? "Yes" : "No"}</span>;
-  return <span>{String(value)}</span>;
-}
-
-function lastSegment(path: string): string {
-  return path.split(".").at(-1) ?? "record";
+  return (
+    <span className="mapping-json-scalar">
+      <span>{value === "" ? '\"\"' : String(value)}</span>
+    </span>
+  );
 }
 
 function humanize(value: string): string {

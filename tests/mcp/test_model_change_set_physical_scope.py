@@ -123,9 +123,7 @@ class PhysicalScopeTransaction:
 
 
 @pytest.mark.asyncio
-async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags() -> (
-    None
-):
+async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags() -> None:
     transaction = PhysicalScopeTransaction()
     model = ModelReadContext(
         model_id=77,
@@ -144,15 +142,10 @@ async def test_load_physical_scope_uses_placement_keys_and_new_eligibility_flags
     assert scope.dimensional_source_objects == frozenset({silver})
     assert scope.logical_mapping_target_objects == frozenset({silver})
     assert scope.dimensional_mapping_target_objects == frozenset({gold})
-    assert scope.model_input_attributes == frozenset(
-        {(*source, "order_id"), (*silver, "orderid")}
-    )
+    assert scope.model_input_attributes == frozenset({(*source, "order_id"), (*silver, "orderid")})
     assert scope.other_model_names == frozenset({"existingmodel"})
     assert scope.active_system_codes == frozenset({"erp", "crm"})
-    assert all(
-        "list_code_generation_target_context" not in query
-        for query, _ in transaction.calls
-    )
+    assert all("list_code_generation_target_context" not in query for query, _ in transaction.calls)
 
 
 @pytest.mark.asyncio

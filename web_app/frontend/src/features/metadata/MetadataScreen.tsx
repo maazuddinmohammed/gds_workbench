@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { Link } from "@tanstack/react-router";
 
 import { ApiError } from "../../core/http";
 import type { TenantLockState } from "../tenant_locks/api";
@@ -274,6 +275,7 @@ export function MetadataScreen({
           <p>Normalized server records, operational workbook exchange, and reviewed Tenant changes.</p>
         </div>
         <div>
+          <Link className="button button-secondary button-small" to="/tenants/$tenantId/metadata/objects" params={{ tenantId: String(tenantId) }}>Objects and Attributes</Link>
           <button
             className="button button-secondary button-small"
             type="button"

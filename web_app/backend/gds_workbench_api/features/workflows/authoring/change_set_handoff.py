@@ -44,6 +44,7 @@ from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowTerminalResult,
     append_agent_workflow_event,
     complete_agent_workflow_run,
+    fail_agent_workflow_run,
 )
 from gds_workbench_api.features.workflows.authoring.plan import ModelWorkflow
 from gds_workbench_api.features.workflows.execution.fence import (
@@ -217,7 +218,84 @@ class WorkflowChangeSetHandoff:
                 completion=completion,
             )
 
-    async def _handoff_in_transaction(
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> AgentWorkflowTerminalResult:
+        """Retain a canonical rejected draft and fail its Run in one transaction."""
+        if not issues:
+            raise InvalidRequestError("Failed draft retention requires validation findings.")
+        staged, staged_record_count = self._validate_changes(
+            expected_workflow=expected_workflow,
+            changes=changes,
+        )
+        async with self._database.write_transaction() as transaction:
+            await assert_workflow_run_claim(
+                transaction,
+                workflow_run_id=workflow_run_id,
+                workflow_run_claim_token=workflow_run_claim_token,
+            )
+            current, model, _replayed = await self._stage_in_transaction(
+                transaction,
+                principal,
+                tenant_id=tenant_id,
+                model_id=model_id,
+                workflow_run_id=workflow_run_id,
+                expected_workflow=expected_workflow,
+                expected_model_revision=expected_model_revision,
+                staged=staged,
+                staged_record_count=staged_record_count,
+            )
+            if current["model_change_set_status"] != "active":
+                raise InvalidRequestError("Only an active rejected draft can be retained.")
+            if model.model_revision != expected_model_revision:
+                raise ModelRevisionConflictError()
+            validation = await self._validator(transaction, model, current)
+            if validation.valid:
+                raise InvalidRequestError("The candidate no longer fails authoritative validation.")
+            repository = PostgresModelChangeSetRepository(transaction)
+            change_set_id = current["model_change_set_id"]
+            retained = await repository.record_validation(
+                change_set_id=change_set_id,
+                status="active",
+                candidate_digest=None,
+                outcome=model_validation_outcome(validation),
+                valid=False,
+            )
+            if retained is None:
+                raise DependencyUnavailableError()
+            await repository.insert_event(
+                change_set_id=change_set_id,
+                model_id=model_id,
+                event_type="validation_failed",
+                draft_revision=retained["draft_revision"],
+                section=None,
+                action_count=staged_record_count,
+                outcome="invalid",
+                metadata={"phase": validation.phase, "error_count": len(validation.issues)},
+                correlation_id=current["correlation_id"],
+            )
+            return await fail_agent_workflow_run(
+                transaction,
+                principal,
+                workflow_run_id=workflow_run_id,
+                expected_model_revision=expected_model_revision,
+                failure_code=failure_code,
+                safe_failure_message=safe_failure_message,
+            )
+
+    async def _stage_in_transaction(
         self,
         transaction: WriteTransaction,
         principal: RequestPrincipal,
@@ -229,7 +307,7 @@ class WorkflowChangeSetHandoff:
         expected_model_revision: int,
         staged: dict[str, list[dict[str, object]]],
         staged_record_count: int,
-    ) -> WorkflowChangeSetHandoffResult:
+    ) -> tuple[Mapping[str, Any], ModelReadContext, bool]:
         repository = PostgresModelChangeSetRepository(transaction)
         model_row = await repository.get_model_for_update(
             tenant_id=tenant_id,
@@ -271,6 +349,13 @@ class WorkflowChangeSetHandoff:
         if not isinstance(correlation_id, UUID):
             raise DependencyUnavailableError()
 
+        model = ModelReadContext(
+            model_id=model_row["model_id"],
+            tenant_id=model_row["tenant_id"],
+            model_name=model_row["model_name"],
+            model_revision=model_row["model_revision"],
+        )
+
         existing = await repository.get_by_workflow_run(
             workflow_run_id=workflow_run_id,
             model_id=model_id,
@@ -295,12 +380,7 @@ class WorkflowChangeSetHandoff:
                 raise InvalidRequestError(
                     "Workflow Run output cannot be replayed from its current state."
                 )
-            return self._result(
-                existing,
-                model_id=model_id,
-                workflow_run_id=workflow_run_id,
-                replayed=True,
-            )
+            return existing, model, True
 
         if run["workflow_run_state"] != "running":
             raise InvalidRequestError(
@@ -364,12 +444,39 @@ class WorkflowChangeSetHandoff:
         )
         if current is None:
             raise DependencyUnavailableError()
-        model = ModelReadContext(
-            model_id=model_row["model_id"],
-            tenant_id=model_row["tenant_id"],
-            model_name=model_row["model_name"],
-            model_revision=model_row["model_revision"],
+        return current, model, False
+
+    async def _handoff_in_transaction(
+        self,
+        transaction: WriteTransaction,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        staged: dict[str, list[dict[str, object]]],
+        staged_record_count: int,
+    ) -> WorkflowChangeSetHandoffResult:
+        current, model, replayed = await self._stage_in_transaction(
+            transaction,
+            principal,
+            tenant_id=tenant_id,
+            model_id=model_id,
+            workflow_run_id=workflow_run_id,
+            expected_workflow=expected_workflow,
+            expected_model_revision=expected_model_revision,
+            staged=staged,
+            staged_record_count=staged_record_count,
         )
+        if replayed:
+            return self._result(
+                current, model_id=model_id, workflow_run_id=workflow_run_id, replayed=True
+            )
+        repository = PostgresModelChangeSetRepository(transaction)
+        change_set_id = current["model_change_set_id"]
+        correlation_id = current["correlation_id"]
         validation = await self._validator(transaction, model, current)
         if not validation.valid:
             raise WorkflowChangeSetValidationError(validation.issues)

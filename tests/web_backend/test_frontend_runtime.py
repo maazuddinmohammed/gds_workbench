@@ -2,7 +2,6 @@ from pathlib import Path
 
 from fastapi import FastAPI, Request
 from fastapi.testclient import TestClient
-
 from gds_workbench_api.frontend import (
     RequestBodyLimitMiddleware,
     SecurityHeadersMiddleware,

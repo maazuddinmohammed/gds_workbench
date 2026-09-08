@@ -6,16 +6,16 @@ Locks, revision fencing, Change Set validation, idempotency, and audit truth.
 
 ## Public MCP surface
 
-The server registers 35 focused tools:
+The server registers 37 focused tools:
 
 - Tenant and Model navigation: `list_tenants`, `get_tenant_details`,
   `list_models`, `get_model_input_scope`.
 - Tenant Locks: `check_tenant_lock`, `acquire_tenant_lock`,
   `renew_tenant_lock`, `release_tenant_lock`, `override_tenant_lock`.
-- Metadata Change Sets: create, stage, inspect, validate, apply, archive, plus
-  their bounded Stage Batch transport.
-- Model Change Sets: create, stage, inspect, validate, apply, archive, plus
-  their bounded Stage Batch transport.
+- Metadata Change Sets: create, stage, inspect, fingerprint, validate, apply,
+  archive, plus their bounded Stage Batch transport.
+- Model Change Sets: create, stage, inspect, fingerprint, validate, apply,
+  archive, plus their bounded Stage Batch transport.
 - Focused reads: `inspect_metadata`, `read_model_section`.
 - Snapshots and contracts: `describe_metadata_dataset`,
   `create_metadata_snapshot`, `describe_model_dataset`, `create_model_snapshot`,

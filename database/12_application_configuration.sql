@@ -443,14 +443,19 @@ CREATE TABLE application.workflow_stage (
     CONSTRAINT ck_workflow_stage_workflow CHECK (
         model_workflow IN (
             'profiling', 'analysis', 'conceptual', 'logical',
-            'dimensional', 'mapping', 'code_generation', 'validation'
+            'dimensional', 'mapping', 'code_generation', 'validation',
+            'metadata_enrichment', 'metadata_enrichment_object', 'metadata_enrichment_attribute'
         )
     ),
     CONSTRAINT ck_workflow_stage_execution_mode CHECK (
         workflow_execution_mode IS NULL
         OR workflow_execution_mode IN (
-            'one_shot', 'tool_assisted', 'detailed_coverage'
+            'one_shot', 'tool_assisted'
         )
+    ),
+    CONSTRAINT ck_workflow_stage_metadata_enrichment_mode CHECK (
+        model_workflow NOT IN ('metadata_enrichment', 'metadata_enrichment_object', 'metadata_enrichment_attribute')
+        OR workflow_execution_mode IS NOT DISTINCT FROM 'one_shot'
     ),
     CONSTRAINT ck_workflow_stage_code CHECK (
         workflow_stage_code ~ '^[a-z][a-z0-9_]{0,99}$'
@@ -668,6 +673,7 @@ CREATE TABLE application.prompt_template_version (
     system_prompt_template TEXT NOT NULL,
     instruction_prompt_template TEXT NOT NULL,
     tool_instruction_prompt_template TEXT,
+    agent_tool_names TEXT[],
     prompt_template_digest CHAR(64) NOT NULL,
     prompt_template_version_status VARCHAR(20) NOT NULL DEFAULT 'draft',
     created_by_principal_id BIGINT NOT NULL,
@@ -775,21 +781,52 @@ SET search_path = pg_catalog
 AS $guard_prompt_template_version$
 DECLARE
     v_expected_digest CHAR(64);
+    v_mode VARCHAR(30);
+    v_workflow VARCHAR(30);
+    v_allowed_tools TEXT[];
 BEGIN
     IF TG_OP = 'DELETE' THEN
         RAISE EXCEPTION 'prompt versions cannot be deleted';
     END IF;
 
+    IF NEW.agent_tool_names IS NOT NULL THEN
+        SELECT workflow_execution_mode, model_workflow INTO v_mode, v_workflow
+          FROM application.workflow_stage WHERE workflow_stage_id = NEW.workflow_stage_id;
+        v_allowed_tools := CASE v_workflow
+            WHEN 'analysis' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions']
+            WHEN 'conceptual' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships']
+            WHEN 'logical' THEN ARRAY['get_source_context', 'get_gds_context', 'get_objects', 'get_object_details', 'get_object_relationships', 'get_modeling_assertions', 'list_conceptual_objects', 'get_conceptual_objects', 'list_conceptual_relationships', 'get_conceptual_relationships', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships']
+            WHEN 'dimensional' THEN ARRAY['get_gds_context', 'get_objects', 'get_object_details', 'get_modeling_assertions', 'get_logical_bindings', 'list_logical_submodels', 'get_logical_submodels', 'list_logical_entities', 'get_logical_entities', 'list_logical_attributes', 'get_logical_attributes', 'list_logical_relationships', 'get_logical_relationships', 'list_dimensional_submodels', 'get_dimensional_submodels', 'list_dimensional_entities', 'get_dimensional_entities', 'list_dimensional_attributes', 'get_dimensional_attributes', 'list_dimensional_relationships', 'get_dimensional_relationships']
+            WHEN 'mapping' THEN ARRAY['get_mapping_target', 'get_mapping_sources', 'get_existing_mapping']
+            WHEN 'code_generation' THEN ARRAY['get_code_target', 'get_code_sources', 'get_code_source_systems', 'get_object_transformations', 'get_attribute_transformations']
+            WHEN 'validation' THEN ARRAY['get_mapping_evidence', 'get_current_code', 'get_applied_groups', 'get_applied_checks']
+            ELSE ARRAY[]::TEXT[]
+        END;
+        IF (v_mode IS DISTINCT FROM 'tool_assisted' AND v_workflow NOT IN ('code_generation', 'validation'))
+           OR cardinality(NEW.agent_tool_names) > 100
+           OR (cardinality(NEW.agent_tool_names) > 0 AND (
+               array_ndims(NEW.agent_tool_names) IS DISTINCT FROM 1
+               OR array_lower(NEW.agent_tool_names, 1) IS DISTINCT FROM 1))
+           OR array_position(NEW.agent_tool_names, NULL) IS NOT NULL
+           OR NOT (NEW.agent_tool_names <@ v_allowed_tools)
+           OR cardinality(NEW.agent_tool_names) <> (
+               SELECT count(DISTINCT name) FROM unnest(NEW.agent_tool_names) AS name
+           ) THEN
+            RAISE EXCEPTION 'Prompt tool selection is invalid for this stage';
+        END IF;
+    END IF;
+
     v_expected_digest := encode(
         sha256(
             convert_to(
-                jsonb_build_object(
+                (jsonb_build_object(
                     'system_prompt_template', NEW.system_prompt_template,
                     'instruction_prompt_template',
                         NEW.instruction_prompt_template,
                     'tool_instruction_prompt_template',
                         NEW.tool_instruction_prompt_template
-                )::TEXT,
+                ) || CASE WHEN NEW.agent_tool_names IS NULL THEN '{}'::JSONB
+                    ELSE jsonb_build_object('agent_tool_names', NEW.agent_tool_names) END)::TEXT,
                 'UTF8'
             )
         ),
@@ -835,6 +872,7 @@ BEGIN
                NEW.system_prompt_template,
                NEW.instruction_prompt_template,
                NEW.tool_instruction_prompt_template,
+               NEW.agent_tool_names,
                NEW.prompt_template_digest,
                NEW.published_time,
                NEW.published_by_principal_id
@@ -842,6 +880,7 @@ BEGIN
                OLD.system_prompt_template,
                OLD.instruction_prompt_template,
                OLD.tool_instruction_prompt_template,
+               OLD.agent_tool_names,
                OLD.prompt_template_digest,
                OLD.published_time,
                OLD.published_by_principal_id
@@ -1308,7 +1347,8 @@ CREATE FUNCTION application.save_prompt_template_draft(
     p_system_prompt_template TEXT,
     p_instruction_prompt_template TEXT,
     p_tool_instruction_prompt_template TEXT,
-    p_expected_updated_time TIMESTAMPTZ
+    p_expected_updated_time TIMESTAMPTZ,
+    p_agent_tool_names TEXT[] DEFAULT NULL
 )
 RETURNS SETOF application.prompt_template_version
 LANGUAGE plpgsql
@@ -1397,12 +1437,13 @@ BEGIN
     v_digest := encode(
         sha256(
             convert_to(
-                jsonb_build_object(
+                (jsonb_build_object(
                     'system_prompt_template', p_system_prompt_template,
                     'instruction_prompt_template', p_instruction_prompt_template,
                     'tool_instruction_prompt_template',
                         p_tool_instruction_prompt_template
-                )::TEXT,
+                ) || CASE WHEN p_agent_tool_names IS NULL THEN '{}'::JSONB
+                    ELSE jsonb_build_object('agent_tool_names', p_agent_tool_names) END)::TEXT,
                 'UTF8'
             )
         ),
@@ -1434,6 +1475,7 @@ BEGIN
                instruction_prompt_template = p_instruction_prompt_template,
                tool_instruction_prompt_template =
                    p_tool_instruction_prompt_template,
+               agent_tool_names = p_agent_tool_names,
                prompt_template_digest = v_digest,
                updated_by_principal_id = v_actor.principal_id,
                updated_time = v_updated_time,
@@ -1461,6 +1503,7 @@ BEGIN
         system_prompt_template,
         instruction_prompt_template,
         tool_instruction_prompt_template,
+        agent_tool_names,
         prompt_template_digest,
         created_by_principal_id,
         updated_by_principal_id
@@ -1471,6 +1514,7 @@ BEGIN
         p_system_prompt_template,
         p_instruction_prompt_template,
         p_tool_instruction_prompt_template,
+        p_agent_tool_names,
         v_digest,
         v_actor.principal_id,
         v_actor.principal_id
@@ -1490,7 +1534,7 @@ REVOKE ALL ON FUNCTION application.save_prompt_template_draft(
     TEXT,
     TEXT,
     TEXT,
-    TIMESTAMPTZ
+    TIMESTAMPTZ, TEXT[]
 ) FROM PUBLIC;
 
 CREATE FUNCTION application.transition_prompt_template_version(

@@ -170,6 +170,7 @@ def project_id_free_rows(
             {
                 **connection_key(row["connection_id"]),
                 "connection_name": row["connection_name"],
+                "connection_description": row.get("connection_description"),
                 "connection_type_code": reference_value(
                     "connection_type",
                     row["connection_type_id"],

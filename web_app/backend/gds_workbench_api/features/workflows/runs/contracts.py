@@ -8,6 +8,8 @@ from uuid import UUID
 from gds_etl_workbench.domain.errors import WorkbenchError
 from pydantic import BaseModel, ConfigDict, Field
 
+from gds_workbench_api.features.workflows.usage.read_service import WorkflowTokenUsageSummary
+
 type ModelWorkflow = Literal[
     "profiling",
     "analysis",
@@ -17,8 +19,9 @@ type ModelWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
 ]
-type ExecutionMode = Literal["one_shot", "tool_assisted", "detailed_coverage"]
+type ExecutionMode = Literal["one_shot", "tool_assisted"]
 type ModeledEntityType = Literal["logical_entity", "dimensional_entity"]
 type RunState = Literal[
     "queued",
@@ -63,6 +66,7 @@ class WorkflowRunLedgerRecord(BaseModel):
 
 class WorkflowRunDetail(WorkflowRunLedgerRecord):
     correlation_id: UUID
+    token_usage: WorkflowTokenUsageSummary = Field(default_factory=WorkflowTokenUsageSummary)
     agent_sdk_code: str | None = Field(default=None, max_length=100)
     agent_provider_code: str | None = Field(default=None, max_length=100)
     agent_model_code: str | None = Field(default=None, max_length=200)

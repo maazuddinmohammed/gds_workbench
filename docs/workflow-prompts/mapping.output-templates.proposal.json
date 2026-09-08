@@ -1,0 +1,252 @@
+{
+  "status": "implemented_seeded_defaults",
+  "purpose": "Simple global Mapping output-template defaults, shared by logical_to_silver and dimensional_to_gold. Examples are synthetic.",
+  "rules": [
+    "The existing Mapping response envelope retains target identity, modeled_attribute_name and object_dependency_order. These templates describe only the inner transformation documents.",
+    "Object fields are source_objects and steps. Both keys are present and either value may be JSON null. There is no grain field.",
+    "source_objects is a nullable list. Each entry is ordered tenant_code, system_code, connection_code, object_schema, object_name, alias. Use complete actual physical natural keys from eligible frozen evidence; no database IDs.",
+    "Aliases are unique SQL shorthand within the Object document. The same physical Object may appear under different aliases for an evidenced self-join.",
+    "steps is a nullable ordered list of strings. It carries all Object transformation instructions: which Objects/tables to join, join types and exact column predicates, filters, grouping, deduplication, and additional processing when needed. Array order is execution order.",
+    "Attribute fields are source_attributes and transformation. source_attributes is optional and may be omitted or JSON null. When supplied, it is a list of complete physical Attribute natural keys ordered tenant_code, system_code, connection_code, object_schema, object_name, attribute_name. It has no alias field.",
+    "transformation is required text containing the Attribute SQL expression or precise implementable generation rule, including needed cast/null/default/aggregation behavior. Use available Object aliases; put any self-join role distinction in transformation. There is no separate description field.",
+    "The document_schema values below record the confirmed shapes and nullability. The existing output-template registry records field presence with is_required and explains nullability in descriptions; it has no separate nullable column. Runtime templates remain advisory.",
+    "These approved definitions are the seeded global defaults for new Logical and Dimensional Mapping runs. Explicit custom template selections take precedence; existing saved mappings and frozen runs retain their original templates."
+  ],
+  "templates": [
+    {
+      "output_template_code": "mapping_object_default",
+      "output_template_name": "Default Object Mapping",
+      "output_template_description": "Describe source Objects and ordered Object transformation steps; both values may be null.",
+      "output_template_target_type": "mapping_object",
+      "fields": [
+        {
+          "output_template_field_name": "source_objects",
+          "output_template_field_description": "Nullable list of source Objects. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, alias, in that order. The field is present and may be JSON null.",
+          "output_template_field_data_type": "array",
+          "output_template_field_array_item_type": "object",
+          "output_template_field_is_required": true,
+          "output_template_field_order": 1,
+          "output_template_field_example": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "GDS",
+              "connection_code": "lakehouse",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "alias": "c"
+            }
+          ]
+        },
+        {
+          "output_template_field_name": "steps",
+          "output_template_field_description": "Nullable ordered list of Object transformation instructions: Objects/tables to join, join types and column predicates, filters and any additional processing. The field is present and may be JSON null.",
+          "output_template_field_data_type": "array",
+          "output_template_field_array_item_type": "string",
+          "output_template_field_is_required": true,
+          "output_template_field_order": 2,
+          "output_template_field_example": [
+            "Read customer rows from c.",
+            "Keep rows where c.is_active = true."
+          ]
+        }
+      ],
+      "example": {
+        "source_objects": [
+          {
+            "tenant_code": "NWA",
+            "system_code": "GDS",
+            "connection_code": "lakehouse",
+            "object_schema": "bronze_crm",
+            "object_name": "customer",
+            "alias": "c"
+          }
+        ],
+        "steps": [
+          "Read customer rows from c.",
+          "Keep rows where c.is_active = true."
+        ]
+      },
+      "document_schema": {
+        "type": "object",
+        "properties": {
+          "source_objects": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "tenant_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "system_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "connection_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_schema": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "alias": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+                "alias"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "steps": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          }
+        },
+        "required": [
+          "source_objects",
+          "steps"
+        ],
+        "additionalProperties": false
+      },
+      "nullable_example": {
+        "source_objects": null,
+        "steps": null
+      }
+    },
+    {
+      "output_template_code": "mapping_attribute_default",
+      "output_template_name": "Default Attribute Mapping",
+      "output_template_description": "Describe optional source Attributes and the target Attribute transformation.",
+      "output_template_target_type": "mapping_attribute",
+      "fields": [
+        {
+          "output_template_field_name": "source_attributes",
+          "output_template_field_description": "Optional nullable list of source Attributes. Each entry has tenant_code, system_code, connection_code, object_schema, object_name, attribute_name, in that order. Omission or JSON null is permitted.",
+          "output_template_field_data_type": "array",
+          "output_template_field_array_item_type": "object",
+          "output_template_field_is_required": false,
+          "output_template_field_order": 1,
+          "output_template_field_example": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "GDS",
+              "connection_code": "lakehouse",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "attribute_name": "customer_name"
+            }
+          ]
+        },
+        {
+          "output_template_field_name": "transformation",
+          "output_template_field_description": "Required SQL expression using available Object aliases, or precise implementable generation rule. Include any necessary cast, null/default, aggregation or self-join source-role behavior.",
+          "output_template_field_data_type": "string",
+          "output_template_field_array_item_type": null,
+          "output_template_field_is_required": true,
+          "output_template_field_order": 2,
+          "output_template_field_example": "TRIM(c.customer_name)"
+        }
+      ],
+      "example": {
+        "source_attributes": [
+          {
+            "tenant_code": "NWA",
+            "system_code": "GDS",
+            "connection_code": "lakehouse",
+            "object_schema": "bronze_crm",
+            "object_name": "customer",
+            "attribute_name": "customer_name"
+          }
+        ],
+        "transformation": "TRIM(c.customer_name)"
+      },
+      "document_schema": {
+        "type": "object",
+        "properties": {
+          "source_attributes": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "type": "object",
+              "properties": {
+                "tenant_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "system_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "connection_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_schema": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_name": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "attribute_name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+                "attribute_name"
+              ],
+              "additionalProperties": false
+            }
+          },
+          "transformation": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "transformation"
+        ],
+        "additionalProperties": false
+      },
+      "nullable_example": {
+        "source_attributes": null,
+        "transformation": "Use the configured warehouse-generated identity policy."
+      },
+      "omitted_sources_example": {
+        "transformation": "Use the configured warehouse-generated identity policy."
+      }
+    }
+  ],
+  "confirmed_on": "2026-09-08"
+}

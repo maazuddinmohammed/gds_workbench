@@ -1,0 +1,813 @@
+{
+  "workflow": "code_generation",
+  "stage": "sql_generation",
+  "modes": [
+    "tool_assisted"
+  ],
+  "status": "authorized_for_implementation",
+  "variables": {
+    "target_metadata": {
+      "description": "Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks.",
+      "value_schema": {
+        "$defs": {
+          "SqlPhysicalAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Attribute Name",
+                "type": "string"
+              },
+              "attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Attribute Data Type",
+                "type": "string"
+              },
+              "attribute_inferred_data_type": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Attribute Inferred Data Type"
+              },
+              "attribute_nullability": {
+                "title": "Attribute Nullability",
+                "type": "boolean"
+              },
+              "attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "attribute_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Attribute Description"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_data_type",
+              "attribute_inferred_data_type",
+              "attribute_nullability",
+              "attribute_ordinal_position",
+              "is_active",
+              "is_locked"
+            ],
+            "title": "SqlPhysicalAttribute",
+            "type": "object"
+          }
+        },
+        "additionalProperties": false,
+        "properties": {
+          "tenant_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Tenant Code",
+            "type": "string"
+          },
+          "tenant_catalog": {
+            "maxLength": 255,
+            "minLength": 1,
+            "title": "Tenant Catalog",
+            "type": "string"
+          },
+          "system_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "System Code",
+            "type": "string"
+          },
+          "connection_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Connection Code",
+            "type": "string"
+          },
+          "object_schema": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Object Schema",
+            "type": "string"
+          },
+          "object_name": {
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Object Name",
+            "type": "string"
+          },
+          "object_description": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Object Description"
+          },
+          "zone_code": {
+            "enum": [
+              "source",
+              "bronze",
+              "silver",
+              "gold"
+            ],
+            "title": "Zone Code",
+            "type": "string"
+          },
+          "attributes": {
+            "items": {
+              "$ref": "#/$defs/SqlPhysicalAttribute"
+            },
+            "title": "Attributes",
+            "type": "array"
+          },
+          "source_tenant_code": {
+            "maxLength": 100,
+            "minLength": 1,
+            "title": "Source Tenant Code",
+            "type": "string"
+          },
+          "source_tenant_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Source Tenant Name",
+            "type": "string"
+          },
+          "tenant_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "Tenant Name",
+            "type": "string"
+          },
+          "system_name": {
+            "maxLength": 200,
+            "minLength": 1,
+            "title": "System Name",
+            "type": "string"
+          }
+        },
+        "required": [
+          "tenant_code",
+          "tenant_catalog",
+          "system_code",
+          "connection_code",
+          "object_schema",
+          "object_name",
+          "zone_code",
+          "attributes",
+          "source_tenant_code",
+          "source_tenant_name",
+          "tenant_name",
+          "system_name"
+        ],
+        "title": "SqlTargetMetadata",
+        "type": "object"
+      },
+      "example": {
+        "tenant_code": "NWA",
+        "tenant_catalog": "northwind",
+        "system_code": "GDS",
+        "connection_code": "lakehouse",
+        "object_schema": "silver_crm",
+        "object_name": "Customer",
+        "object_description": null,
+        "zone_code": "silver",
+        "source_tenant_code": "NWA",
+        "source_tenant_name": "Northwind",
+        "tenant_name": "Shared warehouse",
+        "system_name": "Warehouse",
+        "attributes": [
+          {
+            "attribute_data_type": "BIGINT",
+            "attribute_description": null,
+            "attribute_inferred_data_type": null,
+            "attribute_name": "CustomerID",
+            "attribute_nullability": false,
+            "attribute_ordinal_position": 1,
+            "is_active": true,
+            "is_locked": false
+          }
+        ]
+      }
+    },
+    "source_metadata": {
+      "description": "Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs.",
+      "value_schema": {
+        "$defs": {
+          "SqlPhysicalAttribute": {
+            "additionalProperties": false,
+            "properties": {
+              "attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Attribute Name",
+                "type": "string"
+              },
+              "attribute_data_type": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Attribute Data Type",
+                "type": "string"
+              },
+              "attribute_inferred_data_type": {
+                "anyOf": [
+                  {
+                    "maxLength": 100,
+                    "minLength": 1,
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Attribute Inferred Data Type"
+              },
+              "attribute_nullability": {
+                "title": "Attribute Nullability",
+                "type": "boolean"
+              },
+              "attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "attribute_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Attribute Description"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "attribute_name",
+              "attribute_data_type",
+              "attribute_inferred_data_type",
+              "attribute_nullability",
+              "attribute_ordinal_position",
+              "is_active",
+              "is_locked"
+            ],
+            "title": "SqlPhysicalAttribute",
+            "type": "object"
+          },
+          "SqlPhysicalSource": {
+            "additionalProperties": false,
+            "properties": {
+              "role": {
+                "title": "Role",
+                "type": "string"
+              },
+              "rationale": {
+                "title": "Rationale",
+                "type": "string"
+              },
+              "mapping_order": {
+                "anyOf": [
+                  {
+                    "exclusiveMinimum": 0,
+                    "type": "integer"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Mapping Order"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "object": {
+                "$ref": "#/$defs/SqlSourceObject"
+              },
+              "source_system_code": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "role",
+              "rationale",
+              "mapping_order",
+              "is_locked",
+              "object",
+              "source_system_code"
+            ],
+            "title": "SqlPhysicalSource",
+            "type": "object"
+          },
+          "SqlSourceObject": {
+            "additionalProperties": false,
+            "properties": {
+              "tenant_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Tenant Code",
+                "type": "string"
+              },
+              "tenant_catalog": {
+                "maxLength": 255,
+                "minLength": 1,
+                "title": "Tenant Catalog",
+                "type": "string"
+              },
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "System Code",
+                "type": "string"
+              },
+              "connection_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "Connection Code",
+                "type": "string"
+              },
+              "object_schema": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Object Schema",
+                "type": "string"
+              },
+              "object_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "title": "Object Name",
+                "type": "string"
+              },
+              "object_description": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "default": null,
+                "title": "Object Description"
+              },
+              "zone_code": {
+                "enum": [
+                  "source",
+                  "bronze",
+                  "silver",
+                  "gold"
+                ],
+                "title": "Zone Code",
+                "type": "string"
+              },
+              "attributes": {
+                "items": {
+                  "$ref": "#/$defs/SqlPhysicalAttribute"
+                },
+                "title": "Attributes",
+                "type": "array"
+              },
+              "is_active": {
+                "title": "Is Active",
+                "type": "boolean"
+              },
+              "is_locked": {
+                "title": "Is Locked",
+                "type": "boolean"
+              },
+              "scope_is_active": {
+                "title": "Scope Is Active",
+                "type": "boolean"
+              },
+              "scope_is_locked": {
+                "title": "Scope Is Locked",
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "tenant_code",
+              "tenant_catalog",
+              "system_code",
+              "connection_code",
+              "object_schema",
+              "object_name",
+              "zone_code",
+              "attributes",
+              "is_active",
+              "is_locked",
+              "scope_is_active",
+              "scope_is_locked"
+            ],
+            "title": "SqlSourceObject",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/SqlPhysicalSource"
+        },
+        "type": "array"
+      },
+      "example": [
+        {
+          "role": "primary",
+          "rationale": "Recorded customer source.",
+          "mapping_order": 1,
+          "is_locked": false,
+          "object": {
+            "tenant_code": "NWA",
+            "tenant_catalog": "northwind",
+            "system_code": "CRM",
+            "connection_code": "crm_bronze",
+            "object_schema": "bronze_crm",
+            "object_name": "customer",
+            "object_description": null,
+            "zone_code": "bronze",
+            "is_active": true,
+            "is_locked": false,
+            "scope_is_active": true,
+            "scope_is_locked": false,
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_description": null,
+                "attribute_inferred_data_type": null,
+                "attribute_name": "customer_id",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "is_active": true,
+                "is_locked": false
+              }
+            ]
+          },
+          "source_system_code": "CRM"
+        }
+      ]
+    },
+    "source_systems": {
+      "description": "Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts.",
+      "value_schema": {
+        "$defs": {
+          "SqlSourceSystem": {
+            "additionalProperties": false,
+            "properties": {
+              "system_code": {
+                "maxLength": 100,
+                "minLength": 1,
+                "title": "System Code",
+                "type": "string"
+              },
+              "system_name": {
+                "maxLength": 200,
+                "minLength": 1,
+                "title": "System Name",
+                "type": "string"
+              },
+              "dependency_order": {
+                "minimum": 0,
+                "title": "Dependency Order",
+                "type": "integer"
+              }
+            },
+            "required": [
+              "system_code",
+              "system_name",
+              "dependency_order"
+            ],
+            "title": "SqlSourceSystem",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/SqlSourceSystem"
+        },
+        "type": "array"
+      },
+      "example": [
+        {
+          "system_code": "CRM",
+          "system_name": "CRM",
+          "dependency_order": 10
+        }
+      ]
+    },
+    "object_transformations": {
+      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain.",
+      "value_schema": {
+        "$defs": {
+          "JsonValue": {},
+          "SqlMappedEntity": {
+            "additionalProperties": false,
+            "properties": {
+              "entity_type": {
+                "enum": [
+                  "logical_entity",
+                  "dimensional_entity"
+                ],
+                "title": "Entity Type",
+                "type": "string"
+              },
+              "entity_name": {
+                "maxLength": 255,
+                "minLength": 1,
+                "title": "Entity Name",
+                "type": "string"
+              },
+              "definition": {
+                "title": "Definition",
+                "type": "string"
+              },
+              "classification": {
+                "title": "Classification",
+                "type": "string"
+              },
+              "grain": {
+                "anyOf": [
+                  {
+                    "type": "string"
+                  },
+                  {
+                    "type": "null"
+                  }
+                ],
+                "title": "Grain"
+              }
+            },
+            "required": [
+              "entity_type",
+              "entity_name",
+              "definition",
+              "classification",
+              "grain"
+            ],
+            "title": "SqlMappedEntity",
+            "type": "object"
+          },
+          "SqlObjectTransformation": {
+            "additionalProperties": false,
+            "properties": {
+              "object_dependency_order": {
+                "minimum": 0,
+                "title": "Object Dependency Order",
+                "type": "integer"
+              },
+              "entity": {
+                "$ref": "#/$defs/SqlMappedEntity"
+              },
+              "transformation": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "title": "Transformation",
+                "type": "object"
+              },
+              "source_system_code": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "object_dependency_order",
+              "entity",
+              "transformation",
+              "source_system_code"
+            ],
+            "title": "SqlObjectTransformation",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/SqlObjectTransformation"
+        },
+        "type": "array"
+      },
+      "example": [
+        {
+          "object_dependency_order": 10,
+          "entity": {
+            "entity_type": "logical_entity",
+            "entity_name": "Customer",
+            "definition": "Customer identity.",
+            "classification": "entity",
+            "grain": null
+          },
+          "transformation": {
+            "steps": [
+              {
+                "name": "customers",
+                "source": "customer_source"
+              }
+            ]
+          },
+          "source_system_code": "CRM"
+        }
+      ]
+    },
+    "attribute_transformations": {
+      "description": "Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching.",
+      "value_schema": {
+        "$defs": {
+          "JsonValue": {},
+          "SqlAttributeTransformation": {
+            "additionalProperties": false,
+            "properties": {
+              "target_attribute_name": {
+                "maxLength": 400,
+                "minLength": 1,
+                "pattern": "\\S",
+                "title": "Target Attribute Name",
+                "type": "string"
+              },
+              "target_attribute_ordinal_position": {
+                "exclusiveMinimum": 0,
+                "title": "Target Attribute Ordinal Position",
+                "type": "integer"
+              },
+              "transformation": {
+                "additionalProperties": {
+                  "$ref": "#/$defs/JsonValue"
+                },
+                "title": "Transformation",
+                "type": "object"
+              },
+              "source_system_code": {
+                "type": "string",
+                "minLength": 1
+              },
+              "modeled_entity_type": {
+                "enum": [
+                  "logical_entity",
+                  "dimensional_entity"
+                ]
+              },
+              "modeled_entity_name": {
+                "type": "string",
+                "minLength": 1
+              }
+            },
+            "required": [
+              "target_attribute_name",
+              "target_attribute_ordinal_position",
+              "transformation",
+              "source_system_code",
+              "modeled_entity_type",
+              "modeled_entity_name"
+            ],
+            "title": "SqlAttributeTransformation",
+            "type": "object"
+          }
+        },
+        "items": {
+          "$ref": "#/$defs/SqlAttributeTransformation"
+        },
+        "type": "array"
+      },
+      "example": [
+        {
+          "target_attribute_name": "CustomerID",
+          "target_attribute_ordinal_position": 1,
+          "transformation": {
+            "expression": "CAST(customer_id AS BIGINT)"
+          },
+          "source_system_code": "CRM",
+          "modeled_entity_type": "logical_entity",
+          "modeled_entity_name": "Customer"
+        }
+      ]
+    },
+    "target_ref": {
+      "description": "Frozen opaque output-control handle; copy unchanged into artifacts. It is not a database ID and never identifies a SQL relation.",
+      "value_schema": {
+        "pattern": "^target_[1-9][0-9]*$",
+        "type": "string"
+      },
+      "example": "target_1"
+    },
+    "sql_generation_guide": {
+      "description": "Exact content of the selected frozen published SQL Generation Guide. Apply its target dialect and generation conventions.",
+      "value_schema": {
+        "type": "string",
+        "minLength": 1
+      },
+      "example": "Generate Databricks SQL using exact applied transformations and qualified physical names."
+    }
+  },
+  "selection": "Every variable and reader is workflow-local and author-selected. Defaults do not force inclusion. No hidden context append. Use restricted Jinja, render once; values are data.",
+  "control_handles": "target_ref/system_ref are retained opaque output-control handles, not database IDs. All evidence joins use actual nominal keys.",
+  "default_inline": {
+    "tool_assisted": [
+      "target_ref",
+      "sql_generation_guide"
+    ]
+  },
+  "preserved_output_schema": {
+    "$defs": {
+      "_AgentSqlArtifact": {
+        "additionalProperties": false,
+        "properties": {
+          "target_ref": {
+            "description": "Copy the exact opaque target reference from frozen authoring context.",
+            "pattern": "^[a-z][a-z0-9_]{0,99}$",
+            "title": "Target Ref",
+            "type": "string"
+          },
+          "artifact_name": {
+            "description": "File name only, without a directory path.",
+            "maxLength": 400,
+            "minLength": 1,
+            "title": "Artifact Name",
+            "type": "string"
+          },
+          "artifact_role": {
+            "description": "target_transformation loads the target from assigned source Systems; support is target-bound DDL or helper SQL with no System assignment.",
+            "enum": [
+              "target_transformation",
+              "support"
+            ],
+            "title": "Artifact Role",
+            "type": "string"
+          },
+          "source_system_codes": {
+            "description": "Exact frozen source System Codes covered by this transformation artifact. Use an empty list only for support artifacts.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 200,
+            "title": "Source System Codes",
+            "type": "array"
+          },
+          "generated_sql": {
+            "description": "Complete SQL-only artifact as plain text with no Markdown fences. Separate multiple statements with semicolons; an earlier temporary view may be used by later statements in the same orchestration session.",
+            "minLength": 1,
+            "title": "Generated Sql",
+            "type": "string"
+          }
+        },
+        "required": [
+          "target_ref",
+          "artifact_name",
+          "artifact_role",
+          "source_system_codes",
+          "generated_sql"
+        ],
+        "title": "_AgentSqlArtifact",
+        "type": "object"
+      }
+    },
+    "additionalProperties": false,
+    "properties": {
+      "artifacts": {
+        "description": "Complete artifact ledger assigning each frozen source System exactly once per target across transformation artifacts; support artifacts assign none.",
+        "items": {
+          "$ref": "#/$defs/_AgentSqlArtifact"
+        },
+        "maxItems": 50000,
+        "minItems": 1,
+        "title": "Artifacts",
+        "type": "array"
+      }
+    },
+    "required": [
+      "artifacts"
+    ],
+    "title": "_AgentSqlBatch",
+    "type": "object"
+  }
+}

@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.analysis.router import (
     ExecuteAnalysisInferenceRunRequest,
 )
@@ -77,9 +76,7 @@ class _StaticService:
         expected_model_revision: int,
     ) -> object:
         del principal
-        self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
         return None
 
 
@@ -154,7 +151,7 @@ def _client(service: _StaticService) -> TestClient:
 
 @pytest.mark.parametrize(
     "execution_mode",
-    ("one_shot", "tool_assisted", "detailed_coverage"),
+    ('one_shot', 'tool_assisted'),
 )
 def test_inference_route_starts_without_process_local_execution(
     execution_mode: WorkflowExecutionMode,

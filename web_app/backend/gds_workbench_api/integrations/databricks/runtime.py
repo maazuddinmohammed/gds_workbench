@@ -4,6 +4,16 @@ from dataclasses import dataclass
 from typing import Literal
 
 from gds_etl_workbench.domain.databricks import DatabricksSqlConnection
+from gds_etl_workbench.infrastructure.databricks_sql import (
+    ConnectorDatabricksSqlExecutor,
+    DatabricksSqlExecutor,
+)
+from gds_workbench_runtime.profiling.execution import (
+    ConnectorProfilingExecutor,
+    ProfileMetric,
+    ProfileQuery,
+    ProfilingExecutor,
+)
 
 from gds_workbench_api.features.analysis.validation_execution import (
     AnalysisValidationEvidence,
@@ -12,12 +22,6 @@ from gds_workbench_api.features.analysis.validation_execution import (
 )
 from gds_workbench_api.features.analysis.validation_service import (
     AnalysisValidationQueryExecutor,
-)
-from gds_workbench_runtime.profiling.execution import (
-    ConnectorProfilingExecutor,
-    ProfileMetric,
-    ProfileQuery,
-    ProfilingExecutor,
 )
 
 
@@ -80,6 +84,7 @@ class LocalFakeAnalysisValidationExecutor:
 class DatabricksExecutionAdapters:
     profiling: ProfilingExecutor
     analysis_validation: AnalysisValidationQueryExecutor
+    metadata_enrichment_sql: DatabricksSqlExecutor | None = None
 
 
 def create_databricks_execution_adapters(
@@ -93,4 +98,5 @@ def create_databricks_execution_adapters(
     return DatabricksExecutionAdapters(
         profiling=ConnectorProfilingExecutor(),
         analysis_validation=ConnectorAnalysisValidationExecutor(),
+        metadata_enrichment_sql=ConnectorDatabricksSqlExecutor(),
     )

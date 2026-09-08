@@ -66,6 +66,15 @@ canonical selection digest/count. A Profiling or Analysis batch ID is accepted
 only when the selected eligible Objects belong to one System; no-batch
 multi-System runs remain valid. Callers never supply a digest or count.
 
+Metadata Enrichment normally fills missing descriptions and inferred types.
+An explicit description-regeneration request freezes selected Objects, or
+selected Attributes within one Object, with every physical revision. Completion
+replaces only those descriptions while the frozen revisions and shared Metadata
+locks permit it. Attribute runs also fill missing inferred types; existing
+inferred types remain unchanged. Object runs update descriptions only.
+Manual description edits use the same governed physical review endpoint as
+lock and status changes; they do not change a Model's revision.
+
 Workflow execution is claimed only through
 `application.claim_next_workflow_run`. It uses PostgreSQL time and
 `FOR UPDATE SKIP LOCKED` to give one worker the oldest eligible running Run.
@@ -204,7 +213,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ```
 
 This seed is required for the Databricks web App deployment. Web readiness
-requires exactly 49 active workflow stages and 80 active backend-resolved
+requires exactly 50 active workflow stages and 264 active backend-resolved
 variables. The seed contains no prompt bodies, credentials, connection values,
 or business data and is safe to replay unchanged.
 
@@ -212,7 +221,7 @@ or business data and is safe to replay unchanged.
 
 After an active Super Admin Principal and Entra identity exist, install
 `database/seed/05_global_prompt_defaults.template.sql` as documented in
-`database/seed/README.md`. It supplies all 36 agentic stage defaults required
+`database/seed/README.md`. It supplies all 37 agentic stage defaults required
 when a Workflow Run has no run or Model override. Profiling and the other
 deterministic stages do not use Prompts.
 

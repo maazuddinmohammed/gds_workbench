@@ -12,9 +12,8 @@ Browser
        -> durable workflow worker
             -> existing PostgreSQL database
             -> existing governed Databricks SQL connection
-            -> every JSON-registered Databricks Model Serving endpoint
-            -> optional Microsoft Foundry OpenAI resource and its
-               JSON-registered deployments
+            -> OpenAI Agents SDK
+            -> Microsoft Foundry resource and its registered deployments
 ```
 
 The frontend and API share the Databricks App origin. The worker runs beside the
@@ -37,7 +36,7 @@ It requires an already installed, compatible PostgreSQL database.
 | Open the app | Databricks OAuth plus app `CAN_USE` permission. |
 | Resolve the web user | Databricks forwards `X-Forwarded-Access-Token`. The backend calls `current_user.me()` with that user token and accepts only an active SCIM user whose `externalId` is a nonzero Entra object UUID. |
 | Authorize application actions | The backend combines the configured Entra tenant UUID with the resolved object UUID. Existing PostgreSQL Principal, Tenant, role, Tenant Lock, Model ownership, and revision rules remain authoritative. |
-| Query the agent model | The app can expose both providers. Databricks uses the app service principal with `CAN_QUERY` on every registered endpoint. When configured, Foundry uses a separate Entra service principal or API key. End users receive neither credential. |
+| Query the agent model | OpenAI Agents SDK calls Microsoft Foundry using a dedicated Entra application or API key. End users receive neither credential. |
 | Run profiling and analysis validation | The existing registered GDS Databricks environment and governed connection remain unchanged. |
 | Use MCP | The separate MCP server and its Azure authentication remain unchanged. |
 
@@ -66,8 +65,8 @@ Run bundle commands from the repository root. Databricks uses these files:
 
 | File | Purpose |
 |---|---|
-| `databricks.yml` | Creates or updates the App, grants the user group `CAN_USE`, attaches four secret resources, and defines `development` and `production` targets. Grant the App service principal `CAN_QUERY` on every registered Databricks endpoint separately. |
-| `app.yaml` | Starts `uv run --frozen python -m gds_workbench_api.app_process` with every registered Databricks model and maps resource keys to runtime variables. The manual-upload builder selects this file before hashing. |
+| `databricks.yml` | Creates or updates the App, grants the user group `CAN_USE`, attaches six read-only secret resources including Foundry configuration, and defines `development` and `production` targets. |
+| `app.yaml` | Starts `uv run --frozen python -m gds_workbench_api.app_process` with registered Foundry models and maps resource keys to runtime variables. The manual-upload builder includes this canonical file before hashing. |
 | `pyproject.toml` and `uv.lock` | Install the pinned Python 3.14 application and local package dependencies. |
 | `package.json` and `package-lock.json` | Install Node 22 dependencies and build React into `web_app/frontend/dist`. |
 
@@ -133,8 +132,8 @@ entering the Databricks App while leaving the separate MCP runtime unchanged.
   authenticating the server. Production startup rejects every other database
   login and rejects `disable`, `allow`, and `prefer`.
 - The required application reference seed is installed from
-  `database/seed/04_application_reference.sql`. Readiness requires exactly 49
-  active workflow stages and 80 active backend-resolved variables; missing,
+  `database/seed/04_application_reference.sql`. Readiness requires exactly 50
+  active workflow stages and 82 active backend-resolved variables; missing,
   inactive, or additional reference rows keep the App unavailable.
 - For an upgrade to this release, replay that reference seed, then replay the
   prepared `database/seed/05_global_prompt_defaults.template.sql` copy. These
@@ -154,13 +153,6 @@ test fixture or local runner.
 
 ### Existing Databricks resources
 
-- The checked-in registry uses the Databricks-hosted pay-per-token endpoints
-  `databricks-gpt-oss-120b` and `databricks-claude-opus-5`. Confirm both are
-  available in the target Azure region and grant the App service principal
-  `CAN_QUERY` on both. This release uses the workspace `/serving-endpoints`
-  OpenAI-compatible API; Unity AI Gateway model-service names and
-  route-optimized endpoints require a different base URL or authentication
-  flow.
 - One registered GDS Databricks environment code already present in the existing
   application data. Profiling and analysis validation continue using that
   environment's existing governed connection.
@@ -169,14 +161,12 @@ test fixture or local runner.
   outbound traffic.
 
 See
-[Model Serving resources for Databricks Apps](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/model-serving)
-and
 [Add resources to a Databricks app](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/resources).
 
 ### Secret scope
 
 Create a dedicated Databricks secret scope for this app. The checked-in
-Databricks-model bundle needs only these four values:
+bundle needs these six values:
 
 | Bundle variable points to | Required secret value |
 |---|---|
@@ -184,6 +174,8 @@ Databricks-model bundle needs only these four values:
 | `cursor_signing_key_secret_key` | Random 32-4096 byte cursor-signing value. |
 | `entra_tenant_id_secret_key` | Entra tenant UUID used by existing PostgreSQL identities. |
 | `databricks_environment_code_secret_key` | Existing registered GDS environment code. |
+| `foundry_openai_base_url_secret_key` | Microsoft Foundry resource OpenAI v1 URL. |
+| `foundry_api_key_secret_key` | API key for that Foundry resource. |
 
 Enter secret values through the approved secret-management UI or secret-input
 workflow. Never place a value in source, a shell command, a bundle variable
@@ -204,6 +196,8 @@ mix unrelated secrets into this scope. See
 | `cursor_signing_key_secret_key` | Key name, not its secret value. |
 | `entra_tenant_id_secret_key` | Key name, not its tenant value. |
 | `databricks_environment_code_secret_key` | Key name, not its environment value. |
+| `foundry_openai_base_url_secret_key` | Key name, not its Foundry URL value. |
+| `foundry_api_key_secret_key` | Key name, not its API-key value. |
 
 Keep per-target values in the CLI's ignored local override file. For production,
 create `.databricks/bundle/production/variable-overrides.json` locally:
@@ -216,7 +210,9 @@ create `.databricks/bundle/production/variable-overrides.json` locally:
   "database_dsn_secret_key": "<database-dsn-key-name>",
   "cursor_signing_key_secret_key": "<cursor-key-name>",
   "entra_tenant_id_secret_key": "<tenant-id-key-name>",
-  "databricks_environment_code_secret_key": "<environment-code-key-name>"
+  "databricks_environment_code_secret_key": "<environment-code-key-name>",
+  "foundry_openai_base_url_secret_key": "<foundry-url-key-name>",
+  "foundry_api_key_secret_key": "<foundry-api-key-name>"
 }
 ```
 
@@ -241,6 +237,8 @@ secret values. See
 | `GDS_WEB_CURSOR_SIGNING_KEY` | `cursor-signing-key` secret resource. |
 | `GDS_WEB_ENTRA_TENANT_ID` | `entra-tenant-id` secret resource. |
 | `GDS_WEB_DATABRICKS_ENVIRONMENT_CODE` | `databricks-environment-code` secret resource. |
+| `GDS_WEB_FOUNDRY_OPENAI_BASE_URL` | `foundry-openai-base-url` secret resource. |
+| `GDS_WEB_FOUNDRY_API_KEY` | `foundry-api-key` secret resource. |
 
 Databricks supplies `DATABRICKS_HOST`, `DATABRICKS_APP_NAME`,
 `DATABRICKS_WORKSPACE_ID`, `DATABRICKS_APP_PORT`, `DATABRICKS_CLIENT_ID`, and
@@ -258,7 +256,7 @@ reviewed `app.yaml` update, never as an untracked ambient variable.
 
 For workflows with execution modes, the UI and independent notebooks default
 agentic authoring to `tool_assisted`. Analysis, Conceptual, Logical,
-Dimensional, and Mapping expose all three modes allowed by the selected model
+Dimensional, and Mapping expose both modes allowed by the selected model
 profile:
 
 - `one_shot` sends the complete frozen context once. It intentionally rejects a
@@ -266,105 +264,56 @@ profile:
 - `tool_assisted` sends a compact manifest and serves immutable, byte-bounded
   local pages. Each provider conversation also has one cumulative tool-result
   allowance, reset for a validation-repair attempt.
-- `detailed_coverage` runs deterministic bounded stages and merges their exact
-  coverage server-side before the existing complete backend validator and
-  draft handoff.
-
-Use `detailed_coverage` for the largest scopes or when every selected record
-must be processed. A provider profile must explicitly register the chosen mode;
-the UI hides and the backend rejects unsupported combinations.
+A provider profile must explicitly register the chosen mode; the UI hides and
+the backend rejects unsupported combinations.
 
 Code Generation and Validation are mode-independent agent workflows. Their requests
 store a null execution mode; the UI and notebooks do not expose a mode picker.
 
-### Agent model registry and optional Microsoft Foundry connection
+### Microsoft Foundry models and authentication
 
-Provider, SDK, and model are user-facing runtime selections. One deployed app
-always exposes every registered Databricks model. When the complete Foundry
-resource/authentication settings are present, that same app also exposes every
-registered Foundry model. Any partial Foundry configuration fails startup.
+All agent workflows use OpenAI Agents SDK with Microsoft Foundry. Users choose
+a model and reasoning effort; execution mode remains a workflow choice.
+Remote startup requires the Foundry resource URL and one complete authentication
+method. Missing or partial configuration fails startup.
 
-The non-secret model compatibility registry is
-`web_app/backend/gds_workbench_api/config/agent_capabilities.json`. Every model
-entry represents one physical deployment contract: its stable dropdown `code`,
-display `name`, provider, exact `deployment_name`, and operator-verified SDK,
-execution-mode, and reasoning combinations. Add, change, or remove model
-deployments only in this JSON, then rebuild and redeploy. There is no per-model
-environment variable. The UI and notebooks consume the same registry, and the
-backend validates the exact combination again before calling a provider.
+The non-secret deployment registry is
+`web_app/backend/gds_workbench_api/config/agent_capabilities.json`. Each entry
+contains a stable model `code`, display `name`, exact Foundry `deployment_name`,
+and verified execution-mode/reasoning combinations. The web application and
+notebooks use this registry, and the backend revalidates each selection.
+Change deployments in this JSON and rebuild; no per-model environment variable
+is used. The checked-in deployment names are `gpt-5.6-sol` and `gpt-5.6-luna`.
+Set them to the actual names in your Foundry resource if those differ.
 
-For Databricks, `deployment_name` is the fixed Model Serving endpoint name. For
-Foundry, it is the user-created deployment name passed to the OpenAI-compatible
-API. The checked-in Foundry values assume the deployments kept the portal's
-default model-ID names, `gpt-5.6-sol` and `gpt-5.6-luna`; edit only those two
-`deployment_name` values if your deployment names differ. `code` may remain a
-stable application alias when a physical deployment is replaced. Model codes
-are globally unique; deployment names are unique within their provider.
+Keep provider `microsoft_foundry` and SDK `openai_agents_sdk` on every new model
+entry. Register only modes and reasoning values verified for that deployment.
+The current registry exposes `default`, `none`, `low`, `medium`, `high`, and
+`xhigh` for one-shot, and only `none` for tool-assisted
+execution. `default` omits the reasoning parameter; `none` explicitly disables
+reasoning. The retained SDK adapter uses Chat Completions, so preserve these
+mode restrictions when configuring deployments.
 
-To add a custom deployment, copy one model entry, assign a unique `code`, set
-its exact provider and `deployment_name`, and keep only verified
-`execution_profiles`. Each profile is one SDK + execution-mode contract with
-its accepted reasoning values. JSON can register deployments for the existing
-`langchain_create_agent` and `openai_agents_sdk` adapters. A genuinely new SDK
-requires an implemented and tested backend adapter before it can be registered.
-
-Do not treat the file as a universal vendor catalog: availability and feature
-support vary by workspace, region, deployment type, model version, and API
-surface. `default` omits the reasoning parameter, while `none` sends an explicit
-provider value that disables reasoning. The checked-in profiles expose:
-
-- `databricks-primary` -> `databricks-gpt-oss-120b`, with `default`, `low`,
-  `medium`, and `high`;
-- `databricks-claude-opus-5` -> `databricks-claude-opus-5`, with `default`
-  only because the current adapters do not translate Databricks Claude
-  `thinking` and `budget_tokens` controls;
-- `foundry-primary` -> `gpt-5.6-sol`; and
-- `foundry-gpt-5.6-luna` -> `gpt-5.6-luna`.
-
-The two Foundry entries expose `default`, `none`, `low`, `medium`, `high`, and
-`xhigh` for non-tool modes. `max` is not exposed because it requires the
-Responses API, and `minimal` is unsupported by GPT-5.6. These entries are
-configuration assertions, not availability guarantees; verify regional access
-before deployment.
-
-Both current Agent adapters use Chat Completions. Microsoft documents that
-GPT-5.6 and later cannot combine Chat Completions tools with reasoning unless
-`reasoning_effort` is explicitly `none`; merely omitting the parameter can still
-use the model's reasoning default and fail. Therefore a GPT-5.6 Foundry
-`tool_assisted` profile must expose only `none` until that adapter is deliberately
-migrated to the Responses API. The checked-in Foundry primary profile is
-narrowed accordingly. Databricks reasoning settings are also
-model-specific: GPT OSS accepts `low`, `medium`, and `high`, while other model
-families use different controls. Verify and narrow each concrete deployment
-entry before building the artifact.
-
-After adding a Databricks entry, grant the App service principal `CAN_QUERY` on
-that entry's `deployment_name`. No `app.yaml` model variable is required.
-
-The checked-in manifests remain the least-privilege, Databricks-only default.
-To build a Foundry-enabled source that keeps Databricks models available and
-whose selected `app.yaml`, tree manifest, ZIP, and SHA-256 checksum agree, run:
+Build the single source artifact with:
 
 ```bash
-python3 deployment/databricks_ui/build_uploads.py \
-  --agent-provider microsoft_foundry
+python3 deployment/databricks_ui/build_uploads.py
 ```
 
-Upload the resulting
-`artifacts/databricks-ui-foundry/gds-workbench-app-source` folder. Do not copy
-or replace `app.yaml` after the build. The selected manifest already contains
-the API-key resource variant below, without a literal credential.
+Upload `artifacts/databricks-ui/gds-workbench-app-source`. Canonical `app.yaml`
+is included before the tree manifest and checksums are generated. Do not swap
+manifests inside a generated artifact.
 
 1. Choose exactly one Foundry authentication method. The generated manual-upload
    artifact uses an API-key secret resource. The backend also supports Microsoft
-   Entra client credentials for a separately reviewed provider manifest. For
-   Entra, create a dedicated application/service principal and rotation-managed
+   Entra client credentials configured in canonical source before rebuilding.
+   For Entra, create a dedicated application/service principal and rotation-managed
    client secret, then assign the route-appropriate inference role on the target
    Foundry resource.
 2. Store the Foundry OpenAI base URL as an app-scoped Databricks resource. Store
    each model deployment name in `agent_capabilities.json`. For the generated
-   manual-upload artifact, also store its API key. For an Entra manifest, store the Entra
-   tenant UUID, client UUID, and client secret instead. Never put a credential
+   manual-upload artifact, also store its API key. For Entra authentication, store
+   the Entra tenant UUID, client UUID, and client secret instead. Never put a credential
    in source, a bundle variable value, a shell command, or logs.
 
    For temporary development, the backend also reads a literal process
@@ -372,8 +321,7 @@ the API-key resource variant below, without a literal credential.
    untracked local environment or the Databricks App resource UI. Do not place
    the real key in this repository or a checked-in `app.yaml`; the resource-backed
    form below works for development as well as production.
-3. The generated Foundry `app.yaml` keeps all common Databricks behavior and
-   adds this Foundry resource setting:
+3. Canonical `app.yaml` includes the Foundry resource settings:
 
    ```yaml
    - name: GDS_WEB_FOUNDRY_OPENAI_BASE_URL
@@ -387,9 +335,9 @@ the API-key resource variant below, without a literal credential.
      valueFrom: foundry-api-key
    ```
 
-   A separately reviewed Entra source manifest uses these three variables
-   instead of the API-key variable. Select and package that source manifest
-   before checksums are generated; never edit a generated artifact:
+   For Entra authentication, replace the API-key variable in source `app.yaml`
+   with these three variables and update the corresponding bundle resources
+   before rebuilding; never edit a generated artifact:
 
    ```yaml
    - name: GDS_WEB_FOUNDRY_ENTRA_TENANT_ID
@@ -406,11 +354,11 @@ the API-key resource variant below, without a literal credential.
 
 4. Add read-only App resources for the Foundry base URL and selected
    authentication method, using the exact resource keys above. Bundle variables
-   contain only secret key names. Separately grant `CAN_QUERY` on every
-   registered Databricks `deployment_name`.
+   contain only secret key names. Preserve existing governed Databricks SQL
+   permissions; model calls authenticate directly with Foundry.
 5. Allow outbound HTTPS from Databricks Apps to the selected Foundry host. Only
-   the Entra variant also needs the Microsoft Entra token endpoint. Validate and
-   deploy this manifest as its own release.
+   Entra authentication also needs the Microsoft Entra token endpoint. Validate
+   and deploy this configuration as its own release.
 
 This integration uses Chat Completions. With Entra authentication, configure
 only `https://<resource>.openai.azure.com/openai/v1/`; the application requests
@@ -424,12 +372,53 @@ routes under `/api/projects/` are a different API shape and are rejected.
 Databricks. They are not Azure credentials and must not be copied into the
 Foundry settings. Databricks Apps does not document an assignable Azure managed
 identity for this host, so this release intentionally does not rely on
-`DefaultAzureCredential` discovering one. This is why the Foundry variant needs
-the explicit Entra client credential above.
+`DefaultAzureCredential` discovering one. Entra authentication therefore uses
+the explicit application credentials above.
 
-Enabling Foundry requires no table, function, trigger, migration, or backfill.
-It changes only deployment configuration and may require the governed Model
-default update described below.
+This provider cleanup requires no schema migration or backfill. Check existing
+Model defaults as described below.
+
+### Run tokens and estimated model cost
+
+Every newly executed workflow records model request usage across stages, tool
+turns, retries and repairs. The web Run detail and notebook result show the same
+summary, including failed runs. Missing provider counters or an interrupted
+request remain unknown; earlier runs without tracking remain unavailable.
+Deterministic workflows report zero model requests once tracking starts.
+
+Cost is **Unpriced** until an operator supplies the deployment's token rates in
+`GDS_WEB_FOUNDRY_PRICING_JSON`. Notebooks use the same JSON through
+`GDS_NOTEBOOK_FOUNDRY_PRICING_JSON` in their uploaded root `.env`. Keys are the
+registered model codes. Replace the placeholders below with confirmed USD rates
+per million tokens; this example deliberately is not a usable price schedule:
+
+```json
+{"foundry-primary": {
+  "basis": "Your approved rate schedule",
+  "input_usd_per_million": "<input rate>",
+  "cached_input_usd_per_million": "<cached input rate>",
+  "cache_write_input_usd_per_million": "<cache write rate>",
+  "output_usd_per_million": "<output rate>",
+  "valid_from": null,
+  "valid_until": null,
+  "max_input_tokens": null
+}}
+```
+
+Use a single line when placing JSON in an environment file. Each rate must be
+between 0 and 1,000,000, with at most eight decimal places. Set timezone-aware
+validity bounds and the maximum input size when the schedule has time or context
+restrictions; null means no restriction. The end time is exclusive. All four
+rates are required: cache tokens are part of input, and reasoning tokens are
+part of output. If different cache rates require a breakdown the provider omits,
+that request stays unpriced.
+
+Each request saves its rates before calling Foundry. Refresh and replay use
+those saved rates, including after configuration changes. Partial estimates sum
+only priced requests and show missing usage, unsupported token categories or
+inapplicable rates. These are model token estimates, excluding provisioned
+capacity, contractual adjustments, Databricks compute and other services. Leave
+rates unset when token pricing does not match the deployment's billing basis.
 
 ## 6. Local verification
 
@@ -463,7 +452,7 @@ fresh PostgreSQL container, loads only local fixtures, uses explicit local user
 identity, uses fake Databricks and agent adapters, and disposes the database on
 exit. Stop it with `Ctrl-C`.
 
-This runner deliberately makes no Azure, Databricks, Model Serving, MCP, or
+This runner deliberately makes no Azure, Databricks, Foundry, MCP, or
 persistent database call. Do not use `databricks apps run-local` with production
 secret values as a substitute for the disposable runner.
 
@@ -474,23 +463,18 @@ exact model deployments registered for this release. The default JSON exposes:
 
 ```text
 provider            model code                     deployment_name
-databricks          databricks-primary              databricks-gpt-oss-120b
-databricks          databricks-claude-opus-5        databricks-claude-opus-5
 microsoft_foundry   foundry-primary                 gpt-5.6-sol
 microsoft_foundry   foundry-gpt-5.6-luna            gpt-5.6-luna
 ```
 
-Additional registry entries add their logical model codes to the runtime set.
-Foundry entries become available when the complete Foundry connection is
-configured. Before production acceptance, an
-authorized operator must audit active
-`model.model` defaults. Do not run direct SQL and do not change them as part of
+Additional Foundry entries add their logical model codes to the runtime set.
+Audit active `model.model` defaults. Do not run direct SQL or change them as part of
 deployment. If incompatible active defaults exist:
 
 1. report the exact affected Models without exposing other row data;
 2. obtain explicit user and data-owner approval;
 3. use the existing governed Model update API/workflow to change only active
-   defaults to the pair selected by that deployment; and
+   defaults to OpenAI Agents SDK, Microsoft Foundry, and a registered model; and
 4. leave every historical `application.workflow_run` provider/model value
    unchanged because it is immutable execution provenance.
 
@@ -608,23 +592,20 @@ in production:
    records bounded failure information when deliberately given invalid input.
 9. Profiling and analysis validation use the existing registered GDS Databricks
    environment without any MCP or credential change.
-10. Every registered Databricks endpoint is standard, non-route-optimized, and
-    `READY`, and the app service principal has `CAN_QUERY`, not `CAN_MANAGE`.
-    When Foundry is enabled, its separate Entra service principal has only the
-    route-appropriate inference RBAC on the selected resource, or its API key is
-    held only in the configured secret resource.
-11. Run one approved smoke workflow through each supported agent SDK. Then cover
-    analysis, conceptual, logical, dimensional, mapping, Code Generation, and
+10. Each registered Foundry deployment is available, and its dedicated Entra
+    application has the required inference permission or its API key is held
+    only in the configured secret resource.
+11. Run an approved smoke workflow through OpenAI Agents SDK. Then cover Metadata
+    Enrichment, analysis, conceptual, logical, dimensional, mapping, Code Generation, and
     Validation paths, including each applicable execution mode and reasoning effort.
 12. Verify timeouts, endpoint throttling, authentication failure, dependency
     failure, and validation repair return bounded errors without raw prompts,
     physical rows, tool output, tokens, credentials, or stack traces.
 13. Confirm app logs and any enabled platform telemetry contain no secret,
     database DSN, bearer token, raw prompt, raw physical row, or raw model/tool
-    response. Do not enable Model Serving payload logging or inference tables for
-    this application.
+    response. Keep model payload logging disabled for this application.
 
-Live PostgreSQL, Databricks SQL, and Model Serving acceptance is a production-like
+Live PostgreSQL, Databricks SQL, and Foundry acceptance is a production-like
 deployment activity, not an automated database test. It requires separate
 approval and approved test data.
 
@@ -678,7 +659,6 @@ and
 | API returns `401` | User authorization is enabled, both default identity scopes are granted, the forwarded token is present, and SCIM `externalId` is the Entra object UUID. |
 | API returns `403` | App `CAN_USE`, active SCIM user, PostgreSQL Principal mapping, Tenant access, Model ownership, and Tenant Lock. |
 | Readiness returns `503` | PostgreSQL network path, TLS verification, runtime account, and canonical database revision. Do not print the DSN. |
-| Databricks agent workflow fails | Regional availability, App service-principal `CAN_QUERY` on `databricks-gpt-oss-120b` and `databricks-claude-opus-5`, selected model/reasoning compatibility, and timeout. |
 | Foundry agent workflow fails | Foundry URL, actual Sol/Luna deployment names, exactly one configured authentication method, API-key or client-secret rotation, inference RBAC for Entra, permitted egress, and selected mode/reasoning compatibility. |
 | Queue does not drain | The app process and embedded worker are running; inspect only bounded workflow state and logs. |
 | Deployment cannot download packages | Databricks Apps egress policy allows the exact required package registries. |
@@ -689,7 +669,6 @@ and
 - [Configure `app.yaml`](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/app-runtime)
 - [Databricks Apps resources](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/resources)
 - [Databricks Apps authorization](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/auth)
-- [Databricks Apps Model Serving resources](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/model-serving)
 - [Databricks Apps networking](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/networking)
 - [Databricks Apps environment](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/databricks-apps/system-env)
 - [Manage Apps with Declarative Automation Bundles](https://learn.microsoft.com/en-us/azure/databricks/dev-tools/bundles/apps-tutorial)

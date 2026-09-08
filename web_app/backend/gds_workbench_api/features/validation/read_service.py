@@ -185,7 +185,8 @@ SELECT validation_group.validation_group_id,
        btrim(validation_group.mapping_context_digest::TEXT)
            AS mapping_context_digest,
        btrim(validation_group.code_context_digest::TEXT) AS code_context_digest,
-       validation_group.is_active
+       validation_group.is_active,
+       validation_group.is_locked
   FROM model.model AS target_model
   JOIN workflow.validation_group AS validation_group
     ON validation_group.model_id = target_model.model_id
@@ -214,7 +215,8 @@ SELECT validation_group.validation_group_id,
        validation_check.validation_comparison_operator,
        validation_check.validation_comparison_value_type,
        validation_check.validation_comparison_value,
-       validation_check.is_active AS validation_check_is_active
+       validation_check.is_active AS validation_check_is_active,
+       validation_check.is_locked AS validation_check_is_locked
   FROM model.model AS target_model
   JOIN workflow.validation_group AS validation_group
     ON validation_group.model_id = target_model.model_id
@@ -510,6 +512,7 @@ def _assemble_ledger_groups(
                     "validation_comparison_value_type": row.get("validation_comparison_value_type"),
                     "validation_comparison_value": row.get("validation_comparison_value"),
                     "is_active": row.get("validation_check_is_active"),
+                    "is_locked": row.get("validation_check_is_locked"),
                 },
                 strict=False,
             )
@@ -549,6 +552,7 @@ def _assemble_ledger_groups(
                         is_active and mapping_is_current and code_is_current
                     ),
                     "is_active": is_active,
+                    "is_locked": row.get("is_locked"),
                     "checks": tuple(checks.get(group_id, ())),
                 },
                 strict=False,

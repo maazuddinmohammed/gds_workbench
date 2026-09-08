@@ -1,0 +1,351 @@
+{
+  "schema_version": 1,
+  "diagram_type": "architecture",
+  "meta": {
+    "title": "Analysis inference: data flow in three modes",
+    "locale": "en",
+    "quality_profile": "showcase",
+    "viewBox": [
+      1300,
+      970
+    ]
+  },
+  "components": [
+    {
+      "id": "postgres",
+      "type": "database",
+      "label": "PostgreSQL model data",
+      "sublabel": "Metadata, Profiles, Assertions, Analysis",
+      "pos": [
+        40,
+        60
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "context",
+      "type": "backend",
+      "label": "PostgresAgentContextRepository",
+      "sublabel": "Scope filtering + revision recheck",
+      "pos": [
+        490,
+        60
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "executor",
+      "type": "backend",
+      "label": "Analysis inference executor",
+      "sublabel": "DatabaseAnalysisInferenceExecutor",
+      "pos": [
+        940,
+        60
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "detailed",
+      "type": "backend",
+      "label": "Detailed inference stages",
+      "sublabel": "_execute_detailed",
+      "pos": [
+        940,
+        310
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "runner",
+      "type": "backend",
+      "label": "AgentStageRunner",
+      "sublabel": "Frozen prompts + bounded validation repair",
+      "pos": [
+        490,
+        310
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "catalog",
+      "type": "backend",
+      "label": "Local context tool catalog",
+      "sublabel": "InMemoryAgentContextToolCatalog",
+      "pos": [
+        40,
+        560
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "adapter",
+      "type": "backend",
+      "label": "OpenAIAgentsSdkAdapter",
+      "sublabel": "Configured model receives stage evidence",
+      "pos": [
+        490,
+        560
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "validator",
+      "type": "backend",
+      "label": "Inference candidate validator",
+      "sublabel": "AnalysisInferenceCandidateValidator",
+      "pos": [
+        940,
+        560
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "handoff",
+      "type": "backend",
+      "label": "WorkflowChangeSetHandoff",
+      "sublabel": "Stage + validate + finalize run",
+      "pos": [
+        940,
+        810
+      ],
+      "size": [
+        310,
+        90
+      ]
+    },
+    {
+      "id": "draft",
+      "type": "database",
+      "label": "mcp.model_change_set",
+      "sublabel": "Validated draft; separate apply operation",
+      "pos": [
+        490,
+        810
+      ],
+      "size": [
+        310,
+        90
+      ]
+    }
+  ],
+  "connections": [
+    {
+      "id": "postgres-context",
+      "from": "postgres",
+      "to": "context",
+      "label": "Scoped SQL reads"
+    },
+    {
+      "id": "context-executor",
+      "from": "context",
+      "to": "executor",
+      "label": "Typed context bundle"
+    },
+    {
+      "id": "executor-runner",
+      "from": "executor",
+      "to": "runner",
+      "label": "one_shot / tool_assisted"
+    },
+    {
+      "id": "executor-detailed",
+      "from": "executor",
+      "to": "detailed",
+      "label": "detailed_coverage",
+      "labelDy": 70
+    },
+    {
+      "id": "detailed-runner",
+      "from": "detailed",
+      "to": "runner",
+      "label": "Bounded stage batches",
+      "labelDy": 30
+    },
+    {
+      "id": "context-catalog",
+      "from": "context",
+      "to": "catalog",
+      "label": "tool_assisted: preload"
+    },
+    {
+      "id": "catalog-adapter",
+      "from": "catalog",
+      "to": "adapter",
+      "label": "Requested evidence pages",
+      "labelDy": 30
+    },
+    {
+      "id": "runner-adapter",
+      "from": "runner",
+      "to": "adapter",
+      "label": "Prompt + context + schema",
+      "labelDy": 70
+    },
+    {
+      "id": "adapter-validator",
+      "from": "adapter",
+      "to": "validator",
+      "label": "Candidate JSON"
+    },
+    {
+      "id": "validator-handoff",
+      "from": "validator",
+      "to": "handoff",
+      "label": "Validated changes",
+      "labelDy": 70
+    },
+    {
+      "id": "handoff-draft",
+      "from": "handoff",
+      "to": "draft",
+      "label": "Persist draft"
+    }
+  ],
+  "cards": [
+    {
+      "dot": "cyan",
+      "title": "one_shot",
+      "items": [
+        "A single relationship_inference stage receives the full safe context, bounded by the context byte limit. No tools. Validation repair can add attempts. Evidence: context.py:634-645; analysis/service.py:421-444."
+      ]
+    },
+    {
+      "dot": "violet",
+      "title": "tool_assisted",
+      "items": [
+        "The same relationship_inference stage starts with a manifest. The agent requests get_agent_context_manifest or get_agent_context_dataset pages from immutable preloaded records; these tools perform no database or external calls. Evidence: authoring/context.py:335-336,452-459,622-633; agents/adapters.py:170-183."
+      ]
+    },
+    {
+      "dot": "amber",
+      "title": "detailed_coverage",
+      "items": [
+        "The executor sends bounded object/attribute evidence slices through candidate_finder, relationship_resolver, whole_slice_reconciler, then analysis_reviewer. Each stage uses AgentStageRunner with no tools. A blocker fails validation. Evidence: analysis/service.py:552-980."
+      ]
+    },
+    {
+      "dot": "emerald",
+      "title": "Shared inputs and result",
+      "items": [
+        "Inputs include selected Objects and Attributes, Model details, applicable Assertions, Profiles and applied Analysis. Provider context excludes physical rows and secrets. Evidence: authoring/context.py:312-333,777-882.",
+        "Arrows describe data movement; adapter output is validated inside the stage runner, and the executor hands final changes to WorkflowChangeSetHandoff. Detailed mode validates intermediate stages too. Evidence: authoring/stage_runner.py:50-115; analysis/service.py:445-489.",
+        "No effective changes completes the run without a draft. Applying a draft is outside this inference diagram. Evidence: analysis/service.py:459-489; authoring/change_set_handoff.py:449-515.",
+        "Sources refer to the current local working tree, including uncommitted edits. Every box maps to repository code or a defined database table."
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Repository evidence (local working tree)",
+      "items": [
+        "postgres: web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:554",
+        "context: web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:540",
+        "executor: web_app/backend/gds_workbench_api/features/analysis/service.py:302",
+        "detailed: web_app/backend/gds_workbench_api/features/analysis/service.py:552",
+        "runner: web_app/backend/gds_workbench_api/features/workflows/authoring/stage_runner.py:39",
+        "catalog: web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:335",
+        "adapter: web_app/backend/gds_workbench_api/integrations/agents/adapters.py:127",
+        "validator: web_app/backend/gds_workbench_api/features/analysis/candidate.py:76",
+        "handoff: web_app/backend/gds_workbench_api/features/workflows/authoring/change_set_handoff.py:159",
+        "draft: database/15_mcp_change_sets.sql:5"
+      ]
+    },
+    {
+      "dot": "slate",
+      "title": "Trace the code: how to use this guide",
+      "items": [
+        "Open the repository in your editor. Use Go to File with each path, then Go to Line with the number after the colon. Follow sections 1\u20136 in order; section 5 branches by execution mode. Paths are relative to the repository root and line numbers reflect this working tree.",
+        "For an already authorized run, use the browser Network panel to follow the create response workflow_run_id into the execute request and later run/event reads. The HTTP request and background worker have separate call stacks. Suggested breakpoints: dialog mutation, backend create/start, worker dispatcher, executor context load, selected mode stage, handoff.",
+        "The ten diagram boxes remain the inference data path. This guide adds the frontend entry, HTTP boundary, background worker and UI return without adding diagram nodes."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "1. Frontend: open and submit",
+      "items": [
+        "web_app/frontend/src/features/analysis/AnalysisScreen.tsx:172 \u2014 Run inference button opens WorkflowRunDialog. At line 253, executeCreated is wired to api.executeAnalysisInferenceRun.",
+        "web_app/frontend/src/features/workflows/WorkflowRunDialog.tsx:105 \u2014 onSubmit builds selected_object_ids, workflow_execution_mode, expected_model_revision and agent settings. runMutation at line 143 creates the run, receives workflow_run_id, then calls executeCreated. Follow this ID for the rest of the trace.",
+        "web_app/frontend/src/features/workflows/api.ts:400 \u2014 createWorkflowRun sends POST /api/v1/tenants/{tenantId}/models/{modelId}/runs with an Idempotency-Key. executeAnalysisInferenceRun at line 453 sends POST /api/v1/tenants/{tenantId}/models/{modelId}/analysis/inference-runs/{workflowRunId}/execute."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "2. Backend: create, then start",
+      "items": [
+        "web_app/backend/gds_workbench_api/main.py:359 \u2014 Registers the inference route; workflow command routes are registered at line 494.",
+        "web_app/backend/gds_workbench_api/features/workflows/commands/router.py:26 \u2014 create_run authenticates the request and calls service.create_run.",
+        "web_app/backend/gds_workbench_api/features/workflows/commands/service.py:96 \u2014 create_run checks agent selection and tenant authorization, then calls application.create_workflow_run.",
+        "database/13_application_workflow_runs.sql:1091 \u2014 application.create_workflow_run is the SQL implementation to inspect for selected scope, revision, run creation and frozen prompt configuration.",
+        "web_app/backend/gds_workbench_api/features/analysis/router.py:49 \u2014 execute_run authenticates and calls AnalysisInferenceWorkflow.start (analysis/service.py:262), which calls DatabaseAgentWorkflowLifecycle.start (authoring/lifecycle.py:247). The route returns 202 when the run transitions to running.",
+        "database/13_application_workflow_runs.sql:2139 \u2014 application.start_workflow_run performs the governed start. This HTTP request does not execute the agent; the worker picks up the durable run separately."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "3. Worker: cross the asynchronous boundary",
+      "items": [
+        "web_app/backend/gds_workbench_api/workflow_worker.py:72 \u2014 run_worker_loop calls worker.run_once. Worker dependencies are assembled at line 163. Continue in the worker process, not the HTTP request call stack.",
+        "web_app/backend/gds_workbench_api/features/workflows/execution/worker.py:149 \u2014 run_once calls claim_next, then the lease runner runs the dispatcher and maintains the claim heartbeat.",
+        "web_app/backend/gds_workbench_api/features/workflows/execution/repository.py:56 \u2014 claim_next calls application.claim_next_workflow_run; its SQL implementation is database/13_application_workflow_runs.sql:2281.",
+        "web_app/backend/gds_workbench_api/features/workflows/execution/dispatcher.py:36 \u2014 execute selects analysis_inference when model_workflow is analysis and execution mode is not null; calls execute_started at line 68.",
+        "web_app/backend/gds_workbench_api/features/workflows/execution/assembly.py:156 \u2014 Wires DatabaseAnalysisInferenceExecutor to the shared context repository, stage runner, validator handoff and lifecycle. Use this file when tracing an injected dependency."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "4. Executor: load inputs and choose the mode",
+      "items": [
+        "web_app/backend/gds_workbench_api/features/analysis/service.py:334 \u2014 DatabaseAnalysisInferenceExecutor.execute_started checks tenant authorization and the run plan, then loads context. Inspect mode selection at line 375 and branch at line 408.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/plan.py:253 \u2014 PostgresAgentRunPlanRepository.load reconstructs the frozen run plan and selection.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:554 \u2014 PostgresAgentContextRepository.load reads selected Objects/Attributes and the Model snapshot. _assemble_context at line 777 filters Profiles, Assertions and prior Analysis to the relevant scope.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:622 \u2014 Mode-specific input: tool_assisted creates the local catalog and embeds its manifest; detailed_coverage leaves embedded_context empty for per-stage batching; one_shot embeds full safe context."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "5. Agent calls: follow your selected mode",
+      "items": [
+        "web_app/backend/gds_workbench_api/features/analysis/service.py:421 \u2014 one_shot and tool_assisted both call relationship_inference. one_shot supplies context without tools. tool_assisted supplies a manifest and the local catalog.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/context.py:452 \u2014 Tool-assisted page requests are dispatched here: get_agent_context_manifest or get_agent_context_dataset. The catalog serves immutable preloaded records, not live SQL.",
+        "web_app/backend/gds_workbench_api/features/analysis/service.py:552 \u2014 detailed_coverage enters _execute_detailed: candidate_finder at line 617; relationship_resolver at line 725; whole_slice_reconciler at line 822; analysis_reviewer at line 944. Each has bounded evidence, its own validator and no tools.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/stage_runner.py:50 \u2014 AgentStageRunner.run projects prompt inputs, renders frozen prompts and invokes ValidationRepairRunner. Follow authoring/repair.py:347 for validation/retry behavior.",
+        "web_app/backend/gds_workbench_api/integrations/agents/adapters.py:185 \u2014 OpenAIAgentsSdkAdapter.execute constructs the configured model request. Runner.run at line 234 performs model turns and any allowed local tool calls. Candidate JSON returns to the stage runner for validation."
+      ]
+    },
+    {
+      "dot": "cyan",
+      "title": "6. Result: validated draft back to the frontend",
+      "items": [
+        "web_app/backend/gds_workbench_api/features/analysis/candidate.py:76 \u2014 AnalysisInferenceCandidateValidator checks candidate structure and scoped relationship semantics. The executor parses validated changes at analysis/service.py:445.",
+        "web_app/backend/gds_workbench_api/features/workflows/authoring/change_set_handoff.py:159 \u2014 WorkflowChangeSetHandoff.finalize stages and validates changes and completes the run. _handoff_in_transaction at line 449 records validated draft status. No effective changes instead uses the no-op path at analysis/service.py:474.",
+        "database/15_mcp_change_sets.sql:5 \u2014 mcp.model_change_set stores the draft; mcp.model_stage_batch at line 124 stores staged batch data. Inference completion does not apply the draft.",
+        "web_app/frontend/src/features/analysis/AnalysisScreen.tsx:267 \u2014 onCreated selects the new workflow_run_id and switches to run history.",
+        "web_app/frontend/src/features/workflows/WorkflowRunMonitor.tsx:110 \u2014 Reads run detail and paged events; refreshAll at line 234 refetches status. The backend reads are features/workflows/runs/router.py:58 and :79, then service.py:238 and :271.",
+        "web_app/frontend/src/features/workflows/WorkflowRunMonitor.tsx:539 \u2014 Displays validated draft state and the separate Apply action. This is where to confirm inference output before applying."
+      ]
+    }
+  ]
+}

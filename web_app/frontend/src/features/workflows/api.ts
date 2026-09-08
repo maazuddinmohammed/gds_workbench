@@ -1,7 +1,9 @@
 import type { HttpRequest } from "../../core/http";
+import type { JsonObject } from "../../shared/contracts";
 
 export type ModelWorkflow =
   | "profiling"
+  | "metadata_enrichment"
   | "analysis"
   | "conceptual"
   | "logical"
@@ -12,8 +14,7 @@ export type ModelWorkflow =
 
 export type WorkflowExecutionMode =
   | "one_shot"
-  | "tool_assisted"
-  | "detailed_coverage";
+  | "tool_assisted";
 
 export type WorkflowRunState =
   | "queued"
@@ -58,20 +59,18 @@ export interface AgentModelCapability {
 export const WORKFLOW_EXECUTION_MODES: readonly WorkflowExecutionMode[] = [
   "one_shot",
   "tool_assisted",
-  "detailed_coverage",
 ];
 
 export const WORKFLOW_EXECUTION_MODE_NAMES: Record<WorkflowExecutionMode, string> = {
   one_shot: "One shot",
   tool_assisted: "Tool assisted",
-  detailed_coverage: "Detailed coverage",
 };
 
 export function reasoningEffortDisplayName(
   effort: AgentCapabilities["reasoning_efforts"][number],
 ): string {
-  if (effort.code === "default") return "Provider default (omit setting)";
-  if (effort.code === "none") return "None (explicitly disable reasoning)";
+  if (effort.code === "default") return "Model default";
+  if (effort.code === "none") return "None";
   return effort.name;
 }
 
@@ -80,6 +79,7 @@ export interface CreateWorkflowRunCommand {
   model_workflow: ModelWorkflow;
   workflow_execution_mode: WorkflowExecutionMode | null;
   selected_object_ids: number[];
+  description_targets?: { object_id: number; attribute_id: number | null; expected_revision: string }[];
   selected_system_codes?: string[];
   requested_batch_id: string | null;
   agent: AgentRunSelection | null;
@@ -115,7 +115,41 @@ export interface WorkflowRunCollection {
   next_cursor: string | null;
 }
 
+export interface WorkflowCostEstimate {
+  status: "unavailable" | "unpriced" | "partial" | "estimated";
+  currency: "USD";
+  amount: string | null;
+  priced_request_count: number;
+  unpriced_request_count: number;
+  pricing_bases: string[];
+  unpriced_reasons: Record<
+    | "pricing_not_configured"
+    | "outside_pricing_window"
+    | "context_limit_exceeded"
+    | "missing_usage"
+    | "unsupported_token_types",
+    number
+  >;
+}
+
+export interface WorkflowTokenUsage {
+  cost_estimate: WorkflowCostEstimate;
+  status: "unavailable" | "recording" | "complete" | "partial";
+  request_count: number;
+  reported_request_count: number;
+  pending_request_count: number;
+  missing_usage_request_count: number;
+  input_tokens: number | null;
+  output_tokens: number | null;
+  total_tokens: number | null;
+  cached_input_tokens: number | null;
+  cache_write_input_tokens: number | null;
+  reasoning_output_tokens: number | null;
+  history_incomplete: boolean;
+}
+
 export interface WorkflowRunDetail extends WorkflowRunRecord {
+  token_usage: WorkflowTokenUsage;
   correlation_id: string;
   agent_sdk_code: string | null;
   agent_provider_code: string | null;
@@ -208,11 +242,20 @@ export interface WorkflowDraftReview {
     phase: string;
     staged_record_count: number;
     error_count: number;
+    error_groups?: { dataset: string; code: string; count: number }[];
+    errors?: {
+      code: string;
+      dataset: string;
+      record_number: number | null;
+      fields: string[];
+      message: string;
+    }[];
+    errors_truncated?: boolean;
     action_review: WorkflowDraftActionReview[];
   } | null;
   dataset_counts: { dataset: string; record_count: number }[];
-  dataset: null;
-  records: null;
+  dataset: string | null;
+  records: JsonObject[] | null;
   created_at: string;
   last_activity_at: string;
   expires_at: string;
@@ -261,6 +304,7 @@ export interface WorkflowsApi {
     tenantId: number,
     modelId: number,
     modelChangeSetId: string,
+    dataset?: string,
   ) => Promise<WorkflowDraftReview>;
   executeProfilingRun: (
     tenantId: number,
@@ -386,9 +430,10 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
         }),
       },
     ),
-    readWorkflowDraftReview: (tenantId, modelId, modelChangeSetId) =>
+    readWorkflowDraftReview: (tenantId, modelId, modelChangeSetId, dataset) =>
       request<WorkflowDraftReview>(
-        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/${modelChangeSetId}`,
+        `/api/v1/tenants/${tenantId}/models/${modelId}/change-sets/${modelChangeSetId}`
+        + (dataset ? `?${new URLSearchParams({ dataset })}` : ""),
       ),
     executeProfilingRun: (
       tenantId,
@@ -531,11 +576,16 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
 }
 
 interface WorkflowScopeObject {
+  object_schema?: string;
+  source_tenant_id?: number;
+  is_locked?: boolean;
+  review_revision?: string | null;
   object_id: number;
   system_id: number;
   system_code: string;
   source_tenant_code: string;
   object_name: string;
+  zone_code?: "source" | "bronze" | "silver";
   is_dimensional_source_eligible: boolean;
 }
 
@@ -549,7 +599,7 @@ interface WorkflowScopeReader<TScope extends WorkflowScopeObject = WorkflowScope
   listModelInputScope: (
     tenantId: number,
     modelId: number,
-    filters: { zone: "bronze" | "silver" },
+    filters: { zone?: "bronze" | "silver" },
     pageSize: number,
     cursor?: string,
   ) => Promise<WorkflowScopePage<TScope>>;
@@ -589,6 +639,9 @@ export const workflowCreationQueryKeys = {
   bronzeScope: (tenantId: number, modelId: number) => (
     ["workflow-run-bronze-scope", tenantId, modelId] as const
   ),
+  enrichmentScope: (tenantId: number, modelId: number) => (
+    ["workflow-run-enrichment-scope", tenantId, modelId] as const
+  ),
   dimensionalScope: (tenantId: number, modelId: number) => (
     ["workflow-run-dimensional-scope", tenantId, modelId] as const
   ),
@@ -625,6 +678,42 @@ export async function loadAllBronzeScope<TScope extends WorkflowScopeObject>(
     cursor = response.next_cursor;
   }
   throw new Error("Active Bronze Scope exceeds the supported bounded selection");
+}
+
+export async function loadAllEnrichmentScope<TScope extends WorkflowScopeObject>(
+  api: WorkflowScopeReader<TScope>,
+  tenantId: number,
+  modelId: number,
+): Promise<{ modelRevision: number; items: TScope[] }> {
+  const items: TScope[] = [];
+  const seenCursors = new Set<string>();
+  let cursor: string | undefined;
+  let modelRevision: number | null = null;
+
+  for (let page = 0; page < 250; page += 1) {
+    const response = await api.listModelInputScope(
+      tenantId,
+      modelId,
+      {},
+      200,
+      cursor,
+    );
+    if (modelRevision !== null && modelRevision !== response.model_revision) {
+      throw new Error("Model Input Scope revision changed while loading");
+    }
+    modelRevision = response.model_revision;
+    if (response.items.some((item) => item.zone_code !== "source" && item.zone_code !== "bronze")) {
+      throw new Error("Enrichment requires Source and Bronze Model Input Scope");
+    }
+    items.push(...response.items);
+    if (!response.next_cursor) return { modelRevision, items };
+    if (seenCursors.has(response.next_cursor)) {
+      throw new Error("Model Input Scope cursor repeated");
+    }
+    seenCursors.add(response.next_cursor);
+    cursor = response.next_cursor;
+  }
+  throw new Error("Active Source and Bronze Scope exceeds the supported bounded selection");
 }
 
 export async function loadAllDimensionalScope<TScope extends WorkflowScopeObject>(
@@ -664,59 +753,45 @@ export function resolveDefaultAgent(
   capabilities: AgentCapabilities,
   effectiveExecutionMode: WorkflowExecutionMode,
   defaults: {
-    sdkCode: string | null;
-    providerCode: string | null;
     modelCode: string | null;
     reasoningEffortCode: string | null;
     maxTurns: number | null;
     validationRetryCount: number | null;
   },
 ): CreateWorkflowRunCommand["agent"] {
-  for (const sdk of preferCode(capabilities.sdks, defaults.sdkCode)) {
-    const providers = preferCode(capabilities.providers, defaults.providerCode)
-      .filter((provider) => sdk.provider_codes.includes(provider.code));
-    for (const provider of providers) {
-      const models = preferCode(capabilities.models, defaults.modelCode)
-        .filter((model) => model.provider_code === provider.code);
-      for (const model of models) {
-        const profile = findAgentExecutionProfile(
-          model,
-          sdk.code,
-          effectiveExecutionMode,
-        );
-        if (!profile) continue;
-        const reasoningEffortCode = profile.reasoning_effort_codes.includes(
-          defaults.reasoningEffortCode ?? "",
-        )
-          ? defaults.reasoningEffortCode
-          : profile.reasoning_effort_codes[0];
-        if (!reasoningEffortCode) continue;
-        return {
-          sdk_code: sdk.code,
-          provider_code: provider.code,
-          model_code: model.code,
-          reasoning_effort_code: reasoningEffortCode,
-          max_turns: defaults.maxTurns ?? capabilities.max_turns.default,
-          validation_retry_count: defaults.validationRetryCount
-            ?? capabilities.validation_retries.default,
-        };
-      }
-    }
-  }
-  return null;
+  const resolved = resolveAgentProfileSelection(
+    capabilities, effectiveExecutionMode, defaults, [effectiveExecutionMode],
+  );
+  if (!resolved) return null;
+  const turns = defaults.maxTurns;
+  const retries = defaults.validationRetryCount;
+  return {
+    sdk_code: "openai_agents_sdk",
+    provider_code: "microsoft_foundry",
+    model_code: resolved.modelCode,
+    reasoning_effort_code: resolved.reasoningEffortCode,
+    max_turns: turns !== null && Number.isInteger(turns)
+      && turns >= capabilities.max_turns.minimum && turns <= capabilities.max_turns.maximum
+      ? turns : capabilities.max_turns.default,
+    validation_retry_count: retries !== null && Number.isInteger(retries)
+      && retries >= capabilities.validation_retries.minimum
+      && retries <= capabilities.validation_retries.maximum
+      ? retries : capabilities.validation_retries.default,
+  };
 }
 
 export function listCompatibleExecutionModes(
   capabilities: AgentCapabilities,
-  sdkCode: string,
-  providerCode: string,
 ): WorkflowExecutionMode[] {
-  const sdk = capabilities.sdks.find((item) => item.code === sdkCode);
-  if (!sdk?.provider_codes.includes(providerCode)) return [];
+  const sdk = capabilities.sdks.find((item) => item.code === "openai_agents_sdk");
+  if (!sdk?.provider_codes.includes("microsoft_foundry")
+    || !capabilities.providers.some((item) => item.code === "microsoft_foundry")) return [];
   const available = new Set(capabilities.models
-    .filter((model) => model.provider_code === providerCode)
+    .filter((model) => model.provider_code === "microsoft_foundry")
     .flatMap((model) => model.execution_profiles
-      .filter((profile) => profile.sdk_code === sdkCode)
+      .filter((profile) => profile.sdk_code === "openai_agents_sdk"
+        && profile.reasoning_effort_codes.some((code) =>
+          capabilities.reasoning_efforts.some((effort) => effort.code === code)))
       .map((profile) => profile.execution_mode)));
   return WORKFLOW_EXECUTION_MODES.filter((mode) => available.has(mode));
 }
@@ -725,60 +800,29 @@ export function resolveAgentProfileSelection(
   capabilities: AgentCapabilities,
   preferredExecutionMode: WorkflowExecutionMode,
   selection: {
-    sdkCode: string | null;
-    providerCode: string | null;
     modelCode: string | null;
     reasoningEffortCode: string | null;
   },
+  allowedExecutionModes: readonly WorkflowExecutionMode[] = WORKFLOW_EXECUTION_MODES,
 ): {
   executionMode: WorkflowExecutionMode;
-  sdkCode: string;
-  providerCode: string;
   modelCode: string;
   reasoningEffortCode: string;
 } | null {
-  for (const sdk of preferCode(capabilities.sdks, selection.sdkCode)) {
-    const providers = preferCode(capabilities.providers, selection.providerCode)
-      .filter((provider) => (
-        sdk.provider_codes.includes(provider.code)
-        && capabilities.models.some((model) => (
-          model.provider_code === provider.code
-          && model.execution_profiles.some((profile) => profile.sdk_code === sdk.code)
-        ))
-      ));
-    for (const provider of providers) {
-      const compatibleModes = listCompatibleExecutionModes(
-        capabilities,
-        sdk.code,
-        provider.code,
-      );
-      const modes = preferExecutionMode(compatibleModes, preferredExecutionMode);
-      for (const executionMode of modes) {
-        const models = preferCode(capabilities.models, selection.modelCode)
-          .filter((model) => (
-            model.provider_code === provider.code
-            && findAgentExecutionProfile(model, sdk.code, executionMode) !== undefined
-          ));
-        for (const model of models) {
-          const profile = findAgentExecutionProfile(model, sdk.code, executionMode);
-          const reasoningEfforts = profile?.reasoning_effort_codes.filter((code) => (
-            capabilities.reasoning_efforts.some((effort) => effort.code === code)
-          )) ?? [];
-          const reasoningEffortCode = reasoningEfforts.includes(
-            selection.reasoningEffortCode ?? "",
-          )
-            ? selection.reasoningEffortCode
-            : reasoningEfforts[0];
-          if (!reasoningEffortCode) continue;
-          return {
-            executionMode,
-            sdkCode: sdk.code,
-            providerCode: provider.code,
-            modelCode: model.code,
-            reasoningEffortCode,
-          };
-        }
-      }
+  const modes = preferExecutionMode(
+    listCompatibleExecutionModes(capabilities).filter((mode) => allowedExecutionModes.includes(mode)),
+    preferredExecutionMode,
+  );
+  for (const executionMode of modes) {
+    for (const model of preferCode(capabilities.models, selection.modelCode)) {
+      const profile = findAgentExecutionProfile(model, executionMode);
+      const efforts = profile?.reasoning_effort_codes.filter((code) => (
+        capabilities.reasoning_efforts.some((effort) => effort.code === code)
+      )) ?? [];
+      const reasoningEffortCode = efforts.includes(selection.reasoningEffortCode ?? "")
+        ? selection.reasoningEffortCode : efforts[0];
+      if (!reasoningEffortCode) continue;
+      return { executionMode, modelCode: model.code, reasoningEffortCode };
     }
   }
   return null;
@@ -786,11 +830,11 @@ export function resolveAgentProfileSelection(
 
 export function findAgentExecutionProfile(
   model: AgentModelCapability,
-  sdkCode: string,
   executionMode: WorkflowExecutionMode,
 ): AgentModelExecutionProfile | undefined {
+  if (model.provider_code !== "microsoft_foundry") return undefined;
   return model.execution_profiles.find((profile) => (
-    profile.sdk_code === sdkCode && profile.execution_mode === executionMode
+    profile.sdk_code === "openai_agents_sdk" && profile.execution_mode === executionMode
   ));
 }
 

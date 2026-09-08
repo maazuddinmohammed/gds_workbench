@@ -1,3 +1,4 @@
+import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -33,6 +34,7 @@ export function DimensionalObjectsLedger({
   items,
   filters,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -41,10 +43,13 @@ export function DimensionalObjectsLedger({
   items: DimensionalObject[];
   filters: DimensionalFilters;
   state: DimensionalLedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: DimensionalFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<DimensionalObject>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_entity_id, "Dimensional Objects"),
     {
       accessorKey: "dimensional_entity_name",
       header: "Dimensional Object",
@@ -106,7 +111,7 @@ export function DimensionalObjectsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   const table = useReactTable({ data: items, columns, getCoreRowModel: getCoreRowModel() });
 
   return (
@@ -272,6 +277,7 @@ export function DimensionalAttributesLedger({
   items,
   filters,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -280,10 +286,13 @@ export function DimensionalAttributesLedger({
   items: DimensionalAttribute[];
   filters: DimensionalAttributeFilters;
   state: DimensionalLedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: DimensionalAttributeFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<DimensionalAttribute>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_attribute_id, "Dimensional Attributes"),
     {
       accessorKey: "dimensional_attribute_name",
       header: "Dimensional Attribute",
@@ -341,7 +350,7 @@ export function DimensionalAttributesLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <DimensionalLedgerSurface
       tableLabel="Dimensional Attributes"
@@ -364,6 +373,7 @@ export function DimensionalRelationshipsLedger({
   items,
   filters,
   state,
+  selectedIds, onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -372,10 +382,13 @@ export function DimensionalRelationshipsLedger({
   items: DimensionalRelationship[];
   filters: DimensionalRelationshipFilters;
   state: DimensionalLedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: DimensionalRelationshipFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<DimensionalRelationship>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.dimensional_relationship_id, "Dimensional Relationships"),
     { accessorKey: "dimensional_relationship_name", header: "Relationship" },
     {
       id: "from",
@@ -430,7 +443,7 @@ export function DimensionalRelationshipsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <DimensionalLedgerSurface
       tableLabel="Dimensional Relationships"

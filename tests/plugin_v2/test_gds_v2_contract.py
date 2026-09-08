@@ -66,6 +66,7 @@ def test_workflow_router_names_current_targets_and_validation_terms() -> None:
 
     for target in (
         "Metadata Authoring",
+        "Metadata Enrichment",
         "Model Input Scope Authoring",
         "Logical Build",
         "Silver Target Registration",
@@ -102,6 +103,41 @@ def test_visible_lifecycle_is_refresh_acknowledge_and_proceed() -> None:
     assert "ask separately for Apply approval" in router
     assert "Never ask separately for review acceptance and handoff approval" in router
     assert "Do not run `review` unless the user asks for an action summary" in router
+
+
+def test_stage_uses_the_deterministic_extension_without_payload_context() -> None:
+    router = read(SKILL_ROOT / "SKILL.md")
+    staging = read(REFERENCES / "staging.md")
+    helper = read(REFERENCES / "local-helper.md")
+
+    for document in (router, staging, helper):
+        assert "prepare-stage-request" in document
+        assert "gds_stageApprovedManifest" in document
+    assert "Do not open, parse, quote, or pass any payload file" in staging
+    assert "every dataset currently present" in staging
+    assert "stageStarted=false" in staging
+    assert "legacyFallbackAllowed=true" in staging
+    assert "If `stageStarted=true`, stop" in staging
+    assert "at most 25 bounded examples" in staging
+    assert (
+        "acceptedDigest -> Change Set ID -> resultingRevision -> stageFingerprint"
+        in staging
+    )
+
+
+def test_automatic_subagent_model_is_always_a_persisted_user_choice() -> None:
+    router = read(SKILL_ROOT / "SKILL.md")
+    automatic = read(REFERENCES / "automatic-journey.md")
+    helper = read(REFERENCES / "local-helper.md")
+    combined = "\n".join((router, automatic, helper))
+
+    assert "status.subagent_policy" in combined
+    assert "Inherit current model" in automatic
+    assert "Disable subagents" in automatic
+    assert "Fixed model" in automatic
+    assert "Never infer a fixed model" in automatic
+    assert "subagent-policy --mode inherit|disabled|fixed" in helper
+    assert "Never store prompts, tokens, credentials" in helper
 
 
 def test_resume_continues_from_recorded_state_without_rebuilding() -> None:
@@ -176,7 +212,9 @@ def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
     assert "No Object may contain data from multiple source Tenants" in combined
 
 
-def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> None:
+def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> (
+    None
+):
     registration = read(WORKFLOWS / "target-registration.md")
     binding = read(WORKFLOWS / "model-binding.md")
 
@@ -195,7 +233,12 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     logical = read(WORKFLOWS / "logical-build.md")
     dimensional = read(WORKFLOWS / "dimensional-build.md")
 
-    phases = ["**Profile**", "**Analyze relationships**", "**Build Conceptual**", "**Build Logical**"]
+    phases = [
+        "**Profile**",
+        "**Analyze relationships**",
+        "**Build Conceptual**",
+        "**Build Logical**",
+    ]
     assert [logical.index(phase) for phase in phases] == sorted(
         logical.index(phase) for phase in phases
     )
@@ -224,7 +267,9 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
         "same business concept at the same grain",
     ):
         assert decision in logical
-    assert "Do not finalize a metadata-only result when a query can resolve it" in logical
+    assert (
+        "Do not finalize a metadata-only result when a query can resolve it" in logical
+    )
     assert "do not turn this layer into a star schema" in logical
     assert "Kimball's four decisions" in dimensional
     assert "process-to-dimension bus matrix" in dimensional
@@ -238,14 +283,19 @@ def test_mapping_is_flexible_but_has_a_standard_default() -> None:
         "The work unit is"
     )
     assert "object-level and attribute-level JSON shape" in mapping
-    assert "One confirmation may cover every selected target" in mapping
-    assert "structural change requires confirmation again" in mapping
+    assert "One confirmation covers selected targets sharing the structure" in mapping
+    assert "structural changes require confirmation again" in mapping
     assert "advisory default" in mapping
     assert "target `model_object_binding`" in mapping
     assert "source System" in mapping
     assert "transformation_document" in mapping
-    assert "authoring guidance" in mapping
-    assert "JSON storage is flexible" in mapping
+    assert "follow the selected Output Template" in mapping
+    assert "Flexible storage and advisory templates" in mapping
+    assert "`mapping_object_default` and `mapping_attribute_default`" in mapping
+    assert (
+        "configuration or evidence establishes it is installed; otherwise use JSON null"
+        in mapping
+    )
 
 
 def test_code_generation_confirms_a_small_layout_preview_before_authoring() -> None:
@@ -260,6 +310,24 @@ def test_code_generation_confirms_a_small_layout_preview_before_authoring() -> N
     assert "reconfirm if the layout changes" in code
     assert "CREATE OR REPLACE TEMPORARY VIEW" in example
     assert "UNION ALL" in example
+    assert "SELECT *" not in example.upper()
+
+
+def test_authoring_uses_inferred_types_and_independent_validation() -> None:
+    changes = read(REFERENCES / "change-sets.md")
+    mapping = read(WORKFLOWS / "mapping.md")
+    code = read(WORKFLOWS / "code-generation.md")
+    validation = read(WORKFLOWS / "validation.md")
+
+    assert "attribute_inferred_data_type" in changes
+    assert "does not change STRING storage" in changes
+    assert "never weaken validation" in changes
+    assert "storage, inferred source and bound target types" in mapping
+    assert "invalid-value handling" in mapping
+    assert "explicit target columns in bound order" in code
+    assert "exactly one active artifact assignment" in code
+    assert "independently from Mapping and confirmed rules" in validation
+    assert "empty-input and null behavior" in validation
 
 
 def test_validation_confirms_broad_categories_before_authoring_checks() -> None:
@@ -326,10 +394,7 @@ def test_dbml_is_an_explicit_opt_in_display_export() -> None:
     local_helper = read(REFERENCES / "local-helper.md")
     workbench = read(REFERENCES / "workbench.md")
 
-    rule = (
-        "Never generate, regenerate, read, or inspect DBML unless the user "
-        "explicitly asks"
-    )
+    rule = "Never generate, regenerate, read, or inspect DBML unless the user explicitly asks"
     assert rule in router
     assert rule in local_helper
     assert "DBML is a display export, not validation or review evidence" in router
@@ -351,6 +416,11 @@ def test_user_guide_explains_vs_code_and_the_simple_workflow() -> None:
     assert "Tenant, System, and Connection setup is an external" in guide
     assert "Tenant Intake" not in guide
     assert "Users never calculate chunks or hashes manually" in guide
+    assert "Install from VSIX" in guide
+    assert "GDS: Check Stage Runner" in guide
+    assert "GitHub account" in guide
+    assert "gds.stageRunner.profile" in guide
+    assert "does not guess the server mode" in guide
     for target in (
         "Metadata Authoring",
         "Model Input Scope Authoring",

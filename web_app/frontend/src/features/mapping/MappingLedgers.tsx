@@ -1,3 +1,4 @@
+import { reviewSelectionColumn } from "../model_record_review/selection";
 import { useMemo, type ReactNode } from "react";
 import { useForm } from "@tanstack/react-form";
 import { Link } from "@tanstack/react-router";
@@ -26,6 +27,8 @@ export interface MappingLedgerState {
 }
 
 interface CommonLedgerProps {
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   tenantId: number;
   modelId: number;
   filters: MappingFilters;
@@ -35,6 +38,7 @@ interface CommonLedgerProps {
 }
 
 export function MappingDependenciesLedger({
+  selectedIds, onSelectionChange,
   items,
   filters,
   state,
@@ -42,6 +46,7 @@ export function MappingDependenciesLedger({
   onLoadMore,
 }: CommonLedgerProps & { items: MappingDependency[] }) {
   const columns = useMemo<ColumnDef<MappingDependency>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_source_system_dependency_id, "Mapping Dependencies"),
     {
       id: "source_system",
       header: "Source System",
@@ -65,7 +70,7 @@ export function MappingDependenciesLedger({
       },
     },
     { accessorKey: "updated_at", header: "Updated", cell: ({ getValue }) => formatDateTime(getValue<string>()) },
-  ], []);
+  ], [items, selectedIds, onSelectionChange]);
   return (
     <MappingLedgerSurface
       label="Mapping Dependencies"
@@ -81,6 +86,7 @@ export function MappingDependenciesLedger({
 export function MappingObjectsLedger({
   tenantId,
   modelId,
+  selectedIds, onSelectionChange,
   items,
   filters,
   state,
@@ -88,6 +94,7 @@ export function MappingObjectsLedger({
   onLoadMore,
 }: CommonLedgerProps & { items: MappingObject[] }) {
   const columns = useMemo<ColumnDef<MappingObject>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_object_id, "Mapping Objects"),
     {
       id: "target",
       header: "Target Object",
@@ -130,7 +137,7 @@ export function MappingObjectsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <MappingLedgerSurface
       label="Object Mappings"
@@ -146,6 +153,7 @@ export function MappingObjectsLedger({
 export function MappingAttributesLedger({
   tenantId,
   modelId,
+  selectedIds, onSelectionChange,
   items,
   filters,
   state,
@@ -153,6 +161,7 @@ export function MappingAttributesLedger({
   onLoadMore,
 }: CommonLedgerProps & { items: MappingAttribute[] }) {
   const columns = useMemo<ColumnDef<MappingAttribute>[]>(() => [
+    reviewSelectionColumn(items, { selectedIds, onSelectionChange }, (item) => item.mapping_attribute_id, "Mapping Attributes"),
     {
       id: "target",
       header: "Target Attribute",
@@ -195,7 +204,7 @@ export function MappingAttributesLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, selectedIds, onSelectionChange, modelId, tenantId]);
   return (
     <MappingLedgerSurface
       label="Attribute Mappings"

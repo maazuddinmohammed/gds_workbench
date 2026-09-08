@@ -1,3 +1,4 @@
+import type { ModelRecordReviewApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type { ModelsApi } from "../models/api";
 import type { WorkflowsApi } from "../workflows/api";
@@ -33,6 +34,7 @@ export interface ValidationValidationCheck {
   validation_comparison_value_type: string;
   validation_comparison_value: unknown;
   is_active: boolean;
+  is_locked: boolean;
 }
 
 export interface ValidationValidationGroup {
@@ -45,6 +47,7 @@ export interface ValidationValidationGroup {
   code_context_is_current: boolean;
   validation_group_is_current: boolean;
   is_active: boolean;
+  is_locked: boolean;
   checks: ValidationValidationCheck[];
 }
 
@@ -65,7 +68,7 @@ export interface ValidationTransport {
   ) => Promise<ValidationLedger>;
 }
 
-export type ValidationApi = ValidationTransport
+export type ValidationApi = ValidationTransport & ModelRecordReviewApi
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,

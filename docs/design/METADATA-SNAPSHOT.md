@@ -200,11 +200,17 @@ physical `core.object` and `core.attribute` tables become eight Zone-specific
 datasets. Objects and Attributes remain separate; Object rows never contain a
 nested or duplicate Attribute array.
 
-`is_locked` exists only on Object rows. Attribute rows do not duplicate it.
-A locked Object blocks changes to both that Object and its Attributes. Validate
-reports the staged records; Apply locks and rechecks the physical Object rows
+Objects and Attributes each have `is_locked`. A locked Object blocks changes to
+itself and all its Attributes; an Attribute lock protects that Attribute.
+Validate reports the staged records; Apply locks and rechecks physical rows
 before its first write. Apply remains one PostgreSQL transaction, so any later
 failure rolls back all earlier dataset writes.
+
+Attributes retain their physical `attribute_data_type` and separately carry
+nullable `attribute_inferred_data_type`. Complete records must include both the
+inferred type (null when unknown) and lock flag. Older records missing these fields
+are rejected: refresh their Snapshot before staging, rather than erasing inferred
+types or unlocking Attributes through omitted fields.
 
 The four Foundational datasets are Project, Tenant, System, and Connection.
 The eight allowlisted `reference.*` datasets are Reference. The remaining 16

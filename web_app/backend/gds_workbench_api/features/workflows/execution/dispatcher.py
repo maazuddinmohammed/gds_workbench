@@ -1,8 +1,17 @@
 """Exact dispatch from a durable claim to one Workflow executor."""
 
+from __future__ import annotations
+
+from contextlib import nullcontext
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
+
+from gds_etl_workbench.domain.errors import InvalidRequestError
 
 from .contracts import WorkflowExecutionClaim, WorkflowExecutor
+
+if TYPE_CHECKING:
+    from gds_workbench_api.features.workflows.usage.service import DatabaseWorkflowUsageRecorder
 
 
 @dataclass(frozen=True, slots=True)
@@ -16,6 +25,8 @@ class WorkflowExecutionServices:
     mapping: WorkflowExecutor
     code_generation: WorkflowExecutor
     validation: WorkflowExecutor
+    metadata_enrichment: WorkflowExecutor
+    usage_recorder: DatabaseWorkflowUsageRecorder | None = None
 
 
 class WorkflowExecutionDispatcher:
@@ -41,17 +52,27 @@ class WorkflowExecutionDispatcher:
             executor = self._services.mapping
         elif claim.model_workflow == "code_generation":
             executor = self._services.code_generation
-        else:
+        elif claim.model_workflow == "validation":
             executor = self._services.validation
+        elif claim.model_workflow == "metadata_enrichment":
+            executor = self._services.metadata_enrichment
+        else:
+            raise InvalidRequestError("The requested workflow executor is unavailable.")
 
-        return await executor.execute_started(
-            claim.principal,
-            tenant_id=claim.tenant_id,
-            model_id=claim.model_id,
-            workflow_run_id=claim.workflow_run_id,
-            expected_model_revision=claim.model_revision,
-            workflow_run_claim_token=claim.workflow_run_claim_token,
+        recording = (
+            self._services.usage_recorder.track_run(claim)
+            if self._services.usage_recorder is not None
+            else nullcontext()
         )
+        async with recording:
+            return await executor.execute_started(
+                claim.principal,
+                tenant_id=claim.tenant_id,
+                model_id=claim.model_id,
+                workflow_run_id=claim.workflow_run_id,
+                expected_model_revision=claim.model_revision,
+                workflow_run_claim_token=claim.workflow_run_claim_token,
+            )
 
 
 __all__ = ["WorkflowExecutionDispatcher", "WorkflowExecutionServices"]

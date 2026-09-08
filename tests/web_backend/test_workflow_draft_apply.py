@@ -13,7 +13,6 @@ from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, ModelChangeSetNotFoundError
 from gds_etl_workbench.infrastructure.postgres import WriteTransaction
-
 from gds_workbench_api.features.workflows.authoring.change_set_apply import (
     ApplyWorkflowDraftRequest,
     ApplyWorkflowDraftResult,
@@ -23,6 +22,7 @@ from gds_workbench_api.features.workflows.authoring.change_set_apply_router impo
     WorkflowDraftApplyService,
     create_workflow_draft_apply_router,
 )
+
 
 class StaticWorkflowDraftApplyService:
     async def apply(

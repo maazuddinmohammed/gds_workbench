@@ -8,7 +8,6 @@ from typing import cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -27,6 +26,7 @@ from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
     enrich_agent_output_model_definitions,
+    model_validation_issues,
     parse_pydantic_candidate,
 )
 
@@ -141,13 +141,17 @@ class ConceptualCandidateValidator:
                 path=("objects", index),
                 issues=issues,
             )
+            existing = self._applied_objects.get(_object_key(record))
+            merged = _merge_object(record, existing)
             self._validate_agent_evidence(
                 record.supports,
+                unchanged_applied=(
+                    existing is not None and merged == existing.model_dump(mode="json")
+                ),
                 path=("objects", index, "supports"),
                 issues=issues,
             )
-            existing = self._applied_objects.get(_object_key(record))
-            raw_objects.append(_merge_object(record, existing))
+            raw_objects.append(merged)
 
         raw_relationships: list[dict[str, object]] = []
         for index, record in enumerate(parsed.relationships):
@@ -156,13 +160,17 @@ class ConceptualCandidateValidator:
                 path=("relationships", index),
                 issues=issues,
             )
+            existing = self._applied_relationships.get(_relationship_key(record))
+            merged = _merge_relationship(record, existing)
             self._validate_agent_evidence(
                 record.supports,
+                unchanged_applied=(
+                    existing is not None and merged == existing.model_dump(mode="json")
+                ),
                 path=("relationships", index, "supports"),
                 issues=issues,
             )
-            existing = self._applied_relationships.get(_relationship_key(record))
-            raw_relationships.append(_merge_relationship(record, existing))
+            raw_relationships.append(merged)
 
         object_records, object_issues = validate_staged_records(
             "conceptual_object",
@@ -172,7 +180,7 @@ class ConceptualCandidateValidator:
             "conceptual_relationship",
             raw_relationships,
         )
-        issues.extend(_model_issues(object_issues + relationship_issues))
+        issues.extend(model_validation_issues(object_issues + relationship_issues))
         objects = cast(tuple[ConceptualObjectRecord, ...], object_records)
         relationships = cast(
             tuple[ConceptualRelationshipRecord, ...],
@@ -237,12 +245,16 @@ class ConceptualCandidateValidator:
         self,
         supports: Sequence[SupportRecord],
         *,
+        unchanged_applied: bool,
         path: tuple[str | int, ...],
         issues: list[AgentValidationIssue],
     ) -> None:
         for index, support in enumerate(supports):
             if isinstance(support, ObjectSupportRecord):
-                valid = _physical_key(support.source_object) in self._selected_object_keys
+                valid = (
+                    unchanged_applied
+                    or _physical_key(support.source_object) in self._selected_object_keys
+                )
                 code = "candidate.support_outside_selection"
                 message = "Physical support must belong to this immutable run selection."
             else:
@@ -380,23 +392,6 @@ def _append_locked_change_issues(
                     message="A locked applied Conceptual support cannot be changed.",
                 )
             )
-
-
-def _model_issues(
-    issues: tuple[ModelValidationIssue, ...],
-) -> tuple[AgentValidationIssue, ...]:
-    return tuple(
-        AgentValidationIssue(
-            code=f"candidate.{issue.code}",
-            path=(
-                issue.dataset,
-                *((issue.record_number - 1,) if issue.record_number is not None else ()),
-                *issue.fields,
-            ),
-            message=issue.message,
-        )
-        for issue in issues
-    )
 
 
 def _object_key(record: ConceptualObjectRecord) -> str:

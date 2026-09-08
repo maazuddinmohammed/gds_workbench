@@ -8,6 +8,7 @@ from typing import Any, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
@@ -18,9 +19,6 @@ from gds_etl_workbench.domain.modeling_records import (
     ValidationGroupRecord,
 )
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation, WriteTransaction
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.validation.context import (
     ValidationExecutionContext,
@@ -52,6 +50,9 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
+
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 
@@ -111,6 +112,7 @@ def _plan() -> AgentRunPlan:
 
 def _group() -> ValidationGroupRecord:
     return ValidationGroupRecord(
+        is_locked=False,
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
@@ -121,6 +123,7 @@ def _group() -> ValidationGroupRecord:
 
 def _check() -> ValidationCheckRecord:
     return ValidationCheckRecord(
+        is_locked=False,
         tenant_code="acme",
         system_code="erp",
         validation_group_name="reconciliation",
@@ -148,7 +151,18 @@ def _context(*, applied: bool = False) -> ValidationExecutionContext:
                 applied_groups=(_group(),) if applied else (),
                 applied_checks=(_check(),) if applied else (),
                 current_group_names=("reconciliation",) if applied else (),
-                agent_context={"scope": {"system_code": "erp"}},
+                agent_context={
+                    "system_ref": "system_1",
+                    "scope": {"tenant_code": "acme", "system_code": "erp"},
+                    "mapping_targets": [],
+                    "generated_code": [],
+                    "applied_validation_groups": [_group().model_dump(mode="json")]
+                    if applied
+                    else [],
+                    "applied_validation_checks": [_check().model_dump(mode="json")]
+                    if applied
+                    else [],
+                },
             ),
         )
     )
@@ -235,7 +249,7 @@ class _ContextRepository:
         self, transaction: object, **_: object
     ) -> ValidationExecutionContext:
         del transaction
-        return self.context
+        return validation_graph_context(self.context)
 
 
 @dataclass
@@ -256,7 +270,7 @@ class _AgentExecutor:
 
 
 @dataclass
-class _Handoff:
+class _Handoff(RetainingHandoff):
     calls: list[tuple[StageModelChange, ...]] = field(
         default_factory=lambda: list[tuple[StageModelChange, ...]]()
     )
@@ -314,7 +328,9 @@ class _NoOp:
             model_id=model_id,
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
-            workflow_run_state="completed",
+            workflow_run_state="completed_with_repair"
+            if request.final_event.attempt > 1
+            else "completed",
             model_workflow="validation",
             workflow_execution_mode=None,
             correlation_id=request.expected_correlation_id,
@@ -419,7 +435,7 @@ async def test_executor_stages_validation_groups_and_checks_through_change_set_h
     ]
     assert no_op.requests == []
     assert agent.requests[0].workflow == "validation"
-    assert agent.requests[0].execution_mode == "detailed_coverage"
+    assert agent.requests[0].execution_mode == "tool_assisted"
     assert "{{validation_context}}" not in agent.requests[0].instruction_prompt
     assert lifecycle.failed is None
 
@@ -442,3 +458,57 @@ async def test_executor_completes_identical_candidate_as_no_op() -> None:
     assert handoff.calls == []
     assert len(no_op.requests) == 1
     assert no_op.requests[0].expected_execution_mode is None
+
+
+def validation_graph_context(
+    context: ValidationExecutionContext,
+) -> ValidationExecutionContext:
+    from dataclasses import replace
+
+    from tests.mcp.model_test_fixtures import (
+        complete_model_graph,
+        complete_physical_scope,
+        snapshot_from_graph,
+    )
+
+    if context.snapshot is not None:
+        return context
+    graph = complete_model_graph()
+    systems = tuple(system.system_code for system in context.systems)
+    for dataset in (
+        "mapping_dependency",
+        "mapping_object",
+        "mapping_attribute",
+        "generated_code_source_system",
+    ):
+        graph[cast(Any, dataset)] = [
+            {**row, "source_system_code": system}
+            for row in graph[cast(Any, dataset)]
+            for system in systems
+        ]
+    for document in graph["modeling_assertion_document"]:
+        if document.get("tenant_code") is not None:
+            document["tenant_code"] = "acme"
+    graph["validation_group"] = [
+        row.model_dump(mode="json")
+        for system in context.systems
+        for row in system.applied_groups
+    ]
+    graph["validation_check"] = [
+        row.model_dump(mode="json")
+        for system in context.systems
+        for row in system.applied_checks
+    ]
+    return context.model_copy(
+        update={
+            "snapshot": snapshot_from_graph(graph).model_copy(
+                update={"model_id": 18, "model_revision": 7}
+            ),
+            "physical_scope": replace(
+                complete_physical_scope(),
+                model_tenant_code="acme",
+                active_system_codes=complete_physical_scope().active_system_codes
+                | frozenset(system.casefold() for system in systems),
+            ),
+        }
+    )

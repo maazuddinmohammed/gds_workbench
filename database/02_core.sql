@@ -83,6 +83,7 @@ CREATE TABLE core.connection (
     system_id BIGINT NOT NULL,
     connection_code VARCHAR(100) NOT NULL,
     connection_name VARCHAR(200) NOT NULL,
+    connection_description TEXT,
     connection_type_id BIGINT NOT NULL,
     has_foreign_catalog BOOLEAN NOT NULL DEFAULT FALSE,
     foreign_catalog VARCHAR(255),
@@ -203,6 +204,7 @@ CREATE TABLE core.attribute (
     attribute_ordinal_position INTEGER NOT NULL,
     attribute_description TEXT,
     attribute_data_type VARCHAR(100) NOT NULL,
+    attribute_inferred_data_type VARCHAR(100),
     attribute_nullability BOOLEAN NOT NULL DEFAULT TRUE,
     attribute_custom_code TEXT,
     business_glossary_id BIGINT,
@@ -212,6 +214,7 @@ CREATE TABLE core.attribute (
     is_masking_required BOOLEAN NOT NULL DEFAULT FALSE,
     is_mapped BOOLEAN NOT NULL DEFAULT FALSE,
     is_purge BOOLEAN NOT NULL DEFAULT FALSE,
+    is_locked BOOLEAN NOT NULL DEFAULT FALSE,
     is_active BOOLEAN NOT NULL DEFAULT TRUE,
     created_time TIMESTAMPTZ NOT NULL DEFAULT CURRENT_TIMESTAMP,
     created_by VARCHAR(255) NOT NULL DEFAULT CURRENT_USER,
@@ -224,7 +227,11 @@ CREATE TABLE core.attribute (
         DEFERRABLE INITIALLY IMMEDIATE,
     CONSTRAINT uq_attribute_id_object UNIQUE (attribute_id, object_id),
     CONSTRAINT ck_attribute_name CHECK (reference.is_nonblank(attribute_name)),
-    CONSTRAINT ck_attribute_ordinal CHECK (attribute_ordinal_position > 0)
+    CONSTRAINT ck_attribute_ordinal CHECK (attribute_ordinal_position > 0),
+    CONSTRAINT ck_attribute_inferred_data_type CHECK (
+        attribute_inferred_data_type IS NULL
+        OR reference.is_nonblank(attribute_inferred_data_type)
+    )
 );
 
 CREATE TABLE core.ingestion_object_mapping (

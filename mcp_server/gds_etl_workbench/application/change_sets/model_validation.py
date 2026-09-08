@@ -148,7 +148,10 @@ def validate_future_graph(
     snapshot: ModelSnapshot,
     staged_documents: dict[ModelChangeSetDataset, list[dict[str, object]]],
     physical_scope: PhysicalModelCatalog,
+    code_authoring: bool = True,
 ) -> ValidatedModelChangeSet:
+    # Only the governed, field-only human lifecycle review uses False. It can
+    # retain stale Code; authoring always requires complete System assignments.
     effective = model_snapshot_records(snapshot)
     staged: dict[str, tuple[ModelingRecord, ...]] = {}
     schema_issues: list[ModelValidationIssue] = []
@@ -167,11 +170,13 @@ def validate_future_graph(
 
     candidate_digest = _candidate_digest(staged)
     future: dict[str, tuple[ModelingRecord, ...]] = {}
+    retained_keys: dict[str, set[tuple[object, ...]]] = {}
     lock_issues: list[ModelValidationIssue] = []
     for definition in DATASETS:
         current = effective[definition.name]
         changes = staged.get(definition.name, ())
         by_key = {_canonical_key(definition, record): record for record in current}
+        retained_keys[definition.name] = set(by_key)
         for record in changes:
             key = _canonical_key(definition, record)
             existing = by_key.get(key)
@@ -190,6 +195,8 @@ def validate_future_graph(
                     changed=record,
                     issues=lock_issues,
                 )
+            if existing is None or not _retains_physical_history(existing, record):
+                retained_keys[definition.name].discard(key)
             by_key[key] = record
         future[definition.name] = tuple(by_key.values())
     if lock_issues:
@@ -197,7 +204,7 @@ def validate_future_graph(
 
     scope_issues: list[ModelValidationIssue] = []
     _validate_model_details(future, physical_scope, scope_issues)
-    _validate_physical_scope(future, physical_scope, scope_issues)
+    _validate_physical_scope(future, physical_scope, scope_issues, retained_keys=retained_keys)
     if scope_issues:
         return _failed(staged, "model_input_scope", candidate_digest, scope_issues)
     if uniqueness_issues:
@@ -205,7 +212,16 @@ def validate_future_graph(
 
     reference_issues: list[ModelValidationIssue] = []
     _validate_references(future, reference_issues)
-    _validate_active_dependencies(future, reference_issues)
+    _validate_active_dependencies(
+        future,
+        reference_issues,
+        code_authoring_entities=frozenset(
+            _entity_key(record)
+            for dataset in ("generated_code", "generated_code_source_system")
+            for record in staged.get(dataset, ())
+            if code_authoring
+        ),
+    )
     if reference_issues:
         return _failed(staged, "references", candidate_digest, reference_issues)
 
@@ -214,7 +230,7 @@ def validate_future_graph(
         phase="complete",
         candidate_digest=candidate_digest,
         issues=(),
-        action_review=_build_action_review(effective, staged),
+        action_review=build_model_action_review(effective, staged),
     )
 
 
@@ -241,7 +257,7 @@ def _candidate_digest(records: dict[str, tuple[ModelingRecord, ...]]) -> str:
     return _sha256(document)
 
 
-def _build_action_review(
+def build_model_action_review(
     current: dict[str, tuple[ModelingRecord, ...]],
     staged: dict[str, tuple[ModelingRecord, ...]],
 ) -> tuple[DatasetActionReview, ...]:
@@ -307,6 +323,45 @@ def _model_active_state(values: Mapping[str, object]) -> bool | None:
     return None
 
 
+def _retains_physical_history(existing: ModelingRecord, changed: ModelingRecord) -> bool:
+    """Permit retained evidence and lifecycle review without accepting new authored content."""
+    if type(existing) is not type(changed):
+        return False
+    for field in type(existing).model_fields:
+        previous = getattr(existing, field)
+        current = getattr(changed, field)
+        if previous == current:
+            continue
+        if (
+            (field == "is_locked" or field.endswith("_is_locked"))
+            and isinstance(previous, bool)
+            and isinstance(current, bool)
+        ):
+            continue
+        if field == "is_active" and previous is True and current is False:
+            continue
+        if (field == "status" or field.endswith("_status")) and (
+            previous == "active" and current == "inactive"
+        ):
+            continue
+        if (
+            field in {"supports", "sources", "submodels"}
+            and isinstance(previous, tuple)
+            and isinstance(current, tuple)
+        ):
+            previous_items = cast(tuple[object, ...], previous)
+            current_items = cast(tuple[object, ...], current)
+            if len(previous_items) == len(current_items) and all(
+                isinstance(before, ModelingRecord)
+                and isinstance(after, ModelingRecord)
+                and _retains_physical_history(before, after)
+                for before, after in zip(previous_items, current_items, strict=True)
+            ):
+                continue
+        return False
+    return True
+
+
 def _validate_model_details(
     future: Mapping[str, tuple[Any, ...]],
     catalog: PhysicalModelCatalog,
@@ -335,7 +390,13 @@ def _validate_physical_scope(
     future: Mapping[str, tuple[Any, ...]],
     catalog: PhysicalModelCatalog,
     issues: list[ModelValidationIssue],
+    *,
+    retained_keys: Mapping[str, set[tuple[object, ...]]],
 ) -> None:
+    def retained(dataset: ModelChangeSetDataset, record: ModelingRecord) -> bool:
+        key = _canonical_key(CHANGE_SET_DATASETS_BY_NAME[dataset], record)
+        return key in retained_keys[dataset]
+
     input_objects: set[PhysicalObjectNaturalKey] = set()
     for record in future["model_input_scope"]:
         key = _physical_object_key(record)
@@ -346,14 +407,14 @@ def _validate_physical_scope(
                 "object_name",
                 "Referenced physical Object is not available to this Model Tenant.",
             )
-        elif key not in catalog.model_input_objects:
+        elif key not in catalog.model_input_objects and not retained("model_input_scope", record):
             _scope_missing(
                 issues,
                 "model_input_scope",
                 "object_name",
                 "Model Input Scope accepts only Source or Bronze Objects.",
             )
-        elif record.is_active:
+        elif record.is_active and key in catalog.model_input_objects:
             input_objects.add(key)
     input_attributes = {key for key in catalog.model_input_attributes if key[:5] in input_objects}
 
@@ -362,11 +423,14 @@ def _validate_physical_scope(
             record,
             "profiling_profile",
             "attribute_name",
-            input_attributes,
+            catalog.attributes if retained("profiling_profile", record) else input_attributes,
             "Profile Attribute is not in active Model Input Scope.",
             issues,
         )
     for record in future["analysis_result"]:
+        eligible_attributes = (
+            catalog.attributes if retained("analysis_result", record) else input_attributes
+        )
         for endpoint in ("from", "to"):
             key = cast(
                 PhysicalAttributeNaturalKey,
@@ -382,7 +446,7 @@ def _validate_physical_scope(
                     )
                 ),
             )
-            if key not in input_attributes:
+            if key not in eligible_attributes:
                 _scope_missing(
                     issues,
                     "analysis_result",
@@ -417,7 +481,7 @@ def _validate_physical_scope(
                         support.source_object,
                         dataset,
                         "source_object",
-                        input_objects,
+                        catalog.objects if retained(dataset, record) else input_objects,
                         "Physical support is not in active Model Input Scope.",
                         issues,
                     )
@@ -429,7 +493,7 @@ def _validate_physical_scope(
                         source.source_object,
                         dataset,
                         "source_object",
-                        input_objects,
+                        catalog.objects if retained(dataset, record) else input_objects,
                         "Logical source Object is not in active Model Input Scope.",
                         issues,
                     )
@@ -438,12 +502,12 @@ def _validate_physical_scope(
                         source.source_attribute,
                         dataset,
                         "source_attribute",
-                        input_attributes,
+                        catalog.attributes if retained(dataset, record) else input_attributes,
                         "Logical source Attribute is not in active Model Input Scope.",
                         issues,
                     )
 
-    bindings = _validate_bindings(future, catalog, issues)
+    bindings = _validate_bindings(future, catalog, issues, retained_keys=retained_keys)
     logical_object_sources = set(catalog.dimensional_source_objects)
     logical_attribute_sources = set(catalog.dimensional_source_attributes)
     for record in future["mapping_object"]:
@@ -452,7 +516,7 @@ def _validate_physical_scope(
             and record.modeled_entity_type == "logical_entity"
         ):
             target = bindings[0].get(_entity_key(record))
-            if target is not None:
+            if target is not None and target in catalog.logical_mapping_target_objects:
                 logical_object_sources.add(target)
     for record in future["mapping_attribute"]:
         if (
@@ -460,7 +524,7 @@ def _validate_physical_scope(
             and record.modeled_entity_type == "logical_entity"
         ):
             target = bindings[1].get(_attribute_key(record))
-            if target is not None:
+            if target is not None and target in catalog.logical_mapping_target_attributes:
                 logical_attribute_sources.add(target)
     for dataset in ("dimensional_entity", "dimensional_attribute"):
         for record in future[dataset]:
@@ -470,7 +534,7 @@ def _validate_physical_scope(
                         source.source_object,
                         dataset,
                         "source_object",
-                        logical_object_sources,
+                        catalog.objects if retained(dataset, record) else logical_object_sources,
                         "Dimensional source requires an active Silver Logical contribution.",
                         issues,
                     )
@@ -479,10 +543,57 @@ def _validate_physical_scope(
                         source.source_attribute,
                         dataset,
                         "source_attribute",
-                        logical_attribute_sources,
+                        catalog.attributes
+                        if retained(dataset, record)
+                        else logical_attribute_sources,
                         "Dimensional source requires an active Silver Logical contribution.",
                         issues,
                     )
+
+    # Current authoring must not inherit an inactive target through a retained Binding.
+    all_object_targets = {
+        _entity_key(record): _physical_object_key(record)
+        for record in future["model_object_binding"]
+    }
+    all_attribute_targets = {
+        _attribute_key(record): (
+            *all_object_targets[_entity_key(record)],
+            normalize_model_key_value(record.attribute_name),
+        )
+        for record in future["model_attribute_binding"]
+        if _entity_key(record) in all_object_targets
+    }
+    for dataset in ("mapping_object", "generated_code", "generated_code_source_system"):
+        for record in future[dataset]:
+            if retained(dataset, record):
+                continue
+            eligible_objects = (
+                catalog.logical_mapping_target_objects
+                if record.modeled_entity_type == "logical_entity"
+                else catalog.dimensional_mapping_target_objects
+            )
+            if all_object_targets.get(_entity_key(record)) not in eligible_objects:
+                _scope_missing(
+                    issues,
+                    dataset,
+                    "model_object_binding",
+                    "New or changed authoring requires an eligible active physical target Object.",
+                )
+    for record in future["mapping_attribute"]:
+        if retained("mapping_attribute", record):
+            continue
+        eligible_attributes = (
+            catalog.logical_mapping_target_attributes
+            if record.modeled_entity_type == "logical_entity"
+            else catalog.dimensional_mapping_target_attributes
+        )
+        if all_attribute_targets.get(_attribute_key(record)) not in eligible_attributes:
+            _scope_missing(
+                issues,
+                "mapping_attribute",
+                "model_attribute_binding",
+                "New or changed authoring requires an eligible active physical target Attribute.",
+            )
 
     for record in future["mapping_dependency"]:
         _require_active_system(record.source_system_code, "mapping_dependency", catalog, issues)
@@ -539,6 +650,8 @@ def _validate_bindings(
     future: Mapping[str, tuple[Any, ...]],
     catalog: PhysicalModelCatalog,
     issues: list[ModelValidationIssue],
+    *,
+    retained_keys: Mapping[str, set[tuple[object, ...]]],
 ) -> tuple[
     dict[ModeledEntityKey, PhysicalObjectNaturalKey],
     dict[ModeledAttributeKey, PhysicalAttributeNaturalKey],
@@ -546,6 +659,7 @@ def _validate_bindings(
     entity_targets: dict[ModeledEntityKey, PhysicalObjectNaturalKey] = {}
     all_entity_targets: dict[ModeledEntityKey, PhysicalObjectNaturalKey] = {}
     active_physical_targets: set[PhysicalObjectNaturalKey] = set()
+    retained_object_bindings: set[ModeledEntityKey] = set()
     for record in future["model_object_binding"]:
         entity = _entity_key(record)
         target = _physical_object_key(record)
@@ -554,7 +668,13 @@ def _validate_bindings(
             if record.modeled_entity_type == "logical_entity"
             else catalog.dimensional_mapping_target_objects
         )
-        if target not in eligible:
+        historical = (
+            _canonical_key(CHANGE_SET_DATASETS_BY_NAME["model_object_binding"], record)
+            in retained_keys["model_object_binding"]
+        )
+        if historical:
+            retained_object_bindings.add(entity)
+        if target not in (catalog.objects if historical else eligible):
             _scope_missing(
                 issues,
                 "model_object_binding",
@@ -577,6 +697,7 @@ def _validate_bindings(
 
     attribute_targets: dict[ModeledAttributeKey, PhysicalAttributeNaturalKey] = {}
     active_physical_attributes: set[PhysicalAttributeNaturalKey] = set()
+    retained_physical_attributes: set[PhysicalAttributeNaturalKey] = set()
     for record in future["model_attribute_binding"]:
         entity = _entity_key(record)
         object_target = all_entity_targets.get(entity)
@@ -589,7 +710,12 @@ def _validate_bindings(
             if record.modeled_entity_type == "logical_entity"
             else catalog.dimensional_mapping_target_attributes
         )
-        if target not in eligible:
+        # Attribute Binding targets derive from the parent, so both must retain identity.
+        historical = entity in retained_object_bindings and (
+            _canonical_key(CHANGE_SET_DATASETS_BY_NAME["model_attribute_binding"], record)
+            in retained_keys["model_attribute_binding"]
+        )
+        if target not in (catalog.attributes if historical else eligible):
             _scope_missing(
                 issues,
                 "model_attribute_binding",
@@ -598,6 +724,8 @@ def _validate_bindings(
             )
         if record.model_attribute_binding_status != "active":
             continue
+        if historical and target in catalog.attributes:
+            retained_physical_attributes.add(target)
         if entity not in entity_targets:
             _issue(
                 issues,
@@ -645,7 +773,9 @@ def _validate_bindings(
             else catalog.dimensional_mapping_target_attributes
         )
         expected_physical = {
-            attribute for attribute in eligible_attributes if attribute[:5] == object_target
+            attribute
+            for attribute in (*eligible_attributes, *retained_physical_attributes)
+            if attribute[:5] == object_target
         }
         bound_physical = {
             target for attribute, target in attribute_targets.items() if attribute[:2] == entity
@@ -761,7 +891,27 @@ def _validate_references(
 def _validate_active_dependencies(
     future: Mapping[str, tuple[Any, ...]],
     issues: list[ModelValidationIssue],
+    *,
+    code_authoring_entities: frozenset[ModeledEntityKey],
 ) -> None:
+    active_conceptual_objects = {
+        normalize_model_key_value(record.conceptual_object_name)
+        for record in future["conceptual_object"]
+        if record.conceptual_object_status == "active"
+    }
+    for record in future["conceptual_relationship"]:
+        if record.conceptual_relationship_status == "active" and (
+            normalize_model_key_value(record.from_conceptual_object_name)
+            not in active_conceptual_objects
+            or normalize_model_key_value(record.to_conceptual_object_name)
+            not in active_conceptual_objects
+        ):
+            _active_invalid(
+                issues,
+                "conceptual_relationship",
+                "conceptual_object_name",
+                "Active Conceptual Relationship requires active endpoint Objects.",
+            )
     active_entities = {
         _entity_key(record)
         for layer in ("logical", "dimensional")
@@ -774,6 +924,40 @@ def _validate_active_dependencies(
         for record in future[f"{layer}_attribute"]
         if getattr(record, f"{layer}_attribute_status") == "active"
     }
+    for layer in ("logical", "dimensional"):
+        for record in future[f"{layer}_attribute"]:
+            if (
+                getattr(record, f"{layer}_attribute_status") == "active"
+                and _entity_key(record) not in active_entities
+            ):
+                _active_invalid(
+                    issues,
+                    f"{layer}_attribute",
+                    f"{layer}_entity_name",
+                    f"Active {layer.title()} Attribute requires an active parent Entity.",
+                )
+        for record in future[f"{layer}_relationship"]:
+            if getattr(record, f"{layer}_relationship_status") != "active":
+                continue
+            endpoints = (
+                (
+                    f"{layer}_entity",
+                    normalize_model_key_value(getattr(record, f"{side}_{layer}_entity_name")),
+                    normalize_model_key_value(getattr(record, f"{side}_{layer}_attribute_name")),
+                )
+                for side in ("from", "to")
+            )
+            if any(
+                endpoint not in active_attributes or endpoint[:2] not in active_entities
+                for endpoint in endpoints
+            ):
+                _active_invalid(
+                    issues,
+                    f"{layer}_relationship",
+                    f"{layer}_attribute_name",
+                    f"Active {layer.title()} Relationship requires active endpoint "
+                    "Attributes and Entities.",
+                )
     active_object_bindings = {
         _entity_key(record)
         for record in future["model_object_binding"]
@@ -910,7 +1094,10 @@ def _validate_active_dependencies(
         if not any(_entity_key(record) == entity for record in active_artifacts.values()):
             continue
         for system in systems:
-            if system_assignments[(entity, system)] != 1:
+            # Upstream Mapping may outgrow unchanged Code. Input digests mark that Code
+            # stale; only Code authoring can supply its missing System assignments.
+            count = system_assignments[(entity, system)]
+            if count > 1 or (count == 0 and entity in code_authoring_entities):
                 _active_invalid(
                     issues,
                     "generated_code_source_system",

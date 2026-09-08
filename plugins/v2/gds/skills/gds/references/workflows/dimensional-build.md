@@ -13,4 +13,8 @@ Follow Kimball's four decisions in order for each selected business process:
 
 Then choose transaction, periodic-snapshot, accumulating-snapshot, or factless Fact behavior; identify Bridges only for genuine many-to-many grain; define history behavior, keys, and relationships; and trace every structure to applied Logical Mapping and evidence. Record optionality explicitly rather than inferring it from cardinality. Mark each eligible Silver contribution represented, context-only, excluded with reason, or blocked.
 
-Do not guess grain, conformance, history, measures, or optionality. Apply Dimensional records through one Model Change Set and stop before Gold registration.
+Assign `dimensional_submodel` by business process and reuse conformed Dimensions through Entity `submodels` memberships. Keep role-playing meanings distinct without copying the same Dimension definition.
+
+After drafting, inspect the actual graph: can each Fact join its Dimensions at the declared grain without duplication or loss? Specify current versus event-time history lookup, unknown/late-member handling, snapshot completeness, and any Bridge allocation in existing definitions/source rationale and relationship basis. Mark semi-additive measures and the dimensions across which summation is valid; a balance is not additive over time. Do not invent extra policy fields. Missing executable policy must be resolved before downstream Mapping.
+
+Read `../examples/modeling-decisions.md` for a worked grain check. Do not guess grain, conformance, history, measures, or optionality. Apply Dimensional records through one Model Change Set and stop before Gold registration.

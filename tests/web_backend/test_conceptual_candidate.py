@@ -10,11 +10,19 @@ from gds_etl_workbench.domain.modeling_records import (
     PhysicalObjectKey,
 )
 from gds_etl_workbench.domain.snapshots.model import ConceptualSection
-from pydantic import JsonValue
-
+from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.conceptual.candidate import (
     ConceptualCandidateValidator,
 )
+from gds_workbench_api.features.workflows.authoring.agent_execution import (
+    AgentExecutionRequest,
+    AgentExecutionResult,
+)
+from gds_workbench_api.features.workflows.authoring.repair import (
+    ValidationRepairRunner,
+    load_default_agent_context_policy,
+)
+from pydantic import JsonValue
 
 
 def _physical_object(*, name: str = "customer_raw") -> dict[str, JsonValue]:
@@ -90,9 +98,7 @@ def _validator(
     applied_relationships: tuple[ConceptualRelationshipRecord, ...] = (),
 ) -> ConceptualCandidateValidator:
     return ConceptualCandidateValidator(
-        selected_object_keys=(
-            PhysicalObjectKey.model_validate(_physical_object(), strict=True),
-        ),
+        selected_object_keys=(PhysicalObjectKey.model_validate(_physical_object(), strict=True),),
         assertion_record_keys=(),
         applied=ConceptualSection(
             objects=applied_objects,
@@ -171,9 +177,7 @@ async def test_candidate_omits_unchanged_and_unmentioned_applied_records() -> No
 
 
 @pytest.mark.asyncio
-async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> (
-    None
-):
+async def test_candidate_rejects_agent_lock_authority_and_locked_record_changes() -> None:
     locked = ConceptualObjectRecord.model_validate_json(
         json.dumps(_object(locked=True)),
         strict=True,
@@ -228,3 +232,61 @@ def test_parse_accepts_an_explicit_unchanged_candidate() -> None:
     validator = _validator()
 
     assert validator.parse_validated({"objects": [], "relationships": []}) == ()
+
+
+@pytest.mark.asyncio
+async def test_large_conceptual_candidate_repairs_all_records_after_bounded_feedback() -> None:
+    validator = _validator()
+    invalid: JsonValue = {
+        "objects": [
+            _object(name=f"Concept{index}", supports=[_support(name="outside_scope")])
+            for index in range(201)
+        ],
+        "relationships": [],
+    }
+    corrected: JsonValue = {
+        "objects": [_object(name=f"Concept{index}", supports=[_support()]) for index in range(201)],
+        "relationships": [],
+    }
+    requests: list[AgentExecutionRequest] = []
+
+    class Executor:
+        async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
+            requests.append(request)
+            return AgentExecutionResult(
+                candidate=invalid if len(requests) == 1 else corrected,
+                turn_count=1,
+                tool_call_count=0,
+            )
+
+    assert len((await validator.validate(invalid)).issues) == 200
+    result = await ValidationRepairRunner(
+        executor=Executor(),
+        policy=load_default_agent_context_policy(),
+    ).run(
+        request=AgentExecutionRequest(
+            workflow_run_id=1048,
+            workflow="conceptual",
+            stage="candidate_authoring",
+            execution_mode="one_shot",
+            selection=AgentRunSelection(
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
+                reasoning_effort_code="medium",
+                max_turns=6,
+                validation_retry_count=2,
+            ),
+            system_prompt="Author the selected concepts.",
+            instruction_prompt="Repair unsupported evidence.",
+            context={},
+            output_schema=validator.output_schema(),
+        ),
+        validator=validator,
+    )
+
+    assert result.attempt_count == 2
+    repair = cast(dict[str, JsonValue], requests[1].context)["repair"]
+    assert isinstance(repair, dict)
+    assert len(cast(list[JsonValue], repair["validation_issues"])) == 100
+    assert len(validator.parse_validated(result.candidate)[0].records) == 201

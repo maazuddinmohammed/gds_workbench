@@ -376,6 +376,9 @@ GRANT EXECUTE ON FUNCTION workflow.list_model_object_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_model_attribute_eligibility(BIGINT)
 TO gds_app_write, gds_web_write;
+GRANT EXECUTE ON FUNCTION workflow.list_mapping_source_objects(
+    BIGINT, BIGINT, VARCHAR, BIGINT
+) TO gds_app_write, gds_web_write;
 GRANT EXECUTE ON FUNCTION workflow.list_code_generation_target_context(
     BIGINT,
     VARCHAR,
@@ -529,6 +532,10 @@ BEGIN
                        ('workflow.generated_code', 'generated_code_content'),
                        ('workflow.generated_code', 'artifact_name'),
                        ('workflow.generated_code', 'code_input_digest'),
+                       ('workflow.generated_code', 'generated_code_is_locked'),
+                       ('workflow.generated_code_source_system', 'generated_code_source_system_is_locked'),
+                       ('workflow.validation_group', 'is_locked'),
+                       ('workflow.validation_check', 'is_locked'),
                        ('workflow.validation_group', 'mapping_context_digest'),
                        ('workflow.validation_check', 'validation_query_sql'),
                        ('mcp.model_change_set', 'model_binding_document'),
@@ -536,6 +543,8 @@ BEGIN
                        ('mcp.model_change_set', 'validation_document'),
                        ('core.attribute', 'object_id'),
                        ('core.attribute', 'attribute_name'),
+                       ('core.attribute', 'attribute_inferred_data_type'),
+                       ('core.attribute', 'is_locked'),
                        ('mcp.metadata_change_set', 'created_by_principal_id'),
                        ('mcp.metadata_change_set', 'source_object_document'),
                        ('mcp.metadata_change_set', 'source_attribute_document'),
@@ -681,6 +690,11 @@ BEGIN
                        'list_code_generation_target_context',
                        'bigint, character varying, character varying'
                    ),
+                   (
+                       'workflow',
+                       'list_mapping_source_objects',
+                       'bigint, bigint, character varying, bigint'
+                   ),
                    ('mcp', 'get_databricks_sql_connection_values', 'bigint, text')
                ) AS required_function(
                    schema_name,
@@ -699,7 +713,7 @@ BEGIN
                       AND oidvectortypes(function_record.proargtypes) =
                               required_function.argument_types
                )
-    ) AND NOT EXISTS (
+    ) AND EXISTS (
         SELECT 1
           FROM pg_attribute AS duplicate_lock
           JOIN pg_class AS relation_record
@@ -709,6 +723,8 @@ BEGIN
          WHERE namespace_record.nspname = 'core'
            AND relation_record.relname = 'attribute'
            AND duplicate_lock.attname = 'is_locked'
+           AND duplicate_lock.atttypid = 'boolean'::REGTYPE
+           AND duplicate_lock.attnotnull
            AND duplicate_lock.attnum > 0
            AND NOT duplicate_lock.attisdropped
     ) AND EXISTS (
@@ -901,6 +917,7 @@ BEGIN
                    'workflow.list_tenant_visible_objects(bigint)',
                    'workflow.list_model_object_eligibility(bigint)',
                    'workflow.list_model_attribute_eligibility(bigint)',
+                   'workflow.list_mapping_source_objects(bigint,bigint,character varying,bigint)',
                    'workflow.list_code_generation_target_context(bigint,character varying,character varying)',
                    'mcp.get_databricks_sql_connection_values(bigint,text)'
                ]) AS executable_function(signature)
@@ -1095,6 +1112,14 @@ BEGIN
               );
 
             PERFORM 1
+              FROM workflow.list_mapping_source_objects(
+                  9223372036854775807,
+                  9223372036854775807,
+                  'logical_entity',
+                  9223372036854775807
+              );
+
+            PERFORM 1
               FROM workflow.list_code_generation_target_context(
                   9223372036854775807,
                   'logical_entity'
@@ -1282,8 +1307,21 @@ REVOKE ALL ON ALL TABLES IN SCHEMA application
 FROM gds_app_write, gds_web_write;
 GRANT SELECT ON application.output_template TO gds_app_write;
 GRANT SELECT ON ALL TABLES IN SCHEMA application TO gds_web_write;
+REVOKE SELECT ON application.metadata_enrichment_result FROM gds_web_write;
+REVOKE SELECT ON application.metadata_review_event FROM gds_web_write;
 REVOKE EXECUTE ON ALL FUNCTIONS IN SCHEMA application
 FROM PUBLIC, gds_app_write, gds_web_write;
+GRANT EXECUTE ON FUNCTION application.metadata_object_review_revision(core.object) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.metadata_attribute_review_revision(core.attribute, core.object) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.add_model_input_scope_objects(
+    UUID, UUID, BIGINT, BIGINT, BIGINT, BIGINT[]) TO gds_web_write;
+
+GRANT EXECUTE ON FUNCTION application.authorize_model_record_review(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.review_metadata_records(
+    UUID, UUID, VARCHAR, BIGINT, VARCHAR, VARCHAR, JSONB, UUID
+) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.set_principal_last_tenant(
     UUID,
     UUID,
@@ -1359,7 +1397,7 @@ GRANT EXECUTE ON FUNCTION application.save_prompt_template_draft(
     TEXT,
     TEXT,
     TEXT,
-    TIMESTAMPTZ
+    TIMESTAMPTZ, TEXT[]
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.transition_prompt_template_version(
     UUID,
@@ -1458,7 +1496,8 @@ GRANT EXECUTE ON FUNCTION application.create_workflow_run(
     BIGINT,
     BIGINT,
     VARCHAR,
-    BIGINT
+    BIGINT,
+    JSONB
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.lock_authoring_workflow_run(
     BIGINT,
@@ -1485,6 +1524,16 @@ GRANT EXECUTE ON FUNCTION application.release_workflow_run_claim(
 GRANT EXECUTE ON FUNCTION application.assert_workflow_run_claim(
     BIGINT,
     UUID
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.begin_workflow_run_usage(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.begin_workflow_run_model_request(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, UUID, UUID, VARCHAR, INTEGER, INTEGER, JSONB
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.complete_workflow_run_model_request(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, UUID, BIGINT, BIGINT, BIGINT,
+    BIGINT, BIGINT, BIGINT, BOOLEAN
 ) TO gds_web_write;
 GRANT EXECUTE ON FUNCTION application.append_workflow_run_event(
     UUID,
@@ -1586,6 +1635,19 @@ GRANT EXECUTE ON FUNCTION application.persist_profiling_results(
     BIGINT,
     BIGINT,
     JSONB
+) TO gds_web_write;
+
+GRANT EXECUTE ON FUNCTION application.get_metadata_enrichment_execution_context(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.get_metadata_enrichment_connection_values(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, BIGINT, VARCHAR
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.complete_metadata_enrichment(
+    UUID, UUID, VARCHAR, BIGINT, BIGINT, UUID, CHAR, JSONB
+) TO gds_web_write;
+GRANT EXECUTE ON FUNCTION application.get_metadata_enrichment_results(
+    UUID, UUID, VARCHAR, BIGINT, INTEGER, INTEGER
 ) TO gds_web_write;
 
 -- Identity sequences are granted only when owned by an INSERT-allowlisted

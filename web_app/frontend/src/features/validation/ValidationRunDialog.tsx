@@ -1,10 +1,13 @@
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import { useMutation, useQuery } from "@tanstack/react-query";
 
 import { ApiError } from "../../core/http";
+import { SelectField } from "../../shared/ui";
 import type { ModelDetail } from "../models/api";
 import {
+  findAgentExecutionProfile,
+  reasoningEffortDisplayName,
   resolveDefaultAgent,
   workflowCreationQueryKeys,
   type CreateWorkflowRunCommand,
@@ -15,7 +18,7 @@ import {
 } from "../workflows/presentation";
 import type { ValidationApi, ValidationEligibleSystem } from "./api";
 
-const VALIDATION_AGENT_EXECUTION_MODE = "detailed_coverage" as const;
+const VALIDATION_AGENT_EXECUTION_MODE = "tool_assisted" as const;
 
 type ValidationRunSubmission =
   | { kind: "create"; command: CreateWorkflowRunCommand }
@@ -39,6 +42,7 @@ export function ValidationRunDialog({
   onStarted: (workflowRunId: number) => Promise<void>;
 }) {
   const closeButton = useRef<HTMLButtonElement>(null);
+  const createAttempt = useRef<{ fingerprint: string; key: string } | null>(null);
   const dialog = useRef<HTMLElement>(null);
   const returnFocus = useRef<HTMLElement | null>(
     document.activeElement instanceof HTMLElement ? document.activeElement : null,
@@ -50,22 +54,37 @@ export function ValidationRunDialog({
   }
   const [selectedSystemIds, setSelectedSystemIds] = useState<Set<number>>(() => new Set());
   const [pendingWorkflowRunId, setPendingWorkflowRunId] = useState<number | null>(null);
+  const [modelCode, setModelCode] = useState(model.default_agent_model_code ?? "");
+  const [reasoningEffortCode, setReasoningEffortCode] = useState(model.default_reasoning_effort_code ?? "");
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
   });
-  const agent = useMemo(() => capabilitiesQuery.data ? resolveDefaultAgent(
-    capabilitiesQuery.data,
+  const capabilities = capabilitiesQuery.data;
+  const agent = capabilities ? resolveDefaultAgent(
+    capabilities,
     VALIDATION_AGENT_EXECUTION_MODE,
     {
-      sdkCode: model.default_agent_sdk_code,
-      providerCode: model.default_agent_provider_code,
-      modelCode: model.default_agent_model_code,
-      reasoningEffortCode: model.default_reasoning_effort_code,
+      modelCode,
+      reasoningEffortCode,
       maxTurns: model.default_max_turns,
       validationRetryCount: model.default_validation_retry_count,
     },
-  ) : null, [capabilitiesQuery.data, model]);
+  ) : null;
+  const compatibleModels = capabilities?.models.filter((item) =>
+    findAgentExecutionProfile(item, VALIDATION_AGENT_EXECUTION_MODE) !== undefined) ?? [];
+  const selectedModel = compatibleModels.find((item) => item.code === modelCode);
+  const profile = selectedModel
+    ? findAgentExecutionProfile(selectedModel, VALIDATION_AGENT_EXECUTION_MODE) : undefined;
+  const compatibleReasoning = capabilities?.reasoning_efforts.filter((effort) =>
+    profile?.reasoning_effort_codes.includes(effort.code)) ?? [];
+  const agentSelectionValid = agent !== null && agent.model_code === modelCode
+    && agent.reasoning_effort_code === reasoningEffortCode;
+  useEffect(() => {
+    if (!agent) return;
+    if (modelCode !== agent.model_code) setModelCode(agent.model_code);
+    if (reasoningEffortCode !== agent.reasoning_effort_code) setReasoningEffortCode(agent.reasoning_effort_code);
+  }, [agent?.model_code, agent?.reasoning_effort_code, modelCode, reasoningEffortCode]);
   const selectedSystems = systems.filter((system) => selectedSystemIds.has(system.system_id));
   const selectedCodes = validateSelectedSystemCodes(
     selectedSystems.map((system) => system.system_code),
@@ -82,11 +101,15 @@ export function ValidationRunDialog({
         );
         return submission.workflowRunId;
       }
+      const fingerprint = JSON.stringify(submission.command);
+      if (createAttempt.current?.fingerprint !== fingerprint) {
+        createAttempt.current = { fingerprint, key: globalThis.crypto.randomUUID() };
+      }
       const result = await api.createWorkflowRun(
         tenantId,
         model.model_id,
         submission.command,
-        globalThis.crypto.randomUUID(),
+        createAttempt.current.key,
       );
       setPendingWorkflowRunId(result.workflow_run_id);
       await api.executeValidationRun(
@@ -184,7 +207,7 @@ export function ValidationRunDialog({
               runMutation.mutate({ kind: "retry", workflowRunId: pendingWorkflowRunId });
               return;
             }
-            if (!agent || !selectedCodes) return;
+            if (!agentSelectionValid || !selectedCodes) return;
             runMutation.mutate({
               kind: "create",
               command: {
@@ -276,22 +299,23 @@ export function ValidationRunDialog({
 
           <section className="agent-run-configuration validation-agent-profile" aria-labelledby="validation-agent-profile-heading">
             <header>
-              <strong id="validation-agent-profile-heading">Internal agent profile</strong>
-              <span>Validation uses the fixed Detailed coverage profile and the Model's compatible agent defaults.</span>
+              <strong id="validation-agent-profile-heading">Model and reasoning</strong>
+              <span>The prompt template configures the available context tools.</span>
             </header>
             {capabilitiesQuery.isPending ? (
-              <div className="surface-state compact" aria-busy="true">Loading internal agent profile…</div>
+              <div className="surface-state compact" aria-busy="true">Loading models…</div>
             ) : capabilitiesQuery.isError || !agent ? (
-              <p className="inline-error" role="alert">A compatible Detailed coverage agent profile is unavailable.</p>
+              <p className="inline-error" role="alert">A compatible agent profile with tool support is unavailable.</p>
             ) : (
-              <dl className="detail-fact-grid">
-                <Fact label="Profile" value="Detailed coverage · fixed" />
-                <Fact label="Agent SDK" value={agent.sdk_code} />
-                <Fact label="Provider" value={agent.provider_code} />
-                <Fact label="Model" value={agent.model_code} />
-                <Fact label="Reasoning" value={agent.reasoning_effort_code} />
-                <Fact label="Limits" value={`${agent.max_turns} turns · ${agent.validation_retry_count} validation retries`} />
-              </dl>
+              <fieldset className="agent-run-grid agent-run-grid-two" disabled={runMutation.isPending || pendingWorkflowRunId !== null}>
+                <legend className="sr-only">Model and reasoning</legend>
+                <SelectField label="Model" value={modelCode}
+                  options={compatibleModels.map((item) => [item.code, item.name])}
+                  onChange={setModelCode} />
+                <SelectField label="Reasoning effort" value={reasoningEffortCode}
+                  options={compatibleReasoning.map((item) => [item.code, reasoningEffortDisplayName(item)])}
+                  onChange={setReasoningEffortCode} />
+              </fieldset>
             )}
           </section>
 
@@ -318,7 +342,7 @@ export function ValidationRunDialog({
                 type="submit"
                 disabled={runMutation.isPending || (
                   pendingWorkflowRunId === null
-                  && (!selectedCodes || !agent || capabilitiesQuery.isPending)
+                  && (!selectedCodes || !agentSelectionValid || capabilitiesQuery.isPending)
                 )}
               >
                 {runMutation.isPending
@@ -341,9 +365,6 @@ export function validateSelectedSystemCodes(codes: string[]): string[] | null {
   return new Set(folded).size === folded.length ? normalized : null;
 }
 
-function Fact({ label, value }: { label: string; value: string }) {
-  return <div><dt>{label}</dt><dd>{value}</dd></div>;
-}
 
 function validationRunError(error: Error, runWasCreated: boolean): string {
   if (runWasCreated && isTenantWorkflowConflict(error)) return TENANT_WORKFLOW_CONFLICT_MESSAGE;

@@ -2,18 +2,20 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import Literal, Self, cast
 from urllib.parse import urlsplit
 from uuid import UUID
 
 from gds_etl_workbench.configuration import ConfigurationError
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, TypeAdapter, model_validator
 
 from gds_workbench_api.capabilities import (
     AgentCapabilityRegistry,
     load_default_agent_capabilities,
 )
+from gds_workbench_api.features.workflows.usage.contracts import FoundryModelPricing
 
 
 class FoundryClientCredentials(BaseModel):
@@ -31,7 +33,7 @@ class AgentProviderConnection(BaseModel):
 
     model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
 
-    provider_code: Literal["databricks", "microsoft_foundry"]
+    provider_code: Literal["microsoft_foundry"]
     model_code: str = Field(
         min_length=1,
         max_length=200,
@@ -47,6 +49,7 @@ class AgentProviderConnection(BaseModel):
     token_scope: str | None = Field(default=None, max_length=2048)
     foundry_client_credentials: FoundryClientCredentials | None = None
     foundry_api_key: SecretStr | None = None
+    pricing: FoundryModelPricing | None = None
 
 
 class AgentRuntimeConfiguration(BaseModel):
@@ -97,9 +100,6 @@ class AgentRuntimeConfiguration(BaseModel):
         if not 1 <= timeout_seconds <= 600:
             raise ConfigurationError("GDS_WEB_AGENT_TIMEOUT_SECONDS must be between 1 and 600")
 
-        databricks_models = tuple(
-            model for model in registry.models if model.provider_code == "databricks"
-        )
         foundry_models = tuple(
             model for model in registry.models if model.provider_code == "microsoft_foundry"
         )
@@ -109,6 +109,7 @@ class AgentRuntimeConfiguration(BaseModel):
         foundry_client_id = _optional_uuid(source, "GDS_WEB_FOUNDRY_CLIENT_ID")
         foundry_client_secret = source.get("GDS_WEB_FOUNDRY_CLIENT_SECRET", "")
         foundry_api_key = source.get("GDS_WEB_FOUNDRY_API_KEY", "")
+        pricing_json = source.get("GDS_WEB_FOUNDRY_PRICING_JSON", "").strip()
 
         supplied_foundry_values = any(
             (
@@ -117,6 +118,7 @@ class AgentRuntimeConfiguration(BaseModel):
                 foundry_client_id,
                 foundry_client_secret,
                 foundry_api_key,
+                pricing_json,
             )
         )
         if raw_mode == "fake" and supplied_foundry_values:
@@ -125,16 +127,6 @@ class AgentRuntimeConfiguration(BaseModel):
         try:
             connections: tuple[AgentProviderConnection, ...] = ()
             if raw_mode == "remote":
-                connections = tuple(
-                    AgentProviderConnection(
-                        provider_code="databricks",
-                        model_code=model.code,
-                        model_endpoint=model.deployment_name,
-                        timeout_seconds=timeout_seconds,
-                    )
-                    for model in databricks_models
-                )
-            if raw_mode == "remote" and supplied_foundry_values:
                 if not foundry_models:
                     raise ConfigurationError(
                         "The Agent registry has no Microsoft Foundry model deployments"
@@ -173,7 +165,29 @@ class AgentRuntimeConfiguration(BaseModel):
                     allow_services_host=bool(foundry_api_key.strip()),
                 )
                 _validate_foundry_scope(foundry_scope)
-                connections += tuple(
+                pricing_by_model: dict[str, FoundryModelPricing] = {}
+                if pricing_json:
+                    if len(pricing_json.encode("utf-8")) > 64 * 1024:
+                        raise ConfigurationError("Foundry pricing configuration is too large")
+
+                    def unique_object(pairs: list[tuple[str, object]]) -> dict[str, object]:
+                        result: dict[str, object] = {}
+                        for key, value in pairs:
+                            if key in result:
+                                raise ValueError("Duplicate pricing field")
+                            result[key] = value
+                        return result
+
+                    # Check duplicate keys without converting decimal rates through float.
+                    json.loads(pricing_json, object_pairs_hook=unique_object, parse_float=str)
+                    pricing_by_model = TypeAdapter(dict[str, FoundryModelPricing]).validate_json(
+                        pricing_json, strict=True
+                    )
+                    if set(pricing_by_model) - {model.code for model in foundry_models}:
+                        raise ConfigurationError(
+                            "Foundry pricing must reference registered model codes"
+                        )
+                connections = tuple(
                     AgentProviderConnection(
                         provider_code="microsoft_foundry",
                         model_code=model.code,
@@ -193,11 +207,10 @@ class AgentRuntimeConfiguration(BaseModel):
                         foundry_api_key=(
                             SecretStr(foundry_api_key.strip()) if foundry_api_key.strip() else None
                         ),
+                        pricing=pricing_by_model.get(model.code),
                     )
                     for model in foundry_models
                 )
-            if raw_mode == "remote" and not connections:
-                raise ConfigurationError("The Agent registry has no available model deployments")
         except ConfigurationError:
             raise
         except ValueError as exc:

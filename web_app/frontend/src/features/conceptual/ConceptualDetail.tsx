@@ -2,6 +2,7 @@ import { useEffect, useRef } from "react";
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { DetailState } from "../../shared/ui";
 import { ApiError } from "../../core/http";
 import type {
   ConceptualObjectDetail,
@@ -80,7 +81,7 @@ function ConceptualObjectView({
         status={object.conceptual_object_status}
         locked={object.conceptual_object_is_locked}
       />
-      <section className="detail-section" aria-labelledby="conceptual-object-overview">
+      <section className="detail-section detail-primary" aria-labelledby="conceptual-object-overview">
         <header><h2 id="conceptual-object-overview">Object definition</h2></header>
         <p className="detail-prose is-prominent">{object.conceptual_object_definition}</p>
         <dl className="detail-fact-grid">
@@ -123,7 +124,7 @@ function ConceptualRelationshipView({
         status={relationship.conceptual_relationship_status}
         locked={relationship.conceptual_relationship_is_locked}
       />
-      <section className="detail-section" aria-labelledby="conceptual-relationship-overview">
+      <section className="detail-section detail-primary" aria-labelledby="conceptual-relationship-overview">
         <header><h2 id="conceptual-relationship-overview">Relationship definition</h2></header>
         <p className="detail-prose is-prominent">
           {relationship.conceptual_relationship_definition}
@@ -131,12 +132,12 @@ function ConceptualRelationshipView({
         <div className="conceptual-endpoints" aria-label="Relationship endpoints">
           <section>
             <small>From</small>
-            <strong>{humanize(relationship.from_conceptual_object_name)}</strong>
+            <strong>{relationship.from_conceptual_object_name}</strong>
           </section>
           <span aria-hidden="true">→</span>
           <section>
             <small>To</small>
-            <strong>{humanize(relationship.to_conceptual_object_name)}</strong>
+            <strong>{relationship.to_conceptual_object_name}</strong>
           </section>
         </div>
         <dl className="detail-fact-grid">
@@ -238,36 +239,24 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
               </header>
               <p>{support.support_reason}</p>
               {support.support_reason_detail ? <p>{support.support_reason_detail}</p> : null}
+              {support.support_source_type === "assertion" ? (
+                <div className="assertion-support-detail">
+                  <p>{support.assertion_record.modeling_assertion_text}</p>
+                </div>
+              ) : null}
               <dl className="support-facts">
                 <Fact label="Role" value={support.support_role ?? "Not assigned"} />
                 <Fact label="Status" value={humanize(support.support_status)} />
                 <Fact label="Lock" value={support.support_is_locked ? "Locked" : "Open"} />
-                <Fact
-                  label="Workflow"
-                  value={support.workflow_run_id === null
-                    ? "No workflow provenance"
-                    : `Workflow run ${support.workflow_run_id}`}
-                />
-                <Fact label="Created" value={formatDateTime(support.created_at)} />
-                <Fact label="Updated" value={formatDateTime(support.updated_at)} />
                 {support.support_source_type === "object" ? (
                   <>
-                    <Fact label="Source Object ID" value={`Object ${support.source_object.object_id}`} />
                     <Fact
                       label="Source"
                       value={`${support.source_object.tenant_code} · ${support.source_object.system_code} · ${support.source_object.connection_code}`}
                     />
-                    <Fact
-                      label="Object"
-                      value={`${support.source_object.object_schema}.${support.source_object.object_name}`}
-                    />
                   </>
                 ) : (
                   <>
-                    <Fact
-                      label="Assertion ID"
-                      value={`Assertion ${support.assertion_record.modeling_assertion_record_id}`}
-                    />
                     <Fact label="Document" value={support.assertion_record.modeling_assertion_document_name} />
                     <Fact label="Type" value={humanize(support.assertion_record.modeling_assertion_record_type)} />
                     <Fact
@@ -283,11 +272,25 @@ function SupportEvidence({ supports }: { supports: ConceptualSupport[] }) {
                   </>
                 )}
               </dl>
-              {support.support_source_type === "assertion" ? (
-                <div className="assertion-support-detail">
-                  <p>{support.assertion_record.modeling_assertion_text}</p>
-                </div>
-              ) : null}
+              <details className="support-record-details">
+                <summary>Record details</summary>
+                <dl className="support-facts">
+                  <Fact label="Support ID" value={String(support.conceptual_support_id)} />
+                  {support.support_source_type === "object" ? (
+                    <Fact label="Source Object ID" value={`Object ${support.source_object.object_id}`} />
+                  ) : (
+                    <Fact label="Assertion ID" value={`Assertion ${support.assertion_record.modeling_assertion_record_id}`} />
+                  )}
+                <Fact
+                  label="Workflow"
+                  value={support.workflow_run_id === null
+                    ? "No workflow provenance"
+                    : `Workflow run ${support.workflow_run_id}`}
+                />
+                <Fact label="Created" value={formatDateTime(support.created_at)} />
+                <Fact label="Updated" value={formatDateTime(support.updated_at)} />
+                </dl>
+              </details>
             </article>
           ))}
         </div>
@@ -304,8 +307,8 @@ function Provenance({
   createdAt: string;
 }) {
   return (
-    <section className="detail-section" aria-labelledby="conceptual-provenance-heading">
-      <header><h2 id="conceptual-provenance-heading">Provenance</h2></header>
+    <details className="detail-section detail-disclosure" aria-labelledby="conceptual-provenance-heading">
+      <summary><h2 id="conceptual-provenance-heading">Provenance</h2></summary>
       <dl className="detail-fact-grid">
         <Fact
           label="Workflow"
@@ -313,18 +316,7 @@ function Provenance({
         />
         <Fact label="Created" value={formatDateTime(createdAt)} />
       </dl>
-    </section>
-  );
-}
-
-function DetailState({ label, error = false }: { label: string; error?: boolean }) {
-  return (
-    <div
-      className={`surface-state detail-state${error ? " is-error" : ""}`}
-      {...(error ? { role: "alert" } : { "aria-busy": true })}
-    >
-      {label}
-    </div>
+    </details>
   );
 }
 

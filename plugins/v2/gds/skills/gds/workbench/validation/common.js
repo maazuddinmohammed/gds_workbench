@@ -517,7 +517,7 @@
             ([field, fieldValue]) =>
               fieldValue === true && (field === "is_locked" || field.endsWith("_is_locked")),
           );
-          if (locked && core.stableStringify(original) !== core.stableStringify(record)) {
+          if (area === "model" && locked && core.stableStringify(original) !== core.stableStringify(record)) {
             issues.push({
               code: "locked_record",
               dataset: datasetName,

@@ -1,38 +1,32 @@
 from __future__ import annotations
 
-import json
 from collections.abc import AsyncGenerator, Callable
 from contextlib import asynccontextmanager
 from copy import deepcopy
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from typing import Any, Literal, cast
 from uuid import UUID
 
 import pytest
+from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import PhysicalModelCatalog
 from gds_etl_workbench.domain.authorization import (
     ActorKind,
     RequestPrincipal,
     ToolPolicy,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
-from gds_etl_workbench.domain.modeling_records import PhysicalObjectKey
+from gds_etl_workbench.domain.snapshots.model import DimensionalSection, ModelChangeSetDataset
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
     ReadTransaction,
     WriteTransaction,
 )
-from gds_etl_workbench.application.change_sets.model import StageModelChange
-from gds_etl_workbench.domain.snapshots.model import DimensionalSection
-from pydantic import JsonValue
-
 from gds_workbench_api.capabilities import AgentRunSelection
 from gds_workbench_api.features.dimensional.policy import (
     project_dimensional_foreign_key_policy,
     project_dimensional_gold_policy,
-)
-from gds_workbench_api.features.dimensional.detailed import (
-    DetailedDimensionalTopologyContributionValidator,
 )
 from gds_workbench_api.features.dimensional.service import (
     DatabaseDimensionalExecutor,
@@ -69,6 +63,10 @@ from gds_workbench_api.prompt_rendering import (
     PromptComponentTemplates,
     PromptVariableDefinition,
 )
+from pydantic import JsonValue
+
+from tests.mcp.model_test_fixtures import snapshot_from_graph
+from tests.web_backend.workflow_recovery_fixtures import RetainingHandoff
 
 _CLAIM_TOKEN = UUID("44444444-4444-4444-4444-444444444444")
 
@@ -83,21 +81,10 @@ def _principal() -> RequestPrincipal:
 
 def _plan(
     *,
-    mode: Literal["one_shot", "tool_assisted", "detailed_coverage"] = "one_shot",
+    mode: Literal["one_shot", "tool_assisted"] = "one_shot",
     retry_count: int = 1,
 ) -> AgentRunPlan:
-    stage_codes = (
-        (
-            "topology_builder",
-            "topology_reconciler",
-            "entity_detail_builder",
-            "whole_model_reconciliation",
-            "validator_worker",
-            "validator_lead",
-        )
-        if mode == "detailed_coverage"
-        else ("candidate_authoring",)
-    )
+    stage_codes = ("candidate_authoring",)
     stages: list[FrozenAgentStage] = []
     for position, stage_code in enumerate(stage_codes, start=1):
         variables = [
@@ -111,10 +98,6 @@ def _plan(
         instruction = "Use {{stage_context}}."
         if stage_code in {
             "candidate_authoring",
-            "topology_builder",
-            "topology_reconciler",
-            "entity_detail_builder",
-            "whole_model_reconciliation",
         }:
             variables.append(
                 PromptVariableDefinition(
@@ -125,7 +108,7 @@ def _plan(
                 )
             )
             instruction += " Follow {{naming_instructions}}."
-        if stage_code in {"candidate_authoring", "whole_model_reconciliation"}:
+        if stage_code in {"candidate_authoring"}:
             variables.append(
                 PromptVariableDefinition(
                     name="validation_failures",
@@ -161,9 +144,9 @@ def _plan(
             "selected_scope_digest": "a" * 64,
             "selected_object_ids": (501,),
             "selection": AgentRunSelection(
-                sdk_code="langchain_create_agent",
-                provider_code="databricks",
-                model_code="databricks-primary",
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code="foundry-primary",
                 reasoning_effort_code="medium",
                 max_turns=8,
                 validation_retry_count=retry_count,
@@ -189,6 +172,8 @@ def _selected_object() -> dict[str, object]:
                 "attribute_ordinal_position": position,
                 "attribute_description": f"{name} source value.",
                 "attribute_data_type": "bigint",
+                "attribute_inferred_data_type": None,
+                "is_locked": False,
                 "attribute_nullability": False,
                 "attribute_custom_code": None,
                 "is_surrogate_key": False,
@@ -276,7 +261,7 @@ def _audit_template() -> dict[str, object]:
 
 def _context_bundle(
     *,
-    mode: Literal["one_shot", "tool_assisted", "detailed_coverage"] = "one_shot",
+    mode: Literal["one_shot", "tool_assisted"] = "one_shot",
 ) -> AgentContextBundle:
     context = AgentAuthoringContext.model_validate(
         {
@@ -579,233 +564,14 @@ def _no_op_candidate() -> JsonValue:
     return cast(JsonValue, candidate)
 
 
-def _detailed_model_candidate() -> dict[str, JsonValue]:
-    full = cast(dict[str, JsonValue], deepcopy(_candidate()))
-    submodel = cast(list[JsonValue], full["submodels"])[0]
-    entity = cast(list[JsonValue], full["entities"])[0]
-    attributes = cast(list[dict[str, JsonValue]], full["attributes"])
-    customer_id = attributes[0]
-    sale_customer_id = attributes[1]
-    sale_customer_id.update(
-        {
-            "dimensional_entity_name": "Customer Dimension",
-            "dimensional_attribute_name": "Sale Customer ID",
-            "dimensional_attribute_definition": "Sale-side customer identifier.",
-            "dimensional_attribute_is_nullable": False,
-            "dimensional_attribute_ordinal_position": 2,
-            "dimensional_attribute_change_behavior": "fixed",
-        }
-    )
-    customer_segment = deepcopy(customer_id)
-    customer_segment.update(
-        {
-            "dimensional_attribute_name": "Customer Segment",
-            "dimensional_attribute_definition": "Governed customer segment.",
-            "dimensional_attribute_is_nullable": True,
-            "dimensional_attribute_ordinal_position": 3,
-            "dimensional_attribute_role": "descriptor",
-            "dimensional_attribute_key_role": "none",
-            "dimensional_attribute_is_grain_component": False,
-            "dimensional_attribute_change_behavior": "overwrite",
-            "sources": [
-                {
-                    "support_source_type": "assertion",
-                    "assertion_record": {
-                        "modeling_assertion_record_key": "assertion.customer_segment"
-                    },
-                    "source_order": 1,
-                    "rationale": "Governed customer-segmentation assertion.",
-                    "status": "active",
-                    "is_locked": False,
-                }
-            ],
-        }
-    )
-    return {
-        "submodels": [submodel],
-        "entities": [entity],
-        "attributes": [customer_id, sale_customer_id, customer_segment],
-        "relationships": [],
-    }
+type _AgentResponse = JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
 
 
-type _AgentResponse = (
-    JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
-)
-
-
-def _detailed_reconciliation_receipt(request: AgentExecutionRequest) -> JsonValue:
-    wrapped = cast(dict[str, JsonValue], request.context)
-    context = cast(dict[str, JsonValue], wrapped["original_context"])
-    signals = cast(list[dict[str, JsonValue]], context["relationship_signals"])
-    return cast(
-        JsonValue,
-        {
-            "partition_ref": context["partition_ref"],
-            "manifest": context["review_manifest"],
-            "reviewed_relationship_signal_refs": [
-                item["signal_ref"] for item in signals
-            ],
-            "relationships": [],
-        },
-    )
-
-
-def _detailed_candidates(*, blocking_first: bool = False) -> list[_AgentResponse]:
-    full = _detailed_model_candidate()
-    submodel = cast(list[JsonValue], full["submodels"])[0]
-    entity = cast(list[JsonValue], full["entities"])[0]
-    attributes = cast(list[JsonValue], full["attributes"])
-    contribution = cast(
-        JsonValue,
-        {
-            "contribution_ref": "object_00001",
-            "source_object": _object_key(),
-            "disposition": "represented",
-            "rationale": "Represents the customer dimension.",
-            "proposals": [
-                {
-                    "local_entity_ref": "customer_dimension",
-                    "candidate_entity_name": "Customer Dimension",
-                    "candidate_entity_type": "dimension",
-                    "candidate_fact_type": None,
-                    "candidate_entity_grain_definition": None,
-                    "candidate_submodel_names": ["Sales Analytics"],
-                    "source_attributes": [
-                        {**_object_key(), "attribute_name": "customer_id"},
-                        {**_object_key(), "attribute_name": "sale_customer_id"},
-                    ],
-                }
-            ],
-        },
-    )
-    topology = cast(
-        JsonValue,
-        {
-            "submodels": [
-                {
-                    "canonical_submodel_ref": "sales_analytics",
-                    "submodel": submodel,
-                }
-            ],
-            "entities": [
-                {
-                    "canonical_entity_ref": "customer_dimension",
-                    "dimensional_entity_name": "Customer Dimension",
-                    "contribution_refs": ["object_00001.customer_dimension"],
-                    "submodel_refs": ["sales_analytics"],
-                }
-            ],
-            "discarded_contribution_refs": [],
-        },
-    )
-    detail = cast(
-        JsonValue,
-        {
-            "canonical_entity_ref": "entity_00001",
-            "entity": entity,
-            "attributes": attributes,
-        },
-    )
-    record_refs = [
-        "submodel:sales analytics",
-        "entity:customer dimension",
-        'attribute:["customer dimension","customer id"]',
-        'attribute:["customer dimension","customer dimension key"]',
-        'attribute:["customer dimension","customer segment"]',
-        'attribute:["customer dimension","loaded at"]',
-        'attribute:["customer dimension","sale customer id"]',
-    ]
-    clean_worker = cast(
-        JsonValue,
-        {
-            "package_ref": "validation_00001",
-            "reviewed_record_refs": record_refs,
-            "findings": [],
-        },
-    )
-    clean_lead = cast(
-        JsonValue,
-        {
-            "reviewed_package_refs": ["validation_00001"],
-            "reviewed_finding_refs": [],
-            "blocking_finding_refs": [],
-            "repair_brief": None,
-        },
-    )
-    base: list[_AgentResponse] = [
-        contribution,
-        topology,
-        detail,
-        _detailed_reconciliation_receipt,
-    ]
-    if not blocking_first:
-        return [*base, clean_worker, clean_lead]
-    finding = {
-        "finding_ref": "validation_00001.finding_00001",
-        "severity": "error",
-        "code": "dimensional.review_required",
-        "message": "Repair one blocking dimensional concern.",
-        "record_refs": ["entity:customer dimension"],
-    }
-    blocking_worker = cast(
-        JsonValue,
-        {
-            "package_ref": "validation_00001",
-            "reviewed_record_refs": record_refs,
-            "findings": [finding],
-        },
-    )
-    blocking_lead = cast(
-        JsonValue,
-        {
-            "reviewed_package_refs": ["validation_00001"],
-            "reviewed_finding_refs": ["validation_00001.finding_00001"],
-            "blocking_finding_refs": ["validation_00001.finding_00001"],
-            "repair_brief": "Repair the blocking concern.",
-        },
-    )
-    return [
-        *base,
-        blocking_worker,
-        blocking_lead,
-        _detailed_reconciliation_receipt,
-        clean_worker,
-        clean_lead,
-    ]
-
-
-def _non_dimensional_candidates(
-    *,
-    disposition: Literal["not_dimensional", "needs_review"],
-) -> list[JsonValue]:
-    return [
-        cast(
-            JsonValue,
-            {
-                "contribution_ref": "object_00001",
-                "source_object": _object_key(),
-                "disposition": disposition,
-                "rationale": "No Gold structure is proposed for this Silver Object.",
-                "proposals": [],
-            },
-        ),
-        cast(
-            JsonValue,
-            {
-                "submodels": [],
-                "entities": [],
-                "discarded_contribution_refs": [],
-            },
-        ),
-    ]
 
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -864,7 +630,66 @@ class _ContextRepository:
         plan: AgentRunPlan,
     ) -> AgentContextBundle:
         del transaction, tenant_id, plan
-        return self.bundle
+        if self.bundle.snapshot is not None:
+            return self.bundle
+        context = self.bundle.context
+        graph: dict[ModelChangeSetDataset, list[dict[str, object]]] = {
+            "model_details": [context.model_details.model_dump(mode="json")],
+            "modeling_assertion_document": [
+                item.model_dump(mode="json") for item in context.assertion.documents
+            ],
+            "modeling_assertion_record": [
+                item.model_dump(mode="json") for item in context.assertion.records
+            ],
+        }
+        applied = context.applied.dimensional
+        if applied:
+            for dataset, records in (
+                ("dimensional_submodel", applied.submodels),
+                ("dimensional_entity", applied.entities),
+                ("dimensional_attribute", applied.attributes),
+                ("dimensional_relationship", applied.relationships),
+            ):
+                graph[cast(ModelChangeSetDataset, dataset)] = [
+                    record.model_dump(mode="json") for record in records
+                ]
+        objects = frozenset(
+            (
+                item.object.tenant_code.casefold(),
+                item.object.system_code.casefold(),
+                item.object.connection_code.casefold(),
+                item.object.object_schema.casefold(),
+                item.object.object_name.casefold(),
+            )
+            for item in context.selected_objects
+        )
+        attributes = frozenset(
+            (
+                attribute.tenant_code.casefold(),
+                attribute.system_code.casefold(),
+                attribute.connection_code.casefold(),
+                attribute.object_schema.casefold(),
+                attribute.object_name.casefold(),
+                attribute.attribute_name.casefold(),
+            )
+            for item in context.selected_objects
+            for attribute in item.attributes
+        )
+        scope = PhysicalModelCatalog(
+            model_tenant_code="nwa",
+            active_system_codes=frozenset({"gds"}),
+            objects=objects,
+            attributes=attributes,
+            model_input_objects=frozenset(),
+            model_input_attributes=frozenset(),
+            dimensional_source_objects=objects,
+            dimensional_source_attributes=attributes,
+            logical_mapping_target_objects=objects,
+            logical_mapping_target_attributes=attributes,
+            dimensional_mapping_target_objects=frozenset(),
+            dimensional_mapping_target_attributes=frozenset(),
+        )
+        return replace(self.bundle, snapshot=snapshot_from_graph(graph), physical_scope=scope)
 
 
 @dataclass
@@ -885,7 +710,7 @@ class _AgentExecutor:
 
 
 @dataclass
-class _Handoff:
+class _Handoff(RetainingHandoff):
     calls: list[tuple[StageModelChange, ...]] = field(
         default_factory=lambda: list[tuple[StageModelChange, ...]]()
     )
@@ -937,9 +762,7 @@ class _Handoff:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     finding_count: int | None = None
     failed: tuple[str, str] | None = None
     fail_event_sequence: int | None = None
@@ -1022,9 +845,7 @@ class _NoOp:
             model_revision=request.expected_model_revision,
             workflow_run_id=workflow_run_id,
             workflow_run_state=(
-                "completed_with_repair"
-                if request.final_event.attempt > 1
-                else "completed"
+                "completed_with_repair" if request.final_event.attempt > 1 else "completed"
             ),
             model_workflow=request.expected_workflow,
             workflow_execution_mode=request.expected_execution_mode,
@@ -1086,9 +907,7 @@ async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
     model_details = context.context.model_details.model_copy(
         update={"gold_model_audit_columns_template": None}
     )
-    authoring_context = context.context.model_copy(
-        update={"model_details": model_details}
-    )
+    authoring_context = context.context.model_copy(update={"model_details": model_details})
     agent = _AgentExecutor(responses=[_candidate()])
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1119,9 +938,7 @@ async def test_missing_gold_policy_blocks_before_agent_execution() -> None:
 async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     relationship_optional: bool,
 ) -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(relationship_optional=relationship_optional)]
-    )
+    agent = _AgentExecutor(responses=[_candidate(relationship_optional=relationship_optional)])
     service, database, authorizer, handoff, lifecycle = _service(agent=agent)
 
     result = await service.execute_started(
@@ -1150,9 +967,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert handoff.workflows == ["dimensional"]
     assert len(handoff.calls) == 1
     attribute_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_attribute"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_attribute"
     )
     foreign_key = next(
         record
@@ -1162,9 +977,7 @@ async def test_one_shot_projects_gold_policy_then_foreign_key_once(
     assert foreign_key["dimensional_attribute_name"] == "Bill To Customer key"
     assert foreign_key["dimensional_attribute_is_nullable"] is relationship_optional
     relationship_change = next(
-        change
-        for change in handoff.calls[0]
-        if change.dataset == "dimensional_relationship"
+        change for change in handoff.calls[0] if change.dataset == "dimensional_relationship"
     )
     assert relationship_change.records[0]["from_dimensional_attribute_name"] == (
         "Bill To Customer key"
@@ -1209,9 +1022,7 @@ async def test_tool_assisted_uses_local_catalog_and_same_change_contract() -> No
 
 @pytest.mark.asyncio
 async def test_validation_repair_keeps_original_context_then_hands_off_once() -> None:
-    agent = _AgentExecutor(
-        responses=[_candidate(source_name="outside_selection"), _candidate()]
-    )
+    agent = _AgentExecutor(responses=[_candidate(source_name="outside_selection"), _candidate()])
     service, _database, _authorizer, handoff, _lifecycle = _service(agent=agent)
 
     await service.execute_started(
@@ -1312,12 +1123,8 @@ async def test_valid_unchanged_candidate_completes_as_no_op() -> None:
 
 
 @pytest.mark.asyncio
-async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> (
-    None
-):
-    agent = _AgentExecutor(
-        responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()]
-    )
+async def test_repaired_unchanged_candidate_preserves_attempt_in_no_op_receipt() -> None:
+    agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), _no_op_candidate()])
     no_op = _NoOp()
     service, _database, _authorizer, handoff, lifecycle = _service(
         agent=agent,
@@ -1397,228 +1204,3 @@ async def test_fixed_plan_identity_mismatch_is_rejected_before_agent_execution(
     assert agent.requests == []
     assert handoff.calls == []
     assert lifecycle.failed is not None
-
-
-@pytest.mark.asyncio
-async def test_detailed_coverage_runs_fixed_stages_then_one_atomic_handoff() -> None:
-    agent = _AgentExecutor(responses=_detailed_candidates())
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_model_revision=7,
-    )
-
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-        "entity_detail_builder",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-    ]
-    assert all(
-        request.execution_mode == "detailed_coverage" for request in agent.requests
-    )
-    assert all(request.allowed_tool_names == () for request in agent.requests)
-    assert len(handoff.calls) == 1
-    assert isinstance(result, WorkflowChangeSetHandoffResult)
-    assert result.staged_record_count == 7
-    worker_request = next(
-        request for request in agent.requests if request.stage == "validator_worker"
-    )
-    worker_context = cast(dict[str, JsonValue], worker_request.context)
-    original_context = cast(dict[str, JsonValue], worker_context["original_context"])
-    package = cast(dict[str, JsonValue], original_context["validation_package"])
-    records = cast(list[dict[str, JsonValue]], package["records"])
-    projected_names: set[str] = set()
-    for record in records:
-        if record["dataset"] != "dimensional_attribute":
-            continue
-        name = cast(dict[str, JsonValue], record["record"])[
-            "dimensional_attribute_name"
-        ]
-        if isinstance(name, str):
-            projected_names.add(name)
-    assert {"Customer Dimension key", "Loaded At"} <= projected_names
-    assert lifecycle.failed is None
-
-
-@pytest.mark.asyncio
-async def test_detailed_blocker_retries_only_reconciliation_worker_and_lead() -> None:
-    agent = _AgentExecutor(responses=_detailed_candidates(blocking_first=True))
-    service, _database, _authorizer, handoff, _lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage", retry_count=1),
-    )
-
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_model_revision=7,
-    )
-
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-        "entity_detail_builder",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-        "whole_model_reconciliation",
-        "validator_worker",
-        "validator_lead",
-    ]
-    first = cast(dict[str, JsonValue], agent.requests[3].context)
-    repaired = cast(dict[str, JsonValue], agent.requests[6].context)
-    first_original = cast(dict[str, JsonValue], first["original_context"])
-    repaired_original = cast(dict[str, JsonValue], repaired["original_context"])
-    assert repaired_original["review_manifest"] == first_original["review_manifest"]
-    assert (
-        cast(dict[str, JsonValue], repaired_original["validation_failure_summary"])[
-            "finding_count"
-        ]
-        == 1
-    )
-    assert "dimensional.review_required" in agent.requests[6].instruction_prompt
-    assert len(handoff.calls) == 1
-    assert handoff.final_events[-1].status == "warning"
-
-
-@pytest.mark.asyncio
-async def test_detailed_internal_repair_marks_terminal_attempt() -> None:
-    responses = _detailed_candidates()
-    agent = _AgentExecutor(responses=[cast(JsonValue, {"invalid": True}), *responses])
-    service, _database, _authorizer, handoff, _lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage", retry_count=1),
-    )
-
-    await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_model_revision=7,
-    )
-
-    assert len(handoff.calls) == 1
-    assert handoff.final_events[-1].attempt == 2
-    assert handoff.final_events[-1].status == "warning"
-
-
-def test_maximum_legal_dimensional_attributes_are_exactly_byte_batched() -> None:
-    base = _context_bundle(mode="detailed_coverage")
-    selected = base.context.selected_objects[0]
-    template = selected.attributes[0]
-    excluded_description = "界" * 2_000
-    attributes = tuple(
-        template.model_copy(
-            update={
-                "attribute_name": f"attribute_{position:05d}",
-                "attribute_ordinal_position": position,
-                "attribute_description": excluded_description,
-            }
-        )
-        for position in range(1, 20_001)
-    )
-    wide_selected = selected.model_copy(update={"attributes": attributes})
-    authoring_context = base.context.model_copy(
-        update={"selected_objects": (wide_selected,)}
-    )
-    context = AgentContextBundle(
-        context=authoring_context,
-        embedded_context=base.embedded_context,
-    )
-    plan = _plan(mode="detailed_coverage")
-    service, *_unused = _service(
-        agent=_AgentExecutor(responses=[]),
-        plan=plan,
-        context=context,
-    )
-
-    batches = service._topology_builder_batches(  # pyright: ignore[reportPrivateUsage]
-        plan=plan,
-        context=context,
-        selected=wide_selected,
-    )
-
-    covered = tuple(
-        key.attribute_name for batch in batches for key in batch.source_attributes
-    )
-    assert covered == tuple(item.attribute_name for item in attributes)
-    assert len(batches) > 1
-    assert all(1 <= len(batch.source_attributes) <= 32 for batch in batches)
-    assert all(
-        excluded_description not in json.dumps(batch.context, ensure_ascii=False)
-        for batch in batches
-    )
-    source_object = PhysicalObjectKey.model_validate(_object_key())
-    assert all(
-        service._detailed_stage_fits(  # pyright: ignore[reportPrivateUsage]
-            plan=plan,
-            context=context,
-            stage_code="topology_builder",
-            stage_context=batch.context,
-            output_schema=DetailedDimensionalTopologyContributionValidator(
-                contribution_ref=batch.contribution_ref,
-                source_object=source_object,
-                source_attributes=batch.source_attributes,
-                max_result_bytes=service._detailed_result_limit,  # pyright: ignore[reportPrivateUsage]
-            ).output_schema(),
-        )
-        for batch in batches
-    )
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    ("disposition", "expected_status"),
-    [("not_dimensional", "running"), ("needs_review", "warning")],
-)
-async def test_detailed_empty_topology_completes_as_no_op(
-    disposition: Literal["not_dimensional", "needs_review"],
-    expected_status: Literal["running", "warning"],
-) -> None:
-    agent = _AgentExecutor(
-        responses=cast(
-            list[_AgentResponse],
-            _non_dimensional_candidates(disposition=disposition),
-        )
-    )
-    no_op = _NoOp()
-    service, _database, _authorizer, handoff, lifecycle = _service(
-        agent=agent,
-        plan=_plan(mode="detailed_coverage"),
-        no_op=no_op,
-    )
-
-    result = await service.execute_started(
-        _principal(),
-        tenant_id=7,
-        model_id=18,
-        workflow_run_id=1048,
-        workflow_run_claim_token=_CLAIM_TOKEN,
-        expected_model_revision=7,
-    )
-
-    assert isinstance(result, AuthoringNoOpReceipt)
-    assert result.workflow_run_state == "completed"
-    assert [request.stage for request in agent.requests] == [
-        "topology_builder",
-        "topology_reconciler",
-    ]
-    assert handoff.calls == []
-    assert no_op.requests[0].final_event.status == expected_status
-    assert lifecycle.finding_count is None

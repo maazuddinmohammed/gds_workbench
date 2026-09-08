@@ -2,7 +2,6 @@ from dataclasses import dataclass, field
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-
 from gds_workbench_api.capabilities import (
     AgentRunSelection,
     load_default_agent_capabilities,
@@ -14,23 +13,23 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 )
 
 
-def _selection(*, sdk_code: str = "langchain_create_agent") -> AgentRunSelection:
+def _selection(*, sdk_code: str = "openai_agents_sdk") -> AgentRunSelection:
     return AgentRunSelection(
         sdk_code=sdk_code,
-        provider_code="databricks",
-        model_code="databricks-primary",
+        provider_code="microsoft_foundry",
+        model_code="foundry-primary",
         reasoning_effort_code="medium",
         max_turns=7,
         validation_retry_count=2,
     )
 
 
-def _request(*, sdk_code: str = "langchain_create_agent") -> AgentExecutionRequest:
+def _request(*, sdk_code: str = "openai_agents_sdk") -> AgentExecutionRequest:
     return AgentExecutionRequest(
         workflow_run_id=1048,
         workflow="conceptual",
         stage="object_contribution",
-        execution_mode="detailed_coverage",
+        execution_mode="one_shot",
         selection=_selection(sdk_code=sdk_code),
         system_prompt="sensitive-system-prompt",
         instruction_prompt="sensitive-instruction-prompt",
@@ -43,7 +42,7 @@ def _request(*, sdk_code: str = "langchain_create_agent") -> AgentExecutionReque
 
 @dataclass
 class _Adapter:
-    sdk_code: str = "langchain_create_agent"
+    sdk_code: str = "openai_agents_sdk"
     requests: list[AgentExecutionRequest] = field(
         default_factory=lambda: list[AgentExecutionRequest]()
     )
@@ -58,9 +57,7 @@ class _Adapter:
 
 
 @pytest.mark.asyncio
-async def test_router_validates_and_dispatches_exact_sdk_without_exposing_content() -> (
-    None
-):
+async def test_router_validates_and_dispatches_exact_sdk_without_exposing_content() -> None:
     adapter = _Adapter()
     router = AgentExecutionRouter(
         capabilities=load_default_agent_capabilities(),
@@ -106,9 +103,9 @@ async def test_router_rejects_incompatible_selection_before_adapter_call() -> No
     )
     request = _request().with_selection(
         AgentRunSelection(
-            sdk_code="langchain_create_agent",
+            sdk_code="openai_agents_sdk",
             provider_code="openai",
-            model_code="databricks-primary",
+            model_code="foundry-primary",
             reasoning_effort_code="medium",
             max_turns=7,
             validation_retry_count=2,
@@ -124,7 +121,7 @@ async def test_router_rejects_incompatible_selection_before_adapter_call() -> No
 
 @dataclass
 class _FailingAdapter:
-    sdk_code: str = "langchain_create_agent"
+    sdk_code: str = "openai_agents_sdk"
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         del request
@@ -155,9 +152,7 @@ async def test_router_closes_shared_provider_resources_once() -> None:
 
 
 @pytest.mark.asyncio
-async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error() -> (
-    None
-):
+async def test_router_converts_unexpected_adapter_failure_to_stable_safe_error() -> None:
     router = AgentExecutionRouter(
         capabilities=load_default_agent_capabilities(),
         adapters=(_FailingAdapter(),),

@@ -29,6 +29,9 @@ describe("Model Assertions", () => {
     await user.click(screen.getByRole("link", { name: "Open Assertion Document 31" }));
     expect(await screen.findByRole("heading", { name: "Customer governance rules" })).toBeVisible();
     expect(screen.getByText("Quarterly customer-domain review rules.")).toBeVisible();
+    expect(screen.getByText("data_governance")).not.toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Normalized metadata" }));
+    await user.click(screen.getByRole("heading", { name: "Provenance" }));
     expect(screen.getByText("data_governance")).toBeVisible();
     expect(screen.getByText("No workflow provenance")).toBeVisible();
   });
@@ -55,6 +58,8 @@ describe("Model Assertions", () => {
 
     await user.click(screen.getByRole("link", { name: "Open Assertion Record 91" }));
     expect(await screen.findByRole("heading", { name: "customer.identity.stable" })).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Normalized details" }));
+    await user.click(screen.getByRole("heading", { name: "Provenance" }));
     expect(screen.getByText("customer_raw")).toBeVisible();
     expect(screen.getByText("invoice_raw")).toBeVisible();
     expect(screen.getByText("Workflow run 1048")).toBeVisible();

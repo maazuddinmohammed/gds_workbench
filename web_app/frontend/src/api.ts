@@ -1,3 +1,6 @@
+import { createModelTargetsApi, type ModelTargetsTransport } from "./features/model_targets/api";
+import { createMetadataEnrichmentApi, type MetadataEnrichmentTransport } from "./features/metadata_enrichment/api";
+import { createModelRecordReviewApi, type ModelRecordHistoryApi } from "./features/model_record_review/api";
 import { ApiError, createHttpRequest } from "./core/http";
 import {
   createAnalysisApi,
@@ -299,6 +302,7 @@ export interface WorkbenchApi
   ModelsApi,
   ModelInputScopeApi,
   MetadataApi,
+  ModelRecordHistoryApi,
   WorkflowsApi,
   ProfilingTransport,
   PromptsApi,
@@ -309,7 +313,9 @@ export interface WorkbenchApi
   DimensionalTransport,
   MappingTransport,
   CodeGenerationTransport,
-  ValidationTransport {}
+  ValidationTransport,
+  MetadataEnrichmentTransport,
+  ModelTargetsTransport {}
 
 export function createApiClient(fetcher: typeof fetch = globalThis.fetch): WorkbenchApi {
   const request = createHttpRequest(fetcher);
@@ -326,10 +332,13 @@ export function createApiClient(fetcher: typeof fetch = globalThis.fetch): Workb
     ...createAssertionsApi(request),
     ...createConceptualApi(request),
     ...createLogicalApi(request),
+    ...createModelTargetsApi(request),
     ...createDimensionalApi(request),
     ...createMappingApi(request),
     ...createCodeGenerationApi(request),
     ...createValidationApi(request),
+    ...createMetadataEnrichmentApi(request),
     ...createMetadataApi(request),
+    ...createModelRecordReviewApi(request),
   };
 }

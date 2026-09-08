@@ -16,7 +16,6 @@ from gds_etl_workbench.domain.authorization import (
 )
 from gds_etl_workbench.domain.errors import TenantNotFoundError
 from gds_etl_workbench.infrastructure.postgres import ReadIsolation
-
 from gds_workbench_api.features.tenants import (
     DatabaseTenantService,
     TenantCollection,
@@ -358,9 +357,7 @@ async def test_database_tenant_service_reuses_authorization_and_signed_paging() 
 
 
 @pytest.mark.asyncio
-async def test_database_tenant_selection_reauthorizes_and_calls_the_governed_function() -> (
-    None
-):
+async def test_database_tenant_selection_reauthorizes_and_calls_the_governed_function() -> None:
     database = RecordingDatabase()
     service = DatabaseTenantService(
         database=database,
@@ -461,9 +458,7 @@ class TenantHomeDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_tenant_home_derives_lock_actions_from_role_and_ownership() -> (
-    None
-):
+async def test_database_tenant_home_derives_lock_actions_from_role_and_ownership() -> None:
     service = DatabaseTenantService(
         database=TenantHomeDatabase(),
         authorizer=AuthorizationService(),

@@ -1,0 +1,490 @@
+{
+  "mapping": {
+    "run": {
+      "route": "logical_to_silver",
+      "operation": "build",
+      "output_template_selections": {
+        "mapping_object": null,
+        "mapping_attribute": null
+      }
+    },
+    "target": {
+      "attributes": [
+        {
+          "attribute_data_type": "BIGINT",
+          "attribute_description": null,
+          "attribute_id": 901,
+          "attribute_inferred_data_type": null,
+          "attribute_name": "CustomerID",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 1,
+          "is_active": true
+        }
+      ],
+      "batch_attribute_name": null,
+      "connection_code": "lakehouse",
+      "connection_id": 61,
+      "connection_is_active": true,
+      "is_active": true,
+      "is_global_data_store": true,
+      "is_locked": false,
+      "object_description": null,
+      "object_id": 501,
+      "object_name": "Customer",
+      "object_schema": "silver_crm",
+      "scope_is_active": true,
+      "scope_is_locked": false,
+      "source_tenant_id": 7,
+      "system_code": "GDS",
+      "system_id": 41,
+      "system_is_active": true,
+      "tenant_catalog": "northwind",
+      "tenant_code": "NWA",
+      "tenant_id": 7,
+      "tenant_is_active": true,
+      "zone_code": "silver"
+    },
+    "sources": [
+      {
+        "is_locked": false,
+        "mapping_order": 1,
+        "modeled_entity_id": 201,
+        "object": {
+          "attributes": [
+            {
+              "attribute_data_type": "BIGINT",
+              "attribute_description": null,
+              "attribute_id": 801,
+              "attribute_inferred_data_type": null,
+              "attribute_name": "customer_id",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "is_active": true
+            }
+          ],
+          "batch_attribute_name": null,
+          "connection_code": "crm_bronze",
+          "connection_id": 51,
+          "connection_is_active": true,
+          "is_active": true,
+          "is_global_data_store": false,
+          "is_locked": false,
+          "object_description": null,
+          "object_id": 401,
+          "object_name": "customer",
+          "object_schema": "bronze_crm",
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "source_tenant_id": 7,
+          "system_code": "CRM",
+          "system_id": 31,
+          "system_is_active": true,
+          "tenant_catalog": "northwind",
+          "tenant_code": "NWA",
+          "tenant_id": 7,
+          "tenant_is_active": true,
+          "zone_code": "bronze"
+        },
+        "rationale": "Authoritative CRM feed.",
+        "role": "support",
+        "source_mapping_id": 301
+      }
+    ],
+    "headers": [
+      {
+        "agent_run_id": null,
+        "attribute_mappings": [
+          {
+            "agent_run_id": null,
+            "is_locked": false,
+            "mapping_attribute_id": null,
+            "modeled_attribute_id": 701,
+            "output_template_id": null,
+            "status": "active",
+            "target_attribute_id": 901,
+            "transformation_document": null,
+            "workflow_run_id": null
+          }
+        ],
+        "is_locked": false,
+        "mapping_object_id": null,
+        "model_object_binding_id": 111,
+        "modeled_entity": {
+          "attributes": [
+            {
+              "attribute_data_type": "BIGINT",
+              "attribute_definition": "Stable customer key.",
+              "attribute_id": 701,
+              "attribute_name": "CustomerID",
+              "is_audit_column": false,
+              "is_locked": false,
+              "is_nullable": false,
+              "ordinal_position": 1,
+              "status": "active"
+            }
+          ],
+          "dependency_order": 0,
+          "entity_definition": "A customer.",
+          "entity_id": 201,
+          "entity_kind": "core",
+          "entity_name": "Customer",
+          "grain": "One row per customer.",
+          "is_locked": false,
+          "status": "active"
+        },
+        "object_dependency_order": 0,
+        "output_template_id": null,
+        "status": "active",
+        "transformation_document": null,
+        "workflow_run_id": null
+      }
+    ],
+    "authoring": {
+      "audit_columns_template": null,
+      "model_name": "Customer Model",
+      "naming_instructions": "Use PascalCase names.",
+      "technical_columns_template": null
+    },
+    "source_system": {
+      "is_active": true,
+      "system_code": "CRM",
+      "system_description": null,
+      "system_id": 31,
+      "system_name": "CRM"
+    },
+    "readiness": {
+      "headers": [
+        {
+          "action": "author",
+          "attribute_actions": [
+            {
+              "action": "author",
+              "mapping_attribute_id": null,
+              "modeled_attribute_id": 701
+            }
+          ],
+          "mapping_object_id": null,
+          "model_object_binding_id": 111
+        }
+      ],
+      "issues": [],
+      "operation": "build",
+      "ready": true
+    },
+    "output_templates": {
+      "definitions": []
+    }
+  },
+  "code_generation": {
+    "targets": [
+      {
+        "target_ref": "target_1",
+        "context": {
+          "target": {
+            "object_id": 501,
+            "source_tenant_id": 7,
+            "tenant_id": 7,
+            "tenant_code": "NWA",
+            "tenant_catalog": "northwind",
+            "system_id": 41,
+            "system_code": "GDS",
+            "connection_id": 61,
+            "connection_code": "lakehouse",
+            "object_schema": "silver_crm",
+            "object_name": "Customer",
+            "object_description": null,
+            "zone_code": "silver",
+            "source_tenant_code": "NWA",
+            "source_tenant_name": "Northwind",
+            "tenant_name": "Shared warehouse",
+            "system_name": "Warehouse",
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_description": null,
+                "attribute_id": 901,
+                "attribute_inferred_data_type": null,
+                "attribute_name": "CustomerID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "is_active": true,
+                "is_locked": false
+              }
+            ]
+          },
+          "physical_sources": [
+            {
+              "selected_source_system_id": 31,
+              "source_mapping_id": 1,
+              "role": "primary",
+              "rationale": "Recorded customer source.",
+              "mapping_order": 1,
+              "is_locked": false,
+              "object": {
+                "object_id": 401,
+                "source_tenant_id": 7,
+                "tenant_id": 7,
+                "tenant_code": "NWA",
+                "tenant_catalog": "northwind",
+                "system_id": 31,
+                "system_code": "CRM",
+                "connection_id": 51,
+                "connection_code": "crm_bronze",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "object_description": null,
+                "zone_code": "bronze",
+                "is_active": true,
+                "is_locked": false,
+                "scope_is_active": true,
+                "scope_is_locked": false,
+                "attributes": [
+                  {
+                    "attribute_data_type": "BIGINT",
+                    "attribute_description": null,
+                    "attribute_id": 801,
+                    "attribute_inferred_data_type": null,
+                    "attribute_name": "customer_id",
+                    "attribute_nullability": false,
+                    "attribute_ordinal_position": 1,
+                    "is_active": true,
+                    "is_locked": false
+                  }
+                ]
+              }
+            }
+          ],
+          "source_systems": [
+            {
+              "source_system_id": 31,
+              "system_code": "CRM",
+              "system_name": "CRM",
+              "dependency_order": 10
+            }
+          ],
+          "object_mappings": [
+            {
+              "mapping_object_id": 1,
+              "model_object_binding_id": 1,
+              "source_system_id": 31,
+              "object_dependency_order": 10,
+              "entity": {
+                "entity_type": "logical_entity",
+                "entity_id": 1,
+                "entity_name": "Customer",
+                "definition": "Customer identity.",
+                "classification": "entity",
+                "grain": null
+              },
+              "transformation": {
+                "steps": [
+                  {
+                    "name": "customers",
+                    "source": "customer_source"
+                  }
+                ]
+              }
+            }
+          ],
+          "attribute_mappings": [
+            {
+              "mapping_attribute_id": 1,
+              "mapping_object_id": 1,
+              "model_attribute_binding_id": 1,
+              "source_system_id": 31,
+              "modeled_attribute_id": 1,
+              "target_attribute_id": 901,
+              "target_attribute_name": "CustomerID",
+              "target_attribute_ordinal_position": 1,
+              "transformation": {
+                "expression": "CAST(customer_id AS BIGINT)"
+              }
+            }
+          ],
+          "guide": {
+            "content": "Generate Databricks SQL using exact applied transformations and qualified physical names."
+          }
+        }
+      }
+    ]
+  },
+  "validation": {
+    "system_ref": "system_1",
+    "scope": {
+      "tenant_code": "NWA",
+      "system_code": "CRM"
+    },
+    "mapping_targets": [
+      {
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Customer",
+        "context": {
+          "target": {
+            "object_id": 501,
+            "source_tenant_id": 7,
+            "tenant_id": 7,
+            "tenant_code": "NWA",
+            "tenant_catalog": "northwind",
+            "system_id": 41,
+            "system_code": "GDS",
+            "connection_id": 61,
+            "connection_code": "lakehouse",
+            "object_schema": "silver_crm",
+            "object_name": "Customer",
+            "object_description": null,
+            "zone_code": "silver",
+            "source_tenant_code": "NWA",
+            "source_tenant_name": "Northwind",
+            "tenant_name": "Shared warehouse",
+            "system_name": "Warehouse",
+            "attributes": [
+              {
+                "attribute_data_type": "BIGINT",
+                "attribute_description": null,
+                "attribute_id": 901,
+                "attribute_inferred_data_type": null,
+                "attribute_name": "CustomerID",
+                "attribute_nullability": false,
+                "attribute_ordinal_position": 1,
+                "is_active": true,
+                "is_locked": false
+              }
+            ]
+          },
+          "physical_sources": [
+            {
+              "selected_source_system_id": 31,
+              "source_mapping_id": 1,
+              "role": "primary",
+              "rationale": "Recorded customer source.",
+              "mapping_order": 1,
+              "is_locked": false,
+              "object": {
+                "object_id": 401,
+                "source_tenant_id": 7,
+                "tenant_id": 7,
+                "tenant_code": "NWA",
+                "tenant_catalog": "northwind",
+                "system_id": 31,
+                "system_code": "CRM",
+                "connection_id": 51,
+                "connection_code": "crm_bronze",
+                "object_schema": "bronze_crm",
+                "object_name": "customer",
+                "object_description": null,
+                "zone_code": "bronze",
+                "is_active": true,
+                "is_locked": false,
+                "scope_is_active": true,
+                "scope_is_locked": false,
+                "attributes": [
+                  {
+                    "attribute_data_type": "BIGINT",
+                    "attribute_description": null,
+                    "attribute_id": 801,
+                    "attribute_inferred_data_type": null,
+                    "attribute_name": "customer_id",
+                    "attribute_nullability": false,
+                    "attribute_ordinal_position": 1,
+                    "is_active": true,
+                    "is_locked": false
+                  }
+                ]
+              }
+            }
+          ],
+          "source_systems": [
+            {
+              "source_system_id": 31,
+              "system_code": "CRM",
+              "system_name": "CRM",
+              "dependency_order": 10
+            }
+          ],
+          "object_mappings": [
+            {
+              "mapping_object_id": 1,
+              "model_object_binding_id": 1,
+              "source_system_id": 31,
+              "object_dependency_order": 10,
+              "entity": {
+                "entity_type": "logical_entity",
+                "entity_id": 1,
+                "entity_name": "Customer",
+                "definition": "Customer identity.",
+                "classification": "entity",
+                "grain": null
+              },
+              "transformation": {
+                "steps": [
+                  {
+                    "name": "customers",
+                    "source": "customer_source"
+                  }
+                ]
+              }
+            }
+          ],
+          "attribute_mappings": [
+            {
+              "mapping_attribute_id": 1,
+              "mapping_object_id": 1,
+              "model_attribute_binding_id": 1,
+              "source_system_id": 31,
+              "modeled_attribute_id": 1,
+              "target_attribute_id": 901,
+              "target_attribute_name": "CustomerID",
+              "target_attribute_ordinal_position": 1,
+              "transformation": {
+                "expression": "CAST(customer_id AS BIGINT)"
+              }
+            }
+          ]
+        }
+      }
+    ],
+    "generated_code": [
+      {
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Customer",
+        "artifact_name": "customer.sql",
+        "artifact_type": "sql_file",
+        "generated_code_content": "SELECT customer_id FROM warehouse.bronze.customer;",
+        "generated_code_status": "active",
+        "generated_code_is_locked": false,
+        "source_system_codes": [
+          "CRM"
+        ]
+      }
+    ],
+    "applied_validation_groups": [
+      {
+        "is_locked": false,
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "validation_group_name": "customer_keys",
+        "validation_group_description": "Recorded customer key constraints.",
+        "is_active": true
+      }
+    ],
+    "applied_validation_checks": [
+      {
+        "is_locked": false,
+        "tenant_code": "NWA",
+        "system_code": "CRM",
+        "validation_group_name": "customer_keys",
+        "validation_check_name": "customer_id_not_null",
+        "validation_check_description": null,
+        "validation_category_code": "technical.nullability",
+        "validation_severity": "blocking",
+        "validation_query_sql": "SELECT count(*) FROM warehouse.silver.customer WHERE customer_id IS NULL",
+        "validation_comparison_query_sql": null,
+        "validation_result_data_type": "integer",
+        "validation_comparison_operator": "equal",
+        "validation_comparison_value_type": "literal",
+        "validation_comparison_value": 0,
+        "is_active": true
+      }
+    ]
+  }
+}

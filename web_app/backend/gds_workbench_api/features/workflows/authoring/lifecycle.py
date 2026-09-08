@@ -202,6 +202,42 @@ async def complete_agent_workflow_run(
     return AgentWorkflowTerminalResult.model_validate(row, strict=True)
 
 
+async def fail_agent_workflow_run(
+    transaction: LifecycleTransaction,
+    principal: RequestPrincipal,
+    *,
+    workflow_run_id: int,
+    expected_model_revision: int,
+    failure_code: str,
+    safe_failure_message: str,
+) -> AgentWorkflowTerminalResult:
+    """Fail one Run using the governed function inside the caller's transaction."""
+    if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,99}", failure_code):
+        raise InvalidRequestError("Workflow failure metadata is invalid.")
+    if (
+        not safe_failure_message.strip()
+        or len(safe_failure_message.encode("utf-8")) > 2000
+        or re.search(r"[\x00-\x1f\x7f]", safe_failure_message)
+    ):
+        raise InvalidRequestError("Workflow failure metadata is invalid.")
+    try:
+        row = await transaction.fetch_one(
+            _FAIL_SQL,
+            workflow_identity_triple(principal)
+            + (
+                workflow_run_id,
+                expected_model_revision,
+                failure_code,
+                safe_failure_message,
+            ),
+        )
+    except Exception as error:
+        raise_workflow_lifecycle_error(error)
+    if row is None:
+        raise DependencyUnavailableError()
+    return AgentWorkflowTerminalResult.model_validate(row, strict=True)
+
+
 class DatabaseAgentWorkflowLifecycle:
     """Use only the governed Workflow Run functions for lifecycle mutations."""
 
@@ -310,37 +346,6 @@ class DatabaseAgentWorkflowLifecycle:
         failure_code: str,
         safe_failure_message: str,
     ) -> AgentWorkflowTerminalResult:
-        if not re.fullmatch(r"[a-z][a-z0-9_.-]{0,99}", failure_code):
-            raise InvalidRequestError("Workflow failure metadata is invalid.")
-        if (
-            not safe_failure_message.strip()
-            or len(safe_failure_message.encode("utf-8")) > 2000
-            or re.search(r"[\x00-\x1f\x7f]", safe_failure_message)
-        ):
-            raise InvalidRequestError("Workflow failure metadata is invalid.")
-        return await self._terminal(
-            principal,
-            workflow_run_id=workflow_run_id,
-            workflow_run_claim_token=workflow_run_claim_token,
-            query=_FAIL_SQL,
-            parameters=(
-                workflow_run_id,
-                expected_model_revision,
-                failure_code,
-                safe_failure_message,
-            ),
-        )
-
-    async def _terminal(
-        self,
-        principal: RequestPrincipal,
-        *,
-        workflow_run_id: int,
-        workflow_run_claim_token: UUID,
-        query: LiteralString,
-        parameters: tuple[object, ...],
-    ) -> AgentWorkflowTerminalResult:
-        identity = workflow_identity_triple(principal)
         try:
             async with self._database.write_transaction() as transaction:
                 await assert_workflow_run_claim(
@@ -348,12 +353,16 @@ class DatabaseAgentWorkflowLifecycle:
                     workflow_run_id=workflow_run_id,
                     workflow_run_claim_token=workflow_run_claim_token,
                 )
-                row = await transaction.fetch_one(query, identity + parameters)
+                return await fail_agent_workflow_run(
+                    transaction,
+                    principal,
+                    workflow_run_id=workflow_run_id,
+                    expected_model_revision=expected_model_revision,
+                    failure_code=failure_code,
+                    safe_failure_message=safe_failure_message,
+                )
         except Exception as error:
             raise_workflow_lifecycle_error(error)
-        if row is None:
-            raise DependencyUnavailableError()
-        return AgentWorkflowTerminalResult.model_validate(row, strict=True)
 
 
 def workflow_identity_triple(principal: RequestPrincipal) -> tuple[UUID, UUID, str]:

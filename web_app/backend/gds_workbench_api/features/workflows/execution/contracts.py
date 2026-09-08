@@ -16,11 +16,11 @@ type ModelWorkflow = Literal[
     "mapping",
     "code_generation",
     "validation",
+    "metadata_enrichment",
 ]
 type WorkflowExecutionMode = Literal[
     "one_shot",
     "tool_assisted",
-    "detailed_coverage",
 ]
 
 
@@ -46,6 +46,10 @@ class WorkflowExecutionClaim(BaseModel):
 
     @model_validator(mode="after")
     def validate_execution_shape(self) -> Self:
+        if self.model_workflow == "metadata_enrichment" and (
+            self.workflow_execution_mode != "one_shot"
+        ):
+            raise ValueError("Metadata enrichment requires one-shot execution")
         requires_mode = self.model_workflow in {
             "conceptual",
             "logical",

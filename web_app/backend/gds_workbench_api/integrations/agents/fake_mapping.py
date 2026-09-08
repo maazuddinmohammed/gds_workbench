@@ -11,15 +11,15 @@ from gds_etl_workbench.domain.errors import InvalidRequestError
 from pydantic import JsonValue
 
 from gds_workbench_api.features.workflows.authoring.agent_execution import AgentExecutionRequest
-from gds_workbench_api.integrations.agents.fake_shared import detailed_original_context
-
-
-def fake_detailed_mapping_candidate(request: AgentExecutionRequest) -> JsonValue:
-    return fake_mapping_candidate(detailed_original_context(request.context))
 
 
 def fake_mapping_candidate(context: dict[str, JsonValue]) -> JsonValue:
-    headers = [mapping_dict(item) for item in _mapping_list(context.get("headers"))]
+    if context.get("__gds_downstream_inputs__") == "mapping":
+        context = mapping_dict(context.get("values"))
+    headers = [
+        mapping_dict(item)
+        for item in _mapping_list(context.get("existing_mapping", context.get("headers")))
+    ]
     readiness = mapping_dict(context.get("readiness"))
     readiness_headers = [mapping_dict(item) for item in _mapping_list(readiness.get("headers"))]
     if len(headers) != 1 or len(readiness_headers) != 1:
@@ -31,14 +31,21 @@ def fake_mapping_candidate(context: dict[str, JsonValue]) -> JsonValue:
         _nonblank(item.get("attribute_name")): item
         for item in (mapping_dict(value) for value in _mapping_list(entity.get("attributes")))
     }
-    actionable_ids = {
-        _positive(item.get("modeled_attribute_id"))
+    actionable_keys = {
+        (
+            _nonblank(item["modeled_attribute_name"])
+            if "modeled_attribute_name" in item
+            else _positive(item.get("modeled_attribute_id"))
+        )
         for item in (mapping_dict(value) for value in _mapping_list(ready.get("attribute_actions")))
         if item.get("action") in {"author", "extend"}
     }
     attributes: list[JsonValue] = []
     for name, attribute in sorted(modeled_attributes.items()):
-        if _positive(attribute.get("attribute_id")) not in actionable_ids:
+        attribute_key = (
+            _positive(attribute["attribute_id"]) if "attribute_id" in attribute else name
+        )
+        if attribute_key not in actionable_keys:
             continue
         attributes.append(
             {
@@ -77,7 +84,31 @@ def fake_mapping_context_from_tools(
     catalog = request.local_tool_catalog
     if catalog is None:
         raise InvalidRequestError("The local fake agent context is invalid.")
-    manifest = mapping_dict(catalog.invoke("get_mapping_context_manifest", {}))
+    outer = mapping_dict(request.context)
+    original = mapping_dict(outer.get("original_context", outer))
+    if original.get("__gds_downstream_inputs__") == "mapping":
+        values = mapping_dict(original.get("values"))
+        calls = 0
+        if "get_existing_mapping" in request.allowed_tool_names:
+            headers: list[JsonValue] = []
+            arguments: dict[str, JsonValue] = {}
+            while True:
+                page = mapping_dict(catalog.invoke("get_existing_mapping", arguments))
+                calls += 1
+                headers.extend(_mapping_list(page.get("items")))
+                if page.get("next_cursor") is None:
+                    break
+                arguments = {"cursor": page["next_cursor"]}
+            values = {**values, "existing_mapping": cast(JsonValue, headers)}
+        return values, calls
+    manifest_calls = int("get_mapping_context_manifest" in request.allowed_tool_names)
+    if not isinstance(request.context, dict):
+        raise InvalidRequestError("The local fake agent context is invalid.")
+    manifest = mapping_dict(
+        catalog.invoke("get_mapping_context_manifest", {})
+        if manifest_calls
+        else request.context.get("original_context")
+    )
     counts: dict[str, tuple[int, int]] = {}
     for raw in _mapping_list(manifest.get("datasets")):
         item = mapping_dict(raw)
@@ -96,7 +127,7 @@ def fake_mapping_context_from_tools(
         counts[name] = (record_count, retrieval_count)
 
     datasets: dict[str, list[JsonValue]] = {}
-    calls = 1
+    calls = manifest_calls
     for name, (record_count, retrieval_count) in counts.items():
         items: list[JsonValue] = []
         offset = 0

@@ -1,3 +1,4 @@
+import type { ModelRecordHistoryApi } from "../model_record_review/api";
 import type { HttpRequest } from "../../core/http";
 import type {
   MappingEntityType,
@@ -22,6 +23,7 @@ export interface StoredSqlArtifactSummary {
   workflow_run_id: number | null;
   generated_at: string;
   generated_code_status: "active" | "inactive" | "deprecated";
+  generated_code_is_locked: boolean;
   source_system_codes: string[];
   artifact_is_current: boolean;
 }
@@ -82,6 +84,7 @@ export interface GeneratedSqlArtifactDetail {
   mapping_supports_truncated: boolean;
   artifact_is_current: boolean;
   generated_code_status: "active" | "inactive" | "deprecated";
+  generated_code_is_locked: boolean;
   guide: SqlGenerationGuideProvenance | null;
   workflow_run_id: number | null;
   generator: SqlGeneratorProvenance | null;
@@ -105,7 +108,7 @@ export interface CodeGenerationTransport {
   ) => Promise<GeneratedSqlArtifactDetail>;
 }
 
-export type CodeGenerationApi = CodeGenerationTransport
+export type CodeGenerationApi = CodeGenerationTransport & ModelRecordHistoryApi
   & Pick<ModelsApi, "listModels">
   & Pick<
     WorkflowsApi,

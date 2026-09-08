@@ -5,13 +5,13 @@ from gds_etl_workbench.application.authorization import (
     AuthorizationService,
     ResolvedPrincipal,
 )
-from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_etl_workbench.application.tenants import query_visible_tenants
-from tests.mcp.conftest import DisposablePostgres
-
+from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.session import DatabaseSessionService
 from gds_workbench_api.features.tenants import DatabaseTenantService
+
+from tests.mcp.conftest import DisposablePostgres
 
 
 @pytest.mark.asyncio
@@ -216,9 +216,7 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
         ).fetchall()
         tenant_by_code = {row["tenant_code"]: row for row in tenant_rows}
         gds_owner_tenant = tenant_by_code[f"WEB_SELECTOR_GDS_{suffix}"]
-        inactive_gds_owner_tenant = tenant_by_code[
-            f"WEB_SELECTOR_INACTIVE_GDS_{suffix}"
-        ]
+        inactive_gds_owner_tenant = tenant_by_code[f"WEB_SELECTOR_INACTIVE_GDS_{suffix}"]
         regular_tenant_a = tenant_by_code[f"WEB_SELECTOR_A_{suffix}"]
         regular_tenant_b = tenant_by_code[f"WEB_SELECTOR_B_{suffix}"]
         system = connection.execute(
@@ -360,9 +358,5 @@ async def test_tenant_entry_pages_only_non_global_data_store_owner_tenants(
     shared_visible_tenant_ids = {row["tenant_id"] for row in shared_visible_rows}
     assert gds_owner_tenant["tenant_id"] in shared_visible_tenant_ids
     assert inactive_gds_owner_tenant["tenant_id"] in shared_visible_tenant_ids
-    assert [item.tenant_id for item in first_page.items] == [
-        regular_tenant_a["tenant_id"]
-    ]
-    assert [item.tenant_id for item in second_page.items] == [
-        regular_tenant_b["tenant_id"]
-    ]
+    assert [item.tenant_id for item in first_page.items] == [regular_tenant_a["tenant_id"]]
+    assert [item.tenant_id for item in second_page.items] == [regular_tenant_b["tenant_id"]]

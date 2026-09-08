@@ -257,14 +257,11 @@ def test_running_profiling_context_returns_scope_metadata_and_one_secret_row(
 
     assert len(context_rows) == len(seed.attributes)
     assert [
-        (row["object_id"], row["attribute_id"], row["attribute_name"])
-        for row in context_rows
+        (row["object_id"], row["attribute_id"], row["attribute_name"]) for row in context_rows
     ] == list(seed.attributes)
     assert all(row["workflow_run_id"] == seed.workflow_run_id for row in context_rows)
     assert all(row["model_id"] == seed.context.model_id for row in context_rows)
-    assert all(
-        row["model_revision"] == seed.context.model_revision for row in context_rows
-    )
+    assert all(row["model_revision"] == seed.context.model_revision for row in context_rows)
     assert all(row["relation_catalog"] == seed.relation_catalog for row in context_rows)
     assert all(row["relation_schema"] == seed.relation_schema for row in context_rows)
     assert all(row["gds_connection_id"] == seed.connection_id for row in context_rows)
@@ -276,9 +273,7 @@ def test_running_profiling_context_returns_scope_metadata_and_one_secret_row(
     assert connection_row["failure_message"] is None
     assert connection_row["gds_connection_id"] == seed.connection_id
     assert connection_row["environment_code"] == seed.environment_code
-    assert _digest(connection_row["databricks_host_name"]) == _digest(
-        seed.server_hostname
-    )
+    assert _digest(connection_row["databricks_host_name"]) == _digest(seed.server_hostname)
     assert _digest(connection_row["databricks_http_path"]) == _digest(seed.http_path)
     assert _digest(connection_row["databricks_token"]) == _digest(seed.access_token)
 
@@ -630,13 +625,9 @@ def test_profiling_connection_gaps_return_fixed_failures_without_secrets(
         )
 
     assert missing_environment["failure_code"] == "environment_not_found"
-    assert missing_environment["failure_message"] == (
-        "Profiling Environment is unavailable."
-    )
+    assert missing_environment["failure_message"] == ("Profiling Environment is unavailable.")
     assert missing_values["failure_code"] == "connection_values_missing"
-    assert missing_values["failure_message"] == (
-        "Profiling GDS connection values are incomplete."
-    )
+    assert missing_values["failure_message"] == ("Profiling GDS connection values are incomplete.")
     for failure in (missing_environment, missing_values):
         assert failure["gds_connection_id"] is None
         assert failure["databricks_host_name"] is None

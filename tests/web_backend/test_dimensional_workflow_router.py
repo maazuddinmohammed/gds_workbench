@@ -9,7 +9,6 @@ from fastapi.testclient import TestClient
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.configuration import AuthMode
 from gds_etl_workbench.domain.authorization import RequestPrincipal
-
 from gds_workbench_api.features.dimensional.router import (
     ExecuteDimensionalRunRequest,
     create_dimensional_workflow_router,
@@ -67,9 +66,7 @@ class _StaticDimensionalWorkflowService:
         expected_model_revision: int,
     ) -> None:
         del principal
-        self.executions.append(
-            (tenant_id, model_id, workflow_run_id, expected_model_revision)
-        )
+        self.executions.append((tenant_id, model_id, workflow_run_id, expected_model_revision))
 
 
 def _client(service: _StaticDimensionalWorkflowService) -> TestClient:
@@ -128,18 +125,18 @@ def test_execute_endpoint_does_not_reschedule_an_already_started_one_shot_run() 
     assert service.executions == []
 
 
-def test_execute_endpoint_accepts_explicit_detailed_coverage_mode() -> None:
+def test_execute_endpoint_accepts_explicit_one_shot_mode() -> None:
     service = _StaticDimensionalWorkflowService()
 
     with _client(service) as client:
         response = client.post(
             "/api/v1/tenants/7/models/18/dimensional/runs/1048/execute",
             json={
-                "execution_mode": "detailed_coverage",
+                "execution_mode": "one_shot",
                 "expected_model_revision": 4,
             },
         )
 
     assert response.status_code == 202
-    assert service.starts == [(7, 18, 1048, "detailed_coverage", 4)]
+    assert service.starts == [(7, 18, 1048, "one_shot", 4)]
     assert service.executions == []

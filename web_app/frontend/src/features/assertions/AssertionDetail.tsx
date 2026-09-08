@@ -1,6 +1,7 @@
 import { Link } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 
+import { DetailState } from "../../shared/ui";
 import { formatRequiredDateTime as formatDateTime } from "../../shared/presentation";
 import { assertionsQueryKeys, type AssertionsApi } from "./api";
 import { NormalizedJson } from "./NormalizedJson";
@@ -32,7 +33,7 @@ export function AssertionDocumentDetailPage({
         title={document.modeling_assertion_document_name}
         active={document.is_active}
       />
-      <section className="detail-section" aria-labelledby="document-overview-heading">
+      <section className="detail-section detail-primary" aria-labelledby="document-overview-heading">
         <header><h2 id="document-overview-heading">Document overview</h2></header>
         <p className="detail-prose">
           {document.modeling_assertion_document_description ?? "No description recorded."}
@@ -47,10 +48,10 @@ export function AssertionDocumentDetailPage({
           <Fact label="Updated" value={formatDateTime(document.updated_at)} />
         </dl>
       </section>
-      <section className="detail-section" aria-labelledby="document-metadata-heading">
-        <header><h2 id="document-metadata-heading">Normalized metadata</h2></header>
+      <details className="detail-section detail-disclosure" aria-labelledby="document-metadata-heading">
+        <summary><h2 id="document-metadata-heading">Normalized metadata</h2></summary>
         <NormalizedJson value={document.modeling_assertion_document_metadata} />
-      </section>
+      </details>
       <Provenance
         workflowRunId={document.workflow_run_id}
         agentRunId={document.agent_run_id}
@@ -87,7 +88,7 @@ export function AssertionRecordDetailPage({
         title={record.modeling_assertion_record_key}
         active={record.modeling_assertion_record_status !== "inactive"}
       />
-      <section className="detail-section" aria-labelledby="assertion-text-heading">
+      <section className="detail-section detail-primary" aria-labelledby="assertion-text-heading">
         <header>
           <h2 id="assertion-text-heading">Assertion</h2>
           <span>{humanize(record.modeling_assertion_record_type)}</span>
@@ -105,15 +106,15 @@ export function AssertionRecordDetailPage({
           <Fact label="Updated" value={formatDateTime(record.updated_at)} />
         </dl>
       </section>
-      <section className="detail-section" aria-labelledby="assertion-details-heading">
-        <header><h2 id="assertion-details-heading">Normalized details</h2></header>
+      <details className="detail-section detail-disclosure" aria-labelledby="assertion-details-heading">
+        <summary><h2 id="assertion-details-heading">Normalized details</h2></summary>
         <NormalizedJson value={record.modeling_assertion_details} />
-      </section>
+      </details>
       {record.modeling_assertion_source_location ? (
-        <section className="detail-section" aria-labelledby="assertion-source-heading">
-          <header><h2 id="assertion-source-heading">Source location</h2></header>
+        <details className="detail-section detail-disclosure" aria-labelledby="assertion-source-heading">
+          <summary><h2 id="assertion-source-heading">Source location</h2></summary>
           <NormalizedJson value={record.modeling_assertion_source_location} />
-        </section>
+        </details>
       ) : null}
       <Provenance
         workflowRunId={record.workflow_run_id}
@@ -167,8 +168,8 @@ function Provenance({
   createdAt: string;
 }) {
   return (
-    <section className="detail-section" aria-labelledby="assertion-provenance-heading">
-      <header><h2 id="assertion-provenance-heading">Provenance</h2></header>
+    <details className="detail-section detail-disclosure" aria-labelledby="assertion-provenance-heading">
+      <summary><h2 id="assertion-provenance-heading">Provenance</h2></summary>
       <dl className="detail-fact-grid">
         <Fact
           label="Workflow"
@@ -177,18 +178,7 @@ function Provenance({
         <Fact label="Agent run" value={agentRunId ?? "Not recorded"} />
         <Fact label="Created" value={formatDateTime(createdAt)} />
       </dl>
-    </section>
-  );
-}
-
-function DetailState({ label, error = false }: { label: string; error?: boolean }) {
-  return (
-    <div
-      className={`surface-state detail-state${error ? " is-error" : ""}`}
-      {...(error ? { role: "alert" } : { "aria-busy": true })}
-    >
-      {label}
-    </div>
+    </details>
   );
 }
 

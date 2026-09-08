@@ -1,14 +1,13 @@
 # Server handoff
 
-Load only after a positive acknowledgement of the exact local digest.
+Load only after a positive acknowledgement of the exact local digest. Use the correct area tools dynamically; never invent tool names, IDs or revisions.
 
-1. Check the Tenant Lock. The acknowledgement authorizes acquisition when the Tenant is unlocked. Another owner stops; override requires separate explicit authorization and a reason.
-2. For Model work, re-read the authoritative Model revision. On mismatch, automatically create and install a fresh Model Snapshot, then reassess; never merge automatically. Metadata has no tenant-wide revision: require its local Snapshot to be non-stale and rely on this lock plus server validation.
-3. Get or create the correct Metadata or Model Change Set. Never create a draft merely to inspect.
-4. Reconcile its current pending datasets against the accepted local digest. Content/action changes require another notification and acknowledgement; byte-identical reassessment retains approval.
-5. Read `staging.md`. Run local `prepare-stage` once with the exact server pending datasets, then execute its ordered `operations` exactly. Carry a returned revision only where the manifest directs it.
-6. Validate the exact staged revision on the server. On `valid=false`, cache that active revision as failed before editing. Repair returned paths locally, revalidate, notify, and obtain acknowledgement for changed content. Then replace only this task's failed draft as described in `staging.md`; ordinary conflicts still stop.
-7. Show authoritative `action_review` and ask separately for Apply approval.
-8. Apply once, mark the area stale, release a lock acquired here, and stop.
+1. Check the Tenant Lock. The acknowledgement authorizes ordinary acquisition when unlocked. Another owner stops; override requires separate explicit authorization and a reason.
+2. For Model work, re-read authoritative revision. On mismatch, follow `workflows/revision-recovery.md` **before** creating/caching a draft. Metadata has no tenant-wide revision: require a non-stale Snapshot and lock. Metadata Enrichment also rechecks its scope Model revision.
+3. Inspect existing cache/proof **first**. If proof matches an active/validated staged draft, skip Stage and resume validation/Apply; never reset its status. For a failed-draft retry, retain its cached failure marker and old digest until the runner returns the newer Stage revision. Otherwise get/create the task's correct Metadata or Model Change Set, then bind its authoritative ID/revision with `draft-cache --session <session> --area metadata|model --id <UUID> --revision <n> --status active`. Never create a draft merely to inspect. For summary-only reads omit `dataset`.
+4. Read `staging.md`. Run `prepare-stage-request` once, invoke `gds_stageApprovedManifest` using the exact field translation, and save the bounded proof described there. Cache the receipt's resulting revision as `active`; mark `task-state --task <ID> --state staged`.
+5. Validate that exact server revision. Cache the returned revision/status as `validated` only on success. On `valid=false`, cache the active revision with `--validation-failed true`; repair locally, revalidate, notify, and obtain acknowledgement. Only this task's failed draft may be replaced; never substitute unrelated pending content.
+6. Show bounded authoritative `action_review`; ask separately for Apply approval. Compare the current local digest and server ID/revision/fingerprint with the Stage proof before Apply; changed or missing proof stops handoff.
+7. Apply once. On confirmed success run `task-state --task <ID> --state applied` (marks the area stale), release a lock acquired here, and install the required fresh Snapshot before dependent work. Uncertain Apply results require a summary read; never retry blindly.
 
-Use the Metadata Change Set tools only for Metadata and the Model Change Set tools only for Model records. Archive only on an explicit request.
+Metadata Change Sets carry Metadata only; Model Change Sets carry Model records. Archive only on an explicit request. Do not manipulate task state or clear a cached draft to bypass a conflict.

@@ -30,9 +30,9 @@ def _seed_code_validation_scope(
             connection.execute(
                 cast(
                     LiteralString,
-                    (
-                        DATABASE_ROOT / "seed" / "01_metadata_snapshot_demo.sql"
-                    ).read_text(encoding="utf-8"),
+                    (DATABASE_ROOT / "seed" / "01_metadata_snapshot_demo.sql").read_text(
+                        encoding="utf-8"
+                    ),
                 )
             )
 
@@ -176,9 +176,7 @@ def test_generated_code_enforces_binding_identity_and_derives_content_digest(
             ("customer.SQL", "b" * 64),
             ("Customer-2.sql", "not-a-digest"),
         ):
-            expected_error = (
-                UniqueViolation if artifact_name == "customer.SQL" else CheckViolation
-            )
+            expected_error = UniqueViolation if artifact_name == "customer.SQL" else CheckViolation
             with pytest.raises(expected_error), connection.transaction():
                 connection.execute(
                     """

@@ -5,7 +5,7 @@ Seed files are separate from canonical DDL. Run them only after
 
 ## Application reference metadata
 
-`04_application_reference.sql` installs 49 stable workflow stages and 80 allowed
+`04_application_reference.sql` installs 26 stable workflow stages and 169 allowed
 backend-resolved prompt variables. It includes deterministic stages, but gives
 variables only to agentic stages. It contains no prompt or SQL-generation-guide
 bodies, credentials, connection values, or business data.
@@ -21,7 +21,7 @@ psql "<admin-dsn-without-password>" -X -v ON_ERROR_STOP=1 \
 ## Global default Prompts
 
 `05_global_prompt_defaults.template.sql` creates the governed global default
-for all 36 agentic Workflow Stages. The 13 deterministic stages, including
+for all 14 agentic Workflow Stages. The 12 deterministic stages, including
 Profiling, do not accept Prompts.
 
 Run `04_application_reference.sql` first. Then find one active Super Admin
@@ -57,21 +57,34 @@ seed-owned global assignment without duplicating the template or overwriting
 history. It refuses to replace an active global default owned by another
 template.
 
-After upgrading an existing deployment, replay
-`04_application_reference.sql` first so newly introduced stable stages, such as
-the four Analysis `detailed_coverage` stages, are inserted. Then rerun this
-Prompt seed so their global defaults and any changed existing defaults are
-published and assigned. Both files are replay-safe; neither is a schema install
-or a destructive data reset. Rerun this seed after the bounded Dimensional
-`whole_model_reconciliation` upgrade so deployed agents receive its receipt
-contract instead of the former full-draft contract.
+After installing a compatible schema, replay `04_application_reference.sql` to
+register the supported one-shot and tool-assisted stages and named inputs.
+Then rerun the Prompt seed to publish and assign their defaults. Existing
+frozen runs retain their original Prompt versions. These seeds do not migrate
+populated database schemas or remove historical run records.
 
-The agent runtime already supplies bounded context, naming rules, Mapping
-output templates, SQL guides, and the required output schema separately. The
-defaults therefore do not duplicate those potentially large values. Analysis
-and Logical reconciliation interpolate their bounded allowlisted
-`validation_failures` value. Dimensional reconciliation reads the equivalent
-bounded summary from its receipt context, so the Prompt does not duplicate it.
+Evidence enters model requests only through explicitly rendered workflow-local
+variables and enabled readers. Required output schemas and bounded repair
+feedback remain backend-owned.
+
+## Global default Mapping output templates
+
+`07_global_mapping_output_templates.template.sql` creates two reusable templates:
+
+- `mapping_object_default`: nullable `source_objects` and nullable `steps`.
+- `mapping_attribute_default`: optional nullable `source_attributes` and required
+  `transformation`.
+
+Use the same three active Super Admin identity placeholders as the Prompt seed.
+Exact replay changes nothing. These schemas are immutable: a conflicting existing
+template is rejected rather than overwritten. The local runner installs this
+seed automatically after the local identity and global Prompts.
+
+New Logical-to-Silver and Dimensional-to-Gold Mapping runs select these global
+defaults when no custom template is supplied. Explicit custom selections take
+precedence. The selected template IDs and schema digests are frozen on each run;
+existing Mapping documents and previously frozen runs remain unchanged. Install
+both active defaults before starting Mapping runs that rely on them.
 
 ## Model cleanup template
 
@@ -160,3 +173,13 @@ Run the edited copy as the database administrator with
 refuses unchanged placeholders, a database-name mismatch, zero UUIDs, and
 duplicate local identities. Super Admin grants authorization, but it does not
 bypass Tenant Locks, revisions, validation, or audit.
+
+
+Tool-assisted Prompt versions may select their registered evidence tools through
+`agent_tool_names`. Dataset retrieval is required; manifest retrieval is optional
+because each request already includes a manifest. A null selection uses both
+registered tools. Published selections are immutable and participate in the
+Prompt digest; changes require a new version. No arbitrary tools are accepted.
+The `available_tools` variable supplies the actual enabled names, descriptions,
+and JSON input schemas, including the run's page limits. The Prompt editor shows
+this contract and lets authors save tool permissions with their draft.

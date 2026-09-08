@@ -46,10 +46,12 @@ flowchart LR
             dimensional["Dimensional"]
         end
 
-        models["Foundry + Databricks<br/>Models and Data"]
+        models["Microsoft Foundry<br/>OpenAI Agents SDK"]
+        data["Databricks SQL<br/>Governed Data Access"]
 
         workflows --> profiling & analysis & conceptual & logical & dimensional
-        profiling & analysis & conceptual & logical & dimensional --> models
+        analysis & conceptual & logical & dimensional --> models
+        workflows --> data
     end
 
     subgraph databricksApp["DATABRICKS WEB APP"]
@@ -87,7 +89,7 @@ flowchart LR
     class mcpIdentity,webIdentity,easyAuth auth;
     class mcp,workflows,profiling,analysis,conceptual,logical,dimensional,fastapi,react app;
     class postgres source;
-    class keyVault,storage,models service;
+    class keyVault,storage,models,data service;
 
     style developerAccess fill:#F8FAFC,stroke:#93C5FD,stroke-width:1px;
     style userAccess fill:#F8FAFC,stroke:#93C5FD,stroke-width:1px;
@@ -111,7 +113,7 @@ The workflow box is a logical view. Its code is packaged separately with the
 Web App and notebooks; it is not another deployed service.
 
 Profiling uses governed Databricks data reads. The agent workflows use the
-selected Foundry or Databricks model.
+selected Microsoft Foundry model through OpenAI Agents SDK.
 
 ## References
 

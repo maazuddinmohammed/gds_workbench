@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from collections.abc import Mapping
 from typing import cast
 
@@ -18,31 +19,21 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionResult,
     AgentExecutionRouter,
 )
+from gds_workbench_api.features.workflows.usage.contracts import AgentUsageRecorder
 from gds_workbench_api.integrations.agents.adapters import (
-    DatabricksModelAuthentication,
     FoundryApiKeyAuthentication,
     FoundryModelAuthentication,
-    LangChainCreateAgentAdapter,
     ManagedModelAuthentication,
     OpenAIAgentsSdkAdapter,
 )
 from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
-from gds_workbench_api.integrations.agents.fake_analysis import (
-    fake_detailed_analysis_candidate,
-)
-from gds_workbench_api.integrations.agents.fake_conceptual import (
-    detailed_conceptual_candidate,
-)
 from gds_workbench_api.integrations.agents.fake_dimensional import (
-    detailed_dimensional_candidate,
     fake_dimensional_candidate,
 )
 from gds_workbench_api.integrations.agents.fake_logical import (
-    detailed_logical_candidate,
     fake_logical_candidate,
 )
 from gds_workbench_api.integrations.agents.fake_mapping import (
-    fake_detailed_mapping_candidate,
     fake_mapping_candidate,
     fake_mapping_context_from_tools,
 )
@@ -50,7 +41,7 @@ from gds_workbench_api.integrations.agents.fake_shared import (
     analysis_selected_attributes,
     code_generation_target_refs,
     conceptual_source_objects,
-    detailed_original_context,
+    original_context,
     tool_assisted_conceptual_sources,
     tool_assisted_logical_sources,
 )
@@ -63,10 +54,6 @@ class LocalFakeAgentAdapter:
         self.sdk_code = sdk_code
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
-        if request.execution_mode == "detailed_coverage" and (
-            request.allowed_tool_names or request.local_tool_catalog is not None
-        ):
-            raise InvalidRequestError("The local fake does not support this agent execution path.")
         if request.execution_mode == "one_shot" and (
             request.allowed_tool_names or request.local_tool_catalog is not None
         ):
@@ -78,35 +65,86 @@ class LocalFakeAgentAdapter:
         ):
             raise InvalidRequestError("The local fake does not support this agent execution path.")
         tool_call_count = 0
-        if request.workflow == "mapping" and request.stage == "mapping_authoring":
-            if request.execution_mode == "tool_assisted":
+        if request.workflow == "metadata_enrichment" and request.stage == "candidate_authoring":
+            properties = request.output_schema.get("properties")
+            description_schema = (
+                properties.get("descriptions") if isinstance(properties, dict) else None
+            )
+            refs = (
+                description_schema.get("required") if isinstance(description_schema, dict) else None
+            )
+            if not isinstance(refs, list) or not all(isinstance(ref, str) for ref in refs):
+                raise InvalidRequestError("The local enrichment target schema is unavailable.")
+            descriptions: dict[str, JsonValue] = {}
+            for ref in refs:
+                if not isinstance(ref, str):
+                    continue
+                try:
+                    key = cast(JsonValue, json.loads(ref))
+                    name = key[-1] if isinstance(key, list) and key else ref
+                except ValueError:
+                    name = ref
+                descriptions[ref] = f"Synthetic local description for {name}."
+            candidate = cast(JsonValue, {"descriptions": descriptions})
+        elif request.workflow == "mapping":
+            if request.stage == "mapping_authoring" and request.execution_mode == "tool_assisted":
                 mapping_context, tool_call_count = fake_mapping_context_from_tools(request)
                 candidate = fake_mapping_candidate(mapping_context)
-            elif request.execution_mode == "detailed_coverage":
-                candidate = fake_detailed_mapping_candidate(request)
-            elif request.execution_mode == "one_shot":
-                mapping_context = detailed_original_context(request.context)
+            elif request.stage == "mapping_authoring" and request.execution_mode == "one_shot":
+                mapping_context = original_context(request.context)
                 candidate = fake_mapping_candidate(mapping_context)
             else:
                 raise InvalidRequestError(
                     "The local fake does not support this agent execution path."
                 )
         elif request.workflow == "code_generation" and request.stage == "sql_generation":
-            target_refs = code_generation_target_refs(request.context)
+            target_systems: dict[str, list[JsonValue]]
+            code_context = original_context(request.context)
+            if code_context.get("__gds_downstream_inputs__") == "code_generation":
+                values = cast(dict[str, JsonValue], code_context["values"])
+                target_ref = values.get("target_ref")
+                systems = values.get("source_systems")
+                if not isinstance(target_ref, str) or not isinstance(systems, list):
+                    raise InvalidRequestError("The local Code context is unavailable.")
+                target_systems = {
+                    target_ref: [
+                        row["system_code"]
+                        for row in systems
+                        if isinstance(row, dict) and isinstance(row.get("system_code"), str)
+                    ],
+                }
+            else:
+                target_systems = {
+                    target_ref: [] for target_ref in code_generation_target_refs(request.context)
+                }
             candidate = cast(
                 JsonValue,
                 {
                     "artifacts": [
                         {
                             "target_ref": target_ref,
+                            **(
+                                {
+                                    "artifact_name": f"{target_ref}.sql",
+                                    "artifact_role": "target_transformation",
+                                    "source_system_codes": system_codes,
+                                }
+                                if code_context.get("__gds_downstream_inputs__")
+                                == "code_generation"
+                                else {}
+                            ),
                             "generated_sql": f"SELECT {position};\n",
                         }
-                        for position, target_ref in enumerate(target_refs, start=1)
+                        for position, (target_ref, system_codes) in enumerate(
+                            target_systems.items(), start=1
+                        )
                     ]
                 },
             )
         elif request.workflow == "validation" and request.stage == "validation_generation":
-            validation_context = detailed_original_context(request.context)
+            validation_context = original_context(request.context)
+            if validation_context.get("__gds_downstream_inputs__") == "validation":
+                validation_context = cast(dict[str, JsonValue], validation_context["values"])
             system_ref = validation_context.get("system_ref")
             if not isinstance(system_ref, str):
                 raise InvalidRequestError(
@@ -142,11 +180,6 @@ class LocalFakeAgentAdapter:
                     ],
                 },
             )
-        elif (
-            request.workflow == "analysis_inference"
-            and request.execution_mode == "detailed_coverage"
-        ):
-            candidate = fake_detailed_analysis_candidate(request)
         elif request.workflow == "analysis_inference" and request.stage == "relationship_inference":
             if request.execution_mode == "tool_assisted":
                 _source_objects, attributes, tool_call_count = tool_assisted_logical_sources(
@@ -173,8 +206,6 @@ class LocalFakeAgentAdapter:
                     }
                 )
             candidate = cast(JsonValue, {"relationships": relationships})
-        elif request.workflow == "dimensional" and request.execution_mode == "detailed_coverage":
-            candidate = detailed_dimensional_candidate(request)
         elif request.workflow == "dimensional" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
                 source_objects, source_attributes, tool_call_count = tool_assisted_logical_sources(
@@ -191,8 +222,6 @@ class LocalFakeAgentAdapter:
                 source_objects=source_objects,
                 source_attributes=source_attributes,
             )
-        elif request.workflow == "logical" and request.execution_mode == "detailed_coverage":
-            candidate = detailed_logical_candidate(request)
         elif request.workflow == "logical" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
                 source_objects, source_attributes, tool_call_count = tool_assisted_logical_sources(
@@ -209,8 +238,6 @@ class LocalFakeAgentAdapter:
                 source_objects=source_objects,
                 source_attributes=source_attributes,
             )
-        elif request.workflow == "conceptual" and request.execution_mode == "detailed_coverage":
-            candidate = detailed_conceptual_candidate(request)
         elif request.workflow == "conceptual" and request.stage == "candidate_authoring":
             if request.execution_mode == "tool_assisted":
                 source_objects, tool_call_count = tool_assisted_conceptual_sources(request)
@@ -269,6 +296,7 @@ def create_agent_execution_router(
     configuration: AgentRuntimeConfiguration,
     capabilities: AgentCapabilityRegistry,
     provider_authentications: Mapping[str, ManagedModelAuthentication] | None = None,
+    usage_recorder: AgentUsageRecorder | None = None,
 ) -> AgentExecutionRouter:
     adapters: tuple[AgentExecutionAdapter, ...]
     registered_deployments = {
@@ -314,64 +342,54 @@ def create_agent_execution_router(
                     if connection.provider_code == provider_code
                 )
                 connection = provider_connections[0]
-                if provider_code == "databricks":
-                    authentications[provider_code] = DatabricksModelAuthentication()
-                else:
-                    resource_configuration = (
-                        connection.openai_base_url,
-                        connection.token_scope,
-                        connection.foundry_client_credentials,
-                        connection.foundry_api_key,
+                resource_configuration = (
+                    connection.openai_base_url,
+                    connection.token_scope,
+                    connection.foundry_client_credentials,
+                    connection.foundry_api_key,
+                )
+                if any(
+                    (
+                        candidate.openai_base_url,
+                        candidate.token_scope,
+                        candidate.foundry_client_credentials,
+                        candidate.foundry_api_key,
                     )
-                    if any(
-                        (
-                            candidate.openai_base_url,
-                            candidate.token_scope,
-                            candidate.foundry_client_credentials,
-                            candidate.foundry_api_key,
-                        )
-                        != resource_configuration
-                        for candidate in provider_connections[1:]
+                    != resource_configuration
+                    for candidate in provider_connections[1:]
+                ):
+                    raise ValueError(
+                        "Foundry model deployments must share one resource and authentication"
+                    )
+                if connection.openai_base_url is None:
+                    raise ValueError("Foundry authentication configuration is incomplete")
+                if connection.foundry_api_key is not None:
+                    if (
+                        connection.token_scope is not None
+                        or connection.foundry_client_credentials is not None
                     ):
-                        raise ValueError(
-                            "Foundry model deployments must share one resource and authentication"
-                        )
-                    if connection.openai_base_url is None:
                         raise ValueError("Foundry authentication configuration is incomplete")
-                    if connection.foundry_api_key is not None:
-                        if (
-                            connection.token_scope is not None
-                            or connection.foundry_client_credentials is not None
-                        ):
-                            raise ValueError("Foundry authentication configuration is incomplete")
-                        authentications[provider_code] = FoundryApiKeyAuthentication(
-                            base_url=connection.openai_base_url,
-                            api_key=connection.foundry_api_key,
-                        )
-                    else:
-                        if (
-                            connection.token_scope is None
-                            or connection.foundry_client_credentials is None
-                        ):
-                            raise ValueError("Foundry authentication configuration is incomplete")
-                        credentials = connection.foundry_client_credentials
-                        authentications[provider_code] = FoundryModelAuthentication(
-                            base_url=connection.openai_base_url,
-                            token_scope=connection.token_scope,
-                            tenant_id=str(credentials.tenant_id),
-                            client_id=str(credentials.client_id),
-                            client_secret=credentials.client_secret,
-                        )
+                    authentications[provider_code] = FoundryApiKeyAuthentication(
+                        base_url=connection.openai_base_url,
+                        api_key=connection.foundry_api_key,
+                    )
+                else:
+                    if (
+                        connection.token_scope is None
+                        or connection.foundry_client_credentials is None
+                    ):
+                        raise ValueError("Foundry authentication configuration is incomplete")
+                    credentials = connection.foundry_client_credentials
+                    authentications[provider_code] = FoundryModelAuthentication(
+                        base_url=connection.openai_base_url,
+                        token_scope=connection.token_scope,
+                        tenant_id=str(credentials.tenant_id),
+                        client_id=str(credentials.client_id),
+                        client_secret=credentials.client_secret,
+                    )
         configured_adapters: list[AgentExecutionAdapter] = []
         for sdk in runtime_capabilities.sdks:
-            if sdk.code == "langchain_create_agent":
-                configured_adapters.append(
-                    LangChainCreateAgentAdapter(
-                        connections=configuration.connections,
-                        model_authentications=authentications,
-                    )
-                )
-            elif sdk.code == "openai_agents_sdk":
+            if sdk.code == "openai_agents_sdk":
                 configured_adapters.append(
                     OpenAIAgentsSdkAdapter(
                         connections=configuration.connections,
@@ -385,4 +403,5 @@ def create_agent_execution_router(
         capabilities=runtime_capabilities,
         adapters=adapters,
         resources=tuple(authentications.values()),
+        usage_recorder=usage_recorder,
     )

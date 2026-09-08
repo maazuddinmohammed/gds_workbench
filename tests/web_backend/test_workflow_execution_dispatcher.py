@@ -4,12 +4,12 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
-
 from gds_workbench_api.features.workflows.execution import (
     WorkflowExecutionClaim,
     WorkflowExecutionDispatcher,
     WorkflowExecutionServices,
 )
+from pydantic import ValidationError
 
 
 class RecordingExecutor:
@@ -80,9 +80,26 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
             "mapping",
             "code_generation",
             "validation",
+            "metadata_enrichment",
         )
     }
-    return WorkflowExecutionServices(**executors), executors
+    return WorkflowExecutionServices(**executors, usage_recorder=None), executors
+
+
+@pytest.mark.parametrize("mode", [None, 'tool_assisted'])
+def test_metadata_enrichment_claim_requires_one_shot(mode: str | None) -> None:
+    with pytest.raises(ValidationError, match="requires one-shot"):
+        _claim(model_workflow="metadata_enrichment", workflow_execution_mode=mode)
+
+
+@pytest.mark.asyncio
+async def test_metadata_enrichment_dispatch_never_falls_through_to_validation() -> None:
+    services, executors = _services()
+    await WorkflowExecutionDispatcher(services).execute(
+        _claim(model_workflow="metadata_enrichment", workflow_execution_mode="one_shot")
+    )
+    assert executors["metadata_enrichment"].calls
+    assert not executors["validation"].calls
 
 
 @pytest.mark.parametrize(
@@ -92,11 +109,12 @@ def _services() -> tuple[WorkflowExecutionServices, dict[str, RecordingExecutor]
         ("analysis", "one_shot", "analysis_inference"),
         ("analysis", None, "analysis_validation"),
         ("conceptual", "tool_assisted", "conceptual"),
-        ("logical", "detailed_coverage", "logical"),
+        ("logical", "one_shot", "logical"),
         ("dimensional", "one_shot", "dimensional"),
         ("mapping", "tool_assisted", "mapping"),
         ("code_generation", None, "code_generation"),
         ("validation", None, "validation"),
+        ("metadata_enrichment", "one_shot", "metadata_enrichment"),
     ],
 )
 @pytest.mark.asyncio

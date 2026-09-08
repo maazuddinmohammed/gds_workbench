@@ -60,6 +60,12 @@ describe("Prompts HTTP adapter", () => {
       instruction_prompt_template: "instruction-body-sentinel",
       tool_instruction_prompt_template: null,
     });
+    await api.previewPrompt(7, 31, {
+      system_prompt_template: "system-body-sentinel",
+      instruction_prompt_template: "instruction-body-sentinel",
+      tool_instruction_prompt_template: null,
+      agent_tool_names: [],
+    });
     await api.publishPromptVersion(7, 31, 91);
     await api.retirePromptVersion(7, 31, 91);
     await api.setModelPromptAssignment(7, 18, 4, {
@@ -71,6 +77,7 @@ describe("Prompts HTTP adapter", () => {
       "/api/v1/tenants/7/prompts/templates",
       "/api/v1/tenants/7/prompts/templates/31",
       "/api/v1/tenants/7/prompts/templates/31/draft",
+      "/api/v1/tenants/7/prompts/templates/31/preview",
       "/api/v1/tenants/7/prompts/templates/31/versions/91/publish",
       "/api/v1/tenants/7/prompts/templates/31/versions/91/retire",
       "/api/v1/tenants/7/prompts/models/18/assignments/4",
@@ -79,6 +86,7 @@ describe("Prompts HTTP adapter", () => {
       "POST",
       "PUT",
       "PUT",
+      "POST",
       "POST",
       "POST",
       "PUT",

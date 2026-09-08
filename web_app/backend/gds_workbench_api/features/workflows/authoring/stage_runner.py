@@ -14,12 +14,15 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 from gds_workbench_api.prompt_rendering import render_prompt
 
 from .plan import AgentRunPlan
+from .prompt_inputs import project_prompt_input_values
 from .repair import (
+    AgentCandidateFinalValidation,
     AgentCandidateValidator,
     AgentContextPolicy,
     AgentExecutor,
     ValidationRepairRunner,
 )
+from .tool_configuration import configure_tools
 
 
 class AgentStageOutcome(BaseModel):
@@ -57,18 +60,41 @@ class AgentStageRunner:
         validator: AgentCandidateValidator,
         local_tool_catalog: LocalAgentToolCatalog | None = None,
         max_candidate_bytes: int | None = None,
+        final_validation: AgentCandidateFinalValidation | None = None,
+        prompt_workflow: str | None = None,
     ) -> AgentStageOutcome:
         stage = next(
-            (candidate for candidate in plan.stages if candidate.stage_code == stage_code),
+            (
+                candidate
+                for candidate in plan.stages
+                if candidate.stage_code == stage_code
+                and (prompt_workflow is None or candidate.prompt_workflow == prompt_workflow)
+            ),
             None,
         )
         if stage is None:
             raise InvalidRequestError("The frozen agent stage is unavailable.")
 
+        local_tool_catalog = configure_tools(
+            local_tool_catalog,
+            stage.agent_tool_names,
+            workflow=stage.prompt_workflow or plan.model_workflow,
+            execution_mode=plan.workflow_execution_mode,
+        )
+        if stage.agent_tool_names is not None and local_tool_catalog is not None:
+            allowed_tool_names = tuple(tool.name for tool in local_tool_catalog.definitions)
+
         rendered = render_prompt(
             templates=stage.templates,
             variables=stage.variables,
-            resolver_values=resolver_values,
+            resolver_values=project_prompt_input_values(
+                plan=plan,
+                stage=stage,
+                context=context,
+                resolver_values=resolver_values,
+                tool_definitions=local_tool_catalog.definitions if local_tool_catalog else (),
+                precomputed_values=getattr(local_tool_catalog, "prompt_values", None),
+            ),
         )
         workflow = (
             "analysis_inference" if plan.model_workflow == "analysis" else plan.model_workflow
@@ -90,6 +116,7 @@ class AgentStageRunner:
             ),
             validator=validator,
             max_candidate_bytes=max_candidate_bytes,
+            final_validation=final_validation,
         )
         return AgentStageOutcome(
             candidate=result.candidate,

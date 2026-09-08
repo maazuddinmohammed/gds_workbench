@@ -2,7 +2,14 @@ from __future__ import annotations
 
 from copy import deepcopy
 
-from gds_etl_workbench.application.change_sets.metadata_validation import validate_metadata_documents
+from gds_etl_workbench.application.change_sets.contracts import (
+    bounded_validation_outcome,
+)
+from gds_etl_workbench.application.change_sets.metadata_validation import (
+    MetadataChangeSetValidation,
+    ValidationIssue,
+    validate_metadata_documents,
+)
 
 
 def test_validation_accepts_full_id_free_record_with_resolved_natural_keys() -> None:
@@ -16,6 +23,114 @@ def test_validation_accepts_full_id_free_record_with_resolved_natural_keys() -> 
     assert result.phase == "complete"
     assert result.candidate_digest is not None
     assert result.issues == ()
+
+
+def test_failed_validation_outcome_groups_errors_and_bounds_examples() -> None:
+    issues = tuple(
+        ValidationIssue(
+            code="reference_not_found",
+            dataset="copy_group",
+            record_number=index + 1,
+            fields=("system_code",),
+            message="Referenced record was not found.",
+        )
+        for index in range(30)
+    )
+    result = MetadataChangeSetValidation(
+        valid=False,
+        phase="references",
+        candidate_digest="a" * 64,
+        staged_record_count=30,
+        issues=issues,
+        action_review=(),
+    )
+
+    outcome = result.outcome_document()
+
+    assert outcome["error_count"] == 30
+    assert outcome["error_groups"] == [
+        {
+            "dataset": "copy_group",
+            "code": "reference_not_found",
+            "count": 30,
+        }
+    ]
+    assert len(outcome["errors"]) == 25
+    assert outcome["errors_truncated"] is True
+
+
+def test_legacy_validation_outcome_is_bounded_before_returning_to_an_agent() -> None:
+    errors = [
+        {
+            "code": "reference_not_found",
+            "dataset": "copy_group",
+            "record_number": index + 1,
+            "fields": ["system_code"] * 30,
+            "message": "x" * 1_000,
+        }
+        for index in range(30)
+    ]
+
+    outcome = bounded_validation_outcome(
+        {
+            "schema_version": "1.0",
+            "valid": False,
+            "phase": "references",
+            "staged_record_count": 30,
+            "error_count": 30,
+            "errors": errors,
+            "action_review": [
+                {
+                    "dataset": "copy_group" + ("x" * 200),
+                    "insert_count": 1,
+                    "update_count": 0,
+                    "deactivate_count": 0,
+                    "reactivate_count": 0,
+                    "no_change_count": 0,
+                    "keys": [
+                        {
+                            "action": "insert",
+                            "natural_key": {
+                                "copy_group_name": "x" * 1_000,
+                                "nested": {"must": "not return"},
+                            },
+                            "untrusted_extra": "must-not-return",
+                        }
+                    ],
+                    "keys_truncated": False,
+                    "untrusted_extra": "must-not-return",
+                }
+            ],
+            "untrusted_extra": "must-not-return",
+        }
+    )
+
+    assert outcome is not None
+    assert len(outcome["errors"]) == 25
+    assert outcome["errors_truncated"] is True
+    assert outcome["error_groups"] == [
+        {"dataset": "copy_group", "code": "reference_not_found", "count": 30}
+    ]
+    assert len(outcome["errors"][0]["fields"]) == 20
+    assert len(outcome["errors"][0]["message"]) == 300
+    assert outcome["action_review"] == [
+        {
+            "dataset": ("copy_group" + ("x" * 200))[:100],
+            "insert_count": 1,
+            "update_count": 0,
+            "deactivate_count": 0,
+            "reactivate_count": 0,
+            "no_change_count": 0,
+            "keys": [
+                {
+                    "action": "insert",
+                    "natural_key": {"copy_group_name": "x" * 300},
+                }
+            ],
+            "keys_truncated": False,
+        }
+    ]
+    assert "untrusted_extra" not in outcome
 
 
 def test_validation_returns_authoritative_action_review() -> None:
@@ -331,9 +446,7 @@ def test_validation_rejects_attribute_change_under_locked_object() -> None:
 
 def test_validation_allows_attribute_change_under_unlocked_object() -> None:
     current = _foundation()
-    current["bronze_object"] = [
-        _object_record(object_schema="public", tenant_code="DEMO")
-    ]
+    current["bronze_object"] = [_object_record(object_schema="public", tenant_code="DEMO")]
 
     result = validate_metadata_documents(
         tenant_code="DEMO",
@@ -486,9 +599,7 @@ def _copy_group() -> dict[str, object]:
     }
 
 
-def _object_record(
-    *, object_schema: str, tenant_code: str = "GLOBAL"
-) -> dict[str, object]:
+def _object_record(*, object_schema: str, tenant_code: str = "GLOBAL") -> dict[str, object]:
     return {
         "tenant_code": tenant_code,
         "system_code": "CRM",
@@ -520,6 +631,8 @@ def _attribute_record() -> dict[str, object]:
         "attribute_ordinal_position": 1,
         "attribute_description": None,
         "attribute_data_type": "bigint",
+        "attribute_inferred_data_type": None,
+        "is_locked": False,
         "attribute_nullability": False,
         "attribute_custom_code": None,
         "is_surrogate_key": False,

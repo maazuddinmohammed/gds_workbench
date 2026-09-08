@@ -2,21 +2,14 @@
   "schema_version": "3.0",
   "sdks": [
     {
-      "code": "langchain_create_agent",
-      "name": "LangChain create_agent",
-      "provider_codes": ["databricks", "microsoft_foundry"]
-    },
-    {
       "code": "openai_agents_sdk",
       "name": "OpenAI Agents SDK",
-      "provider_codes": ["databricks", "microsoft_foundry"]
+      "provider_codes": [
+        "microsoft_foundry"
+      ]
     }
   ],
   "providers": [
-    {
-      "code": "databricks",
-      "name": "Databricks Model Serving"
-    },
     {
       "code": "microsoft_foundry",
       "name": "Microsoft Foundry"
@@ -24,116 +17,29 @@
   ],
   "models": [
     {
-      "code": "databricks-primary",
-      "name": "OpenAI GPT OSS 120B",
-      "provider_code": "databricks",
-      "deployment_name": "databricks-gpt-oss-120b",
-      "execution_profiles": [
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "low", "medium", "high"]
-        }
-      ]
-    },
-    {
-      "code": "databricks-claude-opus-5",
-      "name": "Anthropic Claude Opus 5",
-      "provider_code": "databricks",
-      "deployment_name": "databricks-claude-opus-5",
-      "execution_profiles": [
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["default"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["default"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default"]
-        }
-      ]
-    },
-    {
       "code": "foundry-primary",
       "name": "OpenAI GPT-5.6 Sol",
       "provider_code": "microsoft_foundry",
       "deployment_name": "gpt-5.6-sol",
       "execution_profiles": [
         {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["none"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
-        },
-        {
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+          "reasoning_effort_codes": [
+            "default",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
         },
         {
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["none"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+          "reasoning_effort_codes": [
+            "none"
+          ]
         }
       ]
     },
@@ -144,34 +50,23 @@
       "deployment_name": "gpt-5.6-luna",
       "execution_profiles": [
         {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["none"]
-        },
-        {
-          "sdk_code": "langchain_create_agent",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
-        },
-        {
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "one_shot",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+          "reasoning_effort_codes": [
+            "default",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
+          ]
         },
         {
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "tool_assisted",
-          "reasoning_effort_codes": ["none"]
-        },
-        {
-          "sdk_code": "openai_agents_sdk",
-          "execution_mode": "detailed_coverage",
-          "reasoning_effort_codes": ["default", "none", "low", "medium", "high", "xhigh"]
+          "reasoning_effort_codes": [
+            "none"
+          ]
         }
       ]
     }

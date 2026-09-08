@@ -708,9 +708,16 @@ td {
   font-size: 0.78rem;
 }
 
-th:first-child,
-td:first-child {
+.systems-section th:first-child,
+.systems-section td:first-child {
   width: 28%;
+}
+
+table :is(th, td):has(> input[type="checkbox"]) {
+  width: 2.75rem;
+  min-width: 2.75rem;
+  padding-inline: 0.75rem;
+  text-align: center;
 }
 
 tbody tr:hover {

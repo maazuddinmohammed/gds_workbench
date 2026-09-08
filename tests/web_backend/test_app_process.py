@@ -2,7 +2,6 @@ import asyncio
 
 import pytest
 from gds_etl_workbench.configuration import ConfigurationError
-
 from gds_workbench_api.app_process import (
     COORDINATED_SHUTDOWN_SECONDS,
     DATABRICKS_SHUTDOWN_DEADLINE_SECONDS,
@@ -20,7 +19,7 @@ class FakeServer:
 
     async def serve(self) -> None:
         self.started.set()
-        while not self.should_exit:
+        while not self.should_exit:  # noqa: ASYNC110 - uvicorn exposes a polled exit flag.  # noqa: ASYNC110 - uvicorn exposes a polled exit flag.
             await asyncio.sleep(0)
         self.stopped.set()
 

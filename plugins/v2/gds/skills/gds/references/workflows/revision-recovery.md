@@ -1,12 +1,16 @@
 # Model Revision Recovery
 
-Use this only when the authoritative Model revision differs from the Model Snapshot revision used for the accepted digest. Metadata has no tenant-wide revision and instead uses a non-stale Snapshot, Tenant Lock, and server validation.
+Use when authoritative Model revision differs from the installed Snapshot. Metadata has no tenant-wide revision; it uses a non-stale Snapshot, Tenant Lock, and server validation. Metadata Enrichment also uses this recovery for its scope Model.
 
-1. Stop before reconciliation or Stage.
-2. Create and download the fresh complete Snapshot, then install it into the known session with `snapshot-install`. Ask the user only if the session/download location cannot be resolved. Never repeat its temporary signed URL in chat.
-3. Re-run readiness and reassess every affected local record against it.
-4. Never merge or repair automatically.
-5. If the exact local bytes remain unchanged, keep the prior positive acknowledgement.
-6. If any content changes, rerun local validation, notify the user to Refresh Workbench, and wait for another acknowledgement.
+Never install over unapplied pending files: the helper rejects it. Preserve the acknowledged digest and task ID, then check `status` for a cached server draft. If one exists, stop for its explicit disposition; never clear, archive or reset it automatically. Run recovery before draft creation whenever possible.
 
-Conflicting server-draft records are resolved explicitly by canonical key. Never overwrite them because the local copy is newer.
+With no cached draft:
+
+1. If the affected area has local pending work, run `task-stash --session <session> --task <ID> --expected-digest <digest>`. It safely removes live files and machine acceptance while retaining the draft. For enrichment, also stash its Metadata task before reassessing changed scope.
+2. Create/download the fresh Model Snapshot and run `snapshot-install` with exact returned ID, size and SHA-256. Never repeat/store the signed URL. Never edit a Snapshot or discard a draft to enable installation.
+3. Run `task-restore --session <session> --task <ID> --expected-digest <digest>` for stashed work; it returns to `doing`. A restore/schema mismatch stops recovery with the stash retained.
+4. Re-run readiness and reassess the effective graph against fresh evidence. Never merge or repair automatically. Report conflicts; make requested corrections only within authorized scope.
+5. Validate. If bytes remain identical and reassessment passes, retain the user's previous acknowledgement: set `task-state --state review`, then `accept --digest <digest>` to bind it to the new Snapshot. Include `--session` and `--task` where required by `command-contract`. The old acceptance file does not survive stash.
+6. If content changes, rerun the affected functional review/validation, notify the user to Refresh Workbench, and obtain acknowledgement of the new digest before acceptance.
+
+Conflicting server-draft records require explicit resolution by canonical key. A newer local copy does not authorize overwriting them. After Apply, normal `snapshot-install` reconciles exact applied records; do not use the unapplied-work stash sequence for that case.

@@ -283,9 +283,7 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
         "workflow_run_state": "completed",
         "authoring_no_op_base_model_revision": context.model_revision,
         "authoring_no_op_candidate_digest": candidate_digest,
-        "authoring_no_op_model_event_log_id": stored[
-            "authoring_no_op_model_event_log_id"
-        ],
+        "authoring_no_op_model_event_log_id": stored["authoring_no_op_model_event_log_id"],
         "model_revision": context.model_revision,
         "change_set_count": 0,
     }
@@ -295,9 +293,7 @@ def test_authoring_no_op_is_atomic_revision_stable_and_exactly_replayable(
         "final_event_attempt": 1,
         "final_event_stage": "conceptual.backend_validation",
         "final_event_status": "running",
-        "final_event_message": (
-            "Conceptual authoring completed with no effective change."
-        ),
+        "final_event_message": ("Conceptual authoring completed with no effective change."),
         "final_event_current": 1,
         "final_event_total": 1,
         "final_event_percent": 100,
@@ -405,9 +401,7 @@ def test_authoring_no_op_persists_repaired_backend_event_and_derives_state(
         "model_event_log_attempt": 2,
         "model_event_log_stage": "conceptual.backend_validation",
         "model_event_log_status": "warning",
-        "model_event_log_message": (
-            "Conceptual repair completed with no effective change."
-        ),
+        "model_event_log_message": ("Conceptual repair completed with no effective change."),
         "model_event_log_current": 1,
         "model_event_log_total": 1,
         "finding_count": 0,

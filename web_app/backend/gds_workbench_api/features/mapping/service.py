@@ -8,6 +8,10 @@ from typing import Protocol
 from uuid import UUID
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_future_graph,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
 from pydantic import JsonValue
@@ -15,6 +19,7 @@ from pydantic import JsonValue
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
+    WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -31,13 +36,20 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidation,
+    AgentCandidateValidationError,
     AgentContextPolicy,
     AgentExecutor,
     load_default_agent_context_policy,
+    model_validation_issues,
 )
-from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
+from gds_workbench_api.features.workflows.authoring.stage_runner import (
+    AgentStageRunner,
+)
 
-from .complete_candidate import CompleteMappingCandidateValidator
+from .complete_candidate import (
+    CompleteMappingCandidateValidator,
+)
 from .execution_context import (
     MappingExecutionContextLimits,
     build_mapping_execution_context,
@@ -63,6 +75,22 @@ class MappingPreparationService(Protocol):
 
 
 class MappingChangeSetHandoff(Protocol):
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> object: ...
+
     async def finalize(
         self,
         principal: RequestPrincipal,
@@ -248,6 +276,9 @@ class DatabaseMappingExecutor:
         expected_model_revision: int,
     ) -> MappingExecutionResult:
         finalization_attempted = False
+        changes: tuple[StageModelChange, ...] = ()
+        rejected_changes: tuple[StageModelChange, ...] = ()
+        rejected_issues: tuple[ModelValidationIssue, ...] = ()
         try:
             preparation = await self._preparation_service.prepare(
                 principal,
@@ -302,12 +333,31 @@ class DatabaseMappingExecutor:
                     message="Mapping preservation completed with no effective change.",
                 )
 
+            validator = CompleteMappingCandidateValidator(preparation=preparation)
+            snapshot = preparation.snapshot
+            physical_scope = preparation.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Mapping validation context is unavailable.")
+
+            async def validate_complete_candidate(value: JsonValue) -> AgentCandidateValidation:
+                nonlocal rejected_changes, rejected_issues
+                candidate_changes = validator.parse_validated(value).changes
+                checked = validate_future_graph(
+                    snapshot=snapshot,
+                    staged_documents={
+                        change.dataset: change.records for change in candidate_changes
+                    },
+                    physical_scope=physical_scope,
+                )
+                if checked.issues:
+                    rejected_changes, rejected_issues = candidate_changes, checked.issues
+                return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+
             execution_context = build_mapping_execution_context(
                 preparation=preparation,
                 execution_mode=execution_mode,
                 limits=self._context_limits,
             )
-            validator = CompleteMappingCandidateValidator(preparation=preparation)
             outcome = await self._stage_runner.run(
                 plan=plan,
                 stage_code="mapping_authoring",
@@ -325,6 +375,7 @@ class DatabaseMappingExecutor:
                 ),
                 local_tool_catalog=execution_context.tool_catalog,
                 validator=validator,
+                final_validation=validate_complete_candidate,
             )
             candidate = outcome.candidate
             outcomes = (outcome,)
@@ -376,6 +427,38 @@ class DatabaseMappingExecutor:
             )
             return finalized.handoff
         except Exception as error:
+            retention_issues = (
+                error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
+            )
+            if isinstance(error, AgentCandidateValidationError) and rejected_changes:
+                changes, retention_issues = rejected_changes, rejected_issues
+            if retention_issues and changes and isinstance(error, WorkbenchError):
+                try:
+                    await self._handoff.retain_failed_candidate(
+                        principal,
+                        tenant_id=tenant_id,
+                        model_id=model_id,
+                        workflow_run_id=workflow_run_id,
+                        expected_workflow="mapping",
+                        expected_model_revision=expected_model_revision,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        changes=changes,
+                        issues=retention_issues,
+                        failure_code=error.code,
+                        safe_failure_message=(
+                            "Validation failed. A rejected draft was retained for review."
+                        ),
+                    )
+                except Exception as retention_error:
+                    _logger.warning(
+                        "Rejected Workflow draft retention remains pending.",
+                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                    )
+                    raise _safe_execution_error(
+                        retention_error,
+                        finalization_attempted=True,
+                    ) from None
+                raise error from None
             safe_error = _safe_execution_error(
                 error,
                 finalization_attempted=finalization_attempted,
@@ -468,7 +551,7 @@ def _validate_plan(
     expected_stages = ("mapping_authoring",)
     if (
         plan.model_workflow != "mapping"
-        or mode not in ("one_shot", "tool_assisted", "detailed_coverage")
+        or mode not in ("one_shot", "tool_assisted")
         or plan.model_id != model_id
         or mapping_plan.model_id != model_id
         or plan.workflow_run_id != workflow_run_id

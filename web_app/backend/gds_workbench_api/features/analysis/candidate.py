@@ -8,7 +8,6 @@ from typing import Annotated, cast
 
 from gds_etl_workbench.application.change_sets.model import StageModelChange
 from gds_etl_workbench.application.change_sets.model_validation import (
-    ModelValidationIssue,
     validate_staged_records,
 )
 from gds_etl_workbench.domain.errors import InvalidRequestError
@@ -34,6 +33,7 @@ from pydantic import (
 from gds_workbench_api.features.workflows.authoring.repair import (
     AgentCandidateValidation,
     AgentValidationIssue,
+    model_validation_issues,
 )
 
 
@@ -130,21 +130,29 @@ class AnalysisInferenceCandidateValidator:
             )
 
         issues: list[AgentValidationIssue] = []
-        seen: set[tuple[str, ...]] = set()
+        seen: dict[tuple[str, ...], tuple[int, tuple[str, str]]] = {}
         raw_records: list[dict[str, object]] = []
         for index, candidate_record in enumerate(parsed.relationships):
             key = _relationship_key(candidate_record)
+            content = (
+                candidate_record.relationship_confidence,
+                candidate_record.relationship_basis,
+            )
             if key in seen:
-                issues.append(
-                    AgentValidationIssue(
-                        code="candidate.relationship_duplicate",
-                        path=("relationships", index),
-                        message="Analysis relationship identities must be unique.",
+                if seen[key][1] != content:
+                    issues.append(
+                        AgentValidationIssue(
+                            code="candidate.relationship_duplicate",
+                            path=("relationships", index),
+                            message="Duplicate relationship has conflicting confidence or basis.",
+                        )
                     )
-                )
                 continue
-            seen.add(key)
-            if (
+            seen[key] = (index, content)
+            existing = self._applied.get(key)
+            merged = _merge_record(candidate_record, existing)
+            unchanged_applied = existing is not None and merged == existing.model_dump(mode="json")
+            if not unchanged_applied and (
                 _endpoint_key(candidate_record, "from") not in self._selected_attribute_keys
                 or _endpoint_key(candidate_record, "to") not in self._selected_attribute_keys
             ):
@@ -157,22 +165,29 @@ class AnalysisInferenceCandidateValidator:
                         ),
                     )
                 )
-            existing = self._applied.get(key)
-            raw_records.append(_merge_record(candidate_record, existing))
+            raw_records.append(merged)
 
         records, model_issues = validate_staged_records(
             "analysis_result",
             raw_records,
         )
-        issues.extend(_model_issues(model_issues))
+        candidate_indexes = tuple(index for index, _ in seen.values())
+        for issue in model_validation_issues(model_issues):
+            path = issue.path
+            if len(path) > 1 and isinstance(path[1], int):
+                path = ("relationships", candidate_indexes[path[1]], *path[2:])
+            else:
+                path = ("relationships", *path[1:])
+            issues.append(issue.model_copy(update={"path": path}))
         relationships = cast(tuple[AnalysisResultRecord, ...], records)
-        for index, record in enumerate(relationships):
-            existing = self._applied.get(_relationship_key(record))
+        for record in relationships:
+            key = _relationship_key(record)
+            existing = self._applied.get(key)
             if existing is not None and existing.analysis_result_is_locked and existing != record:
                 issues.append(
                     AgentValidationIssue(
                         code="candidate.record_locked",
-                        path=("relationships", index),
+                        path=("relationships", seen[key][0]),
                         message="A locked Analysis relationship cannot be changed.",
                     )
                 )
@@ -256,23 +271,6 @@ def _attribute_key(record: PhysicalAttributeKey) -> tuple[str, ...]:
             "object_name",
             "attribute_name",
         )
-    )
-
-
-def _model_issues(
-    issues: tuple[ModelValidationIssue, ...],
-) -> tuple[AgentValidationIssue, ...]:
-    return tuple(
-        AgentValidationIssue(
-            code=f"candidate.{issue.code}",
-            path=(
-                issue.dataset,
-                *((issue.record_number - 1,) if issue.record_number is not None else ()),
-                *issue.fields,
-            ),
-            message=issue.message,
-        )
-        for issue in issues
     )
 
 

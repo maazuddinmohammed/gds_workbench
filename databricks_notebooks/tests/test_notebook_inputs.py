@@ -15,6 +15,7 @@ from gds_workbench_notebooks.notebook import (
 from gds_workbench_notebooks.workflow_execution import NotebookWorkflowExecutionResult
 
 _WORKFLOWS = (
+    "metadata_enrichment",
     "profiling",
     "analysis_inference",
     "analysis_validation",
@@ -33,12 +34,8 @@ _COMMON_NAMES = (
     "IdempotencyKey",
 )
 _AGENT_NAMES = (
-    "AgentSDK",
-    "AgentProvider",
     "AgentModel",
     "ReasoningEffort",
-    "MaxTurns",
-    "ValidationRetryCount",
     "PromptOverridesJSON",
 )
 
@@ -66,9 +63,9 @@ def _values(workflow: str) -> dict[str, str]:
     return values
 
 
-def _databricks_registry_with_default_reasoning():
+def _foundry_registry_with_default_reasoning():
     registry = load_default_agent_capabilities()
-    model = next(model for model in registry.models if model.provider_code == "databricks")
+    model = next(model for model in registry.models if model.provider_code == "microsoft_foundry")
     profile = next(
         profile
         for profile in model.execution_profiles
@@ -79,8 +76,8 @@ def _databricks_registry_with_default_reasoning():
             "models": (
                 model.model_copy(
                     update={
-                        "code": "registered-databricks-model",
-                        "deployment_name": "registered-serving-endpoint",
+                        "code": "registered-foundry-model",
+                        "deployment_name": "registered-foundry-deployment",
                         "execution_profiles": (
                             profile.model_copy(update={"reasoning_effort_codes": ("default",)}),
                         ),
@@ -94,18 +91,17 @@ def _databricks_registry_with_default_reasoning():
     )
 
 
-def _databricks_registry_with_disjoint_profiles():
-    registry = _databricks_registry_with_default_reasoning()
+def _foundry_registry_with_disjoint_profiles():
+    registry = _foundry_registry_with_default_reasoning()
     model = registry.models[0]
     tool_profile = model.execution_profiles[0]
     one_shot_profile = tool_profile.model_copy(
         update={
-            "sdk_code": "langchain_create_agent",
+            "sdk_code": "openai_agents_sdk",
             "execution_mode": "one_shot",
             "reasoning_effort_codes": ("low",),
         }
     )
-    detailed_profile = tool_profile.model_copy(update={"execution_mode": "detailed_coverage"})
     return registry.model_copy(
         update={
             "models": (
@@ -114,7 +110,6 @@ def _databricks_registry_with_disjoint_profiles():
                         "execution_profiles": (
                             one_shot_profile,
                             tool_profile,
-                            detailed_profile,
                         )
                     }
                 ),
@@ -131,14 +126,14 @@ def _databricks_registry_with_disjoint_profiles():
     )
 
 
-def _databricks_registry_with_secondary_model():
+def _foundry_registry_with_secondary_model():
     registry = load_default_agent_capabilities()
-    primary = next(model for model in registry.models if model.code == "databricks-primary")
+    primary = next(model for model in registry.models if model.code == "foundry-primary")
     secondary = primary.model_copy(
         update={
-            "code": "databricks-secondary",
+            "code": "foundry-secondary",
             "name": "Operator-verified secondary Databricks deployment",
-            "deployment_name": "databricks-secondary",
+            "deployment_name": "foundry-secondary",
         }
     )
     return registry.model_copy(update={"models": (*registry.models, secondary)})
@@ -192,10 +187,10 @@ def test_each_notebook_builds_the_existing_create_contract(workflow: str) -> Non
         "validation",
     }:
         assert command.create_payload["agent"] == {
-            "sdk_code": "langchain_create_agent",
-            "provider_code": "databricks",
-            "model_code": "databricks-primary",
-            "reasoning_effort_code": "default",
+            "sdk_code": "openai_agents_sdk",
+            "provider_code": "microsoft_foundry",
+            "model_code": "foundry-primary",
+            "reasoning_effort_code": _values(workflow)["ReasoningEffort"],
             "max_turns": 10,
             "validation_retry_count": 2,
         }
@@ -213,6 +208,7 @@ def test_each_notebook_payload_passes_the_shared_backend_contract(workflow: str)
 
 def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
     expected_extras = {
+        "metadata_enrichment": _AGENT_NAMES,
         "profiling": ("RequestedBatchID",),
         "analysis_inference": ("RequestedBatchID", "ExecutionMode", *_AGENT_NAMES),
         "analysis_validation": ("RequestedBatchID",),
@@ -244,44 +240,48 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
         spec for spec in widget_specs("analysis_inference") if spec.name == "ExecutionMode"
     )
     assert inference_mode.default == "tool_assisted"
-    assert inference_mode.choices == (
-        "one_shot",
-        "tool_assisted",
-        "detailed_coverage",
-    )
+    assert inference_mode.choices == ("one_shot", "tool_assisted")
     inference_reasoning = next(
         spec for spec in widget_specs("analysis_inference") if spec.name == "ReasoningEffort"
     )
-    assert inference_reasoning.default == "default"
-    assert inference_reasoning.choices == ("default", "low", "medium", "high")
+    registry = load_default_agent_capabilities()
+    assert inference_reasoning.default == "none"
+    assert inference_reasoning.choices == tuple(
+        effort.code
+        for effort in registry.reasoning_efforts
+        if any(
+            effort.code in profile.reasoning_effort_codes
+            for model in registry.models
+            for profile in model.execution_profiles
+        )
+    )
 
 
-def test_agent_widget_choices_and_defaults_follow_the_databricks_registry(
+def test_agent_widget_choices_and_defaults_follow_the_foundry_registry(
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
-        _databricks_registry_with_default_reasoning,
+        _foundry_registry_with_default_reasoning,
     )
 
     specs = {spec.name: spec for spec in widget_specs("analysis_inference")}
 
-    assert specs["AgentProvider"].choices == ("databricks",)
-    assert specs["AgentSDK"].choices == ("openai_agents_sdk",)
-    assert specs["AgentSDK"].default == "openai_agents_sdk"
-    assert specs["AgentModel"].choices == ("registered-databricks-model",)
-    assert specs["AgentModel"].default == "registered-databricks-model"
+    assert "AgentProvider" not in specs
+    assert "AgentSDK" not in specs
+    assert specs["AgentModel"].choices == ("registered-foundry-model",)
+    assert specs["AgentModel"].default == "registered-foundry-model"
     assert specs["ExecutionMode"].choices == ("tool_assisted",)
     assert specs["ExecutionMode"].default == "tool_assisted"
     assert specs["ReasoningEffort"].choices == ("default",)
     assert specs["ReasoningEffort"].default == "default"
 
 
-def test_agent_widgets_offer_all_databricks_models_registered_in_json(
+def test_agent_widgets_offer_all_foundry_models_registered_in_json(
     monkeypatch,
     tmp_path,
 ) -> None:
-    registry = _databricks_registry_with_secondary_model()
+    registry = _foundry_registry_with_secondary_model()
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
         lambda: registry,
@@ -290,6 +290,9 @@ def test_agent_widgets_offer_all_databricks_models_registered_in_json(
     class FakeWidgets:
         def __init__(self) -> None:
             self.created: dict[str, tuple[str, tuple[str, ...]]] = {}
+
+        def remove(self, name: str) -> None:
+            self.created.pop(name, None)
 
         def text(self, name: str, default: str, label: str) -> None:
             self.created[name] = (default, ())
@@ -313,17 +316,15 @@ def test_agent_widgets_offer_all_databricks_models_registered_in_json(
     )
 
     assert widgets.created["AgentModel"] == (
-        "databricks-primary",
-        (
-            "databricks-primary",
-            "databricks-claude-opus-5",
-            "databricks-secondary",
+        "foundry-primary",
+        tuple(
+            model.code for model in registry.models if model.provider_code == "microsoft_foundry"
         ),
     )
 
 
 def test_request_only_accepts_models_configured_in_the_uploaded_env(monkeypatch) -> None:
-    registry = _databricks_registry_with_secondary_model()
+    registry = _foundry_registry_with_secondary_model()
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
         lambda: registry,
@@ -334,17 +335,17 @@ def test_request_only_accepts_models_configured_in_the_uploaded_env(monkeypatch)
         build_notebook_request(
             "analysis_inference",
             values,
-            configured_model_codes={"databricks-secondary"},
+            configured_model_codes={"foundry-secondary"},
         )
 
-    values["AgentModel"] = "databricks-secondary"
+    values["AgentModel"] = "foundry-secondary"
     command = build_notebook_request(
         "analysis_inference",
         values,
-        configured_model_codes={"databricks-secondary"},
+        configured_model_codes={"foundry-secondary"},
     )
 
-    assert command.create_payload["agent"]["model_code"] == "databricks-secondary"
+    assert command.create_payload["agent"]["model_code"] == "foundry-secondary"
 
 
 def test_build_notebook_request_accepts_an_exact_registered_agent_profile(
@@ -352,7 +353,7 @@ def test_build_notebook_request_accepts_an_exact_registered_agent_profile(
 ) -> None:
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
-        _databricks_registry_with_default_reasoning,
+        _foundry_registry_with_default_reasoning,
     )
     values = _values("analysis_inference")
 
@@ -360,8 +361,8 @@ def test_build_notebook_request_accepts_an_exact_registered_agent_profile(
 
     assert command.create_payload["agent"] == {
         "sdk_code": "openai_agents_sdk",
-        "provider_code": "databricks",
-        "model_code": "registered-databricks-model",
+        "provider_code": "microsoft_foundry",
+        "model_code": "registered-foundry-model",
         "reasoning_effort_code": "default",
         "max_turns": 10,
         "validation_retry_count": 2,
@@ -373,7 +374,7 @@ def test_build_notebook_request_rejects_a_union_choice_outside_an_exact_profile(
 ) -> None:
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
-        _databricks_registry_with_disjoint_profiles,
+        _foundry_registry_with_disjoint_profiles,
     )
     values = _values("analysis_inference")
     values["ExecutionMode"] = "one_shot"
@@ -383,13 +384,13 @@ def test_build_notebook_request_rejects_a_union_choice_outside_an_exact_profile(
 
 
 @pytest.mark.parametrize("workflow", ("code_generation", "validation"))
-def test_fixed_mode_widgets_and_validation_use_the_internal_detailed_profile(
+def test_fixed_mode_widgets_and_validation_use_the_internal_tool_assisted_profile(
     workflow: str,
     monkeypatch,
 ) -> None:
     monkeypatch.setattr(
         "gds_workbench_notebooks.notebook.load_default_agent_capabilities",
-        _databricks_registry_with_disjoint_profiles,
+        _foundry_registry_with_disjoint_profiles,
     )
 
     specs = {spec.name: spec for spec in widget_specs(workflow)}
@@ -397,7 +398,7 @@ def test_fixed_mode_widgets_and_validation_use_the_internal_detailed_profile(
     command = build_notebook_request(workflow, values)
 
     assert "ExecutionMode" not in specs
-    assert specs["AgentSDK"].choices == ("openai_agents_sdk",)
+    assert "AgentSDK" not in specs
     assert specs["ReasoningEffort"].choices == ("default",)
     assert command.create_payload["workflow_execution_mode"] is None
     assert command.create_payload["agent"]["sdk_code"] == "openai_agents_sdk"
@@ -442,7 +443,7 @@ def test_validation_rejects_more_than_1000_systems() -> None:
 
 @pytest.mark.parametrize(
     "execution_mode",
-    ("one_shot", "tool_assisted", "detailed_coverage"),
+    ("one_shot", "tool_assisted"),
 )
 def test_analysis_inference_accepts_each_supported_execution_mode(
     execution_mode: str,
@@ -481,7 +482,6 @@ def test_all_eligible_code_generation_requires_empty_selection() -> None:
         ("SelectedObjectIDsJSON", "[11,11]"),
         ("IdempotencyKey", "not-a-uuid"),
         ("PromptOverridesJSON", '{"0": 5}'),
-        ("AgentProvider", "microsoft_foundry"),
         ("AgentModel", "unregistered-model"),
     ),
 )
@@ -561,3 +561,59 @@ GDS_NOTEBOOK_POSTGRES_PASSWORD=fixture-password
     )
     assert calls[0][1].database.user == "gds_notebook_runtime"
     assert f'"workflow":"{calls[0][0].workflow}"' in capsys.readouterr().out
+
+
+@pytest.mark.parametrize("count", [1, 200])
+def test_metadata_enrichment_uses_fixed_mode_and_bounded_physical_selection(count: int) -> None:
+    values = _values("metadata_enrichment")
+    values["SelectedObjectIDsJSON"] = json.dumps(list(range(1, count + 1)))
+    payload = build_notebook_request("metadata_enrichment", values).create_payload
+    assert payload["workflow_execution_mode"] == "one_shot"
+    assert payload["requested_batch_id"] is None
+    assert payload["modeled_entity_type"] is None
+    assert payload["agent"] is not None
+    assert "ExecutionMode" not in values
+    assert "RequestedBatchID" not in values
+
+
+@pytest.mark.parametrize("count", [0, 201])
+def test_metadata_enrichment_rejects_empty_or_excessive_selection(count: int) -> None:
+    values = _values("metadata_enrichment")
+    values["SelectedObjectIDsJSON"] = json.dumps(list(range(1, count + 1)))
+    with pytest.raises(NotebookConfigurationError):
+        build_notebook_request("metadata_enrichment", values)
+
+
+def test_retired_widgets_are_removed_without_changing_scope_and_cannot_override_runtime() -> None:
+    values = _values("conceptual")
+    retired = {
+        "AgentSDK": "langchain_create_agent",
+        "AgentProvider": "databricks",
+        "MaxTurns": "99999",
+        "ValidationRetryCount": "0",
+    }
+    values.update(retired)
+    command = build_notebook_request("conceptual", values)
+    assert command.create_payload["agent"]["sdk_code"] == "openai_agents_sdk"
+    assert command.create_payload["agent"]["provider_code"] == "microsoft_foundry"
+    registry = load_default_agent_capabilities()
+    assert command.create_payload["agent"]["max_turns"] == registry.max_turns.default
+    assert (
+        command.create_payload["agent"]["validation_retry_count"]
+        == registry.validation_retries.default
+    )
+
+    class Widgets:
+        def remove(self, name):
+            del values[name]
+
+        def text(self, name, default, label):
+            values.setdefault(name, default)
+
+        def dropdown(self, name, default, choices, label):
+            values.setdefault(name, default)
+
+    create_workflow_widgets("conceptual", dbutils=type("Dbutils", (), {"widgets": Widgets()})())
+    assert not set(retired) & values.keys()
+    assert values["TenantID"] == "2"
+    assert values["SelectedObjectIDsJSON"] == "[11,12]"

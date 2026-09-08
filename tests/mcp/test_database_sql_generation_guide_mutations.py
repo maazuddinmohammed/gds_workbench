@@ -513,10 +513,7 @@ def test_sql_generation_guide_draft_is_server_owned_single_and_retry_safe(
             ).fetchone()
         )["draft_count"]
 
-    assert (
-        revised["sql_generation_guide_version_id"]
-        == created["sql_generation_guide_version_id"]
-    )
+    assert revised["sql_generation_guide_version_id"] == created["sql_generation_guide_version_id"]
     assert revised["sql_generation_guide_version_number"] == 1
     assert (
         revised["sql_generation_guide_digest"]

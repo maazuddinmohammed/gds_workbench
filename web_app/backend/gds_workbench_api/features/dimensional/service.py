@@ -3,23 +3,22 @@
 from __future__ import annotations
 
 import logging
-from collections.abc import Sequence
 from contextlib import AbstractAsyncContextManager
 from dataclasses import dataclass
-from typing import Protocol, cast
+from typing import Protocol
 from uuid import UUID
 
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.application.change_sets.model import StageModelChange
+from gds_etl_workbench.application.change_sets.model_validation import (
+    ModelValidationIssue,
+    validate_future_graph,
+)
 from gds_etl_workbench.domain.authorization import RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import InvalidRequestError, WorkbenchError
-from gds_etl_workbench.domain.metadata_records import AttributeRecord
 from gds_etl_workbench.domain.modeling_records import (
-    AnalysisResultRecord,
     PhysicalAttributeKey,
     PhysicalObjectKey,
-    ProfilingProfileRecord,
-    normalize_model_key_value,
 )
 from gds_etl_workbench.infrastructure.postgres import (
     ReadIsolation,
@@ -28,17 +27,14 @@ from gds_etl_workbench.infrastructure.postgres import (
 )
 from pydantic import JsonValue
 
-from gds_workbench_api.features.workflows.authoring.agent_execution import (
-    AgentExecutionRequest,
-)
 from gds_workbench_api.features.workflows.authoring.change_set_handoff import (
     WorkflowChangeSetFinalizationResult,
     WorkflowChangeSetHandoffResult,
+    WorkflowChangeSetValidationError,
 )
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextBundle,
     PostgresAgentContextRepository,
-    SelectedObjectContext,
 )
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowEvent,
@@ -60,51 +56,20 @@ from gds_workbench_api.features.workflows.authoring.plan import (
 )
 from gds_workbench_api.features.workflows.authoring.progress import (
     AgentWorkflowProgress,
-    intermediate_progress_points,
 )
 from gds_workbench_api.features.workflows.authoring.repair import (
+    AgentCandidateValidation,
     AgentCandidateValidationError,
     AgentContextPolicy,
     AgentExecutor,
-    agent_request_envelope_bytes,
     load_default_agent_context_policy,
+    model_validation_issues,
 )
 from gds_workbench_api.features.workflows.authoring.stage_runner import AgentStageRunner
-from gds_workbench_api.prompt_rendering import render_prompt
 
 from .candidate import DimensionalCandidateValidator
-from .detailed import (
-    DetailedDimensionalDraftManifest,
-    DetailedDimensionalEntityDetail,
-    DetailedDimensionalEntityDetailValidator,
-    DetailedDimensionalEntityTopology,
-    DetailedDimensionalPolicy,
-    DetailedDimensionalReconciliationReceipt,
-    DetailedDimensionalReconciliationReceiptValidator,
-    DetailedDimensionalRelationshipSignal,
-    DetailedDimensionalRelationshipSignalLedger,
-    DetailedDimensionalTopologyContribution,
-    DetailedDimensionalTopologyContributionValidator,
-    DetailedDimensionalTopologyReconciliation,
-    DetailedDimensionalTopologyReconciliationValidator,
-    DetailedDimensionalValidationLead,
-    DetailedDimensionalValidationLeadValidator,
-    DetailedDimensionalValidationPackage,
-    DetailedDimensionalValidationRecord,
-    DetailedDimensionalValidationWorkerResult,
-    DetailedDimensionalValidationWorkerValidator,
-    build_dimensional_draft_manifest,
-    build_dimensional_relationship_signal_ledger,
-    build_projected_dimensional_validation_packages,
-    dimensional_applied_record_refs,
-    dimensional_json_bytes,
-    dimensional_json_digest,
-    load_default_detailed_dimensional_policy,
-    materialize_dimensional_reviewed_candidate,
-    merge_dimensional_entity_detail_partitions,
-    merge_dimensional_topology_partitions,
-)
 from .policy import (
+    DimensionalProjectionConflictError,
     project_dimensional_foreign_key_policy,
     project_dimensional_gold_policy,
     validate_dimensional_gold_policy,
@@ -113,26 +78,12 @@ from .policy import (
 _logger = logging.getLogger(__name__)
 
 
-@dataclass(frozen=True, slots=True)
-class _TopologyBuilderBatch:
-    contribution_ref: str
-    source_attributes: tuple[PhysicalAttributeKey, ...]
-    context: JsonValue
+@dataclass(slots=True)
+class _RejectedCandidate:
+    """Per-run recovery state, preserved across repair attempts and malformed responses."""
 
-
-@dataclass(frozen=True, slots=True)
-class _EntityDetailBatch:
-    entity: DetailedDimensionalEntityTopology
-    topology: DetailedDimensionalTopologyReconciliation
-    contributions: tuple[DetailedDimensionalTopologyContribution, ...]
-    context: JsonValue
-
-
-@dataclass(frozen=True, slots=True)
-class _ReconciliationBatch:
-    partition_ref: str
-    relationship_signals: tuple[DetailedDimensionalRelationshipSignal, ...]
-    context: JsonValue
+    changes: tuple[StageModelChange, ...] = ()
+    issues: tuple[ModelValidationIssue, ...] = ()
 
 
 class DimensionalExecutionDatabase(Protocol):
@@ -165,6 +116,22 @@ class DimensionalContextRepository(Protocol):
 
 
 class DimensionalChangeSetFinalizer(Protocol):
+    async def retain_failed_candidate(
+        self,
+        principal: RequestPrincipal,
+        *,
+        tenant_id: int,
+        model_id: int,
+        workflow_run_id: int,
+        expected_workflow: ModelWorkflow,
+        expected_model_revision: int,
+        workflow_run_claim_token: UUID,
+        changes: tuple[StageModelChange, ...],
+        issues: tuple[ModelValidationIssue, ...],
+        failure_code: str,
+        safe_failure_message: str,
+    ) -> object: ...
+
     async def finalize(
         self,
         principal: RequestPrincipal,
@@ -329,14 +296,12 @@ class DatabaseDimensionalExecutor:
         plan_repository: DimensionalPlanRepository | None = None,
         context_repository: DimensionalContextRepository | None = None,
         context_policy: AgentContextPolicy | None = None,
-        detailed_policy: DetailedDimensionalPolicy | None = None,
     ) -> None:
         self._database = database
         self._authorizer = authorizer
         self._plan_repository = plan_repository or PostgresAgentRunPlanRepository()
         self._context_repository = context_repository or PostgresAgentContextRepository()
         selected_context_policy = context_policy or load_default_agent_context_policy()
-        self._context_policy = selected_context_policy
         self._stage_runner = AgentStageRunner(
             executor=agent_executor,
             policy=selected_context_policy,
@@ -344,7 +309,6 @@ class DatabaseDimensionalExecutor:
         self._handoff = handoff
         self._no_op = no_op
         self._lifecycle = lifecycle
-        self._detailed_policy = detailed_policy or load_default_detailed_dimensional_policy()
 
     async def execute_started(
         self,
@@ -357,6 +321,8 @@ class DatabaseDimensionalExecutor:
         expected_model_revision: int,
     ) -> DimensionalExecutionResult:
         finalization_attempted = False
+        changes: tuple[StageModelChange, ...] = ()
+        rejected = _RejectedCandidate()
         try:
             async with self._database.write_transaction(
                 isolation=ReadIsolation.REPEATABLE_READ
@@ -396,7 +362,6 @@ class DatabaseDimensionalExecutor:
             )
 
             execution_mode = plan.workflow_execution_mode
-            is_detailed = execution_mode == "detailed_coverage"
             selected_object_count = len(context.context.selected_objects)
             selected_object_label = "Object" if selected_object_count == 1 else "Objects"
             candidate_mode_label = "one-shot" if execution_mode == "one_shot" else "tool-assisted"
@@ -409,75 +374,90 @@ class DatabaseDimensionalExecutor:
             )
             await progress.append(
                 attempt=1,
-                stage=(
-                    "dimensional.topology_builder"
-                    if is_detailed
-                    else "dimensional.candidate_authoring"
-                ),
+                stage=("dimensional.candidate_authoring"),
                 status="running",
                 message=(
-                    f"Dimensional detailed coverage started for {selected_object_count} selected "
-                    f"{selected_object_label}."
-                    if is_detailed
-                    else (
-                        f"Dimensional {candidate_mode_label} candidate authoring started for "
-                        f"{selected_object_count} selected {selected_object_label}; the next "
-                        "persisted milestone follows bounded agent-response validation."
-                    )
+                    f"Dimensional {candidate_mode_label} candidate authoring started for "
+                    f"{selected_object_count} selected {selected_object_label}; the next "
+                    "persisted milestone follows bounded agent-response validation."
                 ),
-                current=0 if is_detailed else None,
-                total=selected_object_count if is_detailed else None,
+                current=None,
+                total=None,
                 finding_count=0,
             )
             validator = _candidate_validator(context)
-            if is_detailed:
+            snapshot, physical_scope = context.snapshot, context.physical_scope
+            if snapshot is None or physical_scope is None:
+                raise InvalidRequestError("The Dimensional validation context is unavailable.")
+
+            async def validate_complete_candidate(value: JsonValue) -> AgentCandidateValidation:
+                try:
+                    candidate_changes = _project_dimensional_changes(
+                        validator=validator,
+                        candidate=value,
+                        context=context,
+                    )
+                except DimensionalProjectionConflictError as projection_error:
+                    issues = (
+                        ModelValidationIssue(
+                            code="gold_projection_conflict",
+                            dataset="dimensional_entity",
+                            record_number=None,
+                            fields=(),
+                            message=projection_error.message,
+                        ),
+                    )
+                    # An earlier complete projected draft is more useful than a later
+                    # candidate that could not be projected. Retain the raw candidate
+                    # only when no complete projected rejection exists yet.
+                    if not rejected.changes:
+                        rejected.changes = validator.parse_validated(value)
+                        rejected.issues = issues
+                    return AgentCandidateValidation(issues=model_validation_issues(issues))
+                checked = validate_future_graph(
+                    snapshot=snapshot,
+                    staged_documents={
+                        change.dataset: change.records for change in candidate_changes
+                    },
+                    physical_scope=physical_scope,
+                )
+                if checked.issues:
+                    rejected.changes, rejected.issues = candidate_changes, checked.issues
+                return AgentCandidateValidation(issues=model_validation_issues(checked.issues))
+
+            resolver_values: dict[str, object] = {
                 (
-                    changes,
-                    final_attempt,
-                    intermediate_warning,
-                ) = await self._execute_detailed(
-                    plan=plan,
-                    context=context,
-                    validator=validator,
-                    progress=progress,
-                )
-            elif execution_mode in ("one_shot", "tool_assisted"):
-                resolver_values: dict[str, object] = {
-                    (
-                        f"workflow.dimensional.{execution_mode}.candidate_authoring.context"
-                    ): context.embedded_context,
-                    "workflow.validation_failures": [],
-                }
-                resolver_values["model.naming_instructions"] = effective_naming_instructions(
-                    "dimensional",
-                    context.context.model_details.gold_model_naming_instructions,
-                )
-                outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="candidate_authoring",
-                    resolver_values=resolver_values,
-                    context=context.embedded_context,
-                    output_schema=validator.output_schema(),
-                    allowed_tool_names=(
-                        context.tool_catalog.allowed_tool_names
-                        if context.tool_catalog is not None
-                        else ()
-                    ),
-                    local_tool_catalog=context.tool_catalog,
-                    validator=validator,
-                )
-                candidate = outcome.candidate
-                final_attempt = outcome.attempt_count
-                intermediate_warning = outcome.was_repaired or bool(outcome.warning_codes)
-                changes = _project_dimensional_changes(
-                    validator=validator,
-                    candidate=candidate,
-                    context=context,
-                )
-            else:
-                raise InvalidRequestError(
-                    "The Dimensional run does not use the fixed execution path."
-                )
+                    f"workflow.dimensional.{execution_mode}.candidate_authoring.context"
+                ): context.embedded_context,
+                "workflow.validation_failures": [],
+            }
+            resolver_values["model.naming_instructions"] = effective_naming_instructions(
+                "dimensional",
+                context.context.model_details.gold_model_naming_instructions,
+            )
+            outcome = await self._stage_runner.run(
+                plan=plan,
+                stage_code="candidate_authoring",
+                resolver_values=resolver_values,
+                context=context.embedded_context,
+                output_schema=validator.output_schema(),
+                allowed_tool_names=(
+                    context.tool_catalog.allowed_tool_names
+                    if context.tool_catalog is not None
+                    else ()
+                ),
+                local_tool_catalog=context.tool_catalog,
+                validator=validator,
+                final_validation=validate_complete_candidate,
+            )
+            candidate = outcome.candidate
+            final_attempt = outcome.attempt_count
+            warning = outcome.was_repaired or bool(outcome.warning_codes)
+            changes = _project_dimensional_changes(
+                validator=validator,
+                candidate=candidate,
+                context=context,
+            )
             if not changes:
                 finalization_attempted = True
                 return await self._no_op.complete(
@@ -495,7 +475,7 @@ class DatabaseDimensionalExecutor:
                         final_event=progress.event(
                             attempt=final_attempt,
                             stage="dimensional.backend_validation",
-                            status=("warning" if intermediate_warning else "running"),
+                            status=("warning" if warning else "running"),
                             message=("Dimensional authoring completed with no effective change."),
                             current=1,
                             total=1,
@@ -508,7 +488,7 @@ class DatabaseDimensionalExecutor:
             final_event = progress.event(
                 attempt=final_attempt,
                 stage="dimensional.backend_validation",
-                status="warning" if intermediate_warning else "running",
+                status="warning" if warning else "running",
                 message="Dimensional candidate is ready in a validated draft.",
                 current=1,
                 total=1,
@@ -528,6 +508,38 @@ class DatabaseDimensionalExecutor:
             )
             return finalized.handoff
         except Exception as error:
+            retention_issues = (
+                error.issues if isinstance(error, WorkflowChangeSetValidationError) else ()
+            )
+            if isinstance(error, AgentCandidateValidationError) and rejected.changes:
+                changes, retention_issues = rejected.changes, rejected.issues
+            if retention_issues and changes and isinstance(error, WorkbenchError):
+                try:
+                    await self._handoff.retain_failed_candidate(
+                        principal,
+                        tenant_id=tenant_id,
+                        model_id=model_id,
+                        workflow_run_id=workflow_run_id,
+                        expected_workflow="dimensional",
+                        expected_model_revision=expected_model_revision,
+                        workflow_run_claim_token=workflow_run_claim_token,
+                        changes=changes,
+                        issues=retention_issues,
+                        failure_code=error.code,
+                        safe_failure_message=(
+                            "Validation failed. A rejected draft was retained for review."
+                        ),
+                    )
+                except Exception as retention_error:
+                    _logger.warning(
+                        "Rejected Workflow draft retention remains pending.",
+                        extra={"workflow_run_id": workflow_run_id, "model_id": model_id},
+                    )
+                    raise _safe_execution_error(
+                        retention_error,
+                        finalization_attempted=True,
+                    ) from None
+                raise error from None
             safe_error = _safe_execution_error(
                 error,
                 finalization_attempted=finalization_attempted,
@@ -562,1116 +574,6 @@ class DatabaseDimensionalExecutor:
                     )
             raise safe_error from None
 
-    async def _execute_detailed(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        validator: DimensionalCandidateValidator,
-        progress: AgentWorkflowProgress,
-    ) -> tuple[tuple[StageModelChange, ...], int, bool]:
-        contributions: list[DetailedDimensionalTopologyContribution] = []
-        intermediate_warning = False
-        max_attempt = 1
-        topology_builder_total = sum(
-            len(
-                self._topology_builder_batches(
-                    plan=plan,
-                    context=context,
-                    selected=selected,
-                )
-            )
-            for selected in context.context.selected_objects
-        )
-        topology_builder_points = intermediate_progress_points(
-            topology_builder_total,
-            maximum_events=5,
-        )
-        topology_builder_current = 0
-        for selected in context.context.selected_objects:
-            for batch in self._topology_builder_batches(
-                plan=plan,
-                context=context,
-                selected=selected,
-            ):
-                contribution_validator = DetailedDimensionalTopologyContributionValidator(
-                    contribution_ref=batch.contribution_ref,
-                    source_object=_physical_object_key(selected),
-                    source_attributes=batch.source_attributes,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="topology_builder",
-                    resolver_values=_detailed_resolver_values(
-                        context,
-                        stage_code="topology_builder",
-                        stage_context=batch.context,
-                    ),
-                    context=batch.context,
-                    output_schema=contribution_validator.output_schema(),
-                    allowed_tool_names=(),
-                    validator=contribution_validator,
-                )
-                contribution = contribution_validator.parse_validated(outcome.candidate)
-                contributions.append(contribution)
-                max_attempt = max(max_attempt, outcome.attempt_count)
-                intermediate_warning = (
-                    intermediate_warning
-                    or contribution.disposition == "needs_review"
-                    or outcome.was_repaired
-                    or bool(outcome.warning_codes)
-                )
-                topology_builder_current += 1
-                if topology_builder_current in topology_builder_points:
-                    await progress.append(
-                        attempt=max_attempt,
-                        stage="dimensional.topology_builder",
-                        status="warning" if intermediate_warning else "running",
-                        message=(
-                            "Dimensional topology authoring validated "
-                            f"{topology_builder_current} of {topology_builder_total} batches."
-                        ),
-                        current=topology_builder_current,
-                        total=topology_builder_total,
-                        finding_count=0,
-                    )
-        if topology_builder_points:
-            await progress.append(
-                attempt=max_attempt,
-                stage="dimensional.topology_builder",
-                status="warning" if intermediate_warning else "running",
-                message=(
-                    "Dimensional topology authoring completed "
-                    f"{topology_builder_total} of {topology_builder_total} batches."
-                ),
-                current=topology_builder_total,
-                total=topology_builder_total,
-                finding_count=0,
-            )
-        intermediate_warning = intermediate_warning or any(
-            item.disposition == "needs_review" for item in contributions
-        )
-
-        await progress.append(
-            attempt=1,
-            stage="dimensional.topology_reconciler",
-            status="running",
-            message="Dimensional Object contributions are ready for topology reconciliation.",
-            current=len(contributions),
-            total=len(contributions),
-            finding_count=len(contributions),
-        )
-        topology_partitions: list[DetailedDimensionalTopologyReconciliation] = []
-        topology_batches = self._topology_reconciliation_batches(
-            plan=plan,
-            context=context,
-            contributions=tuple(contributions),
-        )
-        topology_points = intermediate_progress_points(
-            len(topology_batches),
-            maximum_events=3,
-        )
-        topology_warning = False
-        topology_attempt = 1
-        for topology_current, (contribution_batch, topology_context) in enumerate(
-            topology_batches,
-            start=1,
-        ):
-            topology_validator = DetailedDimensionalTopologyReconciliationValidator(
-                contributions=contribution_batch,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            topology_outcome = await self._stage_runner.run(
-                plan=plan,
-                stage_code="topology_reconciler",
-                resolver_values=_detailed_resolver_values(
-                    context,
-                    stage_code="topology_reconciler",
-                    stage_context=topology_context,
-                ),
-                context=topology_context,
-                output_schema=topology_validator.output_schema(),
-                allowed_tool_names=(),
-                validator=topology_validator,
-            )
-            topology_partitions.append(
-                topology_validator.parse_validated(topology_outcome.candidate)
-            )
-            topology_attempt = max(topology_attempt, topology_outcome.attempt_count)
-            max_attempt = max(max_attempt, topology_attempt)
-            outcome_warning = topology_outcome.was_repaired or bool(topology_outcome.warning_codes)
-            topology_warning = topology_warning or outcome_warning
-            intermediate_warning = intermediate_warning or outcome_warning
-            if topology_current in topology_points:
-                await progress.append(
-                    attempt=topology_attempt,
-                    stage="dimensional.topology_reconciler",
-                    status="warning" if topology_warning else "running",
-                    message=(
-                        "Dimensional topology reconciliation validated "
-                        f"{topology_current} of {len(topology_batches)} batches."
-                    ),
-                    current=topology_current,
-                    total=len(topology_batches),
-                    finding_count=0,
-                )
-        if topology_points:
-            await progress.append(
-                attempt=topology_attempt,
-                stage="dimensional.topology_reconciler",
-                status="warning" if topology_warning else "running",
-                message=(
-                    "Dimensional topology reconciliation completed "
-                    f"{len(topology_batches)} of {len(topology_batches)} batches."
-                ),
-                current=len(topology_batches),
-                total=len(topology_batches),
-                finding_count=0,
-            )
-        topology = merge_dimensional_topology_partitions(
-            contributions=tuple(contributions),
-            partitions=tuple(topology_partitions),
-        )
-        if not topology.entities:
-            return (), max_attempt, intermediate_warning
-
-        await progress.append(
-            attempt=1,
-            stage="dimensional.entity_detail_builder",
-            status="running",
-            message="Dimensional topology is ready for Entity detail authoring.",
-            current=0 if topology.entities else None,
-            total=len(topology.entities) if topology.entities else None,
-            finding_count=len(topology.entities),
-        )
-        assertion_record_keys = tuple(
-            record.modeling_assertion_record_key for record in context.context.assertion.records
-        )
-        details: list[DetailedDimensionalEntityDetail] = []
-        entity_total = len(topology.entities)
-        entity_points = intermediate_progress_points(entity_total, maximum_events=3)
-        entity_warning = False
-        entity_attempt = 1
-        for entity_current, entity in enumerate(topology.entities, start=1):
-            detail_partitions: list[DetailedDimensionalEntityDetail] = []
-            for batch in self._entity_detail_batches(
-                plan=plan,
-                context=context,
-                topology=topology,
-                entity=entity,
-                contributions=tuple(contributions),
-            ):
-                detail_validator = DetailedDimensionalEntityDetailValidator(
-                    entity=batch.entity,
-                    topology=batch.topology,
-                    contributions=batch.contributions,
-                    assertion_record_keys=assertion_record_keys,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                detail_outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="entity_detail_builder",
-                    resolver_values=_detailed_resolver_values(
-                        context,
-                        stage_code="entity_detail_builder",
-                        stage_context=batch.context,
-                    ),
-                    context=batch.context,
-                    output_schema=detail_validator.output_schema(),
-                    allowed_tool_names=(),
-                    validator=detail_validator,
-                )
-                detail_partitions.append(detail_validator.parse_validated(detail_outcome.candidate))
-                entity_attempt = max(entity_attempt, detail_outcome.attempt_count)
-                max_attempt = max(max_attempt, entity_attempt)
-                outcome_warning = detail_outcome.was_repaired or bool(detail_outcome.warning_codes)
-                entity_warning = entity_warning or outcome_warning
-                intermediate_warning = intermediate_warning or outcome_warning
-            details.append(
-                merge_dimensional_entity_detail_partitions(
-                    entity=entity,
-                    topology=topology,
-                    contributions=tuple(contributions),
-                    partitions=tuple(detail_partitions),
-                    assertion_record_keys=assertion_record_keys,
-                )
-            )
-            if entity_current in entity_points:
-                await progress.append(
-                    attempt=entity_attempt,
-                    stage="dimensional.entity_detail_builder",
-                    status="warning" if entity_warning else "running",
-                    message=(
-                        "Dimensional Entity detail authoring completed "
-                        f"{entity_current} of {entity_total} Entities."
-                    ),
-                    current=entity_current,
-                    total=entity_total,
-                    finding_count=0,
-                )
-        if entity_points:
-            await progress.append(
-                attempt=entity_attempt,
-                stage="dimensional.entity_detail_builder",
-                status="warning" if entity_warning else "running",
-                message=(
-                    "Dimensional Entity detail authoring completed "
-                    f"{entity_total} of {entity_total} Entities."
-                ),
-                current=entity_total,
-                total=entity_total,
-                finding_count=0,
-            )
-
-        relationship_ledger = build_dimensional_relationship_signal_ledger(
-            entity_details=tuple(details),
-            max_signals=self._detailed_policy.max_relationship_signals,
-        )
-        await progress.append(
-            attempt=1,
-            stage="dimensional.relationship_signal_derivation",
-            status="running",
-            message="Deterministic Dimensional relationship signals are ready.",
-            current=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
-            total=(len(relationship_ledger.signals) if relationship_ledger.signals else None),
-            finding_count=len(relationship_ledger.signals),
-        )
-        applied_refs = dimensional_applied_record_refs(context.context.applied.dimensional)
-        draft_manifest = build_dimensional_draft_manifest(
-            topology=topology,
-            entity_details=tuple(details),
-            relationship_ledger=relationship_ledger,
-            applied_record_refs=applied_refs,
-        )
-
-        repair_count = 0
-        validation_failures: list[dict[str, object]] = []
-        while True:
-            reconciliation_batches = self._reconciliation_batches(
-                plan=plan,
-                context=context,
-                manifest=draft_manifest,
-                relationship_ledger=relationship_ledger,
-                validation_failures=validation_failures,
-            )
-            await progress.append(
-                attempt=repair_count + 1,
-                stage="dimensional.whole_model_reconciliation",
-                status="running",
-                message="Dimensional whole-model reconciliation started.",
-                current=0,
-                total=len(reconciliation_batches),
-                finding_count=len(validation_failures),
-            )
-            receipts: list[DetailedDimensionalReconciliationReceipt] = []
-            reconciliation_points = (
-                intermediate_progress_points(
-                    len(reconciliation_batches),
-                    maximum_events=3,
-                )
-                if repair_count == 0
-                else frozenset[int]()
-            )
-            reconciliation_warning = False
-            reconciliation_attempt = repair_count + 1
-            for reconciliation_current, batch in enumerate(
-                reconciliation_batches,
-                start=1,
-            ):
-                receipt_validator = DetailedDimensionalReconciliationReceiptValidator(
-                    partition_ref=batch.partition_ref,
-                    manifest=draft_manifest,
-                    relationship_signals=batch.relationship_signals,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                reconciliation_outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="whole_model_reconciliation",
-                    resolver_values=_detailed_resolver_values(
-                        context,
-                        stage_code="whole_model_reconciliation",
-                        stage_context=batch.context,
-                        validation_failures=_bounded_validation_failure_summary(
-                            validation_failures
-                        ),
-                    ),
-                    context=batch.context,
-                    output_schema=receipt_validator.output_schema(),
-                    allowed_tool_names=(),
-                    validator=receipt_validator,
-                )
-                receipts.append(receipt_validator.parse_validated(reconciliation_outcome.candidate))
-                reconciliation_attempt = max(
-                    reconciliation_attempt,
-                    reconciliation_outcome.attempt_count,
-                )
-                max_attempt = max(max_attempt, reconciliation_attempt)
-                outcome_warning = reconciliation_outcome.was_repaired or bool(
-                    reconciliation_outcome.warning_codes
-                )
-                reconciliation_warning = reconciliation_warning or outcome_warning
-                intermediate_warning = intermediate_warning or outcome_warning
-                if reconciliation_current in reconciliation_points:
-                    await progress.append(
-                        attempt=reconciliation_attempt,
-                        stage="dimensional.whole_model_reconciliation",
-                        status="warning" if reconciliation_warning else "running",
-                        message=(
-                            "Dimensional whole-model reconciliation completed "
-                            f"{reconciliation_current} of {len(reconciliation_batches)} batches."
-                        ),
-                        current=reconciliation_current,
-                        total=len(reconciliation_batches),
-                        finding_count=0,
-                    )
-            if reconciliation_points:
-                await progress.append(
-                    attempt=reconciliation_attempt,
-                    stage="dimensional.whole_model_reconciliation",
-                    status="warning" if reconciliation_warning else "running",
-                    message=(
-                        "Dimensional whole-model reconciliation completed "
-                        f"{len(reconciliation_batches)} of {len(reconciliation_batches)} batches."
-                    ),
-                    current=len(reconciliation_batches),
-                    total=len(reconciliation_batches),
-                    finding_count=0,
-                )
-            materialized_candidate = materialize_dimensional_reviewed_candidate(
-                topology=topology,
-                entity_details=tuple(details),
-                relationship_ledger=relationship_ledger,
-                manifest=draft_manifest,
-                receipts=tuple(receipts),
-                applied_record_refs=applied_refs,
-            )
-            complete_validation = await validator.validate(materialized_candidate)
-            if complete_validation.issues:
-                raise AgentCandidateValidationError()
-            projected_changes = _project_dimensional_changes(
-                validator=validator,
-                candidate=materialized_candidate,
-                context=context,
-            )
-            if not projected_changes:
-                return (), max_attempt, intermediate_warning
-            packages = self._validation_packages(
-                plan=plan,
-                context=context,
-                projected_changes=projected_changes,
-            )
-
-            await progress.append(
-                attempt=repair_count + 1,
-                stage="dimensional.validator_worker",
-                status="running",
-                message="Dimensional validation packages are ready for review.",
-                current=0,
-                total=len(packages),
-                finding_count=len(packages),
-            )
-            worker_results: list[DetailedDimensionalValidationWorkerResult] = []
-            package_points = (
-                intermediate_progress_points(len(packages), maximum_events=3)
-                if repair_count == 0
-                else frozenset[int]()
-            )
-            worker_warning = False
-            worker_attempt = repair_count + 1
-            for package_current, package in enumerate(packages, start=1):
-                worker_context = cast(
-                    JsonValue,
-                    {
-                        "schema_version": "1.0",
-                        "model": _detailed_model_context(context),
-                        "validation_package": package.model_dump(mode="json"),
-                    },
-                )
-                worker_validator = DetailedDimensionalValidationWorkerValidator(
-                    package=package,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                worker_outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="validator_worker",
-                    resolver_values=_detailed_resolver_values(
-                        context,
-                        stage_code="validator_worker",
-                        stage_context=worker_context,
-                    ),
-                    context=worker_context,
-                    output_schema=worker_validator.output_schema(),
-                    allowed_tool_names=(),
-                    validator=worker_validator,
-                )
-                worker_results.append(worker_validator.parse_validated(worker_outcome.candidate))
-                worker_attempt = max(worker_attempt, worker_outcome.attempt_count)
-                max_attempt = max(max_attempt, worker_attempt)
-                outcome_warning = worker_outcome.was_repaired or bool(worker_outcome.warning_codes)
-                worker_warning = worker_warning or outcome_warning
-                intermediate_warning = intermediate_warning or outcome_warning
-                if package_current in package_points:
-                    await progress.append(
-                        attempt=worker_attempt,
-                        stage="dimensional.validator_worker",
-                        status="warning" if worker_warning else "running",
-                        message=(
-                            "Dimensional validation completed "
-                            f"{package_current} of {len(packages)} packages."
-                        ),
-                        current=package_current,
-                        total=len(packages),
-                        finding_count=0,
-                    )
-            if package_points:
-                await progress.append(
-                    attempt=worker_attempt,
-                    stage="dimensional.validator_worker",
-                    status="warning" if worker_warning else "running",
-                    message=(
-                        "Dimensional validation completed "
-                        f"{len(packages)} of {len(packages)} packages."
-                    ),
-                    current=len(packages),
-                    total=len(packages),
-                    finding_count=0,
-                )
-
-            await progress.append(
-                attempt=repair_count + 1,
-                stage="dimensional.validator_lead",
-                status="running",
-                message="Dimensional validation findings are ready for reconciliation.",
-                current=len(worker_results),
-                total=len(worker_results),
-                finding_count=sum(len(item.findings) for item in worker_results),
-            )
-            leads: list[DetailedDimensionalValidationLead] = []
-            lead_batches = self._validation_lead_batches(
-                plan=plan,
-                context=context,
-                worker_results=tuple(worker_results),
-            )
-            lead_points = (
-                intermediate_progress_points(len(lead_batches), maximum_events=3)
-                if repair_count == 0
-                else frozenset[int]()
-            )
-            lead_warning = False
-            lead_attempt = repair_count + 1
-            for lead_current, (lead_batch, lead_context) in enumerate(
-                lead_batches,
-                start=1,
-            ):
-                lead_validator = DetailedDimensionalValidationLeadValidator(
-                    worker_results=lead_batch,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                lead_outcome = await self._stage_runner.run(
-                    plan=plan,
-                    stage_code="validator_lead",
-                    resolver_values=_detailed_resolver_values(
-                        context,
-                        stage_code="validator_lead",
-                        stage_context=lead_context,
-                    ),
-                    context=lead_context,
-                    output_schema=lead_validator.output_schema(),
-                    allowed_tool_names=(),
-                    validator=lead_validator,
-                )
-                leads.append(lead_validator.parse_validated(lead_outcome.candidate))
-                lead_attempt = max(lead_attempt, lead_outcome.attempt_count)
-                max_attempt = max(max_attempt, lead_attempt)
-                outcome_warning = lead_outcome.was_repaired or bool(lead_outcome.warning_codes)
-                lead_warning = lead_warning or outcome_warning
-                intermediate_warning = intermediate_warning or outcome_warning
-                if lead_current in lead_points:
-                    await progress.append(
-                        attempt=lead_attempt,
-                        stage="dimensional.validator_lead",
-                        status="warning" if lead_warning else "running",
-                        message=(
-                            "Dimensional validation-lead review completed "
-                            f"{lead_current} of {len(lead_batches)} batches."
-                        ),
-                        current=lead_current,
-                        total=len(lead_batches),
-                        finding_count=0,
-                    )
-            if lead_points:
-                await progress.append(
-                    attempt=lead_attempt,
-                    stage="dimensional.validator_lead",
-                    status="warning" if lead_warning else "running",
-                    message=(
-                        "Dimensional validation-lead review completed "
-                        f"{len(lead_batches)} of {len(lead_batches)} batches."
-                    ),
-                    current=len(lead_batches),
-                    total=len(lead_batches),
-                    finding_count=0,
-                )
-            lead = _merge_validation_leads(
-                worker_results=tuple(worker_results),
-                leads=tuple(leads),
-            )
-            if not lead.blocking_finding_refs:
-                return (
-                    projected_changes,
-                    max_attempt,
-                    intermediate_warning,
-                )
-            if repair_count >= plan.selection.validation_retry_count:
-                raise AgentCandidateValidationError()
-            repair_count += 1
-            intermediate_warning = True
-            validation_failures = [
-                item.model_dump(mode="json")
-                for result in worker_results
-                for item in result.findings
-                if item.finding_ref in set(lead.blocking_finding_refs)
-            ]
-
-    @property
-    def _detailed_request_limit(self) -> int:
-        return max(1, self._context_policy.stage_max_context_bytes // 2)
-
-    @property
-    def _detailed_result_limit(self) -> int:
-        return min(
-            self._context_policy.max_candidate_bytes,
-            max(1, self._context_policy.stage_max_context_bytes // 8),
-        )
-
-    def _topology_builder_batches(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        selected: SelectedObjectContext,
-    ) -> tuple[_TopologyBuilderBatch, ...]:
-        if not selected.attributes:
-            raise InvalidRequestError(
-                "Detailed Dimensional coverage requires Attributes for every selected Object."
-            )
-        base_ref = f"object_{selected.selection_order:05d}"
-        model_context = _detailed_model_context(context)
-        selected_document = selected.model_dump(mode="json")
-        all_attribute_documents = [item.model_dump(mode="json") for item in selected.attributes]
-        selection_manifest = cast(
-            JsonValue,
-            {
-                "selection_order": selected.selection_order,
-                "selected_object_digest": dimensional_json_digest(selected_document),
-                "total_attribute_count": len(selected.attributes),
-                "total_attribute_digest": dimensional_json_digest(
-                    cast(JsonValue, all_attribute_documents)
-                ),
-            },
-        )
-        support = _topology_support_context(context, selected)
-        raw_batches: list[tuple[AttributeRecord, ...]] = []
-        offset = 0
-        while offset < len(selected.attributes):
-            low = 1
-            high = min(32, len(selected.attributes) - offset)
-            accepted_size = 0
-            while low <= high:
-                size = (low + high) // 2
-                candidate = selected.attributes[offset : offset + size]
-                reference = f"{base_ref}_batch_99999"
-                keys = _physical_attribute_keys(
-                    selected.model_copy(update={"attributes": candidate})
-                )
-                stage_context = _topology_builder_context(
-                    selected=selected,
-                    attributes=candidate,
-                    contribution_ref=reference,
-                    batch_index=99_999,
-                    batch_count=99_999,
-                    model_context=model_context,
-                    selection_manifest=selection_manifest,
-                    support=support,
-                )
-                validator = DetailedDimensionalTopologyContributionValidator(
-                    contribution_ref=reference,
-                    source_object=_physical_object_key(selected),
-                    source_attributes=keys,
-                    max_result_bytes=self._detailed_result_limit,
-                )
-                output_floor = _minimum_topology_contribution(
-                    contribution_ref=reference,
-                    source_object=_physical_object_key(selected),
-                    source_attributes=keys,
-                )
-                if dimensional_json_bytes(
-                    output_floor
-                ) <= self._detailed_result_limit // 2 and self._detailed_stage_fits(
-                    plan=plan,
-                    context=context,
-                    stage_code="topology_builder",
-                    stage_context=stage_context,
-                    output_schema=validator.output_schema(),
-                ):
-                    accepted_size = size
-                    low = size + 1
-                else:
-                    high = size - 1
-            if accepted_size == 0:
-                raise InvalidRequestError(
-                    "One selected Dimensional Attribute exceeds the bounded detailed stage size."
-                )
-            raw_batches.append(selected.attributes[offset : offset + accepted_size])
-            offset += accepted_size
-
-        covered_attributes = tuple(attribute for batch in raw_batches for attribute in batch)
-        if covered_attributes != selected.attributes:
-            raise AgentCandidateValidationError()
-
-        batches: list[_TopologyBuilderBatch] = []
-        batch_count = len(raw_batches)
-        for position, attributes in enumerate(raw_batches, start=1):
-            reference = base_ref if batch_count == 1 else f"{base_ref}_batch_{position:05d}"
-            typed_selected = selected.model_copy(update={"attributes": attributes})
-            keys = _physical_attribute_keys(typed_selected)
-            stage_context = _topology_builder_context(
-                selected=selected,
-                attributes=attributes,
-                contribution_ref=reference,
-                batch_index=position,
-                batch_count=batch_count,
-                model_context=model_context,
-                selection_manifest=selection_manifest,
-                support=support,
-            )
-            validator = DetailedDimensionalTopologyContributionValidator(
-                contribution_ref=reference,
-                source_object=_physical_object_key(selected),
-                source_attributes=keys,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="topology_builder",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-            ):
-                raise InvalidRequestError(
-                    "One selected Dimensional Attribute exceeds the bounded detailed stage size."
-                )
-            batches.append(
-                _TopologyBuilderBatch(
-                    contribution_ref=reference,
-                    source_attributes=keys,
-                    context=stage_context,
-                )
-            )
-        return tuple(batches)
-
-    def _topology_reconciliation_batches(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        contributions: tuple[DetailedDimensionalTopologyContribution, ...],
-    ) -> tuple[tuple[tuple[DetailedDimensionalTopologyContribution, ...], JsonValue], ...]:
-        batches: list[tuple[DetailedDimensionalTopologyContribution, ...]] = []
-        pending: list[DetailedDimensionalTopologyContribution] = []
-        for contribution in contributions:
-            candidate = (*pending, contribution)
-            stage_context = _topology_reconciliation_context(context, candidate)
-            validator = DetailedDimensionalTopologyReconciliationValidator(
-                contributions=candidate,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="topology_reconciler",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-            ):
-                pending.append(contribution)
-                continue
-            if not pending:
-                raise InvalidRequestError(
-                    "One Dimensional topology contribution exceeds the bounded stage size."
-                )
-            batches.append(tuple(pending))
-            pending = [contribution]
-        if pending:
-            batches.append(tuple(pending))
-        result = tuple(
-            (batch, _topology_reconciliation_context(context, batch)) for batch in batches
-        )
-        if any(
-            not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="topology_reconciler",
-                stage_context=stage_context,
-                output_schema=DetailedDimensionalTopologyReconciliationValidator(
-                    contributions=batch,
-                    max_result_bytes=self._detailed_result_limit,
-                ).output_schema(),
-            )
-            for batch, stage_context in result
-        ):
-            raise InvalidRequestError(
-                "One Dimensional topology contribution exceeds the bounded stage size."
-            )
-        return result
-
-    def _entity_detail_batches(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        topology: DetailedDimensionalTopologyReconciliation,
-        entity: DetailedDimensionalEntityTopology,
-        contributions: tuple[DetailedDimensionalTopologyContribution, ...],
-    ) -> tuple[_EntityDetailBatch, ...]:
-        proposal_by_ref = {
-            reference: (contribution, proposal)
-            for contribution in contributions
-            for reference, proposal in zip(
-                contribution.proposal_refs,
-                contribution.proposals,
-                strict=True,
-            )
-        }
-        batches: list[tuple[str, ...]] = []
-        pending: list[str] = []
-        pending_attribute_count = 0
-        for reference in entity.contribution_refs:
-            entry = proposal_by_ref.get(reference)
-            if entry is None:
-                raise AgentCandidateValidationError()
-            candidate = (*pending, reference)
-            attribute_count = pending_attribute_count + len(entry[1].source_attributes)
-            batch = _entity_detail_batch(
-                context,
-                topology=topology,
-                entity=entity,
-                contributions=contributions,
-                proposal_refs=candidate,
-            )
-            validator = DetailedDimensionalEntityDetailValidator(
-                entity=batch.entity,
-                topology=batch.topology,
-                contributions=batch.contributions,
-                assertion_record_keys=tuple(
-                    item.modeling_assertion_record_key for item in context.context.assertion.records
-                ),
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if attribute_count <= 32 and self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="entity_detail_builder",
-                stage_context=batch.context,
-                output_schema=validator.output_schema(),
-            ):
-                pending.append(reference)
-                pending_attribute_count = attribute_count
-                continue
-            if not pending:
-                raise InvalidRequestError(
-                    "One Dimensional Entity contribution exceeds the bounded detail stage size."
-                )
-            batches.append(tuple(pending))
-            pending = [reference]
-            pending_attribute_count = len(entry[1].source_attributes)
-        if pending:
-            batches.append(tuple(pending))
-        result = tuple(
-            _entity_detail_batch(
-                context,
-                topology=topology,
-                entity=entity,
-                contributions=contributions,
-                proposal_refs=batch,
-            )
-            for batch in batches
-        )
-        for batch in result:
-            validator = DetailedDimensionalEntityDetailValidator(
-                entity=batch.entity,
-                topology=batch.topology,
-                contributions=batch.contributions,
-                assertion_record_keys=tuple(
-                    item.modeling_assertion_record_key for item in context.context.assertion.records
-                ),
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="entity_detail_builder",
-                stage_context=batch.context,
-                output_schema=validator.output_schema(),
-            ):
-                raise InvalidRequestError(
-                    "One Dimensional Entity contribution exceeds the bounded detail stage size."
-                )
-        return result
-
-    def _reconciliation_batches(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        manifest: DetailedDimensionalDraftManifest,
-        relationship_ledger: DetailedDimensionalRelationshipSignalLedger,
-        validation_failures: list[dict[str, object]],
-    ) -> tuple[_ReconciliationBatch, ...]:
-        raw_batches: list[tuple[DetailedDimensionalRelationshipSignal, ...]] = []
-        pending: list[DetailedDimensionalRelationshipSignal] = []
-        signals: Sequence[DetailedDimensionalRelationshipSignal | None] = (
-            relationship_ledger.signals if relationship_ledger.signals else (None,)
-        )
-        for signal in signals:
-            candidate = tuple(pending) if signal is None else (*pending, signal)
-            position = len(raw_batches) + 1
-            partition_ref = f"reconciliation_{position:05d}"
-            stage_context = _reconciliation_context(
-                context,
-                partition_ref=partition_ref,
-                manifest=manifest,
-                relationship_signals=candidate,
-                validation_failures=validation_failures,
-            )
-            validator = DetailedDimensionalReconciliationReceiptValidator(
-                partition_ref=partition_ref,
-                manifest=manifest,
-                relationship_signals=candidate,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if len(candidate) <= 32 and self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="whole_model_reconciliation",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-                validation_failures=_bounded_validation_failure_summary(validation_failures),
-            ):
-                if signal is not None:
-                    pending.append(signal)
-                continue
-            if not pending:
-                raise InvalidRequestError(
-                    "One Dimensional relationship signal exceeds the bounded stage size."
-                )
-            raw_batches.append(tuple(pending))
-            pending = [] if signal is None else [signal]
-        if pending or not raw_batches:
-            raw_batches.append(tuple(pending))
-        batches: list[_ReconciliationBatch] = []
-        for position, batch in enumerate(raw_batches, start=1):
-            partition_ref = f"reconciliation_{position:05d}"
-            stage_context = _reconciliation_context(
-                context,
-                partition_ref=partition_ref,
-                manifest=manifest,
-                relationship_signals=batch,
-                validation_failures=validation_failures,
-            )
-            validator = DetailedDimensionalReconciliationReceiptValidator(
-                partition_ref=partition_ref,
-                manifest=manifest,
-                relationship_signals=batch,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="whole_model_reconciliation",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-                validation_failures=_bounded_validation_failure_summary(validation_failures),
-            ):
-                raise InvalidRequestError(
-                    "One Dimensional relationship signal exceeds the bounded stage size."
-                )
-            batches.append(
-                _ReconciliationBatch(
-                    partition_ref=partition_ref,
-                    relationship_signals=batch,
-                    context=stage_context,
-                )
-            )
-        return tuple(batches)
-
-    def _validation_packages(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        projected_changes: tuple[StageModelChange, ...],
-    ) -> tuple[DetailedDimensionalValidationPackage, ...]:
-        initial_packages = build_projected_dimensional_validation_packages(
-            projected_changes=projected_changes,
-            package_size=self._detailed_policy.validation_package_size,
-            max_packages=self._detailed_policy.max_validation_packages,
-        )
-        records = tuple(record for package in initial_packages for record in package.records)
-        grouped: list[tuple[DetailedDimensionalValidationRecord, ...]] = []
-        pending: list[DetailedDimensionalValidationRecord] = []
-        for record in records:
-            candidate = (*pending, record)
-            package = _validation_package(99_999, candidate)
-            stage_context = _validation_worker_context(context, package)
-            validator = DetailedDimensionalValidationWorkerValidator(
-                package=package,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if len(
-                candidate
-            ) <= self._detailed_policy.validation_package_size and self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="validator_worker",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-            ):
-                pending.append(record)
-                continue
-            if not pending:
-                raise InvalidRequestError(
-                    "One Dimensional validation record exceeds the bounded stage size."
-                )
-            grouped.append(tuple(pending))
-            pending = [record]
-        if pending:
-            grouped.append(tuple(pending))
-        if not grouped or len(grouped) > self._detailed_policy.max_validation_packages:
-            raise InvalidRequestError(
-                "Dimensional validation exceeds its configured package limit."
-            )
-        packages = tuple(
-            _validation_package(position, batch) for position, batch in enumerate(grouped, start=1)
-        )
-        if any(
-            not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="validator_worker",
-                stage_context=_validation_worker_context(context, package),
-                output_schema=DetailedDimensionalValidationWorkerValidator(
-                    package=package,
-                    max_result_bytes=self._detailed_result_limit,
-                ).output_schema(),
-            )
-            for package in packages
-        ):
-            raise InvalidRequestError(
-                "One Dimensional validation record exceeds the bounded stage size."
-            )
-        return packages
-
-    def _validation_lead_batches(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        worker_results: tuple[DetailedDimensionalValidationWorkerResult, ...],
-    ) -> tuple[
-        tuple[tuple[DetailedDimensionalValidationWorkerResult, ...], JsonValue],
-        ...,
-    ]:
-        grouped: list[tuple[DetailedDimensionalValidationWorkerResult, ...]] = []
-        pending: list[DetailedDimensionalValidationWorkerResult] = []
-        for result in worker_results:
-            candidate = (*pending, result)
-            stage_context = _validation_lead_context(context, candidate)
-            validator = DetailedDimensionalValidationLeadValidator(
-                worker_results=candidate,
-                max_result_bytes=self._detailed_result_limit,
-            )
-            if self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="validator_lead",
-                stage_context=stage_context,
-                output_schema=validator.output_schema(),
-            ):
-                pending.append(result)
-                continue
-            if not pending:
-                raise InvalidRequestError(
-                    "One Dimensional validation result exceeds the bounded lead stage size."
-                )
-            grouped.append(tuple(pending))
-            pending = [result]
-        if pending:
-            grouped.append(tuple(pending))
-        result = tuple((batch, _validation_lead_context(context, batch)) for batch in grouped)
-        if any(
-            not self._detailed_stage_fits(
-                plan=plan,
-                context=context,
-                stage_code="validator_lead",
-                stage_context=stage_context,
-                output_schema=DetailedDimensionalValidationLeadValidator(
-                    worker_results=batch,
-                    max_result_bytes=self._detailed_result_limit,
-                ).output_schema(),
-            )
-            for batch, stage_context in result
-        ):
-            raise InvalidRequestError(
-                "One Dimensional validation result exceeds the bounded lead stage size."
-            )
-        return result
-
-    def _detailed_stage_fits(
-        self,
-        *,
-        plan: AgentRunPlan,
-        context: AgentContextBundle,
-        stage_code: str,
-        stage_context: JsonValue,
-        output_schema: dict[str, JsonValue],
-        validation_failures: object | None = None,
-    ) -> bool:
-        resolver_values = _detailed_resolver_values(
-            context,
-            stage_code=stage_code,
-            stage_context=stage_context,
-            validation_failures=validation_failures,
-        )
-        stage = next(
-            (candidate for candidate in plan.stages if candidate.stage_code == stage_code),
-            None,
-        )
-        if stage is None:
-            raise InvalidRequestError("The frozen agent stage is unavailable.")
-        rendered = render_prompt(
-            templates=stage.templates,
-            variables=stage.variables,
-            resolver_values=resolver_values,
-        )
-        request = AgentExecutionRequest(
-            workflow_run_id=plan.workflow_run_id,
-            workflow="dimensional",
-            stage=stage_code,
-            execution_mode="detailed_coverage",
-            selection=plan.selection,
-            system_prompt=rendered.system,
-            instruction_prompt=rendered.instruction,
-            tool_instruction=rendered.tool_instruction,
-            context=cast(
-                JsonValue,
-                {"original_context": stage_context, "repair": None},
-            ),
-            output_schema=output_schema,
-            allowed_tool_names=(),
-        )
-        return agent_request_envelope_bytes(request) <= self._detailed_request_limit
-
     @staticmethod
     def _validate_plan(
         plan: AgentRunPlan,
@@ -1681,21 +583,10 @@ class DatabaseDimensionalExecutor:
         expected_model_revision: int,
     ) -> None:
         stage_codes = tuple(stage.stage_code for stage in plan.stages)
-        mode_path_is_valid = (
-            plan.workflow_execution_mode in ("one_shot", "tool_assisted")
-            and stage_codes == ("candidate_authoring",)
-        ) or (
-            plan.workflow_execution_mode == "detailed_coverage"
-            and stage_codes
-            == (
-                "topology_builder",
-                "topology_reconciler",
-                "entity_detail_builder",
-                "whole_model_reconciliation",
-                "validator_worker",
-                "validator_lead",
-            )
-        )
+        mode_path_is_valid = plan.workflow_execution_mode in (
+            "one_shot",
+            "tool_assisted",
+        ) and stage_codes == ("candidate_authoring",)
         if (
             plan.model_id != model_id
             or plan.workflow_run_id != workflow_run_id
@@ -1705,489 +596,6 @@ class DatabaseDimensionalExecutor:
             or not mode_path_is_valid
         ):
             raise InvalidRequestError("The Dimensional run does not use the fixed execution path.")
-
-
-def _topology_builder_context(
-    *,
-    selected: SelectedObjectContext,
-    attributes: Sequence[AttributeRecord],
-    contribution_ref: str,
-    batch_index: int,
-    batch_count: int,
-    model_context: JsonValue,
-    selection_manifest: JsonValue,
-    support: JsonValue,
-) -> JsonValue:
-    batch_documents = [item.model_dump(mode="json") for item in attributes]
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": model_context,
-            "contribution_ref": contribution_ref,
-            "batch": {
-                "batch_index": batch_index,
-                "batch_count": batch_count,
-                "attribute_count": len(attributes),
-                "attribute_digest": dimensional_json_digest(cast(JsonValue, batch_documents)),
-            },
-            "authoritative_selection_manifest": selection_manifest,
-            "selected_object": {
-                "selection_order": selected.selection_order,
-                "object": _compact_selected_object(selected),
-                "attributes": [_compact_selected_attribute(item) for item in attributes],
-            },
-            "support": support,
-        },
-    )
-
-
-def _topology_support_context(
-    context: AgentContextBundle,
-    selected: SelectedObjectContext,
-) -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "profiles": _support_projection(
-                tuple(
-                    item.model_dump(mode="json")
-                    for item in context.context.profiles
-                    if _profile_matches_selected(item, selected)
-                )
-            ),
-            "analysis_relationships": _support_projection(
-                tuple(
-                    item.model_dump(mode="json")
-                    for item in context.context.analysis_relationships
-                    if _analysis_matches_selected(item, selected)
-                )
-            ),
-            "assertions": _support_projection(
-                tuple(item.model_dump(mode="json") for item in context.context.assertion.records)
-            ),
-            "applied_dimensional": _applied_dimensional_manifest(context),
-        },
-    )
-
-
-def _topology_reconciliation_context(
-    context: AgentContextBundle,
-    contributions: Sequence[DetailedDimensionalTopologyContribution],
-) -> JsonValue:
-    documents = [item.model_dump(mode="json") for item in contributions]
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": _detailed_model_context(context),
-            "contribution_manifest": {
-                "count": len(documents),
-                "digest": dimensional_json_digest(cast(JsonValue, documents)),
-            },
-            "contributions": documents,
-            "applied_dimensional": _applied_dimensional_manifest(context),
-        },
-    )
-
-
-def _entity_detail_batch(
-    context: AgentContextBundle,
-    *,
-    topology: DetailedDimensionalTopologyReconciliation,
-    entity: DetailedDimensionalEntityTopology,
-    contributions: tuple[DetailedDimensionalTopologyContribution, ...],
-    proposal_refs: tuple[str, ...],
-) -> _EntityDetailBatch:
-    expected_refs = set(proposal_refs)
-    partition_contributions: list[DetailedDimensionalTopologyContribution] = []
-    for contribution in contributions:
-        proposals = tuple(
-            proposal
-            for reference, proposal in zip(
-                contribution.proposal_refs,
-                contribution.proposals,
-                strict=True,
-            )
-            if reference in expected_refs
-        )
-        if not proposals:
-            continue
-        partition_contributions.append(contribution.model_copy(update={"proposals": proposals}))
-    actual_refs = tuple(
-        reference
-        for contribution in partition_contributions
-        for reference in contribution.proposal_refs
-    )
-    if len(actual_refs) != len(set(actual_refs)) or set(actual_refs) != expected_refs:
-        raise AgentCandidateValidationError()
-    partition_entity = entity.model_copy(update={"contribution_refs": proposal_refs})
-    required_submodels = set(entity.submodel_refs)
-    partition_topology = topology.model_copy(
-        update={
-            "submodels": tuple(
-                item
-                for item in topology.submodels
-                if item.canonical_submodel_ref in required_submodels
-            ),
-            "entities": (partition_entity,),
-            "discarded_contribution_refs": (),
-        }
-    )
-    contribution_documents = [item.model_dump(mode="json") for item in partition_contributions]
-    stage_context = cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": _detailed_model_context(context),
-            "topology": partition_topology.model_dump(mode="json"),
-            "entity": partition_entity.model_dump(mode="json"),
-            "contribution_manifest": {
-                "count": len(contribution_documents),
-                "digest": dimensional_json_digest(cast(JsonValue, contribution_documents)),
-            },
-            "contributions": contribution_documents,
-            "assertions": _support_projection(
-                tuple(item.model_dump(mode="json") for item in context.context.assertion.records)
-            ),
-        },
-    )
-    return _EntityDetailBatch(
-        entity=partition_entity,
-        topology=partition_topology,
-        contributions=tuple(partition_contributions),
-        context=stage_context,
-    )
-
-
-def _reconciliation_context(
-    context: AgentContextBundle,
-    *,
-    partition_ref: str,
-    manifest: DetailedDimensionalDraftManifest,
-    relationship_signals: Sequence[DetailedDimensionalRelationshipSignal],
-    validation_failures: list[dict[str, object]],
-) -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": _detailed_model_context(context),
-            "partition_ref": partition_ref,
-            "review_manifest": manifest.model_dump(mode="json"),
-            "relationship_signals": [item.model_dump(mode="json") for item in relationship_signals],
-            "validation_failure_summary": _bounded_validation_failure_summary(validation_failures),
-        },
-    )
-
-
-def _validation_package(
-    position: int,
-    records: Sequence[DetailedDimensionalValidationRecord],
-) -> DetailedDimensionalValidationPackage:
-    return DetailedDimensionalValidationPackage(
-        package_ref=f"validation_{position:05d}",
-        records=tuple(records),
-        record_digests=tuple(
-            dimensional_json_digest(item.record.model_dump(mode="json")) for item in records
-        ),
-    )
-
-
-def _validation_worker_context(
-    context: AgentContextBundle,
-    package: DetailedDimensionalValidationPackage,
-) -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": _detailed_model_context(context),
-            "validation_package": package.model_dump(mode="json"),
-        },
-    )
-
-
-def _validation_lead_context(
-    context: AgentContextBundle,
-    worker_results: Sequence[DetailedDimensionalValidationWorkerResult],
-) -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "schema_version": "1.0",
-            "model": _detailed_model_context(context),
-            "worker_results": [item.model_dump(mode="json") for item in worker_results],
-        },
-    )
-
-
-def _merge_validation_leads(
-    *,
-    worker_results: tuple[DetailedDimensionalValidationWorkerResult, ...],
-    leads: tuple[DetailedDimensionalValidationLead, ...],
-) -> DetailedDimensionalValidationLead:
-    if not worker_results or not leads:
-        raise AgentCandidateValidationError()
-    package_refs = tuple(item.package_ref for item in worker_results)
-    finding_refs = tuple(
-        finding.finding_ref for item in worker_results for finding in item.findings
-    )
-    blocking_refs = tuple(
-        finding.finding_ref
-        for item in worker_results
-        for finding in item.findings
-        if finding.severity == "error"
-    )
-    actual_packages = tuple(reference for item in leads for reference in item.reviewed_package_refs)
-    actual_findings = tuple(reference for item in leads for reference in item.reviewed_finding_refs)
-    actual_blocking = tuple(reference for item in leads for reference in item.blocking_finding_refs)
-    if not all(
-        (
-            _exact_unique(actual_packages, package_refs),
-            _exact_unique(actual_findings, finding_refs),
-            _exact_unique(actual_blocking, blocking_refs),
-        )
-    ):
-        raise AgentCandidateValidationError()
-    return DetailedDimensionalValidationLead(
-        reviewed_package_refs=package_refs,
-        reviewed_finding_refs=finding_refs,
-        blocking_finding_refs=blocking_refs,
-        repair_brief=(
-            "Repair the blocking Dimensional validation findings." if blocking_refs else None
-        ),
-    )
-
-
-def _bounded_validation_failure_summary(
-    failures: list[dict[str, object]],
-) -> JsonValue:
-    documents = cast(JsonValue, failures)
-    included = failures[:20]
-    return cast(
-        JsonValue,
-        {
-            "finding_count": len(failures),
-            "findings_digest": dimensional_json_digest(documents),
-            "included_finding_count": len(included),
-            "included_findings": included,
-            "is_complete": len(included) == len(failures),
-        },
-    )
-
-
-def _compact_selected_object(selected: SelectedObjectContext) -> JsonValue:
-    document = selected.object.model_dump(mode="json")
-    document.pop("object_description", None)
-    document.pop("object_transformation", None)
-    document["record_digest"] = dimensional_json_digest(selected.object.model_dump(mode="json"))
-    return cast(JsonValue, document)
-
-
-def _compact_selected_attribute(attribute: AttributeRecord) -> JsonValue:
-    document = attribute.model_dump(mode="json")
-    document.pop("attribute_description", None)
-    document.pop("attribute_custom_code", None)
-    document["record_digest"] = dimensional_json_digest(attribute.model_dump(mode="json"))
-    return cast(JsonValue, document)
-
-
-def _support_projection(records: Sequence[JsonValue]) -> JsonValue:
-    included = [_bounded_json_projection(item) for item in records[:4]]
-    return cast(
-        JsonValue,
-        {
-            "record_count": len(records),
-            "records_digest": dimensional_json_digest(cast(JsonValue, list(records))),
-            "included_record_count": len(included),
-            "included_records_digest": dimensional_json_digest(cast(JsonValue, included)),
-            "included_records": included,
-            "is_complete": len(included) == len(records),
-        },
-    )
-
-
-def _bounded_json_projection(value: JsonValue, *, depth: int = 0) -> JsonValue:
-    if isinstance(value, str):
-        return value if len(value) <= 512 else value[:512]
-    if isinstance(value, list):
-        if depth >= 4:
-            return cast(JsonValue, {"item_count": len(value)})
-        return [_bounded_json_projection(item, depth=depth + 1) for item in value[:20]]
-    if isinstance(value, dict):
-        if depth >= 4:
-            return cast(JsonValue, {"field_count": len(value)})
-        return {
-            key: _bounded_json_projection(item, depth=depth + 1)
-            for key, item in sorted(value.items())[:40]
-        }
-    return value
-
-
-def _applied_dimensional_manifest(context: AgentContextBundle) -> JsonValue:
-    section = context.context.applied.dimensional
-    document = None if section is None else section.model_dump(mode="json")
-    refs = dimensional_applied_record_refs(section)
-    return cast(
-        JsonValue,
-        {
-            "record_count": len(refs),
-            "record_refs_digest": dimensional_json_digest(cast(JsonValue, list(refs))),
-            "section_digest": dimensional_json_digest(cast(JsonValue, document)),
-        },
-    )
-
-
-def _minimum_topology_contribution(
-    *,
-    contribution_ref: str,
-    source_object: PhysicalObjectKey,
-    source_attributes: tuple[PhysicalAttributeKey, ...],
-) -> JsonValue:
-    return cast(
-        JsonValue,
-        {
-            "contribution_ref": contribution_ref,
-            "source_object": source_object.model_dump(mode="json"),
-            "disposition": "represented",
-            "rationale": "Selected Silver contribution.",
-            "proposals": [
-                {
-                    "local_entity_ref": "entity",
-                    "candidate_entity_name": "Entity",
-                    "candidate_entity_type": "dimension",
-                    "candidate_fact_type": None,
-                    "candidate_entity_grain_definition": None,
-                    "candidate_submodel_names": [],
-                    "source_attributes": [
-                        item.model_dump(mode="json") for item in source_attributes
-                    ],
-                }
-            ],
-        },
-    )
-
-
-def _exact_unique(actual: Sequence[str], expected: Sequence[str]) -> bool:
-    return len(actual) == len(set(actual)) and set(actual) == set(expected)
-
-
-def _detailed_resolver_values(
-    context: AgentContextBundle,
-    *,
-    stage_code: str,
-    stage_context: JsonValue,
-    validation_failures: object | None = None,
-) -> dict[str, object]:
-    values: dict[str, object] = {
-        f"workflow.dimensional.detailed_coverage.{stage_code}.context": (stage_context)
-    }
-    if stage_code in {
-        "topology_builder",
-        "topology_reconciler",
-        "entity_detail_builder",
-        "whole_model_reconciliation",
-    }:
-        values["model.naming_instructions"] = effective_naming_instructions(
-            "dimensional",
-            context.context.model_details.gold_model_naming_instructions,
-        )
-    if stage_code == "whole_model_reconciliation":
-        values["workflow.validation_failures"] = validation_failures or []
-    return values
-
-
-def _detailed_model_context(context: AgentContextBundle) -> JsonValue:
-    details = context.context.model_details.model_dump(mode="json")
-    return cast(
-        JsonValue,
-        {
-            "model_id": context.context.model_id,
-            "model_name": context.context.model_name,
-            "model_revision": context.context.model_revision,
-            "model_details_digest": dimensional_json_digest(details),
-            "model_description": _bounded_json_projection(
-                cast(JsonValue, details.get("model_description"))
-            ),
-        },
-    )
-
-
-def _physical_object_key(selected: SelectedObjectContext) -> PhysicalObjectKey:
-    return PhysicalObjectKey(
-        tenant_code=selected.object.tenant_code,
-        system_code=selected.object.system_code,
-        connection_code=selected.object.connection_code,
-        object_schema=selected.object.object_schema,
-        object_name=selected.object.object_name,
-    )
-
-
-def _physical_attribute_keys(
-    selected: SelectedObjectContext,
-) -> tuple[PhysicalAttributeKey, ...]:
-    return tuple(
-        PhysicalAttributeKey(
-            tenant_code=item.tenant_code,
-            system_code=item.system_code,
-            connection_code=item.connection_code,
-            object_schema=item.object_schema,
-            object_name=item.object_name,
-            attribute_name=item.attribute_name,
-        )
-        for item in selected.attributes
-    )
-
-
-def _profile_matches_selected(
-    profile: ProfilingProfileRecord,
-    selected: SelectedObjectContext,
-) -> bool:
-    return _normalized_object_identity(
-        profile.tenant_code,
-        profile.system_code,
-        profile.connection_code,
-        profile.object_schema,
-        profile.object_name,
-    ) == _selected_identity(selected)
-
-
-def _analysis_matches_selected(
-    relationship: AnalysisResultRecord,
-    selected: SelectedObjectContext,
-) -> bool:
-    selected_key = _selected_identity(selected)
-    return selected_key in {
-        _normalized_object_identity(
-            relationship.from_tenant_code,
-            relationship.from_system_code,
-            relationship.from_connection_code,
-            relationship.from_object_schema,
-            relationship.from_object_name,
-        ),
-        _normalized_object_identity(
-            relationship.to_tenant_code,
-            relationship.to_system_code,
-            relationship.to_connection_code,
-            relationship.to_object_schema,
-            relationship.to_object_name,
-        ),
-    }
-
-
-def _selected_identity(selected: SelectedObjectContext) -> tuple[str, ...]:
-    return _normalized_object_identity(
-        selected.object.tenant_code,
-        selected.object.system_code,
-        selected.object.connection_code,
-        selected.object.object_schema,
-        selected.object.object_name,
-    )
-
-
-def _normalized_object_identity(*values: str) -> tuple[str, ...]:
-    return tuple(normalize_model_key_value(value) for value in values)
 
 
 def _candidate_validator(context: AgentContextBundle) -> DimensionalCandidateValidator:

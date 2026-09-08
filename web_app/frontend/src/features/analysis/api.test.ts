@@ -31,6 +31,25 @@ describe("Analysis HTTP adapter", () => {
       });
     }
   });
+
+  it("sends selected review actions with the Model revision and idempotency key", async () => {
+    const fetcher = vi.fn<typeof fetch>().mockResolvedValue(jsonResponse({ action_count: 1 }));
+    const api = createAnalysisApi(createHttpRequest(fetcher));
+    const command = { record_ids: [81], action: "unlock" as const, expected_model_revision: 18 };
+    await api.reviewAnalysisFindings(7, 18, command, "11111111-1111-4111-8111-111111111111");
+
+    expect(fetcher).toHaveBeenCalledWith("/api/v1/tenants/7/models/18/change-sets/review", {
+      method: "POST",
+      cache: "no-store",
+      credentials: "same-origin",
+      headers: {
+        accept: "application/json",
+        "content-type": "application/json",
+        "Idempotency-Key": "11111111-1111-4111-8111-111111111111",
+      },
+      body: JSON.stringify({ dataset: "analysis_result", ...command }),
+    });
+  });
 });
 
 function jsonResponse(payload: unknown): Response {

@@ -1,0 +1,132 @@
+{
+  "workflow": "code_generation",
+  "note": "Synthetic schema example, not a model-quality evaluation or executed SQL. Actual generation requires selected real guide/documents.",
+  "inputs": {
+    "target_metadata": {
+      "tenant_code": "NWA",
+      "tenant_catalog": "northwind",
+      "system_code": "GDS",
+      "connection_code": "lakehouse",
+      "object_schema": "silver_crm",
+      "object_name": "Customer",
+      "object_description": null,
+      "zone_code": "silver",
+      "source_tenant_code": "NWA",
+      "source_tenant_name": "Northwind",
+      "tenant_name": "Shared warehouse",
+      "system_name": "Warehouse",
+      "attributes": [
+        {
+          "attribute_data_type": "BIGINT",
+          "attribute_description": null,
+          "attribute_inferred_data_type": null,
+          "attribute_name": "CustomerID",
+          "attribute_nullability": false,
+          "attribute_ordinal_position": 1,
+          "is_active": true,
+          "is_locked": false
+        }
+      ]
+    },
+    "source_metadata": [
+      {
+        "role": "primary",
+        "rationale": "Recorded customer source.",
+        "mapping_order": 1,
+        "is_locked": false,
+        "object": {
+          "tenant_code": "NWA",
+          "tenant_catalog": "northwind",
+          "system_code": "CRM",
+          "connection_code": "crm_bronze",
+          "object_schema": "bronze_crm",
+          "object_name": "customer",
+          "object_description": null,
+          "zone_code": "bronze",
+          "is_active": true,
+          "is_locked": false,
+          "scope_is_active": true,
+          "scope_is_locked": false,
+          "attributes": [
+            {
+              "attribute_data_type": "BIGINT",
+              "attribute_description": null,
+              "attribute_inferred_data_type": null,
+              "attribute_name": "customer_id",
+              "attribute_nullability": false,
+              "attribute_ordinal_position": 1,
+              "is_active": true,
+              "is_locked": false
+            }
+          ]
+        },
+        "source_system_code": "CRM"
+      }
+    ],
+    "source_systems": [
+      {
+        "system_code": "CRM",
+        "system_name": "CRM",
+        "dependency_order": 10
+      }
+    ],
+    "object_transformations": [
+      {
+        "object_dependency_order": 10,
+        "entity": {
+          "entity_type": "logical_entity",
+          "entity_name": "Customer",
+          "definition": "Customer identity.",
+          "classification": "entity",
+          "grain": null
+        },
+        "transformation": {
+          "steps": [
+            {
+              "name": "customers",
+              "source": "customer_source"
+            }
+          ]
+        },
+        "source_system_code": "CRM"
+      }
+    ],
+    "attribute_transformations": [
+      {
+        "target_attribute_name": "CustomerID",
+        "target_attribute_ordinal_position": 1,
+        "transformation": {
+          "expression": "CAST(customer_id AS BIGINT)"
+        },
+        "source_system_code": "CRM",
+        "modeled_entity_type": "logical_entity",
+        "modeled_entity_name": "Customer"
+      }
+    ],
+    "target_ref": "target_1",
+    "sql_generation_guide": "Generate Databricks SQL using exact applied transformations and qualified physical names."
+  },
+  "candidate": {
+    "artifacts": [
+      {
+        "target_ref": "target_1",
+        "artifact_name": "customer.sql",
+        "artifact_role": "target_transformation",
+        "source_system_codes": [
+          "CRM"
+        ],
+        "generated_sql": "SELECT CAST(customer_id AS BIGINT) AS CustomerID FROM northwind.bronze.customer;"
+      }
+    ]
+  },
+  "validations": [
+    "Every target_ref resolves to a frozen target and every frozen target is covered.",
+    "Artifact file names are valid and unique within target; reject paths and dot names.",
+    "System assignments are known and cover every target's frozen System exactly once.",
+    "Validate artifact_role: transformations assign Systems; support assigns none.",
+    "Validate exact schema and bounds; parse SQL-only Databricks statements and reject fences/control garbage.",
+    "Derive stored natural identities, bindings, assignments and provenance; preserve generated-code locks.",
+    "Validate combined candidate/Change Set limits and effective Model graph before staging/apply.",
+    "Repair against frozen scope. Parsing is not execution or complete semantic relation/column checking."
+  ]
+}

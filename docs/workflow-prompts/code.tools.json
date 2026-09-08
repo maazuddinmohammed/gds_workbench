@@ -1,0 +1,200 @@
+{
+  "workflow": "code_generation",
+  "stage": "sql_generation",
+  "mode": "tool_assisted",
+  "status": "authorized_for_implementation",
+  "tools": [
+    {
+      "name": "get_code_target",
+      "variable": "target_metadata",
+      "description": "Actual physical target natural key and catalog plus ordered registered Attributes, exact data types/nullability, current descriptions and locks. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": null,
+      "key_fields": [],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_code_sources",
+      "variable": "source_metadata",
+      "description": "Eligible physical source contributions with source_system_code, role, rationale, order, lock and nested actual physical Object/Attributes. No database IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "source_object_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tenant_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "system_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "connection_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_schema": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name"
+              ],
+              "additionalProperties": false
+            },
+            "default": [],
+            "maxItems": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": "source_object_keys",
+      "key_fields": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name"
+      ],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_code_source_systems",
+      "variable": "source_systems",
+      "description": "Frozen contributing Source System codes/names in dependency_order. Codes belong to the one Source Tenant of this target; assign each exactly once across transformation artifacts. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "source_system_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "maxItems": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": "source_system_names",
+      "key_fields": [
+        "system_code"
+      ],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_object_transformations",
+      "variable": "object_transformations",
+      "description": "Applied Object transformation documents with source_system_code, dependency order and exact modeled Entity identity, definition, classification and grain. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "source_system_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "maxItems": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": "source_system_names",
+      "key_fields": [
+        "source_system_code"
+      ],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_attribute_transformations",
+      "variable": "attribute_transformations",
+      "description": "Applied Attribute transformation documents with source_system_code, modeled Entity type/name, physical target_attribute_name and target ordinal. Identity links are resolved from real bindings; no guessed name matching. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "target_attribute_names": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "minLength": 1
+            },
+            "default": [],
+            "maxItems": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": "target_attribute_names",
+      "key_fields": [
+        "target_attribute_name"
+      ],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    }
+  ],
+  "default_inline": [
+    "target_ref",
+    "sql_generation_guide"
+  ],
+  "rules": "Optional enablement and invocation; no-input/empty selects all eligible. Frozen prepared values only; no live DB, arbitrary SQL, code execution, ingestion Mapping reader, or downstream dependency inventory. Same-reader cursor restores selection. Unknown keys, changed selector with cursor, and unavailable/oversized results are errors; never silent truncation."
+}

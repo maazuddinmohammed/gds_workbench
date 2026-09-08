@@ -8,16 +8,7 @@ import zipfile
 from pathlib import Path
 
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
-HELPER = (
-    REPOSITORY_ROOT
-    / "plugins"
-    / "v2"
-    / "gds"
-    / "skills"
-    / "gds"
-    / "scripts"
-    / "gds-local.js"
-)
+HELPER = REPOSITORY_ROOT / "plugins" / "v2" / "gds" / "skills" / "gds" / "scripts" / "gds-local.js"
 
 
 def run_helper(*arguments: str) -> subprocess.CompletedProcess[str]:
@@ -31,6 +22,31 @@ def run_helper(*arguments: str) -> subprocess.CompletedProcess[str]:
     )
 
 
+def test_shared_stage_serialization_matches_the_python_server() -> None:
+    core = HELPER.parent.parent / "workbench" / "core.js"
+    result = subprocess.run(
+        [
+            "node",
+            "-e",
+            "const {stableStringify}=require(process.argv[1]);"
+            "const records=[{small:1e-7,decimal:1e-5,large:1e21,integer:1e20,"
+            "nested:{'😀':1,'\\ue000':2}}];"
+            "process.stdout.write(JSON.stringify({wire:JSON.stringify(records),"
+            "canonical:stableStringify(records)}));",
+            str(core),
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+        timeout=10,
+    )
+    output = json.loads(result.stdout)
+    expected = json.dumps(
+        json.loads(output["wire"]), ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    )
+    assert output["canonical"] == expected
+
+
 def test_helper_exposes_a_bounded_local_command_contract() -> None:
     described = run_helper("command-contract", "--command", "describe")
     assert described.returncode == 0, described.stderr
@@ -38,7 +54,10 @@ def test_helper_exposes_a_bounded_local_command_contract() -> None:
     assert command == {
         "schema_version": "1.0",
         "command": "describe",
-        "usage": "describe --session <session> --area metadata|model --dataset <name> [--detail compact|full]",
+        "usage": (
+            "describe --session <session> --area metadata|model --dataset <name> "
+            "[--detail compact|full]"
+        ),
         "session_required": True,
         "mutates": False,
     }
@@ -72,6 +91,7 @@ def write_snapshot_manifest(
             "model_id": model_id,
             "model_name": model_name,
             "model_revision": model_revision,
+            "tenant_code": tenant_code,
         }
         catalog_path.write_text(json.dumps(catalog_document))
     members = []
@@ -153,9 +173,7 @@ def test_session_init_rejects_unsafe_tenant_code(tmp_path: Path) -> None:
 def test_status_summarizes_session_in_one_call_without_snapshot_rows(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
 
     result = run_helper("status", "--session", str(session))
@@ -167,17 +185,80 @@ def test_status_summarizes_session_in_one_call_without_snapshot_rows(
     assert output["cs"] == {}
     assert output["stale"] == []
     assert output["model"] is None
+    assert output["subagent_policy"] is None
     assert output["snapshots"] == {"metadata": None, "model": None}
     assert output["pending"]["metadata"][0:2] == [0, 0]
     assert len(output["pending"]["metadata"][2]) == 64
 
 
+def test_subagent_policy_requires_an_explicit_bounded_user_choice(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
+    session = Path(json.loads(initialized.stdout)["path"])
+
+    inherited = run_helper("subagent-policy", "--session", str(session), "--mode", "inherit")
+    assert inherited.returncode == 0, inherited.stderr
+    assert json.loads(inherited.stdout) == {"subagent_policy": {"mode": "inherit", "model": None}}
+
+    fixed = run_helper(
+        "subagent-policy",
+        "--session",
+        str(session),
+        "--mode",
+        "fixed",
+        "--model",
+        "Claude Sonnet 4",
+    )
+    assert fixed.returncode == 0, fixed.stderr
+    assert json.loads(fixed.stdout) == {
+        "subagent_policy": {"mode": "fixed", "model": "Claude Sonnet 4"}
+    }
+    assert json.loads(run_helper("status", "--session", str(session)).stdout)[
+        "subagent_policy"
+    ] == {"mode": "fixed", "model": "Claude Sonnet 4"}
+
+    disabled = run_helper("subagent-policy", "--session", str(session), "--mode", "disabled")
+    assert disabled.returncode == 0, disabled.stderr
+    assert json.loads(disabled.stdout) == {"subagent_policy": {"mode": "disabled", "model": None}}
+
+
+def test_subagent_policy_rejects_implicit_or_malformed_model_selection(
+    tmp_path: Path,
+) -> None:
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
+    session = Path(json.loads(initialized.stdout)["path"])
+
+    invalid_calls = (
+        ("--mode", "automatic"),
+        ("--mode", "fixed"),
+        ("--mode", "fixed", "--model", " padded "),
+        ("--mode", "inherit", "--model", "GPT"),
+        ("--mode", "disabled", "--model", "GPT"),
+    )
+    for arguments in invalid_calls:
+        result = run_helper("subagent-policy", "--session", str(session), *arguments)
+        assert result.returncode != 0
+
+
+def test_invalid_saved_subagent_policy_is_rejected(tmp_path: Path) -> None:
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
+    session = Path(json.loads(initialized.stdout)["path"])
+    state_path = session / "session.json"
+    state = json.loads(state_path.read_text())
+    state["subagents"] = ["inherit", "agent-selected-model"]
+    state_path.write_text(json.dumps(state))
+
+    result = run_helper("status", "--session", str(session))
+
+    assert result.returncode != 0
+    assert "invalid shape" in result.stderr
+
+
 def test_status_returns_the_compact_queue_and_cached_server_draft(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     run_helper(
         "task-add",
@@ -235,9 +316,7 @@ def test_status_returns_the_compact_queue_and_cached_server_draft(
 
 
 def test_draft_cache_records_and_clears_the_server_resume_tuple(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -504,11 +583,7 @@ def write_model_snapshot(session: Path) -> None:
         )
     )
     for dataset in datasets:
-        rows = (
-            '{"model_purpose":"Current purpose"}\n'
-            if dataset["name"] == "model_details"
-            else ""
-        )
+        rows = '{"model_purpose":"Current purpose"}\n' if dataset["name"] == "model_details" else ""
         (snapshot / dataset["rows_file"]).write_text(rows)
     (snapshot / "schemas" / "model_details.schema.json").write_text(
         json.dumps(
@@ -568,9 +643,7 @@ def write_model_snapshot(session: Path) -> None:
 def test_snapshot_install_verifies_and_places_a_downloaded_snapshot(
     tmp_path: Path,
 ) -> None:
-    first = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    first = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     source_session = Path(json.loads(first.stdout)["path"])
     write_metadata_snapshot(source_session)
     snapshot = source_session / "metadata" / "metadata-snapshot"
@@ -579,18 +652,22 @@ def test_snapshot_install_verifies_and_places_a_downloaded_snapshot(
     archive = tmp_path / "metadata.zip"
     content = archive_snapshot(snapshot, archive)
 
-    second = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    second = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     target_session = Path(json.loads(second.stdout)["path"])
     installed = run_helper(
         "snapshot-install",
-        "--session", str(target_session),
-        "--area", "metadata",
-        "--archive", str(archive),
-        "--snapshot-id", snapshot_id,
-        "--size-bytes", str(len(content)),
-        "--sha256", hashlib.sha256(content).hexdigest(),
+        "--session",
+        str(target_session),
+        "--area",
+        "metadata",
+        "--archive",
+        str(archive),
+        "--snapshot-id",
+        snapshot_id,
+        "--size-bytes",
+        str(len(content)),
+        "--sha256",
+        hashlib.sha256(content).hexdigest(),
     )
 
     assert installed.returncode == 0, installed.stderr
@@ -601,17 +678,18 @@ def test_snapshot_install_verifies_and_places_a_downloaded_snapshot(
         "dataset_count": 2,
         "refreshed": False,
     }
-    assert json.loads(run_helper(
-        "inspect", "--session", str(target_session), "--area", "metadata"
-    ).stdout)["id"] == snapshot_id
+    assert (
+        json.loads(
+            run_helper("inspect", "--session", str(target_session), "--area", "metadata").stdout
+        )["id"]
+        == snapshot_id
+    )
 
 
 def test_snapshot_install_preserves_current_snapshot_on_descriptor_mismatch(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     archive = tmp_path / "invalid.zip"
@@ -619,27 +697,34 @@ def test_snapshot_install_preserves_current_snapshot_on_descriptor_mismatch(
 
     installed = run_helper(
         "snapshot-install",
-        "--session", str(session),
-        "--area", "metadata",
-        "--archive", str(archive),
-        "--snapshot-id", "00000000-0000-4000-8000-000000000321",
-        "--size-bytes", str(archive.stat().st_size),
-        "--sha256", "0" * 64,
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--archive",
+        str(archive),
+        "--snapshot-id",
+        "00000000-0000-4000-8000-000000000321",
+        "--size-bytes",
+        str(archive.stat().st_size),
+        "--sha256",
+        "0" * 64,
     )
 
     assert installed.returncode != 0
     assert "SHA-256" in installed.stderr
-    assert json.loads(run_helper(
-        "inspect", "--session", str(session), "--area", "metadata"
-    ).stdout)["id"] == "snapshot-01"
+    assert (
+        json.loads(run_helper("inspect", "--session", str(session), "--area", "metadata").stdout)[
+            "id"
+        ]
+        == "snapshot-01"
+    )
 
 
 def test_snapshot_install_rejects_unsafe_archive_paths_without_replacing_current(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     archive = tmp_path / "unsafe.zip"
@@ -649,43 +734,63 @@ def test_snapshot_install_rejects_unsafe_archive_paths_without_replacing_current
 
     installed = run_helper(
         "snapshot-install",
-        "--session", str(session),
-        "--area", "metadata",
-        "--archive", str(archive),
-        "--snapshot-id", "00000000-0000-4000-8000-000000000321",
-        "--size-bytes", str(len(content)),
-        "--sha256", hashlib.sha256(content).hexdigest(),
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--archive",
+        str(archive),
+        "--snapshot-id",
+        "00000000-0000-4000-8000-000000000321",
+        "--size-bytes",
+        str(len(content)),
+        "--sha256",
+        hashlib.sha256(content).hexdigest(),
     )
 
     assert installed.returncode != 0
     assert "unsafe member path" in installed.stderr
     assert not (tmp_path / "escape.txt").exists()
-    assert json.loads(run_helper(
-        "inspect", "--session", str(session), "--area", "metadata"
-    ).stdout)["id"] == "snapshot-01"
+    assert (
+        json.loads(run_helper("inspect", "--session", str(session), "--area", "metadata").stdout)[
+            "id"
+        ]
+        == "snapshot-01"
+    )
 
 
 def test_snapshot_install_refuses_to_replace_unapplied_local_records(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
-        "task-add", "--session", str(session), "--area", "metadata",
-        "--title", "Edit metadata", "--plan", '["Edit"]',
+        "task-add",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--title",
+        "Edit metadata",
+        "--plan",
+        '["Edit"]',
     )
     copied = run_helper(
-        "copy", "--session", str(session), "--area", "metadata",
-        "--dataset", "source_object", "--where", '{"system_code":"CRM"}',
-        "--expected-digest", "empty",
+        "copy",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--dataset",
+        "source_object",
+        "--where",
+        '{"system_code":"CRM"}',
+        "--expected-digest",
+        "empty",
     )
     assert copied.returncode == 0, copied.stderr
-    source_initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    source_initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     source_session = Path(json.loads(source_initialized.stdout)["path"])
     write_metadata_snapshot(source_session)
     snapshot = source_session / "metadata" / "metadata-snapshot"
@@ -696,25 +801,32 @@ def test_snapshot_install_refuses_to_replace_unapplied_local_records(
 
     installed = run_helper(
         "snapshot-install",
-        "--session", str(session),
-        "--area", "metadata",
-        "--archive", str(archive),
-        "--snapshot-id", snapshot_id,
-        "--size-bytes", str(len(content)),
-        "--sha256", hashlib.sha256(content).hexdigest(),
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--archive",
+        str(archive),
+        "--snapshot-id",
+        snapshot_id,
+        "--size-bytes",
+        str(len(content)),
+        "--sha256",
+        hashlib.sha256(content).hexdigest(),
     )
 
     assert installed.returncode != 0
     assert "unapplied local records" in installed.stderr
-    assert json.loads(run_helper(
-        "inspect", "--session", str(session), "--area", "metadata"
-    ).stdout)["id"] == "snapshot-01"
+    assert (
+        json.loads(run_helper("inspect", "--session", str(session), "--area", "metadata").stdout)[
+            "id"
+        ]
+        == "snapshot-01"
+    )
 
 
 def test_model_details_is_change_set_eligible_for_local_edits(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     added = run_helper(
@@ -746,15 +858,13 @@ def test_model_details_is_change_set_eligible_for_local_edits(tmp_path: Path) ->
 
     assert result.returncode == 0, result.stderr
     assert json.loads(result.stdout)["action"] == "changed"
-    assert json.loads(
-        (session / "model-change-set" / "model_details.json").read_text()
-    ) == [{"model_purpose": "Updated purpose"}]
+    assert json.loads((session / "model-change-set" / "model_details.json").read_text()) == [
+        {"model_purpose": "Updated purpose"}
+    ]
 
 
 def test_status_resumes_the_next_queued_automatic_journey_task(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     first = run_helper(
         "task-add",
@@ -795,9 +905,7 @@ def test_status_resumes_the_next_queued_automatic_journey_task(tmp_path: Path) -
 
 
 def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     added = run_helper(
@@ -841,9 +949,7 @@ def prepare_accepted_metadata_task(tmp_path: Path) -> tuple[Path, str]:
 
 
 def prepare_accepted_model_task(tmp_path: Path) -> tuple[Path, str]:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     added = run_helper(
@@ -907,9 +1013,7 @@ def test_status_exposes_accepted_digest_for_exact_resume(tmp_path: Path) -> None
 
 
 def test_inspect_returns_catalog_not_snapshot_rows(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
 
@@ -929,15 +1033,11 @@ def test_inspect_returns_catalog_not_snapshot_rows(tmp_path: Path) -> None:
 def test_first_model_snapshot_binds_session_and_rejects_another_model(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     snapshot = session / "model" / "model-snapshot"
     snapshot.mkdir()
-    (snapshot / "catalog.json").write_text(
-        json.dumps({"snapshot_kind": "model", "sections": []})
-    )
+    (snapshot / "catalog.json").write_text(json.dumps({"snapshot_kind": "model", "sections": []}))
     write_snapshot_manifest(
         snapshot,
         kind="model",
@@ -952,9 +1052,7 @@ def test_first_model_snapshot_binds_session_and_rejects_another_model(
         41,
         "Customer Model",
     ]
-    assert json.loads(run_helper("status", "--session", str(session)).stdout)[
-        "model"
-    ] == [
+    assert json.loads(run_helper("status", "--session", str(session)).stdout)["model"] == [
         41,
         "Customer Model",
     ]
@@ -984,26 +1082,20 @@ def test_first_model_snapshot_binds_session_and_rejects_another_model(
 def test_snapshot_identity_must_match_session_tenant_and_model_catalog(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     metadata_manifest = session / "metadata" / "metadata-snapshot" / "manifest.json"
     metadata_document = json.loads(metadata_manifest.read_text())
     metadata_document["tenant_code"] = "TENANT_B"
     metadata_manifest.write_text(json.dumps(metadata_document))
-    tenant_mismatch = run_helper(
-        "inspect", "--session", str(session), "--area", "metadata"
-    )
+    tenant_mismatch = run_helper("inspect", "--session", str(session), "--area", "metadata")
     assert tenant_mismatch.returncode != 0
     assert "Tenant Code does not match" in tenant_mismatch.stderr
 
     snapshot = session / "model" / "model-snapshot"
     snapshot.mkdir()
-    (snapshot / "catalog.json").write_text(
-        json.dumps({"snapshot_kind": "model", "sections": []})
-    )
+    (snapshot / "catalog.json").write_text(json.dumps({"snapshot_kind": "model", "sections": []}))
     write_snapshot_manifest(
         snapshot,
         kind="model",
@@ -1020,9 +1112,7 @@ def test_snapshot_identity_must_match_session_tenant_and_model_catalog(
 
 
 def test_invalid_session_model_binding_is_rejected(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     state_path = session / "session.json"
     state = json.loads(state_path.read_text())
@@ -1036,9 +1126,7 @@ def test_invalid_session_model_binding_is_rejected(tmp_path: Path) -> None:
 
 
 def test_legacy_unbound_server_draft_cache_is_rejected(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     state_path = session / "session.json"
     state = json.loads(state_path.read_text())
@@ -1052,9 +1140,7 @@ def test_legacy_unbound_server_draft_cache_is_rejected(tmp_path: Path) -> None:
 
 
 def test_inspect_rejects_duplicate_and_unsafe_manifest_members(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     manifest_path = session / "metadata" / "metadata-snapshot" / "manifest.json"
@@ -1067,9 +1153,7 @@ def test_inspect_rejects_duplicate_and_unsafe_manifest_members(tmp_path: Path) -
     assert "duplicate member path" in duplicate.stderr
 
     manifest["members"].pop()
-    manifest["members"].append(
-        {"path": "../outside.json", "size_bytes": 0, "sha256": "0" * 64}
-    )
+    manifest["members"].append({"path": "../outside.json", "size_bytes": 0, "sha256": "0" * 64})
     manifest_path.write_text(json.dumps(manifest))
     unsafe = run_helper("inspect", "--session", str(session), "--area", "metadata")
     assert unsafe.returncode != 0
@@ -1077,9 +1161,7 @@ def test_inspect_rejects_duplicate_and_unsafe_manifest_members(tmp_path: Path) -
 
 
 def test_inspect_verifies_catalog_size_and_sha256(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     snapshot = session / "metadata" / "metadata-snapshot"
@@ -1098,18 +1180,14 @@ def test_inspect_verifies_catalog_size_and_sha256(tmp_path: Path) -> None:
     catalog_member["size_bytes"] -= 1
     manifest_path.write_text(json.dumps(manifest))
     catalog_path = snapshot / "catalog.json"
-    catalog_path.write_bytes(
-        catalog_path.read_bytes().replace(b'"metadata"', b'"metadatz"', 1)
-    )
+    catalog_path.write_bytes(catalog_path.read_bytes().replace(b'"metadata"', b'"metadatz"', 1))
     wrong_hash = run_helper("inspect", "--session", str(session), "--area", "metadata")
     assert wrong_hash.returncode != 0
     assert "SHA-256 mismatch" in wrong_hash.stderr
 
 
 def test_describe_returns_one_exact_schema_without_rows(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
 
@@ -1143,9 +1221,7 @@ def test_describe_returns_one_exact_schema_without_rows(tmp_path: Path) -> None:
 
 
 def test_describe_defaults_to_compact_schema_guidance(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
 
@@ -1167,9 +1243,7 @@ def test_describe_defaults_to_compact_schema_guidance(tmp_path: Path) -> None:
 
 
 def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -1203,9 +1277,7 @@ def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
         '[{"tenant_code":"TENANT_A","system_code":"CRM","connection_code":"MAIN",'
         '"object_schema":"sales","object_name":"Customer"}]\n'
     )
-    validated = run_helper(
-        "validate", "--session", str(session), "--area", "metadata"
-    )
+    validated = run_helper("validate", "--session", str(session), "--area", "metadata")
 
     assert validated.returncode == 0, validated.stderr
     output = json.loads(validated.stdout)
@@ -1214,9 +1286,7 @@ def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
     assert output["repairs"][0]["dataset"] == "source_object"
     assert output["repairs"][0]["record"] == 1
     assert output["repairs"][0]["fields"]
-    report = json.loads(
-        (session / "reports" / "local-validation" / "metadata.json").read_text()
-    )
+    report = json.loads((session / "reports" / "local-validation" / "metadata.json").read_text())
     assert report["schema_version"] == "1.0"
     assert report["area"] == "metadata"
     assert report["run_by"] == "agent"
@@ -1229,9 +1299,7 @@ def test_local_validation_returns_targeted_repair_paths(tmp_path: Path) -> None:
 
 
 def test_rows_and_schema_are_verified_only_when_accessed(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     snapshot = session / "metadata" / "metadata-snapshot"
@@ -1254,9 +1322,7 @@ def test_rows_and_schema_are_verified_only_when_accessed(tmp_path: Path) -> None
 
     manifest = json.loads((snapshot / "manifest.json").read_text())
     rows_member = next(
-        member
-        for member in manifest["members"]
-        if member["path"] == "data/source_object.jsonl"
+        member for member in manifest["members"] if member["path"] == "data/source_object.jsonl"
     )
     rows_member["sha256"] = hashlib.sha256(rows.read_bytes()).hexdigest()
     (snapshot / "manifest.json").write_text(json.dumps(manifest))
@@ -1276,9 +1342,7 @@ def test_rows_and_schema_are_verified_only_when_accessed(tmp_path: Path) -> None
 
 
 def test_select_returns_only_filtered_compact_batch(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
 
@@ -1305,9 +1369,7 @@ def test_select_returns_only_filtered_compact_batch(tmp_path: Path) -> None:
 
 
 def test_select_enforces_a_small_context_limit(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
 
@@ -1332,9 +1394,7 @@ def test_select_enforces_a_small_context_limit(tmp_path: Path) -> None:
 def test_task_add_keeps_one_compact_current_task_and_ordered_plans(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
 
     first = run_helper(
@@ -1387,9 +1447,7 @@ def test_task_add_keeps_one_compact_current_task_and_ordered_plans(
 def test_status_returns_current_plan_and_task_plan_update_is_digest_guarded(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     added = run_helper(
         "task-add",
@@ -1442,14 +1500,13 @@ def test_status_returns_current_plan_and_task_plan_update_is_digest_guarded(
 def test_long_running_task_checkpoints_loop_and_resumes_after_internal_write(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     initial_plan = [
         "Inputs: metadata=snapshot-01",
-        "Loop: target=Customer; phase=metadata; scope=2; covered=0; excluded=0; blocked=0; next=CRM.Customer",
+        "Loop: target=Customer; phase=metadata; scope=2; covered=0; excluded=0; "
+        "blocked=0; next=CRM.Customer",
     ]
     added = run_helper(
         "task-add",
@@ -1489,7 +1546,8 @@ def test_long_running_task_checkpoints_loop_and_resumes_after_internal_write(
 
     checkpoint_plan = [
         "Inputs: metadata=snapshot-01",
-        "Loop: target=Customer; phase=metadata; scope=2; covered=1; excluded=0; blocked=0; next=ERP.Order",
+        "Loop: target=Customer; phase=metadata; scope=2; covered=1; excluded=0; "
+        "blocked=0; next=ERP.Order",
     ]
     checkpointed = run_helper(
         "task-plan",
@@ -1529,9 +1587,7 @@ def test_long_running_task_checkpoints_loop_and_resumes_after_internal_write(
 def test_status_returns_waiting_task_plan_without_mutating_session(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     plan = ["Inputs: metadata=snapshot-01", "Resume selected metadata work"]
     added = run_helper(
@@ -1570,9 +1626,7 @@ def test_status_returns_waiting_task_plan_without_mutating_session(
 
 
 def test_task_state_enforces_gates_and_marks_applied_area_stale(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     run_helper(
         "task-add",
@@ -1684,9 +1738,7 @@ def test_task_state_enforces_gates_and_marks_applied_area_stale(tmp_path: Path) 
         snapshot_id="snapshot-new",
         model_revision=8,
     )
-    refreshed = run_helper(
-        "snapshot-refresh", "--session", str(session), "--area", "model"
-    )
+    refreshed = run_helper("snapshot-refresh", "--session", str(session), "--area", "model")
     assert refreshed.returncode == 0, refreshed.stderr
     assert json.loads(refreshed.stdout) == {
         "area": "model",
@@ -1701,9 +1753,7 @@ def test_task_state_enforces_gates_and_marks_applied_area_stale(tmp_path: Path) 
 def prepare_applied_metadata_refresh(
     tmp_path: Path, *, refreshed_active: bool
 ) -> tuple[Path, Path]:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     pending_record = {
@@ -1726,9 +1776,7 @@ def prepare_applied_metadata_refresh(
         )
         + "\n"
     )
-    (session / "tasks" / "01.applied.json").write_text(
-        '["metadata","snapshot-01",null]\n'
-    )
+    (session / "tasks" / "01.applied.json").write_text('["metadata","snapshot-01",null]\n')
     snapshot = session / "metadata" / "metadata-snapshot"
     pending_record["is_active"] = refreshed_active
     order_record = {
@@ -1749,13 +1797,9 @@ def prepare_applied_metadata_refresh(
 def test_snapshot_refresh_retires_exact_applied_files_before_next_task(
     tmp_path: Path,
 ) -> None:
-    session, pending_path = prepare_applied_metadata_refresh(
-        tmp_path, refreshed_active=False
-    )
+    session, pending_path = prepare_applied_metadata_refresh(tmp_path, refreshed_active=False)
 
-    refreshed = run_helper(
-        "snapshot-refresh", "--session", str(session), "--area", "metadata"
-    )
+    refreshed = run_helper("snapshot-refresh", "--session", str(session), "--area", "metadata")
 
     assert refreshed.returncode == 0, refreshed.stderr
     assert json.loads(refreshed.stdout)["retired"] == 1
@@ -1779,13 +1823,9 @@ def test_snapshot_refresh_retires_exact_applied_files_before_next_task(
 def test_snapshot_refresh_keeps_stale_state_when_applied_records_do_not_match(
     tmp_path: Path,
 ) -> None:
-    session, pending_path = prepare_applied_metadata_refresh(
-        tmp_path, refreshed_active=True
-    )
+    session, pending_path = prepare_applied_metadata_refresh(tmp_path, refreshed_active=True)
 
-    refreshed = run_helper(
-        "snapshot-refresh", "--session", str(session), "--area", "metadata"
-    )
+    refreshed = run_helper("snapshot-refresh", "--session", str(session), "--area", "metadata")
 
     assert refreshed.returncode != 0
     assert "does not contain the exact applied local record" in refreshed.stderr
@@ -1796,9 +1836,7 @@ def test_snapshot_refresh_keeps_stale_state_when_applied_records_do_not_match(
 def test_local_change_set_copy_upsert_review_validate_and_discard(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -1905,16 +1943,11 @@ def test_local_change_set_copy_upsert_review_validate_and_discard(
     )
     assert discarded.returncode == 0, discarded.stderr
     assert json.loads(discarded.stdout)["count"] == 0
-    assert (
-        json.loads((session / "metadata-change-set" / "source_object.json").read_text())
-        == []
-    )
+    assert json.loads((session / "metadata-change-set" / "source_object.json").read_text()) == []
 
 
 def test_upsert_batch_writes_multiple_datasets_in_one_call(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     added = run_helper(
@@ -1973,9 +2006,7 @@ def test_upsert_batch_writes_multiple_datasets_in_one_call(tmp_path: Path) -> No
 
 
 def test_upsert_batch_rejects_duplicate_keys_before_writing(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -2060,9 +2091,7 @@ def test_upsert_batch_rejects_duplicate_keys_before_writing(tmp_path: Path) -> N
 
 
 def test_helper_model_validation_is_schema_driven(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     added = run_helper(
@@ -2104,9 +2133,7 @@ def test_helper_model_validation_is_schema_driven(tmp_path: Path) -> None:
 def test_helper_rejects_logical_type_detail_before_server_staging(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     snapshot = session / "model" / "model-snapshot"
@@ -2118,9 +2145,7 @@ def test_helper_rejects_logical_type_detail_before_server_staging(
                 "properties": {
                     "logical_entity_name": {"type": "string"},
                     "logical_entity_type": {"enum": ["core", "other"]},
-                    "logical_entity_type_detail": {
-                        "anyOf": [{"type": "string"}, {"type": "null"}]
-                    },
+                    "logical_entity_type_detail": {"anyOf": [{"type": "string"}, {"type": "null"}]},
                 },
                 "required": [
                     "logical_entity_name",
@@ -2130,21 +2155,11 @@ def test_helper_rejects_logical_type_detail_before_server_staging(
                 "allOf": [
                     {
                         "if": {
-                            "properties": {
-                                "logical_entity_type": {"const": "other"}
-                            },
+                            "properties": {"logical_entity_type": {"const": "other"}},
                             "required": ["logical_entity_type"],
                         },
-                        "then": {
-                            "properties": {
-                                "logical_entity_type_detail": {"type": "string"}
-                            }
-                        },
-                        "else": {
-                            "properties": {
-                                "logical_entity_type_detail": {"type": "null"}
-                            }
-                        },
+                        "then": {"properties": {"logical_entity_type_detail": {"type": "string"}}},
+                        "else": {"properties": {"logical_entity_type_detail": {"type": "null"}}},
                     }
                 ],
                 "x-gds-change-set-eligible": True,
@@ -2187,15 +2202,12 @@ def test_helper_rejects_logical_type_detail_before_server_staging(
     output = json.loads(result.stdout)
     assert output["valid"] is False
     assert any(
-        issue[0] == "logical_entity" and "expected null" in issue[2]
-        for issue in output["issues"]
+        issue[0] == "logical_entity" and "expected null" in issue[2] for issue in output["issues"]
     )
 
 
 def test_generate_dbml_writes_local_effective_model_files(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     added = run_helper(
@@ -2227,9 +2239,7 @@ def test_generate_dbml_writes_local_effective_model_files(tmp_path: Path) -> Non
         + "\n"
     )
 
-    generated = run_helper(
-        "generate-dbml", "--session", str(session), "--area", "model"
-    )
+    generated = run_helper("generate-dbml", "--session", str(session), "--area", "model")
 
     assert generated.returncode == 0, generated.stderr
     output = json.loads(generated.stdout)
@@ -2246,9 +2256,7 @@ def test_generate_dbml_writes_local_effective_model_files(tmp_path: Path) -> Non
 
 
 def test_upsert_rejects_incomplete_record_and_digest_conflict(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -2297,9 +2305,7 @@ def test_upsert_rejects_incomplete_record_and_digest_conflict(tmp_path: Path) ->
 
 
 def test_validate_checks_references_on_the_effective_overlay(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -2371,10 +2377,7 @@ def test_validate_checks_references_on_the_effective_overlay(tmp_path: Path) -> 
     )
     assert overridden.returncode == 0, overridden.stderr
     assert json.loads(overridden.stdout)["state"] == "overridden"
-    assert (
-        json.loads((session / "session.json").read_text())["tasks"][0][3]
-        == "overridden"
-    )
+    assert json.loads((session / "session.json").read_text())["tasks"][0][3] == "overridden"
     assert json.loads((session / "tasks" / "01.accept.json").read_text()) == [
         output["digest"],
         "override",
@@ -2385,9 +2388,7 @@ def test_validate_checks_references_on_the_effective_overlay(tmp_path: Path) -> 
 
 
 def test_acceptance_is_bound_to_exact_change_set_bytes(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -2446,9 +2447,7 @@ def test_acceptance_is_bound_to_exact_change_set_bytes(tmp_path: Path) -> None:
 def test_reconcile_classifies_exact_non_overlap_and_conflict_without_writing(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     run_helper(
@@ -2504,9 +2503,7 @@ def test_reconcile_classifies_exact_non_overlap_and_conflict_without_writing(
         "task-state", "--session", str(session), "--task", "01", "--state", "staged"
     )
     assert staged.returncode == 0, staged.stderr
-    customer = json.loads(
-        (session / "metadata-change-set" / "source_object.json").read_text()
-    )[0]
+    customer = json.loads((session / "metadata-change-set" / "source_object.json").read_text())[0]
 
     exact = run_helper(
         "reconcile",
@@ -2554,9 +2551,7 @@ def test_failed_server_validation_allows_safe_same_task_replacement(
 ) -> None:
     session, first_digest = prepare_accepted_metadata_task(tmp_path)
     draft_id = "00000000-0000-4000-8000-000000000123"
-    customer = json.loads(
-        (session / "metadata-change-set" / "source_object.json").read_text()
-    )[0]
+    customer = json.loads((session / "metadata-change-set" / "source_object.json").read_text())[0]
 
     cached = run_helper(
         "draft-cache",
@@ -2802,6 +2797,168 @@ def test_prepare_stage_writes_one_direct_request_for_small_datasets(
     ]
 
 
+def test_prepare_stage_request_binds_the_approved_target_without_server_records(
+    tmp_path: Path,
+) -> None:
+    session, digest = prepare_accepted_metadata_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000123"
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        draft_id,
+        "--revision",
+        "2",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper(
+        "prepare-stage-request",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+    )
+
+    assert prepared.returncode == 0, prepared.stderr
+    output = json.loads(prepared.stdout)
+    request_path = Path(output["manifest"])
+    request = json.loads(request_path.read_text())
+    assert request["schema_version"] == "2.0"
+    assert request["kind"] == "gds-stage-request"
+    assert request["area"] == "metadata"
+    assert request["task"] == "01"
+    assert request["accepted_digest"] == digest
+    assert request["target"] == {
+        "tenant_code": "TENANT_A",
+        "change_set_id": draft_id,
+        "starting_revision": 2,
+    }
+    assert request["failed_retry"] is False
+    assert request["datasets"] == [
+        {
+            "dataset": "source_object",
+            "canonical_key": [
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name",
+            ],
+            "record_count": 1,
+            "payload_file": str(session / "metadata-change-set" / "source_object.json"),
+            "sha256": hashlib.sha256(
+                (session / "metadata-change-set" / "source_object.json").read_bytes()
+            ).hexdigest(),
+        }
+    ]
+    serialized = json.dumps(request)
+    assert "server" not in serialized
+    assert "records" not in serialized
+
+
+def test_prepare_stage_request_binds_the_model_identity_and_snapshot(
+    tmp_path: Path,
+) -> None:
+    session, digest = prepare_accepted_model_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000123"
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "model",
+        "--id",
+        draft_id,
+        "--revision",
+        "3",
+        "--status",
+        "active",
+    )
+    assert cached.returncode == 0, cached.stderr
+
+    prepared = run_helper("prepare-stage-request", "--session", str(session), "--area", "model")
+
+    assert prepared.returncode == 0, prepared.stderr
+    request = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    assert request["accepted_digest"] == digest
+    assert request["target"] == {
+        "model_id": 41,
+        "model_name": "Customer Model",
+        "model_revision": 8,
+        "change_set_id": draft_id,
+        "starting_revision": 3,
+    }
+    assert request["snapshot"]["snapshot_id"] == "model-snapshot-01"
+    assert request["datasets"][0]["dataset"] == "logical_entity"
+    assert "records" not in json.dumps(request)
+
+
+def test_prepare_stage_request_marks_only_a_task_bound_failed_validation_retry(
+    tmp_path: Path,
+) -> None:
+    session, first_digest = prepare_accepted_metadata_task(tmp_path)
+    draft_id = "00000000-0000-4000-8000-000000000123"
+    cached = run_helper(
+        "draft-cache",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--id",
+        draft_id,
+        "--revision",
+        "2",
+        "--status",
+        "active",
+        "--validation-failed",
+        "true",
+    )
+    assert cached.returncode == 0, cached.stderr
+    assert json.loads(cached.stdout)["draft"][4:] == [
+        first_digest,
+        "validation_failed",
+    ]
+    doing = run_helper("task-state", "--session", str(session), "--task", "01", "--state", "doing")
+    assert doing.returncode == 0, doing.stderr
+    pending = session / "metadata-change-set" / "source_object.json"
+    records = json.loads(pending.read_text())
+    records[0]["object_name"] = "CustomerCorrected"
+    pending.write_text(json.dumps(records) + "\n")
+    review_state = run_helper(
+        "task-state", "--session", str(session), "--task", "01", "--state", "review"
+    )
+    assert review_state.returncode == 0, review_state.stderr
+    reviewed = run_helper("review", "--session", str(session), "--area", "metadata")
+    assert reviewed.returncode == 0, reviewed.stderr
+    corrected_digest = json.loads(reviewed.stdout)["digest"]
+    assert corrected_digest != first_digest
+    accepted = run_helper(
+        "accept",
+        "--session",
+        str(session),
+        "--area",
+        "metadata",
+        "--digest",
+        corrected_digest,
+    )
+    assert accepted.returncode == 0, accepted.stderr
+
+    prepared = run_helper("prepare-stage-request", "--session", str(session), "--area", "metadata")
+
+    assert prepared.returncode == 0, prepared.stderr
+    request = json.loads(Path(json.loads(prepared.stdout)["manifest"]).read_text())
+    assert request["failed_retry"] is True
+    assert request["accepted_digest"] == corrected_digest
+    assert request["target"]["change_set_id"] == draft_id
+    assert request["target"]["starting_revision"] == 2
+
+
 def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
     tmp_path: Path,
 ) -> None:
@@ -2870,13 +3027,15 @@ def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
     assert batch["total_chunk_count"] == 4
     assert all(chunk["bytes"] <= 460_800 for chunk in batch["chunks"])
     staged_names = [
-        json.loads(Path(chunk["file"]).read_text())[0]["object_name"]
-        for chunk in batch["chunks"]
+        json.loads(Path(chunk["file"]).read_text())[0]["object_name"] for chunk in batch["chunks"]
     ]
     assert staged_names == [record["object_name"] for record in records]
-    assert batch["batch_sha256"] == hashlib.sha256(
-        "".join(chunk["sha256"] for chunk in batch["chunks"]).encode("ascii")
-    ).hexdigest()
+    assert (
+        batch["batch_sha256"]
+        == hashlib.sha256(
+            "".join(chunk["sha256"] for chunk in batch["chunks"]).encode("ascii")
+        ).hexdigest()
+    )
     assert [operation["tool"] for operation in manifest["operations"]] == [
         "begin_metadata_stage_batch",
         "put_metadata_stage_chunk",
@@ -2885,20 +3044,14 @@ def test_prepare_stage_chunks_an_oversized_dataset_deterministically(
         "put_metadata_stage_chunk",
         "commit_metadata_stage_batch",
     ]
-    assert manifest["operations"][0]["expected_revision_from"] == (
-        "manifest.starting_revision"
-    )
-    assert manifest["operations"][-1]["expected_revision_from"] == (
-        "matching begin operation"
-    )
+    assert manifest["operations"][0]["expected_revision_from"] == ("manifest.starting_revision")
+    assert manifest["operations"][-1]["expected_revision_from"] == ("matching begin operation")
 
 
 def test_prepare_stage_batches_agent_unsafe_payloads_below_server_limit(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     added = run_helper(
@@ -2926,16 +3079,14 @@ def test_prepare_stage_batches_agent_unsafe_payloads_below_server_limit(
         }
         for index in range(100)
     ]
-    (session / "model-change-set" / "logical_attribute.json").write_text(
-        json.dumps(records) + "\n"
-    )
+    (session / "model-change-set" / "logical_attribute.json").write_text(json.dumps(records) + "\n")
     reviewed = run_helper(
         "task-state", "--session", str(session), "--task", "01", "--state", "review"
     )
     assert reviewed.returncode == 0, reviewed.stderr
-    digest = json.loads(
-        run_helper("review", "--session", str(session), "--area", "model").stdout
-    )["digest"]
+    digest = json.loads(run_helper("review", "--session", str(session), "--area", "model").stdout)[
+        "digest"
+    ]
     accepted = run_helper(
         "accept", "--session", str(session), "--area", "model", "--digest", digest
     )
@@ -2977,9 +3128,7 @@ def test_prepare_stage_batches_agent_unsafe_payloads_below_server_limit(
 def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(
     tmp_path: Path,
 ) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_model_snapshot(session)
     snapshot = session / "model" / "model-snapshot"
@@ -3037,9 +3186,7 @@ def test_prepare_stage_uses_json_fragments_only_for_large_generated_code(
     )
     assert added.returncode == 0, added.stderr
     records = [{"artifact_name": "customers.sql", "sql": "x" * 1_200_000}]
-    (session / "model-change-set" / "generated_code.json").write_text(
-        json.dumps(records) + "\n"
-    )
+    (session / "model-change-set" / "generated_code.json").write_text(json.dumps(records) + "\n")
     review = run_helper("review", "--session", str(session), "--area", "model")
     assert review.returncode == 0, review.stderr
     digest = json.loads(review.stdout)["digest"]
@@ -3408,9 +3555,7 @@ def test_task_stash_is_digest_guarded_and_requires_server_cache_clear(
         "files": 1,
     }
     assert list((session / "metadata-change-set").iterdir()) == []
-    assert (
-        session / "tasks" / "01" / "metadata-change-set" / "source_object.json"
-    ).exists()
+    assert (session / "tasks" / "01" / "metadata-change-set" / "source_object.json").exists()
     assert not (session / "tasks" / "01.accept.json").exists()
     state = json.loads((session / "session.json").read_text())
     assert state["current"] is None
@@ -3420,9 +3565,7 @@ def test_task_stash_is_digest_guarded_and_requires_server_cache_clear(
 
 
 def test_task_stash_rejects_an_empty_live_change_set(tmp_path: Path) -> None:
-    initialized = run_helper(
-        "session-init", "--root", str(tmp_path), "--tenant", "TENANT_A"
-    )
+    initialized = run_helper("session-init", "--root", str(tmp_path), "--tenant", "TENANT_A")
     session = Path(json.loads(initialized.stdout)["path"])
     write_metadata_snapshot(session)
     added = run_helper(
@@ -3437,9 +3580,9 @@ def test_task_stash_rejects_an_empty_live_change_set(tmp_path: Path) -> None:
         '["Inspect"]',
     )
     assert added.returncode == 0, added.stderr
-    empty_digest = json.loads(run_helper("status", "--session", str(session)).stdout)[
-        "pending"
-    ]["metadata"][2]
+    empty_digest = json.loads(run_helper("status", "--session", str(session)).stdout)["pending"][
+        "metadata"
+    ][2]
 
     result = run_helper(
         "task-stash",
@@ -3569,9 +3712,7 @@ def test_task_restore_isolates_same_area_work_and_requires_fresh_empty_live_set(
         "digest": first_digest,
         "files": 1,
     }
-    records = json.loads(
-        (session / "metadata-change-set" / "source_object.json").read_text()
-    )
+    records = json.loads((session / "metadata-change-set" / "source_object.json").read_text())
     assert [record["system_code"] for record in records] == ["CRM"]
     status = json.loads(run_helper("status", "--session", str(session)).stdout)
     assert status["current"] == ["01", "metadata", "Stage Customer", "doing"]

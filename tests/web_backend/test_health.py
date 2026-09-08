@@ -1,5 +1,4 @@
 from fastapi.testclient import TestClient
-
 from gds_workbench_api.main import ReadinessResult, create_app
 
 

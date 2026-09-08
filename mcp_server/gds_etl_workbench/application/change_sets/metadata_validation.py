@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+from collections import Counter
 from collections.abc import Mapping, Sequence
 from dataclasses import dataclass
 from typing import cast
@@ -11,6 +12,7 @@ from typing import cast
 from pydantic import ValidationError
 
 from gds_etl_workbench.domain.snapshots.metadata import (
+    ATTRIBUTE_KEY,
     DATASETS,
     OBJECT_KEY,
     DatasetDefinition,
@@ -24,6 +26,7 @@ from .action_review import (
     DatasetActionReview,
     classify_record_action,
 )
+from .contracts import MAX_AGENT_VALIDATION_ERROR_EXAMPLES
 
 MAX_VALIDATION_ISSUES = 100
 MAX_REVIEW_KEYS = 100
@@ -57,13 +60,21 @@ class MetadataChangeSetValidation:
     action_review: tuple[DatasetActionReview, ...]
 
     def outcome_document(self) -> dict[str, object]:
+        groups = Counter((issue.dataset, issue.code) for issue in self.issues)
         return {
             "schema_version": "1.0",
             "valid": self.valid,
             "phase": self.phase,
             "staged_record_count": self.staged_record_count,
             "error_count": len(self.issues),
-            "errors": [issue.as_document() for issue in self.issues],
+            "error_groups": [
+                {"dataset": dataset, "code": code, "count": count}
+                for (dataset, code), count in sorted(groups.items())
+            ],
+            "errors": [
+                issue.as_document() for issue in self.issues[:MAX_AGENT_VALIDATION_ERROR_EXAMPLES]
+            ],
+            "errors_truncated": len(self.issues) > MAX_AGENT_VALIDATION_ERROR_EXAMPLES,
             "action_review": [summary.as_document() for summary in self.action_review],
         }
 
@@ -265,22 +276,38 @@ def _validate_object_locks(
         for row in current
         if _definition(row.dataset).record_type == "object" and row.values["is_locked"] is True
     }
+    locked_attribute_keys = {
+        _normalized_key(ATTRIBUTE_KEY, row.values)
+        for row in current
+        if _definition(row.dataset).record_type == "attribute" and row.values["is_locked"] is True
+    }
     issues: list[ValidationIssue] = []
     for row in staged:
         record_type = _definition(row.dataset).record_type
         if record_type not in {"object", "attribute"}:
             continue
-        if _normalized_key(OBJECT_KEY, row.values) not in locked_object_keys:
-            continue
-        issues.append(
-            ValidationIssue(
-                "object_locked",
-                row.dataset,
-                row.record_number,
-                OBJECT_KEY,
-                "Object is locked; neither it nor its Attributes can be changed.",
+        if _normalized_key(OBJECT_KEY, row.values) in locked_object_keys:
+            issues.append(
+                ValidationIssue(
+                    "object_locked",
+                    row.dataset,
+                    row.record_number,
+                    OBJECT_KEY,
+                    "Object is locked; neither it nor its Attributes can be changed.",
+                )
             )
-        )
+        elif record_type == "attribute" and (
+            _normalized_key(ATTRIBUTE_KEY, row.values) in locked_attribute_keys
+        ):
+            issues.append(
+                ValidationIssue(
+                    "attribute_locked",
+                    row.dataset,
+                    row.record_number,
+                    ATTRIBUTE_KEY,
+                    "Attribute is locked and cannot be changed.",
+                )
+            )
         if len(issues) >= MAX_VALIDATION_ISSUES:
             break
     return issues

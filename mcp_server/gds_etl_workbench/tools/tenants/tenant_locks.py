@@ -11,10 +11,10 @@ from typing import Annotated, Any, Literal, LiteralString
 from uuid import UUID
 
 from mcp.server.mcpserver import Context, MCPServer
-from mcp.types import ToolAnnotations
 from pydantic import BaseModel, ConfigDict, Field
 
 from gds_etl_workbench.adapters.auth.identity import AuthenticationError, IdentityProvider
+from gds_etl_workbench.adapters.mcp.annotations import closed_world_annotations
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal, ToolPolicy
 from gds_etl_workbench.domain.errors import (
@@ -151,7 +151,7 @@ def register_tenant_lock_tools(
             "Check whether one authorized Tenant currently has an active Tenant Lock. "
             "Returns only bounded owner display and timing details."
         ),
-        annotations=_annotations(read_only=True, destructive=False, idempotent=True),
+        annotations=closed_world_annotations(read_only=True, destructive=False, idempotent=True),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
@@ -214,7 +214,7 @@ def register_tenant_lock_tools(
             "Fails for any active lock, including one already owned by the caller; use "
             "renew_tenant_lock to extend an owned lock."
         ),
-        annotations=_annotations(read_only=False, destructive=False, idempotent=False),
+        annotations=closed_world_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
@@ -272,7 +272,7 @@ def register_tenant_lock_tools(
             "Renew the current Principal's active Tenant Lock. Fails when no active "
             "lock exists or another Principal owns it."
         ),
-        annotations=_annotations(read_only=False, destructive=False, idempotent=False),
+        annotations=closed_world_annotations(read_only=False, destructive=False, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
@@ -322,7 +322,7 @@ def register_tenant_lock_tools(
             "Release the current Principal's active Tenant Lock. Fails when no active "
             "lock exists or another Principal owns it."
         ),
-        annotations=_annotations(read_only=False, destructive=True, idempotent=False),
+        annotations=closed_world_annotations(read_only=False, destructive=True, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
@@ -367,7 +367,7 @@ def register_tenant_lock_tools(
             "Force-release another Principal's active Tenant Lock. Requires an audit "
             "reason and does not acquire a replacement lock."
         ),
-        annotations=_annotations(read_only=False, destructive=True, idempotent=False),
+        annotations=closed_world_annotations(read_only=False, destructive=True, idempotent=False),
         meta={"gds/toolPolicy": POLICY.value},
         structured_output=True,
     )
@@ -524,17 +524,3 @@ def _override_audit(arguments: Mapping[str, Any]) -> dict[str, str | int | bool]
     raw_reason = arguments.get("reason")
     summary["has_reason"] = isinstance(raw_reason, str) and bool(raw_reason.strip())
     return summary
-
-
-def _annotations(
-    *,
-    read_only: bool,
-    destructive: bool,
-    idempotent: bool,
-) -> ToolAnnotations:
-    return ToolAnnotations(
-        read_only_hint=read_only,
-        destructive_hint=destructive,
-        idempotent_hint=idempotent,
-        open_world_hint=False,
-    )

@@ -35,7 +35,7 @@ You need:
 
    ```text
    mcp_server/dist/gds-mcp-appservice-0.2.0.zip
-   plugins/v2/dist/gds-agent-plugin-0.4.9.zip
+   plugins/v2/dist/gds-agent-plugin-0.5.0.zip
    ```
 
 If the MCP ZIP is missing, build it from the repository root:
@@ -189,7 +189,7 @@ psql -X -v ON_ERROR_STOP=1 --single-transaction \
   -f database/seed/04_application_reference.sql
 ```
 
-This installs exactly 49 workflow stages and 80 backend-resolved prompt
+This installs exactly 26 workflow stages and 169 backend-resolved prompt
 variables. It contains no credentials, prompt bodies, connection values, or
 business data and is safe to replay unchanged.
 
@@ -204,11 +204,18 @@ Choose one route:
 Do not run demo seed data in production. A successfully authenticated Entra
 user must also have an active matching database Principal and Tenant access.
 
-After the active Super Admin identity exists, install the 36 agentic global
+After the active Super Admin identity exists, install the 14 agentic global
 defaults from `database/seed/05_global_prompt_defaults.template.sql` by
 following `database/seed/README.md`. Replace its identity placeholders with
 that exact Super Admin identity. The script is replay-safe and does not create
 Prompts for deterministic stages such as Profiling.
+
+Next, install `database/seed/07_global_mapping_output_templates.template.sql`
+using the same active Super Admin identity placeholders and the instructions in
+`database/seed/README.md`. Both active global Mapping templates are required for
+new Logical-to-Silver and Dimensional-to-Gold Mapping runs that omit a custom
+template. Each run freezes its selected template IDs and schema digests;
+explicit custom selections and previously frozen runs remain unchanged.
 
 ### Step 6: create private snapshot storage
 

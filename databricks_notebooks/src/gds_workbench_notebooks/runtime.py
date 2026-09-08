@@ -8,7 +8,7 @@ from collections.abc import Callable, Generator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import psycopg
 from psycopg.rows import dict_row
@@ -18,6 +18,9 @@ from .errors import (
     NotebookConfigurationError,
     NotebookDatabaseError,
 )
+
+if TYPE_CHECKING:
+    from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
 
 _ENV_FILE_MAX_BYTES = 64 * 1024
 _BASE_ALLOWED_ENV_KEYS = frozenset(
@@ -33,6 +36,12 @@ _BASE_ALLOWED_ENV_KEYS = frozenset(
         "GDS_NOTEBOOK_WORKFLOW_LEASE_SECONDS",
         "GDS_NOTEBOOK_WORKFLOW_HEARTBEAT_SECONDS",
         "GDS_NOTEBOOK_AGENT_TIMEOUT_SECONDS",
+        "GDS_NOTEBOOK_FOUNDRY_OPENAI_BASE_URL",
+        "GDS_NOTEBOOK_FOUNDRY_API_KEY",
+        "GDS_NOTEBOOK_FOUNDRY_ENTRA_TENANT_ID",
+        "GDS_NOTEBOOK_FOUNDRY_CLIENT_ID",
+        "GDS_NOTEBOOK_FOUNDRY_CLIENT_SECRET",
+        "GDS_NOTEBOOK_FOUNDRY_PRICING_JSON",
     }
 )
 _REQUIRED_ENV_KEYS = frozenset(
@@ -64,6 +73,7 @@ class NotebookRuntimeSettings:
     workflow_lease_seconds: int = 30
     workflow_heartbeat_seconds: int = 10
     agent_timeout_seconds: int = 120
+    agent_runtime: AgentRuntimeConfiguration | None = field(default=None, repr=False)
 
 
 def locate_uploaded_root(start: Path) -> Path:
@@ -120,11 +130,36 @@ def load_notebook_runtime_settings(uploaded_root: Path) -> NotebookRuntimeSettin
         minimum=1,
         maximum=600,
     )
+    agent_runtime = None
+    if any(
+        value.strip() for key, value in values.items() if key.startswith("GDS_NOTEBOOK_FOUNDRY_")
+    ):
+        from gds_etl_workbench.configuration import ConfigurationError
+        from gds_workbench_api.integrations.agents.configuration import AgentRuntimeConfiguration
+
+        # Reuse provider validation without copying credentials into process environment.
+        provider_values = {
+            key.replace("GDS_NOTEBOOK_", "GDS_WEB_", 1): value
+            for key, value in values.items()
+            if key.startswith("GDS_NOTEBOOK_FOUNDRY_")
+        }
+        provider_values["GDS_WEB_AGENT_TIMEOUT_SECONDS"] = str(agent_timeout_seconds)
+        try:
+            agent_runtime = AgentRuntimeConfiguration.from_environment(
+                provider_values, production=True
+            )
+        except (ConfigurationError, ValueError):
+            raise NotebookConfigurationError(
+                "Foundry configuration requires a valid OpenAI base URL and exactly one "
+                "authentication method: an API key or complete Entra client credentials. "
+                "Optional pricing must use registered models, valid USD rates and applicability."
+            ) from None
     return NotebookRuntimeSettings(
         database=_database_settings(values),
         workflow_lease_seconds=lease_seconds,
         workflow_heartbeat_seconds=heartbeat_seconds,
         agent_timeout_seconds=agent_timeout_seconds,
+        agent_runtime=agent_runtime,
     )
 
 

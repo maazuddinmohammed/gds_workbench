@@ -1,4 +1,5 @@
-import { render, screen } from "@testing-library/react";
+import { withRecordReview } from "../../test/modelRecordReview";
+import { render, screen, within } from "@testing-library/react";
 import userEvent from "@testing-library/user-event";
 import { createMemoryHistory } from "@tanstack/react-router";
 import { describe, expect, it, vi } from "vitest";
@@ -17,9 +18,13 @@ describe("Model Dimensional", () => {
 
     expect(await screen.findByRole("heading", { name: "sales_fact" })).toBeVisible();
     expect(screen.getByRole("heading", { name: "Submodel membership" })).toBeVisible();
+    expect(screen.getByText("Sales Analytics")).not.toBeVisible();
+    expect(await screen.findByRole("table", { name: "Entity Attributes" })).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Submodel membership" }));
+    await user.click(screen.getByRole("heading", { name: "Source mappings" }));
     expect(screen.getByText("Sales Analytics")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getAllByText("silver.sales_order")).toHaveLength(2);
+    expect(screen.getAllByText("silver.sales_order")).toHaveLength(1);
     expect(screen.getByText("assertion:sales-grain")).toBeVisible();
     expect(screen.getByRole("heading", { name: "Provenance" })).toBeVisible();
 
@@ -35,9 +40,16 @@ describe("Model Dimensional", () => {
     await user.click(screen.getByRole("button", { name: "Attributes" }));
     expect(await screen.findByRole("table", { name: "Dimensional Attributes" })).toBeVisible();
     await user.click(screen.getByRole("link", { name: "Open Dimensional Attribute 401" }));
-    expect(await screen.findByRole("heading", { name: "sales_amount" })).toBeVisible();
+    expect(await screen.findByRole("heading", { name: "sales_amount" })).toHaveFocus();
+    expect(screen.getByRole("heading", { name: "Aggregation" })).toBeVisible();
+    expect(screen.getByText("sum")).toBeVisible();
+    expect(screen.getByText("Grain component").nextElementSibling).toHaveTextContent("No");
+    expect(screen.getByText("No change behavior is recorded.")).toBeVisible();
+    await user.click(screen.getByRole("heading", { name: "Source mappings" }));
+    await user.click(within(screen.getByRole("table", { name: "Source mappings" })).getAllByText("Show details")[0]!);
+    expect(screen.getByText("Entity mapping id").nextElementSibling).toHaveTextContent("901");
     expect(screen.getByRole("heading", { name: "Source mappings" })).toBeVisible();
-    expect(screen.getAllByText("silver.sales_order.sales_amount")).toHaveLength(2);
+    expect(screen.getAllByText("silver.sales_order.sales_amount")).toHaveLength(1);
     expect(screen.getByText("assertion:additive-sales")).toBeVisible();
 
     await user.click(screen.getByRole("link", { name: "Back to Dimensional" }));
@@ -50,6 +62,18 @@ describe("Model Dimensional", () => {
     expect(screen.getByText("sales_fact.customer_key")).toBeVisible();
     expect(screen.getByText("The customer key establishes the conformed join.")).toBeVisible();
     expect(screen.getByText("Each sale has one customer; a customer has many sales.")).toBeVisible();
+  });
+
+  it("shows recorded change behavior without empty aggregation fields", async () => {
+    render(<WorkbenchApp router={createWorkbenchRouter({
+      api: createApiClient(dimensionalFetchStub({ descriptiveAttribute: true })),
+      history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/dimensional/attributes/401"] }),
+    })} />);
+    await screen.findByRole("heading", { name: "sales_amount" });
+    expect(screen.queryByRole("heading", { name: "Aggregation" })).not.toBeInTheDocument();
+    expect(screen.getByText("No aggregation behavior is recorded.")).toBeVisible();
+    expect(screen.getByText("Type 2")).toBeVisible();
+    expect(screen.queryByText("Not applicable")).not.toBeInTheDocument();
   });
 
   it("sends only supported bounded filters and follows opaque pagination cursors", async () => {
@@ -172,6 +196,7 @@ function dimensionalFetchStub(options: {
   denied?: boolean;
   modelRevision?: number;
   hasNextPage?: boolean;
+  descriptiveAttribute?: boolean;
   hasLock?: boolean;
 } = {}) {
   return vi.fn<typeof fetch>(async (input) => {
@@ -215,7 +240,12 @@ function dimensionalFetchStub(options: {
       });
     }
     if (url === "/api/v1/tenants/7/models/18/dimensional/attributes/401") {
-      return jsonResponse(dimensionalAttributeDetailPayload);
+      return jsonResponse(options.descriptiveAttribute ? {
+        ...dimensionalAttributeDetailPayload,
+        dimensional_attribute_role: "descriptive", dimensional_attribute_additivity: null,
+        dimensional_attribute_default_aggregation: null, dimensional_attribute_aggregation_basis: null,
+        dimensional_attribute_change_behavior: "type_2",
+      } : dimensionalAttributeDetailPayload);
     }
     if (url.startsWith("/api/v1/tenants/7/models/18/dimensional/relationships?")) {
       return jsonResponse({
@@ -516,15 +546,15 @@ const dimensionalScopeObjectPayload = {
 
 const agentCapabilitiesPayload = {
   schema_version: "3.0",
-  sdks: [{ code: "openai_agents", name: "OpenAI Agents", provider_codes: ["databricks"] }],
-  providers: [{ code: "databricks", name: "Databricks Model Serving" }],
+  sdks: [{ code: "openai_agents_sdk", name: "OpenAI Agents", provider_codes: ["microsoft_foundry"] }],
+  providers: [{ code: "microsoft_foundry", name: "Microsoft Foundry" }],
   models: [{
-    code: "databricks-primary",
+    code: "foundry-primary",
     name: "GPT-5.6",
-    provider_code: "databricks",
-    deployment_name: "databricks-primary",
-    execution_profiles: ["one_shot", "tool_assisted", "detailed_coverage"].map((execution_mode) => ({
-      sdk_code: "openai_agents",
+    provider_code: "microsoft_foundry",
+    deployment_name: "foundry-primary",
+    execution_profiles: ["one_shot", "tool_assisted"].map((execution_mode) => ({
+      sdk_code: "openai_agents_sdk",
       execution_mode,
       reasoning_effort_codes: ["medium"],
     })),
@@ -533,3 +563,20 @@ const agentCapabilitiesPayload = {
   max_turns: { minimum: 1, default: 8, maximum: 50 },
   validation_retries: { minimum: 0, default: 1, maximum: 5 },
 };
+
+
+it.each([["Objects", "dimensional_entity", 301], ["Attributes", "dimensional_attribute", 401], ["Relationships", "dimensional_relationship", 501]] as const)("reviews selected %s through the governed endpoint", async (view, dataset, recordId) => {
+  const { fetcher, commands } = withRecordReview(dimensionalFetchStub());
+  render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher),
+    history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/dimensional"] }),
+  })} />);
+  const user = userEvent.setup();
+  await user.click(await screen.findByRole("button", { name: view }));
+  const selection = await screen.findByRole("checkbox", { name: new RegExp(`^Select Dimensional .* ${recordId}$`) });
+  await user.click(selection);
+  await user.click(screen.getByRole("button", { name: "Lock selected" }));
+  const apply = await screen.findByRole("button", { name: "Apply this change" });
+  expect(commands[0]).toEqual({ dataset, record_ids: [recordId], action: "lock", expected_model_revision: 18 });
+  await user.click(apply);
+  expect(commands[1]).toEqual({ ...commands[0], expected_plan_digest: "c".repeat(64) });
+});

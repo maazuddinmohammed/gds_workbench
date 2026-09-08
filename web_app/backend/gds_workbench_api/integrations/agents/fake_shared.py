@@ -15,40 +15,7 @@ from gds_workbench_api.features.workflows.authoring.agent_execution import (
 TARGET_REFERENCE = re.compile(r"^[a-z][a-z0-9_]{0,99}$")
 
 
-def selected_source_attributes(
-    selected: dict[str, JsonValue],
-    *,
-    source_object: dict[str, JsonValue],
-) -> list[JsonValue]:
-    raw_attributes = selected.get("attributes")
-    if not isinstance(raw_attributes, list) or not 1 <= len(raw_attributes) <= 10_000:
-        raise InvalidRequestError("The local fake agent context is invalid.")
-    expected_object = tuple(
-        cast(str, source_object[name]).strip().casefold() for name in FAKE_SOURCE_FIELDS
-    )
-    source_attributes: list[JsonValue] = []
-    identities: set[tuple[str, ...]] = set()
-    for raw_attribute in raw_attributes:
-        if not isinstance(raw_attribute, dict):
-            raise InvalidRequestError("The local fake agent context is invalid.")
-        values = tuple(raw_attribute.get(name) for name in (*FAKE_SOURCE_FIELDS, "attribute_name"))
-        if any(
-            not isinstance(value, str) or not value.strip() or len(value.encode("utf-8")) > 400
-            for value in values
-        ):
-            raise InvalidRequestError("The local fake agent context is invalid.")
-        identity = cast(tuple[str, ...], values)
-        normalized = tuple(value.strip().casefold() for value in identity)
-        if normalized[:5] != expected_object or normalized in identities:
-            raise InvalidRequestError("The local fake agent context is invalid.")
-        identities.add(normalized)
-        source_attributes.append(
-            dict(zip((*FAKE_SOURCE_FIELDS, "attribute_name"), identity, strict=True))
-        )
-    return source_attributes
-
-
-def detailed_original_context(context: JsonValue) -> dict[str, JsonValue]:
+def original_context(context: JsonValue) -> dict[str, JsonValue]:
     if not isinstance(context, dict) or set(context) != {"original_context", "repair"}:
         raise InvalidRequestError("The local fake agent context is invalid.")
     repair = context.get("repair")
@@ -67,29 +34,6 @@ FAKE_SOURCE_FIELDS = (
     "object_schema",
     "object_name",
 )
-
-
-def fake_source_object(value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    source: dict[str, JsonValue] = {}
-    for field in FAKE_SOURCE_FIELDS:
-        item = value.get(field)
-        if not isinstance(item, str) or not item.strip() or len(item.encode("utf-8")) > 400:
-            raise InvalidRequestError("The local fake agent context is invalid.")
-        source[field] = item
-    return source
-
-
-def fake_source_attribute(value: dict[str, JsonValue]) -> dict[str, JsonValue]:
-    source = fake_source_object(value)
-    attribute_name = value.get("attribute_name")
-    if (
-        not isinstance(attribute_name, str)
-        or not attribute_name.strip()
-        or len(attribute_name.encode("utf-8")) > 400
-    ):
-        raise InvalidRequestError("The local fake agent context is invalid.")
-    source["attribute_name"] = attribute_name
-    return source
 
 
 def code_generation_target_refs(context: JsonValue) -> tuple[str, ...]:
@@ -169,7 +113,12 @@ def tool_assisted_conceptual_sources(
     catalog = request.local_tool_catalog
     if catalog is None:
         raise InvalidRequestError("The local fake agent context is invalid.")
-    manifest = catalog.invoke("get_agent_context_manifest", {})
+    manifest_calls = int("get_agent_context_manifest" in request.allowed_tool_names)
+    manifest = (
+        catalog.invoke("get_agent_context_manifest", {})
+        if manifest_calls
+        else original_context(request.context)
+    )
     if not isinstance(request.context, dict) or set(request.context) != {
         "original_context",
         "repair",
@@ -263,7 +212,7 @@ def tool_assisted_conceptual_sources(
             offset = selected_count
     if len(sources) != selected_count:
         raise InvalidRequestError("The local fake agent context is invalid.")
-    return tuple(sources), page_calls + 1
+    return tuple(sources), page_calls + manifest_calls
 
 
 def tool_assisted_logical_sources(

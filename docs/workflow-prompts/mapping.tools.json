@@ -1,0 +1,128 @@
+{
+  "workflow": "mapping",
+  "stage": "mapping_authoring",
+  "mode": "tool_assisted",
+  "status": "authorized_for_implementation",
+  "tools": [
+    {
+      "name": "get_mapping_target",
+      "variable": "target_metadata",
+      "description": "Actual target Object natural key, physical catalog, description, layer, lifecycle/locks and ordered registered Attributes with type, inferred type, nullability and descriptions. No internal IDs. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": null,
+      "key_fields": [],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_mapping_sources",
+      "variable": "source_evidence",
+      "description": "Eligible source contributions, each with role, rationale, mapping_order, lock and nested actual physical Object/Attributes. Scoped to this frozen target/Source System pair. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          },
+          "source_object_keys": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "tenant_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "system_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "connection_code": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_schema": {
+                  "type": "string",
+                  "minLength": 1
+                },
+                "object_name": {
+                  "type": "string",
+                  "minLength": 1
+                }
+              },
+              "required": [
+                "tenant_code",
+                "system_code",
+                "connection_code",
+                "object_schema",
+                "object_name"
+              ],
+              "additionalProperties": false
+            },
+            "default": [],
+            "maxItems": 200
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": "source_object_keys",
+      "key_fields": [
+        "tenant_code",
+        "system_code",
+        "connection_code",
+        "object_schema",
+        "object_name"
+      ],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    },
+    {
+      "name": "get_existing_mapping",
+      "variable": "existing_mapping",
+      "description": "Single existing target binding/header with modeled Entity/Attributes, natural Attribute-name bindings, Object/Attribute transformation documents, dependency order, statuses and locks. Null document means unauthored. Omitted/empty selectors return all eligible records, paged. Continue with cursor only.",
+      "input_schema": {
+        "type": "object",
+        "properties": {
+          "cursor": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 1
+          }
+        },
+        "required": [],
+        "additionalProperties": false
+      },
+      "selector": null,
+      "key_fields": [],
+      "output": "Shared {items,next_cursor,is_complete,incomplete_object_key} envelope. Singleton variables return one item. Same record shapes as the variable, complete records; incomplete_object_key always null. Oversized indivisible records fail explicitly."
+    }
+  ],
+  "default_inline": [
+    "mapping_route",
+    "operation",
+    "authoring_policy",
+    "readiness",
+    "source_system",
+    "object_output_template",
+    "attribute_output_template"
+  ],
+  "rules": "Optional enablement and invocation; no-input/empty selects all eligible. Frozen prepared values only; no live DB, arbitrary SQL, code execution, ingestion Mapping reader, or downstream dependency inventory. Same-reader cursor restores selection. Unknown keys, changed selector with cursor, and unavailable/oversized results are errors; never silent truncation."
+}

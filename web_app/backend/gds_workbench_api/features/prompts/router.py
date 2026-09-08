@@ -2,7 +2,7 @@
 
 from typing import Annotated
 
-from fastapi import APIRouter, Path, Query, Request
+from fastapi import APIRouter, Path, Query, Request, Response
 from gds_etl_workbench.application.identity import IdentityProvider
 
 from gds_workbench_api.features.prompts.contracts import (
@@ -10,6 +10,7 @@ from gds_workbench_api.features.prompts.contracts import (
     ModelPromptAssignments,
     ModelPromptAssignmentState,
     ModelWorkflow,
+    PromptPreview,
     PromptStageCatalog,
     PromptTemplateDetail,
     PromptTemplateFilters,
@@ -23,6 +24,11 @@ from gds_workbench_api.features.prompts.contracts import (
     WorkflowExecutionMode,
 )
 from gds_workbench_api.features.prompts.service import PromptService
+from gds_workbench_api.prompt_rendering import (
+    PromptComponentTemplates,
+    PromptVariableDefinition,
+    render_prompt,
+)
 
 
 def create_prompts_router(
@@ -127,6 +133,41 @@ def create_prompts_router(
             body=body,
         )
 
+    async def preview_prompt(
+        request: Request,
+        response: Response,
+        tenant_id: Annotated[int, tenant_path],
+        prompt_template_id: Annotated[int, id_path],
+        body: SavePromptDraftRequest,
+    ) -> PromptPreview:
+        principal = identity_provider.authenticate(request.headers)
+        detail = await service.read_template(
+            principal, tenant_id=tenant_id, prompt_template_id=prompt_template_id
+        )
+        response.headers["Cache-Control"] = "no-store"
+        rendered = render_prompt(
+            templates=PromptComponentTemplates(
+                system=body.system_prompt_template,
+                instruction=body.instruction_prompt_template,
+                tool_instruction=body.tool_instruction_prompt_template,
+            ),
+            variables=tuple(
+                PromptVariableDefinition(
+                    name=v.name,
+                    resolver_key=v.resolver_key,
+                    data_type=v.data_type,
+                    is_required=False,
+                )
+                for v in detail.allowed_variables
+            ),
+            resolver_values={v.resolver_key: v.example for v in detail.allowed_variables},
+        )
+        return PromptPreview(
+            rendered_system_prompt=rendered.system,
+            rendered_instruction_prompt=rendered.instruction,
+            rendered_tool_instruction_prompt=rendered.tool_instruction,
+        )
+
     async def publish_version(
         request: Request,
         tenant_id: Annotated[int, tenant_path],
@@ -213,6 +254,12 @@ def create_prompts_router(
         update_template,
         methods=["PUT"],
         response_model=PromptTemplateHeader,
+    )
+    router.add_api_route(
+        "/templates/{prompt_template_id}/preview",
+        preview_prompt,
+        methods=["POST"],
+        response_model=PromptPreview,
     )
     router.add_api_route(
         "/templates/{prompt_template_id}/draft",

@@ -30,6 +30,8 @@ export function ConceptualObjectsLedger({
   items,
   filters,
   state,
+  selectedIds,
+  onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -38,10 +40,28 @@ export function ConceptualObjectsLedger({
   items: ConceptualObject[];
   filters: ConceptualFilters;
   state: LedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: ConceptualFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<ConceptualObject>[]>(() => [
+    {
+      id: "selection",
+      header: () => <input type="checkbox" aria-label="Select loaded Conceptual Objects"
+        checked={items.length > 0 && items.every((item) => selectedIds.has(item.conceptual_object_id))}
+        onChange={(event) => onSelectionChange(event.target.checked
+          ? new Set(items.map((item) => item.conceptual_object_id)) : new Set())} />,
+      cell: ({ row }) => <input type="checkbox"
+        aria-label={`Select Conceptual Object ${row.original.conceptual_object_id}`}
+        checked={selectedIds.has(row.original.conceptual_object_id)}
+        onChange={(event) => {
+          const ids = new Set(selectedIds);
+          if (event.target.checked) ids.add(row.original.conceptual_object_id);
+          else ids.delete(row.original.conceptual_object_id);
+          onSelectionChange(ids);
+        }} />,
+    },
     {
       accessorKey: "conceptual_object_name",
       header: "Conceptual Object",
@@ -90,7 +110,7 @@ export function ConceptualObjectsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, modelId, onSelectionChange, selectedIds, tenantId]);
   return (
     <ConceptualLedgerSurface
       tableLabel="Conceptual Objects"
@@ -120,6 +140,8 @@ export function ConceptualRelationshipsLedger({
   items,
   filters,
   state,
+  selectedIds,
+  onSelectionChange,
   onApplyFilters,
   onLoadMore,
 }: {
@@ -128,10 +150,28 @@ export function ConceptualRelationshipsLedger({
   items: ConceptualRelationship[];
   filters: ConceptualFilters;
   state: LedgerState;
+  selectedIds: Set<number>;
+  onSelectionChange: (ids: Set<number>) => void;
   onApplyFilters: (filters: ConceptualFilters) => void;
   onLoadMore: () => void;
 }) {
   const columns = useMemo<ColumnDef<ConceptualRelationship>[]>(() => [
+    {
+      id: "selection",
+      header: () => <input type="checkbox" aria-label="Select loaded Conceptual Relationships"
+        checked={items.length > 0 && items.every((item) => selectedIds.has(item.conceptual_relationship_id))}
+        onChange={(event) => onSelectionChange(event.target.checked
+          ? new Set(items.map((item) => item.conceptual_relationship_id)) : new Set())} />,
+      cell: ({ row }) => <input type="checkbox"
+        aria-label={`Select Conceptual Relationship ${row.original.conceptual_relationship_id}`}
+        checked={selectedIds.has(row.original.conceptual_relationship_id)}
+        onChange={(event) => {
+          const ids = new Set(selectedIds);
+          if (event.target.checked) ids.add(row.original.conceptual_relationship_id);
+          else ids.delete(row.original.conceptual_relationship_id);
+          onSelectionChange(ids);
+        }} />,
+    },
     {
       accessorKey: "conceptual_relationship_name",
       header: "Relationship",
@@ -182,7 +222,7 @@ export function ConceptualRelationshipsLedger({
         </Link>
       ),
     },
-  ], [modelId, tenantId]);
+  ], [items, modelId, onSelectionChange, selectedIds, tenantId]);
   return (
     <ConceptualLedgerSurface
       tableLabel="Conceptual Relationships"

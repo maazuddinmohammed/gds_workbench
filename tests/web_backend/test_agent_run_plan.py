@@ -5,7 +5,6 @@ from uuid import UUID
 
 import pytest
 from gds_etl_workbench.domain.errors import WorkbenchError
-
 from gds_workbench_api.features.workflows.authoring.plan import (
     PostgresAgentRunPlanRepository,
 )
@@ -26,9 +25,9 @@ def _stage_row(
         "modeled_entity_type": None,
         "selected_scope_digest": "a" * 64,
         "selected_scope_count": 2,
-        "agent_sdk_code": "langchain_create_agent",
-        "agent_provider_code": "databricks",
-        "agent_model_code": "databricks-primary",
+        "agent_sdk_code": "openai_agents_sdk",
+        "agent_provider_code": "microsoft_foundry",
+        "agent_model_code": "foundry-primary",
         "reasoning_effort_code": "medium",
         "max_turns": 8,
         "validation_retry_count": 2,
@@ -106,7 +105,7 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
     assert plan.correlation_id == UUID("33333333-3333-3333-3333-333333333333")
     assert plan.model_revision == 7
     assert plan.selected_object_ids == (501, 502)
-    assert plan.selection.model_code == "databricks-primary"
+    assert plan.selection.model_code == "foundry-primary"
     assert [stage.stage_code for stage in plan.stages] == ["candidate_authoring"]
     assert [variable.name for variable in plan.stages[0].variables] == [
         "model_name",
@@ -118,7 +117,9 @@ async def test_repository_loads_frozen_prompts_variables_and_exact_selection() -
 
 
 @pytest.mark.asyncio
-async def test_repository_loads_exact_validation_system_selection_without_objects() -> None:
+async def test_repository_loads_exact_validation_system_selection_without_objects() -> (
+    None
+):
     row = _stage_row(variable_id=1, variable_name="stage_context")
     row.update(
         {
@@ -193,3 +194,29 @@ async def test_repository_rejects_inconsistent_frozen_correlation() -> None:
         )
 
     assert captured.value.code == "agent_run_plan_unavailable"
+
+
+@pytest.mark.asyncio
+async def test_plan_freezes_tool_permissions_and_rejects_inconsistent_rows() -> None:
+    rows = [
+        _stage_row(variable_id=1, variable_name="model_name"),
+        _stage_row(variable_id=2, variable_name="stage_context"),
+    ]
+    for row in rows:
+        row["workflow_execution_mode"] = "tool_assisted"
+        row["agent_tool_names"] = ["get_agent_context_dataset"]
+    plan = await PostgresAgentRunPlanRepository().load(
+        PlanTransaction(rows=rows),
+        tenant_id=7,
+        model_id=18,
+        workflow_run_id=1048,
+    )
+    assert plan.stages[0].agent_tool_names == ("get_agent_context_dataset",)
+    rows[1]["agent_tool_names"] = None
+    with pytest.raises(WorkbenchError):
+        await PostgresAgentRunPlanRepository().load(
+            PlanTransaction(rows=rows),
+            tenant_id=7,
+            model_id=18,
+            workflow_run_id=1048,
+        )

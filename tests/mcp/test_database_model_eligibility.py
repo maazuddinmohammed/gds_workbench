@@ -55,9 +55,7 @@ def _seed_demo_if_needed(connection: Connection[TestRow]) -> None:
         )
 
 
-def _seed_inputs_and_target_bindings(
-    connection: Connection[TestRow], model_id: int
-) -> None:
+def _seed_inputs_and_target_bindings(connection: Connection[TestRow], model_id: int) -> None:
     connection.execute(
         """
         INSERT INTO model.model_input_scope (model_id, object_id)
@@ -170,31 +168,16 @@ def test_model_object_eligibility_routes_active_scoped_zones(
     assert _required_bool(by_zone["source"], "is_model_input_eligible") is True
     assert _required_bool(by_zone["bronze"], "is_model_input_eligible") is True
     assert _required_bool(by_zone["bronze"], "is_dimensional_source_eligible") is False
-    assert (
-        _required_bool(by_zone["bronze"], "is_logical_mapping_target_eligible") is False
-    )
-    assert (
-        _required_bool(by_zone["bronze"], "is_dimensional_mapping_target_eligible")
-        is False
-    )
+    assert _required_bool(by_zone["bronze"], "is_logical_mapping_target_eligible") is False
+    assert _required_bool(by_zone["bronze"], "is_dimensional_mapping_target_eligible") is False
     assert _required_bool(by_zone["silver"], "is_model_input_eligible") is False
     assert _required_bool(by_zone["silver"], "is_dimensional_source_eligible") is False
-    assert (
-        _required_bool(by_zone["silver"], "is_logical_mapping_target_eligible") is True
-    )
-    assert (
-        _required_bool(by_zone["silver"], "is_dimensional_mapping_target_eligible")
-        is False
-    )
+    assert _required_bool(by_zone["silver"], "is_logical_mapping_target_eligible") is True
+    assert _required_bool(by_zone["silver"], "is_dimensional_mapping_target_eligible") is False
     assert _required_bool(by_zone["gold"], "is_model_input_eligible") is False
     assert _required_bool(by_zone["gold"], "is_dimensional_source_eligible") is False
-    assert (
-        _required_bool(by_zone["gold"], "is_logical_mapping_target_eligible") is False
-    )
-    assert (
-        _required_bool(by_zone["gold"], "is_dimensional_mapping_target_eligible")
-        is True
-    )
+    assert _required_bool(by_zone["gold"], "is_logical_mapping_target_eligible") is False
+    assert _required_bool(by_zone["gold"], "is_dimensional_mapping_target_eligible") is True
 
 
 def test_model_attribute_eligibility_routes_active_scoped_zones(
@@ -241,16 +224,12 @@ def test_model_attribute_eligibility_routes_active_scoped_zones(
         for row in by_zone["source"] + by_zone["bronze"]
     )
     assert all(
-        _required_bool(row, "is_logical_mapping_target_eligible")
-        for row in by_zone["silver"]
+        _required_bool(row, "is_logical_mapping_target_eligible") for row in by_zone["silver"]
     )
     assert all(
-        _required_bool(row, "is_dimensional_mapping_target_eligible")
-        for row in by_zone["gold"]
+        _required_bool(row, "is_dimensional_mapping_target_eligible") for row in by_zone["gold"]
     )
-    assert not any(
-        _required_bool(row, "is_dimensional_source_eligible") for row in rows
-    )
+    assert not any(_required_bool(row, "is_dimensional_source_eligible") for row in rows)
 
 
 def test_unassigned_gds_object_is_not_workflow_eligible(
@@ -685,9 +664,7 @@ def test_fresh_model_can_add_unscoped_inputs_and_unbound_targets(
             ).fetchone()
         )
 
-    assert _required_int(binding, "object_id") == _required_int(
-        by_zone["silver"], "object_id"
-    )
+    assert _required_int(binding, "object_id") == _required_int(by_zone["silver"], "object_id")
 
 
 def test_model_eligibility_is_internal_to_the_runtime_roles(

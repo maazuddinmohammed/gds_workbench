@@ -5,14 +5,17 @@ from typing import TYPE_CHECKING, LiteralString, cast
 from uuid import uuid4
 
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import RaiseException
+
+from tests.mcp.database_test_support import require_row
 
 if TYPE_CHECKING:
     from conftest import DisposablePostgres
 
 
 APPLICATION_TABLES = (
+    "metadata_enrichment_result",
+    "metadata_review_event",
     "output_template",
     "output_template_field",
     "principal_preference",
@@ -23,6 +26,7 @@ APPLICATION_TABLES = (
     "sql_generation_guide_version",
     "workflow_run",
     "workflow_run_mapping_target_selection",
+    "workflow_run_model_request",
     "workflow_run_object_selection",
     "workflow_run_prompt_snapshot",
     "workflow_run_system_selection",
@@ -31,6 +35,7 @@ APPLICATION_TABLES = (
 )
 
 APPLICATION_WEB_FUNCTIONS = (
+    ("add_model_input_scope_objects", "uuid, uuid, bigint, bigint, bigint, bigint[]"),
     (
         "append_workflow_run_event",
         "uuid, uuid, character varying, bigint, bigint, bigint, integer, "
@@ -45,6 +50,19 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid",
     ),
     (
+        "authorize_model_record_review",
+        "uuid, uuid, character varying, bigint, bigint",
+    ),
+    (
+        "begin_workflow_run_model_request",
+        "uuid, uuid, character varying, bigint, bigint, uuid, uuid, uuid, "
+        "character varying, integer, integer, jsonb",
+    ),
+    (
+        "begin_workflow_run_usage",
+        "uuid, uuid, character varying, bigint, bigint, uuid",
+    ),
+    (
         "claim_next_workflow_run",
         "integer",
     ),
@@ -55,8 +73,17 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, integer, integer, integer",
     ),
     (
+        "complete_metadata_enrichment",
+        "uuid, uuid, character varying, bigint, bigint, uuid, character, jsonb",
+    ),
+    (
         "complete_workflow_run",
         "uuid, uuid, character varying, bigint, bigint, integer",
+    ),
+    (
+        "complete_workflow_run_model_request",
+        "uuid, uuid, character varying, bigint, bigint, uuid, uuid, bigint, bigint, "
+        "bigint, bigint, bigint, bigint, boolean",
     ),
     (
         "create_model",
@@ -75,7 +102,7 @@ APPLICATION_WEB_FUNCTIONS = (
         "character varying, character varying, character varying, character varying, "
         "character varying, integer, integer, bigint[], character varying[], character varying, "
         "character varying, uuid, jsonb, character varying, character varying, "
-        "bigint, bigint, bigint, character varying, bigint",
+        "bigint, bigint, bigint, character varying, bigint, jsonb",
     ),
     (
         "fail_workflow_run",
@@ -90,6 +117,18 @@ APPLICATION_WEB_FUNCTIONS = (
         "uuid, uuid, character varying, bigint, bigint, character varying",
     ),
     (
+        "get_metadata_enrichment_connection_values",
+        "uuid, uuid, character varying, bigint, bigint, bigint, character varying",
+    ),
+    (
+        "get_metadata_enrichment_execution_context",
+        "uuid, uuid, character varying, bigint, bigint",
+    ),
+    (
+        "get_metadata_enrichment_results",
+        "uuid, uuid, character varying, bigint, integer, integer",
+    ),
+    (
         "get_profiling_connection_values",
         "uuid, uuid, character varying, bigint, bigint, character varying",
     ),
@@ -101,6 +140,8 @@ APPLICATION_WEB_FUNCTIONS = (
         "lock_authoring_workflow_run",
         "bigint, bigint",
     ),
+    ("metadata_attribute_review_revision", "core.attribute, core.object"),
+    ("metadata_object_review_revision", "core.object"),
     (
         "persist_analysis_validation_results",
         "uuid, uuid, character varying, bigint, bigint, character varying, jsonb",
@@ -118,13 +159,17 @@ APPLICATION_WEB_FUNCTIONS = (
         "bigint, uuid, integer",
     ),
     (
+        "review_metadata_records",
+        "uuid, uuid, character varying, bigint, character varying, character varying, jsonb, uuid",
+    ),
+    (
         "save_prompt_template",
         "uuid, uuid, character varying, bigint, bigint, character varying, bigint, "
         "character varying, character varying, text, boolean, timestamp with time zone",
     ),
     (
         "save_prompt_template_draft",
-        "uuid, uuid, character varying, bigint, bigint, text, text, text, timestamp with time zone",
+        "uuid, uuid, character varying, bigint, bigint, text, text, text, timestamp with time zone, text[]",
     ),
     (
         "save_sql_generation_guide",
@@ -201,11 +246,14 @@ def test_application_web_function_allowlist_is_exact_and_verified(
             """
         ).fetchall()
 
-    assert len(APPLICATION_WEB_FUNCTIONS) == 30
+    assert len(APPLICATION_WEB_FUNCTIONS) == 42
     assert [(row["function_name"], row["argument_types"]) for row in rows] == list(
         APPLICATION_WEB_FUNCTIONS
     )
-    assert all(row["is_security_definer"] for row in rows)
+    assert [row["function_name"] for row in rows if not row["is_security_definer"]] == [
+        "metadata_attribute_review_revision",
+        "metadata_object_review_revision",
+    ]
     assert all(row["fixed_search_path"] for row in rows)
     assert not any(row["mcp_can_execute"] for row in rows)
     assert not any(row["public_can_execute"] for row in rows)
@@ -555,7 +603,10 @@ def test_application_tables_are_read_only_and_sequences_are_unavailable_to_runti
         )
 
     assert [row["table_name"] for row in table_rows] == sorted(APPLICATION_TABLES)
-    assert all(row["web_can_select"] for row in table_rows)
+    assert {row["table_name"] for row in table_rows if not row["web_can_select"]} == {
+        "metadata_enrichment_result",
+        "metadata_review_event",
+    }
     assert not any(row["web_can_mutate"] for row in table_rows)
     assert [row["table_name"] for row in table_rows if row["mcp_can_access"]] == [
         "output_template"

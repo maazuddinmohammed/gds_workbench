@@ -12,14 +12,13 @@ from gds_etl_workbench.domain.snapshots.model import (
     CHANGE_SET_DATASETS,
     ModelingDatasetDefinition,
 )
-from pydantic import BaseModel, JsonValue
-
 from gds_workbench_api.features.conceptual.candidate import _ConceptualCandidate
 from gds_workbench_api.features.dimensional.candidate import _DimensionalCandidate
 from gds_workbench_api.features.logical.candidate import _LogicalCandidate
 from gds_workbench_api.features.workflows.authoring.repair import (
     enrich_agent_output_model_definitions,
 )
+from pydantic import BaseModel, JsonValue
 
 
 @pytest.mark.parametrize(
@@ -131,9 +130,7 @@ def _without_semantic_guidance(value: object) -> object:
             "examples",
         ):
             typed_document.pop(key, None)
-        return {
-            key: _without_semantic_guidance(item) for key, item in typed_document.items()
-        }
+        return {key: _without_semantic_guidance(item) for key, item in typed_document.items()}
     if isinstance(document, list):
         return [_without_semantic_guidance(item) for item in cast(list[object], document)]
     return document

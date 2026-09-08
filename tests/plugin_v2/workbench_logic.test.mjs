@@ -344,10 +344,12 @@ test("common validation enforces eligibility, keys, constraints, and locks", () 
     ],
   ]);
 
-  const issues = commonValidation.validateLoaded("metadata", loaded);
+  const issues = commonValidation.validateLoaded("model", loaded);
   assert.ok(issues.some((issue) => issue.code === "duplicate_canonical_key"));
   assert.ok(issues.some((issue) => issue.code === "duplicate_unique_constraint"));
   assert.ok(issues.some((issue) => issue.code === "locked_record"));
+  assert.ok(!commonValidation.validateLoaded("metadata", loaded)
+    .some((issue) => issue.code === "locked_record"));
 });
 
 test("metadata validation follows declared references", () => {
@@ -475,6 +477,30 @@ test("metadata local rules match object locks and GDS Tenant scope", () => {
     }], pending: [], effective: [],
   }]]);
   assert.deepEqual(metadataValidation.validateLocks(locked).map((issue) => issue.code), ["object_locked"]);
+});
+
+test("metadata Attribute locks use normalized full keys across zone datasets", () => {
+  const attribute = {
+    tenant_code: "TENANT_A", system_code: "CRM", connection_code: "SOURCE",
+    object_schema: "dbo", object_name: "Customer", attribute_name: "Straße",
+    is_locked: true,
+  };
+  const pending = [{ ...attribute, attribute_name: " straße ", is_locked: false }];
+  const loaded = new Map([
+    ["source_attribute", {
+      definition: { name: "source_attribute", record_type: "attribute" },
+      baseline: [attribute], pending: [],
+    }],
+    ["bronze_attribute", {
+      definition: { name: "bronze_attribute", record_type: "attribute" },
+      baseline: [], pending,
+    }],
+  ]);
+  assert.deepEqual(metadataValidation.validateLocks(loaded).map((issue) => issue.code), ["attribute_locked"]);
+  pending[0] = { ...attribute, attribute_name: "STRASSE", is_locked: false };
+  assert.deepEqual(metadataValidation.validateLocks(loaded), []);
+  pending[0] = { ...attribute, connection_code: "OTHER", is_locked: false };
+  assert.deepEqual(metadataValidation.validateLocks(loaded), []);
 });
 
 test("model validation follows current schema references across Model datasets", () => {
@@ -940,4 +966,136 @@ test("Model active dependencies cover Binding, Mapping, Code, and Validation", (
     "mapping_attribute", "generated_code", "generated_code_source_system",
     "validation_group", "validation_check",
   ]) assert.ok(issues.some((item) => item.dataset === dataset), dataset);
+});
+
+test("physical history only permits typed lifecycle changes, never JSON payload edits", () => {
+  const original = {
+    logical_entity_status: "active", logical_entity_is_locked: false,
+    sources: [{ status: "active", is_locked: false, rationale: "Observed source.",
+      source_object: { object_name: "Customer" } }],
+    metadata: { status: "active", is_locked: false, sources: [{ status: "active" }] },
+  };
+  for (const field of ["logical_entity_status", "logical_entity_is_locked", "sources"]) {
+    const changed = structuredClone(original);
+    if (field === "sources") changed.sources[0].is_locked = true;
+    else changed[field] = field.endsWith("status") ? "inactive" : true;
+    assert.equal(modelValidation.retainsPhysicalReferences(original, changed), true, field);
+  }
+  for (const edit of [
+    (value) => { value.metadata.status = "inactive"; },
+    (value) => { value.metadata.is_locked = true; },
+    (value) => { value.metadata.sources[0].status = "inactive"; },
+    (value) => { value.sources[0].rationale = "Changed meaning."; },
+    (value) => { value.sources.push(structuredClone(value.sources[0])); },
+  ]) {
+    const changed = structuredClone(original);
+    edit(changed);
+    assert.equal(modelValidation.retainsPhysicalReferences(original, changed), false);
+  }
+  assert.equal(modelValidation.retainsPhysicalReferences(null, original), false);
+  assert.equal(modelValidation.retainsPhysicalReferences(
+    { ...original, logical_entity_status: "inactive" }, original), false);
+});
+
+test("historical bindings retain inactive physical Attributes without enabling new authoring", () => {
+  const target = { tenant_code: "GDS", system_code: "GDS", connection_code: "DEV",
+    source_tenant_code: "TENANT_A", object_schema: "silver", object_name: "Customer",
+    zone_code: "silver", is_active: true };
+  const attr = { ...target, attribute_name: "ID", is_active: false };
+  const binding = { ...target, modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
+    model_object_binding_status: "active", model_object_binding_is_locked: false };
+  const attrBinding = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
+    modeled_attribute_name: "ID", attribute_name: "ID", model_attribute_binding_status: "active",
+    model_attribute_binding_is_locked: false };
+  const dataset = (name, records, keys, baseline = structuredClone(records)) => ({
+    ...modelDataset(name, records, baseline), definition: { name, record_type: name, canonical_key: keys },
+  });
+  const graph = new Map([
+    ["model_details", dataset("model_details", [{ model_name: "History" }], [])],
+    ["model_input_scope", dataset("model_input_scope", [], [])],
+    ["logical_entity", dataset("logical_entity", [{ logical_entity_name: "Customer",
+      logical_entity_status: "active", sources: [] }], ["logical_entity_name"])],
+    ["logical_attribute", dataset("logical_attribute", [{ logical_entity_name: "Customer",
+      logical_attribute_name: "ID", logical_attribute_status: "active", sources: [] }],
+    ["logical_entity_name", "logical_attribute_name"])],
+    ["model_object_binding", dataset("model_object_binding", [binding],
+      ["modeled_entity_type", "modeled_entity_name"])],
+    ["model_attribute_binding", dataset("model_attribute_binding", [attrBinding],
+      ["modeled_entity_type", "modeled_entity_name", "modeled_attribute_name"])],
+  ]);
+  const metadata = new Map([
+    ["object", modelDataset("object", [target])], ["attribute", modelDataset("attribute", [attr])],
+    ["system", modelDataset("system", [{ system_code: "GDS", is_active: true }])],
+  ]);
+  const validate = () => modelValidation.validatePhysicalScope(graph,
+    modelValidation.buildPhysicalCatalog(graph, metadata, { tenantCode: "TENANT_A" }));
+  assert.deepEqual(validate(), []);
+
+  const rebound = { ...target, object_name: "OtherCustomer" };
+  metadata.get("object").records.push(rebound);
+  metadata.get("attribute").records.push({ ...attr, object_name: "OtherCustomer" });
+  binding.object_name = "OtherCustomer";
+  assert.ok(validate().some((issue) => issue.dataset === "model_attribute_binding" &&
+    issue.code === "model_input_reference_invalid"));
+  binding.object_name = "Customer";
+
+  target.is_active = false;
+  assert.deepEqual(validate(), []);
+  const mapping = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer",
+    source_system_code: "GDS", object_mapping_status: "active", mapping_transformation_document: {} };
+  graph.set("mapping_object", dataset("mapping_object", [mapping],
+    ["modeled_entity_type", "modeled_entity_name", "source_system_code"], []));
+  assert.ok(validate().some((issue) => issue.dataset === "mapping_object" &&
+    issue.field === "model_object_binding"));
+  graph.get("mapping_object").baseline = [structuredClone(mapping)];
+  const dimensional = { dimensional_entity_name: "DimCustomer", dimensional_entity_status: "inactive",
+    sources: [{ support_source_type: "object", source_object: target }] };
+  graph.set("dimensional_entity", dataset("dimensional_entity", [dimensional],
+    ["dimensional_entity_name"], []));
+  assert.ok(validate().some((issue) => issue.dataset === "dimensional_entity" &&
+    issue.code === "model_input_reference_invalid"));
+});
+
+for (const [dataset, lockField] of [
+  ["generated_code", "generated_code_is_locked"],
+  ["generated_code_source_system", "generated_code_source_system_is_locked"],
+  ["validation_group", "is_locked"],
+  ["validation_check", "is_locked"],
+]) {
+  test(`${dataset} preserves its real stored lock during local authoring`, () => {
+    const baseline = [{ name: "Existing", [lockField]: true, is_active: true }];
+    for (const change of [{ [lockField]: false }, { is_active: false }]) {
+      const pending = [{ ...baseline[0], ...change }];
+      const loaded = new Map([[dataset, {
+        definition: { name: dataset, canonical_key: ["name"] },
+        schema: { type: "object", "x-gds-change-set-eligible": true },
+        baseline, pending, effective: pending, overlayError: null,
+      }]]);
+      assert.ok(commonValidation.validateLoaded("model", loaded)
+        .some((issue) => issue.code === "locked_record"));
+    }
+  });
+}
+
+test("new Mapping systems leave prior Code stale; Code authoring still needs exact coverage", () => {
+  const entity = { modeled_entity_type: "logical_entity", modeled_entity_name: "Customer" };
+  const artifact = { ...entity, artifact_name: "customer.sql", generated_code_status: "active" };
+  const graph = new Map([
+    ["logical_entity", modelDataset("logical_entity", [{logical_entity_name: "Customer", logical_entity_status: "active"}])],
+    ["logical_attribute", modelDataset("logical_attribute", [{logical_entity_name: "Customer", logical_attribute_name: "ID", logical_attribute_status: "active"}])],
+    ["model_object_binding", modelDataset("model_object_binding", [{...entity, model_object_binding_status: "active"}])],
+    ["model_attribute_binding", modelDataset("model_attribute_binding", [{...entity, modeled_attribute_name: "ID", model_attribute_binding_status: "active"}])],
+    ["mapping_dependency", modelDataset("mapping_dependency", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, mapping_source_system_dependency_status: "active"})))],
+    ["mapping_object", modelDataset("mapping_object", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, object_mapping_status: "active", mapping_transformation_document: {kind: "direct"}})))],
+    ["mapping_attribute", modelDataset("mapping_attribute", ["ERP", "CRM"].map((source_system_code) => ({...entity, source_system_code, modeled_attribute_name: "ID", attribute_mapping_status: "active", attribute_mapping_transformation_document: {kind: "direct"}})))],
+    ["generated_code", modelDataset("generated_code", [artifact])],
+    ["generated_code_source_system", modelDataset("generated_code_source_system", [{...artifact, source_system_code: "ERP", generated_code_source_system_status: "active"}])],
+  ]);
+  assert.deepEqual(modelValidation.validateActiveDependencies(graph), []);
+  graph.get("generated_code").pending = [artifact];
+  assert.deepEqual(modelValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
+  graph.get("generated_code").pending = [];
+  graph.get("generated_code").records.push({...artifact, artifact_name: "duplicate.sql"});
+  graph.get("generated_code_source_system").records.push({...artifact, artifact_name: "duplicate.sql", source_system_code: "ERP", generated_code_source_system_status: "active"});
+  assert.deepEqual(modelValidation.validateActiveDependencies(graph).map((issue) => issue.dataset), ["generated_code_source_system"]);
 });
