@@ -68,7 +68,7 @@ multi-System runs remain valid. Callers never supply a digest or count.
 
 Metadata Enrichment normally fills missing descriptions and inferred types.
 An explicit description-regeneration request freezes selected Objects, or
-selected Attributes within one Object, with every physical revision. Completion
+selected Attributes across selected Objects, with every physical revision. Completion
 replaces only those descriptions while the frozen revisions and shared Metadata
 locks permit it. Attribute runs also fill missing inferred types; existing
 inferred types remain unchanged. Object runs update descriptions only.

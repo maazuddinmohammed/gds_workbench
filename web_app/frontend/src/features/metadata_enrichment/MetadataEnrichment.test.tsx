@@ -104,7 +104,7 @@ describe("Metadata enrichment scope and run creation", () => {
     const api = creationApi(); const user = userEvent.setup(); const onCreated = vi.fn(async () => undefined);
     api.createWorkflowRun.mockRejectedValueOnce(new TypeError("Network unavailable"));
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={onCreated} />);
-    const submit = await screen.findByRole("button", { name: "Run metadata enrichment" });
+    const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     expect(screen.queryByLabelText("Execution mode")).not.toBeInTheDocument();
     expect(screen.queryByLabelText("Batch ID (optional)")).not.toBeInTheDocument();
@@ -121,7 +121,7 @@ describe("Metadata enrichment scope and run creation", () => {
     const api = creationApi(); const user = userEvent.setup();
     api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }, { ...scope(503), source_tenant_id: 8 }], next_cursor: null });
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
-    const submit = await screen.findByRole("button", { name: "Run metadata enrichment" });
+    const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     expect(screen.getAllByRole("checkbox")).toHaveLength(1);
     await user.click(submit);
@@ -132,7 +132,7 @@ describe("Metadata enrichment scope and run creation", () => {
     const api = creationApi(); const user = userEvent.setup();
     api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: [scope(501), { ...scope(502), is_locked: true }], next_cursor: null });
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" initialSelectedIds={[502]} onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
-    const submit = await screen.findByRole("button", { name: "Run metadata enrichment" });
+    const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("one-shot"));
     expect(submit).toBeDisabled();
     await user.click(submit); expect(api.createWorkflowRun).not.toHaveBeenCalled();
@@ -142,7 +142,7 @@ describe("Metadata enrichment scope and run creation", () => {
     const api = creationApi(); const user = userEvent.setup();
     api.listModelInputScope.mockResolvedValue({ model_revision: 18, items: Array.from({ length: 201 }, (_, index) => scope(index + 1)), next_cursor: null });
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
-    const submit = await screen.findByRole("button", { name: "Run metadata enrichment" });
+    const submit = await screen.findByRole("button", { name: "Run object enrichment" });
     await screen.findByText(/Select up to 200 Objects. Choose Selected Objects/);
     expect(submit).toBeDisabled();
     await user.click(screen.getByRole("radio", { name: /Selected Objects/ }));
@@ -157,7 +157,7 @@ describe("Metadata enrichment scope and run creation", () => {
     const onClose = vi.fn();
     setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference" workflow="metadata_enrichment" onClose={onClose} onCreated={vi.fn(async () => undefined)} />);
     await screen.findByText(/The Model changed. Close this dialog/);
-    expect(screen.getByRole("button", { name: "Run metadata enrichment" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Run object enrichment" })).toBeDisabled();
     const close = screen.getByRole("button", { name: "Close Enrich objects" });
     await waitFor(() => expect(screen.getByRole("combobox", { name: "Model" })).toHaveValue("one-shot"));
     close.focus(); expect(close).toHaveFocus(); await user.tab({ shift: true });
@@ -197,10 +197,10 @@ describe("Metadata enrichment Model screen", () => {
     });
     const user = userEvent.setup();
     render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(fetcher), history: createMemoryHistory({ initialEntries: ["/tenants/7/models/18/metadata-enrichment"] }) })} />);
-    const trigger = await screen.findByRole("button", { name: "Run enrichment" });
+    const trigger = await screen.findByRole("button", { name: "Run object enrichment" });
     expect(screen.getByRole("link", { name: "Metadata enrichment" })).toHaveAttribute("href", "/tenants/7/models/18/metadata-enrichment");
     await user.click(trigger);
-    const submit = await screen.findByRole("button", { name: "Run metadata enrichment" });
+    const submit = within(screen.getByRole("dialog")).getByRole("button", { name: "Run object enrichment" });
     await waitFor(() => expect(submit).toBeEnabled());
     await user.click(submit);
     if (retryStart) {
@@ -296,7 +296,7 @@ describe("current metadata enrichment workspace", () => {
       system_code: "CRM", system_name: "Customer system", source_tenant_id: options.foreign ? 8 : 7,
       source_tenant_code: "NWA", source_tenant_name: "Northwind", object_schema: "crm", object_name: "customers",
       zone_code: "source", object_description: "Customer accounts.", description_truncated: false, is_locked: false,
-      review_revision: revision, batch_attribute_name: null, attribute_count: 1, is_model_input_eligible: true,
+      review_revision: revision, batch_attribute_name: null, attribute_count: 1, total_attribute_count: 1, is_model_input_eligible: true,
       is_dimensional_source_eligible: false, is_logical_mapping_target_eligible: false, is_dimensional_mapping_target_eligible: false,
       created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
       attributes: [{ attribute_id: 81, review_revision: revision, attribute_name: "customer_id", attribute_ordinal_position: 1,
@@ -307,7 +307,8 @@ describe("current metadata enrichment workspace", () => {
     const api = {
       ...creationApi(),
       listModelInputScope: vi.fn(async () => ({ model_id: 18, model_revision: 18, items: options.secondObject ? [metadata, { ...metadata, object_id: 502, object_name: "orders" }] : [metadata], next_cursor: null })),
-      readModelInputScopeObject: vi.fn(async () => metadata),
+      readModelInputScopeObject: vi.fn(async (_tenant: number, _model: number, objectId: number) => objectId === 502
+        ? { ...metadata, object_id: 502, object_name: "orders", attributes: metadata.attributes.map((attribute) => ({ ...attribute, attribute_id: 82 })) } : metadata),
       listWorkflowRuns: vi.fn(async () => ({ items: [run], next_cursor: null })),
       readWorkflowRun: vi.fn(async () => run),
       listWorkflowRunEvents: vi.fn(async () => ({ items: [], next_after_sequence: 0 })),
@@ -388,16 +389,34 @@ describe("current metadata enrichment workspace", () => {
     expect(screen.getByRole("button", { name: "Show details for customers" })).toHaveFocus();
   });
 
+  it("offers separate Object and Attribute actions and respects Object page selection", async () => {
+    const api = metadataFixture({ secondObject: true }); const user = userEvent.setup();
+    const table = await screen.findByRole("table", { name: "Object metadata" });
+    expect(screen.getByRole("button", { name: "Refresh" })).toBeVisible();
+    expect(screen.getByRole("button", { name: "Run object enrichment" })).toBeEnabled();
+    await user.click(within(table).getByRole("checkbox", { name: "Select Object 502" }));
+    await user.click(screen.getByRole("button", { name: "Run attribute enrichment" }));
+    const dialog = screen.getByRole("dialog");
+    const submit = within(dialog).getByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(within(dialog).getByRole("checkbox", { name: "Include Object customers" })).not.toBeChecked();
+    expect(within(dialog).getByRole("checkbox", { name: "Include Object orders" })).toBeChecked();
+    await user.click(submit);
+    await waitFor(() => expect(api.executeMetadataEnrichmentRun).toHaveBeenCalledOnce());
+    expect(api.createWorkflowRun.mock.calls[0]?.[2]).toMatchObject({ selected_object_ids: [502],
+      description_targets: [{ object_id: 502, attribute_id: 82, expected_revision: "a".repeat(64) }] });
+  });
+
   it("regenerates only the chosen Attribute using the normal model and effort controls", async () => {
     const api = metadataFixture(); const user = userEvent.setup();
     await user.click(await screen.findByRole("button", { name: "Show details for customers" }));
     const attributes = await screen.findByRole("table", { name: "Attributes for customers" });
     await user.click(within(attributes).getByRole("checkbox", { name: "Select Attribute 81" }));
-    await user.click(screen.getByRole("button", { name: "Run enrichment" }));
+    await user.click(screen.getByRole("button", { name: "Run attribute enrichment" }));
     const dialog = screen.getByRole("dialog");
     expect(within(dialog).getByRole("heading", { name: "Enrich attributes" })).toBeVisible();
     expect(within(dialog).queryByText("Object coverage")).not.toBeInTheDocument();
-    const submit = within(dialog).getByRole("button", { name: "Run metadata enrichment" });
+    const submit = within(dialog).getByRole("button", { name: "Run attribute enrichment" });
     await waitFor(() => expect(submit).toBeEnabled()); await user.click(submit);
     await waitFor(() => expect(api.executeMetadataEnrichmentRun).toHaveBeenCalledOnce());
     const command = api.createWorkflowRun.mock.calls[0]![2];
@@ -419,5 +438,193 @@ describe("current metadata enrichment workspace", () => {
     expect(api.readMetadataEnrichmentResults).not.toHaveBeenCalled();
     await user.click(screen.getByRole("button", { name: "Hide activity" }));
     expect(screen.getByRole("button", { name: "Show activity" })).toHaveAttribute("aria-expanded", "false");
+  });
+});
+
+describe("bulk Attribute enrichment selection", () => {
+  function detail(id: number, attributeCount = 2, overrides: Partial<ModelInputScopeDetail> = {}): ModelInputScopeDetail {
+    return {
+      ...scope(id), model_input_scope_id: id, connection_id: 1, system_name: "Customer system",
+      source_tenant_name: "Northwind", batch_attribute_name: null, attribute_count: attributeCount,
+      total_attribute_count: attributeCount, is_model_input_eligible: true,
+      is_logical_mapping_target_eligible: false, is_dimensional_mapping_target_eligible: false,
+      created_at: "2026-09-05T12:00:00Z", updated_at: "2026-09-05T12:00:00Z",
+      attributes: Array.from({ length: attributeCount }, (_, index) => ({
+        attribute_id: id * 10000 + index, attribute_name: `field_${index}`, attribute_ordinal_position: index + 1,
+        review_revision: "b".repeat(64), attribute_description: null, attribute_data_type: "STRING",
+        attribute_inferred_data_type: null, attribute_nullability: true, is_surrogate_key: false,
+        is_natural_key: false, is_meta_data: false, is_masking_required: false, is_mapped: false,
+        is_purge: false, is_locked: false, is_active: true,
+      })), ...overrides,
+    };
+  }
+  function bulk(objects = [detail(501), detail(502)], options: {
+    selected?: number[];
+    read?: (tenantId: number, modelId: number, objectId: number) => Promise<ModelInputScopeDetail>;
+    execute?: (id: number, mode: "one_shot" | "tool_assisted") => Promise<void>;
+    pages?: boolean;
+  } = {}) {
+    const api = creationApi();
+    api.listModelInputScope.mockImplementation(async (_tenant, _model, _filters, _size, cursor) => ({
+      model_revision: 18, items: options.pages ? cursor ? objects.slice(1) : objects.slice(0, 1) : objects,
+      next_cursor: options.pages && !cursor ? "next-page" : null,
+    }));
+    const read = vi.fn(options.read ?? (async (_tenant: number, _model: number, id: number) => objects.find((object) => object.object_id === id)!));
+    const mounted = setup(<WorkflowRunDialog api={api} tenantId={7} model={model} kind="inference"
+      workflow="metadata_enrichment" enrichmentTarget="attribute" readEnrichmentObject={read}
+      {...(options.selected ? { initialSelectedIds: options.selected } : {})}
+      {...(options.execute ? { executeCreated: options.execute } : {})}
+      onClose={vi.fn()} onCreated={vi.fn(async () => undefined)} />);
+    return { api, read, ...mounted, user: userEvent.setup() };
+  }
+
+  it("loads all Scope pages and preserves exclusions across Back, modes and Object reselection", async () => {
+    const locked = detail(503, 1, { is_locked: true });
+    const first = detail(501, 3); first.attributes[2]!.is_locked = true;
+    const { api, read, user } = bulk([first, detail(502), locked], { pages: true });
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(api.listModelInputScope.mock.calls[1]?.[4]).toBe("next-page");
+    expect(read.mock.calls.map((call) => call[2])).toEqual([501, 502]);
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_503" })).toBeDisabled();
+    expect(screen.getByText("4 Attributes selected across 2 Objects")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_501" }));
+    expect(screen.getByRole("heading", { name: "customer_501" })).toHaveFocus();
+    expect(screen.getByRole("checkbox", { name: "Include Attribute field_2" })).toBeDisabled();
+    await user.click(screen.getByRole("checkbox", { name: "Include Attribute field_1" }));
+    await user.click(screen.getByRole("button", { name: "Back to Objects" }));
+    expect(screen.getByRole("button", { name: "Choose Attributes for customer_501" })).toHaveFocus();
+    expect(screen.getByText("1 selected · 2 unselected")).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_501" })).toBeChecked();
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_502" })).toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_501" }));
+    await user.click(screen.getByRole("radio", { name: "All unlocked Objects" }));
+    expect(screen.getByText("3 Attributes selected across 2 Objects")).toBeVisible();
+    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_501" })).not.toBeChecked();
+    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_501" }));
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_502" }));
+    await user.click(screen.getByRole("button", { name: "Clear Attribute selection" }));
+    await user.click(screen.getByRole("button", { name: "Back to Objects" }));
+    expect(screen.getByText("0 selected · 2 unselected")).toBeVisible();
+    await user.click(submit);
+    expect(api.createWorkflowRun.mock.calls[0]?.[2]).toMatchObject({ selected_object_ids: [501],
+      description_targets: [{ object_id: 501, attribute_id: 5010000, expected_revision: "b".repeat(64) }] });
+  });
+
+  it("respects page preselection and never changes an empty selection to All", async () => {
+    const { api, read, user } = bulk(undefined, { selected: [502] });
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(read.mock.calls.map((call) => call[2])).toEqual([502]);
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_501" })).not.toBeChecked();
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_502" }));
+    await user.click(screen.getByRole("button", { name: "Clear Attribute selection" }));
+    expect(submit).toBeDisabled();
+    expect(screen.getByText("Select at least one unlocked Attribute to run enrichment.")).toBeVisible();
+    await user.click(submit); expect(api.createWorkflowRun).not.toHaveBeenCalled();
+  });
+
+  it("keeps locked-only page selection empty and foreign Objects disabled", async () => {
+    const { read } = bulk([detail(501), detail(502, 2, { is_locked: true }), detail(503, 2, { source_tenant_id: 8 })], { selected: [502] });
+    await screen.findByText("Select at least one unlocked Attribute to run enrichment.");
+    expect(screen.getByRole("button", { name: "Run attribute enrichment" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_502" })).toBeDisabled();
+    expect(screen.getByRole("checkbox", { name: "Include Object customer_503" })).toBeDisabled();
+    expect(read).not.toHaveBeenCalled();
+  });
+
+  it("blocks a partial run after a failed detail and retries only that Object", async () => {
+    const objects = [detail(501), detail(502)]; let fail = true;
+    const { api, read, user } = bulk(objects, { read: async (_tenant, _model, id) => {
+      if (id === 502 && fail) { fail = false; throw new Error("Synthetic failure"); }
+      return objects.find((object) => object.object_id === id)!;
+    } });
+    const retry = await screen.findByRole("button", { name: "Retry Attributes for customer_502" });
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+    expect(submit).toBeDisabled(); await user.click(submit); expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    await user.click(retry); await waitFor(() => expect(submit).toBeEnabled());
+    expect(read.mock.calls.map((call) => call[2])).toEqual([501, 502, 502]);
+  });
+
+  it.each(["Object", "Tenant", "revision", "connection", "incomplete", "missing total", "invalid total", "too many Attributes"])(
+    "blocks mismatched or incomplete detail: %s", async (failure) => {
+      const object = detail(501);
+      const broken = { ...object };
+      if (failure === "Object") broken.object_id = 502;
+      if (failure === "Tenant") broken.source_tenant_id = 8;
+      if (failure === "revision") broken.review_revision = "c".repeat(64);
+      if (failure === "connection") broken.connection_id = 9;
+      if (failure === "incomplete") broken.attributes = [];
+      if (failure === "missing total") delete broken.total_attribute_count;
+      if (failure === "invalid total") broken.total_attribute_count = 1;
+      if (failure === "too many Attributes") Object.assign(broken, detail(501, 2001));
+      const { api, user } = bulk([object], { read: async () => broken });
+      await screen.findByText(/No partial run will be created/);
+      const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+      expect(submit).toBeDisabled(); await user.click(submit); expect(api.createWorkflowRun).not.toHaveBeenCalled();
+    },
+  );
+
+  it("uses total stored sibling count and drops only Objects with no targets from the context cap", async () => {
+    const { api, user } = bulk([detail(501, 2, { total_attribute_count: 3000 }), detail(502, 2, { total_attribute_count: 2500 })]);
+    await screen.findByText(/more than 5,000 stored Attributes/);
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" }); expect(submit).toBeDisabled();
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_501" }));
+    await user.click(screen.getByRole("checkbox", { name: "Include Attribute field_1" }));
+    expect(submit).toBeDisabled(); expect(screen.getByText("5500 stored Attributes in context · limit 5,000")).toBeVisible();
+    await user.click(screen.getByRole("button", { name: "Clear Attribute selection" }));
+    await waitFor(() => expect(submit).toBeEnabled());
+    expect(screen.getByText("2500 stored Attributes in context · limit 5,000")).toBeVisible();
+    await user.click(submit); expect(api.createWorkflowRun.mock.calls[0]?.[2].selected_object_ids).toEqual([502]);
+  });
+
+  it("blocks more than 200 chosen Objects before any detail requests", async () => {
+    const { read, user } = bulk(Array.from({ length: 201 }, (_, index) => detail(index + 1, 1)));
+    await screen.findByText(/Select up to 200 Objects before loading Attributes/);
+    expect(read).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
+    expect(read).not.toHaveBeenCalled();
+    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_201" }));
+    const submit = screen.getByRole("button", { name: "Run attribute enrichment" });
+    await waitFor(() => expect(submit).toBeEnabled(), { timeout: 10000 });
+    expect(read).toHaveBeenCalledTimes(200);
+    expect(read.mock.calls.some((call) => call[2] === 201)).toBe(false);
+  }, 15000);
+
+  it("loads at most four details concurrently and waits even if an in-flight Object is deselected", async () => {
+    const objects = Array.from({ length: 5 }, (_, index) => detail(index + 1));
+    const resolves = new Map<number, (value: ModelInputScopeDetail) => void>();
+    const { read, user } = bulk(objects, { read: (_tenant, _model, id) => new Promise((resolve) => { resolves.set(id, resolve); }) });
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(4));
+    await user.click(screen.getByRole("radio", { name: "Selected Objects" }));
+    await user.click(screen.getByRole("checkbox", { name: "Include Object customer_4" }));
+    for (const object of objects.slice(0, 3)) resolves.get(object.object_id)!(object);
+    await waitFor(() => expect(read).toHaveBeenCalledTimes(5));
+    resolves.get(5)!(objects[4]!);
+    await screen.findByText("8 Attributes selected across 4 Objects");
+    expect(screen.getByRole("button", { name: "Run attribute enrichment" })).toBeDisabled();
+    resolves.get(4)!(objects[3]!);
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run attribute enrichment" })).toBeEnabled());
+  });
+
+  it("keeps Attribute choices across pages and freezes every selector through start retry", async () => {
+    const execute = vi.fn(async () => undefined).mockRejectedValueOnce(new Error("Synthetic start failure"));
+    const { api, user } = bulk([detail(501, 51)], { execute });
+    await waitFor(() => expect(screen.getByRole("button", { name: "Run attribute enrichment" })).toBeEnabled());
+    await user.click(screen.getByRole("button", { name: "Choose Attributes for customer_501" }));
+    await user.click(screen.getByRole("button", { name: "Next Attributes" }));
+    await user.click(screen.getByRole("checkbox", { name: "Include Attribute field_50" }));
+    await user.click(screen.getByRole("button", { name: "Previous Attributes" }));
+    await user.click(screen.getByRole("button", { name: "Run attribute enrichment" }));
+    const retry = await screen.findByRole("button", { name: "Retry start" });
+    for (const control of [...screen.getAllByRole("checkbox"), ...screen.getAllByRole("radio"), ...screen.getAllByRole("combobox")]) expect(control).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Back to Objects" })).toBeDisabled();
+    expect(screen.getByRole("button", { name: "Next Attributes" })).toBeDisabled();
+    await user.click(retry);
+    await waitFor(() => expect(execute).toHaveBeenCalledTimes(2));
+    expect(api.createWorkflowRun).toHaveBeenCalledOnce();
+    expect(api.createWorkflowRun.mock.calls[0]?.[2].description_targets).toHaveLength(50);
   });
 });

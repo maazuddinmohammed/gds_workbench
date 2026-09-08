@@ -245,11 +245,19 @@ Before completing a frontend change:
   Attribute descriptions and inferred types. Row Actions contain only Edit;
   Show details opens the Object's Attributes. Put selection before Schema and
   bulk Lock/Unlock beside Refresh runs, using the physical locks from Metadata.
-- Run enrichment offers all unlocked or selected records at the current level:
-  Object descriptions from the list, Attribute descriptions from Object details.
-  Attribute runs also infer missing types and preserve existing inferred types.
-  Freeze every selected physical revision; concurrent changes protect the batch.
-  Description edits and runs use existing governed commands and receipts.
+- The Object list offers Refresh, Run object enrichment and Run attribute
+  enrichment. Object details explicitly offer Run attribute enrichment.
+  Bulk Attribute runs offer all unlocked or selected Objects. Each Object starts
+  with every active unlocked Attribute selected; users can open its Attribute
+  list inside the same dialog and exclude individual Attributes. Preserve those
+  choices when returning to the Object list or changing selection mode.
+  Show per-Object selected/unselected counts, including zero, and distinguish
+  locked Attributes. Parent Object locks protect their Attributes. Load complete
+  details before starting; incomplete or failed loads must not create a partial
+  run. Freeze every selected physical revision and omit Objects with no selected
+  Attributes. Attribute runs also infer missing types and preserve existing
+  inferred types. Description edits and runs use existing governed commands and
+  receipts; concurrent changes protect the batch.
 - Logical Attributes live inside Entity details, including review actions and
   their source mapping links. Logical and Dimensional provenance use the same
   Source/Rationale/Status table and structured detail renderer as Mapping.

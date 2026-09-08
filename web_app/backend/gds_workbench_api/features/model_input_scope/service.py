@@ -116,6 +116,7 @@ SELECT model_input_scope.model_input_scope_id,
        application.metadata_object_review_revision(object) AS review_revision,
        object.batch_attribute_name,
        attribute_count.attribute_count,
+       attribute_count.total_attribute_count,
        eligible_object.is_model_input_eligible,
        eligible_object.is_dimensional_source_eligible,
        eligible_object.is_logical_mapping_target_eligible,
@@ -137,10 +138,10 @@ SELECT model_input_scope.model_input_scope_id,
   JOIN core.tenant AS source_tenant
     ON source_tenant.tenant_id = eligible_object.object_tenant_id
  CROSS JOIN LATERAL (
-       SELECT count(*)::INTEGER AS attribute_count
+       SELECT (count(*) FILTER (WHERE attribute.is_active))::INTEGER AS attribute_count,
+              count(*)::INTEGER AS total_attribute_count
          FROM core.attribute AS attribute
         WHERE attribute.object_id = eligible_object.object_id
-          AND attribute.is_active
   ) AS attribute_count
  WHERE target_model.tenant_id = %s
    AND target_model.model_id = %s

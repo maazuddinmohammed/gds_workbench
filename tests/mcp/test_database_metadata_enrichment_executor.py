@@ -3,6 +3,7 @@
 # Reuse fixture-only setup; never connect to an existing database.
 # pyright: reportPrivateUsage=false
 import json
+from typing import Any
 from uuid import UUID, uuid4
 
 import pytest
@@ -18,6 +19,9 @@ from gds_workbench_api.features.metadata_enrichment.repository import (
 )
 from gds_workbench_api.features.metadata_enrichment.service import (
     DatabaseMetadataEnrichmentExecutor,
+)
+from gds_workbench_api.features.model_input_scope.service import (
+    DatabaseModelInputScopeService,
 )
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentExecutionRequest,
@@ -67,6 +71,7 @@ class DescriptionAgent(LocalFakeAgentAdapter):
         super().__init__(sdk_code="langchain_create_agent")
         self.behavior = behavior
         self.calls = 0
+        self.requested_keys: list[tuple[str, ...]] = []
 
     async def execute(self, request: AgentExecutionRequest) -> AgentExecutionResult:
         self.calls += 1
@@ -87,6 +92,7 @@ class DescriptionAgent(LocalFakeAgentAdapter):
         assert len({len(key) for key in keys}) == 1, (
             "Objects and Attributes are separate calls."
         )
+        self.requested_keys.extend(tuple(key) for key in keys)
         assert isinstance(request.context, dict)
         frozen = request.context["original_context"]
         assert isinstance(frozen, dict)
@@ -139,6 +145,7 @@ class DescriptionAgent(LocalFakeAgentAdapter):
         "regenerate_changed",
         "regenerate_objects",
         "regenerate_attributes",
+        "regenerate_bulk_attributes",
         "regenerate_existing_type",
         "regenerate_null",
     ],
@@ -153,6 +160,8 @@ async def test_shared_executor_completes_physical_enrichment(
     first_object, first_attribute = attributes[0]
     regeneration = None
     regenerations = None
+    before_objects: dict[int, dict[str, Any]] = {}
+    before_attributes: dict[int, dict[str, Any]] = {}
     with actor.database.connect_owner() as connection:
         connection.execute(
             "UPDATE model.model SET default_agent_sdk_code='langchain_create_agent', "
@@ -224,7 +233,8 @@ async def test_shared_executor_completes_physical_enrichment(
                 connection.execute(
                     "INSERT INTO core.attribute(object_id, attribute_name, "
                     "attribute_ordinal_position, attribute_data_type, attribute_nullability) "
-                    "SELECT %s, 'value_' || number, number + 1, 'BIGINT', TRUE FROM generate_series(1,30) AS number",
+                    "SELECT %s, 'value_' || number, number + 1, 'BIGINT', TRUE "
+                    "FROM generate_series(1,30) AS number",
                     (first_object,),
                 )
                 selected = connection.execute(
@@ -249,6 +259,67 @@ async def test_shared_executor_completes_physical_enrichment(
                 )
                 for row in selected
             ]
+        if behavior == "regenerate_bulk_attributes":
+            selected_objects = list(context.selected_object_ids[:2])
+            assert len(selected_objects) == 2
+            connection.execute(
+                "UPDATE core.object SET object_description='Original Object description.' "
+                "WHERE object_id=ANY(%s)",
+                (list(context.selected_object_ids),),
+            )
+            connection.execute(
+                "INSERT INTO core.attribute(object_id,attribute_name,attribute_ordinal_position,"
+                "attribute_data_type,attribute_description,is_locked,is_active) "
+                "SELECT object_id, name, ordinal, 'BIGINT', "
+                "'Preserve unless selected.', locked, active "
+                "FROM unnest(%s::BIGINT[]) AS objects(object_id) CROSS JOIN (VALUES "
+                "('bulk_selected',2,FALSE,TRUE), ('bulk_excluded',3,FALSE,TRUE), "
+                "('bulk_locked',4,TRUE,TRUE), ('bulk_inactive',5,FALSE,FALSE)"
+                ") AS attributes(name,ordinal,locked,active)",
+                (selected_objects,),
+            )
+            connection.execute(
+                "UPDATE core.attribute SET "
+                "attribute_description='Original Attribute description.', "
+                "attribute_data_type=CASE WHEN attribute_id=%s "
+                "THEN 'DECIMAL(12,2)' ELSE 'BIGINT' END "
+                "WHERE object_id=ANY(%s)",
+                (first_attribute, list(context.selected_object_ids)),
+            )
+            selected = connection.execute(
+                "SELECT attribute.attribute_id,object.object_id, "
+                "application.metadata_attribute_review_revision(attribute,object) AS revision "
+                "FROM core.attribute AS attribute JOIN core.object AS object USING(object_id) "
+                "WHERE object.object_id=ANY(%s) AND attribute.is_active "
+                "AND NOT attribute.is_locked AND attribute.attribute_name <> 'bulk_excluded' "
+                "ORDER BY object.object_id,attribute.attribute_id",
+                (selected_objects,),
+            ).fetchall()
+            regenerations = [
+                EnrichmentDescriptionTarget(
+                    object_id=row["object_id"],
+                    attribute_id=row["attribute_id"],
+                    expected_revision=row["revision"],
+                )
+                for row in selected
+            ]
+            before_objects = {
+                row["object_id"]: row["record"]
+                for row in connection.execute(
+                    "SELECT object_id,to_jsonb(object) AS record FROM core.object AS object "
+                    "WHERE object_id=ANY(%s)",
+                    (list(context.selected_object_ids),),
+                ).fetchall()
+            }
+            before_attributes = {
+                row["attribute_id"]: row["record"]
+                for row in connection.execute(
+                    "SELECT attribute_id,to_jsonb(attribute) AS record "
+                    "FROM core.attribute AS attribute "
+                    "WHERE object_id=ANY(%s)",
+                    (list(context.selected_object_ids),),
+                ).fetchall()
+            }
         if behavior == "locked":
             connection.execute(
                 "UPDATE core.object SET is_locked=TRUE WHERE object_id=ANY(%s)",
@@ -268,6 +339,20 @@ async def test_shared_executor_completes_physical_enrichment(
     await database.open()
     agent = DescriptionAgent(behavior)
     try:
+        if behavior == "regenerate_bulk_attributes":
+            scope = DatabaseModelInputScopeService(
+                database=database,
+                authorizer=AuthorizationService(),
+                cursor_signing_key=b"fixture-only-cursor-signing-key-32",
+            )
+            detail = await scope.read_input_scope_object(
+                principal,
+                tenant_id=context.tenant_id,
+                model_id=context.model_id,
+                object_id=first_object,
+            )
+            assert detail.total_attribute_count == 5
+            assert detail.attribute_count == len(detail.attributes) == 4
         created = await DatabaseWorkflowCommandService(
             database=database,
             authorizer=AuthorizationService(),
@@ -341,7 +426,7 @@ async def test_shared_executor_completes_physical_enrichment(
             ).fetchone()
         )
         outcomes = connection.execute(
-            "SELECT field_name,status,applied_value,evidence_method FROM "
+            "SELECT object_id,attribute_id,field_name,status,applied_value,evidence_method FROM "
             "application.metadata_enrichment_result WHERE workflow_run_id=%s",
             (run_id,),
         ).fetchall()
@@ -352,6 +437,62 @@ async def test_shared_executor_completes_physical_enrichment(
                 (run_id,),
             ).fetchone()
         )
+        if behavior == "regenerate_bulk_attributes":
+            after_objects = {
+                row["object_id"]: row["record"]
+                for row in connection.execute(
+                    "SELECT object_id,to_jsonb(object) AS record FROM core.object AS object "
+                    "WHERE object_id=ANY(%s)",
+                    (list(context.selected_object_ids),),
+                ).fetchall()
+            }
+            after_attributes = {
+                row["attribute_id"]: row["record"]
+                for row in connection.execute(
+                    "SELECT attribute_id,to_jsonb(attribute) AS record "
+                    "FROM core.attribute AS attribute "
+                    "WHERE object_id=ANY(%s)",
+                    (list(context.selected_object_ids),),
+                ).fetchall()
+            }
+            assert after_objects == before_objects
+            selected_ids = {target.attribute_id for target in regenerations or ()}
+            descriptions = [
+                row for row in outcomes if row["field_name"] == "attribute_description"
+            ]
+            assert len(descriptions) == len(selected_ids) == 4
+            assert {row["attribute_id"] for row in descriptions} == selected_ids
+            assert all(row["status"] == "applied" for row in descriptions)
+            assert not any(
+                row["field_name"] == "object_description" for row in outcomes
+            )
+            assert len(agent.requested_keys) == 4
+            assert all(len(key) == 6 for key in agent.requested_keys)
+            assert len({key[:5] for key in agent.requested_keys}) == 2
+            for attribute_id, before in before_attributes.items():
+                after = after_attributes[attribute_id]
+                if attribute_id not in selected_ids:
+                    assert after == before
+                else:
+                    assert (
+                        after["attribute_description"]
+                        != before["attribute_description"]
+                    )
+                    permitted = {
+                        "attribute_description",
+                        "attribute_inferred_data_type",
+                        "updated_time",
+                        "updated_by",
+                    }
+                    assert {
+                        key: value
+                        for key, value in before.items()
+                        if key not in permitted
+                    } == {
+                        key: value
+                        for key, value in after.items()
+                        if key not in permitted
+                    }
     assert len(outcomes) == (
         sum(1 if target.attribute_id is None else 2 for target in regenerations)
         if regenerations
@@ -373,6 +514,8 @@ async def test_shared_executor_completes_physical_enrichment(
             if behavior == "regenerate_changed"
             else {"applied": 1, "existing": 1}
             if behavior == "regenerate_existing_type"
+            else {"applied": 6, "inconclusive": 2}
+            if behavior == "regenerate_bulk_attributes"
             else {"applied": len(outcomes)}
         )
         assert agent.calls == (

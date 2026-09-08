@@ -1226,8 +1226,6 @@ BEGIN
         IF EXISTS (SELECT 1 FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target
             GROUP BY target->>'object_id', target->>'attribute_id' HAVING count(*) > 1)
            OR (SELECT count(DISTINCT (target->>'attribute_id' IS NULL)) FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target) <> 1
-           OR ((p_metadata_enrichment_description_targets->0->>'attribute_id') IS NOT NULL
-               AND (SELECT count(DISTINCT target->>'object_id') FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target) <> 1)
            OR ARRAY(SELECT DISTINCT (target->>'object_id')::BIGINT FROM jsonb_array_elements(p_metadata_enrichment_description_targets) AS target ORDER BY 1)
               IS DISTINCT FROM ARRAY(SELECT DISTINCT id FROM unnest(p_selected_object_ids) AS id ORDER BY 1) THEN
             RAISE EXCEPTION 'Invalid description regeneration selection';

@@ -1,3 +1,4 @@
+import json
 from collections.abc import AsyncGenerator
 from contextlib import asynccontextmanager
 from datetime import UTC, datetime
@@ -25,6 +26,7 @@ from gds_workbench_api.features.model_input_scope import (
 )
 from gds_workbench_api.features.model_input_scope.contracts import ScopeSearchOptions
 from gds_workbench_api.main import create_app
+from pydantic import ValidationError
 
 
 class DisposablePostgresFixture(Protocol):
@@ -172,6 +174,7 @@ class StaticModelInputScopeService(ModelInputScopeService):
             zone_code="bronze",
             batch_attribute_name="batch_id",
             attribute_count=1,
+            total_attribute_count=2,
             is_model_input_eligible=True,
             is_dimensional_source_eligible=False,
             is_logical_mapping_target_eligible=False,
@@ -201,7 +204,9 @@ class StaticModelInputScopeService(ModelInputScopeService):
         )
 
 
-def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> None:
+def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> (
+    None
+):
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -267,7 +272,9 @@ def test_model_input_scope_candidates_are_exact_filtered_and_read_only() -> None
     assert "model_input_scope_id" not in payload["items"][0]
 
 
-def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> None:
+def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> (
+    None
+):
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -284,6 +291,11 @@ def test_model_input_scope_detail_opens_cross_source_object_through_model_author
     payload = response.json()
     assert payload["source_tenant_id"] == 8
     assert payload["attributes"][0]["attribute_name"] == "customer_id"
+    assert payload["attribute_count"] == 1 and payload["total_attribute_count"] == 2
+    with pytest.raises(ValidationError, match="total_attribute_count"):
+        ModelInputScopeDetail.model_validate_json(
+            json.dumps({**payload, "total_attribute_count": 0})
+        )
 
 
 class ScopeTransaction:
@@ -315,6 +327,7 @@ class ScopeTransaction:
                 "zone_code": "bronze",
                 "batch_attribute_name": "batch_id",
                 "attribute_count": 1,
+                "total_attribute_count": 2,
                 "is_model_input_eligible": True,
                 "is_dimensional_source_eligible": False,
                 "is_logical_mapping_target_eligible": False,
@@ -612,6 +625,7 @@ async def test_database_scope_detail_is_bound_to_active_model_input_scope() -> N
 
     assert detail.object_name == "customer_raw"
     assert detail.attributes[0].attribute_name == "customer_id"
+    assert detail.total_attribute_count == 2 and detail.attribute_count == 1
 
 
 @pytest.mark.asyncio
@@ -628,7 +642,9 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
+            connection.execute(
+                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
+            )
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -822,7 +838,9 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
     finally:
         await database.close()
 
-    candidate_keys = {(item.object_schema, item.object_name) for item in candidates.items}
+    candidate_keys = {
+        (item.object_schema, item.object_name) for item in candidates.items
+    }
     assert ("source_demo", "customer") in candidate_keys
     assert ("bronze_demo", "customer") in candidate_keys
     assert ("silver_demo", "customer") not in candidate_keys

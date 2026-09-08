@@ -22,7 +22,7 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
   api: EnrichmentApi; tenantId: number; model: ModelDetail; hasTenantLock: boolean;
 }) {
   const client = useQueryClient();
-  const [runDialog, setRunDialog] = useState<boolean>(false);
+  const [runDialog, setRunDialog] = useState<"object" | "attribute" | null>(null);
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [recentRunId, setRecentRunId] = useState<number | null>(null);
   const [objectId, setObjectId] = useState<number | null>(null);
@@ -134,7 +134,8 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
       <h1>Enrichment</h1>
       <div className="target-review-actions">
         <button className="button button-secondary button-small" type="button" disabled={busy || objects.isFetching || detail.isFetching} onClick={() => void refresh()}>Refresh</button>
-        <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog(true)}>Run enrichment</button>
+        {objectId === null ? <button className="button button-primary button-small" type="button" disabled={!hasTenantLock || busy || refreshRequired || changed} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("object")}>Run object enrichment</button> : null}
+        <button className={`button button-${objectId === null ? "secondary" : "primary"} button-small`} type="button" disabled={!hasTenantLock || busy || refreshRequired || changed || (objectId !== null && (!current || current.is_locked || current.source_tenant_id !== tenantId))} title={hasTenantLock ? undefined : "Owned Tenant Lock required"} onClick={() => setRunDialog("attribute")}>Run attribute enrichment</button>
       </div>
     </header>
     <EnrichmentHistory api={api} tenantId={tenantId} modelId={model.model_id} focusRunId={recentRunId} onRefresh={refresh} controls={lockControls} disabled={busy} />
@@ -168,9 +169,9 @@ export function MetadataEnrichmentScreen({ api, tenantId, model, hasTenantLock }
     {editor ? <DescriptionEditor record={editor} busy={busy} uncertain={uncertain} canSave={hasTenantLock && !refreshRequired} error={review.isError ? error : null}
       onClose={() => setEditor(null)} onRetry={() => { if (pendingReview.current) review.mutate(pendingReview.current); }}
       onSave={(description) => submitReview({ record_type: editor.type, action: "describe", records: [{ record_id: editor.id, expected_revision: editor.revision, description }] })} /> : null}
-    {runDialog ? <WorkflowRunDialog api={api} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" {...(current ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
+    {runDialog ? <WorkflowRunDialog api={api} tenantId={tenantId} model={model} kind="inference" workflow="metadata_enrichment" enrichmentTarget={runDialog} readEnrichmentObject={api.readModelInputScopeObject} {...(current && runDialog === "attribute" ? { enrichmentObject: current } : {})} initialSelectedIds={[...selectedIds]}
       executeCreated={async (runId) => { await api.executeMetadataEnrichmentRun(tenantId, model.model_id, runId, model.model_revision); }}
-      onClose={() => setRunDialog(false)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "metadata_enrichment") }); }} /> : null}
+      onClose={() => setRunDialog(null)} onCreated={async (runId) => { setRecentRunId(runId); await client.invalidateQueries({ queryKey: workflowRunQueryKeys.recent(tenantId, model.model_id, "metadata_enrichment") }); }} /> : null}
   </div>;
 }
 

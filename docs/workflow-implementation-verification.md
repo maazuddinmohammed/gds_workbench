@@ -147,3 +147,38 @@ The fresh final MCP/backend/SQL/packaging/plugin regression passed **2,749 tests
 with **44 Windows PowerShell skips**. It ran after every cleanup edit and archive
 rebuild, using only fixture-created disposable PostgreSQL containers. Final
 workspace whitespace checks passed. No commit, push or deployment was performed.
+
+## Bulk Attribute enrichment — 2026-09-08
+
+Enrichment now provides separate Object and Attribute actions. The Attribute
+dialog loads all scoped Objects, defaults to active unlocked Attributes, and
+preserves individual exclusions while navigating between Objects. Counts show
+selected, unselected and locked Attributes. Incomplete or stale detail loads
+block creation; a start retry retains the original frozen selection.
+
+The API and fresh-install SQL accept Attribute targets across several Objects.
+The executor still makes one call per Object, retaining its sibling evidence
+and all ownership, lock, revision, duplicate and exact-target checks. A detail
+count includes inactive siblings when checking the existing context limit.
+
+Verification: 371 frontend tests, TypeScript and production build; 82 focused
+backend/database tests; backend Ruff and Pyright; 159 notebook tests, 20 artifact
+checks and all three extracted Python 3.12 probes. App and notebook source
+archives were rebuilt and compared with source. MCP, plugin and extension
+source were unaffected.
+
+Browser checks covered multiple Objects across scope pages, default counts,
+locked exclusions, drill-down edits, deselection/reselection, exact submitted
+targets, keyboard dismissal and a 390px viewport. The rebuilt production app
+also completed a run through the local fake provider and generated both selected
+Attribute descriptions while preserving the Object description.
+
+The fresh disposable review app is available at
+`http://127.0.0.1:8081/tenants/1/models/1/metadata-enrichment`; health and readiness
+return 200. The existing app and review data on port 8080 remain untouched.
+Existing databases were not migrated, and no live provider was called.
+
+The final full MCP/backend/SQL/packaging/Python plugin regression passed
+**2,750 tests**, with **44 Windows PowerShell skips**, after the affected archives
+were rebuilt. It used source imports and fixture-created disposable PostgreSQL
+containers. Final whitespace checks passed; changes remain uncommitted.

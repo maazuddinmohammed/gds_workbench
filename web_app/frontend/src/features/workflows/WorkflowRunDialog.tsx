@@ -1,4 +1,5 @@
-import type { ModelInputScopeDetail } from "../model_input_scope/api";
+import type { ModelInputScopeApi, ModelInputScopeDetail } from "../model_input_scope/api";
+import { EnrichmentAttributeSelection, type EnrichmentAttributeSelectionValue } from "../metadata_enrichment/EnrichmentAttributeSelection";
 import { useEffect, useRef, useState } from "react";
 import { useForm, useStore } from "@tanstack/react-form";
 import { useMutation, useQuery } from "@tanstack/react-query";
@@ -49,6 +50,8 @@ export function WorkflowRunDialog({
   workflow = "analysis",
   executeCreated,
   enrichmentObject,
+  enrichmentTarget,
+  readEnrichmentObject,
   initialSelectedIds = [],
   executeValidationCreated,
   onClose,
@@ -60,6 +63,8 @@ export function WorkflowRunDialog({
   kind: AnalysisRunKind;
   workflow?: AgenticWorkflow;
   enrichmentObject?: ModelInputScopeDetail;
+  enrichmentTarget?: "object" | "attribute";
+  readEnrichmentObject?: ModelInputScopeApi["readModelInputScopeObject"];
   initialSelectedIds?: number[];
   executeCreated?: (
     workflowRunId: number,
@@ -74,6 +79,8 @@ export function WorkflowRunDialog({
   const closeButton = useRef<HTMLButtonElement>(null);
   const [pendingStart, setPendingStart] = useState<PendingWorkflowStart | null>(null);
   const isEnrichment = workflow === "metadata_enrichment";
+  const isAttributeEnrichment = isEnrichment && (enrichmentTarget === "attribute" || enrichmentObject !== undefined);
+  const [attributeSelection, setAttributeSelection] = useState<EnrichmentAttributeSelectionValue>({ targets: [], ready: false });
   const isDimensional = workflow === "dimensional";
   const authoringWorkflowName = isEnrichment ? "Metadata enrichment" : workflow === "conceptual"
     ? "Conceptual"
@@ -102,7 +109,7 @@ export function WorkflowRunDialog({
     : (scopeQuery.data?.items ?? []).filter((item) => !isEnrichment || (!item.is_locked && item.source_tenant_id === tenantId && /^[0-9a-f]{64}$/.test(item.review_revision ?? "")))
       .map((item) => ({ id: item.object_id, objectId: item.object_id, attributeId: null as number | null, name: item.object_name,
         context: isEnrichment ? `${item.object_schema ?? ""} · ${item.zone_code}` : `${item.system_code} · ${item.source_tenant_code}`, revision: item.review_revision ?? "" }));
-  const recordName = enrichmentObject ? "Attributes" : "Objects";
+  const recordName = isAttributeEnrichment ? "Attributes" : "Objects";
   const capabilitiesQuery = useQuery({
     queryKey: workflowCreationQueryKeys.capabilities,
     queryFn: api.readAgentCapabilities,
@@ -123,8 +130,12 @@ export function WorkflowRunDialog({
         return;
       }
       if (kind === "inference" && !agentSelectionValid) return;
+      if (isAttributeEnrichment && (!attributeSelection.ready || scopeQuery.isFetching || scopeQuery.isError || revisionChanged)) return;
       const selectedRows = value.scopeMode === "all" ? scopeRows : scopeRows.filter((item) => value.selectedObjectIds.includes(item.id));
-      const selectedObjectIds = [...new Set(selectedRows.map((item) => item.objectId))];
+      const descriptionTargets = isAttributeEnrichment ? attributeSelection.targets
+        : selectedRows.map((item) => ({ object_id: item.objectId, attribute_id: item.attributeId, expected_revision: item.revision }));
+      const selectedObjectIds = [...new Set(isAttributeEnrichment
+        ? descriptionTargets.map((target) => target.object_id) : selectedRows.map((item) => item.objectId))];
       if (isEnrichment && (selectedObjectIds.length > 200 || selectedObjectIds.length === 0
         || value.executionMode !== "one_shot" || selectedObjectIds.some((id) =>
           !scopeQuery.data?.items.some((item) => item.object_id === id)))) return;
@@ -138,7 +149,7 @@ export function WorkflowRunDialog({
           requested_batch_id: isEnrichment ? null : value.requestedBatchId.trim() || null,
           agent: kind === "inference" ? agent : null,
           prompt_overrides: {},
-          ...(isEnrichment ? { description_targets: selectedRows.map((item) => ({ object_id: item.objectId, attribute_id: item.attributeId, expected_revision: item.revision })) } : {}),
+          ...(isEnrichment ? { description_targets: descriptionTargets } : {}),
         },
       });
     },
@@ -362,7 +373,15 @@ export function WorkflowRunDialog({
             </p>
           )}
 
-          <fieldset className="scope-mode-options">
+          {isAttributeEnrichment ? scopeQuery.isPending ? <p className="surface-state compact" aria-busy="true">Loading active Scope…</p>
+            : scopeQuery.isError ? <p className="inline-error" role="alert">Active Scope could not be loaded. Close and refresh to retry.</p>
+              : readEnrichmentObject && scopeQuery.data ? <EnrichmentAttributeSelection
+                objects={scopeQuery.data.items} tenantId={tenantId} modelId={model.model_id}
+                readObject={readEnrichmentObject} {...(enrichmentObject ? { initialObject: enrichmentObject } : {})}
+                initialSelectedIds={initialSelectedIds} disabled={runMutation.isPending || pendingStart !== null || scopeQuery.isFetching || revisionChanged}
+                onChange={setAttributeSelection} />
+                : <p className="inline-error" role="alert">Attribute selection is unavailable.</p>
+            : <><fieldset className="scope-mode-options" disabled={runMutation.isPending || pendingStart !== null}>
             <legend>{recordName}</legend>
             <form.Field name="scopeMode">
               {(field) => (
@@ -413,7 +432,7 @@ export function WorkflowRunDialog({
                         <input
                           type="checkbox"
                           checked={scopeMode === "all" || field.state.value.includes(item.id)}
-                          disabled={scopeMode === "all" || (isEnrichment && !enrichmentObject && field.state.value.length >= 200 && !field.state.value.includes(item.id))}
+                          disabled={runMutation.isPending || pendingStart !== null || scopeMode === "all" || (isEnrichment && !enrichmentObject && field.state.value.length >= 200 && !field.state.value.includes(item.id))}
                           onChange={(event) => field.handleChange(event.target.checked
                             ? [...field.state.value, item.id]
                             : field.state.value.filter((id) => id !== item.id))}
@@ -428,7 +447,7 @@ export function WorkflowRunDialog({
                 )}
               </form.Field>
             )}
-          </section>
+          </section></>}
 
 
           {!isEnrichment ? <form.Field name="requestedBatchId">
@@ -437,6 +456,7 @@ export function WorkflowRunDialog({
                 <span>Batch ID (optional)</span>
                 <input
                   aria-label="Batch ID (optional)"
+                  disabled={runMutation.isPending || pendingStart !== null}
                   value={field.state.value}
                   onBlur={field.handleBlur}
                   onChange={(event) => field.handleChange(event.target.value)}
@@ -445,7 +465,7 @@ export function WorkflowRunDialog({
               </label>
             )}
           </form.Field> : null}
-          {isEnrichment && effectiveObjects.length > 200 ? (
+          {isEnrichment && !isAttributeEnrichment && effectiveObjects.length > 200 ? (
             <p className="inline-error" role="alert">Select up to 200 Objects. Choose Selected Objects to narrow this run.</p>
           ) : null}
 
@@ -497,8 +517,8 @@ export function WorkflowRunDialog({
                   || (pendingStart === null && (
                     scopeQuery.isPending
                     || scopeQuery.isError
-                    || effectiveRows.length === 0
-                    || (isEnrichment && effectiveObjects.length > 200)
+                    || (isAttributeEnrichment ? !attributeSelection.ready || scopeQuery.isFetching : effectiveRows.length === 0)
+                    || (isEnrichment && !isAttributeEnrichment && effectiveObjects.length > 200)
                     || batchIsIncoherent
                     || revisionChanged
                     || (kind === "inference" && (capabilitiesQuery.isPending || !agentSelectionValid))
@@ -513,7 +533,7 @@ export function WorkflowRunDialog({
                       : "Creating…"
                   : pendingStart
                     ? "Retry start"
-                    : isEnrichment ? "Run metadata enrichment" : workflow !== "analysis"
+                    : isEnrichment ? `Run ${isAttributeEnrichment ? "attribute" : "object"} enrichment` : workflow !== "analysis"
                       ? `Create and run ${authoringWorkflowName}`
                       : executeCreated || executeValidationCreated
                         ? `Create and run ${kind}`

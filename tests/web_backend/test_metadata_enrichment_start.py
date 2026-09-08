@@ -15,6 +15,7 @@ from gds_workbench_api.features.metadata_enrichment.service import (
 from gds_workbench_api.features.workflows.authoring.lifecycle import (
     AgentWorkflowRunStart,
 )
+from gds_workbench_api.features.workflows.commands import WorkflowRunCommandResult
 from gds_workbench_api.main import create_app
 
 
@@ -94,13 +95,6 @@ def test_web_start_uses_governed_fixed_target_and_supports_retry(changed: bool) 
                 {"object_id": 1, "attribute_id": 2, "expected_revision": "a" * 64},
             ]
         },
-        {
-            "selected_object_ids": [1, 2],
-            "description_targets": [
-                {"object_id": 1, "attribute_id": 3, "expected_revision": "a" * 64},
-                {"object_id": 2, "attribute_id": 4, "expected_revision": "a" * 64},
-            ],
-        },
         {"description_targets": [{"object_id": 1, "attribute_id": None}]},
         {
             "description_targets": [
@@ -143,6 +137,55 @@ def test_regeneration_requires_exact_scope_and_current_metadata_revision(
             }
         ],
     }
-    assert CreateWorkflowRunRequest.model_validate(document).description_targets is not None
+    assert (
+        CreateWorkflowRunRequest.model_validate(document).description_targets
+        is not None
+    )
     with pytest.raises(ValidationError):
         CreateWorkflowRunRequest.model_validate(document | patch)
+
+
+def test_bulk_attribute_creation_keeps_exact_targets_across_objects() -> None:
+    targets = [
+        {"object_id": 1, "attribute_id": 3, "expected_revision": "a" * 64},
+        {"object_id": 1, "attribute_id": 4, "expected_revision": "b" * 64},
+        {"object_id": 2, "attribute_id": 5, "expected_revision": "c" * 64},
+    ]
+    commands = AsyncMock()
+    correlation_id = UUID("aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa")
+    commands.create_run.return_value = WorkflowRunCommandResult(
+        created=True,
+        workflow_run_id=71,
+        workflow_run_state="queued",
+        correlation_id=correlation_id,
+        prompt_snapshot_count=1,
+        model_revision=4,
+        selected_scope_digest="d" * 64,
+        selected_scope_count=2,
+        code_generation_coverage_mode=None,
+        created_at=datetime(2026, 9, 5, tzinfo=UTC),
+    )
+    app = create_app(
+        identity_provider=IdentityProvider(
+            AuthMode.DEV,
+            local_tenant_id=UUID("11111111-1111-1111-1111-111111111111"),
+            local_principal_object_id=UUID("22222222-2222-2222-2222-222222222222"),
+        ),
+        workflow_command_service=commands,
+    )
+    with TestClient(app) as client:
+        response = client.post(
+            "/api/v1/tenants/2/models/3/runs",
+            headers={"Idempotency-Key": str(correlation_id)},
+            json={
+                "expected_model_revision": 4,
+                "model_workflow": "metadata_enrichment",
+                "workflow_execution_mode": "one_shot",
+                "selected_object_ids": [1, 2],
+                "description_targets": targets,
+            },
+        )
+    assert response.status_code == 201
+    command = commands.create_run.await_args.kwargs["command"]
+    assert command.selected_object_ids == [1, 2]
+    assert [target.model_dump() for target in command.description_targets] == targets

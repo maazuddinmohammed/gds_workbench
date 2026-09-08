@@ -575,7 +575,9 @@ export function createWorkflowsApi(request: HttpRequest): WorkflowsApi {
   };
 }
 
-interface WorkflowScopeObject {
+export interface WorkflowScopeObject {
+  connection_id?: number;
+  attribute_count?: number;
   object_schema?: string;
   source_tenant_id?: number;
   is_locked?: boolean;

@@ -5,6 +5,24 @@ all confirmed decisions. The configs/readers and prompt editor are implemented;
 [verification](workflow-implementation-verification.md) records the local checks.
 Earlier design-only wording below is retained as decision history.
 
+## Bulk Attribute selection — 2026-09-08
+
+The Object list provides separate Run object enrichment and Run attribute
+enrichment actions. Object details name the Attribute action explicitly.
+An Attribute run can cover multiple selected unlocked Objects. Each Object
+defaults to every active unlocked Attribute selected, with per-Object
+selected/unselected counts and an Attribute picker inside the same dialog.
+The user can exclude Objects or individual Attributes before starting; excluded
+Attributes are evidence only and are never generated as targets. Objects with
+no selected Attributes are omitted from the run.
+
+One model call still handles one Object and its selected Attributes, with that
+Object's sibling metadata as context. The existing executor visits every
+selected Object; prompt shapes, natural keys, bounded repair, lock protection
+and physical revision fences remain unchanged. Each run stays homogeneous:
+Object descriptions or Attribute descriptions, never both. Complete selection
+loads and the existing Object/Attribute evidence limits remain required.
+
 
 ## Approved: separate Object and Attribute workflows
 

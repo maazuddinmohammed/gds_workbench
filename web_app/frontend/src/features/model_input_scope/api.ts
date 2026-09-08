@@ -46,6 +46,7 @@ export interface ModelInputScopePage {
 }
 
 export interface ModelInputScopeDetail extends ModelInputScopeObject {
+  total_attribute_count?: number;
   attributes: ObjectAttribute[];
 }
 

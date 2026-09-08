@@ -109,11 +109,14 @@ class ModelInputScopeCandidatePage(BaseModel):
 
 class ModelInputScopeDetail(ModelInputScopeObject):
     attributes: tuple[ObjectAttribute, ...] = Field(max_length=2000)
+    total_attribute_count: int = Field(ge=0)
 
     @model_validator(mode="after")
     def validate_attribute_count(self) -> ModelInputScopeDetail:
         if self.attribute_count != len(self.attributes):
             raise ValueError("attribute_count must match the returned Attributes")
+        if self.total_attribute_count < self.attribute_count:
+            raise ValueError("total_attribute_count must include every active Attribute")
         return self
 
 

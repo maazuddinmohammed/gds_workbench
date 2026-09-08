@@ -111,10 +111,9 @@ class CreateWorkflowRunRequest(BaseModel):
                 self.model_workflow != "metadata_enrichment"
                 or objects != set(self.selected_object_ids)
                 or len(attributes) != 1
-                or (True in attributes and len(objects) != 1)
                 or len(identities) != len(targets)
             ):
-                raise ValueError("Select unique Object descriptions or Attributes of one Object")
+                raise ValueError("Select unique Object descriptions or unique Attributes")
         if len(self.selected_object_ids) != len(set(self.selected_object_ids)):
             raise ValueError("Selected Object IDs must be unique")
         normalized_system_codes = [value.casefold() for value in self.selected_system_codes]
