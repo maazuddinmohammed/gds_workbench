@@ -18843,10 +18843,80 @@ var ManagedStageMcpClient = class {
             "Microsoft authentication was rejected by GDS MCP."
           );
         }
-        throw new StageMcpError(
-          couldHaveWritten(name) ? "MCP_OUTCOME_UNKNOWN" : "MCP_UNAVAILABLE",
-          couldHaveWritten(name) ? "The Stage operation outcome is unknown; verify before retrying." : "GDS MCP is unavailable."
-        );
+        if (couldHaveWritten(name)) {
+          throw new StageMcpError(
+            "MCP_OUTCOME_UNKNOWN",
+            "The Stage operation outcome is unknown; verify before retrying."
+          );
+        }
+        if (error2 instanceof StreamableHTTPError) {
+          if (typeof error2.code === "number" && Number.isInteger(error2.code) && error2.code >= 100 && error2.code <= 599) {
+            throw new StageMcpError(
+              "MCP_HTTP_ERROR",
+              `GDS MCP returned HTTP ${error2.code}. Check server access and the selected Stage Runner profile.`
+            );
+          }
+          throw new StageMcpError("MCP_RESPONSE_INVALID", "GDS MCP returned an unsupported HTTP response.");
+        }
+        const cause = error2 instanceof Error && error2.cause !== void 0 ? error2.cause : error2;
+        const networkCode = error2 instanceof McpError && error2.code === ErrorCode.RequestTimeout ? "ETIMEDOUT" : isObject3(cause) && typeof cause.code === "string" ? cause.code : cause instanceof Error ? /^net::(ERR_[A-Z_]+)$/.exec(cause.message)?.[1] : void 0;
+        const failures = [
+          [
+            ["ENOTFOUND", "EAI_AGAIN", "ERR_NAME_NOT_RESOLVED"],
+            "MCP_DNS_FAILED",
+            "GDS MCP DNS lookup failed. Check the server address, VPN, and DNS access."
+          ],
+          [
+            [
+              "CERT_HAS_EXPIRED",
+              "UNABLE_TO_VERIFY_LEAF_SIGNATURE",
+              "UNABLE_TO_GET_ISSUER_CERT_LOCALLY",
+              "SELF_SIGNED_CERT_IN_CHAIN",
+              "DEPTH_ZERO_SELF_SIGNED_CERT",
+              "ERR_TLS_CERT_ALTNAME_INVALID",
+              "ERR_CERT_AUTHORITY_INVALID",
+              "ERR_CERT_DATE_INVALID",
+              "ERR_CERT_COMMON_NAME_INVALID"
+            ],
+            "MCP_TLS_FAILED",
+            "GDS MCP certificate verification failed. Check the server certificate and VS Code's trusted certificates."
+          ],
+          [
+            [
+              "ETIMEDOUT",
+              "UND_ERR_CONNECT_TIMEOUT",
+              "UND_ERR_HEADERS_TIMEOUT",
+              "UND_ERR_BODY_TIMEOUT",
+              "ERR_CONNECTION_TIMED_OUT",
+              "ERR_TIMED_OUT"
+            ],
+            "MCP_TIMEOUT",
+            "The GDS MCP connection timed out. Check server availability and network access."
+          ],
+          [
+            ["ERR_PROXY_CONNECTION_FAILED", "ERR_TUNNEL_CONNECTION_FAILED", "ERR_NO_SUPPORTED_PROXIES"],
+            "MCP_PROXY_FAILED",
+            "The GDS MCP proxy connection failed. Check VS Code's proxy settings."
+          ],
+          [
+            [
+              "ECONNREFUSED",
+              "ECONNRESET",
+              "EHOSTUNREACH",
+              "ENETUNREACH",
+              "UND_ERR_SOCKET",
+              "ERR_CONNECTION_REFUSED",
+              "ERR_CONNECTION_RESET",
+              "ERR_ADDRESS_UNREACHABLE"
+            ],
+            "MCP_CONNECTION_FAILED",
+            "The GDS MCP connection was refused, interrupted, or unreachable. Check server and network access."
+          ]
+        ];
+        for (const [codes, code, message] of failures) {
+          if (networkCode !== void 0 && codes.includes(networkCode)) throw new StageMcpError(code, message);
+        }
+        throw new StageMcpError("MCP_UNAVAILABLE", "GDS MCP is unavailable.");
       }
     }
     throw new StageMcpError("AUTHENTICATION_REQUIRED", "Microsoft authentication failed.");
@@ -18894,7 +18964,7 @@ async function createStageMcpClient(profile, tokenSupplier, connector = connectS
 }
 
 // src/profile.ts
-var PRODUCTION_MCP_URL = "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp";
+var PRODUCTION_MCP_URL = "https://gds-workbench-v1.goamrasedevgdsgblai001.appserviceenvironment.net/mcp";
 var StageProfileError = class extends Error {
   constructor(message) {
     super(message);
@@ -19887,10 +19957,12 @@ var StageApprovedManifestTool = class {
 };
 async function checkStageRunner() {
   let mcp;
+  let profile;
   try {
-    const profile = configuredProfile();
+    profile = configuredProfile();
+    const endpoint = profile.endpoint;
     const tokenSupplier = profile.authentication === "microsoft" ? (forceNewSession) => acquireMicrosoftAccessToken(
-      profile.endpoint,
+      endpoint,
       getMicrosoftSession,
       fetch,
       forceNewSession
@@ -19905,7 +19977,9 @@ async function checkStageRunner() {
     );
   } catch (error2) {
     const receipt = failureReceipt(error2, false);
-    await vscode.window.showErrorMessage(`GDS Stage Runner: ${receipt.code}. ${receipt.message}`);
+    await vscode.window.showErrorMessage(
+      `GDS Stage Runner${profile === void 0 ? "" : ` (${profile.name})`}: ${receipt.code}. ${receipt.message}`
+    );
   } finally {
     await mcp?.close().catch(() => void 0);
   }

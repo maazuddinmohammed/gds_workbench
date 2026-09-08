@@ -115,4 +115,15 @@ describe("VS Code tool boundary", () => {
     expect(mocks.error.mock.calls.flat().join()).not.toContain("private test detail");
     expect(mocks.close).toHaveBeenCalledOnce();
   });
+
+  test("the connection check includes its selected profile and safe network diagnosis", async () => {
+    mocks.callTool.mockRejectedValue(new StageMcpError("MCP_DNS_FAILED", "GDS MCP DNS lookup failed."));
+    activatedTool();
+    await mocks.registerCommand.mock.calls[0]![1]();
+
+    expect(mocks.error).toHaveBeenCalledWith(
+      "GDS Stage Runner (local): MCP_DNS_FAILED. GDS MCP DNS lookup failed.",
+    );
+    expect(mocks.close).toHaveBeenCalledOnce();
+  });
 });

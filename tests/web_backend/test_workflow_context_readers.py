@@ -1,5 +1,8 @@
 """Frozen nominal-key readers and compact prompt projections."""
 
+# Reuse synthetic executor fixtures at the shared input boundary.
+# pyright: reportPrivateUsage=false
+
 from __future__ import annotations
 
 from copy import deepcopy
@@ -7,11 +10,13 @@ from typing import Any, cast
 
 import pytest
 from gds_etl_workbench.domain.errors import InvalidRequestError
+from gds_etl_workbench.domain.modeling_records import AnalysisResultRecord
 from gds_workbench_api.features.workflows.authoring.agent_execution import (
     AgentContextToolResultTooLargeError,
 )
 from gds_workbench_api.features.workflows.authoring.context import (
     AgentContextToolRequestError,
+    InMemoryAgentContextToolCatalog,
 )
 from gds_workbench_api.features.workflows.authoring.context_contracts import (
     INPUT_EXAMPLES,
@@ -21,11 +26,17 @@ from gds_workbench_api.features.workflows.authoring.context_inputs import OBJECT
 from gds_workbench_api.features.workflows.authoring.context_readers import (
     FrozenContextReaders,
 )
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    project_prompt_input_values,
+)
 from gds_workbench_api.features.workflows.authoring.tool_configuration import (
     ConfiguredToolCatalog,
     configure_tools,
 )
+from gds_workbench_api.prompt_rendering import PromptVariableDefinition
 from jsonschema import Draft202012Validator
+
+from tests.web_backend.test_analysis_executor import _candidate, _context_bundle, _plan
 
 
 def catalog(
@@ -46,6 +57,76 @@ def catalog(
 
 def physical_key(row: dict[str, Any]) -> dict[str, Any]:
     return {field: row[field] for field in OBJECT_FIELDS}
+
+
+@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
+@pytest.mark.parametrize("locked", [False, True])
+def test_existing_relationships_preserve_the_registered_lock_field(
+    workflow: str,
+    mode: str,
+    locked: bool,
+) -> None:
+    relationship = AnalysisResultRecord.model_validate(
+        {
+            **cast(dict[str, Any], _candidate())["relationships"][0],
+            "analysis_result_status": "active",
+            "analysis_result_is_locked": locked,
+        }
+    )
+    context = _context_bundle().context.model_copy(
+        update={
+            "model_workflow": workflow,
+            "workflow_execution_mode": mode,
+            "analysis_relationships": (relationship,),
+        }
+    )
+    plan = _plan().model_copy(update={"model_workflow": workflow, "workflow_execution_mode": mode})
+    code = "relationship_inference" if workflow == "analysis" else "candidate_authoring"
+    key = f"workflow.{workflow}.common.{code}.inputs.object_relationship_context"
+    stage = plan.stages[0].model_copy(
+        update={
+            "stage_code": code,
+            "variables": (
+                PromptVariableDefinition(
+                    name="object_relationship_context",
+                    resolver_key=key,
+                    data_type="json",
+                    is_required=False,
+                ),
+            ),
+        }
+    )
+    readers = (
+        InMemoryAgentContextToolCatalog(
+            context=context,
+            max_result_bytes=128 * 1024,
+            max_catalog_bytes=256 * 1024,
+            max_page_records=20,
+        )
+        if mode == "tool_assisted"
+        else None
+    )
+    values = project_prompt_input_values(
+        plan=plan,
+        stage=stage,
+        context=readers.manifest if readers else context.model_dump(mode="json"),
+        resolver_values={},
+        precomputed_values=readers.prompt_values if readers else None,
+    )
+    groups = cast(list[dict[str, Any]], values[key])
+    assert groups[0]["incoming_relationships"] == groups[1]["outgoing_relationships"] == []
+    expected = relationship.model_dump(
+        mode="json",
+        exclude={
+            field for field in AnalysisResultRecord.model_fields if field.startswith("validation_")
+        },
+    )
+    assert groups[0]["outgoing_relationships"] == groups[1]["incoming_relationships"] == [expected]
+    assert expected["analysis_result_is_locked"] is locked
+    if readers:
+        result = cast(dict[str, Any], readers.invoke("get_object_relationships", {}))
+        assert result["items"] == groups
 
 
 @pytest.mark.parametrize(

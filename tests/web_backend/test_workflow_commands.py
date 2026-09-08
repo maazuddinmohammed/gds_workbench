@@ -843,9 +843,7 @@ async def test_database_command_validates_implicit_model_agent_default(
             sdk_code="openai_agents_sdk",
             provider_code="microsoft_foundry",
             model_code="foundry-primary",
-            reasoning_effort_code="none"
-            if expected_mode == "tool_assisted"
-            else "medium",
+            reasoning_effort_code="medium",
             max_turns=10,
             validation_retry_count=2,
         )

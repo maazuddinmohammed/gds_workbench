@@ -19,12 +19,33 @@ from gds_workbench_api.main import create_app
 from pydantic import ValidationError
 
 
+def test_tool_assisted_supports_the_same_registered_reasoning_choices_as_one_shot() -> None:
+    registry = load_default_agent_capabilities()
+    for model in registry.models:
+        profiles = {profile.execution_mode: profile for profile in model.execution_profiles}
+        assert (
+            profiles["tool_assisted"].reasoning_effort_codes
+            == (
+                "default",
+                "none",
+                "low",
+                "medium",
+                "high",
+                "xhigh",
+            )
+            == profiles["one_shot"].reasoning_effort_codes
+        )
+
+
 def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -> None:
     registry = load_default_agent_capabilities()
     assert registry.schema_version == "3.0"
     assert {sdk.code for sdk in registry.sdks} == {"openai_agents_sdk"}
     assert {provider.code for provider in registry.providers} == {"microsoft_foundry"}
-    assert {model.code for model in registry.models} == {"foundry-primary", "foundry-gpt-5.6-luna"}
+    assert {model.code for model in registry.models} == {
+        "foundry-primary",
+        "foundry-gpt-5.6-luna",
+    }
     for model in registry.models:
         for profile in model.execution_profiles:
             for effort in profile.reasoning_effort_codes:
@@ -48,8 +69,7 @@ def test_default_agent_capability_registry_is_valid_and_selection_is_bounded() -
     ):
         with pytest.raises(InvalidRequestError):
             registry.validate_selection(selection.model_copy(update=changed))
-    with pytest.raises(InvalidRequestError):
-        registry.validate_selection(selection, execution_mode="tool_assisted")
+    registry.validate_selection(selection, execution_mode="tool_assisted")
 
 
 @pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
@@ -67,7 +87,7 @@ def test_new_run_defaults_recover_retired_models_and_incompatible_efforts(
     assert selected.model_code == "foundry-primary"
     assert selected.max_turns == registry.max_turns.default
     assert selected.validation_retry_count == registry.validation_retries.default
-    assert selected.reasoning_effort_code == ("none" if mode == "tool_assisted" else "default")
+    assert selected.reasoning_effort_code == "default"
     preserved = registry.resolve_default_selection(
         execution_mode=mode,
         model_code="foundry-gpt-5.6-luna",

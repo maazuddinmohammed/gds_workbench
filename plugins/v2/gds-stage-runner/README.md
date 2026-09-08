@@ -23,6 +23,19 @@ Production is the default profile. VS Code may request normal Microsoft sign-in/
 
 For a loopback development server, set `gds.stageRunner.profile` to `local` and configure its loopback `/mcp` URL. For the temporary unauthenticated Azure deployment only, explicitly select `azureLocalTest`. The extension never guesses a profile.
 
+If the plugin connects but Stage Runner fails, run **GDS: Check Stage Runner** from the
+Command Palette (`Ctrl+Shift+P` on Windows, `Cmd+Shift+P` on macOS). This is a read-only
+Tenant-list check. A failure includes the selected profile and a safe DNS, certificate,
+proxy, timeout, connection, or HTTP status diagnosis when recognized. Unknown failures
+remain `MCP_UNAVAILABLE`; response bodies, credentials, and server addresses are omitted.
+The plugin and extension connect independently. `azureLocalTest` uses the extension's
+pinned Azure address and ignores `gds.stageRunner.localUrl`.
+
+The source defaults and distributed packages target the same App Service Environment
+deployment. Keep `../gds/mcp.json` and `src/profile.ts` aligned when changing that
+deployment, then rebuild both the plugin ZIP and Stage Runner VSIX. Editing an
+extracted plugin's address does not update an already installed extension.
+
 ## Security boundary
 
 - Input is only an absolute Stage request path plus its accepted SHA-256 digest.

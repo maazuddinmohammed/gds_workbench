@@ -3,7 +3,7 @@
   "mcpServers": {
     "gds-workbench": {
       "type": "streamable-http",
-      "url": "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp"
+      "url": "https://gds-workbench-v1.goamrasedevgdsgblai001.appserviceenvironment.net/mcp"
     }
   }
 }

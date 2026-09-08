@@ -8,7 +8,9 @@ from uuid import UUID
 
 import httpx2
 import pytest
-from gds_workbench_api.features.mapping.complete_candidate import CompleteMappingCandidateValidator
+from gds_workbench_api.features.mapping.complete_candidate import (
+    CompleteMappingCandidateValidator,
+)
 from gds_workbench_api.features.workflows.authoring.repair import (
     ValidationRepairRunner,
     load_default_agent_context_policy,
@@ -16,15 +18,23 @@ from gds_workbench_api.features.workflows.authoring.repair import (
 from mapping_fixtures import mapping_candidate, mapping_preparation
 from pydantic import JsonValue
 
-from tests.web_backend.test_agent_usage import MemoryRecorder, _request, _response, _router
+from tests.web_backend.test_agent_usage import (
+    MemoryRecorder,
+    _request,
+    _response,
+    _router,
+)
 from tests.web_backend.test_conceptual_candidate import _object, _validator
 
 
 @pytest.mark.parametrize("workflow", ["conceptual", "mapping"])
 @pytest.mark.parametrize(
     ("tools", "effort"),
-    [(False, "default"), (False, "none"), (True, "none")],
-    ids=["one_shot_default", "one_shot_none", "tool_assisted_none"],
+    [
+        (False, "default"),
+        (False, "none"),
+        *((True, effort) for effort in ("default", "none", "low", "medium", "high", "xhigh")),
+    ],
 )
 @pytest.mark.parametrize("invalid", ["malformed", "wrong_type"])
 async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usage(
@@ -77,6 +87,10 @@ async def test_json_mode_preserves_actual_candidate_schema_tools_repairs_and_usa
 
     def handler(request: httpx2.Request) -> httpx2.Response:
         body: dict[str, Any] = json.loads(request.content)
+        if effort == "default":
+            assert "reasoning_effort" not in body
+        else:
+            assert body["reasoning_effort"] == effort
         formats.append(body.get("response_format"))
         user_message = next(item for item in body["messages"] if item["role"] == "user")
         payload = json.loads(user_message["content"])

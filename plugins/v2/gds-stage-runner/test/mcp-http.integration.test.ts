@@ -24,6 +24,31 @@ afterEach(async () => {
 });
 
 describe("MCP Streamable HTTP integration", () => {
+  test("reports an HTTP rejection without exposing the response body", async () => {
+    const app = createMcpExpressApp();
+    app.post("/mcp", (_request: Request, response: Response) => {
+      response.status(403).send("private server response");
+    });
+    const httpServer = app.listen(0, "127.0.0.1");
+    servers.push(httpServer);
+    await new Promise<void>((resolve, reject) => {
+      httpServer.once("listening", resolve);
+      httpServer.once("error", reject);
+    });
+    const port = (httpServer.address() as AddressInfo).port;
+    const client = await createStageMcpClient({
+      name: "local", endpoint: new URL(`http://127.0.0.1:${port}/mcp`), authentication: "none",
+    });
+    try {
+      await expect(client.callTool("list_tenants", { page_size: 1 })).rejects.toMatchObject({
+        code: "MCP_HTTP_ERROR",
+        message: "GDS MCP returned HTTP 403. Check server access and the selected Stage Runner profile.",
+      });
+    } finally {
+      await client.close();
+    }
+  });
+
   test("does not forward Stage payloads through an HTTP redirect", async () => {
     const app = createMcpExpressApp();
     let forwarded = 0;

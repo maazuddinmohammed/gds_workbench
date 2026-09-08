@@ -164,8 +164,9 @@ def test_unbound_login_fails_before_any_workflow_control() -> None:
     assert len(connection.calls) == 1
 
 
-def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
-    request = build_notebook_request("mapping", _values("mapping"))
+@pytest.mark.parametrize("effort", ["default", "none", "high"])
+def test_create_uses_exact_actor_free_wrapper_parameters(effort: str) -> None:
+    request = build_notebook_request("mapping", {**_values("mapping"), "ReasoningEffort": effort})
     row = _create_row(selected_scope_count=1)
     row["prompt_snapshot_count"] = 6
     connection = FakeConnection(row)
@@ -183,7 +184,7 @@ def test_create_uses_exact_actor_free_wrapper_parameters() -> None:
         "openai_agents_sdk",
         "microsoft_foundry",
         "foundry-primary",
-        "none",
+        effort,
         10,
         2,
         [11],

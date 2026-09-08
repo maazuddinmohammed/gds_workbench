@@ -1,6 +1,6 @@
 from collections.abc import Mapping
 from pathlib import Path
-from typing import LiteralString, Protocol, cast
+from typing import Any, LiteralString, Protocol, cast
 from uuid import uuid4
 
 import pytest
@@ -14,8 +14,19 @@ from gds_workbench_api.features.workflows.authoring.plan import (
     AgentRunPlan,
     FrozenAgentStage,
 )
-from gds_workbench_api.prompt_rendering import PromptComponentTemplates
+from gds_workbench_api.features.workflows.authoring.prompt_inputs import (
+    project_prompt_input_values,
+)
+from gds_workbench_api.prompt_rendering import PromptComponentTemplates, render_prompt
 from psycopg import Connection
+
+from tests.mcp.conftest import (
+    bootstrap_postgres_database as bootstrap_postgres_database,
+)
+from tests.web_backend.test_database_seeded_analysis_conceptual import SeedStages
+from tests.web_backend.test_database_seeded_analysis_conceptual import (
+    installed_stages as installed_stages,
+)
 
 _DATABASE_ROOT = Path(__file__).resolve().parents[2] / "database"
 
@@ -76,8 +87,13 @@ def _plan(*, model_id: int, model_revision: int, object_id: int) -> AgentRunPlan
 
 
 @pytest.mark.asyncio
+@pytest.mark.parametrize("workflow", ["analysis", "conceptual", "logical"])
+@pytest.mark.parametrize("mode", ["one_shot", "tool_assisted"])
 async def test_database_context_uses_object_source_tenant_under_web_role(
     web_postgres_database: DisposablePostgresFixture,
+    installed_stages: SeedStages,
+    workflow: str,
+    mode: str,
 ) -> None:
     with web_postgres_database.connect_owner() as connection:
         seeded = connection.execute(
@@ -120,6 +136,40 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             "INSERT INTO model.model_input_scope (model_id, object_id) VALUES (%s, %s)",
             (model_id, object_id),
         )
+        attributes = connection.execute(
+            "SELECT attribute_id FROM core.attribute WHERE object_id=%s "
+            "ORDER BY attribute_ordinal_position",
+            (object_id,),
+        ).fetchall()
+        connection.execute(
+            """INSERT INTO workflow.analysis_result (
+                model_id,from_object_id,from_attribute_id,to_object_id,to_attribute_id,
+                relationship_kind,relationship_confidence,relationship_basis,analysis_result_is_locked
+            ) VALUES (%s,%s,%s,%s,%s,'reference','high','Synthetic stored relationship.',TRUE)""",
+            (
+                model_id,
+                object_id,
+                attributes[0]["attribute_id"],
+                object_id,
+                attributes[1]["attribute_id"],
+            ),
+        )
+        connection.execute(
+            """INSERT INTO workflow.attribute_profile (
+                model_id,object_id,attribute_id,source_context_digest,
+                row_count,non_null_count,null_count,avg_data_length,percent_populated
+            ) VALUES (%s,%s,%s,%s,2,2,0,3.500000,100.0000)""",
+            (model_id, object_id, attributes[0]["attribute_id"], "a" * 64),
+        )
+
+    stages = installed_stages[(workflow, mode)]
+    plan = _plan(model_id=model_id, model_revision=model_revision, object_id=object_id).model_copy(
+        update={
+            "model_workflow": workflow,
+            "workflow_execution_mode": mode,
+            "stages": stages,
+        },
+    )
 
     database = WebPostgresDatabase(
         dsn=web_postgres_database.web_runtime_dsn(),
@@ -135,11 +185,7 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
             result = await PostgresAgentContextRepository().load(
                 transaction,
                 tenant_id=tenant_id,
-                plan=_plan(
-                    model_id=model_id,
-                    model_revision=model_revision,
-                    object_id=object_id,
-                ),
+                plan=plan,
             )
     finally:
         await database.close()
@@ -155,3 +201,28 @@ async def test_database_context_uses_object_source_tenant_under_web_role(
     assert isinstance(result.embedded_context, dict)
     assert "workflow_run_id" not in result.embedded_context
     assert "model_id" not in result.embedded_context
+    for stage in stages:
+        catalog = result.tool_catalog
+        values = project_prompt_input_values(
+            plan=plan,
+            stage=stage,
+            context=result.embedded_context,
+            resolver_values={},
+            tool_definitions=catalog.definitions if catalog else (),
+            precomputed_values=catalog.prompt_values if catalog else None,
+        )
+        prefix = f"workflow.{workflow}.common.{stage.stage_code}.inputs."
+        groups = cast(list[dict[str, Any]], values[prefix + "object_relationship_context"])
+        for direction in ("incoming_relationships", "outgoing_relationships"):
+            assert len(groups[0][direction]) == 1
+            assert groups[0][direction][0]["analysis_result_is_locked"] is True
+            assert not any(name.startswith("validation_") for name in groups[0][direction][0])
+        attribute_groups = cast(list[dict[str, Any]], values[prefix + "object_attribute_context"])
+        assert attribute_groups[0]["attributes"][0]["profile"]["avg_data_length"] == 3.5
+        assert values[prefix + "source_context"] and values[prefix + "gds_context"]
+        assert values[prefix + "ingestion_mapping"]
+        rendered = render_prompt(
+            templates=stage.templates, variables=stage.variables, resolver_values=values
+        )
+        assert rendered.system and rendered.instruction
+        assert not rendered.warning_codes and not rendered.unknown_placeholders

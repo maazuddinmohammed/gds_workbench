@@ -1,5 +1,5 @@
 export const PRODUCTION_MCP_URL =
-  "https://gds-test-workbench-hsemb2a9cuacd0gx.canadacentral-01.azurewebsites.net/mcp";
+  "https://gds-workbench-v1.goamrasedevgdsgblai001.appserviceenvironment.net/mcp";
 
 export type StageProfileName = "production" | "local" | "azureLocalTest";
 

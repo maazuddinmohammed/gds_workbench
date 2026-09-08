@@ -182,3 +182,46 @@ The final full MCP/backend/SQL/packaging/Python plugin regression passed
 **2,750 tests**, with **44 Windows PowerShell skips**, after the affected archives
 were rebuilt. It used source imports and fixture-created disposable PostgreSQL
 containers. Final whitespace checks passed; changes remain uncommitted.
+
+## Frozen prompt inputs and reasoning selection — 2026-09-08
+
+Existing Analysis relationships exposed a projection/schema mismatch: the input
+projector renamed `analysis_result_is_locked` to `is_locked`, while the approved
+prompt contract requires the original field. Conceptual and Logical runs failed
+before the provider call in both execution modes; Analysis shared the same
+defect. The projector now preserves the documented field and still excludes
+validation results. No prompt schema, saved prompt version or database object
+changes are required.
+
+Both registered models now offer default, none, low, medium, high and xhigh
+reasoning in tool-assisted mode, matching their one-shot profiles. Existing
+selections remain valid. The dialog and notebook widgets read these capabilities
+from the backend; no separate frontend rule was added. Real SDK transport tests
+verify effort forwarding through tool calls and repair, and verify that default
+omits the provider setting.
+
+The regression reproduces the original error with locked and unlocked
+relationships across Analysis, Conceptual and Logical, in both modes. Installed
+default tests additionally load real disposable PostgreSQL metadata, ingestion
+mapping, stored relationships and profiles through the web-role repository and
+render the frozen prompts. All 26 installed-prompt cases pass, including both
+enrichment prompts, Analysis, Conceptual, Logical, Dimensional, Mapping, Code
+Generation and Validation, their supported modes and bounded repair paths.
+Populated saved Conceptual, Logical and Dimensional records also satisfy all
+56 variable contracts through inline and tool delivery.
+
+Frontend verification passed 372 tests, TypeScript and production build. Notebook
+source passed 161 tests, plus all three extracted Python 3.12 artifact probes.
+Backend Ruff and Pyright passed. Web and notebook source archives were rebuilt.
+Browser verification of the actual configuration component confirmed the High
+effort remains selected across mode switches and reaches tool-assisted run creation.
+These are local checks with synthetic provider responses; no live deployment,
+provider call or database migration was performed. Existing Stage Runner edits
+were preserved.
+
+The final complete MCP/backend/SQL/packaging/Python plugin regression passed
+**2,788 tests**, with **44 Windows PowerShell skips**. The earlier expectation
+that Code Generation silently forced a Model's reasoning setting to none was
+updated: supported Model defaults are now preserved. Final whitespace checks
+passed. Deploy the rebuilt app/notebook code and create new runs; no SQL is
+needed for this fix.

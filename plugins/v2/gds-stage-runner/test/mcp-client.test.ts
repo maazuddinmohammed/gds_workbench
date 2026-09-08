@@ -1,4 +1,6 @@
 import { describe, expect, test, vi } from "vitest";
+import { StreamableHTTPError } from "@modelcontextprotocol/sdk/client/streamableHttp.js";
+import { ErrorCode, McpError } from "@modelcontextprotocol/sdk/types.js";
 
 import {
   createStageMcpClient,
@@ -21,6 +23,47 @@ const PRODUCTION_PROFILE: ResolvedStageProfile = {
 };
 
 describe("createStageMcpClient", () => {
+  test.each([
+    [Object.assign(new Error("private host"), { code: "ENOTFOUND" }), "MCP_DNS_FAILED", "DNS"],
+    [new TypeError("fetch failed: private URL", {
+      cause: Object.assign(new Error("private certificate"), { code: "UNABLE_TO_VERIFY_LEAF_SIGNATURE" }),
+    }), "MCP_TLS_FAILED", "certificate"],
+    [new Error("net::ERR_CERT_AUTHORITY_INVALID"), "MCP_TLS_FAILED", "certificate"],
+    [new Error("net::ERR_PROXY_CONNECTION_FAILED"), "MCP_PROXY_FAILED", "proxy"],
+    [Object.assign(new Error("private host"), { code: "ECONNREFUSED" }), "MCP_CONNECTION_FAILED", "connection"],
+    [new TypeError("fetch failed", {
+      cause: Object.assign(new Error("private host"), { code: "UND_ERR_CONNECT_TIMEOUT" }),
+    }), "MCP_TIMEOUT", "timed out"],
+    [new McpError(ErrorCode.RequestTimeout, "private request"), "MCP_TIMEOUT", "timed out"],
+    [new StreamableHTTPError(403, "private server response"), "MCP_HTTP_ERROR", "HTTP 403"],
+    [new StreamableHTTPError(-1, "private content type"), "MCP_RESPONSE_INVALID", "response"],
+    [Object.assign(new Error("private unexpected detail"), { code: "private_unknown_code" }), "MCP_UNAVAILABLE", "unavailable"],
+  ])("reports a safe read-failure category: %s", async (error, code, detail) => {
+    const connector = vi.fn<ProtocolConnector>(async () => { throw error; });
+    const client = await createStageMcpClient(LOCAL_PROFILE, undefined, connector);
+
+    const failure = await client.callTool("list_tenants", { page_size: 1 }).catch((error: unknown) => error);
+    expect(failure).toMatchObject({
+      code, message: expect.stringContaining(detail),
+    });
+    expect((failure as Error).message).not.toContain("private");
+    expect(connector).toHaveBeenCalledOnce();
+  });
+
+  test("network diagnostics never make a failed write safe to retry", async () => {
+    const connector = vi.fn<ProtocolConnector>(async () => ({
+      async callTool() { throw new StreamableHTTPError(502, "private server response"); },
+      async close() {},
+    }));
+    const client = await createStageMcpClient(LOCAL_PROFILE, undefined, connector);
+
+    await expect(client.callTool("commit_model_stage_batch", {})).rejects.toMatchObject({
+      code: "MCP_OUTCOME_UNKNOWN",
+      message: "The Stage operation outcome is unknown; verify before retrying.",
+    });
+    expect(connector).toHaveBeenCalledOnce();
+  });
+
   test("does not retry a write after losing its response", async () => {
     const callTool = vi.fn(async () => { throw new Error("private connection detail"); });
     const close = vi.fn(async () => {});

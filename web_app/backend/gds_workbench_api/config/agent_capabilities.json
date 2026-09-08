@@ -38,7 +38,12 @@
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "tool_assisted",
           "reasoning_effort_codes": [
-            "none"
+            "default",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
           ]
         }
       ]
@@ -65,7 +70,12 @@
           "sdk_code": "openai_agents_sdk",
           "execution_mode": "tool_assisted",
           "reasoning_effort_codes": [
-            "none"
+            "default",
+            "none",
+            "low",
+            "medium",
+            "high",
+            "xhigh"
           ]
         }
       ]

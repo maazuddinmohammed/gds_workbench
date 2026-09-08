@@ -50,6 +50,10 @@ For a loopback server, set:
 
 Local accepts only loopback HTTP ending in `/mcp` and does not request authentication. During the temporary unauthenticated Azure test deployment only, set `gds.stageRunner.profile` to `azureLocalTest`; it uses the pinned Azure endpoint without authentication. Change it back to `production` when Easy Auth is enabled. The extension does not guess the server mode.
 
+The plugin and Stage Runner packages use the same App Service Environment address.
+Stage Runner keeps its own built-in address; changing this plugin's `mcp.json` does
+not redirect an installed extension. Install the matching VSIX when switching deployments.
+
 The extension runs in VS Code's extension-host Node runtime; users do not install Node separately
 for Stage. Never distribute the unsigned local candidate as production software.
 

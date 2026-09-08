@@ -113,13 +113,15 @@ class StageApprovedManifestTool
 
 async function checkStageRunner(): Promise<void> {
   let mcp: Awaited<ReturnType<typeof createStageMcpClient>> | undefined;
+  let profile: ReturnType<typeof configuredProfile> | undefined;
   try {
-    const profile = configuredProfile();
+    profile = configuredProfile();
+    const endpoint = profile.endpoint;
     const tokenSupplier =
       profile.authentication === "microsoft"
         ? (forceNewSession: boolean) =>
             acquireMicrosoftAccessToken(
-              profile.endpoint,
+              endpoint,
               getMicrosoftSession,
               fetch,
               forceNewSession,
@@ -139,7 +141,9 @@ async function checkStageRunner(): Promise<void> {
     );
   } catch (error) {
     const receipt = failureReceipt(error, false);
-    await vscode.window.showErrorMessage(`GDS Stage Runner: ${receipt.code}. ${receipt.message}`);
+    await vscode.window.showErrorMessage(
+      `GDS Stage Runner${profile === undefined ? "" : ` (${profile.name})`}: ${receipt.code}. ${receipt.message}`,
+    );
   } finally {
     // The connection check has already reported its result.
     await mcp?.close().catch(() => undefined);

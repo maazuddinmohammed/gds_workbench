@@ -144,11 +144,8 @@ def project_context_inputs(context: Mapping[str, Any]) -> dict[str, Any]:
             if any(natural_key(endpoint) not in selected_keys for endpoint in endpoints.values()):
                 continue
             evidence = {
-                name: value
-                for name, value in rel.items()
-                if not name.startswith("validation_") and name != "analysis_result_is_locked"
+                name: value for name, value in rel.items() if not name.startswith("validation_")
             }
-            evidence["is_locked"] = rel["analysis_result_is_locked"]
             for side, direction in (("from", "outgoing"), ("to", "incoming")):
                 if natural_key(endpoints[side]) == natural_key(obj):
                     group[f"{direction}_relationships"].append(evidence)

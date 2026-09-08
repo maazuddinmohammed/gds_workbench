@@ -245,7 +245,7 @@ def test_widget_contract_is_exact_and_contains_no_secret_input() -> None:
         spec for spec in widget_specs("analysis_inference") if spec.name == "ReasoningEffort"
     )
     registry = load_default_agent_capabilities()
-    assert inference_reasoning.default == "none"
+    assert inference_reasoning.default == "default"
     assert inference_reasoning.choices == tuple(
         effort.code
         for effort in registry.reasoning_efforts

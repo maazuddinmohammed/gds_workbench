@@ -5,8 +5,36 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
+import deployedCapabilities from "../../../../backend/gds_workbench_api/config/agent_capabilities.json";
 
 describe("Model Conceptual", () => {
+  it("offers and submits deployed reasoning choices in tool-assisted and one-shot modes", async () => {
+    const fetcher = conceptualFetchStub({ deployedCapabilities: true });
+    const user = userEvent.setup();
+    render(<WorkbenchApp router={conceptualRouter(fetcher)} />);
+    await user.click(await screen.findByRole("button", { name: "Run Conceptual" }));
+    const dialog = await screen.findByRole("dialog", { name: "Configure Conceptual run" });
+    const reasoning = within(dialog).getByLabelText("Reasoning effort");
+    const mode = within(dialog).getByLabelText("Execution mode");
+    await waitFor(() => expect(reasoning).toHaveValue("medium"));
+    expect(mode).toHaveValue("tool_assisted");
+    for (const model of deployedCapabilities.models) {
+      await user.selectOptions(within(dialog).getByLabelText("Model"), model.code);
+      for (const executionMode of ["one_shot", "tool_assisted"]) {
+        await user.selectOptions(mode, executionMode);
+        expect(within(reasoning).getAllByRole("option").map((item) => (item as HTMLOptionElement).value))
+          .toEqual(["", "default", "none", "low", "medium", "high", "xhigh"]);
+        await user.selectOptions(reasoning, "high");
+        expect(reasoning).toHaveValue("high");
+      }
+    }
+    await user.click(within(dialog).getByRole("button", { name: "Create and run Conceptual" }));
+    await waitFor(() => expect(fetcher).toHaveBeenCalledWith(
+      "/api/v1/tenants/7/models/18/runs",
+      expect.objectContaining({ body: expect.stringContaining('"reasoning_effort_code":"high"') }),
+    ));
+  });
+
   it("reviews exact IDs from both ledgers and clears selection when switching or filtering", async () => {
     const fetcher = conceptualFetchStub();
     const user = userEvent.setup();
@@ -270,6 +298,7 @@ function conceptualRouter(fetcher: ReturnType<typeof conceptualFetchStub>) {
 }
 
 function conceptualFetchStub(options: {
+  deployedCapabilities?: boolean;
   empty?: boolean;
   error?: boolean;
   modelRevision?: number;
@@ -347,7 +376,7 @@ function conceptualFetchStub(options: {
       });
     }
     if (url === "/api/v1/config/agent-capabilities") {
-      return jsonResponse(agentCapabilitiesPayload);
+      return jsonResponse(options.deployedCapabilities ? deployedCapabilities : agentCapabilitiesPayload);
     }
     if (url === "/api/v1/tenants/7/models/18/runs?workflow=conceptual&page_size=5") {
       return jsonResponse({ items: [], next_cursor: null });
