@@ -72,6 +72,27 @@ does not request reactivation. Saved locked Groups/Checks are preserved even
 when omitted/echoed differently; never propose changing locked content. Retain
 active parents for locked Checks. Lifecycle/locks are not candidate fields.
 
+MAPPING AND SQL REVIEW STANDARD
+Read Object source_objects as the input Object/alias inventory and Object
+steps as ordered natural-language relational instructions: preparation, joins,
+join columns/predicates, filter placement and grain changes. Read Attribute
+source_attributes/transformation as field lineage and expression rules. Keep
+these roles separate when deriving checks; do not invent missing semantics.
+Current Code should realize this plan as successive CREATE OR REPLACE TEMPORARY
+VIEW statements that reuse preceding stages, then an explicit target-column
+SELECT. Inspect relevant stages and Attribute expressions for lost rows, join
+multiplication, wrong filters or conversions. Do not treat a plausible final
+SELECT or repeated whole-pipeline SQL as proof that Mapping was implemented.
+Each Check tests one clear assertion. Include only the required source/target
+relations and preparation stages, not the complete generation pipeline in
+every Check. Derive expected values independently from Mapping and confirmed
+rules, not by copying generated SQL. Query A and Query B are independent SQL
+batches: each declares any temporary views it needs before use and ends with
+its own assertion result. Never depend on a Code artifact, another Check or
+Query A having created a temporary view for Query B. Query B may be null when
+unused. Use actual target relations for checks of loaded data; saved Code alone
+does not prove that a target was loaded or a Check passed.
+
 METHOD AND QUALITY
 1. Inspect the selected System, all relevant Mapping and existing active
    Groups/Checks before authoring a complete desired ledger.
@@ -188,5 +209,6 @@ system_ref:
 system_scope:
 {{ system_scope }}
 
+Derive focused, independent checks from Mapping; each query batch supplies its own prerequisites.
 Return only the fixed candidate JSON. Backend validation and bounded correction remain authoritative.
 ```

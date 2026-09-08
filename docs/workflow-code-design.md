@@ -72,6 +72,32 @@ sql_generation_guide is the exact frozen selected published guide. Apply its
 dialect/conventions; braces in its content are data, not another render pass.
 Missing guide is a configuration error.
 
+STAGED SQL STANDARD
+For each target_transformation artifact, generate one ordered SQL batch for
+this target and its assigned Source Systems only. Translate the applied Object
+steps into meaningful stages using CREATE OR REPLACE TEMPORARY VIEW <name> AS
+SELECT ...; later stages reference the earlier temporary views. Source
+preparation, joins/filters and the final Attribute projection form successive
+steps when Mapping requires them. Each statement implements its own step;
+never repeat the entire pipeline or all source joins in every statement, view
+or artifact. A simple Mapping can use one temporary view and a final SELECT.
+Temporary names are unqualified, unique within the batch and specific to the
+target/System; physical sources use their actual catalog.schema.Object.
+Apply field expressions from Attribute Mapping at the appropriate stage. Carry
+only columns needed for subsequent joins, transformations and final output.
+Finish with one SELECT of explicit target columns in bound order from the
+prepared view(s). Runtime performs loading/merge. Do not emit target CREATE,
+INSERT, MERGE, UPDATE, DELETE, orchestration or unrelated target SQL as part of
+this query-building standard. Retain the fixed artifact output schema.
+Define each temporary view before use in the same batch; do not assume a view
+from another artifact/session exists. For multiple Systems, use separate
+branches with aligned columns and apply only Mapping's evidenced combination
+and collision policy. Do not duplicate a System assignment across artifacts.
+Before returning, trace step → view → downstream reference → target column.
+Reject repeated whole-query stages, missing prerequisites and transformations
+that contradict Mapping. The selected guide supplies dialect/naming details;
+report conflicting Mapping or guide requirements instead of silently redesigning.
+
 METHOD AND QUALITY
 1. Identify the exact target, columns/types and all Source System assignments.
    Inspect applied source membership and dependency order.
@@ -85,11 +111,11 @@ METHOD AND QUALITY
    Do not use SELECT * to evade target-column order.
 4. Produce complete SQL, without pseudocode, Markdown, TODOs or notebook wrappers.
    Separate statements with semicolons. An earlier temporary object may be used
-   later in the same orchestration session.
+   later in the same SQL batch; keep prerequisites in that batch.
 5. Assign every frozen Source System exactly once across target_transformation
    artifacts. One artifact may cover several Systems when its SQL implements
-   the combined Mapping. Optional support artifacts contain target-bound helper/
-   DDL SQL and assign no Systems.
+   the combined Mapping. Optional support artifacts contain target-bound helper
+   SQL and assign no Systems; do not duplicate transformation stages there.
 6. Review required relations/columns against metadata, preservation of grain and
    joins, SQL syntax, artifact names and exact assignment coverage. Do not
    generate dummy artifacts merely to satisfy a nonempty ledger.
@@ -104,8 +130,8 @@ Transformation artifacts need nonempty unique System lists; support needs [].
 Every required System appears exactly once across transformation assignments;
 no unknown, missing or repeated assignments.
 generated_sql is nonempty Databricks SQL-only text, no fences/control garbage.
-DDL/DML may be generated as artifacts according to approved Mapping and guide;
-authoring does not execute them. Do not output artifact_type, database IDs,
+This default authors temporary-view query batches; authoring does not execute
+them. Runtime owns persistent target creation/loading. Do not output artifact_type, database IDs,
 provenance, status, locks or execution results. Backend binds artifacts to the
 frozen target and preserves generated-code locks and effective-graph rules.
 
@@ -169,5 +195,6 @@ target_ref:
 sql_generation_guide:
 {{ sql_generation_guide }}
 
+Use successive temporary views and one final target SELECT; each stage reuses prior results.
 Return only the fixed candidate JSON. Backend validation and bounded correction remain authoritative.
 ```

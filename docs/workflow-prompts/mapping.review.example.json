@@ -146,10 +146,19 @@
     "object_mapping": {
       "object_dependency_order": 0,
       "mapping_transformation_document": {
-        "source": "customer",
-        "grain": "One row per customer",
+        "source_objects": [
+          {
+            "tenant_code": "NWA",
+            "system_code": "CRM",
+            "connection_code": "crm_bronze",
+            "object_schema": "bronze_crm",
+            "object_name": "customer",
+            "alias": "c"
+          }
+        ],
         "steps": [
-          "Read the eligible customer source at its documented customer grain."
+          "Read northwind.bronze_crm.customer as c at its documented customer grain. No joins, filtering, grouping or deduplication apply.",
+          "Produce one row per customer using the bound Attribute transformations in target order. Runtime handles target loading."
         ]
       }
     },
@@ -157,8 +166,17 @@
       {
         "modeled_attribute_name": "CustomerID",
         "attribute_mapping_transformation_document": {
-          "expression": "CAST(customer_id AS BIGINT)",
-          "target_attribute_name": "CustomerID"
+          "source_attributes": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "attribute_name": "customer_id"
+            }
+          ],
+          "transformation": "Return c.customer_id unchanged as BIGINT. Source and target are non-null BIGINT; no cast or default is needed."
         }
       }
     ]

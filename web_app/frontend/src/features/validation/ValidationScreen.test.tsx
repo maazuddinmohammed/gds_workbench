@@ -6,7 +6,6 @@ import { describe, expect, it, vi } from "vitest";
 
 import { createApiClient } from "../../api";
 import { WorkbenchApp, createWorkbenchRouter } from "../../app";
-import { ValidationLedger } from "./ValidationLedger";
 import { validateSelectedSystemCodes } from "./ValidationRunDialog";
 import type { ValidationValidationGroup } from "./api";
 
@@ -30,45 +29,51 @@ describe("Validation journey", () => {
     );
   });
 
-  it("groups applied Validation Checks and exposes authoritative currentness", async () => {
+  it("navigates Groups → Checks → SQL with page URLs and keyboard access", async () => {
     const user = userEvent.setup();
-    render(<WorkbenchApp router={createWorkbenchRouter({
-      api: createApiClient(validationFetchStub()),
-      history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
-    })} />);
+    const history = createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] });
+    render(<WorkbenchApp router={createWorkbenchRouter({ api: createApiClient(validationFetchStub()), history })} />);
 
-    expect(await screen.findByRole("region", { name: "Validation recent runs" })).toBeVisible();
-    expect(await screen.findByText("Order reconciliation")).toBeVisible();
-    expect(screen.getAllByText("Definition current")).not.toHaveLength(0);
-    expect(screen.getByText("Mapping current")).toBeVisible();
-    expect(screen.getByText("Code current")).toBeVisible();
-
-    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
-    const checks = await screen.findByRole("table", {
-      name: "Order reconciliation Validation Checks",
-    });
-    expect(within(checks).getByText("Source and target counts match")).toBeVisible();
-    expect(within(checks).getByText("Equal Query B")).toBeVisible();
-    const review = within(checks).getByRole("button", { name: "Show details" });
-    review.focus();
+    const groups = await screen.findByRole("table", { name: "Validation Groups" });
+    expect(within(groups).getByText("Mapping current")).toBeVisible();
+    expect(within(groups).getByText("Code current")).toBeVisible();
+    expect(screen.queryByText("Source and target counts match")).not.toBeInTheDocument();
+    const groupLink = within(groups).getByRole("link", { name: "Show details for Order reconciliation" });
+    groupLink.focus();
     await user.keyboard("{Enter}");
-    const detail = screen.getByRole("region", { name: "Source and target counts match details" });
+    const checks = await screen.findByRole("table", { name: "Order reconciliation Validation Checks" });
+    expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91");
+    expect(screen.queryByRole("table", { name: "Validation Groups" })).not.toBeInTheDocument();
+    expect(within(checks).getByText("Equal Query B")).toBeVisible();
+    expect(screen.queryByText("SELECT COUNT(*) FROM bronze.orders")).not.toBeInTheDocument();
+    await user.click(within(checks).getByRole("link", { name: "Show details for Source and target counts match" }));
+    const detail = await screen.findByRole("region", { name: "Source and target counts match details" });
+    expect(history.location.pathname).toBe("/tenants/7/validation/models/18/groups/91/checks/301");
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM bronze.orders");
     expect(detail).toHaveTextContent("SELECT COUNT(*) FROM silver.orders");
-    expect(within(detail).getByRole("heading", { name: "Source and target counts match" })).toHaveFocus();
-    expect(review).toHaveAttribute("aria-controls", detail.id);
-    expect(within(detail).getByText("Query A").compareDocumentPosition(within(detail).getByText("Operator")) & Node.DOCUMENT_POSITION_FOLLOWING).toBeTruthy();
-    expect(screen.getByText("Applied check definitions")).toBeVisible();
+    expect(screen.getByRole("heading", { name: "Source and target counts match" })).toHaveFocus();
+    expect(screen.queryByRole("table")).not.toBeInTheDocument();
     expect(screen.getByText(/execution results are not recorded here/)).toBeVisible();
-    await user.keyboard("{Escape}");
-    expect(screen.queryByRole("region", { name: "Source and target counts match details" })).not.toBeInTheDocument();
-    expect(review).toHaveFocus();
-    await user.keyboard(" ");
-    await user.click(screen.getByRole("button", { name: "Close check details" }));
-    expect(review).toHaveFocus();
+    await user.click(screen.getByRole("link", { name: "Back to Checks" }));
+    expect(await screen.findByRole("table", { name: "Order reconciliation Validation Checks" })).toBeVisible();
+    await user.click(screen.getByRole("link", { name: "Back to Groups" }));
+    expect(await screen.findByRole("table", { name: "Validation Groups" })).toBeVisible();
+    history.back();
+    expect(await screen.findByRole("table", { name: "Order reconciliation Validation Checks" })).toBeVisible();
   });
 
-  it("distinguishes stale and current Code and Mapping", () => {
+  it.each([
+    ["/groups/999", "This Validation Group is not available in this Model."],
+    ["/groups/91/checks/999", "This Validation Check is not available in this Group."],
+    ["/groups/92/checks/301", "This Validation Check is not available in this Group."],
+  ])("keeps missing or unrelated detail routes inside their scope (%s)", async (path, message) => {
+    renderValidation(validationFetchStub({ groups: [...validationGroups, { ...validationGroups[0]!, validation_group_id: 92, checks: [] }] }), path);
+    expect(await screen.findByText(message)).toBeVisible();
+    expect(screen.queryByText("SELECT COUNT(*) FROM bronze.orders")).not.toBeInTheDocument();
+    expect(screen.getByRole("link", { name: /Back to (Checks|Groups)/ })).toBeVisible();
+  });
+
+  it("distinguishes stale and current Code and Mapping", async () => {
     const base = validationGroups[0] as ValidationValidationGroup;
     const groups: ValidationValidationGroup[] = [
       {
@@ -96,13 +101,8 @@ describe("Validation journey", () => {
         checks: [],
       },
     ];
-    render(<ValidationLedger
-      groups={groups}
-      modelRevision={18}
-      loadedModelRevision={18}
-      isLoading={false}
-      error={null}
-    />);
+    renderValidation(validationFetchStub({ groups }));
+    await screen.findByRole("table", { name: "Validation Groups" });
 
     expect(within(screen.getByLabelText("Stale Code status")).getByText("Code stale"))
       .toBeVisible();
@@ -114,18 +114,12 @@ describe("Validation journey", () => {
   });
 
   it.each([0, false, "", [0, false, ""]])("preserves literal operands (%j) before SQL", async (value) => {
-    const user = userEvent.setup();
     const base = validationGroups[0]!;
     const group = { ...base, checks: [{ ...base.checks[0]!, validation_comparison_value_type: Array.isArray(value) ? "literal_list" : "literal", validation_comparison_value: value, validation_comparison_query_sql: null }] } as ValidationValidationGroup;
-    render(<ValidationLedger groups={[group]} modelRevision={18} loadedModelRevision={18} isLoading={false} error={null} />);
-    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
-    await user.click(screen.getByRole("button", { name: "Show details" }));
-    const detail = screen.getByRole("region", { name: "Source and target counts match details" });
+    renderValidation(validationFetchStub({ groups: [group] }), "/groups/91/checks/301");
+    const detail = await screen.findByRole("region", { name: "Source and target counts match details" });
     expect(within(detail).getByText("Comparison value").nextElementSibling?.textContent).toBe(JSON.stringify(value));
     expect(within(detail).queryByText("Query B")).not.toBeInTheDocument();
-    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
-    await user.click(screen.getByRole("button", { name: /Order reconciliation/ }));
-    expect(screen.queryByRole("region", { name: "Source and target counts match details" })).not.toBeInTheDocument();
   });
 
   it("selects exact Systems and starts fixed-profile Validation through a governed draft run", async () => {
@@ -319,14 +313,15 @@ describe("Validation journey", () => {
   });
 });
 
-function renderValidation(fetcher: ReturnType<typeof vi.fn<typeof fetch>>) {
+function renderValidation(fetcher: ReturnType<typeof vi.fn<typeof fetch>>, path = "") {
   return render(<WorkbenchApp router={createWorkbenchRouter({
     api: createApiClient(fetcher),
-    history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
+    history: createMemoryHistory({ initialEntries: [`/tenants/7/validation/models/18${path}`] }),
   })} />);
 }
 
 function validationFetchStub(options: {
+  groups?: ValidationValidationGroup[];
   empty?: boolean;
   denied?: boolean;
   error?: boolean;
@@ -355,7 +350,7 @@ function validationFetchStub(options: {
       return jsonResponse({
         model_id: 18,
         model_revision: options.modelRevision ?? 18,
-        groups: options.empty ? [] : validationGroups,
+        groups: options.empty ? [] : options.groups ?? validationGroups,
       });
     }
     if (url === "/api/v1/config/agent-capabilities") return jsonResponse(agentCapabilities);
@@ -465,7 +460,8 @@ const eligibleSystems = [
   },
 ];
 
-const validationGroups = [{
+const validationGroups: ValidationValidationGroup[] = [{
+  is_locked: false,
   validation_group_id: 91,
   system_id: 2,
   system_code: "CRM",
@@ -476,6 +472,7 @@ const validationGroups = [{
   validation_group_is_current: true,
   is_active: true,
   checks: [{
+    is_locked: false,
     validation_check_id: 301,
     validation_check_name: "Source and target counts match",
     validation_check_description: "Counts must match after processing.",
@@ -547,8 +544,7 @@ it.each([["Groups", "validation_group", 91], ["Checks", "validation_check", 301]
       history: createMemoryHistory({ initialEntries: ["/tenants/7/validation/models/18"] }),
     })} />);
     const user = userEvent.setup();
-    await user.selectOptions(await screen.findByRole("combobox", { name: "Review selection" }), dataset);
-    if (kind === "Checks") await user.click(await screen.findByRole("button", { name: /Order reconciliation/ }));
+    if (kind === "Checks") await user.click(await screen.findByRole("link", { name: "Show details for Order reconciliation" }));
     await user.click(await screen.findByRole("checkbox", { name: `Select Validation ${kind === "Groups" ? "Group" : "Check"} ${id}` }));
     await user.click(screen.getByRole("button", { name: "Lock selected" }));
     await user.click(await screen.findByRole("button", { name: "Apply this change" }));

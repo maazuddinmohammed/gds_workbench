@@ -16,15 +16,19 @@ export function ValidationScreen({
   model,
   hasTenantLock,
   hasAppPermission,
+  groupId,
+  checkId,
 }: {
   api: ValidationApi;
   tenantId: number;
   model: ModelDetail;
   hasTenantLock: boolean;
   hasAppPermission: boolean;
+  groupId?: number | undefined;
+  checkId?: number | undefined;
 }) {
   const queryClient = useQueryClient();
-  const [reviewDataset, setReviewDataset] = useState<"validation_group" | "validation_check">("validation_group");
+  const reviewDataset = groupId === undefined ? "validation_group" : "validation_check";
   const [selectedIds, setSelectedIds] = useState<Set<number>>(new Set());
   const [runDialogOpen, setRunDialogOpen] = useState(false);
   const [startedRunId, setStartedRunId] = useState<number | null>(null);
@@ -74,14 +78,24 @@ export function ValidationScreen({
     <main className="workspace mapping-workspace validation-workspace page-enter">
       <header className="workflow-commandbar validation-commandbar">
         <div className="workflow-command-context validation-command-context">
-          <Link
+          {checkId !== undefined && groupId !== undefined ? <Link
+            className="text-action"
+            aria-label="Back to Checks"
+            to="/tenants/$tenantId/validation/models/$modelId/groups/$groupId"
+            params={{ tenantId: String(tenantId), modelId: String(model.model_id), groupId: String(groupId) }}
+          >← Back to Checks</Link> : groupId !== undefined ? <Link
+            className="text-action"
+            aria-label="Back to Groups"
+            to="/tenants/$tenantId/validation/models/$modelId"
+            params={{ tenantId: String(tenantId), modelId: String(model.model_id) }}
+          >← Back to Groups</Link> : <Link
             className="text-action"
             aria-label="Back to Validation Models"
             to="/tenants/$tenantId/validation"
             params={{ tenantId: String(tenantId) }}
           >
             ← Back to Models
-          </Link>
+          </Link>}
           <span className={canAuthor ? "lock-context is-held" : "lock-context"}>
             {permissionLabel}
           </span>
@@ -95,7 +109,7 @@ export function ValidationScreen({
           >
             {systemsQuery.isFetching || ledgerQuery.isFetching ? "Refreshing…" : "Refresh"}
           </button>
-          <button
+          {groupId === undefined ? <button
             className="button button-primary button-small"
             type="button"
             disabled={!canOpenRun}
@@ -103,7 +117,7 @@ export function ValidationScreen({
             onClick={() => setRunDialogOpen(true)}
           >
             Run Validation
-          </button>
+          </button> : null}
         </div>
       </header>
       <div className="workflow-context-line validation-context-line">
@@ -132,7 +146,7 @@ export function ValidationScreen({
           Validation run {startedRunId} started. Refresh runs to review the draft, then Apply the validated draft.
         </p>
       ) : null}
-      <WorkflowRunMonitor
+      {groupId === undefined ? <WorkflowRunMonitor
         api={api}
         tenantId={tenantId}
         modelId={model.model_id}
@@ -141,24 +155,18 @@ export function ValidationScreen({
         hasTenantLock={canAuthor}
         focusRunId={startedRunId}
         onApplied={invalidateValidation}
-      />
-      <label className="field-label">Review selection
-        <select value={reviewDataset} onChange={(event) => {
-          setSelectedIds(new Set());
-          setReviewDataset(event.target.value as "validation_group" | "validation_check");
-        }}>
-          <option value="validation_group">Groups</option>
-          <option value="validation_check">Checks</option>
-        </select>
-      </label>
-      <ModelRecordReview
+      /> : null}
+      {checkId === undefined ? <ModelRecordReview
         api={api} tenantId={tenantId} modelId={model.model_id} modelRevision={model.model_revision}
         dataset={reviewDataset} selectedIds={selectedIds} hasTenantLock={canAuthor}
         disabled={ledgerQuery.isPending || ledgerQuery.isError || ledgerQuery.data?.model_revision !== model.model_revision}
         onApplied={async () => { setSelectedIds(new Set()); await queryClient.invalidateQueries({ predicate: (query) => query.queryKey[1] === tenantId }); }}
-      />
-      {reviewDataset === "validation_check" ? <p className="field-help">Expand a Group to select its Checks.</p> : null}
+      /> : null}
       <ValidationLedger
+        tenantId={tenantId}
+        modelId={model.model_id}
+        groupId={groupId}
+        checkId={checkId}
         selection={{ dataset: reviewDataset, selectedIds, onSelectionChange: setSelectedIds }}
         groups={ledgerQuery.data?.groups ?? []}
         modelRevision={model.model_revision}

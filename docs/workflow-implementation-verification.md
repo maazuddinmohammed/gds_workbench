@@ -225,3 +225,51 @@ that Code Generation silently forced a Model's reasoning setting to none was
 updated: supported Model defaults are now preserved. Final whitespace checks
 passed. Deploy the rebuilt app/notebook code and create new runs; no SQL is
 needed for this fix.
+
+
+## Validation navigation and staged SQL guidance — 2026-09-08
+
+Validation now has addressable Groups → Group Checks → Check SQL pages. The
+existing ledger API supplies data; Group/Check membership is checked before
+showing detail. Selection and governed review follow the current ledger.
+Keyboard navigation, direct links, unavailable/wrong-parent records, literal
+comparison values, currentness, load errors, revision drift and lock commands
+are covered by the 19 Validation screen tests. All 375 frontend tests, types
+and production build pass. Browser review covered the desktop ledger, SQL
+page, narrow stacked SQL panels and contained horizontal Check-table scrolling.
+
+Mapping template schemas are unchanged. Plugin guidance, both Mapping default
+prompt modes, Code Generation and Validation default prompts now distinguish
+Object source inventory/ordered natural-language steps from Attribute field
+rules. Code uses successive temporary views, reuses prior stages, and ends
+with one target-column SELECT. Runtime owns persistent loading. Each Validation
+query supplies only its required stages and its own prerequisites, including
+Query B. Existing custom prompt/template/guide choices remain user controlled;
+this updates default instructions, not a new hard database SQL-shape constraint.
+The original Client Billing SQL was not present in this checkout; the existing
+multi-System example and a new explicitly fictional staged-join example record
+the described pattern. All three SQL review examples pass the governed parser.
+
+The canonical prompt JSON, matching design-document copies and the existing
+governed global-default seed were synchronized. Web/notebook source archives
+and the plugin ZIP were rebuilt. Backend Pyright passes; the notebook suite
+and three extracted Python 3.12 probes pass (164 tests). No live provider or
+Databricks execution, installed prompt mutation or external deployment occurred.
+
+Deployment: redeploy the web app and install the rebuilt plugin. Publish the
+updated Mapping/Code Generation/Validation prompt versions through the governed
+Prompt controls, or use the existing identity-configured global-default seed
+procedure. A code redeployment alone does not replace saved prompt versions.
+Start new runs after publishing; frozen existing runs retain their saved inputs.
+No schema change, function drop/recreation or mapping-template change is needed.
+
+The full regression passed 2,788 checks and skipped 44 Windows PowerShell
+checks; one plugin instruction-footprint guard initially failed. The three
+workflow guides were shortened without changing their requirements. The
+footprint and guidance checks then passed together (25 tests), and the final
+plugin ZIP was rebuilt from those bounded instructions.
+
+Final plugin/packaging regression passed 254 tests, with the same 44 Windows
+PowerShell skips. Instruction footprint is 10,084 words total (limit 10,300),
+with no individual Markdown guide above 666 words (limit 700). Final whitespace
+checks pass. All observed test failures are resolved.

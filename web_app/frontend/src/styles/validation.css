@@ -50,61 +50,12 @@
   font-size: 0.66rem;
 }
 
-.validation-group-ledger {
-  display: grid;
-}
-
-.validation-group {
-  min-width: 0;
-  border-bottom: 1px solid var(--line-strong);
-}
-
-.validation-group-summary {
-  display: grid;
-  grid-template-columns: minmax(16rem, 1fr) auto;
-  align-items: center;
-  gap: 1rem;
-  padding: 0.85rem 0;
-}
-
-.validation-group-summary > button {
-  display: flex;
-  min-width: 0;
-  align-items: center;
-  gap: 0.7rem;
-  padding: 0;
-  border: 0;
-  color: var(--ink);
-  background: transparent;
-  text-align: left;
-  cursor: pointer;
-}
-
-.validation-group-summary > button > span:first-child {
-  display: grid;
-  width: 1.55rem;
-  height: 1.55rem;
-  flex: 0 0 auto;
-  place-items: center;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-small);
-  color: var(--orange-dark);
-  font-size: 1rem;
-  line-height: 1;
-}
-
-.validation-group-summary > button > span:last-child,
 .validation-check-name {
   display: grid;
   min-width: 0;
   gap: 0.2rem;
 }
 
-.validation-group-summary strong {
-  font-size: 0.8rem;
-}
-
-.validation-group-summary small,
 .validation-check-name span {
   color: var(--muted);
   font-size: 0.62rem;
@@ -113,39 +64,9 @@
 .validation-group-statuses {
   display: flex;
   flex-wrap: wrap;
-  justify-content: flex-end;
   gap: 0.35rem;
 }
 
-.validation-group-description {
-  display: grid;
-  grid-template-columns: minmax(0, 1fr);
-  gap: 1.5rem;
-  padding: 0 0 0.9rem 2.25rem;
-}
-
-.validation-group-description > p {
-  overflow-wrap: anywhere;
-  margin: 0;
-  color: var(--muted);
-  font-size: 0.68rem;
-}
-
-.validation-digest-ledger {
-  display: grid;
-  grid-template-columns: repeat(2, minmax(0, 1fr));
-  gap: 0.45rem 1rem;
-  margin: 0;
-}
-
-.validation-digest-ledger > div {
-  display: grid;
-  min-width: 0;
-  grid-template-columns: 6.8rem minmax(0, 1fr);
-  gap: 0.5rem;
-}
-
-.validation-digest-ledger dt,
 .validation-check-facts dt {
   color: var(--faint);
   font-size: 0.56rem;
@@ -154,21 +75,11 @@
   text-transform: uppercase;
 }
 
-.validation-digest-ledger dd,
 .validation-check-facts dd {
   min-width: 0;
   margin: 0;
   color: var(--muted);
   font-size: 0.62rem;
-}
-
-.validation-digest-ledger code {
-  font-size: 0.6rem;
-}
-
-.validation-check-panel {
-  margin-left: 2.25rem;
-  padding: 0 0 1rem;
 }
 
 .validation-check-table-scroll {
@@ -190,37 +101,17 @@
 }
 
 .validation-check-detail {
-  margin-top: 0.75rem;
-  padding: 1rem;
-  border: 1px solid var(--line-strong);
-  border-radius: var(--radius-medium);
-  background: var(--soft);
-}
-
-.validation-check-detail > header {
-  display: flex;
-  align-items: end;
-  justify-content: space-between;
-  gap: 1rem;
-  margin-bottom: 0.85rem;
-}
-
-.validation-check-detail > header small,
-.validation-check-detail > header > span {
-  color: var(--muted);
-  font-size: 0.62rem;
-}
-
-.validation-check-detail h4 {
-  overflow-wrap: anywhere;
-  margin: 0.15rem 0 0;
-  font-size: 0.86rem;
+  margin-top: 1rem;
 }
 
 .validation-query-grid {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 0.75rem;
+}
+
+.validation-query-grid > div:only-child {
+  grid-column: 1 / -1;
 }
 
 .validation-query-grid > div {
@@ -234,7 +125,7 @@
 }
 
 .validation-query-grid pre {
-  max-height: 18rem;
+  max-height: 36rem;
   margin: 0;
   padding: 0.8rem;
   overflow: auto;
@@ -360,16 +251,6 @@
 }
 
 @media (max-width: 58rem) {
-  .validation-group-summary,
-  .validation-group-description {
-    grid-template-columns: 1fr;
-  }
-
-  .validation-group-statuses {
-    justify-content: flex-start;
-    padding-left: 2.25rem;
-  }
-
   .validation-query-grid {
     grid-template-columns: 1fr;
   }
@@ -377,19 +258,11 @@
 
 @media (max-width: 42rem) {
   .validation-ledger-heading,
-  .validation-run-systems > header,
-  .validation-check-detail > header {
+  .validation-run-systems > header {
     align-items: flex-start;
     flex-direction: column;
   }
 
-  .validation-group-description,
-  .validation-check-panel {
-    margin-left: 0;
-    padding-left: 0;
-  }
-
-  .validation-digest-ledger,
   .validation-check-facts {
     grid-template-columns: 1fr;
   }

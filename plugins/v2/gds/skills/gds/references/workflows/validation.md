@@ -1,23 +1,23 @@
 # Validation Authoring
 
-Validation is the name of this workflow; do not call it QA. Create `validation_group` and `validation_check` Model records for exact selected source Systems and targets.
+Call this workflow Validation, never QA. Author `validation_group` and `validation_check` Model records for selected source Systems/targets. Enter only when Validation Authoring is selected or explicitly included in the journey; ordinary Mapping/Code review creates no Validation records. Set a Logical or Dimensional boundary; never mix layers implicitly.
 
-Enter this workflow only when Validation Authoring is selected or explicitly included in the agreed journey; ordinary Mapping/Code review does not create Validation records. Set the task boundary to Logical or Dimensional Validation before authoring. Do not mix layers implicitly in one task.
+Before authoring, present Systems/targets and a broad validation coverage plan; wait for user confirmation. Propose applicable categories:
 
-Before authoring Groups or Checks, present the selected Systems/targets and a broad validation coverage plan, then wait for user confirmation. Propose only applicable categories:
+- **Technical** — execution, columns/types, nullability, keys, uniqueness, references.
+- **Reconciliation** — counts, control totals, Mapping coverage, transformation consistency.
+- **Functional/business** — confirmed Assertions, domain rules, expected outcomes.
 
-- **Technical** — execution, required columns/types, nullability, keys, uniqueness, and referential integrity.
-- **Reconciliation** — source-to-target counts, control totals, mapping coverage, and transformation consistency.
-- **Functional/business** — confirmed Assertions, domain rules, and expected business outcomes.
+Give representative examples, not every final query. Identify exclusions/evidence gaps. One confirmation covers the boundary; material coverage change requires confirmation again. Existing explicit acknowledgement satisfies this gate in every interaction mode.
 
-Give representative examples, not every final query. Identify excluded categories or known evidence gaps. One confirmation may cover the complete selected boundary; a material coverage change requires confirmation again. An existing explicit acknowledgement of this coverage satisfies the gate; do not ask again. This gate is required in every interaction mode.
+Use applied Mapping and current relevant Code when present. Read frozen Snapshots with bounded local `select`; `read_model_section` reads live applied records, requiring revision reassessment. Generated Code/Validation are Snapshot-only. Resolve contradictory Mapping before deriving checks. Each Check stores SQL/assertion contracts, never execution results.
 
-Use applied Mapping as required context and current relevant Code when it exists. Read frozen Snapshot records with bounded local `select`; `read_model_section` reads live applied records, requiring refresh/reassessment if the revision changed. Generated Code and Validation are Snapshot-only. Cover applicable technical checks and confirmed functional/business Assertions. Each Check stores its SQL and assertion contract; it never stores execution results. Resolve contradictory Mapping before deriving checks from it.
+Interpret Object `source_objects` as input Objects/aliases and `steps` as ordered natural-language preparation, joins, predicates, filters and grain changes. Attribute transformations contain field rules. Current Code should implement successive temporary-view stages followed by the target-column SELECT. Trace stages against Mapping; repeated whole-pipeline SQL proves nothing.
 
-Derive expected results independently from Mapping and confirmed rules, not by copying generated SQL. Check failed conversions, unintended join multiplication, lost keys, and precision loss when applicable. Use identical scope, batch, and filter boundaries for comparisons. Define empty-input and null behavior explicitly; never assume empty input passes. A permitted syntax preflight is not proof that a business assertion passed.
+Each Check tests one clear assertion using only necessary preparation stages. Do not copy the complete generation pipeline into every Check. Query A and Query B are independent SQL batches: each declares its temporary views before use. Never rely on Code Generation, another Check or Query A to prepare Query B. Check loaded data against actual target relations.
 
-Query checks must follow the current dataset schema. Except for `executes_successfully`, scalar comparisons return exactly one row by one column with the declared result type. Other cardinality is a query-contract error, not an assertion failure. Fully qualify persistent relations; only temporary relations declared earlier in the same SQL batch may be unqualified.
+Derive expected results independently from Mapping and confirmed rules, not by copying generated SQL. Cover failed conversions, join multiplication, lost keys and precision loss when applicable. Match scope/batch/filter boundaries; specify empty-input and null behavior. Never assume empty input passes or syntax proves business correctness.
 
-Review each actual check statically before local validation: trace its independent expected value, scope, null behavior and failure condition. Reject constant passing checks and assertions unsupported by evidence.
+Follow the dataset schema. Except `executes_successfully`, comparisons return exactly one row/column with declared type; other cardinality is a query-contract error. Fully qualify persistent relations. Only temporary relations declared earlier in the same batch may be unqualified.
 
-Optional SQL Preflight is separate from Validation records. Governed `execute_databricks_sql` performs external execution; obey saved SQL policy and current authorization, using it only to resolve a specific uncertainty. Do not repeat unchanged checks routinely. Syntax may be checked before data is loaded; no-result output is not a failure of syntax or evidence that an assertion passed. Report the distinction. Apply complete Groups/Checks through a Model Change Set and stop.
+Statically trace each check's expected value, scope and failure condition. Reject constant passing checks and unsupported assertions. Optional governed `execute_databricks_sql` preflight is external: obey saved SQL policy/current authorization and resolve specific uncertainties without unchanged repeated checks. No-result output proves neither failure nor assertion success. Apply complete Groups/Checks through a Model Change Set and stop.

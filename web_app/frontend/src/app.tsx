@@ -11,6 +11,7 @@ import {
   createRoute,
   createRouter,
   useNavigate,
+  useParams,
   type RouterHistory,
 } from "@tanstack/react-router";
 
@@ -188,6 +189,18 @@ const tenantValidationModelRoute = createRoute({
   component: TenantValidationModel,
 });
 
+const tenantValidationGroupRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId",
+  component: TenantValidationModel,
+});
+
+const tenantValidationCheckRoute = createRoute({
+  getParentRoute: () => rootRoute,
+  path: "/tenants/$tenantId/validation/models/$modelId/groups/$groupId/checks/$checkId",
+  component: TenantValidationModel,
+});
+
 const tenantPromptsRoute = createRoute({
   getParentRoute: () => rootRoute,
   path: "/tenants/$tenantId/prompts",
@@ -362,6 +375,8 @@ const routeTree = rootRoute.addChildren([
   tenantGeneratedSqlArtifactRoute,
   tenantValidationRoute,
   tenantValidationModelRoute,
+  tenantValidationGroupRoute,
+  tenantValidationCheckRoute,
   tenantPromptsRoute,
   tenantPromptTemplateRoute,
   tenantModelPromptSettingsRoute,
@@ -700,7 +715,7 @@ function TenantValidation() {
 
 function TenantValidationModel() {
   const { api } = rootRoute.useRouteContext();
-  const { tenantId, modelId } = tenantValidationModelRoute.useParams();
+  const { tenantId, modelId, groupId, checkId } = useParams({ strict: false });
   const numericTenantId = Number(tenantId);
   const numericModelId = Number(modelId);
   return (
@@ -713,11 +728,14 @@ function TenantValidationModel() {
     >
       {({ home, model }) => (
         <ValidationScreen
+          key={`${tenantId}/${modelId}/${groupId ?? ""}/${checkId ?? ""}`}
           api={api}
           tenantId={numericTenantId}
           model={model}
           hasTenantLock={home.lock.owned_by_current_principal === true}
           hasAppPermission={canAuthorModels(home.tenant.effective_role)}
+          groupId={groupId === undefined ? undefined : Number(groupId)}
+          checkId={checkId === undefined ? undefined : Number(checkId)}
         />
       )}
     </WorkspaceModelRouteFrame>

@@ -3,7 +3,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 REPOSITORY_ROOT = Path(__file__).resolve().parents[2]
 PLUGIN_ROOT = REPOSITORY_ROOT / "plugins" / "v2" / "gds"
 SKILL_ROOT = PLUGIN_ROOT / "skills" / "gds"
@@ -21,9 +20,7 @@ def test_plugin_keeps_the_portable_agent_plugins_manifest() -> None:
     mcp = json.loads(read(PLUGIN_ROOT / "mcp.json"))
     marketplace = json.loads(read(MARKETPLACE))
 
-    assert manifest["$schema"] == (
-        "https://agent-plugins.org/schemas/1.0.0/plugin.schema.json"
-    )
+    assert manifest["$schema"] == ("https://agent-plugins.org/schemas/1.0.0/plugin.schema.json")
     assert manifest["name"] == "gds"
     assert mcp["$schema"] == "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json"
     assert mcp["mcpServers"]["gds-workbench"]["type"] == "streamable-http"
@@ -119,10 +116,7 @@ def test_stage_uses_the_deterministic_extension_without_payload_context() -> Non
     assert "legacyFallbackAllowed=true" in staging
     assert "If `stageStarted=true`, stop" in staging
     assert "at most 25 bounded examples" in staging
-    assert (
-        "acceptedDigest -> Change Set ID -> resultingRevision -> stageFingerprint"
-        in staging
-    )
+    assert "acceptedDigest -> Change Set ID -> resultingRevision -> stageFingerprint" in staging
 
 
 def test_automatic_subagent_model_is_always_a_persisted_user_choice() -> None:
@@ -212,9 +206,7 @@ def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
     assert "No Object may contain data from multiple source Tenants" in combined
 
 
-def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> (
-    None
-):
+def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> None:
     registration = read(WORKFLOWS / "target-registration.md")
     binding = read(WORKFLOWS / "model-binding.md")
 
@@ -267,9 +259,7 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
         "same business concept at the same grain",
     ):
         assert decision in logical
-    assert (
-        "Do not finalize a metadata-only result when a query can resolve it" in logical
-    )
+    assert "Do not finalize a metadata-only result when a query can resolve it" in logical
     assert "do not turn this layer into a star schema" in logical
     assert "Kimball's four decisions" in dimensional
     assert "process-to-dimension bus matrix" in dimensional
@@ -279,9 +269,7 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
 def test_mapping_is_flexible_but_has_a_standard_default() -> None:
     mapping = read(WORKFLOWS / "mapping.md")
 
-    assert mapping.index("wait for user confirmation") < mapping.index(
-        "The work unit is"
-    )
+    assert mapping.index("wait for user confirmation") < mapping.index("The work unit is")
     assert "object-level and attribute-level JSON shape" in mapping
     assert "One confirmation covers selected targets sharing the structure" in mapping
     assert "structural changes require confirmation again" in mapping
@@ -293,8 +281,7 @@ def test_mapping_is_flexible_but_has_a_standard_default() -> None:
     assert "Flexible storage and advisory templates" in mapping
     assert "`mapping_object_default` and `mapping_attribute_default`" in mapping
     assert (
-        "configuration or evidence establishes it is installed; otherwise use JSON null"
-        in mapping
+        "configuration or evidence establishes it is installed; otherwise use JSON null" in mapping
     )
 
 
@@ -328,6 +315,54 @@ def test_authoring_uses_inferred_types_and_independent_validation() -> None:
     assert "exactly one active artifact assignment" in code
     assert "independently from Mapping and confirmed rules" in validation
     assert "empty-input and null behavior" in validation
+
+
+def test_staged_sql_examples_and_mapping_guidance_agree() -> None:
+    from gds_etl_workbench.domain.databricks_sql import (
+        DatabricksStatementKind,
+        validate_databricks_sql,
+    )
+
+    prompts = REPOSITORY_ROOT / "docs" / "workflow-prompts"
+    mapping = json.loads(read(prompts / "mapping.review.example.json"))["candidate"]
+    code = json.loads(read(prompts / "code.review.example.json"))
+    object_document = mapping["object_mapping"]["mapping_transformation_document"]
+    attribute_document = mapping["attribute_mappings"][0][
+        "attribute_mapping_transformation_document"
+    ]
+    assert set(object_document) == {"source_objects", "steps"}
+    assert all(isinstance(step, str) for step in object_document["steps"])
+    assert set(attribute_document) == {"source_attributes", "transformation"}
+    assert code["inputs"]["object_transformations"][0]["transformation"] == object_document
+    assert code["inputs"]["attribute_transformations"][0]["transformation"] == attribute_document
+
+    examples = [
+        read(REFERENCES / "examples" / "staged-target-query.sql"),
+        read(REFERENCES / "examples" / "multi-system-target.sql"),
+        code["candidate"]["artifacts"][0]["generated_sql"],
+    ]
+    for sql in examples:
+        batch = validate_databricks_sql(sql)
+        assert len(batch.statements) >= 2
+        assert all(
+            statement.kind == DatabricksStatementKind.TEMPORARY_DDL
+            for statement in batch.statements[:-1]
+        )
+        assert batch.statements[-1].kind == DatabricksStatementKind.READ
+        assert batch.final_returns_rows
+        assert "SELECT *" not in sql.upper()
+
+    for mode in ("one_shot", "tool_assisted"):
+        prompt = json.loads(read(prompts / f"mapping.{mode}.json"))["system_prompt"]
+        assert "natural-language query-building instructions" in prompt
+        assert "Keep field transformations here" in prompt
+    prompt = json.loads(read(prompts / "code.tool_assisted.json"))["system_prompt"]
+    assert "never repeat the entire pipeline" in prompt
+    assert "Runtime performs loading/merge" in prompt
+    prompt = json.loads(read(prompts / "validation.tool_assisted.json"))["system_prompt"]
+    assert "Query A and Query B are independent SQL" in prompt
+    assert "not the complete generation pipeline" in prompt
+    assert "staged-target-query.sql" in read(WORKFLOWS / "code-generation.md")
 
 
 def test_validation_confirms_broad_categories_before_authoring_checks() -> None:

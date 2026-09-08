@@ -237,6 +237,18 @@ Before completing a frontend change:
 - Confirm no automatic workflow polling was added.
 - Run `npm run check` from the repository root.
 
+### Validation navigation
+
+- The Model's Validation page lists Groups in a table with an explicit Show
+  details link. Group details list only that Group's Checks. Check details open
+  a separate page showing its SQL and comparison contract.
+- Use addressable Group/Check routes and Back to Groups / Back to Checks links.
+  Focus the page heading on arrival. Keep Group selection/review at the Group
+  ledger and Check selection/review inside its Group; reset selection on navigation.
+- Preserve authoritative lock, active and currentness badges, safe load/revision
+  errors and manual refresh. SQL panels stack at narrow widths; wide Check
+  tables scroll inside their surface.
+
 ### Model metadata and target handoff
 
 - Enrichment opens on current physical metadata. Keep Workflow history separate

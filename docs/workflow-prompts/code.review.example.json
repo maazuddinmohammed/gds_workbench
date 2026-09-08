@@ -81,11 +81,19 @@
           "grain": null
         },
         "transformation": {
-          "steps": [
+          "source_objects": [
             {
-              "name": "customers",
-              "source": "customer_source"
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "alias": "c"
             }
+          ],
+          "steps": [
+            "Read northwind.bronze_crm.customer as c at its documented customer grain. No joins, filtering, grouping or deduplication apply.",
+            "Produce one row per customer using the bound Attribute transformations in target order. Runtime handles target loading."
           ]
         },
         "source_system_code": "CRM"
@@ -96,7 +104,17 @@
         "target_attribute_name": "CustomerID",
         "target_attribute_ordinal_position": 1,
         "transformation": {
-          "expression": "CAST(customer_id AS BIGINT)"
+          "source_attributes": [
+            {
+              "tenant_code": "NWA",
+              "system_code": "CRM",
+              "connection_code": "crm_bronze",
+              "object_schema": "bronze_crm",
+              "object_name": "customer",
+              "attribute_name": "customer_id"
+            }
+          ],
+          "transformation": "Return c.customer_id unchanged as BIGINT. Source and target are non-null BIGINT; no cast or default is needed."
         },
         "source_system_code": "CRM",
         "modeled_entity_type": "logical_entity",
@@ -104,7 +122,7 @@
       }
     ],
     "target_ref": "target_1",
-    "sql_generation_guide": "Generate Databricks SQL using exact applied transformations and qualified physical names."
+    "sql_generation_guide": "Generate Databricks SQL from applied Object steps and Attribute transformations using successive CREATE OR REPLACE TEMPORARY VIEW statements and one final target-column SELECT. Qualify physical relations. Runtime owns target loading."
   },
   "candidate": {
     "artifacts": [
@@ -115,7 +133,7 @@
         "source_system_codes": [
           "CRM"
         ],
-        "generated_sql": "SELECT CAST(customer_id AS BIGINT) AS CustomerID FROM northwind.bronze.customer;"
+        "generated_sql": "CREATE OR REPLACE TEMPORARY VIEW temp_customer_crm_projected AS\nSELECT c.customer_id AS CustomerID\nFROM northwind.bronze_crm.customer AS c;\n\nSELECT CustomerID FROM temp_customer_crm_projected;"
       }
     ]
   },

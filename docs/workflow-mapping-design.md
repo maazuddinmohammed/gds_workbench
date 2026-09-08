@@ -114,6 +114,29 @@ and examples. Write meaningful concrete documents using this guidance. Examples
 are not actual values; null means no template selected. Guidance does not
 replace the outer candidate schema or create strict database columns.
 
+MAPPING CONTENT STANDARD
+Keep the selected template shape. For mapping_object_default, source_objects
+lists only the physical Objects used to build this target query, with complete
+Tenant/System/Connection/schema/Object keys and unique aliases. steps is an
+ordered list of natural-language query-building instructions: starting Object,
+source preparation, join order/type and exact join columns/predicates, filters
+and their placement, then any evidenced grouping or deduplication. Each step
+states its inputs and resulting row grain. Steps describe what to do; do not
+paste a complete SQL query, CREATE statement or full pipeline into each step.
+For mapping_attribute_default, source_attributes identifies actual input
+Attributes; transformation specifies the target field's expression or precise
+rule, including casts and null behavior. Keep field transformations here rather
+than duplicating them in Object steps. Use the Object aliases consistently.
+Keep required keys and permitted nulls unchanged. Null source_objects or steps
+means the evidence establishes no applicable sources or relational steps; it
+must not hide unknown required behavior. Constants/generated fields may omit
+source_attributes or use null when the template allows it.
+Code Generation will translate the Object steps into successive CREATE OR
+REPLACE TEMPORARY VIEW statements, reuse earlier views for later steps, apply
+Attribute transformations and finish with the exact target-column SELECT.
+Mapping defines the query logic, not the executable SQL or runtime loading.
+Never invent a join or additional stage just to imitate an example.
+
 METHOD AND QUALITY
 1. Resolve target, route, Source System and readiness. Inspect modeled grain,
    existing natural-name bindings and transformations.
@@ -220,6 +243,7 @@ object_output_template:
 attribute_output_template:
 {{ attribute_output_template }}
 
+Keep Object steps in natural language and field rules in Attribute transformations.
 Return only the fixed candidate JSON. Backend validation and bounded correction remain authoritative.
 ```
 
@@ -268,6 +292,29 @@ by code, with ordered field descriptions/types, array item type, is_required
 and examples. Write meaningful concrete documents using this guidance. Examples
 are not actual values; null means no template selected. Guidance does not
 replace the outer candidate schema or create strict database columns.
+
+MAPPING CONTENT STANDARD
+Keep the selected template shape. For mapping_object_default, source_objects
+lists only the physical Objects used to build this target query, with complete
+Tenant/System/Connection/schema/Object keys and unique aliases. steps is an
+ordered list of natural-language query-building instructions: starting Object,
+source preparation, join order/type and exact join columns/predicates, filters
+and their placement, then any evidenced grouping or deduplication. Each step
+states its inputs and resulting row grain. Steps describe what to do; do not
+paste a complete SQL query, CREATE statement or full pipeline into each step.
+For mapping_attribute_default, source_attributes identifies actual input
+Attributes; transformation specifies the target field's expression or precise
+rule, including casts and null behavior. Keep field transformations here rather
+than duplicating them in Object steps. Use the Object aliases consistently.
+Keep required keys and permitted nulls unchanged. Null source_objects or steps
+means the evidence establishes no applicable sources or relational steps; it
+must not hide unknown required behavior. Constants/generated fields may omit
+source_attributes or use null when the template allows it.
+Code Generation will translate the Object steps into successive CREATE OR
+REPLACE TEMPORARY VIEW statements, reuse earlier views for later steps, apply
+Attribute transformations and finish with the exact target-column SELECT.
+Mapping defines the query logic, not the executable SQL or runtime loading.
+Never invent a join or additional stage just to imitate an example.
 
 METHOD AND QUALITY
 1. Resolve target, route, Source System and readiness. Inspect modeled grain,
@@ -372,5 +419,6 @@ object_output_template:
 attribute_output_template:
 {{ attribute_output_template }}
 
+Keep Object steps in natural language and field rules in Attribute transformations.
 Return only the fixed candidate JSON. Backend validation and bounded correction remain authoritative.
 ```
