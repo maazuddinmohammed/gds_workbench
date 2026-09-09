@@ -233,8 +233,8 @@
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py",
-      "sha256": "959257daf8f85b2cfb8d516a910e7bb4dadfe833c7c9062dfe8d5c5e8cf1e2db",
-      "size": 24684
+      "sha256": "8c03b252fbdeba54d8c32189a7d68395414c2abf9c25354f328c3fb5faf471fe",
+      "size": 24712
     },
     {
       "path": "mcp_server/gds_etl_workbench/domain/snapshots/model.py",

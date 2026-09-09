@@ -11,9 +11,10 @@ _Avoid_: Customer, client, account scope
 **Source Tenant**:
 The single Tenant that owns a physical Object's metadata, independent of its
 Connection placement. Source and Bronze retain their originating Source Tenant.
-Model-produced Silver and Gold belong to the Model Tenant and may consolidate
-authorized inputs from several Tenants and Systems. Their source_tenant_id is
-the Model Tenant; it does not enumerate their contributors.
+Silver/Gold retain the metadata/user-selected Source Tenant. For new model
+targets, the Model Tenant is the default proposal, not a physical-registration
+invariant. Source Tenant does not enumerate contributing Tenants or Systems.
+Current Model Binding separately restricts target Source Tenant to Model Tenant.
 _Avoid_: Connection owner, source System, GDS Connection
 
 **Physical Object Placement**:
@@ -21,9 +22,9 @@ The Connection on an Object identifies where that Object is registered. A
 Source Object uses its source Connection. Bronze, Silver, and Gold Objects use
 the active Connection identified for the Source Tenant as
 `is_tenant_gds_connection=true`; it must also be a Global Data Store Connection.
-That Connection identifies the GDS Tenant and GDS System. Their Source Tenant
-still identifies the Tenant whose data they contain and does not change to the
-GDS Tenant.
+That Connection identifies the GDS Tenant and GDS System used in Object physical
+keys. Never substitute Source or Model Tenant into those keys. Source Tenant
+still identifies whose data the Object contains; GDS placement does not change it.
 _Avoid_: Source Tenant, modeled ownership, inferred Connection
 
 **Active Tenant**:

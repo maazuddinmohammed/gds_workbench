@@ -384,7 +384,8 @@ def metadata_population_rules(definition: DatasetDefinition) -> tuple[str, ...]:
         )
     if definition.record_type == "object":
         rules.append(
-            "source_tenant_code identifies its metadata owner (the Model Tenant for Silver/Gold). "
+            "source_tenant_code identifies its metadata/user-selected owner, independently of "
+            "Model ownership. "
             "tenant_code, "
             "system_code, and connection_code identify its physical Connection."
         )

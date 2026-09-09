@@ -153,7 +153,9 @@ Source names/types remain actual. Each Source Object has one Bronze counterpart.
 
 A Model belongs to one Tenant; input scope can include Objects from several authorized Source Tenants. Choose Source or Bronze explicitly. Scope selection does not change ownership or silently prefer Bronze. Model access does not grant access to another Tenant's data.
 
-Common Silver/Gold targets belong to the Model Tenant and use that Tenant's configured GDS Connection. Their source_tenant_id is the Model Tenant, while contributing source lineage is retained. Physical GDS Tenant/System placement can differ from the owning Tenant. Source/Bronze Objects retain their original Source Tenant.
+Bronze, Silver, and Gold are physically registered under the Tenant/System/Connection identified by the selected Source Tenant's configured `gds_connection_id`. Their `source_tenant_id` separately identifies the Tenant whose data they represent. For example, Bronze can be placed under GDS while its Source Tenant is ABC. The agent copies placement from the Connection and preserves the metadata/user-selected Source Tenant. For new Silver/Gold, the Model Tenant is a proposed default, not a forced metadata value.
+
+The Model Scope table has no same-Tenant constraint: it references Objects by ID. Workflow eligibility and access checks still apply. Current Model Binding requires a Silver/Gold target's Source Tenant to equal the Model Tenant; the agent reports a different owner choice as a workflow limitation rather than changing the metadata to fit it.
 
 ## Enrichment, profiling, and modeling quality
 

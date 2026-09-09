@@ -13,7 +13,7 @@ Resolve actual System Type, format, and supported expression syntax. Type conver
 
 ## Target definitions and loading
 
-Source/Bronze Objects retain one Source Tenant. Common model-produced Silver/Gold targets belong to the Model Tenant and may consolidate authorized inputs from other Tenants. Use that owner's configured active GDS Connection; retain contributor lineage.
+Bronze/Silver/Gold use the chosen Source Tenant's configured `gds_connection_id`. Copy physical Tenant/System/Connection from that Connection into Object keys; never substitute Source or Model Tenant. `source_tenant_id` identifies the metadata/user-selected owner. Model Tenant is only a default for new Silver/Gold. Preserve contributor lineage. See Target Registration for current Binding restrictions.
 
 Framework-executed SQL/DDL uses `schema.table`, without catalog: runtime selects the catalog. Temporary views are unqualified. If placements require different catalog contexts, resolve supported runtime access before code generation; never silently redirect a source to the target catalog. Direct evidence queries still need the registered execution coordinates; do not strip their required catalog.
 

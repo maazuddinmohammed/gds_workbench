@@ -203,7 +203,6 @@ def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
     assert "is_global_data_store=true" in combined
     assert "data-owning Tenant" in combined
     assert "Multiple Systems or Connections" in combined
-    assert "Common Silver/Gold targets use Model Tenant ownership" in combined
 
 
 def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> None:

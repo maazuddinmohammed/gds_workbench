@@ -12,8 +12,11 @@ deeper investigation before that plan. Existing answers and applied work survive
 workflow boundaries. Both builds invoke missing Metadata Enrichment.
 
 A Model belongs to one Tenant. Its Source/Bronze scope may span readable Source
-Tenants. Silver/Gold targets belong to the Model Tenant and use its configured
-GDS Connection. Source ownership and physical placement remain distinct.
+Tenants. Bronze/Silver/Gold placement follows the selected Source Tenant's GDS
+Connection and that Connection's Tenant/System. Source ownership remains a
+metadata/user choice; Model Tenant is the default proposal for new Silver/Gold.
+The current Binding implementation still requires target Source Tenant to equal
+Model Tenant. This is an implementation restriction, not a registration invariant.
 
 Model authorization rechecks access to retained Source Tenant references,
 including inactive scope. Structural SQL eligibility alone grants no access.
@@ -29,7 +32,7 @@ uses the existing governed SQL tool under saved policy. Modeling investigations
 remain evidence-driven; freeform per-Object notes support downstream reuse.
 
 The packaged orchestration reference owns conventions shared across workflows:
-Bronze casting/names, Model target ownership, generated identities, audit
+Bronze casting/names, Source ownership versus GDS placement, generated identities, audit
 projection, schema qualification, Mapping/Code behavior, and Copy Group selection.
 The user guide describes intake and lifecycle; workflow references teach only
 the relevant mechanics and decisions.

@@ -18,8 +18,8 @@ When assigning the Tenant's GDS placement Connection, use the exact documented a
 
 - `source_tenant_id` is always the Tenant whose data the Object contains. It is mandatory; never use the GDS Tenant merely because GDS stores the table.
 - A Source Object uses its actual source Connection.
-- Bronze, Silver, and Gold use the active Connection identified by `is_tenant_gds_connection=true`. That Connection determines physical Tenant/System placement while `source_tenant_id` remains the data owner.
-- Source/Bronze retain their Source Tenant. Multiple Systems or Connections for that owner are allowed. Common Silver/Gold targets use Model Tenant ownership; follow Target Registration.
+- Bronze, Silver, and Gold use the chosen Source Tenant's active Connection identified by `is_tenant_gds_connection=true`. Object `tenant_code`, `system_code`, and `connection_code` come from that Connection's registered placement, even when its Tenant differs from both Source and Model Tenant.
+- Source/Bronze retain their Source Tenant. Multiple Systems or Connections for that owner are allowed. Silver/Gold retain the metadata/user-selected Source Tenant; the Model Tenant is only a default for new targets. Follow Target Registration.
 - The Metadata Change Set Tenant and Tenant Lock are always the data-owning Tenant, never the GDS placement Tenant.
 - In ingestion Mapping and Copy natural keys, `source_*` and `target_*` Tenant/System/Connection fields identify each Object's physical key. The referenced Objects must both have the locked Tenant as `source_tenant_id`.
 - Copy Group, Copy, Process Group, and Process ownership fields use the locked Tenant. Process `object_*` fields use the referenced Object's physical key, which may identify the configured GDS Connection.

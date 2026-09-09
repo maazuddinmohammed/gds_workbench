@@ -36,7 +36,7 @@ After code generation, resolve the user's next goal. Validation, optional Dimens
 - Its input scope may include Objects from multiple authorized Source Tenants and Systems.
 - Existing physical input Objects retain their source_tenant_id and full physical identity.
 - Common Conceptual and Logical models consolidate across Tenants and Systems when business meaning and grain support it. Provenance alone does not justify separate concepts or entities.
-- Model-produced Silver and Gold targets belong to the Model Tenant, with source_tenant_id set to that Tenant. Their physical placement uses the Model Tenant's configured GDS Connection. Do not create separate targets merely because contributing inputs belong to different Tenants.
+- Bronze/Silver/Gold physical placement uses the selected Source Tenant's configured GDS Connection and its actual Tenant/System. Preserve the metadata/user-selected source_tenant_id; propose Model Tenant only as the default for new Silver/Gold. Do not create separate targets merely because contributing inputs belong to different Tenants. Current Binding's same-Source-Tenant restriction is a separate implementation limitation.
 - Preserve original source lineage. Model access never grants access to another Tenant's underlying metadata or data.
 
 This changes existing same-Tenant assumptions. Implement it through backend authorization, eligibility, snapshots, session handling, reference resolution, and Change Set validation together. Do not implement it only as plugin prose or a client-side bypass. Preserve governed Change Sets; do not add direct Model Scope mutation or foundational CRUD tools.
@@ -203,7 +203,7 @@ Silver uses the applied Logical model. Gold uses the applied Dimensional model. 
 
 **Routine question:** the target schema name, if not already known.
 
-Resolve target ownership and placement from the Model Tenant and its GDS Connection. Reuse approved entity names, descriptions, Attributes, types, nullability, key roles, natural keys, and audit fields.
+Resolve Source Tenant from existing metadata or the user, proposing Model Tenant as the default for new targets. Resolve physical Tenant/System/Connection from that owner's configured GDS Connection. Report current Binding restrictions before preparing an incompatible target; never rewrite the chosen owner. Reuse approved entity names, descriptions, Attributes, types, nullability, key roles, natural keys, and audit fields.
 
 Build one target definition and derive both Metadata and DDL from it. For every selected target, generate complete CREATE TABLE IF NOT EXISTS schema.table DDL, including generated identity keys. Do not include a catalog.
 

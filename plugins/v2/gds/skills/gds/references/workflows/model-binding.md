@@ -8,6 +8,6 @@ Once those prerequisites are present, derive and author the bindings directly fr
 - `model_attribute_binding` binds each modeled Attribute to one Attribute under that Object Binding.
 - Bind every modeled and physical target Attribute exactly once, including audit, technical, and constant-valued Attributes.
 - Derive Model, Object, and Entity type from the parent binding instead of repeating them in Attribute Binding.
-- A target Object's `source_tenant_id` must equal the Model Tenant.
+- Current server eligibility requires a target Object's `source_tenant_id` to equal the Model Tenant. Report a mismatch as a workflow limitation; never rewrite registered ownership to pass it. Physical Tenant/System/Connection still come from the GDS Connection.
 
 Missing or ambiguous metadata blocks. Apply Binding through a Model Change Set, refresh the Model Snapshot, and stop before Mapping. Mapping never establishes Binding.
