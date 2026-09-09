@@ -3345,6 +3345,8 @@ AS $add_model_input_scope_objects$
 DECLARE
     v_decision RECORD;
     v_count INTEGER;
+    v_source_tenant_id BIGINT;
+    v_source_access RECORD;
 BEGIN
     IF p_object_ids IS NULL OR cardinality(p_object_ids) NOT BETWEEN 1 AND 200
        OR (SELECT count(DISTINCT id) FROM unnest(p_object_ids) AS ids(id))
@@ -3370,6 +3372,16 @@ BEGIN
         <> cardinality(p_object_ids) THEN
         RAISE EXCEPTION 'Objects are not eligible for Input Scope' USING ERRCODE = '22023';
     END IF;
+    FOR v_source_tenant_id IN
+        SELECT DISTINCT object.source_tenant_id FROM core.object AS object
+         WHERE object.object_id = ANY(p_object_ids)
+    LOOP
+        SELECT * INTO v_source_access FROM security.authorize_tenant_operation(
+            p_entra_tenant_id, p_entra_object_id, 'user', v_source_tenant_id, 'tenant_read');
+        IF NOT coalesce(v_source_access.authorized, FALSE) THEN
+            RAISE EXCEPTION 'Input Scope source authorization denied' USING ERRCODE = '42501';
+        END IF;
+    END LOOP;
     PERFORM 1 FROM model.model_input_scope AS scope
      WHERE scope.model_id = p_model_id AND scope.object_id = ANY(p_object_ids)
      ORDER BY scope.model_input_scope_id FOR UPDATE;

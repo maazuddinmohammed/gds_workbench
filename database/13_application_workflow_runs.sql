@@ -1162,6 +1162,8 @@ SET search_path = pg_catalog
 AS $create_workflow_run$
 DECLARE
     v_model RECORD;
+    v_source_tenant_id BIGINT;
+    v_source_access RECORD;
     v_decision RECORD;
     v_actor_entra_principal_identity_id BIGINT;
     v_existing application.workflow_run%ROWTYPE;
@@ -1918,6 +1920,21 @@ BEGIN
         END IF;
     END IF;
 
+    -- Source metadata can span Tenants, while the Run remains Model-Tenant owned.
+    FOR v_source_tenant_id IN
+        SELECT DISTINCT object.source_tenant_id
+          FROM model.model_input_scope AS scope
+          JOIN core.object AS object ON object.object_id = scope.object_id
+         WHERE scope.model_id = p_model_id
+    LOOP
+        SELECT * INTO v_source_access FROM security.authorize_tenant_operation(
+            p_entra_tenant_id, p_entra_object_id, p_expected_principal_type,
+            v_source_tenant_id, 'tenant_read');
+        IF NOT coalesce(v_source_access.authorized, FALSE) THEN
+            RAISE EXCEPTION 'Workflow source authorization denied' USING ERRCODE = '42501';
+        END IF;
+    END LOOP;
+
     IF p_model_workflow <> 'validation' THEN
         SELECT count(*)::INTEGER
           INTO v_eligible_scope_count
@@ -1929,6 +1946,7 @@ BEGIN
                    ) THEN eligible.is_model_input_eligible
                    WHEN p_model_workflow = 'metadata_enrichment' THEN
                        eligible.is_model_input_eligible
+                       AND eligible.object_tenant_id = v_model.tenant_id
                        AND EXISTS (
                            SELECT 1
                              FROM model.model_input_scope AS scope

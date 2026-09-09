@@ -75,6 +75,11 @@ class StageCatalogTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "application.workflow_stage_variable" in query
         assert parameters == (2001,)
         return [
@@ -125,9 +130,7 @@ class StageCatalogDatabase:
 
 
 @pytest.mark.asyncio
-async def test_stage_catalog_returns_only_agentic_stages_with_allowed_variables() -> (
-    None
-):
+async def test_stage_catalog_returns_only_agentic_stages_with_allowed_variables() -> None:
     service = DatabasePromptService(
         database=cast(PromptDatabase, StageCatalogDatabase()),
         authorizer=AuthorizationService(),
@@ -170,6 +173,11 @@ class TemplateListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM application.prompt_template AS template" in query
         assert "system_prompt_template" not in query
         assert parameters[:-2] == (
@@ -236,9 +244,7 @@ def _template_summary_row(
 
 
 @pytest.mark.asyncio
-async def test_template_list_is_visible_scope_filtered_and_signed_page_bounded() -> (
-    None
-):
+async def test_template_list_is_visible_scope_filtered_and_signed_page_bounded() -> None:
     database = TemplateListDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -306,6 +312,11 @@ class TemplateDetailTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         if "application.workflow_stage_variable" in query:
             self.calls.append("variables")
             assert parameters == (12, 101)
@@ -357,9 +368,7 @@ class TemplateDetailDatabase:
 
 
 @pytest.mark.asyncio
-async def test_template_detail_authorizes_before_returning_bounded_raw_version_history() -> (
-    None
-):
+async def test_template_detail_authorizes_before_returning_bounded_raw_version_history() -> None:
     database = TemplateDetailDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -441,6 +450,11 @@ class CreateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         raise AssertionError((query, parameters))
 
 
@@ -454,9 +468,7 @@ class CreateTemplateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_create_tenant_template_binds_owner_server_side_and_calls_governed_function() -> (
-    None
-):
+async def test_create_tenant_template_binds_owner_server_side_and_calls_governed_function() -> None:
     database = CreateTemplateDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -533,9 +545,7 @@ class GlobalCreateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_global_template_mutation_requires_super_admin_and_passes_null_owner() -> (
-    None
-):
+async def test_global_template_mutation_requires_super_admin_and_passes_null_owner() -> None:
     body = CreatePromptTemplateRequest(
         workflow_stage_id=12,
         prompt_template_ownership_scope="global",
@@ -646,6 +656,11 @@ class UpdateTemplateTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         raise AssertionError((query, parameters))
 
 
@@ -659,9 +674,7 @@ class UpdateTemplateDatabase:
 
 
 @pytest.mark.asyncio
-async def test_update_template_uses_server_loaded_immutable_identity_and_timestamp_fence() -> (
-    None
-):
+async def test_update_template_uses_server_loaded_immutable_identity_and_timestamp_fence() -> None:
     database = UpdateTemplateDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -739,9 +752,7 @@ class SaveDraftDatabase:
 
 
 @pytest.mark.asyncio
-async def test_save_draft_passes_raw_bodies_and_both_stale_fences_to_governed_function() -> (
-    None
-):
+async def test_save_draft_passes_raw_bodies_and_both_stale_fences_to_governed_function() -> None:
     database = SaveDraftDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -909,6 +920,11 @@ class AssignmentListTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         self.calls.append("list_effective")
         assert "application.prompt_assignment" in query
         assert "system_prompt_template" not in query
@@ -951,22 +967,14 @@ def _assignment_state_row(
         row.update(
             {
                 f"{prefix}_assignment_id": assignment_id,
-                f"{prefix}_version_id": None
-                if assignment_id is None
-                else assignment_id + 1000,
+                f"{prefix}_version_id": None if assignment_id is None else assignment_id + 1000,
                 f"{prefix}_version_number": None if assignment_id is None else 1,
                 f"{prefix}_version_digest": None if assignment_id is None else "c" * 64,
-                f"{prefix}_template_id": None
-                if assignment_id is None
-                else assignment_id + 2000,
+                f"{prefix}_template_id": None if assignment_id is None else assignment_id + 2000,
                 f"{prefix}_template_ownership_scope": (
-                    None
-                    if assignment_id is None
-                    else ("tenant" if prefix == "model" else "global")
+                    None if assignment_id is None else ("tenant" if prefix == "model" else "global")
                 ),
-                f"{prefix}_owner_tenant_id": (
-                    None if assignment_id is None else owner_tenant_id
-                ),
+                f"{prefix}_owner_tenant_id": (None if assignment_id is None else owner_tenant_id),
                 f"{prefix}_template_code": (
                     None if assignment_id is None else f"{prefix}_{stage_code}"
                 ),
@@ -995,9 +1003,7 @@ class AssignmentListDatabase:
 
 
 @pytest.mark.asyncio
-async def test_model_assignments_bind_model_owner_and_resolve_model_over_global_default() -> (
-    None
-):
+async def test_model_assignments_bind_model_owner_and_resolve_model_over_global_default() -> None:
     database = AssignmentListDatabase()
     service = DatabasePromptService(
         database=cast(PromptDatabase, database),
@@ -1073,6 +1079,11 @@ class SetAssignmentTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         self.calls.append("read_effective")
         assert "application.prompt_assignment" in query
         assert parameters == (18, 201)
@@ -1156,9 +1167,7 @@ class StaleDraftDatabase:
 
 
 @pytest.mark.asyncio
-async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text() -> (
-    None
-):
+async def test_stale_database_failure_maps_to_stable_conflict_without_raw_text() -> None:
     service = DatabasePromptService(
         database=cast(PromptDatabase, StaleDraftDatabase()),
         authorizer=AuthorizationService(),
@@ -1564,9 +1573,7 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
             workflow_stage_id=context.workflow_stage_id,
             body=SetModelPromptAssignmentRequest(
                 prompt_template_version_id=None,
-                expected_prompt_assignment_id=(
-                    assigned.model_assignment.prompt_assignment_id
-                ),
+                expected_prompt_assignment_id=(assigned.model_assignment.prompt_assignment_id),
             ),
         )
         retired = await service.retire_version(
@@ -1590,16 +1597,10 @@ async def test_prompt_library_round_trip_uses_disposable_database_web_role(
         await database.close()
 
     matching_stage = next(
-        stage
-        for stage in stages.items
-        if stage.workflow_stage_id == context.workflow_stage_id
+        stage for stage in stages.items if stage.workflow_stage_id == context.workflow_stage_id
     )
-    assert [variable.name for variable in matching_stage.allowed_variables] == [
-        "stage_context"
-    ]
-    assert [item.prompt_template_id for item in page.items] == [
-        created.prompt_template_id
-    ]
+    assert [variable.name for variable in matching_stage.allowed_variables] == ["stage_context"]
+    assert [item.prompt_template_id for item in page.items] == [created.prompt_template_id]
     assert detail.versions[0].system_prompt_template == "System {{future_variable}}"
     matching_assignment = next(
         item
@@ -1639,20 +1640,13 @@ def test_prompt_preview_uses_synthetic_examples_and_never_saves() -> None:
             "system_prompt_template": "Use supplied evidence",
             "instruction_prompt_template": "{{stage_context}}",
         }
-        response = client.post(
-            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
-        )
+        response = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)
         assert response.status_code == 200
         assert response.json()["rendered_instruction_prompt"] == "null"
         assert "RAW_SYSTEM_SENTINEL" not in response.text
         body["instruction_prompt_template"] = "{{not_registered}}"
-        invalid = client.post(
-            "/api/v1/tenants/7/prompts/templates/101/preview", json=body
-        )
+        invalid = client.post("/api/v1/tenants/7/prompts/templates/101/preview", json=body)
         assert invalid.status_code == 422
         assert invalid.json()["error"]["code"] == "invalid_request"
         assert "not_registered" not in invalid.text
-    assert (
-        database.transaction.calls
-        == ["authorize", "header", "variables", "versions"] * 2
-    )
+    assert database.transaction.calls == ["authorize", "header", "variables", "versions"] * 2

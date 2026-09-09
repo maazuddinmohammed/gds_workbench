@@ -219,7 +219,8 @@
       const type = recordType(value);
       const source = value.records || value.effective || value.baseline || [];
       if (type === "object") objects.push(...source.filter((record) =>
-        normalized(record.source_tenant_code) === normalized(context.tenantCode)));
+        normalized(record.source_tenant_code) === normalized(context.tenantCode) ||
+        ["source", "bronze"].includes(normalized(record.zone_code))));
       else if (type === "attribute") attributes.push(...source);
       else if (type === "system") systems.push(...source.filter((record) => record.is_active !== false));
     }

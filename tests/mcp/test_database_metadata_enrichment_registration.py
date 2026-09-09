@@ -9,7 +9,7 @@ from uuid import uuid4
 
 import psycopg
 import pytest
-from psycopg.errors import RaiseException
+from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 
 from tests.mcp.database_test_support import require_row
@@ -19,6 +19,8 @@ from tests.mcp.test_database_notebook_workflows import (
     NotebookActor,
     _bind_notebook_tenant_lock,
     _seed_missing_model_prompt_assignments,
+)
+from tests.mcp.test_database_notebook_workflows import (
     notebook_actor as notebook_actor,
 )
 from tests.mcp.test_database_workflow_run_lifecycle import (
@@ -268,7 +270,8 @@ def test_enrichment_rejects_ineligible_scope_atomically(
             if case == "outside_scope":
                 object_id = require_row(cursor.fetchone())["object_id"]
     correlation_id = uuid4()
-    with pytest.raises(RaiseException):
+    expected_error = InsufficientPrivilege if case == "foreign_owner" else RaiseException
+    with pytest.raises(expected_error):
         _create(
             actor,
             context,

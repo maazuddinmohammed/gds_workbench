@@ -265,9 +265,19 @@ async def test_code_and_validation_track_physical_metadata_without_model_revisio
             )
         foreign = await current()
         assert foreign["code_input_digest"] != prior["code_input_digest"]
-        assert physical_source["object_id"] not in {
-            item["object"]["object_id"] for item in foreign["source_context"]["physical_sources"]
+        # Cross-Tenant Source/Bronze inputs remain structural contributors.
+        # A transferred Silver target is no longer this Model's dimensional input.
+        remaining = {
+            item["object"]["object_id"]: item["object"]
+            for item in foreign["source_context"]["physical_sources"]
         }
+        if dimensional:
+            assert physical_source["object_id"] not in remaining
+        else:
+            assert (
+                remaining[physical_source["object_id"]]["source_tenant_id"]
+                == scope.placement_tenant_id
+            )
         assert await current() == foreign
     finally:
         await runtime.close()

@@ -33,7 +33,7 @@ The agent owns setup. If the session path is unknown, ask once for the working d
 
 When a required Snapshot is missing or stale (not an unapplied revision conflict):
 
-1. Call `create_metadata_snapshot` for the session Tenant or `create_model_snapshot` for its Model.
+1. Call `create_metadata_snapshot` for the session Tenant, including required authorized `source_tenant_ids` for cross-Tenant Source/Bronze context; or `create_model_snapshot` for its Model.
 2. Download its complete ZIP temporarily. Never expose or save the signed URL.
 3. Run `snapshot-install` with returned ID, bytes, and SHA-256. It verifies and replaces the area, retiring exact applied records when stale.
 4. Delete the ZIP and rerun `readiness`.
@@ -44,12 +44,16 @@ Before Model Stage, compare the authoritative Model revision with the installed 
 
 Apply marks its area stale. Refresh before dependent work. Model replacement requires a newer revision.
 
-Metadata Enrichment requires both Snapshots and a selected Model. Its task area is `metadata`; check Model revision before handoff because that Snapshot determines scope. Physical results are shared by every Model using those Objects.
+Metadata Enrichment requires both Snapshots and a selected Model. Its task area is `metadata`; check Model revision before handoff because that Snapshot determines scope. Physical results are shared by every Model using those Objects. For another Source Tenant, keep scope evidence in the owning Model session and create a metadata-only session for that Source Tenant's edits (`metadata-authoring` readiness). Do not install a foreign-owned Model Snapshot there. Validate/apply each Metadata Change Set under its own Tenant Lock; then refresh the main session's combined Metadata Snapshot. Extra input context never grants Metadata write authority.
 
 ## Read the right data
 
 `readiness` checks Snapshot presence/freshness, not applied workflow eligibility. Check the active guide's prerequisites separately. Author against installed Snapshots using bounded `select --where`; it reads Snapshot rows only. To inspect the effective result, overlay the corresponding local draft records by canonical key. Do not confuse draft records with applied data.
 
 `inspect_metadata` and `read_model_section` read live applied data. Compare Model reads' returned revision to the installed revision; reassess on mismatch. Follow MCP `next_cursor` when traversing a dataset. Generated Code/Validation require local Snapshot reads. Local `select` has no cursor: when `truncated=true`, narrow by known entity/object/System/attribute keys; never call a partial page complete. Use paginated MCP inventory reads to discover missing keys.
+
+## Reusable investigation notes
+
+Keep `<session>/working/<task>/object-analysis/` with an index mapping full physical Object keys to freeform Markdown notes. Record grain, hypotheses, evidence references, decisions, corrections, and any other useful findings; no mandatory per-file JSON schema. Conceptual/Logical/Dimensional read applicable notes first. Reassess affected notes after evidence changes. These notes are temporary context, not Model state; never save physical rows, raw output, prompts, or secrets.
 
 `snapshot-install` installs a newly downloaded archive. `snapshot-refresh` only reconciles a replacement already on disk; it does not fetch a Snapshot. Use `snapshot-install` for the normal refresh path. Workbench **Refresh** only reloads local files.

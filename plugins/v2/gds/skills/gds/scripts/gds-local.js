@@ -45,6 +45,40 @@ const MODEL_STAGE_FRAGMENT_MAX_BYTES = 1024 * 1024;
 const STAGE_CHUNK_MAX_RECORDS = 5000;
 const STAGE_MAX_CHUNKS = 64;
 
+function profilePlan(options) {
+  const context = changeSetContext({...options, area: "model"});
+  const metadata = locateSnapshot({session: options.session, area: "metadata"});
+  if (context.state.stale?.includes("metadata")) fail("Metadata Snapshot is stale.");
+  if (!options["plan-file"]) fail("--plan-file is required.");
+  const plan = readJsonFile(path.resolve(options["plan-file"]), "Profiling selections");
+  const scopeDefinition = context.byName.get("model_input_scope");
+  if (!scopeDefinition) fail("Model Input Scope is missing.");
+  const datasets = Object.fromEntries(metadata.datasets.filter((dataset) =>
+    ["source_object", "bronze_object", "source_attribute", "bronze_attribute", "tenant", "connection", "ingestion_object_mapping"].includes(dataset.name))
+    .map((dataset) => [dataset.name, readSnapshotRecords(metadata, dataset)]));
+  const queries = require("./profiling.js").planProfiling(datasets,
+    readSnapshotRecords(context, scopeDefinition), plan);
+  let directory = context.session;
+  for (const segment of ["working", context.current[0]]) {
+    directory = path.join(directory, segment);
+    if (!fs.existsSync(directory)) fs.mkdirSync(directory, {mode: 0o700});
+    const stat = fs.lstatSync(directory);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) fail("Profiling output must be inside regular session directories.");
+  }
+  directory = fs.mkdtempSync(path.join(directory, "profiling-"));
+  const entries = queries.map(({sql, ...query}, index) => {
+    const file = `${String(index + 1).padStart(4, "0")}.sql`;
+    fs.writeFileSync(path.join(directory, file), sql, {flag: "wx", mode: 0o600});
+    return {...query, file, sha256: sha256Bytes(Buffer.from(sql, "utf8"))};
+  });
+  const manifest = path.join(directory, "plan.json");
+  writeJsonAtomic(manifest, {schema_version: "1.0", model_snapshot_id: context.manifest.snapshot_id,
+    metadata_snapshot_id: metadata.manifest.snapshot_id, model_revision: context.manifest.model_revision,
+    selections: plan, queries: entries});
+  return {directory, manifest, query_count: queries.length,
+    attribute_count: queries.reduce((count, query) => count + query.attributes.length, 0)};
+}
+
 function commandContract(options) {
   const contract = readJsonFile(HELPER_CONTRACT_PATH, "Local helper command contract");
   if (!options.command) {
@@ -2721,6 +2755,7 @@ async function main() {
   else if (command === "status") output = sessionStatus(options);
   else if (command === "subagent-policy") output = setSubagentPolicy(options);
   else if (command === "sql-policy") output = setSqlPolicy(options);
+  else if (command === "profile-plan") output = profilePlan(options);
   else if (command === "readiness") output = workflowReadiness(options);
   else if (command === "inspect") output = inspectSnapshot(options);
   else if (command === "describe") output = describeDataset(options);

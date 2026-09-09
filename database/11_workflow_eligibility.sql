@@ -73,6 +73,8 @@ FROM PUBLIC;
 
 -- Model Inputs are Source or Bronze Objects. Bound Silver and Gold Objects are
 -- included separately as downstream targets and do not belong to Input Scope.
+-- Source/Bronze eligibility spans Tenants; callers must intersect it with actor
+-- read permissions. Silver/Gold targets still belong to the Model Tenant.
 CREATE FUNCTION workflow.list_model_object_eligibility(
     p_model_id BIGINT
 )
@@ -105,11 +107,14 @@ AS $list_model_object_eligibility$
          WHERE model.model_id = p_model_id
            AND model.is_active
     ), candidate_object AS MATERIALIZED (
-        SELECT visible.object_id
+        SELECT object.object_id
           FROM target_model
-          CROSS JOIN LATERAL workflow.list_tenant_visible_objects(
-              target_model.tenant_id
-          ) AS visible
+          JOIN core.object AS object ON TRUE
+          JOIN reference.zone AS zone ON zone.zone_id = object.zone_id
+          JOIN core.tenant AS owner ON owner.tenant_id = object.source_tenant_id
+           AND owner.is_active
+         WHERE object.source_tenant_id = target_model.tenant_id
+            OR lower(btrim(zone.zone_code)) IN ('source', 'bronze')
     )
     SELECT target_model.model_id,
            object.object_id,
@@ -155,7 +160,6 @@ AS $list_model_object_eligibility$
         ON TRUE
       JOIN core.object AS object
         ON object.object_id = candidate_object.object_id
-       AND object.source_tenant_id = target_model.tenant_id
        AND object.is_active
       JOIN core.connection AS connection
         ON connection.connection_id = object.connection_id
@@ -263,7 +267,6 @@ AS $list_mapping_source_objects$
         ON source_object.object_id = source.source_object_id
       JOIN model.model AS source_model
         ON source_model.model_id = source.model_id
-       AND source_object.source_tenant_id = source_model.tenant_id
       JOIN workflow.list_model_object_eligibility(p_model_id) AS eligibility
         ON eligibility.object_id = source_object.object_id
       LEFT JOIN model.model_input_scope AS source_scope

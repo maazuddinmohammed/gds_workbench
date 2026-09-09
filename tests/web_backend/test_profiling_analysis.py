@@ -531,6 +531,11 @@ class ReviewTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         if "workflow.analysis_result" in query:
             assert "target_model.tenant_id = %s" in query
             assert parameters[:18] == (

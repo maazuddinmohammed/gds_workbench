@@ -1,6 +1,6 @@
 # Mapping inner-document examples
 
-Fictional preconditions: applied Binding targets `CustomerSourceRecord`, with STRING columns `SourceSystemCode`, `CustomerCode`, `CustomerName`; source columns are STRING. Confirmed grain: source System/customer code. Evidence establishes unique, non-null, nonblank codes with significant formatting. Optional names trim surrounding spaces, converting blanks to null. ERP/CRM remain separate records; customer unification requires evidenced identity/reconciliation rules.
+Fictional preconditions: applied Binding targets `CustomerSourceRecord`, with STRING columns `SourceSystemCode`, `CustomerCode`, `CustomerName`, followed by BIGINT `SourceSystemID`; source columns are STRING. Confirmed grain: source System/customer code. Evidence establishes unique, non-null, nonblank codes with significant formatting. Optional names trim surrounding spaces, converting blanks to null. ERP/CRM remain separate records; customer unification requires evidenced identity/reconciliation rules.
 
 Illustrative Bronze placement: `GDS` Tenant/System, connection `DEMO_GDS`. Ownership `source_tenant_code=DEMO` and Mapping lineage `source_system_code=ERP` differ from physical keys. Obtain actual keys, SQL relations, Attributes and policies from evidence. These are **inner documents**; describe each dataset before constructing its outer Change Set record.
 
@@ -21,8 +21,8 @@ Store this ERP object document in `mapping_transformation_document`:
     }
   ],
   "steps": [
-    "Read every row from the resolved relation example.bronze.erp_customer as c once. No joins, filters, aggregation or deduplication are required.",
-    "Project the three bound columns in order using their Attribute transformations. Source codes are unique, non-null and nonblank; preserve CustomerCode unchanged.",
+    "Read every row from the resolved relation bronze.erp_customer as c once. No joins, filters, aggregation or deduplication are required.",
+    "Project the SQL-populated columns through SourceSystemID in order using their Attribute transformations. Source codes are unique, non-null and nonblank; preserve CustomerCode unchanged.",
     "Use (SourceSystemCode, CustomerCode) as the confirmed output grain and runtime merge key. ERP and CRM branches have disjoint composite keys. No predecessor target is required; runtime performs the merge."
   ]
 }
@@ -74,6 +74,8 @@ Store these in corresponding `attribute_mapping_transformation_document` fields.
   "transformation": "Return the STRING literal 'ERP' for every row, from the confirmed source-lineage policy. Never null. This combines with CustomerCode to identify a source record."
 }
 ```
+
+`SourceSystemID` uses the registered Bronze `source_system_id`, cast to BIGINT under the confirmed conversion policy. Include its full Attribute lineage in the actual Mapping. The own surrogate and framework audit fields are accounted for as database/framework-generated, with no SELECT expression. See `../orchestration-rules.md`.
 
 For the Object template, `source_objects` and `steps` are required keys whose values may be JSON null. For the Attribute template, `source_attributes` may be omitted or null; `transformation` remains required. A generated Attribute may describe its confirmed identity/generation rule instead of an invented SQL expression.
 

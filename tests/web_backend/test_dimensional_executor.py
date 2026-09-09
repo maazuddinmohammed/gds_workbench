@@ -567,8 +567,6 @@ def _no_op_candidate() -> JsonValue:
 type _AgentResponse = JsonValue | Exception | Callable[[AgentExecutionRequest], JsonValue]
 
 
-
-
 @dataclass
 class _Database:
     isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
@@ -596,6 +594,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
+        model_id: int | None = None,
     ) -> object:
         assert principal == _principal()
         self.calls.append((tenant_id, policy))

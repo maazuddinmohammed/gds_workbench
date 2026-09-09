@@ -231,6 +231,11 @@ class EligibleSystemsTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "LIMIT 1001" in query
         assert "workflow.list_code_generation_target_context" in query
         assert parameters == (7, 18)
@@ -304,6 +309,11 @@ class LedgerTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert parameters == (7, 18)
         if "validation_check.validation_query_sql" in query:
             return [_check_row(group_id=41)]

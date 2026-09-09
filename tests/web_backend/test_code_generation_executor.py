@@ -328,6 +328,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
+        model_id: int | None = None,
     ) -> object:
         del transaction
         assert principal == _principal()

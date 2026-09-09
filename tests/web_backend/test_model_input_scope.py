@@ -204,9 +204,7 @@ class StaticModelInputScopeService(ModelInputScopeService):
         )
 
 
-def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> (
-    None
-):
+def test_model_input_scope_returns_derived_eligibility_with_normalized_filters() -> None:
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -272,9 +270,7 @@ def test_model_input_scope_candidates_are_exact_filtered_and_read_only() -> None
     assert "model_input_scope_id" not in payload["items"][0]
 
 
-def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> (
-    None
-):
+def test_model_input_scope_detail_opens_cross_source_object_through_model_authority() -> None:
     app = create_app(
         identity_provider=IdentityProvider(
             AuthMode.DEV,
@@ -379,13 +375,17 @@ class ScopeTransaction:
                     "is_active": True,
                 }
             ]
+        if "core.tenant AS tenant" in query and "model.model_input_scope" not in query:
+            return [{"tenant_id": 7}, {"tenant_id": 8}]
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return [{"source_tenant_id": 8}]
         if "is_in_active_scope" in query:
-            assert "WITH RECURSIVE requested_tenant AS" in query
+            assert "WITH requested_tenant AS" in query
             assert "visible_objects AS" in query
-            assert "workflow.list_tenant_visible_objects" in query
+            assert "object.source_tenant_id = ANY(%s::BIGINT[])" in query
             assert "connection_value" not in query
-            assert parameters[:2] == (7, 18)
-            assert parameters[2:10] == (
+            assert parameters[:3] == (7, [7, 8], 18)
+            assert parameters[3:11] == (
                 "bronze",
                 "bronze",
                 "crm",
@@ -598,8 +598,11 @@ async def test_database_scope_candidates_use_authorized_visible_closure() -> Non
     assert second.items[0].is_in_active_scope is False
     assert database.transaction.candidate_offsets == [0, 1]
     assert "security.entra_principal_identity" in database.transaction.statements[0]
-    assert "FROM model.model" in database.transaction.statements[1]
-    assert "WITH RECURSIVE requested_tenant AS" in database.transaction.statements[2]
+    assert any("FROM model.model" in query for query in database.transaction.statements)
+    assert any(
+        "object.source_tenant_id = ANY(%s::BIGINT[])" in query
+        for query in database.transaction.statements
+    )
 
 
 @pytest.mark.asyncio
@@ -642,9 +645,7 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
         if existing is None:
-            connection.execute(
-                cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8"))
-            )
+            connection.execute(cast(LiteralString, DEMO_METADATA_SEED.read_text(encoding="utf-8")))
         tenant = connection.execute(
             "SELECT tenant_id FROM core.tenant WHERE tenant_code = 'DEMO_TENANT'"
         ).fetchone()
@@ -838,9 +839,7 @@ async def test_scope_reads_preserve_visibility_and_support_partial_object_name_s
     finally:
         await database.close()
 
-    candidate_keys = {
-        (item.object_schema, item.object_name) for item in candidates.items
-    }
+    candidate_keys = {(item.object_schema, item.object_name) for item in candidates.items}
     assert ("source_demo", "customer") in candidate_keys
     assert ("bronze_demo", "customer") in candidate_keys
     assert ("silver_demo", "customer") not in candidate_keys

@@ -559,6 +559,11 @@ class CodeTargetTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "workflow.list_code_generation_target_context" in query
         assert "workflow.list_model_object_eligibility" not in query
         assert "workflow.generated_code" in query
@@ -823,6 +828,11 @@ class SqlArtifactTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         raise AssertionError((query, parameters))
 
 
@@ -1074,6 +1084,11 @@ class SqlDownloadTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "workflow.generated_code" in query
         assert "application.generated_sql_artifact" not in query
         assert "application.store_generated_sql_artifact" not in query
@@ -1193,6 +1208,11 @@ class OversizeSqlDownloadTransaction(SqlDownloadTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         raise AssertionError((query, parameters))
 
 

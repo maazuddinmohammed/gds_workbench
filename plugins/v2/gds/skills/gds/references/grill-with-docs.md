@@ -4,4 +4,4 @@ Use only when the user requests a deep GDS discussion. It is an interaction mode
 
 Explore one decision branch at a time against current Snapshots, local session documents, and accepted domain terms. Challenge ambiguity plainly, record decisions in whatever local Markdown or ADR structure best fits the session, and keep unresolved questions explicit.
 
-Do not force a fixed document template. As conclusions become actionable, offer to promote them into Assertions, Conceptual, Logical, Dimensional, Mapping, Code, or Validation records through their normal Change Set boundary. Discussion alone never mutates server state.
+Do not force a fixed document template. End with a concrete plan for user approval. After approval, execute through the appropriate Guided or Custom workflows and promote applicable conclusions into Assertions, Conceptual, Logical, Dimensional, Mapping, Code, or Validation records through their normal Change Set boundary. Discussion alone never mutates server state.

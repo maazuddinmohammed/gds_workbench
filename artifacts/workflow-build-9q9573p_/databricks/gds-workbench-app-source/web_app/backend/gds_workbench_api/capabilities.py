@@ -1,0 +1,326 @@
+"""Validated, non-secret agent SDK/provider/model capability registry."""
+
+from __future__ import annotations
+
+from collections.abc import Collection
+from importlib.resources import files
+from pathlib import Path
+from typing import Literal, Self
+
+from gds_etl_workbench.domain.errors import InvalidRequestError
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+_CODE_PATTERN = r"^[a-z][a-z0-9_.-]{0,99}$"
+_MODEL_CODE_PATTERN = r"^[A-Za-z0-9][A-Za-z0-9_.:/-]{0,199}$"
+_MAX_CONFIGURATION_BYTES = 1024 * 1024
+
+type AgentExecutionModeCode = Literal[
+    "one_shot",
+    "tool_assisted",
+]
+
+CODE_GENERATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "tool_assisted"
+VALIDATION_AGENT_EXECUTION_MODE: AgentExecutionModeCode = "tool_assisted"
+
+
+class CapabilityModel(BaseModel):
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+
+class AgentSdkCapability(CapabilityModel):
+    code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+    provider_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
+
+
+class AgentProviderCapability(CapabilityModel):
+    code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    name: str = Field(min_length=1, max_length=200)
+
+
+class AgentModelExecutionProfile(CapabilityModel):
+    """One tested SDK/mode contract for a configured model deployment."""
+
+    sdk_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    execution_mode: AgentExecutionModeCode
+    reasoning_effort_codes: tuple[str, ...] = Field(min_length=1, max_length=20)
+
+
+class AgentModelCapability(CapabilityModel):
+    """One selectable, operator-verified provider deployment."""
+
+    code: str = Field(pattern=_MODEL_CODE_PATTERN, max_length=200)
+    name: str = Field(min_length=1, max_length=200)
+    provider_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    deployment_name: str = Field(
+        min_length=1,
+        max_length=200,
+        pattern=r"^[A-Za-z0-9][A-Za-z0-9_.-]{0,199}$",
+    )
+    execution_profiles: tuple[AgentModelExecutionProfile, ...] = Field(
+        min_length=1,
+        max_length=60,
+    )
+
+
+class ReasoningEffortCapability(CapabilityModel):
+    code: str = Field(pattern=_CODE_PATTERN, max_length=50)
+    name: str = Field(min_length=1, max_length=100)
+
+
+class BoundedDefault(CapabilityModel):
+    minimum: int
+    default: int
+    maximum: int
+
+    @model_validator(mode="after")
+    def validate_bounds(self) -> Self:
+        if not self.minimum <= self.default <= self.maximum:
+            raise ValueError("default must be within the configured bounds")
+        return self
+
+
+class AgentRunSelection(CapabilityModel):
+    sdk_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    provider_code: str = Field(pattern=_CODE_PATTERN, max_length=100)
+    model_code: str = Field(pattern=_MODEL_CODE_PATTERN, max_length=200)
+    reasoning_effort_code: str = Field(pattern=_CODE_PATTERN, max_length=50)
+    max_turns: int = Field(ge=1, le=50)
+    validation_retry_count: int = Field(ge=0, le=5)
+
+
+class AgentCapabilityRegistry(CapabilityModel):
+    schema_version: Literal["3.0"]
+    sdks: tuple[AgentSdkCapability, ...] = Field(min_length=1, max_length=20)
+    providers: tuple[AgentProviderCapability, ...] = Field(min_length=1, max_length=20)
+    models: tuple[AgentModelCapability, ...] = Field(min_length=1, max_length=200)
+    reasoning_efforts: tuple[ReasoningEffortCapability, ...] = Field(
+        min_length=1,
+        max_length=20,
+    )
+    max_turns: BoundedDefault
+    validation_retries: BoundedDefault
+
+    @model_validator(mode="after")
+    def validate_registry(self) -> Self:
+        sdk_codes = _unique_codes("SDK", self.sdks)
+        provider_codes = _unique_codes("provider", self.providers)
+        model_codes = _unique_codes("model", self.models)
+        reasoning_codes = _unique_codes("reasoning effort", self.reasoning_efforts)
+        del model_codes
+        if sdk_codes != {"openai_agents_sdk"} or provider_codes != {"microsoft_foundry"}:
+            raise ValueError("Agent execution requires OpenAI Agents SDK and Microsoft Foundry")
+
+        for sdk in self.sdks:
+            if not set(sdk.provider_codes) <= provider_codes:
+                raise ValueError(f"SDK {sdk.code} references an unknown provider")
+            if len(set(sdk.provider_codes)) != len(sdk.provider_codes):
+                raise ValueError(f"SDK {sdk.code} repeats a provider")
+        for model in self.models:
+            if model.provider_code not in provider_codes:
+                raise ValueError(f"Model {model.code} references an unknown provider")
+            profile_keys = [
+                (profile.sdk_code, profile.execution_mode) for profile in model.execution_profiles
+            ]
+            if len(set(profile_keys)) != len(profile_keys):
+                raise ValueError(f"Model {model.code} repeats an execution profile")
+            for profile in model.execution_profiles:
+                if profile.sdk_code not in sdk_codes:
+                    raise ValueError(f"Model {model.code} references an unknown SDK")
+                if not set(profile.reasoning_effort_codes) <= reasoning_codes:
+                    raise ValueError(f"Model {model.code} references an unknown reasoning effort")
+                if len(set(profile.reasoning_effort_codes)) != len(profile.reasoning_effort_codes):
+                    raise ValueError(f"Model {model.code} repeats a profile reasoning effort")
+                sdk = next(item for item in self.sdks if item.code == profile.sdk_code)
+                if model.provider_code not in sdk.provider_codes:
+                    raise ValueError(
+                        f"Model {model.code} uses an SDK incompatible with its provider"
+                    )
+        deployment_keys = [(model.provider_code, model.deployment_name) for model in self.models]
+        if len(set(deployment_keys)) != len(deployment_keys):
+            raise ValueError("Model deployment names must be unique within a provider")
+        if (self.max_turns.minimum, self.max_turns.maximum) != (1, 50):
+            raise ValueError("max_turns bounds must remain 1 through 50")
+        if (self.validation_retries.minimum, self.validation_retries.maximum) != (
+            0,
+            5,
+        ):
+            raise ValueError("validation retry bounds must remain 0 through 5")
+        return self
+
+    @classmethod
+    def from_path(cls, path: Path) -> AgentCapabilityRegistry:
+        raw = path.read_bytes()
+        if len(raw) > _MAX_CONFIGURATION_BYTES:
+            raise ValueError("agent capability configuration is too large")
+        return cls.model_validate_json(raw, strict=True)
+
+    def validate_selection(
+        self,
+        selection: AgentRunSelection,
+        *,
+        execution_mode: AgentExecutionModeCode | None = None,
+    ) -> None:
+        sdk = next((item for item in self.sdks if item.code == selection.sdk_code), None)
+        provider = next(
+            (item for item in self.providers if item.code == selection.provider_code),
+            None,
+        )
+        model = next(
+            (item for item in self.models if item.code == selection.model_code),
+            None,
+        )
+        reasoning = next(
+            (
+                item
+                for item in self.reasoning_efforts
+                if item.code == selection.reasoning_effort_code
+            ),
+            None,
+        )
+        if sdk is None or provider is None or model is None or reasoning is None:
+            raise InvalidRequestError("The selected agent configuration is unavailable.")
+        compatible_profile = next(
+            (
+                profile
+                for profile in model.execution_profiles
+                if profile.sdk_code == sdk.code
+                and (execution_mode is None or profile.execution_mode == execution_mode)
+                and reasoning.code in profile.reasoning_effort_codes
+            ),
+            None,
+        )
+        if (
+            provider.code not in sdk.provider_codes
+            or model.provider_code != provider.code
+            or compatible_profile is None
+            or not self.max_turns.minimum <= selection.max_turns <= self.max_turns.maximum
+            or not self.validation_retries.minimum
+            <= selection.validation_retry_count
+            <= self.validation_retries.maximum
+        ):
+            raise InvalidRequestError("The selected agent configuration is incompatible.")
+
+    def resolve_default_selection(
+        self,
+        *,
+        execution_mode: AgentExecutionModeCode,
+        model_code: str | None = None,
+        reasoning_effort_code: str | None = None,
+        max_turns: int | None = None,
+        validation_retry_count: int | None = None,
+    ) -> AgentRunSelection:
+        """Resolve a new Run against available deployments, including retired Model defaults."""
+        for model in sorted(self.models, key=lambda item: item.code != model_code):
+            profile = next(
+                (
+                    item
+                    for item in model.execution_profiles
+                    if item.sdk_code == "openai_agents_sdk"
+                    and item.execution_mode == execution_mode
+                ),
+                None,
+            )
+            if profile is None:
+                continue
+            efforts = profile.reasoning_effort_codes
+            effort = (
+                reasoning_effort_code
+                if reasoning_effort_code in efforts
+                else "default"
+                if "default" in efforts
+                else efforts[0]
+            )
+            selection = AgentRunSelection(
+                sdk_code="openai_agents_sdk",
+                provider_code="microsoft_foundry",
+                model_code=model.code,
+                reasoning_effort_code=effort,
+                max_turns=(
+                    max_turns
+                    if type(max_turns) is int
+                    and self.max_turns.minimum <= max_turns <= self.max_turns.maximum
+                    else self.max_turns.default
+                ),
+                validation_retry_count=(
+                    validation_retry_count
+                    if type(validation_retry_count) is int
+                    and self.validation_retries.minimum
+                    <= validation_retry_count
+                    <= self.validation_retries.maximum
+                    else self.validation_retries.default
+                ),
+            )
+            self.validate_selection(selection, execution_mode=execution_mode)
+            return selection
+        raise InvalidRequestError("No configured Foundry model supports this execution mode.")
+
+
+def load_default_agent_capabilities() -> AgentCapabilityRegistry:
+    resource = files("gds_workbench_api").joinpath("config/agent_capabilities.json")
+    raw = resource.read_bytes()
+    if len(raw) > _MAX_CONFIGURATION_BYTES:
+        raise ValueError("agent capability configuration is too large")
+    return AgentCapabilityRegistry.model_validate_json(raw, strict=True)
+
+
+def select_agent_runtime_capabilities(
+    registry: AgentCapabilityRegistry,
+    *,
+    configured_models: Collection[tuple[str, str]],
+) -> AgentCapabilityRegistry:
+    """Expose only exact provider/model deployments available to this runtime."""
+    configured = tuple(configured_models)
+    selected = frozenset(configured)
+    if not selected:
+        raise ValueError("At least one Agent model deployment must be configured")
+    if len(selected) != len(configured):
+        raise ValueError("Configured Agent model deployments must be unique")
+    registered_models = {(model.provider_code, model.code): model for model in registry.models}
+    if not selected <= registered_models.keys():
+        raise ValueError("A configured Agent model deployment is not registered")
+    selected_provider_codes = frozenset(provider_code for provider_code, _ in selected)
+    providers = tuple(
+        provider for provider in registry.providers if provider.code in selected_provider_codes
+    )
+    models = tuple(
+        model for model in registry.models if (model.provider_code, model.code) in selected
+    )
+    sdks = tuple(
+        sdk.model_copy(
+            update={
+                "provider_codes": tuple(
+                    provider_code
+                    for provider_code in sdk.provider_codes
+                    if provider_code in selected_provider_codes
+                )
+            }
+        )
+        for sdk in registry.sdks
+        if any(
+            profile.sdk_code == sdk.code for model in models for profile in model.execution_profiles
+        )
+    )
+    return registry.model_copy(
+        update={
+            "sdks": sdks,
+            "providers": providers,
+            "models": models,
+        }
+    )
+
+
+def _unique_codes(
+    label: str,
+    items: tuple[
+        AgentSdkCapability
+        | AgentProviderCapability
+        | AgentModelCapability
+        | ReasoningEffortCapability,
+        ...,
+    ],
+) -> set[str]:
+    codes = [item.code for item in items]
+    if len(set(codes)) != len(codes):
+        raise ValueError(f"{label} codes must be unique")
+    return set(codes)

@@ -4,6 +4,7 @@
 import pytest
 from gds_etl_workbench.application.authorization import AuthorizationService
 from gds_etl_workbench.domain.authorization import ActorKind, RequestPrincipal
+from gds_etl_workbench.domain.errors import InvalidRequestError
 from gds_workbench_api.database import WebPostgresDatabase
 from gds_workbench_api.features.metadata import (
     DatabaseMetadataService,
@@ -24,8 +25,8 @@ from tests.web_backend.test_database_model_change_sets import _seed_profile_mode
 async def test_catalog_revisions_hash_full_hidden_content_and_ignore_session_timezone(
     web_postgres_database: DisposablePostgres,
 ) -> None:
-    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
-        _seed_profile_model(web_postgres_database)
+    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = _seed_profile_model(
+        web_postgres_database
     )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -66,9 +67,7 @@ async def test_catalog_revisions_hash_full_hidden_content_and_ignore_session_tim
     )
     await database.open()
     try:
-        baseline = await catalog.get_object(
-            principal, tenant_id=tenant_id, object_id=object_id
-        )
+        baseline = await catalog.get_object(principal, tenant_id=tenant_id, object_id=object_id)
         summary = await catalog.list_objects(
             principal,
             tenant_id=tenant_id,
@@ -82,10 +81,7 @@ async def test_catalog_revisions_hash_full_hidden_content_and_ignore_session_tim
         scoped = await scope.read_input_scope_object(
             principal, tenant_id=tenant_id, model_id=model_id, object_id=object_id
         )
-        assert (
-            scoped.attributes[0].review_revision
-            == baseline.attributes[0].review_revision
-        )
+        assert scoped.attributes[0].review_revision == baseline.attributes[0].review_revision
         assert scoped.review_revision == baseline.review_revision
         assert scoped.object_description == baseline.object_description
         assert scoped.description_truncated is True
@@ -94,9 +90,7 @@ async def test_catalog_revisions_hash_full_hidden_content_and_ignore_session_tim
         timezone_revisions: list[object] = []
         async with database.read_transaction() as transaction:
             for timezone in ("UTC", "Pacific/Honolulu", "Asia/Kolkata"):
-                await transaction.fetch_one(
-                    "SELECT set_config('TimeZone', %s, TRUE)", (timezone,)
-                )
+                await transaction.fetch_one("SELECT set_config('TimeZone', %s, TRUE)", (timezone,))
                 timezone_revisions.append(
                     await transaction.fetch_one(
                         (
@@ -180,8 +174,8 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
     web_postgres_database: DisposablePostgres,
     change: str,
 ) -> None:
-    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = (
-        _seed_profile_model(web_postgres_database)
+    model_id, tenant_id, attribute_id, entra_tenant_id, entra_object_id, _ = _seed_profile_model(
+        web_postgres_database
     )
     principal = RequestPrincipal(
         actor_kind=ActorKind.HUMAN,
@@ -214,9 +208,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
     )
     await database.open()
     try:
-        baseline = await catalog.get_object(
-            principal, tenant_id=tenant_id, object_id=object_id
-        )
+        baseline = await catalog.get_object(principal, tenant_id=tenant_id, object_id=object_id)
         if change == "source_tenant":
             _, foreign_tenant, *_ = _seed_profile_model(web_postgres_database)
             with web_postgres_database.connect_owner() as connection:
@@ -238,9 +230,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
                 )["revision"]
             assert revision != baseline.attributes[0].review_revision
             with pytest.raises(MetadataObjectNotFoundError):
-                await catalog.get_object(
-                    principal, tenant_id=tenant_id, object_id=object_id
-                )
+                await catalog.get_object(principal, tenant_id=tenant_id, object_id=object_id)
         else:
             with web_postgres_database.connect_owner() as connection:
                 if change == "parent_lock":
@@ -258,14 +248,9 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
                         "UPDATE core.attribute SET is_active=FALSE WHERE attribute_id=%s",
                         (attribute_id,),
                     )
-            changed = await catalog.get_object(
-                principal, tenant_id=tenant_id, object_id=object_id
-            )
+            changed = await catalog.get_object(principal, tenant_id=tenant_id, object_id=object_id)
             assert changed.attribute_count == 1
-            assert (
-                changed.attributes[0].review_revision
-                != baseline.attributes[0].review_revision
-            )
+            assert changed.attributes[0].review_revision != baseline.attributes[0].review_revision
             assert changed.attributes[0].is_locked is False
             assert changed.attributes[0].is_active is (change != "child_inactive")
             assert changed.is_active is (change != "parent_inactive")
@@ -278,9 +263,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
                 cursor=None,
             )
             assert (
-                next(
-                    item for item in all_rows.items if item.object_id == object_id
-                ).review_revision
+                next(item for item in all_rows.items if item.object_id == object_id).review_revision
                 == changed.review_revision
             )
             inactive = await catalog.list_objects(
@@ -294,7 +277,12 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
                 change == "parent_inactive"
             )
         if change in {"parent_inactive", "source_tenant"}:
-            with pytest.raises(ModelInputScopeObjectNotFoundError):
+            expected_error = (
+                InvalidRequestError
+                if change == "source_tenant"
+                else ModelInputScopeObjectNotFoundError
+            )
+            with pytest.raises(expected_error):
                 await scope.read_input_scope_object(
                     principal,
                     tenant_id=tenant_id,
@@ -308,8 +296,7 @@ async def test_catalog_retains_inactive_records_but_scope_keeps_current_eligibil
             assert scoped.attribute_count == (0 if change == "child_inactive" else 1)
             if change == "parent_lock":
                 assert (
-                    scoped.attributes[0].review_revision
-                    != baseline.attributes[0].review_revision
+                    scoped.attributes[0].review_revision != baseline.attributes[0].review_revision
                 )
     finally:
         await database.close()

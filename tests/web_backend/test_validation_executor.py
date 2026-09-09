@@ -201,9 +201,7 @@ def _candidate() -> JsonValue:
 
 @dataclass
 class _Database:
-    isolations: list[ReadIsolation] = field(
-        default_factory=lambda: list[ReadIsolation]()
-    )
+    isolations: list[ReadIsolation] = field(default_factory=lambda: list[ReadIsolation]())
 
     @asynccontextmanager
     async def write_transaction(
@@ -228,6 +226,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
+        model_id: int | None = None,
     ) -> object:
         del transaction
         assert principal == _principal()
@@ -245,9 +244,7 @@ class _PlanRepository:
 class _ContextRepository:
     context: ValidationExecutionContext
 
-    async def load(
-        self, transaction: object, **_: object
-    ) -> ValidationExecutionContext:
+    async def load(self, transaction: object, **_: object) -> ValidationExecutionContext:
         del transaction
         return validation_graph_context(self.context)
 
@@ -343,9 +340,7 @@ class _NoOp:
 
 @dataclass
 class _Lifecycle:
-    events: list[AgentWorkflowEvent] = field(
-        default_factory=lambda: list[AgentWorkflowEvent]()
-    )
+    events: list[AgentWorkflowEvent] = field(default_factory=lambda: list[AgentWorkflowEvent]())
     failed: tuple[str, str] | None = None
 
     async def append_event(
@@ -412,9 +407,7 @@ def _service(
 
 
 @pytest.mark.asyncio
-async def test_executor_stages_validation_groups_and_checks_through_change_set_handoff() -> (
-    None
-):
+async def test_executor_stages_validation_groups_and_checks_through_change_set_handoff() -> None:
     service, database, agent, handoff, no_op, lifecycle = _service(context=_context())
 
     result = await service.execute_started(
@@ -490,14 +483,10 @@ def validation_graph_context(
         if document.get("tenant_code") is not None:
             document["tenant_code"] = "acme"
     graph["validation_group"] = [
-        row.model_dump(mode="json")
-        for system in context.systems
-        for row in system.applied_groups
+        row.model_dump(mode="json") for system in context.systems for row in system.applied_groups
     ]
     graph["validation_check"] = [
-        row.model_dump(mode="json")
-        for system in context.systems
-        for row in system.applied_checks
+        row.model_dump(mode="json") for system in context.systems for row in system.applied_checks
     ]
     return context.model_copy(
         update={

@@ -1,16 +1,16 @@
-from gds_etl_workbench.tools.modeling.model_input_scope import (
-    _MODEL_INPUT_SCOPE_SQL as MODEL_INPUT_SCOPE_TOOL_SQL,
-)
-from gds_etl_workbench.application.modeling.profiling_analysis import (
-    ANALYSIS_SQL,
-    PROFILING_SQL,
-)
 from gds_etl_workbench.application.model_snapshot import (
     _MAPPING_ATTRIBUTE_SQL,
     _MAPPING_OBJECT_SQL,
     _MODEL_ATTRIBUTE_BINDING_SQL,
     _MODEL_INPUT_SCOPE_SQL,
     _MODEL_OBJECT_BINDING_SQL,
+)
+from gds_etl_workbench.application.modeling.profiling_analysis import (
+    ANALYSIS_SQL,
+    PROFILING_SQL,
+)
+from gds_etl_workbench.tools.modeling.model_input_scope import (
+    _MODEL_INPUT_SCOPE_SQL as MODEL_INPUT_SCOPE_TOOL_SQL,
 )
 
 
@@ -44,7 +44,7 @@ def test_model_input_scope_snapshot_uses_connection_placement_natural_key() -> N
 def test_model_input_scope_reader_exposes_source_owner_and_foreign_catalog() -> None:
     sql = compact(MODEL_INPUT_SCOPE_TOOL_SQL)
 
-    assert "object.source_tenant_id = model.tenant_id" in sql
+    assert "object.source_tenant_id = model.tenant_id" not in sql
     assert "source_tenant.tenant_code AS source_tenant_code" in sql
     assert "placement_tenant.tenant_code AS placement_tenant_code" in sql
     assert "connection.foreign_catalog" in sql

@@ -4,7 +4,7 @@ These are governed execution boundaries, not a requirement to run every target. 
 
 1. **Metadata Authoring** — Source, Bronze, ingestion, and Copy metadata.
 2. **Model Input Scope Authoring** — select active Source and/or Bronze inputs for one Model.
-3. **Logical Build** — Profiling, relationship Analysis, Conceptual, and Logical work.
+3. **Logical Build** — missing Metadata Enrichment, then Profiling, relationship Analysis, Conceptual, and Logical work.
 4. **Silver Target Registration** — applied Logical to DDL and Silver Metadata.
 5. **Logical Model Binding** — bind Logical records to registered Silver metadata.
 6. **Logical Mapping** — bound Silver targets by source System.
@@ -18,7 +18,7 @@ These are governed execution boundaries, not a requirement to run every target. 
 14. **Process Registration** — later Metadata from user-supplied artifact paths.
 15. **Metadata Enrichment** — generated physical Object/Attribute descriptions and missing inferred Attribute types within one Model's active Source/Bronze Input Scope; replace only unlocked descriptions and add no locks.
 
-Profiling, relationship Analysis, and Conceptual are required phases inside Logical Build, not separate targets. Assertions are supporting records authored only from user-confirmed business evidence. Grill With Docs is an interaction mode, never a target.
+Profiling, relationship Analysis, and Conceptual are phases inside Logical Build, not separate targets; reuse or explicitly skip measurements as directed. Both builds invoke missing Metadata Enrichment through its separate Metadata boundary. Assertions are supporting records authored only from user-confirmed business evidence. Grill With Docs is an interaction mode, never a target.
 
 Load only the active guide:
 

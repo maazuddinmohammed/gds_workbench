@@ -2,16 +2,16 @@
 
 Create a compact business view of what the organization manages and what happens to it. Conceptual is a required Logical Build phase and is business-facing, not a simplified table design. Use PascalCase unless the user or Model policy says otherwise.
 
-Use Kimball's business-process-first discovery as an internal thinking aid:
+Reuse existing concepts and object-analysis notes. Ask for a glossary or preferred terms only if not supplied. Use business-process discovery:
 
 1. Name the operational activities or state transitions represented, such as placing an order, servicing an account, or assigning a customer to a household.
 2. Run a table-by-table pass. For every Object, state what one row means and which process, event, agreement, party, thing, place, or classification it supports. One Object may support several concepts or be context-only.
 3. Build a small internal process-to-concept matrix: processes as rows, reusable business concepts as columns. Use it to expose shared concepts, duplicates, and missing context; do not persist the matrix as model records.
-4. Consolidate candidates across Objects and Systems only when their business meaning agrees. Names alone never prove identity. Several Objects may support one concept, and one Object never forces one concept.
+4. Consolidate candidates across Objects, Tenants, and Systems only when their business meaning agrees. Names alone never prove identity. Several Objects may support one concept, and one Object never forces one concept.
 5. Define each retained concept in plain business language, including what one occurrence represents. Do not add Attributes, keys, normalization, physical tables, or dependency order.
 6. Add verb-based business relationships from completed Analysis. Record high-level cardinality only when supported; otherwise use `unknown`. Never infer physical keys.
 7. Account for every input as represented, context-only, excluded with reason, or blocked.
 
-After drafting, inspect the complete effective result: remove technical staging concepts, merge synonyms, split concepts that combine different business meanings, and verify that each concept helps explain a process or relationship. Reject one-concept-per-Object, renamed table inventories, and a Conceptual-to-Logical copy. Conceptual supplies shared vocabulary and boundaries; Logical grain and normalization are decided separately.
+Before retaining overlapping concepts, explain their business distinction or consolidate them. After drafting, inspect the complete effective result: remove technical staging concepts, merge synonyms, split concepts that combine different business meanings, and verify that each concept helps explain a process or relationship. Reject one-concept-per-Object, renamed table inventories, and a Conceptual-to-Logical copy. Conceptual supplies shared vocabulary and boundaries; Logical grain and normalization are decided separately.
 
 Use `conceptual_object_definition`, `conceptual_object_grain`, aliases, and nested `supports` to explain each concept and its evidence. Business grain means one occurrence of the concept, not a physical key. Preserve distinct business roles where merging would obscure meaning. Read `../examples/modeling-decisions.md` for a worked reconciliation; its names are illustrative, never defaults for this Model.

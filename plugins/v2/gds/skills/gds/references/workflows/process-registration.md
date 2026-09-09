@@ -6,4 +6,6 @@ Before authoring, derive known values from applied Code, Mapping, and Metadata. 
 
 Do not infer triggers, scheduling, file grouping, or paths. Triggers are orchestration ownership. Several System-specific Process rows may reference the same combined artifact; distinct artifacts may run separately according to user-supplied orchestration metadata.
 
+Reuse the actual ingestion Copy Group for each System; ask only when ambiguous. Normally one group covers a System, but preserve split groups. Runtime selection is Tenant/System/Copy Group; selector `default` means all Copy Groups for that Tenant/System, not a fabricated stored group. Process Groups remain linked to actual Copy Groups and processing follows relevant ingestion. Read `../orchestration-rules.md` and validate prerequisites when groups split.
+
 Author complete records through a Metadata Change Set, preserve existing active metadata, and apply once. Generated code remains a manual handoff; the plugin never deploys it.

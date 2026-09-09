@@ -101,6 +101,14 @@ def test_workflow_draft_apply_route_is_explicit_and_fenced() -> None:
 
 
 class MissingMappingDraftTransaction:
+    async def fetch_all(
+        self, query: LiteralString, parameters: tuple[Any, ...] = ()
+    ) -> list[dict[str, Any]]:
+        assert "SELECT DISTINCT object.source_tenant_id" in query or (
+            "core.tenant AS tenant" in query and "effective_role" in query
+        )
+        return []
+
     def __init__(
         self,
         *,

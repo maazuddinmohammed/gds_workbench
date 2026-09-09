@@ -1,0 +1,105 @@
+.model-targets-page { min-width: 0; container-type: inline-size; }
+.model-targets-page h1 { margin: 0; font-size: 1.4rem; letter-spacing: -0.035em; }
+.model-targets-page h2 { margin: 0.25rem 0; font-size: 1.05rem; }
+.model-targets-page p { margin: 0.4rem 0; }
+.model-targets-page .workflow-tabs a { padding: 0.7rem; text-decoration: none; color: var(--muted); border-bottom: 2px solid transparent; }
+.model-targets-page .workflow-tabs a.is-active { color: var(--orange-dark); border-color: var(--orange); }
+.target-context-bar, .target-review-actions { display: flex; flex-wrap: wrap; align-items: center; gap: 0.75rem; padding: 0.75rem 0; font-size: 0.8rem; }
+.target-context-bar > button { margin-left: auto; }
+.target-step { min-width: 0; padding: 1.5rem 0; border-top: 1px solid var(--line); }
+.target-step small { color: var(--muted); font-weight: 700; font-size: 0.7rem; }
+.target-step-header, .target-registration-step { display: flex; align-items: start; justify-content: space-between; gap: 1rem; }
+.target-step-header > div, .target-registration-step > div { min-width: 0; }
+.target-step-header p, .target-registration-step p { color: var(--muted); font-size: 0.8rem; max-width: 48rem; }
+.target-step-header > .button, .target-registration-step > .button { flex-shrink: 0; }
+.target-table-scroll { overflow: auto; margin: 0.8rem 0; border: 1px solid var(--line); border-radius: var(--radius-small); max-height: 28rem; }
+.target-table { width: 100%; min-width: 36rem; border-collapse: collapse; font-size: 0.8rem; text-align: left; }
+.target-table th, .target-table td { padding: 0.7rem 0.8rem; border-bottom: 1px solid var(--line); }
+.target-table thead th { position: sticky; top: 0; background: var(--soft); color: var(--muted); z-index: 1; }
+.target-table tbody th { font-weight: 600; font-size: inherit; text-transform: none; letter-spacing: normal; background: transparent; color: var(--ink); }
+.target-table tbody tr:last-child > * { border-bottom: 0; }
+.target-table .is-selected { background: var(--blue-soft); }
+.target-table td:last-child { text-align: right; }
+.target-table select { width: 100%; min-width: 15rem; }
+.target-export-form { display: grid; gap: 1rem; padding: 1.25rem; }
+.target-export-form label, .target-object-field, .target-filters label { display: grid; gap: 0.35rem; font-size: 0.8rem; font-weight: 600; }
+.target-export-form input, .target-export-form select, .target-object-field select, .target-filters input, .target-filters select, .target-table select { padding: 0.6rem; color: var(--ink); background: var(--surface); border: 1px solid var(--line-strong); border-radius: var(--radius-small); font: inherit; }
+.target-export-form p, .target-export-form .field-help { margin: 0; }
+.target-filters { align-items: end; margin: 0.75rem 0; padding: 0; }
+.target-filters label { flex: 1; }
+.target-binding-review { padding-top: 0.75rem; }
+.target-binding-review > p, .target-binding-review li { font-size: 0.8rem; }
+.target-success { color: var(--green); }
+@container (max-width: 44rem) {
+  .model-targets-page .workflow-commandbar, .target-step-header, .target-registration-step { display: flex; flex-direction: column; align-items: stretch; }
+  .model-targets-page .workflow-tabs { flex-wrap: wrap; }
+  .target-filters { display: flex; flex-wrap: wrap; }
+}
+@media (max-width: 42rem) {
+  .target-step-header, .target-registration-step { flex-direction: column; align-items: stretch; }
+}
+
+.target-object-bindings td:nth-child(2) { min-width: 18rem; }
+.target-object-bindings th { white-space: nowrap; }
+.target-object-bindings td:last-child { width: 6rem; }
+.target-object-bindings td:nth-child(3) { white-space: nowrap; color: var(--muted); }
+
+.target-table { table-layout: auto; }
+.target-filters { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 0.7rem 1rem; }
+.target-filters > .button { justify-self: end; }
+.target-object-bindings td:nth-child(3) { min-width: 5rem; }
+@container (max-width: 38rem) {
+  .target-filters { grid-template-columns: minmax(0, 1fr); }
+  .target-filters > .button { justify-self: start; }
+}
+
+.target-layer-switch { display: inline-flex; align-items: center; padding: 0.2rem; gap: 0.2rem; background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius-small); }
+.target-layer-switch a { color: var(--muted); text-decoration: none; font-size: 0.8rem; font-weight: 600; padding: 0.55rem 1rem; border-radius: calc(var(--radius-small) - 2px); }
+.target-layer-switch a.is-active { background: var(--surface); color: var(--orange-dark); box-shadow: 0 1px 3px #00000012; }
+.target-object-search { display: flex; align-items: end; gap: 0.6rem; }
+.target-object-search label { min-width: 0; }
+.target-filters { padding: 1rem; background: var(--soft); border: 1px solid var(--line); border-radius: var(--radius-small); margin: 1rem 0 1.5rem; }
+.target-filters input { min-width: 0; width: 100%; }
+.target-list-heading { display: flex; align-items: baseline; gap: 1rem; margin: 1.25rem 0 0.75rem; }
+.target-list-heading h2, .target-list-heading h3 { font-size: 0.95rem; margin: 0; font-weight: 600; }
+.target-list-heading span { color: var(--muted); font-size: 0.8rem; }
+.target-list-footer { display: flex; align-items: center; justify-content: space-between; gap: 1rem; margin: 1rem 0 2rem; font-size: 0.8rem; }
+.target-binding-detail { padding-top: 1rem; }
+.target-back { margin-bottom: 1.5rem; }
+.target-binding-identity { display: grid; grid-template-columns: 1fr 1fr; border-bottom: 1px solid var(--line); padding-bottom: 1.5rem; gap: 1.5rem; }
+.target-binding-identity > div { min-width: 0; }
+.target-binding-identity small { display: block; color: var(--muted); font-size: 0.75rem; margin-bottom: 0.5rem; }
+.target-binding-identity h2, .target-binding-identity strong { display: block; font-size: 1.5rem; letter-spacing: -0.025em; margin: 0; font-weight: 600; overflow-wrap: anywhere; }
+.target-binding-identity > div:last-child { border-left: 1px solid var(--line); padding-left: 1.5rem; }
+.target-binding-identity > div:last-child strong { color: var(--muted); font-weight: 500; }
+.target-binding-review > .button-accent { display: block; margin: 1rem 0 1rem auto; }
+.target-object-bindings td:last-child { width: 7rem; }
+@container (max-width: 38rem) {
+  .target-binding-identity { grid-template-columns: 1fr; }
+  .target-binding-identity > div:last-child { border: 0; padding: 0; }
+  .target-list-heading { flex-wrap: wrap; gap: 0.4rem; }
+}
+
+.model-targets-page .workflow-commandbar { align-items: center; }
+.model-targets-page .workflow-table-scroll > .target-table { min-width: 38rem; }
+.model-targets-page .target-layer-switch { align-self: center; }
+
+/* Rounded ledgers keep the Profiling detail table's quiet framing. */
+.binding-ledger { border: 1px solid var(--line); border-radius: var(--radius-medium); margin: 0.75rem 0; overflow: auto; }
+.model-targets-page .binding-ledger table { table-layout: auto; min-width: 38rem; }
+.model-targets-page .binding-ledger .selection-cell { width: 2.75rem; min-width: 2.75rem; max-width: 2.75rem; padding: 0.6rem; text-align: center; }
+.target-context-bar > .target-review-actions { margin-left: auto; padding: 0; }
+.binding-attribute-toolbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 0.75rem; margin-top: 1rem; }
+.binding-dialog { width: min(54rem, calc(100vw - 2rem)); }
+.binding-dialog-body { padding: 1.25rem; display: grid; gap: 1rem; overflow: auto; max-height: 72vh; min-width: 0; }
+.binding-dialog-body label { display: grid; gap: 0.4rem; font-size: 0.85rem; font-weight: 600; min-width: 0; }
+.binding-dialog-body input { width: 100%; min-width: 0; padding: 0.65rem; border: 1px solid var(--line-strong); border-radius: var(--radius-small); background: var(--surface); color: var(--ink); font: inherit; }
+.binding-search-form { display: flex; flex-wrap: wrap; align-items: end; gap: 0.75rem; }
+.binding-search-form label { flex: 1 1 12rem; }
+.binding-search-results { display: grid; max-height: 24rem; overflow: auto; }
+.binding-search-result { border: 0; border-bottom: 1px solid var(--line); background: var(--surface); color: var(--ink); padding: 0.9rem 0.75rem; display: flex; align-items: center; justify-content: space-between; gap: 1rem; text-align: left; cursor: pointer; transition: background 120ms var(--ease-fluid); }
+.binding-search-result span { color: var(--muted); font-size: 0.8rem; }
+.binding-search-result:hover:not(:disabled) { background: var(--blue-soft); }
+.binding-search-result:disabled { opacity: 0.5; cursor: default; }
+.binding-dialog .workflow-table-scroll > table { table-layout: auto; min-width: 25rem; }
+@media (prefers-reduced-motion: reduce) { .binding-search-result { transition: none; } }

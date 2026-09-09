@@ -37,11 +37,11 @@ def test_plugin_keeps_the_portable_agent_plugins_manifest() -> None:
 def test_router_has_simple_modes_and_no_server_contract_preflight() -> None:
     router = read(SKILL_ROOT / "SKILL.md")
 
-    for mode in ("Quick", "Guided", "Automatic", "Custom", "Grill With Docs"):
+    for mode in ("Guided", "Custom", "Grill With Docs"):
         assert f"**{mode}**" in router
     assert "Open Workbench only when the session is first created" in router
     assert "Read `references/workflow-targets.md` and only the active guide" in router
-    assert "For Automatic, also read `references/automatic-journey.md`" in router
+    assert "Guided also reads `references/guided-journey.md`" in router
     assert "ask them to Refresh Workbench" in router
     assert "Any unambiguous positive acknowledgement" in router
     assert "There is no packaged server-contract hash preflight" in router
@@ -119,9 +119,9 @@ def test_stage_uses_the_deterministic_extension_without_payload_context() -> Non
     assert "acceptedDigest -> Change Set ID -> resultingRevision -> stageFingerprint" in staging
 
 
-def test_automatic_subagent_model_is_always_a_persisted_user_choice() -> None:
+def test_optional_subagent_model_is_always_a_persisted_user_choice() -> None:
     router = read(SKILL_ROOT / "SKILL.md")
-    automatic = read(REFERENCES / "automatic-journey.md")
+    automatic = read(REFERENCES / "guided-journey.md")
     helper = read(REFERENCES / "local-helper.md")
     combined = "\n".join((router, automatic, helper))
 
@@ -203,18 +203,19 @@ def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
     assert "is_global_data_store=true" in combined
     assert "data-owning Tenant" in combined
     assert "Multiple Systems or Connections" in combined
-    assert "No Object may contain data from multiple source Tenants" in combined
+    assert "Common Silver/Gold targets use Model Tenant ownership" in combined
 
 
 def test_silver_schema_is_confirmed_before_authoring_and_binding_needs_no_pause() -> None:
     registration = read(WORKFLOWS / "target-registration.md")
     binding = read(WORKFLOWS / "model-binding.md")
 
-    gate = registration.index("confirm the exact target schema name")
+    gate = registration.index("Resolve the exact target schema")
     authoring = registration.index("Use PascalCase")
     assert gate < authoring
-    assert "Do not begin authoring until the user confirms" in registration
-    assert "every interaction mode" in registration
+    assert "before authoring" in registration
+    assert "Reuse an already confirmed assignment" in registration
+    assert "every mode" in registration
     assert "Do not add an optional design-confirmation pause" in binding
     assert "missing or more than one compatible match" in binding
 
@@ -226,10 +227,10 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     dimensional = read(WORKFLOWS / "dimensional-build.md")
 
     phases = [
-        "**Profile**",
-        "**Analyze relationships**",
-        "**Build Conceptual**",
-        "**Build Logical**",
+        "**Profiling:**",
+        "**Analysis:**",
+        "**Conceptual:**",
+        "**Logical:**",
     ]
     assert [logical.index(phase) for phase in phases] == sorted(
         logical.index(phase) for phase in phases
@@ -238,29 +239,32 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     assert "required Logical Build phase" in conceptual
     assert "Conceptual-to-Logical copy" in conceptual
     assert "one-concept-per-Object" in conceptual
-    assert "business-process-first" in conceptual
+    assert "business-process discovery" in conceptual
     assert "process-to-concept matrix" in conceptual
     assert "One Object may support several concepts" in conceptual
     for state in ("represented", "context-only", "excluded", "blocked"):
         assert state in conceptual
     assert "PascalCase" in conceptual
-    assert "PascalCase" in logical and "CustomerID" in logical
+    assert "model-conventions.md" in logical
+    conventions = read(REFERENCES / "model-conventions.md")
+    assert "PascalCase" in conventions and "CustomerID" in conventions
     assert "PascalCase" in dimensional and "CustomerKey" in dimensional
     for policy in ("`never`", "`essential`", "`as_needed`"):
         assert policy in router
-        assert policy in logical
-    assert "never persist raw query output" in logical
+    assert "never save physical rows, raw output, prompts, or secrets" in read(
+        REFERENCES / "session.md"
+    )
     for decision in (
-        "functional dependencies",
+        "Attribute determinants",
         "1NF",
         "2NF",
         "3NF",
-        "source-projection challenge",
-        "same business concept at the same grain",
+        "Challenge source-table-shaped results",
+        "meaning and grain agree",
     ):
         assert decision in logical
-    assert "Do not finalize a metadata-only result when a query can resolve it" in logical
-    assert "do not turn this layer into a star schema" in logical
+    assert "Use the saved SQL policy for specific gaps" in logical
+    assert "operational model" in logical
     assert "Kimball's four decisions" in dimensional
     assert "process-to-dimension bus matrix" in dimensional
     assert "true to the declared grain" in dimensional
@@ -311,7 +315,7 @@ def test_authoring_uses_inferred_types_and_independent_validation() -> None:
     assert "never weaken validation" in changes
     assert "storage, inferred source and bound target types" in mapping
     assert "invalid-value handling" in mapping
-    assert "explicit target columns in bound order" in code
+    assert "explicit SQL-populated target columns in bound order" in code
     assert "exactly one active artifact assignment" in code
     assert "independently from Mapping and confirmed rules" in validation
     assert "empty-input and null behavior" in validation
@@ -341,8 +345,22 @@ def test_staged_sql_examples_and_mapping_guidance_agree() -> None:
         read(REFERENCES / "examples" / "multi-system-target.sql"),
         code["candidate"]["artifacts"][0]["generated_sql"],
     ]
+    import sqlglot
+    from sqlglot import exp
+
     for sql in examples:
-        batch = validate_databricks_sql(sql)
+        # Framework artifacts omit catalog. Direct governed preflight requires
+        # explicit coordinates; resolve the fictional catalog for that path.
+        statements = sqlglot.parse(sql, read="databricks")
+        for statement in statements:
+            assert statement is not None
+            for table in statement.find_all(exp.Table):
+                if table.db and not table.catalog:
+                    table.set("catalog", exp.to_identifier("example"))
+        preflight = ";\n".join(
+            statement.sql(dialect="databricks") for statement in statements if statement is not None
+        )
+        batch = validate_databricks_sql(preflight)
         assert len(batch.statements) >= 2
         assert all(
             statement.kind == DatabricksStatementKind.TEMPORARY_DDL
@@ -394,7 +412,7 @@ def test_grill_with_docs_is_lazy_and_may_promote_decisions() -> None:
 
     frontmatter = router.split("---", maxsplit=2)[1]
     assert "Grill With Docs" in frontmatter
-    assert "Read `references/grill-with-docs.md` only when requested" in router
+    assert "read `references/grill-with-docs.md`" in router
     assert "not a target itself" in grill
     assert "Do not force a fixed document template" in grill
     for destination in (
@@ -418,10 +436,10 @@ def test_workbench_opens_once_and_chat_acknowledgement_stays_user_facing() -> No
     assert "only when the session is first created or the user asks" in router
     assert "do not reopen Workbench unless asked" in session
     assert "never relaunch it after every update" in local_helper
-    assert "There is no separate user review command" in guide
-    assert "positive acknowledgement accepts the exact current content" in guide
-    assert "downloads its ZIP to a temporary file" in guide
-    assert "asks for the working directory only when no session path is known" in guide
+    assert "normal handoff" in guide
+    assert "acknowledgement such as “proceed” accepts the exact current content" in guide
+    assert "creates/downloads/installs Metadata" in guide
+    assert "reuses information you already supplied" in guide
 
 
 def test_dbml_is_an_explicit_opt_in_display_export() -> None:
@@ -442,15 +460,15 @@ def test_user_guide_explains_vs_code_and_the_simple_workflow() -> None:
     assert "Agent Plugins 1.0" in guide
     assert "VS Code" in guide
     assert '"chat.plugins.enabled": true' in guide
-    assert "Workbench opens once" in guide
+    assert "opens Workbench once" in guide
     assert "Refresh" in guide
     assert "proceed" in guide
     assert "Validation Authoring" in guide
-    assert "SQL Preflight" in guide
-    assert "## Work targets" in guide
-    assert "Tenant, System, and Connection setup is an external" in guide
+    assert "Optional preflight follows SQL policy" in guide
+    assert "## Available workflows and opening questions" in guide
+    assert "Tenant, System, and Connection setup remains an operator/web prerequisite" in guide
     assert "Tenant Intake" not in guide
-    assert "Users never calculate chunks or hashes manually" in guide
+    assert "you do not calculate chunks or hashes" in guide
     assert "Install from VSIX" in guide
     assert "GDS: Check Stage Runner" in guide
     assert "GitHub account" in guide

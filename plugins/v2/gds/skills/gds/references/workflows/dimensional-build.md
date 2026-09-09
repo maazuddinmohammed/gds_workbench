@@ -2,7 +2,11 @@
 
 Require applied Logical Mapping and eligible Silver contributions. Dimensional is optional.
 
-Use PascalCase by default. Dimensional key Attributes end in `Key`, such as `CustomerKey`; user instructions or Model policy override this.
+Show existing dimensional work and resolve add/refine/rebuild intent only if unknown. Ask which business processes and analytical questions to support; reuse prior outcomes or propose evidenced possibilities for confirmation.
+
+Invoke Metadata Enrichment for missing underlying Source/Bronze descriptions/types through registered upstream lineage; use its separate owning-Tenant Metadata task, Apply, and refresh. Reuse complete enrichment and object-analysis notes. Silver modeled types/definitions come from applied Logical; fix upstream ambiguity rather than treating Silver as Source/Bronze input.
+
+Read `../model-conventions.md`; reuse or confirm missing naming/audit choices. Use PascalCase by default. Dimensional key Attributes end in `Key`, such as `CustomerKey`; user instructions or Model policy override this.
 
 Follow Kimball's four decisions in order for each selected business process:
 

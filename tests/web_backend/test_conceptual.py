@@ -409,6 +409,11 @@ class ConceptualTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "JOIN model.model AS target_model" in query
         assert "target_model.tenant_id = %s" in query
         assert parameters[:10] == (
@@ -561,6 +566,11 @@ class ConceptualDetailTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM workflow.conceptual_support AS support" in query
         assert "JOIN model.model AS target_model" in query
         assert "jsonb_agg" not in query
@@ -657,6 +667,11 @@ class ConceptualSupportOverflowTransaction(ConceptualDetailTransaction):
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM workflow.conceptual_support AS support" in query
         assert parameters == (7, 18, 101, 2001)
         return [{} for _ in range(2001)]
@@ -725,6 +740,11 @@ class ConceptualRelationshipTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM workflow.conceptual_relationship AS relationship" in query
         assert "JOIN model.model AS target_model" in query
         assert "from_object.model_id = relationship.model_id" in query
@@ -885,6 +905,11 @@ class ConceptualRelationshipDetailTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM workflow.conceptual_support AS support" in query
         assert "JOIN workflow.conceptual_relationship AS relationship" in query
         assert "jsonb_agg" not in query

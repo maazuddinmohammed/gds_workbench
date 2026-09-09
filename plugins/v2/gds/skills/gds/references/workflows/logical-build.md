@@ -1,36 +1,38 @@
 # Logical Build
 
-Require fresh Metadata and Model Snapshots and an applied Model Input Scope. Read `model-input-scope.md`, `profiling.md`, `analysis.md`, and `conceptual.md`. Read `assertions.md` when Assertions exist or the user supplies business rules. Use bounded local Snapshot `select`; live MCP reads follow `../session.md`.
+Require applied Model Input Scope and fresh Metadata/Model Snapshots. Read `model-input-scope.md`; load each phase guide when entering it. Use bounded Snapshot `select` and current-task draft evidence between phases; follow `../session.md` on live reads/revisions. Other workflows still require applied prerequisites.
 
-Logical Build is one target. Run these phases in order without separate user review:
+## Intake and prerequisites
 
-1. **Profile** every scoped Source/Bronze Object and Attribute. Use existing Profile evidence first. Under the SQL policy, collect missing bounded evidence about counts, nulls, distinctness, value patterns, grain, and candidate keys.
-2. **Analyze relationships**. For every Object, examine business process, row grain, identifiers, functional dependencies, repeating groups, header/detail structure, history, and signaled within- or cross-System relationships. Support, reject, or retain findings explicitly.
-3. **Build Conceptual**. Identify processes and reusable business concepts across all inputs. Consolidate matching meaning across Systems. Conceptual is required and must remain distinct from Logical.
-4. **Build Logical**. Produce a normalized operational model from business meaning and source reality. Use process and grain questions; do not turn this layer into a star schema.
+Show existing results. Resolve whether the user is adding inputs, refining areas, or rebuilding selected work; reuse supplied intent. Select all scoped Objects or named inputs without changing membership. Preserve valid existing results, locks, and unrelated work; inspect downstream dependencies before structural changes.
 
-For each candidate Logical Entity, state its business grain, candidate key, lifecycle, source support, and the determinant for every Attribute. Then make these decisions:
+Invoke `metadata-enrichment.md` for missing descriptions/inferred types. Reuse the saved overwrite/fill-missing policy or ask once. It is a separate physical Metadata task; Apply and refresh before dependent modeling. Unavailable evidence remains explicit, not fabricated. Read `../model-conventions.md` and confirm only missing naming/audit choices.
 
-- Combine sources only when they represent the same business concept at the same grain. Similar names or columns are insufficient; cross-System identity needs evidence or a confirmed rule.
-- Split different grains, header/detail records, repeating or multi-valued groups, independently changing reference data, history, snapshots, events, and many-to-many associations when their semantics require it.
-- Apply 1NF by removing repeating groups; 2NF by moving Attributes dependent on only part of a composite key; and 3NF by moving non-key Attributes that depend on another non-key determinant.
-- Keep an Attribute with its Entity when it depends on that Entity's whole key and has no independent identity or lifecycle. Do not create small reference Entities merely because values repeat.
-- Place transactions, events, associations, history, and current master state in separate Entities when their grains differ. Never mix facts from different grains in one Entity.
-- Choose natural keys only when uniqueness, stability, and business meaning are supported. Add a surrogate identifier only when the target contract needs one; never fabricate key semantics.
-- Derive relationship direction, cardinality, and optionality from evidence. If a structural uncertainty changes the model, query it, ask the user, or block it rather than copying the source shape.
+## Phases
 
-After drafting, run a source-projection challenge. If each source Object still maps to one similarly shaped Entity, recheck mixed grains, functional dependencies, repeating groups, code/description domains, header/detail patterns, history, and cross-System consolidation. A one-to-one result is acceptable only when this examination supports it; record that basis.
+1. **Profiling:** read `profiling.md`; show existing Profiles and ask reuse, selected reprofile, or skip. Resolve batch choices only for requested measurements. Use the deterministic planner and saved SQL policy.
+2. **Analysis:** read `analysis.md`; understand every Object, propose relationships across the complete scope, measure supported candidates when permitted, and retain supported/rejected/unresolved findings.
+3. **Conceptual:** read `conceptual.md`; build high-level business concepts, consolidate equivalent meanings across Objects/Tenants/Systems, and account for every input. Do not reproduce the Logical inventory.
+4. **Logical:** use the evidence and reusable object-analysis notes to build the operational model below.
 
-Apply the session SQL policy throughout:
+Read `assertions.md` only for existing Assertions or user-confirmed business rules. Generated interpretation is not an Assertion. Reuse and update affected findings across phases; do not repeat full analysis on every run.
 
-- `never`: execute no SQL. Use Metadata, Profiles, Analysis, Assertions, constraints, descriptions, and user evidence. Treat unsupported conclusions as inference; ask or block material ambiguity instead of defaulting to one-to-one.
-- `essential`: query only a specific evidence gap blocking a responsible structural decision.
-- `as_needed`: run bounded queries for each material, testable grain, identity, dependency, relationship, or normalization hypothesis. Do not finalize a metadata-only result when a query can resolve it.
+## Logical decisions
 
-Prefer deterministic key, functional-dependency, cardinality, orphan, and overlap checks. Read a small sample only when values or record shape clarify semantics; never persist raw query output. Use governed `execute_databricks_sql` with default environment `dev`. Source and Bronze coordinates follow `profiling.md`.
+For each candidate Entity, state business grain, identifiers, lifecycle, source support, and Attribute determinants.
 
-Assign `logical_submodel` by coherent business capability, with purpose in its definition and Entity `submodels` memberships. Reuse shared Entities across memberships; do not duplicate them per source System. Put normalization exceptions and proposed derived/technical Attributes in definitions/source rationale; require an implementable rule, not imagined source data.
+- Consolidate equivalent Entities across Tenants/Systems when meaning and grain agree. Source provenance is not a reason to separate them; similar names do not prove common row identity.
+- Consolidate equivalent Attributes after checking units, precision, code definitions, and time semantics. Preserve lineage and useful System-specific fields.
+- Apply 1NF/2NF/3NF where supported. Separate mixed grains, repeating groups, header/detail, independent lifecycles, and genuine many-to-many relationships. Do not create tiny lookup Entities just because values repeat.
+- Every Logical Entity has its own generated BIGINT surrogate first, ending `ID`. Foreign keys reference those surrogate values. Retain evidence-based natural identifiers; surrogate keys do not establish cross-System identity.
+- Use reliable inferred types, preserving leading-zero identifiers, exact decimals, and date/time meaning. Bronze STRING is storage, not the modeled type. Resolve unclear definitions before finalizing affected Attributes.
+- Define relationship direction, optionality, and cardinality from evidence. Clarify or defer only affected decisions when structural uncertainty remains.
+- Organize submodels by business capability. Share Entities through memberships, not copies per System/submodel.
 
-Default names use PascalCase; identifiers end in `ID`, e.g. `CustomerID`. User/Model policy overrides. Keep every intended physical, audit, technical, and constant-valued target Attribute. Read `../examples/modeling-decisions.md` for identity and address decisions.
+## Coverage and review
 
-Across every phase, mark each input represented, context-only, excluded with reason, or blocked. Supported records are `active`; unresolved structural facts block Apply rather than persisting `needs_review`.
+Account for every scoped Object AND Attribute as a contribution, context-only, excluded with a substantive reason, or blocked. Empty, unfamiliar, or single-System data is not automatically useless.
+
+Review the effective graph for duplicate representations, missing consolidation, excessive splits, mixed grains, and unsupported exclusions. Challenge source-table-shaped results; keep them only when grain/dependency analysis supports them. Trace outputs back to evidence and inputs forward to outcomes. Use definitions/source rationale for meaningful exceptions; keep investigative notes in the scratchpad.
+
+Use the saved SQL policy for specific gaps; static validity is not business correctness. Complete functional review before local validation and the normal Model Change Set handoff. Supported records are `active`; never manufacture `needs_review` status or call blocked coverage complete.

@@ -162,6 +162,7 @@ def test_model_object_eligibility_routes_active_scoped_zones(
             ).fetchall()
         )
 
+    rows = [row for row in rows if _required_int(row, "object_tenant_id") == tenant_id]
     by_zone = {_required_str(row, "zone_code"): row for row in rows}
     assert set(by_zone) == {"source", "bronze", "silver", "gold"}
     assert {_required_int(row, "object_tenant_id") for row in rows} == {tenant_id}
@@ -232,7 +233,7 @@ def test_model_attribute_eligibility_routes_active_scoped_zones(
     assert not any(_required_bool(row, "is_dimensional_source_eligible") for row in rows)
 
 
-def test_unassigned_gds_object_is_not_workflow_eligible(
+def test_source_owner_transfer_does_not_implicitly_remove_model_input(
     postgres_database: DisposablePostgres,
 ) -> None:
     with postgres_database.connect_owner() as connection:
@@ -290,7 +291,8 @@ def test_unassigned_gds_object_is_not_workflow_eligible(
         ).fetchall()
         connection.rollback()
 
-    assert bronze_object_id not in {int(row["object_id"]) for row in rows}
+    assert bronze_object_id in {int(row["object_id"]) for row in rows}
+    # Structural eligibility is separate from the caller's Source Tenant access.
 
 
 def test_gds_eligibility_uses_assigned_tenant_when_connection_owner_is_inactive(
@@ -343,7 +345,12 @@ def test_gds_eligibility_uses_assigned_tenant_when_connection_owner_is_inactive(
         )
         connection.rollback()
 
-    bronze = next(row for row in rows if _required_str(row, "zone_code") == "bronze")
+    bronze = next(
+        row
+        for row in rows
+        if _required_str(row, "zone_code") == "bronze"
+        and _required_int(row, "object_tenant_id") == tenant_id
+    )
     assert _required_int(bronze, "object_tenant_id") == tenant_id
     assert _required_bool(bronze, "is_model_input_eligible") is True
 

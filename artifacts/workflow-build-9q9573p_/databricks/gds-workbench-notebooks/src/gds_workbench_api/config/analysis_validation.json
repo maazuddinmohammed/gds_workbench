@@ -1,0 +1,8 @@
+{
+  "schema_version": "1.0",
+  "validation_policy_version": "1.0.0",
+  "max_parallel_queries": 4,
+  "max_progress_events": 20,
+  "statement_timeout_seconds": 300,
+  "max_relationships": 50000
+}

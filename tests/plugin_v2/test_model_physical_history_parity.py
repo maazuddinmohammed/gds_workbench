@@ -82,6 +82,7 @@ def write_graph_snapshot(
         ("description_edit", False),
         ("source_edit", False),
         ("profile_edit", False),
+        ("foreign_source", True),
         ("wrong_owner", False),
         ("missing_attribute", False),
     ],
@@ -116,8 +117,10 @@ def test_physical_history_does_not_authorize_new_evidence(
     if scenario == "attribute_inactive":
         obj["is_active"] = True
         attr["is_active"] = False
-    if scenario == "wrong_owner":
+    if scenario in {"wrong_owner", "foreign_source"}:
         obj["source_tenant_code"] = "OTHER"
+    if scenario == "wrong_owner":
+        obj["zone_code"] = "silver"
     write_graph_snapshot(
         session,
         "metadata",

@@ -6,9 +6,6 @@ from dataclasses import dataclass, field
 from typing import Any, LiteralString
 
 import pytest
-from mcp import Client
-from mcp.server.mcpserver import MCPServer
-
 from gds_etl_workbench.adapters.auth.identity import IdentityProvider
 from gds_etl_workbench.adapters.mcp.tool_audit import ToolCallAuditMiddleware
 from gds_etl_workbench.application.authorization import AuthorizationService
@@ -22,6 +19,8 @@ from gds_etl_workbench.tools.modeling.model_input_scope import (
     GetModelInputScopeResult,
     register_get_model_input_scope_tool,
 )
+from mcp import Client
+from mcp.server.mcpserver import MCPServer
 
 
 @dataclass
@@ -66,8 +65,12 @@ class FakeReadTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        if "FROM core.tenant AS tenant" in query and "model.model_input_scope" not in query:
+            return [{"tenant_id": 3}]
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return [{"source_tenant_id": 3}]
         assert "model.model_input_scope" in query
-        assert "object.source_tenant_id = model.tenant_id" in query
+        assert "object.source_tenant_id = model.tenant_id" not in query
         assert "zone.zone_code IN ('source', 'bronze')" in query
         assert "source_tenant.tenant_code AS source_tenant_code" in query
         assert "placement_tenant.tenant_code AS placement_tenant_code" in query

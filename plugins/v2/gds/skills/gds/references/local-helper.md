@@ -2,9 +2,11 @@
 
 Use `scripts/gds-local.js` for governed local work. `.ps1` is a native compatibility helper. Never inspect helper source to rediscover a command; use `command-contract --command <name>` when needed.
 
-State: session/status/task commands, `subagent-policy`, `sql-policy`, `readiness`, `snapshot-install`, `snapshot-refresh`. Reads: `inspect`, `describe`, bounded `select`. Edits: `copy`, `upsert`, `upsert-batch`, `discard`.
+For setup, query `command-contract --command session-init`, then run `session-init --root <directory> --tenant <code>`. Use the returned session path. Installing the first Model Snapshot binds its Model to the session; there is no Model-selection command. Run `bash scripts/open-workbench.sh` or `./scripts/open-workbench.ps1` without arguments. In Chrome/Edge, have the user choose the session directory through Workbench's folder picker; the browser grants that local access once.
 
-`subagent-policy --mode inherit|disabled|fixed` records only the user's Automatic-mode choice. `fixed` also requires the exact user-supplied VS Code model name. Never store prompts, tokens, credentials, or an agent-selected model.
+State: session/status/task commands, `subagent-policy`, `sql-policy`, `readiness`, `snapshot-install`, `snapshot-refresh`. Reads: `inspect`, `describe`, bounded `select`. Edits: `copy`, `upsert`, `upsert-batch`, `discard`. `profile-plan` generates standard aggregate SQL from saved selections; read `workflows/profiling.md` when needed.
+
+`subagent-policy --mode inherit|disabled|fixed` records the user's authorized delegation choice. `fixed` also requires the exact user-supplied VS Code model name. Never store prompts, tokens, credentials, or an agent-selected model.
 
 Download the MCP ZIP temporarily; run `snapshot-install` with exact returned `snapshot_id`, `size_bytes`, and `sha256`; delete it after success. Never expose the signed URL. Installation verifies every member, replaces safely, and reconciles stale areas.
 
@@ -14,7 +16,7 @@ Then follow `server-handoff.md` to bind the active `draft-cache`; read `staging.
 
 When server validation returns `valid=false`, cache its active revision with `draft-cache --validation-failed true` before local repair. A corrected, revalidated, re-acknowledged digest may replace only that same task's failed draft through the Stage Runner; other overlap remains a conflict.
 
-JavaScript `validate` checks exported record rules, uniqueness, references, Tenant/GDS scope, locks, Model dependencies, Bindings, Mapping, Code, and Validation. It and Workbench share the same validators; server validation remains authoritative.
+Local `validate` shares Workbench validators; server validation remains authoritative.
 
 Never generate, regenerate, read, or inspect DBML unless the user explicitly asks. `generate-dbml` exports the effective Model to `model-dbml/`.
 
@@ -27,3 +29,5 @@ node scripts/gds-local.js select --session <session> --area model --dataset logi
 ```
 
 Paths are relative to this skill directory; quote actual filesystem paths for the host shell. For PowerShell use `scripts/gds-local.ps1` and its same command contract. `--expected-digest` guards local edits; `task-plan` uses its separate plan digest. Read the specific `command-contract` rather than guessing flags. Local Snapshot reads, authoring helpers, Workbench and the Stage extension have separate jobs; the extension neither designs nor Applies results.
+
+For bounded edits: `copy` the matching complete records using the current `--expected-digest` (`empty` only for an empty draft). Read the resulting `<session>/<area>-change-set/<dataset>.json` array locally; preserve unknown fields and modify only intended fields. Pass complete changed records to `upsert-batch --changes <dataset-to-record-array-JSON>` with the returned digest. Pass large JSON through a script's process argument array; don't print records. The helper merges by canonical key, invalidates acceptance, and returns the new digest. Then validate the complete effective graph.

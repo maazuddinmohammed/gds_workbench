@@ -2710,7 +2710,8 @@ function Add-ModelPhysicalScopeIssues([object[]]$States, [object[]]$ReferenceSta
         if ([string]$state.Area -cne 'metadata' -or [string]$state.RecordType -cne 'object') { continue }
         foreach ($record in @($state.Effective)) {
             if ((Normalize-Value 'model' 'tenant_code' (Get-Property $record 'source_tenant_code')) -cne
-                (Normalize-Value 'model' 'tenant_code' $TenantCode)) { continue }
+                (Normalize-Value 'model' 'tenant_code' $TenantCode) -and
+                @('source', 'bronze') -cnotcontains (Normalize-Value 'model' 'zone_code' (Get-Property $record 'zone_code'))) { continue }
             $key = Get-NormalizedValidationKey 'model' $objectFields $record
             $objects[$key] = $record
             [void]$sets.objects.Add($key)
@@ -3923,7 +3924,7 @@ function Render-ConceptualDbml($Loaded, $Model) {
     foreach ($record in $objects) {
         $name = Get-Property $record 'conceptual_object_name'
         [void]$lines.Add("Table $(ConvertTo-DbmlIdentifier $name) [headercolor: #4E79A7] {")
-        [void]$lines.Add("  \"__conceptual_key\" conceptual_key [pk, not null, note: 'Visualization-only endpoint; not a modeled Attribute.']")
+        [void]$lines.Add("  `"__conceptual_key`" conceptual_key [pk, not null, note: 'Visualization-only endpoint; not a modeled Attribute.']")
         $note = @(
             'Type: ' + [string](Get-Property $record 'conceptual_object_type'),
             'Grain: ' + [string](Get-Property $record 'conceptual_object_grain'),
@@ -4486,6 +4487,7 @@ try {
         'review' { $output = Review-Changes $options }
         'validate' { $output = Validate-Changes $options }
         'generate-dbml' { $output = Generate-LocalDbml $options }
+        'profile-plan' { . (Join-Path $PSScriptRoot 'profiling.ps1'); $output = New-ProfilePlan $options }
         'accept' { $output = Accept-Changes $options }
         'snapshot-install' { $output = Install-Snapshot $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }

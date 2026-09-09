@@ -393,6 +393,14 @@ def test_mapping_request_rejects_a_caller_route_or_incomplete_pair(
 
 
 class WorkflowCommandTransaction:
+    async def fetch_all(
+        self, query: LiteralString, parameters: tuple[Any, ...] = ()
+    ) -> list[dict[str, Any]]:
+        assert "SELECT DISTINCT object.source_tenant_id" in query or (
+            "core.tenant AS tenant" in query and "effective_role" in query
+        )
+        return []
+
     async def fetch_one(
         self,
         query: LiteralString,
@@ -454,9 +462,7 @@ class WorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_derives_actor_and_calls_only_governed_function() -> (
-    None
-):
+async def test_database_command_derives_actor_and_calls_only_governed_function() -> None:
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
         authorizer=AuthorizationService(),
@@ -492,13 +498,9 @@ async def test_database_command_derives_actor_and_calls_only_governed_function()
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_agent_against_the_requested_execution_mode() -> (
-    None
-):
+async def test_database_command_validates_agent_against_the_requested_execution_mode() -> None:
     registry = load_default_agent_capabilities()
-    databricks_model = next(
-        model for model in registry.models if model.code == "foundry-primary"
-    )
+    databricks_model = next(model for model in registry.models if model.code == "foundry-primary")
     restricted = databricks_model.model_copy(
         update={
             "execution_profiles": (
@@ -513,8 +515,7 @@ async def test_database_command_validates_agent_against_the_requested_execution_
     registry = registry.model_copy(
         update={
             "models": tuple(
-                restricted if model.code == restricted.code else model
-                for model in registry.models
+                restricted if model.code == restricted.code else model for model in registry.models
             )
         }
     )
@@ -562,9 +563,7 @@ class _RecordingCapabilityRegistry:
         self.selections: list[AgentRunSelection] = []
 
     def resolve_default_selection(self, **values: Any) -> AgentRunSelection:
-        selection = load_default_agent_capabilities().resolve_default_selection(
-            **values
-        )
+        selection = load_default_agent_capabilities().resolve_default_selection(**values)
         self.validate_selection(selection, execution_mode=values["execution_mode"])
         return selection
 
@@ -626,9 +625,7 @@ async def test_database_command_validates_code_generation_against_internal_tool_
 
 
 @pytest.mark.asyncio
-async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> (
-    None
-):
+async def test_database_command_validates_validation_against_internal_tool_assisted_mode() -> None:
     registry = _RecordingCapabilityRegistry()
     service = DatabaseWorkflowCommandService(
         database=WorkflowCommandDatabase(),
@@ -741,9 +738,7 @@ class _SuccessfulImplicitDefaultWorkflowCommandDatabase:
 
 
 @pytest.mark.asyncio
-async def test_database_command_passes_validated_defaults_to_governed_creation() -> (
-    None
-):
+async def test_database_command_passes_validated_defaults_to_governed_creation() -> None:
     transaction = _SuccessfulImplicitDefaultWorkflowCommandTransaction()
     service = DatabaseWorkflowCommandService(
         database=_SuccessfulImplicitDefaultWorkflowCommandDatabase(transaction),
@@ -1057,6 +1052,4 @@ async def test_missing_mapping_default_returns_a_clear_controlled_error(
                 mapping_source_system_id=77,
             ),
         )
-    assert (
-        caught.value.message == "The global Mapping output templates are unavailable."
-    )
+    assert caught.value.message == "The global Mapping output templates are unavailable."

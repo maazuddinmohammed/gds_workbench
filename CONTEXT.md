@@ -9,10 +9,11 @@ The ownership scope for Principals, metadata, Models, and authorization.
 _Avoid_: Customer, client, account scope
 
 **Source Tenant**:
-The single Tenant whose data a physical Object represents, independent of the
-Systems or Connections contributing to it. An Object may combine contributors
-within that Tenant but never data from another Tenant. Every physical Object has
-exactly one Source Tenant; shared or cross-Tenant Objects are not supported.
+The single Tenant that owns a physical Object's metadata, independent of its
+Connection placement. Source and Bronze retain their originating Source Tenant.
+Model-produced Silver and Gold belong to the Model Tenant and may consolidate
+authorized inputs from several Tenants and Systems. Their source_tenant_id is
+the Model Tenant; it does not enumerate their contributors.
 _Avoid_: Connection owner, source System, GDS Connection
 
 **Physical Object Placement**:
@@ -73,8 +74,11 @@ server-derived audit metadata and no raw input, output, prompt, or secret.
 _Avoid_: Transcript, request dump, tool output log
 
 **Model**:
-The governed metadata aggregate that contains input scope, bindings, policy,
-effective Sections, and one current revision.
+The governed aggregate owned by one Tenant, containing input scope, bindings,
+policy, effective Sections, and one current revision. Source/Bronze inputs may
+belong to several readable Source Tenants; target ownership stays with the Model
+Tenant. Source access is rechecked on Model reads and changes, including retained
+historical scope.
 _Avoid_: Project, workspace model
 
 **Model Input Scope**:
@@ -82,9 +86,11 @@ The server-owned active set of physical Source or Bronze input Objects that a
 Model can use. A Source Object may be used directly when it is accessible
 through a foreign catalog and Bronze is skipped. Model-produced Silver and Gold
 targets use Model Object Bindings; they are not inputs. Selected Scope controls
-which eligible inputs participate. If equivalent Source and Bronze Objects are
-both selected, Bronze is the default transformation input unless the user
-directs otherwise.
+which eligible inputs participate. Show existing scope first, then resolve the
+Source Tenants, Source or Bronze choice, Systems, and Objects to add or refine.
+Use Object.source_tenant_id for source ownership. Neither placement nor a Bronze
+preference changes selected membership. Resolve equivalent representations
+explicitly before transformation.
 _Avoid_: Selection, source list
 
 **Selected Scope**:
@@ -380,44 +386,34 @@ governed drafts within that boundary.
 _Avoid_: Workflow Run, chat, permanent workspace
 
 **GDS Interaction Mode**:
-One explicit collaboration style for a GDS request: Quick, Guided, Automatic,
-Custom, or Grill With Docs. It changes depth and checkpoint behavior without
-changing Workflow Targets, governance, or Apply boundaries.
+One collaboration style: Guided, Custom, or Grill With Docs. It changes planning
+and questioning depth, not authorization or Apply boundaries.
 _Avoid_: Workflow Target, execution permission
 
-**Quick Mode**:
-Small, bounded GDS work without a complete-coverage promise. Any mutation still
-uses the normal session, Change Set, validation, and approval boundaries.
-_Avoid_: Ungoverned edit, Automatic Mode
-
 **Guided Mode**:
-GDS work that pauses at meaningful semantic checkpoints selected for the active
-Workflow Target or Section.
-_Avoid_: Step-by-step tool narration, mandatory pause after every record
-
-**Automatic Mode**:
-GDS work that makes supported local decisions and continues through the selected
-scope without optional pauses. It still stops for blockers, Snapshot handoffs,
-the local review handoff, Stage, Apply, and Workflow Target boundaries.
-_Avoid_: Unattended Apply, evidence-free decisions
+An orchestrated journey through selected workflows. At entry, resolve context,
+save SQL policy, open Workbench, and install relevant Snapshots. Reuse decisions,
+existing results, and applied prerequisites. Ask what follows code generation;
+Dimensional and Validation are optional unless requested.
+_Avoid_: Mandatory pause after every record, unattended Apply
 
 **Custom Mode**:
-A user-defined GDS workflow shape for work that does not fit the standard
-interaction patterns. It never relaxes domain or governance rules.
+Clarify the user's goal, ask focused questions, build a plan, obtain approval,
+and execute using the appropriate existing tools and workflows. It combines the
+former Quick and Custom modes without relaxing governance.
 _Avoid_: Bypass mode, arbitrary execution
 
 **Grill With Docs Mode**:
-A lazily loaded interactive mode that examines any GDS request branch by branch,
-asks one focused question at a time, and updates agreed local documentation as
-shared understanding develops. It may support any Workflow Target or discovery
-work but is never itself a Workflow Target. The agent chooses a lightweight
-session document or ADR appropriate to the discussion and may promote accepted
-conclusions into governed records or artifacts.
-_Avoid_: Grill Workflow Target, unstructured brainstorming
+A deeper investigation using domain documentation and one focused decision at a
+time. Record accepted decisions, produce a custom plan, obtain approval, then
+execute through suitable workflows. Discussion alone does not author server state.
+_Avoid_: Workflow Target, unstructured brainstorming
 
 **GDS Workflow Target**:
 One user-selected bounded outcome with at most one authoritative Apply boundary.
-It never advances automatically into another Workflow Target.
+A selected journey may queue subsequent targets, but each retains its own review
+and Apply boundary. Logical Build invokes enrichment as a prerequisite with a
+separate Metadata Change Set.
 _Avoid_: Model Section, focus area, end-to-end build
 
 **Resolution Prompt**:

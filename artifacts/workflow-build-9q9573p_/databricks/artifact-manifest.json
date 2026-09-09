@@ -1,0 +1,3447 @@
+{
+  "agent_provider": "microsoft_foundry",
+  "app_source": [
+    {
+      "path": "DEPLOYMENT_GUIDE.md",
+      "sha256": "9cb328f0444b3480dfbd530c1e52a68a54ec91b7c86667a25758c58fc3c1e700",
+      "size": 37362
+    },
+    {
+      "path": "app.yaml",
+      "sha256": "5c9ae69f7025f5621ebb96e3f87bb64744955bbe93ecc2124af612b1ee2b1846",
+      "size": 799
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/__init__.py",
+      "sha256": "1b5ccc26991ad55db9d6ccf2a3084d5ecfde642d723a9f4424b484111e5aae26",
+      "size": 96
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/__init__.py",
+      "sha256": "f07e3a006719560ab0f4d0dfa9c5a77d24b9503a9c466cad6bc5e16b4e9d3af9",
+      "size": 48
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/auth/__init__.py",
+      "sha256": "b529e88d1462c301f0f49d15e70eeb74881c457ce13b5dec0526cc96902c7967",
+      "size": 31
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/auth/identity.py",
+      "sha256": "aac3b4cc59fdc8022d954df42d4a04a85525e4a1258aa4d9cb99e37308dd1bec",
+      "size": 7125
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/auth/middleware.py",
+      "sha256": "2065832ebd186f66707933677e27ea0abcc6bafec904d91c4f3f6cb594121872",
+      "size": 2316
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/mcp/__init__.py",
+      "sha256": "e07c0ae1063a940caf7cceccedfbe173e478cacd14a1cefd378b1c194f2d6b02",
+      "size": 29
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/mcp/annotations.py",
+      "sha256": "294f1f6f41aa219ef764719bb51154de0583ae23b5a3dde7cc5e60cf2ce5669b",
+      "size": 457
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/mcp/server.py",
+      "sha256": "7d7f15d3412338cae54bb47a2e3632631857c087e59bff6db429c892dffaff8e",
+      "size": 11383
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/adapters/mcp/tool_audit.py",
+      "sha256": "587e3fddff910d30b2014cdd89448276b8a22b9e9bb012e5a7a34172613ab8bf",
+      "size": 7824
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/__init__.py",
+      "sha256": "7001c28b30eb15d8e9f9608ed87a44eb3629235f92b37a48f9709c1a160725da",
+      "size": 49
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/authorization.py",
+      "sha256": "cf3fd793d1583375d1d2ff7226f229545f731f2091ac8726a66e64eb4d5f2260",
+      "size": 9834
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/__init__.py",
+      "sha256": "984695ff26cf5044dc0eaccbb3371748a861e66cdf38881011b424a0ae583d36",
+      "size": 53
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/action_review.py",
+      "sha256": "9a1aee85ef07b195da5314a97afd929bcb633e700de0681d6619f6c47c2aff06",
+      "size": 1903
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/contracts.py",
+      "sha256": "7aa9b0ba09c56b6377da418c8636a301cd2516629c47ac6acea886e219cebedb",
+      "size": 8545
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/metadata.py",
+      "sha256": "e4f6388d273040967e70130a6cd2f877e456b74a88c612ed244e687c211f08b8",
+      "size": 60791
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/metadata_validation.py",
+      "sha256": "e4625a87f7f63f4d460fcbf8252c61aa9ecc67c675a1a8f78a983c302d4dfe02",
+      "size": 22743
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/model.py",
+      "sha256": "f8615d32297a11a407bddd614ab908bb7b549db297ed0b42e4f0d72a59b53739",
+      "size": 121962
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/model_apply.py",
+      "sha256": "adff9f3b55dfc24f4a74e01fc013c52a4c3fc93f5a23606eec07a437da381bd5",
+      "size": 117654
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/change_sets/model_validation.py",
+      "sha256": "7b9f76411a1e2cb2c84381a2d0ae872d4c7b22472321533b544a9604e6bf5b3f",
+      "size": 62258
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/cursor.py",
+      "sha256": "d4cd91e8a23f71d7bc9d5e764dc1e77a619f765b36a4ddca28690c8e6dc4bf44",
+      "size": 2775
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/identity.py",
+      "sha256": "923dfb8368ed200eef174588b216e665ce59a71aa52e15e575a22891a6e88025",
+      "size": 427
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/model_read.py",
+      "sha256": "0d401be7450f555f71161838a16fd0a3055de8f0bee0dcd7040db18be553359a",
+      "size": 3763
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/model_snapshot.py",
+      "sha256": "2a0198ebdb05cb2d8da6b4bafa20a60983bde408c1fc35b3af9be24a68f0f23f",
+      "size": 30175
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/modeling/__init__.py",
+      "sha256": "2cb4ee52c5088fa972f9da5861a278ff9815fb7c69393deaa74bac22aff7e079",
+      "size": 62
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/modeling/assertions.py",
+      "sha256": "6d2ca31f348dbbe8607424ce3d49ec396e3db83f6a3f984a1d1400b771ad2f45",
+      "size": 2089
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/modeling/conceptual.py",
+      "sha256": "531686f9a803600266c7a36a7f269b97e60e23df3a8d693531da18e343f075a8",
+      "size": 8942
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/modeling/modeled_layer.py",
+      "sha256": "1d6f122e78677f327751dc9b1dfc3742424c459074318c7c79d4df7a6b510fa5",
+      "size": 24198
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/modeling/profiling_analysis.py",
+      "sha256": "2ac291c225b3ab73498b56ad00dc1133d223c05baafc9a1e6c363cfa541e2d80",
+      "size": 6958
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/application/tenants.py",
+      "sha256": "a1565bf5f17ec48b623f3f2c7fa915a2c23809abbd61c855ff609fba9be4db3a",
+      "size": 3564
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/configuration.py",
+      "sha256": "741b3c79fe30027c424bc72df07cd5af3e0b22a7ee8d21ab5c34181af2190c65",
+      "size": 12270
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/diagnostics/__init__.py",
+      "sha256": "560ba1cac3c90e4d5ec93e2c4e4db0e8c9ee15c4b12cf34e2df06ed9a547b9a1",
+      "size": 37
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/diagnostics/metadata_snapshot.py",
+      "sha256": "7e367c38dfe9df537f9ed1e03fb26c96e6fbac8c33b6a33de6791c467d386ad8",
+      "size": 33749
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/__init__.py",
+      "sha256": "555b4cadd963d5e202096c42fbafac67af56fe83136f57d15e951ad2c01a46a2",
+      "size": 43
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/assertion_safety.py",
+      "sha256": "25029fca5cb0c2bcbfda623a260a6bbdbf0d309818d35c39fdb61b322811de62",
+      "size": 3303
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/authorization.py",
+      "sha256": "dbb0e1ff3097a3a3e698f40153de7a8a5bb8a03e55da0d49ce0278b65cc77550",
+      "size": 1109
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/databricks.py",
+      "sha256": "3a8d40232c096172793591916e8dca23438085271c8e21fedf2e798a80d1a9af",
+      "size": 331
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/databricks_sql.py",
+      "sha256": "297fd154df05c3a4d5d388c913570268c215f9325fc03b3b75365f4554414fc2",
+      "size": 8223
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/errors.py",
+      "sha256": "b35b4e9f27db995e0df9e7418c16b6a3471a30a9e0c7c43655e1e02a6de67552",
+      "size": 7954
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/metadata_records.py",
+      "sha256": "40dbcf0f02f3a6e09165d382f7ce804e7001de3b17ac55c649842865cb5f9093",
+      "size": 11180
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/modeling_records.py",
+      "sha256": "79c40bc7ef6854ce344ccc8bd22064200e7c3f41d2a0d45d8749c44c636fe38d",
+      "size": 41458
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/portable_validation.py",
+      "sha256": "2fe4110f097e774d0989c08f6849a03bf468492800d3e3db542841560cde4552",
+      "size": 1673
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/__init__.py",
+      "sha256": "858f5f309c1ef370eda387efd5b540ee285f3ae173981cf765e801532f825832",
+      "size": 61
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/description.py",
+      "sha256": "d8769fc6dfe5eec6e532a47e5eee5f9a6bdade954c4f81128119b62953cc0742",
+      "size": 2116
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/metadata.py",
+      "sha256": "9a01078dbdfef28add4e3872e48a0c6e94f8f71081aeff321a0678c25c414528",
+      "size": 16475
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/metadata_guidance.py",
+      "sha256": "959257daf8f85b2cfb8d516a910e7bb4dadfe833c7c9062dfe8d5c5e8cf1e2db",
+      "size": 24684
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/model.py",
+      "sha256": "2f83c83b971c50f4d42a74a2510ec6e4b144688227476f21dcfde848375f6e4b",
+      "size": 16924
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/domain/snapshots/model_guidance.py",
+      "sha256": "1a7766f88a3d248c1c4ce5d76430460fc2cc767864b07f78e988c1a053ea4bea",
+      "size": 14930
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/infrastructure/__init__.py",
+      "sha256": "74cd58a6ea3102ae922e527f18131d3e61f6d6a0600521f1012f1186bc1b991e",
+      "size": 42
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/infrastructure/databricks_sql.py",
+      "sha256": "b648e6170853e440ef2439b79eb3825695c455c7315a401de132db41e7fdce2c",
+      "size": 9289
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/infrastructure/metadata_visibility.py",
+      "sha256": "2b9bb20befa82376bf7db300de0e7caba7ee9280dfb4a3730b8b34946c0f75c2",
+      "size": 513
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/infrastructure/postgres.py",
+      "sha256": "d2843835cd82bdca713173f2f939d1278e4497e39a51a9b69a27e7692c10cbfd",
+      "size": 12134
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/runtime.py",
+      "sha256": "b12a57d2bd793974cabf3c9cbbf43260d6e2eb21f14410922dc39fb2855a60ea",
+      "size": 3754
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/__init__.py",
+      "sha256": "55acbe9b75e234e5cdb6c6c516b2a3bc0c76e3bf96ee6186c1583762fd171c76",
+      "size": 33
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/catalog/__init__.py",
+      "sha256": "f40a933a8bd6dd69157288c7b410d71c70e5a8f8bf208e2072789a47afd472e2",
+      "size": 49
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/catalog/get_object_lineage.py",
+      "sha256": "41476ae8405873dbabde579ffcb9b250c957727c0a3cd2d6046016fb2afed067",
+      "size": 5693
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/catalog/get_objects.py",
+      "sha256": "238e9891675aded0416abadcd610c9782cddcf85b63ced2c364fc2b78bd95008",
+      "size": 5390
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/catalog/inspect_metadata.py",
+      "sha256": "ed28fb9e3d2677a0b0f1f794d321349abfb3389bd7341cb30bf1f92df0b51769",
+      "size": 16290
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/catalog/list_objects.py",
+      "sha256": "005ea69b89d10792e1db4def1f21337c222a37aa53a3bc49cf26216b2eeb2f29",
+      "size": 4619
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/change_sets/__init__.py",
+      "sha256": "1adf587c532dcb40d580d41dffc611c238d32113e71870b2b4f59f64daafcf8d",
+      "size": 33
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/change_sets/metadata.py",
+      "sha256": "d124ccd9963b1998127a5ab7991b6dbdf7efbdbe99593af1c2cd12c13404de27",
+      "size": 224
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/change_sets/model.py",
+      "sha256": "bc0eadadd1da2f22ca20dd725d512ec516a5c61da5a881d9fc9a376011d34442",
+      "size": 203
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/databricks/__init__.py",
+      "sha256": "1e0e10e022f7b4d3dbd23c72824188c0e49b15b6c8241d1417b6aedaae0691d2",
+      "size": 44
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/databricks/execute_sql.py",
+      "sha256": "29f4bd377bcfa51ef07356c0dd727021c87b88862214ca487a020c0b09b1173f",
+      "size": 9793
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/ingestion/__init__.py",
+      "sha256": "b893681062a94f0b0f3a90fe5478ff588b25c3fdd82187012ccec4cb8225a3f0",
+      "size": 47
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/ingestion/copy_groups.py",
+      "sha256": "f287eb16621953bd1e8a7dc972e01678016ff27c29b5681473eabb13a0a33cb2",
+      "size": 9743
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/modeling/__init__.py",
+      "sha256": "fbcc7bc5eb0fc994a208929daee149f29a7a68110c9cf9d01f7d980ae343f55a",
+      "size": 42
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/modeling/model_details.py",
+      "sha256": "fc962b220842b2c02b20ea71e6f9ad6f4ab0c413a4b2f9da213fe3e1ac725703",
+      "size": 7145
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/modeling/model_input_scope.py",
+      "sha256": "8c35fb3e5070a9db4ba843bb3db8bcadc46781de01b3002ac5d72f595737e95e",
+      "size": 9396
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/modeling/read_model_section.py",
+      "sha256": "97d98a4085a70480d5947f4e33f1951046c6328babfb49de3dc7208949b9e588",
+      "size": 10000
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/processing/__init__.py",
+      "sha256": "133ffafe91139edc3ffb4aef0336055e7fc718ee4c954595c0d1123f1f1db127",
+      "size": 48
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/processing/process_groups.py",
+      "sha256": "9473f027a773bb5bdc7a3b0a3f90dc0347bf5d07aaa880e50a5c163758fb9178",
+      "size": 6477
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/__init__.py",
+      "sha256": "816fd7ca7a6fc9b09f3fbf97ee43cd81f9ebc9446b7945cc294330bd2fde0eb6",
+      "size": 22
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/archive.py",
+      "sha256": "aaedec3fc1a68c229cbd776a0851f67a245c797f3110348a5c1e312a2c1a3413",
+      "size": 6019
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/__init__.py",
+      "sha256": "5df966581d98736b75ec9da0d35818735ca6bdaa4fc580be93cee0a6cdf2ecf5",
+      "size": 62
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/archive.py",
+      "sha256": "df03096a59a18cd33f1857eb5e025a830527914d76c9b75db95273ac64d413f4",
+      "size": 4099
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/get_model_dbml.py",
+      "sha256": "b4b2a7a24814a94c048987778dffe4c7cabe2f0f8d1b323164a47401e3ab0bae",
+      "size": 10149
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/dbml/renderer.py",
+      "sha256": "3e3972e634ae0e8fe04076f772705356bf16b9c55b780c9e781e1fcd91ea7c56",
+      "size": 33075
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/__init__.py",
+      "sha256": "01a387d2a9dcfbc9d660804ee5e9a6ce730b234ad1625c38b1cfd7afba571930",
+      "size": 38
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/archive.py",
+      "sha256": "0759808dbd432b2d6e156bb13e19bac458bd72a1ba9194770342a67346ca65d1",
+      "size": 21410
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/describe_metadata_dataset.py",
+      "sha256": "c7880fc3a2e9d30920be22c07f87f5d11ff0b2d76f3cc505ff76cc446e2e0ff5",
+      "size": 6486
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/get_metadata_snapshot.py",
+      "sha256": "aff93dff304459a8622a836c6317b83dbd6ffaaa2ff773a16c3222138d9f4ce0",
+      "size": 24775
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/projection.py",
+      "sha256": "b11da953d2467d98ff9d53d8dacb7c478ef97806404828ed0c21793d06464533",
+      "size": 15050
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/metadata/sql.py",
+      "sha256": "6e4fd986fa6e40986668080b69cd1307fd1c1f5ff8982fb2cc547e4225b4e55d",
+      "size": 8915
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/model/__init__.py",
+      "sha256": "fb172a0e0d95e8b8dbcbbc811685fb379cdfc19b68ba6287620f7a3b6287c7d3",
+      "size": 47
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/model/archive.py",
+      "sha256": "d645a0a557c7ac5d9520f92a6354c56d55b7f5faa9e072f3f141818c8572baf3",
+      "size": 8874
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/model/describe_model_dataset.py",
+      "sha256": "1e96ec243cb686222d8502d4141287725cba354955a9f19a787e1bec59e66c6e",
+      "size": 6435
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/model/get_model_snapshot.py",
+      "sha256": "b09a81e966c3e50f3c4bfe6647b411c82aecd0c5eadf17f38bab7a387f2768f5",
+      "size": 9766
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/service.py",
+      "sha256": "99a0d22431ad93c8ace0f137a1d0ce1d18be1961d0530affe6539c2f99e5bb04",
+      "size": 3861
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/snapshots/storage.py",
+      "sha256": "6e653c4f73090c692346f24ff17d2b4c66256e24bd2de4c81617a922d271cc7c",
+      "size": 9065
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/tenants/__init__.py",
+      "sha256": "add02f698ac018a523fe8a28945082a190dbd3a84a4cd355921af5ca3464ff6b",
+      "size": 24
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/tenants/get_tenant_details.py",
+      "sha256": "266a02b70cdb92de6da9541cbab73b8829d7f2afb5bd60ab06018b5b8a76c9c2",
+      "size": 11043
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/tenants/list_tenants.py",
+      "sha256": "5c347324749c86da75b5e31fc04ff7d16999b93525daa31be9a817206c4d1237",
+      "size": 6022
+    },
+    {
+      "path": "mcp_server/gds_etl_workbench/tools/tenants/tenant_locks.py",
+      "sha256": "db1c2a129b5f8bfad115f0c46e4d5712d641c9a75b55fcd1d2cbbd9dd609467a",
+      "size": 19361
+    },
+    {
+      "path": "mcp_server/pyproject.toml",
+      "sha256": "59d3ac051493387cc787e24fdc884d172db772ba79eac73f160a210e144a1e32",
+      "size": 1261
+    },
+    {
+      "path": "package-lock.json",
+      "sha256": "a2e3a532ea4fb0a4c2582a4acb04737d31d18cc3ea5ad37e70593c61f1b496a7",
+      "size": 80946
+    },
+    {
+      "path": "package.json",
+      "sha256": "fd05bc5e24f61fa11f50eb0c5fe2116fc2c2f5a05eb7ef9f073f04014397f594",
+      "size": 317
+    },
+    {
+      "path": "pyproject.toml",
+      "sha256": "d43a4e4886c0aafae9e20d24133f5b2ad2df63d02ca0f7c28b3d84383731d67c",
+      "size": 365
+    },
+    {
+      "path": "uv.lock",
+      "sha256": "f3bf29c69a030dd421609e3c710c3b7f39575fa44011061848245af3910f9fec",
+      "size": 227244
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/__init__.py",
+      "sha256": "7db54a2217a0b2461b0df62ca77532be203245e8e952d0ee95a3c983f5fb26af",
+      "size": 37
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/app_process.py",
+      "sha256": "7f8fb35849715a1d95a598c478208c29bc4ccce18155f92227b45fb1906f39af",
+      "size": 3818
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/authentication.py",
+      "sha256": "d51af206506bb253e0b47001c3c5973d2fbdba1464f966106e8a1c91e66beee1",
+      "size": 7894
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/capabilities.py",
+      "sha256": "b83035bcda56a972612bee618a4a9576062852fd7eb5597f31ff31e09f25aa35",
+      "size": 13194
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/config/agent_capabilities.json",
+      "sha256": "930921aa55c003e9a9a587d00cc5f62870d79974761b82095bee3c7c2e84735e",
+      "size": 2563
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/config/agent_execution.json",
+      "sha256": "15136776113febac0551833a13140ef9d5964af6f99ef7881a8252d8ebaff2ed",
+      "size": 173
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/config/analysis_validation.json",
+      "sha256": "8c047da5a2fb7bf5ba284c1cd74b109e1c10d2bf13f4b30bf02dada7d47e9730",
+      "size": 194
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/config/workflow_execution.json",
+      "sha256": "97438c5655db7d80e1135981d4424d141842025895fb4ab7791bdad16a796705",
+      "size": 175
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/configuration.py",
+      "sha256": "aab803b1701c5ae7e3189828b7a135ca85648fdc0b934c99b8fe997d4c65f533",
+      "size": 10537
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/database.py",
+      "sha256": "dceaea490a95a925226a41a867acac1ebf289fd37afe728139dfd59f83508aae",
+      "size": 20179
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/errors.py",
+      "sha256": "46c6a65d8d8f92efdc019de18f92dcce2d2ca74e470a9db49ac4320573a8df8d",
+      "size": 2065
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/__init__.py",
+      "sha256": "9a27a3cf6cf28822e812af392deca97d0a6dc84fb9bdb82d2073cf308af49103",
+      "size": 56
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/__init__.py",
+      "sha256": "d8c054a84537b72413a83bed5e8e65f9a8803a270885e71b7e1ec076c008ae6a",
+      "size": 3109
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/candidate.py",
+      "sha256": "a08e89aa87d3fc9dc90c89c92c804418dff42427f12c3bb72515aa28f141ffb1",
+      "size": 9966
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/read_contracts.py",
+      "sha256": "f99643751844abf76a444f4423ecc757543ce1b83c74e786dfa3fc2230127ddf",
+      "size": 4994
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/read_router.py",
+      "sha256": "1f1692af9f06f077a593cf1cfecbe2fcd1c51cd6644a0bee3042d582541eaab0",
+      "size": 3031
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/read_service.py",
+      "sha256": "aa09a5d77ac44a0780dc6f0fdd076daaef251bf3fae1d3fe053f0c592612342c",
+      "size": 20824
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/router.py",
+      "sha256": "3904abfd20e307821e13d3a39eb51d970a9782159b6c726f3b8775672d050424",
+      "size": 2670
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/service.py",
+      "sha256": "ad9e8f41d75cdfdfc4fbb7af3e03bb778cd11885948e6ae533e0f6a2fb6fe466",
+      "size": 19665
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/validation_execution.py",
+      "sha256": "325f1234f9566b16304b8212ad56aee084f7a5d35dcc27c692b873a18b26f8e1",
+      "size": 19593
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/validation_router.py",
+      "sha256": "988b4a0e12d4b25c2b71dfd2330723b8767c73e0ffb043f2d66dc58d88c3e875",
+      "size": 2462
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/analysis/validation_service.py",
+      "sha256": "371924f231eaa9b08e1867e6212e02408488d72c2472c63589f1b2c347eed417",
+      "size": 28887
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/assertions/__init__.py",
+      "sha256": "d7adc4d4198803970bdbbdc61655a7adafb43230172938ae7cfb80a9973f7a29",
+      "size": 1668
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/assertions/contracts.py",
+      "sha256": "be465f56ea877a6751d350eb0d0f089c0892544bebd928371758c9f2ceba0b01",
+      "size": 8159
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/assertions/repository.py",
+      "sha256": "cbbb927bf3b918a6e44a5609554594d9e0c951b9fc8be4959db8497e61b0b98c",
+      "size": 19540
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/assertions/router.py",
+      "sha256": "0752c3879529417354e4190c31df47e223926c04128305e5234f5ac9fb50faed",
+      "size": 6665
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/assertions/service.py",
+      "sha256": "bfbe372b0e9e642124f81bd375e48c950efe2b392fd117a3c953f39e9f573ebb",
+      "size": 8226
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/__init__.py",
+      "sha256": "71ef887acacc67b45be04bbad7bdf32efc6323d8c92a3bb9147462ed24776d07",
+      "size": 2256
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/artifact_context.py",
+      "sha256": "e02850324c50bce393884d5595847d2775d0ecc78e13e5756b2c997f1fcfa273",
+      "size": 1234
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/candidate.py",
+      "sha256": "143559ff2eb98f3380df5de0db473d73409c6c75be46a823094dc04ebb0053cb",
+      "size": 12262
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/context.py",
+      "sha256": "cce77dd9e97ceb993d7e9b17bd1d0b4ea369002554f5e7d3b9addb2bd7a1288b",
+      "size": 18769
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/contracts.py",
+      "sha256": "f0edf123ee7ce1bccbe6a0725c6d1b84d6040fe677314722e6d7b749d17a07ae",
+      "size": 8719
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/downloads.py",
+      "sha256": "72955f7e0b41de8d38226390e82f6aee7c7d2f9a88a7d3df8f8e8ab5232f0e06",
+      "size": 2814
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/read_router.py",
+      "sha256": "87657b84fd6561e61cc519c4a1e9f2ae972a106b65328b62584ce52101a945bd",
+      "size": 5147
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/read_service.py",
+      "sha256": "a97cb58b36addfa9c2b1c636c6be234eee4f343cdb4406754846b0a54f05d0f6",
+      "size": 28163
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/router.py",
+      "sha256": "a9eac0b78f021e1ea98061abf4ff1d6ee14b25d20671104be347c497701b0b58",
+      "size": 2287
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/code_generation/service.py",
+      "sha256": "f505ac97cec67a818ac84f104bac84b3f83ee941fa9da33a05dd0dc5e086b65a",
+      "size": 35322
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/__init__.py",
+      "sha256": "afdb532f43962d57ba740d157a0be7fa3d797f4175867892cc01f02f237a21e8",
+      "size": 2291
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/candidate.py",
+      "sha256": "b36af0067de191b9749dd11c77577a04fbc62c91bc8796db7576b1d9e665d6c4",
+      "size": 17107
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/read_contracts.py",
+      "sha256": "fa60f85af88be584252f2f5e77378adf6657c2b24b1c2491aadf59788758d463",
+      "size": 7854
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/read_router.py",
+      "sha256": "36cf3bcb91d8300ae42434cf967fdfec7779c518d207fd7b7af096b27d13669d",
+      "size": 4299
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/read_service.py",
+      "sha256": "7a5f8dc52cdf732e542d07792e23be12bddbb0852bb54865778d56bf856cb04f",
+      "size": 24366
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/router.py",
+      "sha256": "0ae72224be4c1bfebf6abe53b8571c241b430111bfb435fae68b718d80ac585a",
+      "size": 2606
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/conceptual/service.py",
+      "sha256": "8b8de632ec1e72d56d877dbe8208395fb648c3eaad82116d8d371ba123b3815a",
+      "size": 21580
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/__init__.py",
+      "sha256": "37f3f5ff489eb40d62f4a25d62adb92ebeec6457378b55488a5504b22ae8eb13",
+      "size": 3405
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/candidate.py",
+      "sha256": "13b8c947303c492421d0aaccdbafc1f391fa86cf5ebaed24b70d88e7d2e427ef",
+      "size": 27333
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/policy.py",
+      "sha256": "d6c569fb20fe1d7fd3cd570a970b2d555a532573285e9d7faceb3320c5f89b0f",
+      "size": 27219
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/read_contracts.py",
+      "sha256": "278b222cb7bdd963a71506031508cddc6ca05d97033063d53f8aa01ab018bac7",
+      "size": 9811
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/read_router.py",
+      "sha256": "d0478d10eefe003a860696c2422e53f04b43ce41224c00fb0500cbcd7abaf6c4",
+      "size": 6497
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/read_service.py",
+      "sha256": "24a94dc7705edbeb007daef63520ddbb6dc18cd60f3cf6c754e9d0ccc468cc45",
+      "size": 38990
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/router.py",
+      "sha256": "37703278a5893c9f75c91c859b54e142a880685ccc49469bc197ab2e97d5fe57",
+      "size": 2617
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/dimensional/service.py",
+      "sha256": "8838a2faa0e5ad4bbd926c3b1d558bb7f8167f516f553743a84aea15afb64b59",
+      "size": 25122
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/__init__.py",
+      "sha256": "b3a3b7fdc09b83828cf7ff8749f355a43935614487d348028906f813015841e2",
+      "size": 3438
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/candidate.py",
+      "sha256": "e73cbfbc135b17e4f5ae2ed1d7779c9eb4bb576e18b5f25368c6bfe6baf790e2",
+      "size": 28615
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/policy.py",
+      "sha256": "bd46b754c389e99b0d016b4398d0cb00171824cab7d364dc77d2a509c793c64e",
+      "size": 8254
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/read_contracts.py",
+      "sha256": "69cf17167faaa64cdf7d4178e73a67ec98053592082b58b03f92aec2e72d0409",
+      "size": 13336
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/read_router.py",
+      "sha256": "c2302066ff51e7e30230db23dcd871e7e30be2191f4ec0e226f0028ad470bc9e",
+      "size": 8170
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/read_service.py",
+      "sha256": "6a0891c90e7213e96dfd04d2d7f38d9034ba619f0bbd7046726f73fa8f4ace4d",
+      "size": 44926
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/router.py",
+      "sha256": "a505c8b17f0cfd499ae7808ccb269f3f90b4a5e144f7115a5e42fa4debb42849",
+      "size": 2573
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/logical/service.py",
+      "sha256": "a221ccd46ef0d854e6be713f026b0fac73bdd4f07f54c0520627e9e290966ca1",
+      "size": 23576
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/__init__.py",
+      "sha256": "544658b858cb84006d916e1f3970f640cfacf6c7af8e18eec07b0e6114ac2341",
+      "size": 5116
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/complete_candidate.py",
+      "sha256": "56f2a5ecf3474750c36e36312969c23de9793ac45c55b68544dcf9b1a8c6995a",
+      "size": 2524
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/contracts.py",
+      "sha256": "a8df1bc7a317cfef0a2030c78a94ff9ef2404ecb692a76b227ed4caf5a3478e0",
+      "size": 2436
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/execution_context.py",
+      "sha256": "39b1edf08a9ed1a142e482ede3f6093d8e0e7ecda5c8a66542b7b21d4db771bd",
+      "size": 23109
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/output_schema.py",
+      "sha256": "c6caef12c698555f1d1a1ed3b512d4bb6929d420b7ff2897474d0f854634ccc6",
+      "size": 2517
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/preparation_contracts.py",
+      "sha256": "1b4ab43a68086956fa3c645e9853ac1d40bf05d3c2d3ba033d75096a585ea71c",
+      "size": 16864
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/preparation_repository.py",
+      "sha256": "e5603ace46b309923ee9d45f5af2e884f2eeb251b532a87c728f5b9dd8520700",
+      "size": 35172
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/read_contracts.py",
+      "sha256": "4eba1bfdd0005838418ba6af1fa1f34a13efe35ed23e6037543f1a34c170c681",
+      "size": 8255
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/read_router.py",
+      "sha256": "c6d08bff4837d55a8a9ac602c43e876e3d01b59721e9e946cacdbb007e1c9ea0",
+      "size": 6290
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/read_service.py",
+      "sha256": "00854cd38442bdc590ff19512a48488c787ade5b8a4247c2a4deea94754a52c7",
+      "size": 26019
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/readiness.py",
+      "sha256": "f1282bb0c6ebe917595167031676a48f5a85cd7092c5f1663517655ab41c9eb0",
+      "size": 12138
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/reconciliation.py",
+      "sha256": "0c43784f4262b22d2689a34b19ca0190b61dd943d039aa1406ee344606ced424",
+      "size": 9172
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/router.py",
+      "sha256": "dee1f52524078d6d8551476082560be9d28f90bbc346c52afb3ba982b7f3cecf",
+      "size": 2573
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/mapping/service.py",
+      "sha256": "e1fabceeab1899501359d70b5a9d98edf668c55064309b961ae83ca8a905dee6",
+      "size": 23259
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/__init__.py",
+      "sha256": "48d321136334f25675516ae74e6bec5a185243979924ffcea51fb6ce0578ef40",
+      "size": 1829
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/contracts.py",
+      "sha256": "b7ed9c98feae9ae56ebc7f633bcebdeba41b9436f5271c0483c354d37a580991",
+      "size": 10971
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/repository.py",
+      "sha256": "2a5394371d76c7b4c5fb1139aa0b648f461831de88e38f9ef1341c42850bc449",
+      "size": 41447
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/review.py",
+      "sha256": "6bc5427c3252a2be2a5db6003b78f300f8990c3f3db29dc7f4e12df6d2166173",
+      "size": 8533
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/router.py",
+      "sha256": "58a6f900aee3b303f8d91a20543e16e7d6e6ca9fa3672a18fb72753e99606ef5",
+      "size": 9249
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/service.py",
+      "sha256": "34de77d8401d0084a67d832fae024da5da4756b9c181591b23f75157d3fa21e7",
+      "size": 13406
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata/workbook.py",
+      "sha256": "a3c43c52f340f9b3ca78e5145588a13099a9fdc03f640bee941bc8fd8a0b3460",
+      "size": 16316
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_change_sets/__init__.py",
+      "sha256": "83f5e1834161ea0fcd47d0a4650889dc4e4aa22c93d7a6d91c1e6dd8bd9e3d05",
+      "size": 1114
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_change_sets/contracts.py",
+      "sha256": "83cb59b3c3b0c433ba9f2294c04b4dd9909f7108e4a80544d887aac56bb94deb",
+      "size": 6324
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_change_sets/router.py",
+      "sha256": "e9bf56ba2e1f78650e6cbb0c7aa6b14eeb66f841676a9e95ed9bb95f3bf8d2c8",
+      "size": 8703
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_change_sets/service.py",
+      "sha256": "222117ae630b5ccbe4bc76d5fd8c373dc6bdf38f4d0625890b02026ae197e1a6",
+      "size": 17828
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/__init__.py",
+      "sha256": "cb1f27c64e21f1558dadcff96d21a0c2a23fdc0a40a85394fa77d91bdaa7d6f2",
+      "size": 76
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/contracts.py",
+      "sha256": "9bd1673b9ae898a83a47ac51129466ba8b55f42c9a3f66e3ead82ae87eafd73a",
+      "size": 5601
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/evidence.py",
+      "sha256": "3421d902635ac6065b6e7cea6f918745aee2981ccb52eb1e0a3413abc0a06f50",
+      "size": 11775
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/inference.py",
+      "sha256": "cbbbcedb6e1458af29daabafca7f66d740ddc9d8299739be2f4a7aa0079ca8b3",
+      "size": 7027
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/read_contracts.py",
+      "sha256": "37102ac39b69d5304fe0e64fcac6c84a52e8244a56fd57ed037e326ee35e196a",
+      "size": 3309
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/read_router.py",
+      "sha256": "365c3a544454a7a39aa653aaea1bc6a01052d575e730c2775b864a15fc44fdfe",
+      "size": 1462
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/read_service.py",
+      "sha256": "6a06a1ae5e084985d109a31dd3084976207cb80f2beffe7b8c5de695c79c9480",
+      "size": 4532
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/repository.py",
+      "sha256": "394964513af118f6d7205e9df6fb6f8a79299ce56042d229e7c12775cdd9a54b",
+      "size": 7995
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/router.py",
+      "sha256": "bc5d60f08d4035ed86c5057000b073de2d504c46b4000b00f4674f71a9113dad",
+      "size": 2315
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/metadata_enrichment/service.py",
+      "sha256": "444212dd6dcf139991d2a1781c70eb863cfb17bde145880ff8135ba99c9cb8f7",
+      "size": 18678
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/__init__.py",
+      "sha256": "776df1d5a1326963190a21b6823b50cffe590f61f5087b7746df25ee9f22070c",
+      "size": 55
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/contracts.py",
+      "sha256": "a90dc9979a1514dcc5437bc622e0dc1521d094550ca60e137296705e135636f3",
+      "size": 7469
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/input_scope.py",
+      "sha256": "9f19c52ab9e19d5b09025becc08bd108b4d66700e3360d80354a8be952f86491",
+      "size": 3267
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/repository.py",
+      "sha256": "dda1fe522ec9f262a2d23a39559554a5aa7422244fde0faebe6dc294fdc9071d",
+      "size": 34521
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/review.py",
+      "sha256": "54dc5d496850e75da2759cbc1ad8bc2314458f4e904705f53da9e321657d6188",
+      "size": 19259
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/router.py",
+      "sha256": "f6facf9ab10c47060f607eb3aae559d594fadae815d373d34a64af83eb332154",
+      "size": 17703
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_change_sets/service.py",
+      "sha256": "f4ea4d1555503e29e9d1a529ba6f15d128eb0745233a25c44fd93a5a238b5836",
+      "size": 72814
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_input_scope/__init__.py",
+      "sha256": "42a756d58e92aebabbd2e7032c6766eee7d248799849dbbc7020f4f6f1b8e8c1",
+      "size": 986
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_input_scope/contracts.py",
+      "sha256": "0b96f2adf342dff33378f2adee009dce17b0cdc6ca4f7c5846ae6766a193270f",
+      "size": 5582
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_input_scope/router.py",
+      "sha256": "68c319785aa5ba8e12284b54e570814f32faffef0e89eba1c1999870b402c3b5",
+      "size": 4933
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_input_scope/service.py",
+      "sha256": "d131db0f8bb8d008b5e7635982419f7355c24a526cfc6a19416ef509ea4126fa",
+      "size": 20518
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/__init__.py",
+      "sha256": "45539ba14d473b7857d156eaf3c5bcad2e6e0a2f920d5177b5dbcb09b2c69c7f",
+      "size": 69
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/binding.py",
+      "sha256": "e986c4fd03b105b12260d62b9dc70a7720d98e010d5cf57147ee118c737f0907",
+      "size": 21848
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/contracts.py",
+      "sha256": "1ece45c97f6c478ed33db64f8c8a728074f350dcf70759b32c5b3d8e3a7123e2",
+      "size": 5874
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/queries.py",
+      "sha256": "2c2a49eedf7c14229e3d4ddba3b06cf7053fd2d788f85195a0d4fc9f92a5388c",
+      "size": 1792
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/router.py",
+      "sha256": "d42df1fddb24d443e9faa781065ee7cdb9bd576617f03c9bb29cdabb656c9ad8",
+      "size": 4246
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/model_targets/service.py",
+      "sha256": "ad56f6b675ec8c27d0326f4e77d4219506a13c4599a80c7a1805c7c1d6e3fcff",
+      "size": 18550
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/__init__.py",
+      "sha256": "4f067d5922ab8f4105733a6083fb6af2203bfc44293c1b1cb97664ad4cb664fb",
+      "size": 1421
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/command_contracts.py",
+      "sha256": "9cf450fd0efbeed026c39514bf085ce553f3bb67ab3dec98fcbf42a33115f5c9",
+      "size": 5906
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/command_router.py",
+      "sha256": "c1a469a29dc258182467de22f164baeb2e03fba361e3aea6e73451e117d402b5",
+      "size": 2445
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/command_service.py",
+      "sha256": "a7c25a93c6cf95d3f18c2a6b775bb27c2ba10d505d60aa1019d5fc8b4d4e6cde",
+      "size": 10365
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/contracts.py",
+      "sha256": "c46c7c3a69a3e27dce6a10c585ffef81e66ef2ba439f3f437e35705d61f7ffaf",
+      "size": 2622
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/router.py",
+      "sha256": "7fe397c593b6958ea0dc8a2eda0a63ca97079bbfbfa0eed1728254c04a5bbe6a",
+      "size": 1733
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/models/service.py",
+      "sha256": "f1522d0c8559226a0afd530b8d662867276f74d9843f4990fc822073fff0fbec",
+      "size": 5877
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/output_templates/__init__.py",
+      "sha256": "f29ff5826f34d0f02be369795e9dc1e83f957330bb7a5f6e3ad73a7f168c6c37",
+      "size": 872
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/output_templates/contracts.py",
+      "sha256": "3116b7679704270f5c1bf9612b59e31c38cda9257c2a835e201123bcab5a7bd5",
+      "size": 3093
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/output_templates/router.py",
+      "sha256": "c327f57bd6ad6d948ad2b98c821d3b7f37cf792559eae1e0db08d5028c35f8f5",
+      "size": 2214
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/output_templates/service.py",
+      "sha256": "f5a7ab40682c26a2c591065c7ef55dd4aea06556a0af50ac29b21de514b087b5",
+      "size": 11471
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/profiling/__init__.py",
+      "sha256": "9d314cc550e3cd7209680581efacb64434fabb2cbb0168c922f26704c3814743",
+      "size": 2220
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/profiling/read_contracts.py",
+      "sha256": "f4a7b2f2d652e5788c80acef07a8da88e5d6c41c1c8bd88f67d779e599d686ea",
+      "size": 5659
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/profiling/read_router.py",
+      "sha256": "2d4e27cb1ae3ce403d117df3b07f3c5daaa6edec0e75d1e502d0dbe7de673bda",
+      "size": 2759
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/profiling/read_service.py",
+      "sha256": "86daed55e352422dafe399c14268503759b91814bd66aa42338cc49b8308753a",
+      "size": 13748
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/profiling/workflow.py",
+      "sha256": "4f73581b94607fafa548a26a1799766b8e5e22a2377f3794d5123ec094b10dbf",
+      "size": 23682
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/prompts/__init__.py",
+      "sha256": "9addd67b54f2f37e786ed76a9519ba19bb81a93aff7e6791f50c119640374ee1",
+      "size": 1932
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/prompts/contracts.py",
+      "sha256": "996539a240a4ebbb85bf18ca54f9072564c3817a985077be00108cfd2bf3bff7",
+      "size": 15423
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/prompts/router.py",
+      "sha256": "bdf40133d07068386e0d1b9cbef587999a6d615c118036fddb8497e6afaf6462",
+      "size": 9815
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/prompts/service.py",
+      "sha256": "347dc4040a7e5c340e5af3ee10d586aaad2b05363c59cff7b9f91e972717b8b0",
+      "size": 42420
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/session/__init__.py",
+      "sha256": "7073e0b5dc37414aafd1d43f9ba4fbe07bd87cc3aba671d7549ae0195e270952",
+      "size": 472
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/session/contracts.py",
+      "sha256": "638b9d720b05437efc9c57393721891e29f40bc433276d3a1218830b6757af1b",
+      "size": 439
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/session/router.py",
+      "sha256": "22eb3b76fc7a52e1fc1b58c42e2289f7e2d70bc25dcaea2b7924683a2077c5c0",
+      "size": 813
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/session/service.py",
+      "sha256": "9db59b8103d2ff3dcf75e7a0c46b6347407356b3b02932bc5c19c5443eb7d7a3",
+      "size": 3008
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/sql_generation_guides/__init__.py",
+      "sha256": "3deee508d7b92e8ec2be7a8fa7d4782be8b1c75778086828120de1d1c3db3b0c",
+      "size": 1145
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/sql_generation_guides/contracts.py",
+      "sha256": "ffe8ad68fff5c922d85c94a0f4b30dc96b0d198fbdc20b4b03f26adafd63dafd",
+      "size": 4735
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/sql_generation_guides/router.py",
+      "sha256": "d799d16f779a617af1d282052ea0cd200fea870ac6f1b623d9bbf0a42e253509",
+      "size": 4662
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/sql_generation_guides/service.py",
+      "sha256": "4bfd1816994357b0c554f8032dd3bd511e4a553e5cbfa89c07f055484d1a1002",
+      "size": 18011
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenant_locks/__init__.py",
+      "sha256": "d90c054ea6e5895520541f28d6a36678003be04a9b7789d8fb06288e9bf42f6c",
+      "size": 917
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenant_locks/contracts.py",
+      "sha256": "cb49fe42d5f143a1aba737d97359cffca5261e0ea304f414563adff558026c2a",
+      "size": 3113
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenant_locks/router.py",
+      "sha256": "976a552bfba8a2b647b438b88201ffa18a0e6014b7d679aa3d5e7a533c522e8a",
+      "size": 3149
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenant_locks/service.py",
+      "sha256": "dea9be5e71b6293839a3aabb5e44ae810324efe37c6f104ba584adcc8dba96b4",
+      "size": 10293
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenants/__init__.py",
+      "sha256": "5389777e236869b2e0754c5e5358950ef425feb16c91ab97c4520002513774f0",
+      "size": 711
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenants/contracts.py",
+      "sha256": "3269e1823604fc6294cfb8cd645ba16d43d0007b9af918c320336caf31d97bbb",
+      "size": 2873
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenants/router.py",
+      "sha256": "2100d69524c7f2b57e94c50c32d284bb2f9f8da2da54e8b77cb98ebda39f970d",
+      "size": 1989
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/tenants/service.py",
+      "sha256": "c54177eb6b8cf165447d20bb8f22a1a2905939a0880e5a6e4c50bd021feb52b9",
+      "size": 9076
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/__init__.py",
+      "sha256": "2b261693b3c95617dcf40d9bc7046030692417090986b0fadb23fb53112976c8",
+      "size": 1816
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/candidate.py",
+      "sha256": "31697db515605d87136cf7f329013497ad01327d5dae014859e71f72bca50edb",
+      "size": 20850
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/context.py",
+      "sha256": "87adc7bed113b96be51871a797ff1250d2e314f5fbf4372c2624bf3d1628030a",
+      "size": 35729
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/contracts.py",
+      "sha256": "bf7720f408cc9d13610b9d556a243840ed8cc4af38c555a00b2536453f32f92c",
+      "size": 3061
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/read_router.py",
+      "sha256": "40c759c5fe5f7824457ef6bfcb8ceef057409cc152d9ac05fa126c5aad4b600a",
+      "size": 1772
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/read_service.py",
+      "sha256": "942f05fdae65e795bd75a75ce642cdae29a1c94460b1a52c7161cc327dabfee5",
+      "size": 30043
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/router.py",
+      "sha256": "2e5631791d25c1fdcec8641f304770477420fd3ef9b9f1010a01a1e8c2623dab",
+      "size": 2365
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/validation/service.py",
+      "sha256": "bb6bf83aeb397c3a707e622afdda6efd1266b0ea3af4af592ae7f407ee85634c",
+      "size": 24084
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/__init__.py",
+      "sha256": "2f0b78ff6f5820f86fe10496ac81334e383e94fd692b2f81a0ff0e05ad067ab7",
+      "size": 48
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/__init__.py",
+      "sha256": "b58074c34a4b2a2ee0fba494f954d783b0dffc2f01a65fb40ba70554ce4c6f05",
+      "size": 1966
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/agent_execution.py",
+      "sha256": "3413addb9177f47197e1e4d92f147ebfc38cf9b0701e6190eda451613fd7e0fb",
+      "size": 10796
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/change_set_apply.py",
+      "sha256": "03b9781225907d48c4e779f274bcadc859ca099f6396945827cd6c7e07fd78ad",
+      "size": 13042
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/change_set_apply_router.py",
+      "sha256": "461139c175ed5f0aa276fe3e06719995bedfeed503712b2f61208871d19166e0",
+      "size": 1918
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/change_set_handoff.py",
+      "sha256": "e3555a6e5d0dfb8c21c59fe031cdc126fd4ab10c5362f1659c8157d2a43ce377",
+      "size": 21630
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/context.py",
+      "sha256": "bf2b656cbdf7505378fa3a3dd0637b1e7a63cd0edf6dd92d84c59e6b8de22dc4",
+      "size": 59859
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/context_contracts.py",
+      "sha256": "6d7ebfd5b190695bbcf9d43a58424b2de42bea890149d8f5e33b9813c96a2947",
+      "size": 224374
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/context_inputs.py",
+      "sha256": "b3b336c9cd45c40c53c1b5c0a97ad5f756c5a35f82aa9a9105e0deeab0327148",
+      "size": 7902
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/context_readers.py",
+      "sha256": "110884bc369ec7bc0336ca8253f8d476eb5effbad6d95886c45658ee2ec98f54",
+      "size": 19179
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_contracts.py",
+      "sha256": "fd635a35555fb224818b9e68cfd22d2c542b65cd90159618335f16c4a6f86c05",
+      "size": 124360
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/downstream_inputs.py",
+      "sha256": "b6b09152dca39cff503621466b6d4fd860ee113ed62efd8b0a2e05c30dae27f6",
+      "size": 11657
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/lifecycle.py",
+      "sha256": "3614616d70d2586c2ec71bc92cf0cd4c4d57c63ef1f4c48c0347e68edd5c7dae",
+      "size": 14554
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/naming.py",
+      "sha256": "1a1826197135dfb72ded6497d1d29dae61a46891c58008364c472b9527fba4e2",
+      "size": 1177
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/no_op.py",
+      "sha256": "d86e770930a5591b62c2d5fb958ae67fd4730a333a79d7b679dd9ffe14ba6beb",
+      "size": 10228
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/plan.py",
+      "sha256": "f750de21e4dd50cc252ee7da0ca7be96f1ed7b2da86ffddb537b29271c3849fb",
+      "size": 21412
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/progress.py",
+      "sha256": "dfdb2167aecbaa88442390f72ee3e4569639775a3f833e9cde1c6596709c27c3",
+      "size": 3106
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/prompt_inputs.py",
+      "sha256": "0ab1ef0b1da9afbd52fd87ffc27d253fb4411ef3f82ddfc0a9c087b15c8127fa",
+      "size": 55802
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/repair.py",
+      "sha256": "2b589f496edf1e6ec699fb67ac09f5ba8cb801298c5f5dc1f2f8d4283faa1e85",
+      "size": 27557
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/stage_runner.py",
+      "sha256": "6ae9c196ee835b9142331dd98d9991b3a68a16296c00a1041d03230fc4cd4b18",
+      "size": 4774
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/authoring/tool_configuration.py",
+      "sha256": "aa3ee0124a0b25e845ca147bbdf2e420e8948d784b8cfa4e53dd7aa9921b4d6c",
+      "size": 5628
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/commands/__init__.py",
+      "sha256": "78a604d62f2dfd4fdf401e16824cdab5897094752099bd09240ff55bcd3801bc",
+      "size": 669
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/commands/contracts.py",
+      "sha256": "9320f8e3c52a4056cf6e46a331a9b42c59201657616032ea9fed5d93bd0ada9c",
+      "size": 10564
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/commands/router.py",
+      "sha256": "f3caf2156ccbc9c67e881fb7e552b3cf49f2070a33a3796cba3bab80d95c43d0",
+      "size": 1664
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/commands/service.py",
+      "sha256": "8926bbc42a1895807d111c311d4ffc54c0f0b08ba294a6622ce863689a346b8e",
+      "size": 11799
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/__init__.py",
+      "sha256": "4dc1d7ccde374fe0bba1161de5da1440ef8f9bde5dad154cfe8b05072c0de642",
+      "size": 1170
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/assembly.py",
+      "sha256": "2c10625cd0923f5ec49cda1f9eeecc5213647387f9a125d18c99cc8361bbf4c8",
+      "size": 9560
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/configuration.py",
+      "sha256": "e0dd8deb75ac719c41a88f31a22e4cc1a04692b18654df6db9fe3100f950a97c",
+      "size": 2916
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/contracts.py",
+      "sha256": "05d991a3c87def67a5515a262cc66d4f04a66705957a9411d825d0b0b485346f",
+      "size": 3151
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/dispatcher.py",
+      "sha256": "19418fe878666aef01c008e8e461d256dfd10b108e363e9b0b12b78a5fdb815c",
+      "size": 2977
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/fence.py",
+      "sha256": "fc763bcca1c1f67d3d42b9f7c4e62dd2e758866e8ff06723a5bff5466d61e857",
+      "size": 1065
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/repository.py",
+      "sha256": "54ef5d4bf8ed95c62a059f4ac5ba4521a89645fc8c01e3d0619f008e111f17a6",
+      "size": 3559
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/execution/worker.py",
+      "sha256": "ddb31b60f4d84cc8cb2de9e312790c27bd8355fd84166b91983a70069d7cf4fb",
+      "size": 5340
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/overview/__init__.py",
+      "sha256": "9d27cf7093453c9101fabcda5c5f231882e861982b48e91541f9c23a03b2c6eb",
+      "size": 863
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/overview/contracts.py",
+      "sha256": "9322fa18642cae412b1f316cbdd10b5a31aed95f8adff6a64b9174a8f3a3c2e5",
+      "size": 1945
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/overview/router.py",
+      "sha256": "b6a99270b6b369a73e91f2fe4293d7305f3dc43812535c2da01d745eec008024",
+      "size": 1208
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/overview/service.py",
+      "sha256": "b9fddc6877d64288f7ec265fb7efce66af1c2abb70e9a0662d4ff8a00c4a65c5",
+      "size": 9005
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/runs/__init__.py",
+      "sha256": "de3e24192eb3ac5377fabf91c0c1ccacbdf42589f1ecffe0af4e12211d617af0",
+      "size": 1068
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/runs/contracts.py",
+      "sha256": "552b6ed05a63f87b64b68d109c14089a8eef24641e5079ea5954ac0b004d235f",
+      "size": 3914
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/runs/router.py",
+      "sha256": "cf083918456dbb2c6eb912af80e33b6d610764b640b5e9be7df5a3e6db7ae6cb",
+      "size": 5948
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/runs/service.py",
+      "sha256": "abecf0210543a15e061f7dd55f63c5073a9cae89dc90d28fdafe3b8672689668",
+      "size": 9899
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/usage/contracts.py",
+      "sha256": "98cda8c9c93bb8811ba93492ed65ea4ee389605caf1afbf0b6cc778f2201bb09",
+      "size": 3913
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/usage/read_service.py",
+      "sha256": "1da23534b55fc27fabec02f8e5b43ce3ca17b778c1cf698ffbf385a2605551ea",
+      "size": 9818
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/features/workflows/usage/service.py",
+      "sha256": "d808152e68bfef3381d334ecfe3a92c5a1a790909506bc224417147623e26898",
+      "size": 6820
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/frontend.py",
+      "sha256": "b109104bcdec1c275d6573685d397641c148e98d7b66f337cd7189dfec369b21",
+      "size": 5934
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/__init__.py",
+      "sha256": "6a10dff9451800e943ed4bfa8cc75ba1fa90dc99503242a86c1fe5c50969dbd6",
+      "size": 42
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/__init__.py",
+      "sha256": "e53b94a44534848b78564a4b6c52d7977be1785167f73e16b7bbd9cf12d667f9",
+      "size": 318
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/adapters.py",
+      "sha256": "e6d063301d85c095ab564e238d35afc68d217871f1d9f3737130d34eecb4a082",
+      "size": 13917
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/composition.py",
+      "sha256": "0aeec81da2d79ca87eb4405ab77890f193737dc0f6783313fd70d0e0f3072ffa",
+      "size": 19559
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/configuration.py",
+      "sha256": "c8cfae1ea51e05b3efd6e170a1628a75f18e520e5e67b04054b26a43803189e3",
+      "size": 11761
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/fake_dimensional.py",
+      "sha256": "4c3e58cf2c896347275744d892f4a90f865f5bc4149ef5c210eaaff035a88ea3",
+      "size": 5940
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/fake_logical.py",
+      "sha256": "06baecc6a1eb77b3d9fda22cecd78632288d7349223027bc2c9722e34b0ee575",
+      "size": 4183
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/fake_mapping.py",
+      "sha256": "a9eec9442d981788b11e60dfb0d100641267d75ac07838e848dec980392e5206",
+      "size": 10048
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/fake_shared.py",
+      "sha256": "17b929d8970d4b8aed303c788310f16eb2536783b01994cf6f6c7ec9062e0e98",
+      "size": 16127
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/agents/usage.py",
+      "sha256": "3f615131034847bc907e838d6740520102effec5ecf4b1209b8055ab15518f89",
+      "size": 4252
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/databricks/__init__.py",
+      "sha256": "4e0aaee216cf955f8384707de85d62a7b8eb37fb7ee0f7a500d18b149d32df5b",
+      "size": 415
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/integrations/databricks/runtime.py",
+      "sha256": "91ff6852fb52fecf76d8a5da257ff1d523afd5f30e38a11ba4e116e2800cc0c4",
+      "size": 3341
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/main.py",
+      "sha256": "c5896f76b8093695fc6e8da60a2ee79204718af9975d26372274cb0ebe5649df",
+      "size": 20031
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/prompt_rendering.py",
+      "sha256": "4831f9dced547f08b83a22f153bea7b8c6e6a249bd01c4a6e3964b927f9e1120",
+      "size": 11093
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/runtime.py",
+      "sha256": "fb96971bad89262cf302b7de11fd4dda17818c1cf4c26b2dd74240c1d11e2c5c",
+      "size": 14728
+    },
+    {
+      "path": "web_app/backend/gds_workbench_api/workflow_worker.py",
+      "sha256": "127f882415aedd7a2716995eed54ff2155a3a6ff173f0f1268322a835abb57fc",
+      "size": 6377
+    },
+    {
+      "path": "web_app/backend/gds_workbench_runtime/__init__.py",
+      "sha256": "9d3403044733ad1107f4ce1592422c01bc4cecd292ff1a542d83edeb423dc550",
+      "size": 80
+    },
+    {
+      "path": "web_app/backend/gds_workbench_runtime/config/profiling.json",
+      "sha256": "3feb817c4426b8af9fe19f0f9aaa057ad25d90d3d496edfd402c673542b6ec83",
+      "size": 162
+    },
+    {
+      "path": "web_app/backend/gds_workbench_runtime/profiling/__init__.py",
+      "sha256": "31ad8adbbbeac4212ac11778afdc1fe0a075f083e7921279a76b3a6dc316b758",
+      "size": 1013
+    },
+    {
+      "path": "web_app/backend/gds_workbench_runtime/profiling/execution.py",
+      "sha256": "4336b6b1e9def882dabc9322222233de678fd82b122dd25b86fd7a1a1ef6d704",
+      "size": 18853
+    },
+    {
+      "path": "web_app/backend/gds_workbench_runtime/profiling/workflow.py",
+      "sha256": "768551a10c733fa72439005fe9a5873693b0d8ab8e704f608f5537cf35762b20",
+      "size": 14875
+    },
+    {
+      "path": "web_app/backend/pyproject.toml",
+      "sha256": "6dacb424e3ea289745561bd8e5567eba273ff0a00cc32a0ef01552dfecd90693",
+      "size": 1572
+    },
+    {
+      "path": "web_app/frontend/index.html",
+      "sha256": "01c4b9e1634f3db6beaa16c8d7eccfd28e4bc67b9208d53365e6c9caeb823f44",
+      "size": 1058
+    },
+    {
+      "path": "web_app/frontend/package.json",
+      "sha256": "e7c76cf55353c458c889a6d84dc75f96ce2498aa7aa33542ce8bc7809d9ff8cf",
+      "size": 1045
+    },
+    {
+      "path": "web_app/frontend/src/api.ts",
+      "sha256": "855a887318fb5d2dd4f9ce633fce998e3caa0ec07f878696513048e19d7290ba",
+      "size": 9100
+    },
+    {
+      "path": "web_app/frontend/src/app.tsx",
+      "sha256": "aa18977d3747bd6de37afb11ca4152a1bffc6bcfe63c11abb995690c1aa56816",
+      "size": 43230
+    },
+    {
+      "path": "web_app/frontend/src/app/TenantRouteFrame.tsx",
+      "sha256": "9d2aeca5b82244edb48b8fd0be4b738397b7229f97c4b63db583dbeedc813a59",
+      "size": 1363
+    },
+    {
+      "path": "web_app/frontend/src/app/TenantWorkspace.tsx",
+      "sha256": "f24e8e765a3de629863e0ac0bc6af7ea232a81c7659201223b6cdac5c71abb4d",
+      "size": 6789
+    },
+    {
+      "path": "web_app/frontend/src/app/WorkspaceModelRouteFrame.tsx",
+      "sha256": "74275ce93a18c3725b0729c32971436c0c45c5767de5735f30246184be8e2973",
+      "size": 1765
+    },
+    {
+      "path": "web_app/frontend/src/core/http.ts",
+      "sha256": "51d01c2267df9ec1c4b7e6f180b5fba4b7151d1b58019873eebe922cad1b2511",
+      "size": 2989
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisDetail.tsx",
+      "sha256": "85427adef872126a3b66197ffe6647491d9ceda11ddc6741d321d541bdeb9925",
+      "size": 7067
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisResults.tsx",
+      "sha256": "27147539f7ce451f8fc894d5b3563ec02852106c7a527056f5b9ac4597c94dee",
+      "size": 12712
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisRuns.tsx",
+      "sha256": "32ac33cf83c082b1842e2e253261b080a534e3468bf7246c6fbb4e4f2061e8df",
+      "size": 3833
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/AnalysisScreen.tsx",
+      "sha256": "2f26f8b7e3fa2ea2b5437fcb335565db4325a6dafe13bb514ecf95f83559050d",
+      "size": 11284
+    },
+    {
+      "path": "web_app/frontend/src/features/analysis/api.ts",
+      "sha256": "91b8a962b2cbc2be7120549d2d1dcf8d2815c38ee93f269c915a4f602b44c656",
+      "size": 5636
+    },
+    {
+      "path": "web_app/frontend/src/features/assertions/AssertionDetail.tsx",
+      "sha256": "50c1cdf3a578db1bd43a656616fcbe321f2f26a9bed9ee10d5024bfd9f4b338a",
+      "size": 7283
+    },
+    {
+      "path": "web_app/frontend/src/features/assertions/AssertionLedgers.tsx",
+      "sha256": "f1323e9cc5ee6c4bf3a78d3b902210d06d729c1ef6de0cd930a862dd4c60488b",
+      "size": 16549
+    },
+    {
+      "path": "web_app/frontend/src/features/assertions/AssertionsScreen.tsx",
+      "sha256": "88931b305c6636efd17c2e6eb96b7bf4af7ca7e9188f35cf50eeddf237608695",
+      "size": 4765
+    },
+    {
+      "path": "web_app/frontend/src/features/assertions/NormalizedJson.tsx",
+      "sha256": "a8363f9efb7af4575fadeee2a20cae7b00c77bff0f0dbd0625083bec9715c01c",
+      "size": 1530
+    },
+    {
+      "path": "web_app/frontend/src/features/assertions/api.ts",
+      "sha256": "eeffa3533341b2838cc28df448f932e8d2127281a0c23a290550a5cf003b9660",
+      "size": 7194
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationLedger.tsx",
+      "sha256": "7d12b5eae4d98bd6f5eb8dc1cc6a5b5ceda0af796b372da2de19555005eb016a",
+      "size": 15253
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationModels.tsx",
+      "sha256": "3e593ee99d08466da5f95c8a9059b3b356ef4c630b14b0f980e5af4f58f82c30",
+      "size": 5667
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationRunDialog.tsx",
+      "sha256": "9e03baf6459fcab11c0e770f0a224a3f202ed4f2e94b69d747c9656f57558bf6",
+      "size": 12929
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/CodeGenerationScreen.tsx",
+      "sha256": "4dd44a44e5c629d5d6699c66234b28dc4994bb6ac487ee8c7c5d9e86ef68daf8",
+      "size": 10211
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/GeneratedSqlDetail.tsx",
+      "sha256": "d1b4b9fea06b9ce2c8e8df2de6044f8d062aad4500b62914fcfa86302256fe2b",
+      "size": 13722
+    },
+    {
+      "path": "web_app/frontend/src/features/code_generation/api.ts",
+      "sha256": "dadf70d1d9dec0a344308ee52db5864c46e98df1e5b960161083dd415f9d6ad1",
+      "size": 5983
+    },
+    {
+      "path": "web_app/frontend/src/features/conceptual/ConceptualDetail.tsx",
+      "sha256": "e0a80aeb6394c7847909871b53ff6acba22614f4fd70db0cd7b95e1e201df955",
+      "size": 12897
+    },
+    {
+      "path": "web_app/frontend/src/features/conceptual/ConceptualLedgers.tsx",
+      "sha256": "e662a709d61bafd0e1d4d2be1c6152aaee08ae37051073a98c45122bbecb5475",
+      "size": 14039
+    },
+    {
+      "path": "web_app/frontend/src/features/conceptual/ConceptualScreen.tsx",
+      "sha256": "6aedb6f2ce00f651b7e431e57165d38350ddd036d418bd4d6cb5de6033765376",
+      "size": 8873
+    },
+    {
+      "path": "web_app/frontend/src/features/conceptual/api.ts",
+      "sha256": "1da4483e0eab0a12e4f728828b3d1064b4790b615e9d23cd436799897d07cfe6",
+      "size": 7516
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalDetail.tsx",
+      "sha256": "5245ecc77f6958a559cb207bb924f5ba12045735a90bbd16272359ef68e63c52",
+      "size": 15953
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalLedgers.tsx",
+      "sha256": "896c583d1b4c94495b42ececabe5cb56e0ff928c75e631ba6f94d3d61dbbf2f7",
+      "size": 20953
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/DimensionalScreen.tsx",
+      "sha256": "fbbf028c3c923e5f1da41941d2f759b82dd92d490b5eb3e0b750209d112f803d",
+      "size": 10295
+    },
+    {
+      "path": "web_app/frontend/src/features/dimensional/api.ts",
+      "sha256": "cd4fc7da527979aa67f76295431df8592a269e69374f9950ec880db65ed093ed",
+      "size": 12291
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalDetail.tsx",
+      "sha256": "d05bf98ec64bdd73872bf365896d97c891ac08286f33dc10de44e00df6c84bc5",
+      "size": 16280
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalLedgers.tsx",
+      "sha256": "646e9ef0071b27a7359feaea5310629f065078e7d8346d2f57188b9ebc398894",
+      "size": 21532
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/LogicalScreen.tsx",
+      "sha256": "8dcbea69d327f1b45afffe5a19e601a960fbc204af0d4d65f85567dd5e0af820",
+      "size": 10603
+    },
+    {
+      "path": "web_app/frontend/src/features/logical/api.ts",
+      "sha256": "38ce4ecf3126a71ec0778aacdc6ee34a9007a84c0768fc3718259678f4540630",
+      "size": 14342
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingDetail.tsx",
+      "sha256": "5af99e8c01df5576fa703ce2b6d9453161794b0682ff06f4cbba6010d20d95cc",
+      "size": 11622
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingDocumentView.tsx",
+      "sha256": "058df20a45bd2550df3b4555734cb27d9c98019fe73900e51d15eba1b2aae631",
+      "size": 2291
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingLedgers.tsx",
+      "sha256": "ac93a8cf2d35c6df36d5defb1aefd8ace97217fb78f52b80f38262f01c2e1cfd",
+      "size": 13635
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingModels.tsx",
+      "sha256": "32cc2b61d3c3bf6849b595064dd444f025919210d156d6bfbb7893d79ecba346",
+      "size": 5419
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingOutputTemplateSelection.tsx",
+      "sha256": "83695e21211cfb281cc81758ad9ced4aa3adac55c1a4a9213d98b18df7c40d48",
+      "size": 2968
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingRunDialog.tsx",
+      "sha256": "ee8e368acc1e1189d4efa95b2e3458442f8b0b8f54b6eef9f750a5dc4c2056cc",
+      "size": 19761
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/MappingScreen.tsx",
+      "sha256": "966c6217b991172cf219339afa290b69bdad76ffa3d50dbc970497079647f549",
+      "size": 9837
+    },
+    {
+      "path": "web_app/frontend/src/features/mapping/api.ts",
+      "sha256": "3f6107daaee544a779e5904c3ddce06e37015321e655d06fc0fd2e80157bda4c",
+      "size": 14389
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataChangeSetPanel.tsx",
+      "sha256": "7924c265eb713ad1ba474bd19e38d12fed19ae9f6798d80e7b0b6910e5072de4",
+      "size": 10756
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataExportDialog.tsx",
+      "sha256": "0a9020ef89426f40ea998063e8693c04212fc22d0b4d9da3b3fa5a9a7f976ed0",
+      "size": 5197
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataLedger.tsx",
+      "sha256": "c50211cea4adef50443826c83cebcba6750cdf10f11f0e7370c6be5193af9689",
+      "size": 10133
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataRowSurface.tsx",
+      "sha256": "4778dc42b763346f8f150a19fd4110e16e7705fb916c774eacfbc24f3aa01598",
+      "size": 17380
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/MetadataScreen.tsx",
+      "sha256": "1b145d6a17deec17178a3a45e995f671b9801fe4d4d11feb4edeb01ed7b85386",
+      "size": 17905
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/PhysicalMetadataScreen.tsx",
+      "sha256": "18d3b18a432c3044cfaff455fff58358fd455f42421272d4efd2d6950f4d1d18",
+      "size": 24415
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata/api.ts",
+      "sha256": "705bcecd80af62ca69c5989cd0ee98032cb860add57dee10e3e269dc08c4429b",
+      "size": 19785
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/EnrichmentAttributeSelection.tsx",
+      "sha256": "b2c2f4f03d01f6934e7be7209cfa9c1f8624c679aeaa77f0e83097d66bf9a786",
+      "size": 17790
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/MetadataEnrichmentResults.tsx",
+      "sha256": "3025480c2322aacd65cd5403126a7d103812cde93540e5c402149f4611cda64c",
+      "size": 6178
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/MetadataEnrichmentScreen.tsx",
+      "sha256": "786d64cb2e68f5719189835c602f53998781f3f0bd13f15c1b8dfc66b2fc0f37",
+      "size": 24485
+    },
+    {
+      "path": "web_app/frontend/src/features/metadata_enrichment/api.ts",
+      "sha256": "5fa66c43a9a9bf2ffb9cf23ccf78a9030d927f7b0441cf4a4053c670ee6f7131",
+      "size": 2669
+    },
+    {
+      "path": "web_app/frontend/src/features/model_input_scope/AddScopeDialog.tsx",
+      "sha256": "0eb64c26f76c1c5099293a2ae6d9d2f29da99f88512db7c7c5ab29d369d9e41e",
+      "size": 8602
+    },
+    {
+      "path": "web_app/frontend/src/features/model_input_scope/ModelInputScopeScreen.tsx",
+      "sha256": "e68575fdfe935e869efad0088656e3570b52e5264b1bf926aa8d5ba54829a266",
+      "size": 18238
+    },
+    {
+      "path": "web_app/frontend/src/features/model_input_scope/api.ts",
+      "sha256": "2745b3b6e3e94aa29eb185472c71c57015ff759913c1330296ba7d8f6255e600",
+      "size": 4972
+    },
+    {
+      "path": "web_app/frontend/src/features/model_record_review/ModelRecordHistory.tsx",
+      "sha256": "80b119b440a33aa56f7f89c002a955d3f699eb12ded05b231b48c5e905a28a49",
+      "size": 4060
+    },
+    {
+      "path": "web_app/frontend/src/features/model_record_review/ModelRecordReview.tsx",
+      "sha256": "b1a390008dced0445f72702b10f5fb08e929d3a9820903ea0aa502177e4f635e",
+      "size": 11873
+    },
+    {
+      "path": "web_app/frontend/src/features/model_record_review/api.ts",
+      "sha256": "b11dc390ef8a59b37b0dbaa37ebec4cb970107532b54622a0f663f0f87d84dc9",
+      "size": 3408
+    },
+    {
+      "path": "web_app/frontend/src/features/model_record_review/selection.tsx",
+      "sha256": "cd6aa3f85b297b915c4223db818b79c1df44b88f5278bf0ea42f81f1c4df6b87",
+      "size": 1156
+    },
+    {
+      "path": "web_app/frontend/src/features/model_targets/ModelTargetsScreen.tsx",
+      "sha256": "c0f4a90084cec745f6b213b2346f5d2ea4c1f622c313e75721c8ed320e462eec",
+      "size": 25837
+    },
+    {
+      "path": "web_app/frontend/src/features/model_targets/TargetExportDialog.tsx",
+      "sha256": "bf7b7ead8fb4c336b5b557a2face5eb7ef0bfa559ac3b27a978c9f5a938a233b",
+      "size": 4969
+    },
+    {
+      "path": "web_app/frontend/src/features/model_targets/api.ts",
+      "sha256": "6843ce299316fbd080318f12d676a0be0694066c03e642571b83fbe465ac1f97",
+      "size": 7265
+    },
+    {
+      "path": "web_app/frontend/src/features/models/EntityAttributes.tsx",
+      "sha256": "715b3824bb4419da0f2cb3d27e6b614f1df1cf087c27c7a2b985bd4f4668e92a",
+      "size": 6575
+    },
+    {
+      "path": "web_app/frontend/src/features/models/ModelOverviewScreen.tsx",
+      "sha256": "96c5c0350770c6f08ec869c6c48f46c5f31a6895b3b2fdcbcfda5c687438618b",
+      "size": 8866
+    },
+    {
+      "path": "web_app/frontend/src/features/models/ModelRouteFrame.tsx",
+      "sha256": "772df5aaa9ccd2af210e80c7d41fa3d209441739aa233f0a176e982cf7838d51",
+      "size": 1988
+    },
+    {
+      "path": "web_app/frontend/src/features/models/ModelWorkspaceShell.tsx",
+      "sha256": "ddbda32983202778f53db5c23839f9dce49e1c55b8462c0feb7e07854501fc22",
+      "size": 7208
+    },
+    {
+      "path": "web_app/frontend/src/features/models/ModelsLedgerScreen.tsx",
+      "sha256": "79c93a5120597b06437157fc73e8eccf94337916254c75cb526f8a4ce42f24dc",
+      "size": 6035
+    },
+    {
+      "path": "web_app/frontend/src/features/models/SourceMappings.tsx",
+      "sha256": "9b4b7a96d64108fc84712beec05470f6df50f948f984c43633bbad93ef1d0e3a",
+      "size": 3752
+    },
+    {
+      "path": "web_app/frontend/src/features/models/api.ts",
+      "sha256": "f1c7cbc2da4c5c1f5e6b55fae9b17e01dc45b6537b6bcdfea6998dbea4ee9fd8",
+      "size": 3284
+    },
+    {
+      "path": "web_app/frontend/src/features/models/presentation.ts",
+      "sha256": "43a7dc1558e08339cc7261135133c1dfd6a76ec90da52479c6134dd5ce972427",
+      "size": 301
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingDetail.tsx",
+      "sha256": "d83d8d5f86941a3d524f610494e19bf2aba858eadfc20979c8b8df7cf2f37210",
+      "size": 10739
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingResults.tsx",
+      "sha256": "9ab22e453d325ccd1f196e49ebb5d02c06cabf3c9edb790bad4d793b8612cd19",
+      "size": 7728
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingRunConfiguration.tsx",
+      "sha256": "bb014820d7f4f2eb61c1d3ab854af78147b0fd268b34abac4076cfeededc9af8",
+      "size": 10143
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingRuns.tsx",
+      "sha256": "d8a72a23973845da1a198ed6efa499b698e48d31f0e26a84f3524794a85f7a3a",
+      "size": 10005
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/ProfilingScreen.tsx",
+      "sha256": "8bcee15583e1cb8302a693f8f6c7988b057185dcf11abe195c93e430fbe45afc",
+      "size": 7565
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/api.ts",
+      "sha256": "6f370856a928276b60294f5f6367d2828749e47f95ad995182a309fdfa5fdb3e",
+      "size": 7167
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/shared.tsx",
+      "sha256": "1288c74f448885b0f6fca852b7cc3e713ea545aa9b0d8127d1e74909a4a33b9c",
+      "size": 2962
+    },
+    {
+      "path": "web_app/frontend/src/features/profiling/useProfilingRunEvents.ts",
+      "sha256": "99c1249c9369770895a4311da1db259c29bfffe5370c3ec714b0ac6544355bb0",
+      "size": 1485
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/ModelPromptSettings.tsx",
+      "sha256": "2319cfcda8dca40f8ea87bb82cfdd721081e2d0244f5314bbb8475ca0c7f834f",
+      "size": 16274
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTemplateDetail.tsx",
+      "sha256": "458f154d83d4e275c8dc6b2b9169687cdf6a179d22fc98e69a5f367004d4bcad",
+      "size": 28405
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTemplateDialogs.tsx",
+      "sha256": "85a68164ed121df8b7ae4d7ba3b947cca204edfe5abe27ae3934c9d414b6f04d",
+      "size": 17988
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptTools.tsx",
+      "sha256": "7bf11328590874f6257e06be87512db2cce698db3c329cc29b2487c0fc5137a7",
+      "size": 3045
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptVariables.tsx",
+      "sha256": "c33ff0505732a0f15ab6e28ec25e5275b616f579fadf67d414590af49e51be5f",
+      "size": 4723
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptsLedger.tsx",
+      "sha256": "4feb68aa9984439c080e939414a9bcdcf163bcf2f2bdd5bb5ff0cc2c84321015",
+      "size": 7119
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/PromptsScreen.tsx",
+      "sha256": "b1f5606e42f95d41d083fb6aff606c3a33e957dad372780719d0562d02d70e25",
+      "size": 12545
+    },
+    {
+      "path": "web_app/frontend/src/features/prompts/api.ts",
+      "sha256": "fb5a5b506a1b0f9a58780276ac3b665418fece3a65ed19f21438a2c81c8cd009",
+      "size": 14465
+    },
+    {
+      "path": "web_app/frontend/src/features/tenant_locks/TenantLockFocus.tsx",
+      "sha256": "dfbbf765afd7d2866fe8652767da274edeb3d196223060ad9535def343f730c7",
+      "size": 17654
+    },
+    {
+      "path": "web_app/frontend/src/features/tenant_locks/api.ts",
+      "sha256": "cf6166d0e86d0ef5634bd1761e1519d53ac9d0c57fdabbd14fd381925efe5ed1",
+      "size": 7618
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/TenantEntryScreen.tsx",
+      "sha256": "e0cc9a3d1861ece6e1b445a91c9984eb25b8337744f28345c5e908154642e9e3",
+      "size": 6822
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/TenantHomeScreen.tsx",
+      "sha256": "978757d87c5139e116bf4a2b2193f861115693f02f8c43ac8ece862f4dacfc28",
+      "size": 3991
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/api.ts",
+      "sha256": "9b690881af09dc831722b44aca2c943e60c42a4208c883d5d9b0b656858f11a8",
+      "size": 1880
+    },
+    {
+      "path": "web_app/frontend/src/features/tenants/presentation.ts",
+      "sha256": "b38dc23cbedafed481e3af27d840236a2d07807705119f1430fd50ee76a48449",
+      "size": 465
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationLedger.tsx",
+      "sha256": "ed3dd223bf3a43fc4e40e5d6ff394c01d3e9f5791b849401c98ea84a5996f450",
+      "size": 11956
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationModels.tsx",
+      "sha256": "13eb22557d2799f6f8d6b456190901f4a10d50027f94df63911de30cb2f551f1",
+      "size": 5656
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationRunDialog.tsx",
+      "sha256": "f9bf7fb84804b23b8acb8dea6683963776c84731216331ff55bba1b6090c6ba9",
+      "size": 15774
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/ValidationScreen.tsx",
+      "sha256": "65487412b4b4f5f089dbc6f0d1cdb1cf5bc2a06b85464cd570bc8718adf54c8b",
+      "size": 8516
+    },
+    {
+      "path": "web_app/frontend/src/features/validation/api.ts",
+      "sha256": "1b0aa36eae5c1e762894a12b6932bbaead2d6faba98e9ba89c1fa99f06279fea",
+      "size": 3160
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/FailedWorkflowDraft.tsx",
+      "sha256": "3ec68ddeb2929711f07b5b8a318b8b234639b82475babeba9c94333e67e1b3c4",
+      "size": 7113
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowRunDialog.tsx",
+      "sha256": "f68ea0770a780fd8a8439a234e38662a0be888244bee7cd69dd0cd8668285322",
+      "size": 26195
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowRunMonitor.tsx",
+      "sha256": "50ae1465606ae8a19662ec5f68608946e84a2ebc33f74f428f68b9489482a51d",
+      "size": 33678
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/WorkflowTokenUsage.tsx",
+      "sha256": "a4f531724f8e1a4a9a5678da217f5c412b126687764a370f44625b3eab96cbbd",
+      "size": 5326
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/api.ts",
+      "sha256": "3b0d5046b94762804babfd1fd9bfe51084a72b9e801e2ea446dfd4e77c812c33",
+      "size": 27351
+    },
+    {
+      "path": "web_app/frontend/src/features/workflows/presentation.tsx",
+      "sha256": "ef12278a4a4ad0d5925acb250eb73d16fad423f77d74f70051bd11dba222f46d",
+      "size": 1896
+    },
+    {
+      "path": "web_app/frontend/src/main.tsx",
+      "sha256": "8dd2d2016b2a8287975d8e49b1e161f411b6cdbb34560e65d87682e8cb9775df",
+      "size": 497
+    },
+    {
+      "path": "web_app/frontend/src/shared/contracts.ts",
+      "sha256": "2afa64d4ea68bbb0d12efe4968dccfe08f1dcea37e8e6f389adf2912d31befdf",
+      "size": 388
+    },
+    {
+      "path": "web_app/frontend/src/shared/presentation.ts",
+      "sha256": "c2afe913344a9d88f4f80a0536e4d8782601a4281d5372d7bfc1bf00a0d30feb",
+      "size": 879
+    },
+    {
+      "path": "web_app/frontend/src/shared/ui.tsx",
+      "sha256": "ffb2038c5a6003d9538272584019aca5bf04063d803e7587982406d78bbc8654",
+      "size": 4475
+    },
+    {
+      "path": "web_app/frontend/src/shared/useStoredBoolean.ts",
+      "sha256": "5822e4d8288de67d698c6e6b6a8a70c37a6577ff6aef5984e913e6ca3d539722",
+      "size": 696
+    },
+    {
+      "path": "web_app/frontend/src/styles.css",
+      "sha256": "f66f1ff6b21570ebc762c0dfe68dfae42a6cdac2a7e30335822fd261d9c2eb62",
+      "size": 502
+    },
+    {
+      "path": "web_app/frontend/src/styles/analysis-assertions-modeled.css",
+      "sha256": "146889f01c7b0c224da6888c3d7e980db8fee66f6129e7553b436da7d4024eb0",
+      "size": 17204
+    },
+    {
+      "path": "web_app/frontend/src/styles/code-generation.css",
+      "sha256": "ed382accd9ad840236c4ad8939a8f4db7d4ad9da8f53090ca07e4e2014a75420",
+      "size": 8588
+    },
+    {
+      "path": "web_app/frontend/src/styles/foundation.css",
+      "sha256": "bab588e03000c85df4deb3c1bd0e6b56b4f9f2a14d77cde63a43561f664626d6",
+      "size": 1730
+    },
+    {
+      "path": "web_app/frontend/src/styles/metadata.css",
+      "sha256": "abd728c7c8b959570e7bbbde489d63b21cbae74735824119163e0cbe096931f5",
+      "size": 22057
+    },
+    {
+      "path": "web_app/frontend/src/styles/model-targets.css",
+      "sha256": "86981695e506b77ee29c99ef023fb73152e5d4dd9bf021529ec8d6b076143361",
+      "size": 8747
+    },
+    {
+      "path": "web_app/frontend/src/styles/model-workspace-overrides.css",
+      "sha256": "7ae1bd9e77be4592a5e196c4def8237a90c32bc57aa3b226e0284c76553ec596",
+      "size": 583
+    },
+    {
+      "path": "web_app/frontend/src/styles/models-scope.css",
+      "sha256": "e431549dfa12db1696b4401a24449e11798c8c46834c3b4dafeb46ce34953585",
+      "size": 21161
+    },
+    {
+      "path": "web_app/frontend/src/styles/profiling.css",
+      "sha256": "1415fe12ca8e44a4850cf176f8e5fac96594c6bcb05290e31921508156e0cc94",
+      "size": 15929
+    },
+    {
+      "path": "web_app/frontend/src/styles/prompts.css",
+      "sha256": "55403eb44bf44231e7f0be86eed413656a57247050a5837e1169aebdb8d159a1",
+      "size": 22614
+    },
+    {
+      "path": "web_app/frontend/src/styles/tenant-entry.css",
+      "sha256": "30e702c3c68a4f6c72420a68f766296c117a45ae00a33be7469097a563b910ff",
+      "size": 5642
+    },
+    {
+      "path": "web_app/frontend/src/styles/tenant-workspace.css",
+      "sha256": "8e2e8b7f9ce46d583b641210fef65c1505f57e1e99aa8ce0f795e615cdd8c35e",
+      "size": 20042
+    },
+    {
+      "path": "web_app/frontend/src/styles/validation.css",
+      "sha256": "dd1615ad70dd02dc161887c4f522739a127e0aa2415d943cc41a494499263c71",
+      "size": 5154
+    },
+    {
+      "path": "web_app/frontend/src/styles/workflow-runs.css",
+      "sha256": "3254935ba466aab93ab8b54cc186591d40a1baccc576ce60970c0018ed996645",
+      "size": 19830
+    },
+    {
+      "path": "web_app/frontend/src/vite-env.d.ts",
+      "sha256": "65996936fbb042915f7b74a200fcdde7e410f32a669b1ab9597cfaa4b0faddb5",
+      "size": 38
+    },
+    {
+      "path": "web_app/frontend/tsconfig.build.json",
+      "sha256": "4177592007f2f2b6b36b962b9f182588f6dde852ad155f3b0529d3bae4b82207",
+      "size": 147
+    },
+    {
+      "path": "web_app/frontend/tsconfig.json",
+      "sha256": "dd361e47c61dd5f811b4ec35578010ea3b6ccdc9b760af75f0745048f7eb82c0",
+      "size": 610
+    },
+    {
+      "path": "web_app/frontend/vite.config.mjs",
+      "sha256": "acac54053f455d0b54cdc98d922afb99fc64f73751b676420ac38ac808c8b733",
+      "size": 250
+    }
+  ],
+  "notebook_source": [
+    {
+      "path": ".env.example",
+      "sha256": "f96ce30d3dbf2f653017a2f5ac86f063e19fb5f0bca1bc96e1aa39d0dba4a1b9",
+      "size": 1368
+    },
+    {
+      "path": "notebooks/00_tenant_lock.py",
+      "sha256": "cf609cc74504e0f86882e4cba8175d3aa72c32334d3755b4b948b5e6a9de16ae",
+      "size": 1119
+    },
+    {
+      "path": "notebooks/01_runtime_preflight.py",
+      "sha256": "0222ed7cf909d22529aa2f813b205bd0bcbdaf3161496ecf60dd32dab4be56a1",
+      "size": 862
+    },
+    {
+      "path": "notebooks/91_apply_workflow_draft.py",
+      "sha256": "2f362f175fb1fde946dcfe633e6be3442fca04cffb588afbe2d656dfb628a84b",
+      "size": 1156
+    },
+    {
+      "path": "notebooks/analysis_inference.py",
+      "sha256": "a03fcf144a65fd824a6324513ec8c956ce6c8f054941bd252ba693e65f7fd213",
+      "size": 926
+    },
+    {
+      "path": "notebooks/analysis_validation.py",
+      "sha256": "96d0170a2f895c8257e494980d5a343feb4121756eed13f91bb05d606c18af15",
+      "size": 929
+    },
+    {
+      "path": "notebooks/code_generation.py",
+      "sha256": "9a3fa9ea3042ce20da77e2e9f7008fb178b33aa1ef6f968e609a4444682b9ff5",
+      "size": 917
+    },
+    {
+      "path": "notebooks/conceptual.py",
+      "sha256": "9586fae6543947f0d403eec0df0cdacc04fcfe54e3bf8b1f6c1c8d3ab3cb92f5",
+      "size": 902
+    },
+    {
+      "path": "notebooks/dimensional.py",
+      "sha256": "a4828882c21b4cad1d8d2915d6cb5bf9c5a4eb4138efa729e2543b9baef510bb",
+      "size": 905
+    },
+    {
+      "path": "notebooks/logical.py",
+      "sha256": "3499cde4c18df79fb8f017f8f4128a51bfbc0403426ff52bf7651562c61b3429",
+      "size": 893
+    },
+    {
+      "path": "notebooks/mapping.py",
+      "sha256": "343bdd24b3899d8ac39016b7be98aaf60ca14622a6109ec1e737af75f0ef3734",
+      "size": 893
+    },
+    {
+      "path": "notebooks/metadata_enrichment.py",
+      "sha256": "5c166e19e5819e10a345295ec9e26b2b3cce86c73b3ea67740925bbbcf070896",
+      "size": 1087
+    },
+    {
+      "path": "notebooks/profiling.py",
+      "sha256": "54d34833287e5ad82ad3c5fbd8a68fbe0ba2e130727e542b87bfe0730c5b76f9",
+      "size": 899
+    },
+    {
+      "path": "notebooks/validation.py",
+      "sha256": "27a42ebfe20ddb7c3537a9c8dafb8b94f7ff0111616faafb894ad376184f6f44",
+      "size": 902
+    },
+    {
+      "path": "requirements.txt",
+      "sha256": "87c7682d8523777c8e9475aee1d615f66d1457fe1a0c7cb9699040673f83327e",
+      "size": 270
+    },
+    {
+      "path": "src/gds_etl_workbench/__init__.py",
+      "sha256": "1b5ccc26991ad55db9d6ccf2a3084d5ecfde642d723a9f4424b484111e5aae26",
+      "size": 96
+    },
+    {
+      "path": "src/gds_etl_workbench/adapters/__init__.py",
+      "sha256": "f07e3a006719560ab0f4d0dfa9c5a77d24b9503a9c466cad6bc5e16b4e9d3af9",
+      "size": 48
+    },
+    {
+      "path": "src/gds_etl_workbench/adapters/auth/__init__.py",
+      "sha256": "b529e88d1462c301f0f49d15e70eeb74881c457ce13b5dec0526cc96902c7967",
+      "size": 31
+    },
+    {
+      "path": "src/gds_etl_workbench/adapters/auth/identity.py",
+      "sha256": "aac3b4cc59fdc8022d954df42d4a04a85525e4a1258aa4d9cb99e37308dd1bec",
+      "size": 7125
+    },
+    {
+      "path": "src/gds_etl_workbench/application/__init__.py",
+      "sha256": "7001c28b30eb15d8e9f9608ed87a44eb3629235f92b37a48f9709c1a160725da",
+      "size": 49
+    },
+    {
+      "path": "src/gds_etl_workbench/application/authorization.py",
+      "sha256": "cf3fd793d1583375d1d2ff7226f229545f731f2091ac8726a66e64eb4d5f2260",
+      "size": 9834
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/__init__.py",
+      "sha256": "984695ff26cf5044dc0eaccbb3371748a861e66cdf38881011b424a0ae583d36",
+      "size": 53
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/action_review.py",
+      "sha256": "9a1aee85ef07b195da5314a97afd929bcb633e700de0681d6619f6c47c2aff06",
+      "size": 1903
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/contracts.py",
+      "sha256": "7aa9b0ba09c56b6377da418c8636a301cd2516629c47ac6acea886e219cebedb",
+      "size": 8545
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/metadata_validation.py",
+      "sha256": "e4625a87f7f63f4d460fcbf8252c61aa9ecc67c675a1a8f78a983c302d4dfe02",
+      "size": 22743
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/model.py",
+      "sha256": "f8615d32297a11a407bddd614ab908bb7b549db297ed0b42e4f0d72a59b53739",
+      "size": 121962
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/model_apply.py",
+      "sha256": "adff9f3b55dfc24f4a74e01fc013c52a4c3fc93f5a23606eec07a437da381bd5",
+      "size": 117654
+    },
+    {
+      "path": "src/gds_etl_workbench/application/change_sets/model_validation.py",
+      "sha256": "7b9f76411a1e2cb2c84381a2d0ae872d4c7b22472321533b544a9604e6bf5b3f",
+      "size": 62258
+    },
+    {
+      "path": "src/gds_etl_workbench/application/cursor.py",
+      "sha256": "d4cd91e8a23f71d7bc9d5e764dc1e77a619f765b36a4ddca28690c8e6dc4bf44",
+      "size": 2775
+    },
+    {
+      "path": "src/gds_etl_workbench/application/identity.py",
+      "sha256": "923dfb8368ed200eef174588b216e665ce59a71aa52e15e575a22891a6e88025",
+      "size": 427
+    },
+    {
+      "path": "src/gds_etl_workbench/application/model_read.py",
+      "sha256": "0d401be7450f555f71161838a16fd0a3055de8f0bee0dcd7040db18be553359a",
+      "size": 3763
+    },
+    {
+      "path": "src/gds_etl_workbench/application/model_snapshot.py",
+      "sha256": "2a0198ebdb05cb2d8da6b4bafa20a60983bde408c1fc35b3af9be24a68f0f23f",
+      "size": 30175
+    },
+    {
+      "path": "src/gds_etl_workbench/application/modeling/__init__.py",
+      "sha256": "2cb4ee52c5088fa972f9da5861a278ff9815fb7c69393deaa74bac22aff7e079",
+      "size": 62
+    },
+    {
+      "path": "src/gds_etl_workbench/application/modeling/assertions.py",
+      "sha256": "6d2ca31f348dbbe8607424ce3d49ec396e3db83f6a3f984a1d1400b771ad2f45",
+      "size": 2089
+    },
+    {
+      "path": "src/gds_etl_workbench/application/modeling/conceptual.py",
+      "sha256": "531686f9a803600266c7a36a7f269b97e60e23df3a8d693531da18e343f075a8",
+      "size": 8942
+    },
+    {
+      "path": "src/gds_etl_workbench/application/modeling/modeled_layer.py",
+      "sha256": "1d6f122e78677f327751dc9b1dfc3742424c459074318c7c79d4df7a6b510fa5",
+      "size": 24198
+    },
+    {
+      "path": "src/gds_etl_workbench/application/modeling/profiling_analysis.py",
+      "sha256": "2ac291c225b3ab73498b56ad00dc1133d223c05baafc9a1e6c363cfa541e2d80",
+      "size": 6958
+    },
+    {
+      "path": "src/gds_etl_workbench/application/tenants.py",
+      "sha256": "a1565bf5f17ec48b623f3f2c7fa915a2c23809abbd61c855ff609fba9be4db3a",
+      "size": 3564
+    },
+    {
+      "path": "src/gds_etl_workbench/configuration.py",
+      "sha256": "741b3c79fe30027c424bc72df07cd5af3e0b22a7ee8d21ab5c34181af2190c65",
+      "size": 12270
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/__init__.py",
+      "sha256": "555b4cadd963d5e202096c42fbafac67af56fe83136f57d15e951ad2c01a46a2",
+      "size": 43
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/assertion_safety.py",
+      "sha256": "25029fca5cb0c2bcbfda623a260a6bbdbf0d309818d35c39fdb61b322811de62",
+      "size": 3303
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/authorization.py",
+      "sha256": "dbb0e1ff3097a3a3e698f40153de7a8a5bb8a03e55da0d49ce0278b65cc77550",
+      "size": 1109
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/databricks.py",
+      "sha256": "3a8d40232c096172793591916e8dca23438085271c8e21fedf2e798a80d1a9af",
+      "size": 331
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/databricks_sql.py",
+      "sha256": "297fd154df05c3a4d5d388c913570268c215f9325fc03b3b75365f4554414fc2",
+      "size": 8223
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/errors.py",
+      "sha256": "b35b4e9f27db995e0df9e7418c16b6a3471a30a9e0c7c43655e1e02a6de67552",
+      "size": 7954
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/metadata_records.py",
+      "sha256": "40dbcf0f02f3a6e09165d382f7ce804e7001de3b17ac55c649842865cb5f9093",
+      "size": 11180
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/modeling_records.py",
+      "sha256": "79c40bc7ef6854ce344ccc8bd22064200e7c3f41d2a0d45d8749c44c636fe38d",
+      "size": 41458
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/portable_validation.py",
+      "sha256": "2fe4110f097e774d0989c08f6849a03bf468492800d3e3db542841560cde4552",
+      "size": 1673
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/snapshots/__init__.py",
+      "sha256": "858f5f309c1ef370eda387efd5b540ee285f3ae173981cf765e801532f825832",
+      "size": 61
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/snapshots/description.py",
+      "sha256": "d8769fc6dfe5eec6e532a47e5eee5f9a6bdade954c4f81128119b62953cc0742",
+      "size": 2116
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/snapshots/metadata.py",
+      "sha256": "9a01078dbdfef28add4e3872e48a0c6e94f8f71081aeff321a0678c25c414528",
+      "size": 16475
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/snapshots/model.py",
+      "sha256": "2f83c83b971c50f4d42a74a2510ec6e4b144688227476f21dcfde848375f6e4b",
+      "size": 16924
+    },
+    {
+      "path": "src/gds_etl_workbench/domain/snapshots/model_guidance.py",
+      "sha256": "1a7766f88a3d248c1c4ce5d76430460fc2cc767864b07f78e988c1a053ea4bea",
+      "size": 14930
+    },
+    {
+      "path": "src/gds_etl_workbench/infrastructure/__init__.py",
+      "sha256": "74cd58a6ea3102ae922e527f18131d3e61f6d6a0600521f1012f1186bc1b991e",
+      "size": 42
+    },
+    {
+      "path": "src/gds_etl_workbench/infrastructure/databricks_sql.py",
+      "sha256": "b648e6170853e440ef2439b79eb3825695c455c7315a401de132db41e7fdce2c",
+      "size": 9289
+    },
+    {
+      "path": "src/gds_etl_workbench/infrastructure/metadata_visibility.py",
+      "sha256": "2b9bb20befa82376bf7db300de0e7caba7ee9280dfb4a3730b8b34946c0f75c2",
+      "size": 513
+    },
+    {
+      "path": "src/gds_etl_workbench/infrastructure/postgres.py",
+      "sha256": "d2843835cd82bdca713173f2f939d1278e4497e39a51a9b69a27e7692c10cbfd",
+      "size": 12134
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/__init__.py",
+      "sha256": "55acbe9b75e234e5cdb6c6c516b2a3bc0c76e3bf96ee6186c1583762fd171c76",
+      "size": 33
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/catalog/__init__.py",
+      "sha256": "f40a933a8bd6dd69157288c7b410d71c70e5a8f8bf208e2072789a47afd472e2",
+      "size": 49
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/change_sets/__init__.py",
+      "sha256": "1adf587c532dcb40d580d41dffc611c238d32113e71870b2b4f59f64daafcf8d",
+      "size": 33
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/databricks/__init__.py",
+      "sha256": "1e0e10e022f7b4d3dbd23c72824188c0e49b15b6c8241d1417b6aedaae0691d2",
+      "size": 44
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/modeling/__init__.py",
+      "sha256": "fbcc7bc5eb0fc994a208929daee149f29a7a68110c9cf9d01f7d980ae343f55a",
+      "size": 42
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/snapshots/__init__.py",
+      "sha256": "816fd7ca7a6fc9b09f3fbf97ee43cd81f9ebc9446b7945cc294330bd2fde0eb6",
+      "size": 22
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/snapshots/metadata/__init__.py",
+      "sha256": "01a387d2a9dcfbc9d660804ee5e9a6ce730b234ad1625c38b1cfd7afba571930",
+      "size": 38
+    },
+    {
+      "path": "src/gds_etl_workbench/tools/snapshots/model/__init__.py",
+      "sha256": "fb172a0e0d95e8b8dbcbbc811685fb379cdfc19b68ba6287620f7a3b6287c7d3",
+      "size": 47
+    },
+    {
+      "path": "src/gds_workbench_api/__init__.py",
+      "sha256": "7db54a2217a0b2461b0df62ca77532be203245e8e952d0ee95a3c983f5fb26af",
+      "size": 37
+    },
+    {
+      "path": "src/gds_workbench_api/capabilities.py",
+      "sha256": "b83035bcda56a972612bee618a4a9576062852fd7eb5597f31ff31e09f25aa35",
+      "size": 13194
+    },
+    {
+      "path": "src/gds_workbench_api/config/agent_capabilities.json",
+      "sha256": "930921aa55c003e9a9a587d00cc5f62870d79974761b82095bee3c7c2e84735e",
+      "size": 2563
+    },
+    {
+      "path": "src/gds_workbench_api/config/agent_execution.json",
+      "sha256": "15136776113febac0551833a13140ef9d5964af6f99ef7881a8252d8ebaff2ed",
+      "size": 173
+    },
+    {
+      "path": "src/gds_workbench_api/config/analysis_validation.json",
+      "sha256": "8c047da5a2fb7bf5ba284c1cd74b109e1c10d2bf13f4b30bf02dada7d47e9730",
+      "size": 194
+    },
+    {
+      "path": "src/gds_workbench_api/database.py",
+      "sha256": "dceaea490a95a925226a41a867acac1ebf289fd37afe728139dfd59f83508aae",
+      "size": 20179
+    },
+    {
+      "path": "src/gds_workbench_api/features/__init__.py",
+      "sha256": "9a27a3cf6cf28822e812af392deca97d0a6dc84fb9bdb82d2073cf308af49103",
+      "size": 56
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/__init__.py",
+      "sha256": "d8c054a84537b72413a83bed5e8e65f9a8803a270885e71b7e1ec076c008ae6a",
+      "size": 3109
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/candidate.py",
+      "sha256": "a08e89aa87d3fc9dc90c89c92c804418dff42427f12c3bb72515aa28f141ffb1",
+      "size": 9966
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/read_contracts.py",
+      "sha256": "f99643751844abf76a444f4423ecc757543ce1b83c74e786dfa3fc2230127ddf",
+      "size": 4994
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/read_router.py",
+      "sha256": "1f1692af9f06f077a593cf1cfecbe2fcd1c51cd6644a0bee3042d582541eaab0",
+      "size": 3031
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/read_service.py",
+      "sha256": "aa09a5d77ac44a0780dc6f0fdd076daaef251bf3fae1d3fe053f0c592612342c",
+      "size": 20824
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/router.py",
+      "sha256": "3904abfd20e307821e13d3a39eb51d970a9782159b6c726f3b8775672d050424",
+      "size": 2670
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/service.py",
+      "sha256": "ad9e8f41d75cdfdfc4fbb7af3e03bb778cd11885948e6ae533e0f6a2fb6fe466",
+      "size": 19665
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/validation_execution.py",
+      "sha256": "325f1234f9566b16304b8212ad56aee084f7a5d35dcc27c692b873a18b26f8e1",
+      "size": 19593
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/validation_router.py",
+      "sha256": "988b4a0e12d4b25c2b71dfd2330723b8767c73e0ffb043f2d66dc58d88c3e875",
+      "size": 2462
+    },
+    {
+      "path": "src/gds_workbench_api/features/analysis/validation_service.py",
+      "sha256": "371924f231eaa9b08e1867e6212e02408488d72c2472c63589f1b2c347eed417",
+      "size": 28887
+    },
+    {
+      "path": "src/gds_workbench_api/features/assertions/__init__.py",
+      "sha256": "d7adc4d4198803970bdbbdc61655a7adafb43230172938ae7cfb80a9973f7a29",
+      "size": 1668
+    },
+    {
+      "path": "src/gds_workbench_api/features/assertions/contracts.py",
+      "sha256": "be465f56ea877a6751d350eb0d0f089c0892544bebd928371758c9f2ceba0b01",
+      "size": 8159
+    },
+    {
+      "path": "src/gds_workbench_api/features/assertions/repository.py",
+      "sha256": "cbbb927bf3b918a6e44a5609554594d9e0c951b9fc8be4959db8497e61b0b98c",
+      "size": 19540
+    },
+    {
+      "path": "src/gds_workbench_api/features/assertions/router.py",
+      "sha256": "0752c3879529417354e4190c31df47e223926c04128305e5234f5ac9fb50faed",
+      "size": 6665
+    },
+    {
+      "path": "src/gds_workbench_api/features/assertions/service.py",
+      "sha256": "bfbe372b0e9e642124f81bd375e48c950efe2b392fd117a3c953f39e9f573ebb",
+      "size": 8226
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/__init__.py",
+      "sha256": "71ef887acacc67b45be04bbad7bdf32efc6323d8c92a3bb9147462ed24776d07",
+      "size": 2256
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/artifact_context.py",
+      "sha256": "e02850324c50bce393884d5595847d2775d0ecc78e13e5756b2c997f1fcfa273",
+      "size": 1234
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/candidate.py",
+      "sha256": "143559ff2eb98f3380df5de0db473d73409c6c75be46a823094dc04ebb0053cb",
+      "size": 12262
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/context.py",
+      "sha256": "cce77dd9e97ceb993d7e9b17bd1d0b4ea369002554f5e7d3b9addb2bd7a1288b",
+      "size": 18769
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/contracts.py",
+      "sha256": "f0edf123ee7ce1bccbe6a0725c6d1b84d6040fe677314722e6d7b749d17a07ae",
+      "size": 8719
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/downloads.py",
+      "sha256": "72955f7e0b41de8d38226390e82f6aee7c7d2f9a88a7d3df8f8e8ab5232f0e06",
+      "size": 2814
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/read_router.py",
+      "sha256": "87657b84fd6561e61cc519c4a1e9f2ae972a106b65328b62584ce52101a945bd",
+      "size": 5147
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/read_service.py",
+      "sha256": "a97cb58b36addfa9c2b1c636c6be234eee4f343cdb4406754846b0a54f05d0f6",
+      "size": 28163
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/router.py",
+      "sha256": "a9eac0b78f021e1ea98061abf4ff1d6ee14b25d20671104be347c497701b0b58",
+      "size": 2287
+    },
+    {
+      "path": "src/gds_workbench_api/features/code_generation/service.py",
+      "sha256": "f505ac97cec67a818ac84f104bac84b3f83ee941fa9da33a05dd0dc5e086b65a",
+      "size": 35322
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/__init__.py",
+      "sha256": "afdb532f43962d57ba740d157a0be7fa3d797f4175867892cc01f02f237a21e8",
+      "size": 2291
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/candidate.py",
+      "sha256": "b36af0067de191b9749dd11c77577a04fbc62c91bc8796db7576b1d9e665d6c4",
+      "size": 17107
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/read_contracts.py",
+      "sha256": "fa60f85af88be584252f2f5e77378adf6657c2b24b1c2491aadf59788758d463",
+      "size": 7854
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/read_router.py",
+      "sha256": "36cf3bcb91d8300ae42434cf967fdfec7779c518d207fd7b7af096b27d13669d",
+      "size": 4299
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/read_service.py",
+      "sha256": "7a5f8dc52cdf732e542d07792e23be12bddbb0852bb54865778d56bf856cb04f",
+      "size": 24366
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/router.py",
+      "sha256": "0ae72224be4c1bfebf6abe53b8571c241b430111bfb435fae68b718d80ac585a",
+      "size": 2606
+    },
+    {
+      "path": "src/gds_workbench_api/features/conceptual/service.py",
+      "sha256": "8b8de632ec1e72d56d877dbe8208395fb648c3eaad82116d8d371ba123b3815a",
+      "size": 21580
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/__init__.py",
+      "sha256": "37f3f5ff489eb40d62f4a25d62adb92ebeec6457378b55488a5504b22ae8eb13",
+      "size": 3405
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/candidate.py",
+      "sha256": "13b8c947303c492421d0aaccdbafc1f391fa86cf5ebaed24b70d88e7d2e427ef",
+      "size": 27333
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/policy.py",
+      "sha256": "d6c569fb20fe1d7fd3cd570a970b2d555a532573285e9d7faceb3320c5f89b0f",
+      "size": 27219
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/read_contracts.py",
+      "sha256": "278b222cb7bdd963a71506031508cddc6ca05d97033063d53f8aa01ab018bac7",
+      "size": 9811
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/read_router.py",
+      "sha256": "d0478d10eefe003a860696c2422e53f04b43ce41224c00fb0500cbcd7abaf6c4",
+      "size": 6497
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/read_service.py",
+      "sha256": "24a94dc7705edbeb007daef63520ddbb6dc18cd60f3cf6c754e9d0ccc468cc45",
+      "size": 38990
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/router.py",
+      "sha256": "37703278a5893c9f75c91c859b54e142a880685ccc49469bc197ab2e97d5fe57",
+      "size": 2617
+    },
+    {
+      "path": "src/gds_workbench_api/features/dimensional/service.py",
+      "sha256": "8838a2faa0e5ad4bbd926c3b1d558bb7f8167f516f553743a84aea15afb64b59",
+      "size": 25122
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/__init__.py",
+      "sha256": "b3a3b7fdc09b83828cf7ff8749f355a43935614487d348028906f813015841e2",
+      "size": 3438
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/candidate.py",
+      "sha256": "e73cbfbc135b17e4f5ae2ed1d7779c9eb4bb576e18b5f25368c6bfe6baf790e2",
+      "size": 28615
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/policy.py",
+      "sha256": "bd46b754c389e99b0d016b4398d0cb00171824cab7d364dc77d2a509c793c64e",
+      "size": 8254
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/read_contracts.py",
+      "sha256": "69cf17167faaa64cdf7d4178e73a67ec98053592082b58b03f92aec2e72d0409",
+      "size": 13336
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/read_router.py",
+      "sha256": "c2302066ff51e7e30230db23dcd871e7e30be2191f4ec0e226f0028ad470bc9e",
+      "size": 8170
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/read_service.py",
+      "sha256": "6a0891c90e7213e96dfd04d2d7f38d9034ba619f0bbd7046726f73fa8f4ace4d",
+      "size": 44926
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/router.py",
+      "sha256": "a505c8b17f0cfd499ae7808ccb269f3f90b4a5e144f7115a5e42fa4debb42849",
+      "size": 2573
+    },
+    {
+      "path": "src/gds_workbench_api/features/logical/service.py",
+      "sha256": "a221ccd46ef0d854e6be713f026b0fac73bdd4f07f54c0520627e9e290966ca1",
+      "size": 23576
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/__init__.py",
+      "sha256": "544658b858cb84006d916e1f3970f640cfacf6c7af8e18eec07b0e6114ac2341",
+      "size": 5116
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/complete_candidate.py",
+      "sha256": "56f2a5ecf3474750c36e36312969c23de9793ac45c55b68544dcf9b1a8c6995a",
+      "size": 2524
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/contracts.py",
+      "sha256": "a8df1bc7a317cfef0a2030c78a94ff9ef2404ecb692a76b227ed4caf5a3478e0",
+      "size": 2436
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/execution_context.py",
+      "sha256": "39b1edf08a9ed1a142e482ede3f6093d8e0e7ecda5c8a66542b7b21d4db771bd",
+      "size": 23109
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/output_schema.py",
+      "sha256": "c6caef12c698555f1d1a1ed3b512d4bb6929d420b7ff2897474d0f854634ccc6",
+      "size": 2517
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/preparation_contracts.py",
+      "sha256": "1b4ab43a68086956fa3c645e9853ac1d40bf05d3c2d3ba033d75096a585ea71c",
+      "size": 16864
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/preparation_repository.py",
+      "sha256": "e5603ace46b309923ee9d45f5af2e884f2eeb251b532a87c728f5b9dd8520700",
+      "size": 35172
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/read_contracts.py",
+      "sha256": "4eba1bfdd0005838418ba6af1fa1f34a13efe35ed23e6037543f1a34c170c681",
+      "size": 8255
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/read_router.py",
+      "sha256": "c6d08bff4837d55a8a9ac602c43e876e3d01b59721e9e946cacdbb007e1c9ea0",
+      "size": 6290
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/read_service.py",
+      "sha256": "00854cd38442bdc590ff19512a48488c787ade5b8a4247c2a4deea94754a52c7",
+      "size": 26019
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/readiness.py",
+      "sha256": "f1282bb0c6ebe917595167031676a48f5a85cd7092c5f1663517655ab41c9eb0",
+      "size": 12138
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/reconciliation.py",
+      "sha256": "0c43784f4262b22d2689a34b19ca0190b61dd943d039aa1406ee344606ced424",
+      "size": 9172
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/router.py",
+      "sha256": "dee1f52524078d6d8551476082560be9d28f90bbc346c52afb3ba982b7f3cecf",
+      "size": 2573
+    },
+    {
+      "path": "src/gds_workbench_api/features/mapping/service.py",
+      "sha256": "e1fabceeab1899501359d70b5a9d98edf668c55064309b961ae83ca8a905dee6",
+      "size": 23259
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/__init__.py",
+      "sha256": "cb1f27c64e21f1558dadcff96d21a0c2a23fdc0a40a85394fa77d91bdaa7d6f2",
+      "size": 76
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/contracts.py",
+      "sha256": "9bd1673b9ae898a83a47ac51129466ba8b55f42c9a3f66e3ead82ae87eafd73a",
+      "size": 5601
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/evidence.py",
+      "sha256": "3421d902635ac6065b6e7cea6f918745aee2981ccb52eb1e0a3413abc0a06f50",
+      "size": 11775
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/inference.py",
+      "sha256": "cbbbcedb6e1458af29daabafca7f66d740ddc9d8299739be2f4a7aa0079ca8b3",
+      "size": 7027
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/read_contracts.py",
+      "sha256": "37102ac39b69d5304fe0e64fcac6c84a52e8244a56fd57ed037e326ee35e196a",
+      "size": 3309
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/read_router.py",
+      "sha256": "365c3a544454a7a39aa653aaea1bc6a01052d575e730c2775b864a15fc44fdfe",
+      "size": 1462
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/read_service.py",
+      "sha256": "6a06a1ae5e084985d109a31dd3084976207cb80f2beffe7b8c5de695c79c9480",
+      "size": 4532
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/repository.py",
+      "sha256": "394964513af118f6d7205e9df6fb6f8a79299ce56042d229e7c12775cdd9a54b",
+      "size": 7995
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/router.py",
+      "sha256": "bc5d60f08d4035ed86c5057000b073de2d504c46b4000b00f4674f71a9113dad",
+      "size": 2315
+    },
+    {
+      "path": "src/gds_workbench_api/features/metadata_enrichment/service.py",
+      "sha256": "444212dd6dcf139991d2a1781c70eb863cfb17bde145880ff8135ba99c9cb8f7",
+      "size": 18678
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/__init__.py",
+      "sha256": "776df1d5a1326963190a21b6823b50cffe590f61f5087b7746df25ee9f22070c",
+      "size": 55
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/contracts.py",
+      "sha256": "a90dc9979a1514dcc5437bc622e0dc1521d094550ca60e137296705e135636f3",
+      "size": 7469
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/input_scope.py",
+      "sha256": "9f19c52ab9e19d5b09025becc08bd108b4d66700e3360d80354a8be952f86491",
+      "size": 3267
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/repository.py",
+      "sha256": "dda1fe522ec9f262a2d23a39559554a5aa7422244fde0faebe6dc294fdc9071d",
+      "size": 34521
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/review.py",
+      "sha256": "54dc5d496850e75da2759cbc1ad8bc2314458f4e904705f53da9e321657d6188",
+      "size": 19259
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_change_sets/service.py",
+      "sha256": "f4ea4d1555503e29e9d1a529ba6f15d128eb0745233a25c44fd93a5a238b5836",
+      "size": 72814
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_targets/__init__.py",
+      "sha256": "45539ba14d473b7857d156eaf3c5bcad2e6e0a2f920d5177b5dbcb09b2c69c7f",
+      "size": 69
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_targets/binding.py",
+      "sha256": "e986c4fd03b105b12260d62b9dc70a7720d98e010d5cf57147ee118c737f0907",
+      "size": 21848
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_targets/contracts.py",
+      "sha256": "1ece45c97f6c478ed33db64f8c8a728074f350dcf70759b32c5b3d8e3a7123e2",
+      "size": 5874
+    },
+    {
+      "path": "src/gds_workbench_api/features/model_targets/queries.py",
+      "sha256": "2c2a49eedf7c14229e3d4ddba3b06cf7053fd2d788f85195a0d4fc9f92a5388c",
+      "size": 1792
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/__init__.py",
+      "sha256": "4f067d5922ab8f4105733a6083fb6af2203bfc44293c1b1cb97664ad4cb664fb",
+      "size": 1421
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/command_contracts.py",
+      "sha256": "9cf450fd0efbeed026c39514bf085ce553f3bb67ab3dec98fcbf42a33115f5c9",
+      "size": 5906
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/command_router.py",
+      "sha256": "c1a469a29dc258182467de22f164baeb2e03fba361e3aea6e73451e117d402b5",
+      "size": 2445
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/command_service.py",
+      "sha256": "a7c25a93c6cf95d3f18c2a6b775bb27c2ba10d505d60aa1019d5fc8b4d4e6cde",
+      "size": 10365
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/contracts.py",
+      "sha256": "c46c7c3a69a3e27dce6a10c585ffef81e66ef2ba439f3f437e35705d61f7ffaf",
+      "size": 2622
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/router.py",
+      "sha256": "7fe397c593b6958ea0dc8a2eda0a63ca97079bbfbfa0eed1728254c04a5bbe6a",
+      "size": 1733
+    },
+    {
+      "path": "src/gds_workbench_api/features/models/service.py",
+      "sha256": "f1522d0c8559226a0afd530b8d662867276f74d9843f4990fc822073fff0fbec",
+      "size": 5877
+    },
+    {
+      "path": "src/gds_workbench_api/features/profiling/__init__.py",
+      "sha256": "9d314cc550e3cd7209680581efacb64434fabb2cbb0168c922f26704c3814743",
+      "size": 2220
+    },
+    {
+      "path": "src/gds_workbench_api/features/profiling/read_contracts.py",
+      "sha256": "f4a7b2f2d652e5788c80acef07a8da88e5d6c41c1c8bd88f67d779e599d686ea",
+      "size": 5659
+    },
+    {
+      "path": "src/gds_workbench_api/features/profiling/read_router.py",
+      "sha256": "2d4e27cb1ae3ce403d117df3b07f3c5daaa6edec0e75d1e502d0dbe7de673bda",
+      "size": 2759
+    },
+    {
+      "path": "src/gds_workbench_api/features/profiling/read_service.py",
+      "sha256": "86daed55e352422dafe399c14268503759b91814bd66aa42338cc49b8308753a",
+      "size": 13748
+    },
+    {
+      "path": "src/gds_workbench_api/features/profiling/workflow.py",
+      "sha256": "4f73581b94607fafa548a26a1799766b8e5e22a2377f3794d5123ec094b10dbf",
+      "size": 23682
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/__init__.py",
+      "sha256": "2b261693b3c95617dcf40d9bc7046030692417090986b0fadb23fb53112976c8",
+      "size": 1816
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/candidate.py",
+      "sha256": "31697db515605d87136cf7f329013497ad01327d5dae014859e71f72bca50edb",
+      "size": 20850
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/context.py",
+      "sha256": "87adc7bed113b96be51871a797ff1250d2e314f5fbf4372c2624bf3d1628030a",
+      "size": 35729
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/contracts.py",
+      "sha256": "bf7720f408cc9d13610b9d556a243840ed8cc4af38c555a00b2536453f32f92c",
+      "size": 3061
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/read_router.py",
+      "sha256": "40c759c5fe5f7824457ef6bfcb8ceef057409cc152d9ac05fa126c5aad4b600a",
+      "size": 1772
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/read_service.py",
+      "sha256": "942f05fdae65e795bd75a75ce642cdae29a1c94460b1a52c7161cc327dabfee5",
+      "size": 30043
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/router.py",
+      "sha256": "2e5631791d25c1fdcec8641f304770477420fd3ef9b9f1010a01a1e8c2623dab",
+      "size": 2365
+    },
+    {
+      "path": "src/gds_workbench_api/features/validation/service.py",
+      "sha256": "bb6bf83aeb397c3a707e622afdda6efd1266b0ea3af4af592ae7f407ee85634c",
+      "size": 24084
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/__init__.py",
+      "sha256": "2f0b78ff6f5820f86fe10496ac81334e383e94fd692b2f81a0ff0e05ad067ab7",
+      "size": 48
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/__init__.py",
+      "sha256": "b58074c34a4b2a2ee0fba494f954d783b0dffc2f01a65fb40ba70554ce4c6f05",
+      "size": 1966
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/agent_execution.py",
+      "sha256": "3413addb9177f47197e1e4d92f147ebfc38cf9b0701e6190eda451613fd7e0fb",
+      "size": 10796
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/change_set_apply.py",
+      "sha256": "03b9781225907d48c4e779f274bcadc859ca099f6396945827cd6c7e07fd78ad",
+      "size": 13042
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/change_set_handoff.py",
+      "sha256": "e3555a6e5d0dfb8c21c59fe031cdc126fd4ab10c5362f1659c8157d2a43ce377",
+      "size": 21630
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/context.py",
+      "sha256": "bf2b656cbdf7505378fa3a3dd0637b1e7a63cd0edf6dd92d84c59e6b8de22dc4",
+      "size": 59859
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/context_contracts.py",
+      "sha256": "6d7ebfd5b190695bbcf9d43a58424b2de42bea890149d8f5e33b9813c96a2947",
+      "size": 224374
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/context_inputs.py",
+      "sha256": "b3b336c9cd45c40c53c1b5c0a97ad5f756c5a35f82aa9a9105e0deeab0327148",
+      "size": 7902
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/context_readers.py",
+      "sha256": "110884bc369ec7bc0336ca8253f8d476eb5effbad6d95886c45658ee2ec98f54",
+      "size": 19179
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/downstream_contracts.py",
+      "sha256": "fd635a35555fb224818b9e68cfd22d2c542b65cd90159618335f16c4a6f86c05",
+      "size": 124360
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/downstream_inputs.py",
+      "sha256": "b6b09152dca39cff503621466b6d4fd860ee113ed62efd8b0a2e05c30dae27f6",
+      "size": 11657
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/lifecycle.py",
+      "sha256": "3614616d70d2586c2ec71bc92cf0cd4c4d57c63ef1f4c48c0347e68edd5c7dae",
+      "size": 14554
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/naming.py",
+      "sha256": "1a1826197135dfb72ded6497d1d29dae61a46891c58008364c472b9527fba4e2",
+      "size": 1177
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/no_op.py",
+      "sha256": "d86e770930a5591b62c2d5fb958ae67fd4730a333a79d7b679dd9ffe14ba6beb",
+      "size": 10228
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/plan.py",
+      "sha256": "f750de21e4dd50cc252ee7da0ca7be96f1ed7b2da86ffddb537b29271c3849fb",
+      "size": 21412
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/progress.py",
+      "sha256": "dfdb2167aecbaa88442390f72ee3e4569639775a3f833e9cde1c6596709c27c3",
+      "size": 3106
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/prompt_inputs.py",
+      "sha256": "0ab1ef0b1da9afbd52fd87ffc27d253fb4411ef3f82ddfc0a9c087b15c8127fa",
+      "size": 55802
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/repair.py",
+      "sha256": "2b589f496edf1e6ec699fb67ac09f5ba8cb801298c5f5dc1f2f8d4283faa1e85",
+      "size": 27557
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/stage_runner.py",
+      "sha256": "6ae9c196ee835b9142331dd98d9991b3a68a16296c00a1041d03230fc4cd4b18",
+      "size": 4774
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/authoring/tool_configuration.py",
+      "sha256": "aa3ee0124a0b25e845ca147bbdf2e420e8948d784b8cfa4e53dd7aa9921b4d6c",
+      "size": 5628
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/__init__.py",
+      "sha256": "4dc1d7ccde374fe0bba1161de5da1440ef8f9bde5dad154cfe8b05072c0de642",
+      "size": 1170
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/assembly.py",
+      "sha256": "2c10625cd0923f5ec49cda1f9eeecc5213647387f9a125d18c99cc8361bbf4c8",
+      "size": 9560
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/contracts.py",
+      "sha256": "05d991a3c87def67a5515a262cc66d4f04a66705957a9411d825d0b0b485346f",
+      "size": 3151
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/dispatcher.py",
+      "sha256": "19418fe878666aef01c008e8e461d256dfd10b108e363e9b0b12b78a5fdb815c",
+      "size": 2977
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/fence.py",
+      "sha256": "fc763bcca1c1f67d3d42b9f7c4e62dd2e758866e8ff06723a5bff5466d61e857",
+      "size": 1065
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/repository.py",
+      "sha256": "54ef5d4bf8ed95c62a059f4ac5ba4521a89645fc8c01e3d0619f008e111f17a6",
+      "size": 3559
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/execution/worker.py",
+      "sha256": "ddb31b60f4d84cc8cb2de9e312790c27bd8355fd84166b91983a70069d7cf4fb",
+      "size": 5340
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/runs/__init__.py",
+      "sha256": "de3e24192eb3ac5377fabf91c0c1ccacbdf42589f1ecffe0af4e12211d617af0",
+      "size": 1068
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/runs/contracts.py",
+      "sha256": "552b6ed05a63f87b64b68d109c14089a8eef24641e5079ea5954ac0b004d235f",
+      "size": 3914
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/runs/router.py",
+      "sha256": "cf083918456dbb2c6eb912af80e33b6d610764b640b5e9be7df5a3e6db7ae6cb",
+      "size": 5948
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/runs/service.py",
+      "sha256": "abecf0210543a15e061f7dd55f63c5073a9cae89dc90d28fdafe3b8672689668",
+      "size": 9899
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/usage/contracts.py",
+      "sha256": "98cda8c9c93bb8811ba93492ed65ea4ee389605caf1afbf0b6cc778f2201bb09",
+      "size": 3913
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/usage/read_service.py",
+      "sha256": "1da23534b55fc27fabec02f8e5b43ce3ca17b778c1cf698ffbf385a2605551ea",
+      "size": 9818
+    },
+    {
+      "path": "src/gds_workbench_api/features/workflows/usage/service.py",
+      "sha256": "d808152e68bfef3381d334ecfe3a92c5a1a790909506bc224417147623e26898",
+      "size": 6820
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/__init__.py",
+      "sha256": "6a10dff9451800e943ed4bfa8cc75ba1fa90dc99503242a86c1fe5c50969dbd6",
+      "size": 42
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/__init__.py",
+      "sha256": "e53b94a44534848b78564a4b6c52d7977be1785167f73e16b7bbd9cf12d667f9",
+      "size": 318
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/adapters.py",
+      "sha256": "e6d063301d85c095ab564e238d35afc68d217871f1d9f3737130d34eecb4a082",
+      "size": 13917
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/composition.py",
+      "sha256": "0aeec81da2d79ca87eb4405ab77890f193737dc0f6783313fd70d0e0f3072ffa",
+      "size": 19559
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/configuration.py",
+      "sha256": "c8cfae1ea51e05b3efd6e170a1628a75f18e520e5e67b04054b26a43803189e3",
+      "size": 11761
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/fake_dimensional.py",
+      "sha256": "4c3e58cf2c896347275744d892f4a90f865f5bc4149ef5c210eaaff035a88ea3",
+      "size": 5940
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/fake_logical.py",
+      "sha256": "06baecc6a1eb77b3d9fda22cecd78632288d7349223027bc2c9722e34b0ee575",
+      "size": 4183
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/fake_mapping.py",
+      "sha256": "a9eec9442d981788b11e60dfb0d100641267d75ac07838e848dec980392e5206",
+      "size": 10048
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/fake_shared.py",
+      "sha256": "17b929d8970d4b8aed303c788310f16eb2536783b01994cf6f6c7ec9062e0e98",
+      "size": 16127
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/agents/usage.py",
+      "sha256": "3f615131034847bc907e838d6740520102effec5ecf4b1209b8055ab15518f89",
+      "size": 4252
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/databricks/__init__.py",
+      "sha256": "4e0aaee216cf955f8384707de85d62a7b8eb37fb7ee0f7a500d18b149d32df5b",
+      "size": 415
+    },
+    {
+      "path": "src/gds_workbench_api/integrations/databricks/runtime.py",
+      "sha256": "91ff6852fb52fecf76d8a5da257ff1d523afd5f30e38a11ba4e116e2800cc0c4",
+      "size": 3341
+    },
+    {
+      "path": "src/gds_workbench_api/prompt_rendering.py",
+      "sha256": "4831f9dced547f08b83a22f153bea7b8c6e6a249bd01c4a6e3964b927f9e1120",
+      "size": 11093
+    },
+    {
+      "path": "src/gds_workbench_notebooks/__init__.py",
+      "sha256": "b73309a16bb1254ac100f1885bdf27af2fc06deeb8183b39e38c389218121a87",
+      "size": 63
+    },
+    {
+      "path": "src/gds_workbench_notebooks/drafts.py",
+      "sha256": "3932a1988d99324db55c67fee232df3b1aa37f4f3584d603b993d7ee84a5e5d1",
+      "size": 11112
+    },
+    {
+      "path": "src/gds_workbench_notebooks/errors.py",
+      "sha256": "24ad2649059585948d69b9f1201dde23b0c33e0e5976434a20f9a0f5d39d8bc9",
+      "size": 554
+    },
+    {
+      "path": "src/gds_workbench_notebooks/notebook.py",
+      "sha256": "9586a99985796050616422bb510c624ab94e6056e78188c866bd178e36f9374c",
+      "size": 22797
+    },
+    {
+      "path": "src/gds_workbench_notebooks/preflight.py",
+      "sha256": "2c4857bd0d99af0cb03a6c3f3e030d50a512e91022e57fac864eee6f8af18573",
+      "size": 5210
+    },
+    {
+      "path": "src/gds_workbench_notebooks/runtime.py",
+      "sha256": "07682ae354a3344f8a39234c0432bc8c0aa6e3b662faddd44984fa1a8f287767",
+      "size": 13383
+    },
+    {
+      "path": "src/gds_workbench_notebooks/shared_runtime.py",
+      "sha256": "2028dd135845c31d22f8a4c60e8834a60b42045c5041c240ba55e1f8f0264997",
+      "size": 1846
+    },
+    {
+      "path": "src/gds_workbench_notebooks/tenant_lock.py",
+      "sha256": "23e9770043f2525b13564eb51c55c094d183c719294033b8f482133b6e2f3ae0",
+      "size": 12161
+    },
+    {
+      "path": "src/gds_workbench_notebooks/workflow_control.py",
+      "sha256": "8f9c24eb028949c07abd92e38d6342b59724247ed6b9abd0b71a41b1ec553382",
+      "size": 22262
+    },
+    {
+      "path": "src/gds_workbench_notebooks/workflow_execution.py",
+      "sha256": "a521f228a7d44811b7b2a2e837daf49ee396269d4e2d4e20c3f8fc9d99e49525",
+      "size": 19290
+    },
+    {
+      "path": "src/gds_workbench_runtime/__init__.py",
+      "sha256": "9d3403044733ad1107f4ce1592422c01bc4cecd292ff1a542d83edeb423dc550",
+      "size": 80
+    },
+    {
+      "path": "src/gds_workbench_runtime/config/profiling.json",
+      "sha256": "3feb817c4426b8af9fe19f0f9aaa057ad25d90d3d496edfd402c673542b6ec83",
+      "size": 162
+    },
+    {
+      "path": "src/gds_workbench_runtime/profiling/__init__.py",
+      "sha256": "31ad8adbbbeac4212ac11778afdc1fe0a075f083e7921279a76b3a6dc316b758",
+      "size": 1013
+    },
+    {
+      "path": "src/gds_workbench_runtime/profiling/execution.py",
+      "sha256": "4336b6b1e9def882dabc9322222233de678fd82b122dd25b86fd7a1a1ef6d704",
+      "size": 18853
+    },
+    {
+      "path": "src/gds_workbench_runtime/profiling/workflow.py",
+      "sha256": "768551a10c733fa72439005fe9a5873693b0d8ab8e704f608f5537cf35762b20",
+      "size": 14875
+    }
+  ]
+}

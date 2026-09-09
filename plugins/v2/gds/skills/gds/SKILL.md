@@ -5,31 +5,28 @@ description: Govern GDS metadata, models, bindings, mappings, code, and validati
 
 # GDS router
 
-Reads need no session; writes do. Read-only reviews use relevant guides and supplied evidence without setup/writes; cross-layer review may load several guides. Plugin owns lifecycle; server instructions constrain operations.
+Reads need no session; writes do. Read-only reviews use relevant guides/evidence without setup/writes; cross-layer reviews may load several guides. Plugin owns lifecycle within server constraints.
 
 ## Authoring: start or resume
 
-1. Read `references/session.md`. Create/resume one Tenant session and optional Model; ask for the directory only when unknown.
-2. Open Workbench only when the session is first created or the user asks. Later results need only Refresh.
-3. Infer mode, target, and Full/Selected scope; ask only decisions that change the result. Read `references/workflow-targets.md` and only the active guide. For Automatic, also read `references/automatic-journey.md`.
-4. In Automatic mode, follow `automatic-journey.md`: require and persist the user's policy before any subagent; never choose or substitute its model.
-5. For query targets, ask/persist SQL policy once: `never` uses existing evidence; `essential` resolves a blocking gap; `as_needed` permits useful bounded queries.
-6. Run local `readiness` once for a known target without first running the local helper's `inspect` command. Install missing/stale Snapshots, then rerun. Use bounded Snapshot `select`; `inspect_metadata`/`read_model_section` read live data. See `references/session.md`; never load a complete Snapshot into context.
-7. Before the first local write, read `references/change-sets.md` and `references/local-helper.md`, then request the compact dataset schema with `describe_metadata_dataset` or `describe_model_dataset`.
+1. Infer the goal and mode; ask only unresolved decisions. Read `references/workflow-targets.md` and only the active guide. Guided also reads `references/guided-journey.md`; Custom gets plan approval before execution.
+2. Read `references/session.md` and `references/local-helper.md`. Create/resume the Tenant session and optional Model; reuse known paths. Open Workbench only when the session is first created or the user asks.
+3. At Guided entry, ask/persist SQL policy once: `never` uses existing evidence; `essential` resolves a blocking gap; `as_needed` permits useful bounded queries. Install Metadata and, when a Model is selected, Model Snapshots before choosing the next workflow.
+4. Run local `readiness` once for a known target without first running the local helper's `inspect` command. Install missing/stale Snapshots, then rerun. Use bounded Snapshot `select`; `inspect_metadata`/`read_model_section` read live data. See `references/session.md`; never load a complete Snapshot into context.
+5. Before local authoring, read `references/change-sets.md` and applicable [orchestration rules](references/orchestration-rules.md). Request compact dataset schemas with `describe_metadata_dataset` or `describe_model_dataset`; use helper command contracts for exact flags.
 
 Trust MCP tool schemas dynamically. There is no packaged server-contract hash preflight. Never use removed specialized Mapping or Code context tools.
 
-For every `execute_databricks_sql` call, default `environment_code` to lowercase `dev` unless the user explicitly requests another registered Environment.
+For `execute_databricks_sql`, default `environment_code` to lowercase `dev` unless another registered Environment is explicitly requested.
 
 Metadata Enrichment selects Model inputs but updates physical Metadata; load its dedicated guide.
 
+
 ## Interaction modes
 
-- **Quick**: bounded explanation, inspection, or small governed change.
-- **Guided**: pause at useful decisions.
-- **Automatic**: finish the target without optional pauses; preserve governance.
-- **Custom**: follow a bounded requested exception.
-- **Grill With Docs**: deep collaborative exploration, not a Workflow Target. Read `references/grill-with-docs.md` only when requested.
+- **Guided**: enter the selected orchestrated workflow; reuse answers and advance through approved prerequisites.
+- **Custom**: clarify the goal, ask focused questions, propose a plan, obtain approval, then execute with existing tools/workflows.
+- **Grill With Docs**: deeper investigation and questioning; read `references/grill-with-docs.md`. Finish with an approved plan and execute through appropriate workflows.
 
 Full covers every eligible input. Selected covers only named eligible inputs. A requested count is never an output quota.
 

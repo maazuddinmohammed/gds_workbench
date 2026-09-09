@@ -298,6 +298,7 @@ class _Authorizer:
         *,
         tenant_id: int,
         policy: ToolPolicy,
+        model_id: int | None = None,
     ) -> object:
         assert principal == _principal()
         self.calls.append((tenant_id, policy))

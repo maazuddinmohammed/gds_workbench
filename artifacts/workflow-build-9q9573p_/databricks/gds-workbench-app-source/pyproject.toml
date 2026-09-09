@@ -1,0 +1,15 @@
+[project]
+name = "gds-workbench-databricks-app"
+version = "0.1.0"
+requires-python = ">=3.14,<3.15"
+dependencies = [
+    "gds-etl-workbench-mcp==0.2.0",
+    "gds-workbench-api==0.1.0",
+]
+
+[tool.uv]
+package = false
+
+[tool.uv.sources]
+gds-etl-workbench-mcp = { path = "mcp_server", editable = false }
+gds-workbench-api = { path = "web_app/backend", editable = false }

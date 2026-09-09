@@ -1,12 +1,14 @@
 # Validation Authoring
 
-Call this workflow Validation, never QA. Author `validation_group` and `validation_check` Model records for selected source Systems/targets. Enter only when Validation Authoring is selected or explicitly included in the journey; ordinary Mapping/Code review creates no Validation records. Set a Logical or Dimensional boundary; never mix layers implicitly.
+Call this workflow Validation, never QA. Author `validation_group` and `validation_check` Model records for selected source Systems/targets. Enter only when Validation Authoring is selected or explicitly included in the journey; ordinary Mapping/Code review creates no Validation records. Show available Silver/Gold layers, Systems, and targets; ask what to cover. Both layers may be selected explicitly, with distinct identifiable groups. Resolve transformation-output versus loaded-data checks, or both.
 
 Before authoring, present Systems/targets and a broad validation coverage plan; wait for user confirmation. Propose applicable categories:
 
 - **Technical** — execution, columns/types, nullability, keys, uniqueness, references.
 - **Reconciliation** — counts, control totals, Mapping coverage, transformation consistency.
 - **Functional/business** — confirmed Assertions, domain rules, expected outcomes.
+
+Reuse existing valid checks. Split groups by useful purpose: key uniqueness, mapping compatibility, references, or supported business features. Layer/feature/purpose belong in clear names and descriptions; use the existing Group/Check schema and System association. Do not put all technical checks in one generic group, create a group per trivial check, or multiply redundant assertions. Derive functional features from Mapping and confirmed rules without inventing thresholds.
 
 Give representative examples, not every final query. Identify exclusions/evidence gaps. One confirmation covers the boundary; material coverage change requires confirmation again. Existing explicit acknowledgement satisfies this gate in every interaction mode.
 
@@ -18,6 +20,6 @@ Each Check tests one clear assertion using only necessary preparation stages. Do
 
 Derive expected results independently from Mapping and confirmed rules, not by copying generated SQL. Cover failed conversions, join multiplication, lost keys and precision loss when applicable. Match scope/batch/filter boundaries; specify empty-input and null behavior. Never assume empty input passes or syntax proves business correctness.
 
-Follow the dataset schema. Except `executes_successfully`, comparisons return exactly one row/column with declared type; other cardinality is a query-contract error. Fully qualify persistent relations. Only temporary relations declared earlier in the same batch may be unqualified.
+Follow the dataset schema. Except `executes_successfully`, comparisons return exactly one row/column with declared type; other cardinality is a query-contract error. For framework execution qualify persistent relations as schema.table, following `../orchestration-rules.md`; direct preflight resolves its required catalog separately. Only temporary relations declared earlier in the same batch may be unqualified.
 
 Statically trace each check's expected value, scope and failure condition. Reject constant passing checks and unsupported assertions. Optional governed `execute_databricks_sql` preflight is external: obey saved SQL policy/current authorization and resolve specific uncertainties without unchanged repeated checks. No-result output proves neither failure nor assertion success. Apply complete Groups/Checks through a Model Change Set and stop.

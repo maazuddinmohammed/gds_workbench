@@ -560,6 +560,11 @@ class LogicalCollectionTransaction:
         query: LiteralString,
         parameters: tuple[Any, ...] = (),
     ) -> list[dict[str, Any]]:
+        # No retained cross-Tenant scope in this isolated service fixture.
+        if "SELECT DISTINCT object.source_tenant_id" in query:
+            return []
+        if "core.tenant AS tenant" in query and "effective_role" in query:
+            return []
         assert "FROM workflow.logical_entity AS entity" in query
         assert "JOIN model.model AS target_model" in query
         assert "target_model.tenant_id = %s" in query

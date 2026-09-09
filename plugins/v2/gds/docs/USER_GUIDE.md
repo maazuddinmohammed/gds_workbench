@@ -61,174 +61,175 @@ Read-only smoke test:
 
 > List the GDS Tenants I can access. Do not make changes.
 
-## Start a session
+## Start working
 
-> Initialize GDS Workbench. Working directory: `<absolute-path>`. Tenant Code: `<CODE>`. Mode: `<Quick|Guided|Automatic|Custom>`. Scope: `<Full|Selected>`. Target: `<target>`. Selection: `<details>`.
+Describe your goal in ordinary language, for example:
 
-One session belongs to one Tenant and optionally one Model. After a Model is selected, use another session for another Model.
+> Use Guided mode for Model `<name>` in Tenant `<code>`. Working directory: `<absolute-path>`. SQL policy: Essential. Build Logical from the selected inputs, then help me create Silver validations.
 
-Workbench opens once when the session starts. Keep it open. When the agent says results are ready, click **Refresh**. Each sheet has a read-only **Snapshot** ledger and an editable **Change Set** ledger. Select Snapshot rows and choose **Add selected to Change Set**, or add a new row in Change Set. Editing is available only for Change Set drafts; **Save changes** writes immediately to the local session.
+The agent infers the mode and workflow when clear. Otherwise it shows relevant choices. Read-only inspection does not require a session. Tenant, System, and Connection setup remains an operator/web prerequisite.
 
-Each sheet has up to three useful multi-select filters. Mapping documents, generated SQL, and Validation SQL stay compact in the ledger; choose **Show details** to open the complete content on its own record page. **Validate locally** runs the same effective-graph checks used by the agent and stores the digest-bound report under `reports/local-validation/`. **Generate DBML** is optional: use it only when you want a visual export of the current Model Snapshot plus local Model Change Set. Model edits never generate it automatically, and the agent does not inspect it unless asked.
+## Three modes
 
-Edit in Workbench, ask the agent for changes, or reply “proceed”, “OK”, or another clear positive acknowledgement.
+- **Guided:** follow one or more selected orchestrated workflows. The agent asks meaningful questions and reuses your answers.
+- **Custom:** explain your goal, answer focused questions, review a proposed plan, then approve execution using appropriate tools and workflows.
+- **Grill With Docs:** investigate a less-defined or complex goal more thoroughly against documentation and evidence. Review the resulting plan before execution.
 
-There is no separate user review command. Before presenting work, the agent compiles and validates the complete effective local graph. A positive acknowledgement accepts the exact current content. Any later content edit makes the report stale and requires another look.
+Quick and Custom are combined into Custom. Automatic and Guided are combined into Guided. These choices do not change authorization or Apply boundaries.
 
-Before staging Model work, the agent checks the authoritative Model revision. If it changed before a server draft exists, the agent stashes pending work, installs a fresh Model Snapshot, restores the draft, and reassesses. A cached server draft requires explicit disposition first; it is never silently cleared. Unchanged, valid work can reuse your acknowledgement while rebinding it to the new Snapshot. Metadata has no tenant-wide revision; the agent requires a non-stale Metadata Snapshot and relies on the Tenant Lock plus server validation against current database state. An unchanged result keeps the acknowledgement; changed local content is shown again. A positive acknowledgement authorizes an ordinary free Tenant Lock, deterministic staging, and server Change Set validation. The agent gives the Stage Runner only a local manifest path and accepted digest. The extension privately reconciles and transports all present datasets through existing MCP tools, then returns only revision, fingerprint, and counts. Payload rows and MCP subcall results do not enter chat context. The helper output fields `manifest` and `accepted_digest` become the extension arguments `manifestPath` and `expectedDigest`. A small local Stage proof retains the accepted digest, Change Set ID, resulting revision and fingerprint; resume checks it against the server before proceeding. Users never calculate chunks or hashes manually. Conflicts stop for resolution. Lock override and Apply always require separate confirmation.
+At Guided entry, choose SQL policy once:
 
-Server validation returns grouped counts and at most 25 bounded error examples, not the complete Change Set. If it rejects the agent's own staged draft, the agent records that exact failed revision, fixes the local records, validates them again, and asks the user to acknowledge changed content. It may then replace only that same task's unapplied failed draft and rerun server validation. Unrelated or externally changed overlaps remain conflicts.
+- **Never:** use metadata, saved Profiles, and supplied evidence; execute no SQL.
+- **Essential:** query only an evidence gap that blocks a responsible decision.
+- **As needed:** allow useful bounded evidence queries.
 
-## Interaction modes
+The agent initializes or resumes the local Tenant session, opens Workbench once, and creates/downloads/installs Metadata and, when a Model is selected, Model Snapshots. It then resolves what to do next. Metadata-only work does not need a Model. Installing the first Model Snapshot binds that Model to the session; another Model needs another session.
 
-- **Quick**: bounded explanation, inspection, or small well-defined change.
-- **Guided**: pauses at meaningful decisions.
-- **Automatic**: makes supportable decisions and completes the current target without optional pauses.
-- **Custom**: follows a bounded exception.
-- **Grill With Docs**: a deep collaborative discussion around any GDS work. It writes loose session notes or ADRs as useful and may later promote accepted conclusions into governed records. It is not a Workflow Target.
+The Workbench launcher opens the packaged local page in Chrome/Edge. Choose the session folder when the browser asks for local directory access. Keep that tab open and click **Refresh** when the agent says new work is ready.
 
-At the start of Automatic mode, the agent asks once how subagents may run: inherit the model currently selected in VS Code (default), disable subagents, or use an exact model name chosen by the user. The choice is saved for that local session. The agent never chooses, upgrades, or silently substitutes a subagent model.
+## Workbench and approvals
 
-Full covers every eligible input within the task boundary. Selected covers only explicitly named eligible inputs. Input count never dictates output count.
+Each sheet has a read-only Snapshot and an editable Change Set. **Add selected to Change Set** copies complete selected records into the draft; **Save changes** writes locally. Mapping, Code, and Validation details open through **Show details**. **Validate locally** checks the effective Snapshot-plus-draft graph. **Generate DBML** is an optional user-requested visual export.
 
-Before a selected target may use live data, the agent asks once per session for SQL policy: **Never** uses Metadata/Snapshots/user evidence only; **Essential** queries only to resolve an otherwise blocking evidence gap; **As needed** permits bounded queries when they materially improve the result. The choice is reused until the user changes it.
+A missing draft record means no change, not deletion. Snapshots are immutable. The agent reads bounded selections, preserves unrelated/locked records, and uses deterministic local helpers for editing and validation.
 
-## Work targets
+The normal handoff is:
 
-Core modeling stages are Profiling, Analysis, Conceptual, Logical, optional Dimensional, Mapping and Code Generation. The governed targets below also cover preparation and split work by layer; they are not a checklist to run for every request. Read-only reviews can span stages without a session.
+1. The agent completes functional review and local validation, then asks you to Refresh Workbench.
+2. Review, edit, or request changes. A clear acknowledgement such as “proceed” accepts the exact current content and authorizes an ordinary available Tenant Lock, Stage, and server validation. Answering a design question does not accept an unseen draft.
+3. Stage Runner privately transports and reconciles the approved records. The agent passes only the manifest path and accepted digest; you do not calculate chunks or hashes.
+4. Review the server's authoritative result and give separate Apply approval.
+5. After Apply, the agent refreshes the affected Snapshot before dependent work and releases a lock it acquired.
 
-There is no separate graphical target menu. The agent infers the target from the request and asks only when the intended result is unclear. Available targets are:
+Edits invalidate prior acceptance. Model revision changes require fresh evidence and reassessment, never a silent merge. Metadata has no tenant-wide revision: freshness, Tenant Lock, and server validation protect it. A different lock owner, changed server draft, or uncertain Stage outcome requires resolution. Lock override always needs explicit authorization and a reason.
 
-1. Metadata Authoring
-2. Model Input Scope Authoring
-3. Logical Build
-4. Silver Target Registration
-5. Logical Model Binding
-6. Logical Mapping
-7. Logical Code Generation
-8. Dimensional Build
-9. Gold Target Registration
-10. Dimensional Model Binding
-11. Dimensional Mapping
-12. Dimensional Code Generation
-13. Validation Authoring
-14. Process Registration
-15. Metadata Enrichment
+Server rejection of the agent's own draft can be repaired and reviewed again. The runner can replace only that exact failed, unapplied draft; unrelated overlaps remain conflicts. Applying Code, Validation, or Process definitions never deploys or runs them.
 
-Tenant, System, and Connection setup is an external operator/web prerequisite, not a plugin target. Profiling, relationship Analysis, and Conceptual are required phases inside Logical Build. Assertions are supporting evidence and may be authored within relevant work only from user-confirmed business facts.
+## Available workflows and opening questions
 
-## Required pre-authoring confirmations
+The agent reuses information you already supplied. A question is asked only when its answer is missing or ambiguous.
 
-| Target | What the agent confirms first |
+| Workflow | Main intake |
 | --- | --- |
-| Silver Target Registration | Exact target schema name or Entity-to-schema assignment |
-| Model Binding | No optional confirmation; it proceeds from applied model and target Metadata unless a match is missing or ambiguous |
-| Logical or Dimensional Mapping | Output Template code and proposed object/attribute JSON structure |
-| Logical or Dimensional Code Generation | Artifact/file grouping, SQL pattern, and a small representative preview |
-| Validation Authoring | Selected Systems/targets and applicable technical, reconciliation, and functional/business categories |
-| Process Registration | Missing artifact/orchestration details, followed by the resolved registration plan |
+| Metadata Authoring | Owning Tenant/System, Source-only or Source-plus-Bronze, and available source definitions |
+| Model Input Scope Authoring | Show existing scope; resolve additions/updates, Source Tenants, Source/Bronze, and Objects |
+| Metadata Enrichment | Fill missing descriptions or overwrite unlocked descriptions |
+| Logical Build | Existing-work intent, selected inputs, missing naming/audit choices, Profile reuse/reprofile/skip and batch choices |
+| Silver Target Registration | Target schema name |
+| Logical Model Binding | No routine question; resolve only missing/ambiguous matches |
+| Logical Mapping | Default format or installed custom Output Template |
+| Logical Code Generation | File grouping and representative SQL preview |
+| Dimensional Build | Business processes and analytical questions, plus missing history/grain choices |
+| Gold Target Registration | Target schema name |
+| Dimensional Model Binding | No routine question; resolve only missing/ambiguous matches |
+| Dimensional Mapping | Reuse or confirm Mapping format |
+| Dimensional Code Generation | Reuse or confirm file grouping and preview |
+| Validation Authoring | Silver/Gold/both, Systems/targets, transformation output or loaded data, and focused coverage |
+| Process Registration | Missing runtime paths and execution details, then resolved assignments/order |
 
-These confirmations remain required in Automatic mode. One confirmation may cover all selected records that share the same structure; a material change is confirmed again.
+One confirmation covers a shared layout or policy. Material changes are shown again. The agent does not ask separately about every record.
 
-## Workflow
+## Typical journeys
 
 ```text
-External foundational setup, then Metadata Authoring
-→ Source/Bronze Model Input Scope (Model Apply and fresh Model Snapshot)
-→ Profiling → relationship Analysis → Conceptual → Logical
-→ Silver Target Registration
-→ Logical Model Binding
-→ Logical Mapping → Code and/or Validation
+Metadata Authoring → Model Input Scope
+→ missing Metadata Enrichment → Profiling → Analysis → Conceptual → Logical
+→ Silver Target Registration → Logical Binding → Mapping → Code
+→ choose the next goal: Validation, optional Dimensional work, Process, or finish
 
-Logical Mapping
-→ optional Dimensional
-→ Gold Target Registration
-→ Dimensional Model Binding
-→ Dimensional Mapping → Code and/or Validation
+Dimensional Build → Gold Target Registration → Dimensional Binding
+→ Mapping → Code → choose the next goal
 ```
 
-Metadata Authoring and Target Registration are Metadata work. Input Scope, Binding, Mapping, Code, and Validation are Model work. Input Scope Apply must finish before Profiling or model development. Metadata Apply must finish before Binding; Binding Apply must finish before Mapping.
+Both builds invoke missing Metadata Enrichment and reuse complete enrichment. Dimensional work follows registered upstream lineage to enrich Source/Bronze inputs; applied Logical definitions remain authoritative for Silver. Enrichment uses its own Metadata Change Set and refresh boundary. The agent does not mix physical Metadata edits into a Model draft.
 
-**Metadata Enrichment** uses one Model's active Source/Bronze Input Scope to generate selected Object/Attribute descriptions and fill missing `attribute_inferred_data_type`. Both Model and Metadata Snapshots are required. Valid generated descriptions replace unlocked descriptions; a generated null clears the description. Enrichment adds no locks. Locked Objects/Attributes, inactive records, children of locked Objects, existing inferred types, and the original `attribute_data_type` are preserved. Technical failures leave affected fields unchanged. These updates affect physical Metadata shared by Models. Source schema and registered types take priority over bounded sample inference; masked fields are never sampled. The plugin presents a normal Metadata Change Set for acknowledgement, Stage, server validation, and Apply. Ask: “Run Metadata Enrichment for Model `<name>`, Selected scope `<objects>`.”
+Input Scope must be applied before dependent modeling; target Metadata before Binding; Binding before Mapping. Readiness checks Snapshot freshness, while the agent separately checks these applied prerequisites.
 
-Enrichment first establishes each Object's purpose, row grain and relationships, then describes Attributes in that business context. Permitted bounded queries may resolve missing meaning; unsupported acronym expansions, code definitions and business rules remain blank. Related descriptions are reconciled before presentation.
+## Metadata, ownership, and scope
 
-The agent creates each required Snapshot, downloads its ZIP to a temporary file, and installs it into the known session automatically. It asks for the working directory only when no session path is known. The installer verifies the returned Snapshot ID, size, SHA-256, and every archive member; temporary signed URLs are never repeated or saved in chat or session files.
+Supply DDLs, schema exports, documentation, or other available definitions. The agent extracts supported fields and asks precise gaps. Physical rows are not required if definitions suffice. Source-plus-Bronze produces Objects/Attributes, Bronze DDL, ingestion Mapping, and Copy configuration together.
 
-## Metadata rules
+Source names/types remain actual. Each Source Object has one Bronze counterpart. Bronze columns are STRING and lowercase snake_case. RDBMS extraction aliases names into Parquet; Bronze reads those actual incoming names. Without custom Attribute code, the framework casts to STRING; custom Bronze expressions perform their own final cast.
 
-`source_tenant_id` always means whose data an Object contains.
+A Model belongs to one Tenant; input scope can include Objects from several authorized Source Tenants. Choose Source or Bronze explicitly. Scope selection does not change ownership or silently prefer Bronze. Model access does not grant access to another Tenant's data.
 
-- Source Objects use their real source Connection.
-- Bronze, Silver, and Gold use the active Connection identified by `is_tenant_gds_connection=true`; it must also be a Global Data Store Connection. Its Tenant and System describe physical placement.
-- `source_tenant_id` remains the data-owning Tenant even when the Object lives in GDS.
-- One physical Object never mixes source Tenants. It may combine several Systems belonging to the same Tenant.
+Common Silver/Gold targets belong to the Model Tenant and use that Tenant's configured GDS Connection. Their source_tenant_id is the Model Tenant, while contributing source lineage is retained. Physical GDS Tenant/System placement can differ from the owning Tenant. Source/Bronze Objects retain their original Source Tenant.
 
-Model Input Scope permits Source and Bronze. When equivalent Source and Bronze Objects are both selected, Bronze wins by default. Source is used when Bronze is skipped, the user chooses Source, or foreign-catalog architecture requires it.
+## Enrichment, profiling, and modeling quality
 
-## Profiling coordinates
+Enrichment preserves locked Objects/Attributes and physical storage types. Choose fill-missing or overwrite-unlocked descriptions; existing inferred types are preserved unless correction is requested. The agent describes each Object's row meaning and its Attributes consistently. Unsupported meaning stays unchanged and is reported.
 
-Source profiling always uses the foreign catalog:
+For Bronze inferred types, reliable Source metadata is resolved through registered ingestion Mapping. Permitted evidence queries address gaps. Generated descriptions are not proof of relationships. Masked fields are not sampled.
 
-- Connection `foreign_catalog`
-- Object `fc_object_schema`
-- Object `fc_object_name`
-- Attribute `fc_attribute_name`
+For Profiling, inspect saved results and choose reuse, selected reprofile, or skip. Specify all rows or batches in ordinary language, for example “CRM uses batch A, ERP uses batch B, this table uses all rows.” The agent resolves Tenant/System/Object assignments into a fixed plan. Deterministic generation filters only when a batch is assigned and a registered batch column exists. Execution follows SQL policy. Missing measurements remain identified as missing.
 
-Missing foreign-catalog coordinates are an error. The workflow never connects directly to Source or silently falls back to ordinary Source names.
+Source evidence queries use foreign_catalog, fc_object_schema, fc_object_name, and fc_attribute_name. Missing coordinates are reported; the agent does not connect directly to Source. Bronze queries use its actual placement coordinates.
 
-Bronze profiling uses tenant catalog plus `object_schema`, `object_name`, and `attribute_name`.
+Analysis examines Object meaning, grain, identifiers, dependencies, and plausible relationships across the full scope. Permitted deterministic checks measure uniqueness, matching coverage, orphans, and join multiplication. Equal IDs alone do not prove shared identity. Batch transactions may reference historical master data, so relationship checks need appropriate scope.
 
-## Modeling quality
+Investigation notes live in a predictable session-local object-analysis folder. Freeform notes and an identity index let Conceptual/Logical/Dimensional reuse findings instead of starting over. Notes contain sanitized reasoning and evidence references, not raw rows or execution dumps.
 
-Default naming is PascalCase for Conceptual, Logical, and Dimensional. Logical identifiers end in `ID`, such as `CustomerID`. Dimensional keys end in `Key`, such as `CustomerKey`. User instructions or Model policy override defaults.
+Conceptual forms higher-level business concepts. Several physical Objects may support one concept. Equivalent meanings can consolidate across Tenants and Systems; the result does not repeat the Logical entity inventory.
 
-Logical Build profiles every scoped input, then tests grain, keys, functional dependencies, repeating groups, header/detail patterns, history, and relationships. It queries bounded evidence when the session policy permits it. A source table becomes one similarly shaped Logical Entity only when that examination supports the result.
+Logical defines Entities by grain, lifecycle, and business identifiers. It consolidates equivalent Entities/Attributes, keeps useful System-specific information, and balances normalization against unnecessary splitting. Every scoped Object and Attribute is accounted for. Exclusions require a substantive reason. Existing results are refined incrementally; locks and unrelated work remain protected.
 
-Before presenting a result, the agent inspects the completed candidate against the effective Snapshot-plus-draft graph. Every input must be accounted for and every output justified. It removes unsupported additions, reconciles duplicates and mixed grains, repairs references, and explicitly retires superseded mutable records within scope. Simply omitting an applied record leaves it active. Locked and out-of-scope records stay protected. Local/server schema validation cannot establish business correctness by itself.
+Dimensional starts with business process and fact grain, then Dimensions and measures. It defines history, valid aggregation, and missing/late-reference behavior. Shared Dimensions are reused when meanings and keys agree; role-playing does not automatically duplicate them. Joins must preserve grain and avoid measure duplication.
 
-Conceptual starts from business processes and state changes. It defines a small reusable business vocabulary and verb-based relationships. It has no Attributes, keys, normalization, table design, or required one-to-one correspondence with physical or Logical records.
+## Naming, keys, and audit policy
 
-Logical is the normalized operational model. It applies 1NF, 2NF, and 3NF where the evidence supports them, separates different grains and lifecycles, and consolidates Systems only when their business meaning and grain agree. It includes every intended physical Attribute, including audit, technical, and constant-valued Attributes. Submodels represent coherent business capabilities; shared Entities use memberships rather than copies per source System. Common table structure does not prove shared customer identity; consolidation requires supported identity and survivorship rules.
+The agent shows actual approved templates rather than inventing missing defaults. PascalCase is the default. Logical surrogate keys end in ID, e.g. CustomerID; foreign keys reference those values. Dimensional keys end in Key, e.g. CustomerKey, with the approved dim/fact prefixes.
 
-Dimensional follows the Kimball sequence for each process: choose the business process, declare one fact-row grain, identify Dimensions, then identify Facts. The process-to-dimension matrix is an internal completeness check, not a stored model record. Final review checks join fanout, history lookup, unknown/late members, Bridge allocation, snapshot completeness and valid aggregation. Missing policy is exposed rather than defaulted.
+Every Logical Entity has its own generated BIGINT surrogate first. Declared target surrogate keys are generated by Databricks; DDL expresses identity behavior and load SQL omits them. Foreign keys remain mapped columns.
 
-Every modeling loop accounts for selected inputs as represented, context-only, excluded with reason, or blocked. Coverage does not force one output per input.
+SourceCreatedDate, SourceUpdatedDate, SourceCreatedBy, and SourceUpdatedBy are optional: the agent asks whether to include them. If selected, they precede the shared block:
 
-## Target registration and binding
+SourceSystemID, IsDataValid, HashKey, IsActive, GDSBatchID, PipelineRunID, CreatedDate, UpdatedDate, CreatedBy, UpdatedBy.
 
-Before Silver registration begins, the agent asks the user to confirm the exact target schema name or Entity-to-schema assignment. It then generates local Databricks DDL and complete Metadata records. DDL is handed to the user; only Metadata is applied. All GDS targets use the GDS Connection and retain the real `source_tenant_id`.
+SourceSystemID identifies the originating System. The following nine columns are framework-populated. All intended columns remain in Model, DDL, and Binding, but load SQL ends at SourceSystemID. Mapping explicitly identifies database/framework population. Confirm missing audit-template types rather than assuming them.
 
-After a fresh Metadata Snapshot, Model Object Binding connects each Logical/Dimensional Entity to its registered Silver/Gold Object. Model Attribute Binding connects every modeled Attribute to the registered Attribute. No additional design confirmation is required unless metadata is missing or ambiguous. Mapping never establishes these bindings.
+## Target registration and Binding
 
-## Mapping, code, and process handoff
+Registration reuses applied model names, types, keys, nullability, descriptions, and audit policy. It builds consistent Metadata and complete CREATE TABLE IF NOT EXISTS schema.table DDL for all selected targets. The framework sets catalog, so artifacts omit it.
 
-Before Mapping begins, the agent presents the Output Template code and proposed object/attribute JSON structure—or recommends the flexible standard structure when no template applies—and waits for confirmation. Mapping is target-binding plus source-System oriented. Its default object and attribute documents have two keys: `transformation_source` and `transformation_logic`. They identify exact source objects/columns and specify the operations needed to populate the bound target, including grain, keys, joins, conversions, null behavior and applicable reconciliation. Required `mapping_dependency` records carry source-System ordering. The JSON shape stays flexible for confirmed templates; incomplete transformation decisions block the affected target.
+Separate migration statements describe known differences from the Metadata Snapshot baseline. If a change is unclear, the agent asks; unresolved changes are listed while complete creation DDL and known migrations are delivered. CREATE IF NOT EXISTS does not alter an existing table. Registration applies Metadata, not DDL.
 
-Before Code Generation begins, the agent presents the proposed artifact/file layout and a small SQL preview for confirmation. Code Generation uses separate files when selected, or isolated temporary-view branches in a combined file. An aligned `UNION ALL` is sufficient only for disjoint target keys; otherwise Mapping must supply identity reconciliation and precedence. SQL generation cannot silently invent those rules or repair Mapping by adding `DISTINCT`, prior-target preferences or unsupported lookup tables. The orchestration layer performs loading and owns triggers.
+After refresh, Binding matches every modeled Entity/Attribute to compatible registered targets, including generated columns. Only missing or ambiguous matches require clarification.
 
-Process/Process Group registration happens later. The agent derives known details, asks one consolidated question for missing artifact paths and orchestration metadata, and confirms the resolved registration plan before authoring. The plugin never deploys or runs generated code.
+## Mapping and SQL generation
 
-## Validation Authoring and SQL Preflight
+Default Object documents use source_objects and ordered steps. Default Attribute documents use transformation and optional source_attributes. Confirmed installed custom templates remain supported.
 
-Before Validation Authoring begins, the agent presents the selected Systems/targets and proposed technical, reconciliation, and functional/business categories with representative examples. After confirmation, it creates Validation Groups and Validation Checks from applied Mapping and current Code when available. Records store definitions and SQL, never execution results.
+Object steps explain inputs, preparation, joins, filters, grain changes, branch outputs, and reconciliation. Attribute rules define expressions, casts, invalid/null behavior, and any confirmed defaults. Every target column is accounted for, including columns populated by the framework. Steps and teaching SQL examples describe the desired output, not arbitrary business rules.
 
-SQL is first reviewed statement by statement against applied Mapping. Code generation does not automatically start Validation Authoring or run repeated execution tests. SQL Preflight is optional, external Databricks execution under the saved SQL policy, and separate. It may check syntax before upstream data has loaded; an empty result is acceptable. The plugin never treats preflight output as persisted validation evidence.
+Code Generation uses one file per target with separate System branches by default, or the approved separate files. It creates reusable temporary stages and an explicit final SELECT. UNION ALL needs disjoint keys or mapped reconciliation. The agent does not invent deduplication, precedence, lookups, or existing-value fallback to compensate for incomplete Mapping.
 
-## Safe boundaries
+Generated files contain code only. Runtime performs loading/merge. SQL review traces each step and output against Mapping. Validation Authoring is a separate selected workflow; code review alone creates no Validation records.
 
-- Snapshots are complete and read-only. The agent automatically creates and safely installs a missing or stale Snapshot in the known session.
-- Local Workbench never calls MCP or performs server changes.
-- Metadata and Model Change Sets remain separate.
-- Tenant Lock, revision fencing, server validation, and Apply approval remain mandatory.
-- The plugin never exposes foundational CRUD, arbitrary PostgreSQL, secret-returning tools, direct graph mutation, or generated-code execution.
+## Validation and Process registration
+
+Choose Silver, Gold, or both, then Systems/targets and transformation-output or loaded-data checks. The agent proposes a focused coverage plan with representative examples.
+
+Groups separate meaningful purposes: key uniqueness, output compatibility, references, or supported business features. They are not just one Technical and one Functional bucket. Each check catches a distinct relevant failure, with an explicit comparison, severity, and null/empty-input behavior. Expectations come independently from Mapping and confirmed rules. Existing valid checks are reused.
+
+Checks can be authored before data loads. Optional preflight follows SQL policy; empty input or successful syntax does not prove business correctness. Stored definitions do not contain execution results.
+
+Process Registration derives known artifacts, targets, Systems, and dependencies, then asks for missing paths and execution details. Process Groups reuse actual ingestion Copy Groups. Usually one group covers a System; split groups remain supported. Runtime inputs are Tenant, System, and Copy Group; selector default means all Copy Groups for that Tenant/System. It is not a replacement for their actual stored associations.
+
+Review artifact-to-Process assignments and execution order before Metadata Apply. Deployment, scheduling, and physical execution remain external handoffs.
 
 ## Example requests
 
-- “Review these Conceptual and Logical drafts using the supplied evidence. Read-only; SQL policy Never. Explain business-grain problems and unsupported assumptions.”
-- “Build Logical for the applied Input Scope. SQL policy Essential. Reconcile concepts, normalize by meaning, assign business submodels, and explain cross-System identity decisions before presenting the result.”
-- “Enrich missing descriptions for these scoped Objects. Use the saved SQL policy to understand the data first. Leave unsupported meanings blank.”
-- “Create Logical Mapping for these bound Silver targets. Use transformation_source and transformation_logic for object and attribute documents; show one populated example for confirmation.”
-- “Generate SQL from applied Mapping. Review the actual SQL against each transformation. Report incomplete Mapping for correction; do not start Validation Authoring automatically.”
+- “Guided: show the current Model scope, then add selected Bronze Objects from these two accessible Tenants.”
+- “Build Logical using existing Profiles; fill missing metadata first. Reuse the naming policy and ask about unclear business identity.”
+- “Custom: investigate why these mappings lose order lines. Propose a plan before changes.”
+- “Grill With Docs: help define the analytical processes and grain for this dimensional model.”
+- “Generate SQL from applied Mapping. Use one file per target; then ask which validations I need.”
+- “Create focused Silver and Gold validations for these Systems, grouped by technical purpose and business feature.”
 
-The packaged `references/examples/modeling-decisions.md` and `mapping-documents.md` show the reasoning and document shape. Their fictional names and policies are never defaults for your data. The plugin can make evidence limits explicit and require correction; instructions alone cannot guarantee that every business inference is true.
+## Agent efficiency and safety
+
+The skill loads only relevant references. It teaches session setup, exact helper command discovery, bounded snapshot reads, complete-record edits, digest validation, and the Stage Runner handoff. Snapshots and Stage payloads are not dumped into chat. The server remains authoritative for ownership, access, locks, references, revisions, normalization, and Apply.
+
+The shared skill reference references/orchestration-rules.md is the place to extend confirmed runtime behavior. Request updates there with the agent; keep examples fictional and consumer rules precise. Instructions improve consistency but cannot guarantee that an unsupported business inference is true.
+
+Cross-Tenant scope and combined snapshots require the matching MCP/backend and SQL release. A plugin rebuild does not upgrade running services or databases. Generated deployment artifacts require the normal separate deployment process.
