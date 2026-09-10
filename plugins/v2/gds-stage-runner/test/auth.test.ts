@@ -39,7 +39,7 @@ describe("acquireMicrosoftAccessToken", () => {
     expect(getSession).not.toHaveBeenCalled();
   });
 
-  test("uses the exact protected-resource metadata in the VS Code Microsoft challenge", async () => {
+  test("uses the validated MCP scope and tenant for normal Microsoft sign-in", async () => {
     const fetcher = vi.fn(async () =>
       new Response(JSON.stringify(metadata()), {
         status: 200,
@@ -67,12 +67,7 @@ describe("acquireMicrosoftAccessToken", () => {
     );
     expect(getSession).toHaveBeenCalledWith(
       "microsoft",
-      {
-        wwwAuthenticate:
-          `Bearer resource_metadata="${new URL("/.well-known/oauth-protected-resource/mcp", PRODUCTION_MCP_URL)}", ` +
-          `scope="${PRODUCTION_MCP_URL}/workbench.access"`,
-        fallbackScopes: [`${PRODUCTION_MCP_URL}/workbench.access`],
-      },
+      [`${PRODUCTION_MCP_URL}/workbench.access`, `VSCODE_TENANT:${TENANT_ID}`],
       {
         createIfNone: {
           detail: "Sign in with the Microsoft account authorized for GDS Workbench.",
@@ -122,5 +117,8 @@ describe("acquireMicrosoftAccessToken", () => {
         detail: "GDS Workbench rejected the expired session. Sign in again to continue Stage.",
       },
     });
+    expect(getSession.mock.calls[0]?.[1]).toEqual([
+      `${PRODUCTION_MCP_URL}/workbench.access`, `VSCODE_TENANT:${TENANT_ID}`,
+    ]);
   });
 });

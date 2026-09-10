@@ -1,19 +1,22 @@
 import type * as Vscode from "vscode";
-import { beforeEach, describe, expect, test, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, test, vi } from "vitest";
 import type { StageRunnerDependencies } from "../src/stage-runner.js";
+import { PRODUCTION_MCP_URL } from "../src/profile.js";
 
 const mocks = vi.hoisted(() => ({
   registerTool: vi.fn(), registerCommand: vi.fn(),
   createClient: vi.fn(), stage: vi.fn(), close: vi.fn(),
   callTool: vi.fn(), information: vi.fn(), error: vi.fn(),
+  getSession: vi.fn(), profile: "local",
   workspace: { isTrusted: true, workspaceFolders: [{ uri: { fsPath: "/workspace" } }] },
 }));
 vi.mock("vscode", () => ({
   workspace: {
     get isTrusted() { return mocks.workspace.isTrusted; },
     get workspaceFolders() { return mocks.workspace.workspaceFolders; },
-    getConfiguration: () => ({ get: (key: string, fallback: unknown) => key === "profile" ? "local" : fallback }),
+    getConfiguration: () => ({ get: (key: string, fallback: unknown) => key === "profile" ? mocks.profile : fallback }),
   },
+  authentication: { getSession: mocks.getSession },
   lm: { registerTool: mocks.registerTool },
   commands: { registerCommand: mocks.registerCommand },
   window: { showInformationMessage: mocks.information, showErrorMessage: mocks.error },
@@ -34,11 +37,14 @@ import { StageMcpError } from "../src/mcp-client.js";
 
 beforeEach(() => {
   vi.resetAllMocks();
+  mocks.profile = "local";
   mocks.workspace.isTrusted = true;
   mocks.workspace.workspaceFolders = [{ uri: { fsPath: "/workspace" } }];
   mocks.createClient.mockResolvedValue({ callTool: mocks.callTool, close: mocks.close });
   mocks.close.mockResolvedValue(undefined);
 });
+
+afterEach(() => vi.unstubAllGlobals());
 
 function activatedTool() {
   const subscriptions: Vscode.Disposable[] = [];
@@ -53,6 +59,43 @@ const input = { manifestPath: "/workspace/tasks/01.stage-request.json", expected
 const token = (cancelled = false) => ({ isCancellationRequested: cancelled }) as Vscode.CancellationToken;
 
 describe("VS Code tool boundary", () => {
+  test.each(["check", "stage"])("production %s uses normal Microsoft sign-in instead of a claimless challenge", async (operation) => {
+    const tenant = "11111111-1111-4111-8111-111111111111";
+    mocks.profile = "production";
+    vi.stubGlobal("fetch", vi.fn(async () => new Response(JSON.stringify({
+      resource: PRODUCTION_MCP_URL,
+      authorization_servers: [`https://login.microsoftonline.com/${tenant}/v2.0`],
+      scopes_supported: [`${PRODUCTION_MCP_URL}/workbench.access`],
+      bearer_methods_supported: ["header"],
+    }))));
+    mocks.getSession.mockImplementation(async (_provider, scopes: unknown) => {
+      // Microsoft's getSessionsFromChallenges rejects missing claims before VS Code can prompt.
+      if (!Array.isArray(scopes)) throw new Error("No claims found in authentication challenges");
+      return { accessToken: "fixture-session" };
+    });
+    mocks.createClient.mockImplementation(async (_profile, tokenSupplier) => {
+      await tokenSupplier(false);
+      return { callTool: mocks.callTool, close: mocks.close };
+    });
+    mocks.callTool.mockResolvedValue({ tenants: [] });
+    mocks.stage.mockResolvedValue({ status: "staged", fingerprintVerified: true });
+    const tool = activatedTool();
+
+    if (operation === "check") {
+      await mocks.registerCommand.mock.calls[0]![1]();
+      expect(mocks.error).not.toHaveBeenCalled();
+      expect(mocks.information).toHaveBeenCalledWith("GDS Stage Runner is ready (production).");
+    } else {
+      const result = await tool.invoke({ input, toolInvocationToken: undefined }, token());
+      expect(result?.content[0]).toMatchObject({ status: "staged" });
+    }
+    expect(mocks.getSession).toHaveBeenCalledWith(
+      "microsoft",
+      [`${PRODUCTION_MCP_URL}/workbench.access`, `VSCODE_TENANT:${tenant}`],
+      { createIfNone: { detail: "Sign in with the Microsoft account authorized for GDS Workbench." } },
+    );
+  });
+
   test.each(["untrusted", "cancelled", "no workspace"])("rejects %s before connecting", async (reason) => {
     if (reason === "untrusted") mocks.workspace.isTrusted = false;
     if (reason === "no workspace") mocks.workspace.workspaceFolders = [];

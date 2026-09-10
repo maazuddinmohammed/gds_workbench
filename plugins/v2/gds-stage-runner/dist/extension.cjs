@@ -7508,15 +7508,12 @@ async function acquireMicrosoftAccessToken(endpoint, getSession, fetcher = fetch
   if (authorizationServer.protocol !== "https:" || authorizationServer.hostname !== "login.microsoftonline.com" || authorizationServer.port !== "" || authorizationServer.username !== "" || authorizationServer.password !== "" || authorizationServer.search !== "" || authorizationServer.hash !== "" || authorityParts.length !== 2 || !UUID.test(authorityParts[0] ?? "") || authorityParts[1] !== "v2.0") {
     fail("AUTHORITY_MISMATCH", "GDS authorization server is not an exact Entra tenant.");
   }
-  const challenge = {
-    wwwAuthenticate: `Bearer resource_metadata="${metadataUrl.toString()}", scope="${expectedScope}"`,
-    fallbackScopes: [expectedScope]
-  };
+  const scopes = [expectedScope, `VSCODE_TENANT:${authorityParts[0]}`];
   let session;
   try {
     session = await getSession(
       "microsoft",
-      challenge,
+      scopes,
       forceNewSession ? {
         forceNewSession: {
           detail: "GDS Workbench rejected the expired session. Sign in again to continue Stage."
@@ -19880,13 +19877,13 @@ function failureReceipt(error2, stageStarted) {
 
 // src/extension.ts
 var TOOL_NAME = "gds_stageApprovedManifest";
-var getMicrosoftSession = async (providerId, request, options) => {
+var getMicrosoftSession = async (providerId, scopes, options) => {
   if (options.forceNewSession !== void 0) {
-    return vscode.authentication.getSession(providerId, request, {
+    return vscode.authentication.getSession(providerId, scopes, {
       forceNewSession: options.forceNewSession
     });
   }
-  return vscode.authentication.getSession(providerId, request, {
+  return vscode.authentication.getSession(providerId, scopes, {
     createIfNone: options.createIfNone ?? true
   });
 };

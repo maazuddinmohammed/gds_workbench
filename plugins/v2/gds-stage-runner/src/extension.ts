@@ -17,15 +17,15 @@ const TOOL_NAME = "gds_stageApprovedManifest";
 
 const getMicrosoftSession: MicrosoftSessionGetter = async (
   providerId,
-  request,
+  scopes,
   options,
 ) => {
   if (options.forceNewSession !== undefined) {
-    return vscode.authentication.getSession(providerId, request, {
+    return vscode.authentication.getSession(providerId, scopes, {
       forceNewSession: options.forceNewSession,
     });
   }
-  return vscode.authentication.getSession(providerId, request, {
+  return vscode.authentication.getSession(providerId, scopes, {
     createIfNone: options.createIfNone ?? true,
   });
 };

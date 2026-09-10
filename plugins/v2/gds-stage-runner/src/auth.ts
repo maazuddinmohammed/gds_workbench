@@ -5,11 +5,6 @@ export interface MicrosoftAuthenticationSession {
   accessToken: string;
 }
 
-export interface MicrosoftChallengeRequest {
-  wwwAuthenticate: string;
-  fallbackScopes: readonly string[];
-}
-
 export interface MicrosoftSessionOptions {
   createIfNone?: { detail: string };
   forceNewSession?: { detail: string };
@@ -17,7 +12,7 @@ export interface MicrosoftSessionOptions {
 
 export type MicrosoftSessionGetter = (
   providerId: "microsoft",
-  request: MicrosoftChallengeRequest,
+  scopes: readonly string[],
   options: MicrosoftSessionOptions,
 ) => PromiseLike<MicrosoftAuthenticationSession | undefined>;
 
@@ -120,17 +115,14 @@ export async function acquireMicrosoftAccessToken(
   ) {
     fail("AUTHORITY_MISMATCH", "GDS authorization server is not an exact Entra tenant.");
   }
-  const challenge: MicrosoftChallengeRequest = {
-    wwwAuthenticate:
-      `Bearer resource_metadata="${metadataUrl.toString()}", ` +
-      `scope="${expectedScope}"`,
-    fallbackScopes: [expectedScope],
-  };
+  // Microsoft's challenge flow requires actual claims and rejects a discovery-only
+  // challenge before prompting. Use ordinary scopes with its tenant-routing marker.
+  const scopes = [expectedScope, `VSCODE_TENANT:${authorityParts[0]}`];
   let session: MicrosoftAuthenticationSession | undefined;
   try {
     session = await getSession(
       "microsoft",
-      challenge,
+      scopes,
       forceNewSession
         ? {
             forceNewSession: {
