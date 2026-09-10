@@ -1,6 +1,6 @@
 # Profiling
 
-Use active applied Model Input Scope. Show existing Profiles and ask reuse, selected reprofile, or skip. For fresh measurements ask all rows or batch selections, accepting natural language by Source Tenant, originating System, or specific Object. Reuse answers; clarify conflicting assignments.
+Use active applied Input Scope. Resolve reuse/reprofile/skip and all rows/batches from supplied intent or existing Profiles. Batch rules may name Source Tenant, originating System or Object; clarify conflicts only.
 
 ## Deterministic planning
 
@@ -27,12 +27,12 @@ A batch filter requires an assigned batch AND a registered batch column; otherwi
 
 ## Evidence coordinates and execution
 
-Source coordinates are Connection `foreign_catalog`, Object `fc_object_schema`, Object `fc_object_name`, and Attribute `fc_attribute_name`. Missing coordinates are an error. Never connect directly to a Source or substitute ordinary names. Bronze uses its placement `tenant_catalog`, `object_schema`, `object_name`, and `attribute_name`.
+The planner uses registered Source foreign-catalog coordinates and Bronze placement. Missing coordinates fail; never substitute names or connect directly to Source.
 
-Execute generated queries only under saved SQL policy and current authorization. `never` executes none; `essential` resolves a blocking gap; `as_needed` permits useful bounded measurements. Resolve the registered non-GDS source Connection accepted by `execute_databricks_sql`; the server routes its GDS execution. Do not pass a guessed connection ID.
+Execute only under saved SQL policy/current authorization. Resolve the registered non-GDS source Connection for `execute_databricks_sql`; the server routes GDS execution. Never guess connection IDs.
 
 Convert only returned aggregate metrics into complete `profiling_profile` records using the index and compact dataset schema; discard the temporary index field. Never fabricate metrics or persist raw tool envelopes/physical rows. Keep measurement time, batch scope, snapshot IDs, and unavailable outcomes in sanitized task evidence; do not invent record fields. Existing Profile evidence is reusable only with its known scope/freshness.
 
-Report scoped, reused, measured, unprofiled, excluded, and blocked coverage. Additional modeling investigations may use agent-written SQL where permitted, without replacing the fixed standard profiling contract.
+Report scoped, reused, measured, unprofiled, excluded and blocked coverage. Use `../analysis-probes.md` for deeper key/dependency/join evidence.
 
 Non-null batch IDs are strings, for example `"712"`; `null` means all rows. Report each Object’s resolved scope before execution, including unfiltered Objects without a batch column.

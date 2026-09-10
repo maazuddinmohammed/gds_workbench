@@ -1669,8 +1669,17 @@ def test_task_state_enforces_gates_and_marks_applied_area_stale(tmp_path: Path) 
     )
     assert unaccepted.returncode != 0
     assert "accepted digest" in unaccepted.stderr
+    # This state-machine fixture has an empty model dataset; semantic review is
+    # exercised with real exported records in test_complete_authoring_graph.py.
+    quality = json.dumps({"schema_version": "1.0", "task": "01", "draft_digest": digest,
+                          "files": [], "quality": {
+                              "required": False, "status": "not_required", "errors": [],
+                          }}).encode()
+    (session / "tasks" / "01.modeling-quality.json").write_bytes(quality)
     (session / "tasks" / "01.accept.json").write_text(
-        json.dumps([digest, "valid", "snapshot-old", 7]) + "\n"
+        json.dumps([digest, "valid", "snapshot-old", 7, {"modeling_quality": {
+            "report_sha256": hashlib.sha256(quality).hexdigest(),
+        }}]) + "\n"
     )
     missing_cache = run_helper(
         "task-state", "--session", str(session), "--task", "01", "--state", "staged"

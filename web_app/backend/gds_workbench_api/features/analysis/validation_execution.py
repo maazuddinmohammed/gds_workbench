@@ -24,6 +24,9 @@ from gds_etl_workbench.domain.errors import (
     InvalidRequestError,
     WorkbenchError,
 )
+from gds_etl_workbench.domain.modeling_records import (
+    AnalysisValidationEvidence as AnalysisValidationEvidence,
+)
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator, model_validator
 
 _MAX_RELATIONSHIPS = 50_000
@@ -46,12 +49,6 @@ _RESULT_COLUMNS = (
     "validation_duplicate_target_key_count",
     "validation_result",
 )
-
-type AnalysisValidationResult = Literal[
-    "supported",
-    "inconclusive",
-    "unsupported",
-]
 
 
 class AnalysisValidationPolicy(BaseModel):
@@ -156,57 +153,6 @@ class AnalysisValidationRelationship(BaseModel):
     def validate_endpoints(self) -> AnalysisValidationRelationship:
         if self.from_endpoint.attribute_id == self.to_endpoint.attribute_id:
             raise ValueError("Analysis validation endpoints must be distinct")
-        return self
-
-
-class AnalysisValidationEvidence(BaseModel):
-    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
-
-    validation_source_non_null_count: int = Field(ge=0)
-    validation_source_distinct_count: int = Field(ge=0)
-    validation_target_non_null_count: int = Field(ge=0)
-    validation_target_distinct_count: int = Field(ge=0)
-    validation_source_missing_target_count: int = Field(ge=0)
-    validation_unused_target_count: int = Field(ge=0)
-    validation_duplicate_target_key_count: int = Field(ge=0)
-    validation_result: AnalysisValidationResult
-
-    @model_validator(mode="after")
-    def validate_evidence(self) -> AnalysisValidationEvidence:
-        if self.validation_source_distinct_count > self.validation_source_non_null_count:
-            raise ValueError("Source validation counts do not reconcile")
-        if (self.validation_source_non_null_count == 0) != (
-            self.validation_source_distinct_count == 0
-        ):
-            raise ValueError("Source validation counts do not reconcile")
-        if self.validation_target_distinct_count > self.validation_target_non_null_count:
-            raise ValueError("Target validation counts do not reconcile")
-        if (self.validation_target_non_null_count == 0) != (
-            self.validation_target_distinct_count == 0
-        ):
-            raise ValueError("Target validation counts do not reconcile")
-        if self.validation_source_missing_target_count > self.validation_source_distinct_count:
-            raise ValueError("Missing-target count exceeds source distinct count")
-        if self.validation_unused_target_count > self.validation_target_distinct_count:
-            raise ValueError("Unused-target count exceeds target distinct count")
-        expected_duplicate_count = (
-            self.validation_target_non_null_count - self.validation_target_distinct_count
-        )
-        if self.validation_duplicate_target_key_count != expected_duplicate_count:
-            raise ValueError("Duplicate-target count does not reconcile")
-
-        expected_result: AnalysisValidationResult
-        if self.validation_source_non_null_count == 0 or self.validation_target_non_null_count == 0:
-            expected_result = "inconclusive"
-        elif (
-            self.validation_source_missing_target_count == 0
-            and self.validation_duplicate_target_key_count == 0
-        ):
-            expected_result = "supported"
-        else:
-            expected_result = "unsupported"
-        if self.validation_result != expected_result:
-            raise ValueError("Analysis validation result does not match its evidence")
         return self
 
 

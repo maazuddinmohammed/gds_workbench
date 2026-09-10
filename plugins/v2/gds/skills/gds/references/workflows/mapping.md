@@ -4,7 +4,7 @@ Require active applied Model Binding. Logical maps scoped Source/Bronze inputs t
 
 Before authoring, present the applicable Output Template code, object-level and attribute-level JSON shapes and target exceptions; wait for user confirmation. Without a template, recommend the advisory default below. One confirmation covers selected targets sharing the structure; structural changes require confirmation again. Existing explicit acknowledgement satisfies this gate in every interaction mode.
 
-The work unit is target `model_object_binding` plus source System. Mapping transforms bound targets; never register metadata or establish Binding here. Use bounded local `select` for the Model Snapshot, `read_model_section` for live applied Binding/Mapping and `inspect_metadata` for focused physical context. Reconcile changed revisions before authoring.
+Work unit: target `model_object_binding` plus source System. Do not register Metadata or establish Binding here. Follow `../session.md` for bounded reads and revision checks.
 
 Cover every active bound target Attribute through `model_attribute_binding`, including technical/constants. Preserve or author active `mapping_dependency` per modeled layer/source System with supported execution order. Keep Object order consistent. Multiple Systems may contribute to one target; Code Generation decides files.
 
@@ -22,7 +22,7 @@ Default Attribute inner document — required `transformation`, optional `source
 
 Each step names its output: available columns, row grain, and how later stages consume it. Explain lookup failure behavior, deduplication tie handling, and value preservation only when evidence supplies that rule. Each System branch ends with the same ordered runtime input columns; state how branches combine. Account for database/framework columns using `../orchestration-rules.md`. Read `../examples/mapping-steps.md` for step-to-SQL examples when needed.
 
-Code Generation translates Object steps into successive `CREATE OR REPLACE TEMPORARY VIEW` statements, reuses earlier views and applies Attribute rules before the final target-column SELECT. Keep template shapes/nullability unchanged. See `../examples/mapping-documents.md`; obtain outer fields from dataset schemas. Template nullability and registry `is_required` govern values/presence. Flexible storage and advisory templates still require functional review.
+Keep template shapes/nullability unchanged; registry `is_required` governs presence. See `../examples/mapping-documents.md` for examples and dataset schemas for outer fields. Code translates steps into temporary views and applies Attribute rules before the final target-column SELECT.
 
 Before validation, trace sources to every target Attribute; reconcile storage, inferred source and bound target types, invalid-value handling, identifier formatting, decimals and timezones. Check grain, optional joins and cross-System disjoint keys or evidenced reconciliation/precedence. Deduplication needs evidenced keys/order. Reject conflicting Object/Attribute rules, missing lineage and vague instructions.
 

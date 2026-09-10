@@ -13,7 +13,7 @@ Ask whether to include these optional Source audit fields; they are not defaults
 
 If selected, place them before the shared audit block and specify each System's source expression or confirmed missing-value behavior. Never silently invent an audit timestamp or user identity.
 
-Shared columns, in order:
+Confirm applicability of the complete shared block when the Model template is absent; optional Source audit fields do not constitute approval of this block. Do not silently expand every Entity with unconfirmed framework fields. Once approved, shared columns appear in this order:
 
 | Column | Population |
 | --- | --- |

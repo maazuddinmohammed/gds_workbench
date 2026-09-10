@@ -25,7 +25,7 @@ function fixture(count = 2) {
 test('plans Source foreign coordinates and Bronze origin-system batches without leaking batch SQL syntax', () => {
   const {source,bronze,metadata} = fixture();
   const batch = "a' OR 1=1 --\\b";
-  const queries = planProfiling(metadata,[source,bronze],{default_batch_id:null,
+  const {queries} = planProfiling(metadata,[source,bronze],{default_batch_id:null,
     systems:[{source_tenant_code:'OWNER',system_code:'CRM',batch_id:batch}]});
   assert.equal(queries.length,2);
   assert.match(queries[0].sql,/`foreign`\.`remote`\.`Customers`/);
@@ -45,13 +45,13 @@ test('explicit all-rows overrides batches; absent batch column omits predicate',
   const {source,bronze,metadata} = fixture();
   source.batch_attribute_name = null;
   const object = Object.fromEntries(['tenant_code','system_code','connection_code','object_schema','object_name'].map(k => [k,bronze[k]]));
-  const queries = planProfiling(metadata,[source,bronze],{default_batch_id:'123',objects:[{...object,batch_id:null}]});
+  const {queries} = planProfiling(metadata,[source,bronze],{default_batch_id:'123',objects:[{...object,batch_id:null}]});
   assert.ok(queries.every(q => q.batch_id === null && !q.sql.includes(' WHERE ')));
 });
 
 test('large scope is batched without losing Attribute identity', () => {
   const {source,metadata} = fixture(71);
-  const queries = planProfiling(metadata,[source],{default_batch_id:null});
+  const {queries} = planProfiling(metadata,[source],{default_batch_id:null});
   assert.deepEqual(queries.map(q => q.attributes.length),[50,21]);
   assert.equal(queries[1].attributes[0].attribute_index,51);
   assert.equal(queries[1].attributes.at(-1).attribute_name,'Column70');
@@ -67,4 +67,27 @@ test('ambiguous assignments and missing coordinates fail before generating evide
     systems:[{...assignment,system_code:'misspelled'}]}),/Unknown batch assignment/);
   source.fc_object_name = null;
   assert.throws(() => planProfiling(metadata,[source],{default_batch_id:null}),/coordinate/);
+});
+
+test('masked Source lineage is excluded from Bronze profiling with complete coverage', () => {
+  const {source,bronze,metadata} = fixture(3);
+  metadata.source_attribute[1].is_masking_required = true;
+  metadata.ingestion_attribute_mapping = [{...metadata.ingestion_object_mapping[0],
+    source_attribute_name:'Column1',target_attribute_name:'Column1'}];
+  const {queries,coverage} = planProfiling(metadata,[source,bronze],{default_batch_id:null});
+  assert.equal(queries.length,2);
+  assert.ok(queries.every(query => query.attributes.length === 2 && !query.sql.includes('Remote1') && !query.sql.includes('Column1')));
+  assert.ok(coverage.every(object => object.active_attribute_count === 3 && object.planned_attribute_count === 2));
+  assert.ok(coverage.every(object => object.excluded.length === 1 && object.excluded[0].reason === 'masking_required'));
+});
+
+test('fully masked Objects retain coverage without SQL; masked batch filters fail', () => {
+  const {source,metadata} = fixture(2);
+  for (const attribute of metadata.source_attribute) attribute.is_masking_required = true;
+  const {queries,coverage} = planProfiling(metadata,[source],{default_batch_id:null});
+  assert.deepEqual(queries,[]);
+  assert.equal(coverage[0].planned_attribute_count,0);
+  assert.equal(coverage[0].excluded.length,2);
+  metadata.source_attribute[1].is_masking_required = false;
+  assert.throws(() => planProfiling(metadata,[source],{default_batch_id:'7'}),/Masked batch Attribute/);
 });

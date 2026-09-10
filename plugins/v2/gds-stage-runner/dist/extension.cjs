@@ -7425,6 +7425,119 @@ var require_core3 = __commonJS({
   }
 });
 
+// ../gds/skills/gds/scripts/model-quality-files.js
+var require_model_quality_files = __commonJS({
+  "../gds/skills/gds/scripts/model-quality-files.js"(exports2, module2) {
+    "use strict";
+    var fs = require("node:fs");
+    var path = require("node:path");
+    var crypto2 = require("node:crypto");
+    var modelingDatasets = /* @__PURE__ */ new Set([
+      "conceptual_object",
+      "conceptual_relationship",
+      "logical_entity",
+      "logical_attribute",
+      "logical_relationship",
+      "analysis_result",
+      "modeling_assertion_document",
+      "modeling_assertion_record"
+    ]);
+    var hash = (bytes) => crypto2.createHash("sha256").update(bytes).digest("hex");
+    function readEvidenceFile(session, relative2, limit = 1024 * 1024) {
+      if (typeof relative2 !== "string" || !relative2 || relative2.includes("\\") || path.isAbsolute(relative2) || relative2.split("/").some((part) => !part || part === "." || part === "..")) {
+        throw Error("Modeling evidence path must be relative to the session.");
+      }
+      let current = session;
+      const parts = relative2.split("/");
+      for (let index = 0; index < parts.length; index++) {
+        current = path.join(current, parts[index]);
+        const stat = fs.lstatSync(current);
+        if (stat.isSymbolicLink() || (index < parts.length - 1 ? !stat.isDirectory() : !stat.isFile())) {
+          throw Error("Modeling evidence must use regular session files.");
+        }
+        if (index === parts.length - 1 && stat.size > limit) throw Error("Modeling evidence exceeds its byte limit.");
+      }
+      const bytes = fs.readFileSync(current);
+      if (bytes.length > limit) throw Error("Modeling evidence exceeds its byte limit.");
+      return { path: relative2, sha256: hash(bytes), bytes };
+    }
+    function readDecisions(session, task) {
+      const relative2 = `tasks/${task}.modeling-decisions.json`;
+      let file;
+      try {
+        file = readEvidenceFile(session, relative2);
+      } catch (error2) {
+        if (error2.code === "ENOENT") return { decisions: null, files: [{ path: relative2, sha256: null }], noteFiles: {} };
+        throw error2;
+      }
+      let decisions;
+      try {
+        decisions = JSON.parse(file.bytes.toString("utf8"));
+      } catch {
+        throw Error("Modeling decisions must be valid JSON.");
+      }
+      const files = [{ path: relative2, sha256: file.sha256 }];
+      const noteFiles = {};
+      const entries = [
+        ...Array.isArray(decisions?.entities) ? decisions.entities : [],
+        ...Array.isArray(decisions?.relationships) ? decisions.relationships : []
+      ];
+      for (const entry of entries) {
+        for (const reference of Array.isArray(entry?.evidence) ? entry.evidence : []) {
+          if (typeof reference?.note !== "string" || Object.hasOwn(noteFiles, reference.note)) continue;
+          if (!/^working\/\d{2,}\/object-analysis\/.+\.md$/.test(reference.note)) {
+            throw Error("Decision notes must be Markdown inside working/<task>/object-analysis/.");
+          }
+          try {
+            const note = readEvidenceFile(session, reference.note, 64 * 1024);
+            if (!note.bytes.toString("utf8").trim()) throw Error("Decision evidence note is empty.");
+            noteFiles[reference.note] = { sha256: note.sha256 };
+            files.push({ path: note.path, sha256: note.sha256 });
+          } catch (error2) {
+            if (error2.code !== "ENOENT") throw error2;
+            files.push({ path: reference.note, sha256: null });
+          }
+        }
+      }
+      return { decisions, files, noteFiles };
+    }
+    function verifyQualityAcceptance(session, task, digest, acceptance, datasets) {
+      if (!datasets.some((name) => modelingDatasets.has(name))) return;
+      const binding = acceptance.at(-1)?.modeling_quality;
+      if (!binding || !/^[0-9a-f]{64}$/.test(binding.report_sha256 ?? "")) {
+        throw Error("Modeling evidence is not bound to acceptance; validate and acknowledge the current result.");
+      }
+      const file = readEvidenceFile(session, `tasks/${task}.modeling-quality.json`, 4 * 1024 * 1024);
+      if (file.sha256 !== binding.report_sha256) throw Error("Modeling quality report changed after acknowledgement.");
+      const report = JSON.parse(file.bytes.toString("utf8"));
+      if (report.schema_version !== "1.0" || report.task !== task || report.draft_digest !== digest || !Array.isArray(report.files) || !Array.isArray(report.quality?.errors) || report.quality.errors.length || !["not_required", "evidence_present"].includes(report.quality?.status)) {
+        throw Error("Required modeling evidence is missing or unresolved.");
+      }
+      const state = JSON.parse(readEvidenceFile(session, "session.json").bytes.toString("utf8"));
+      if (state.stale?.includes("model") || report.quality.required && state.stale?.includes("metadata")) {
+        throw Error("Modeling evidence uses a stale Snapshot.");
+      }
+      for (const expected of report.files) {
+        if (expected.sha256 === null) {
+          try {
+            readEvidenceFile(session, expected.path);
+            throw Error("Modeling evidence changed after acknowledgement.");
+          } catch (error2) {
+            if (error2.code !== "ENOENT") throw error2;
+          }
+        } else if (readEvidenceFile(
+          session,
+          expected.path,
+          /^(model|metadata)\/(?:.*\/)?manifest\.json$/.test(expected.path) ? 8 * 1024 * 1024 : 1024 * 1024
+        ).sha256 !== expected.sha256) {
+          throw Error("Modeling evidence or Snapshot changed after acknowledgement.");
+        }
+      }
+    }
+    module2.exports = { modelingDatasets, readEvidenceFile, readDecisions, verifyQualityAcceptance, hash };
+  }
+});
+
 // src/extension.ts
 var extension_exports = {};
 __export(extension_exports, {
@@ -19005,6 +19118,7 @@ var unicodeLower = unicode.lower;
 
 // src/stage-runner.ts
 var import_core8 = __toESM(require_core3(), 1);
+var import_model_quality_files = __toESM(require_model_quality_files(), 1);
 var stableStringify = import_core8.default.stableStringify;
 var SHA256 = /^[0-9a-f]{64}$/;
 var UUID2 = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -19257,6 +19371,19 @@ async function verifyLocalStateBinding(request, session) {
   }
   if (request.area === "model" && (!Array.isArray(state.model) || state.model[0] !== request.target.model_id || state.model[1] !== request.target.model_name)) {
     fail2("LOCAL_STATE_MISMATCH", "The session is bound to a different Model.");
+  }
+  if (request.area === "model") {
+    try {
+      import_model_quality_files.default.verifyQualityAcceptance(
+        session,
+        request.task,
+        request.accepted_digest,
+        acceptance,
+        request.datasets.map((item) => item.dataset)
+      );
+    } catch {
+      fail2("MODELING_EVIDENCE_CHANGED", "Modeling evidence is missing, unresolved, or changed after acknowledgement.");
+    }
   }
 }
 async function verifySnapshotBinding(request, session) {

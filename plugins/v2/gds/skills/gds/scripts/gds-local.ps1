@@ -642,10 +642,10 @@ function Get-Sha256Digest([string]$Path) {
     finally { $stream.Dispose(); $sha.Dispose() }
 }
 
-function Write-JsonAtomic([string]$Path, $Value) {
+function Write-JsonAtomic([string]$Path, $Value, [string]$NewLine = [Environment]::NewLine) {
     $directory = Split-Path -Parent $Path
     $temporary = Join-Path $directory ('.' + [IO.Path]::GetFileName($Path) + '.' + [Guid]::NewGuid().ToString('N') + '.tmp')
-    $text = (ConvertTo-GdsJson $Value) + [Environment]::NewLine
+    $text = (ConvertTo-GdsJson $Value) + $NewLine
     [IO.File]::WriteAllText($temporary, $text, $script:Utf8NoBom)
     try {
         if (Test-Path -LiteralPath $Path -PathType Leaf) {
@@ -906,6 +906,7 @@ function Get-SessionStatus([hashtable]$Options) {
         $planDigest = Get-FileDigest $planPath
     }
     $acceptance = $null
+    $acceptanceIssue = $null
     if ($null -ne $current) {
         $acceptancePath = Join-Path (Join-Path $session 'tasks') ([string]$current[0] + '.accept.json')
         if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
@@ -928,6 +929,13 @@ function Get-SessionStatus([hashtable]$Options) {
                 mode = [string]$accepted[1]
                 snapshot_id = [string]$accepted[$offset]
                 model_revision = $accepted[$offset + 1]
+            }
+            if ([string]$current[1] -ceq 'model') {
+                try {
+                    $datasets = @(Get-ChildItem -LiteralPath (Get-PendingDirectory $session 'model') | ForEach-Object { $_.BaseName })
+                    Assert-ModelingQualityAcceptance $session ([string]$current[0]) ([string]$accepted[0]) $accepted $datasets
+                }
+                catch { $acceptance = $null; $acceptanceIssue = $_.Exception.Message }
             }
         }
     }
@@ -960,7 +968,9 @@ function Get-SessionStatus([hashtable]$Options) {
         $subagentPolicy = [ordered]@{ mode = [string]$subagentBinding[0]; model = $subagentBinding[1] }
     }
     $sqlPolicy = if (Test-Property $state 'sql') { [string](Get-Property $state 'sql') } else { $null }
-    return [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; subagent_policy = $subagentPolicy; sql_policy = $sqlPolicy; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes); acceptance = $acceptance }
+    $result = [ordered]@{ current = $current; resume = $resume; plan = $plan; plan_digest = $planDigest; tasks = @($state.tasks); model = $model; subagent_policy = $subagentPolicy; sql_policy = $sqlPolicy; cs = $cache; stale = $stale; snapshots = $snapshots; pending = $pending; stashes = @($stashes); acceptance = $acceptance }
+    if ($acceptanceIssue) { $result['acceptance_issue'] = $acceptanceIssue }
+    return $result
 }
 
 function Set-SubagentPolicy([hashtable]$Options) {
@@ -1805,6 +1815,10 @@ function Get-AcceptedWorkspaceDigest([string]$Session, $Task, [string]$Area) {
         ([string]$Task[3] -ceq 'staged' -and @('valid', 'override') -cnotcontains [string]$acceptance[1])) {
         Fail 'Task accepted digest does not match the exact local Change Set.'
     }
+    if ($Area -ceq 'model') {
+        $datasets = @(Get-ChildItem -LiteralPath $directory | ForEach-Object { $_.BaseName })
+        Assert-ModelingQualityAcceptance $Session ([string]$Task[0]) $actual $acceptance $datasets
+    }
     return $actual
 }
 
@@ -2387,6 +2401,53 @@ function Get-SchemaIssues {
                 foreach ($issue in @(Get-SchemaIssues -Value (Get-Property $Value $name) -Schema $childSchema -Root $Root -Location "$Location.$name" -SeenReferences @())) {
                     [void]$issues.Add($issue)
                 }
+            }
+        }
+    }
+    # Match the shared Analysis record invariant after its field types pass.
+    $recordContract = Get-Property $Schema 'x-gds-record-validation'
+    $recordRules = Get-Property $recordContract 'rules'
+    if ($issues.Count -eq 0 -and $null -ne $recordContract -and
+        $recordRules -ccontains 'analysis_result') {
+        $fields = @('validation_policy_version', 'validation_result',
+            'validation_source_non_null_count', 'validation_source_distinct_count',
+            'validation_target_non_null_count', 'validation_target_distinct_count',
+            'validation_source_missing_target_count', 'validation_unused_target_count',
+            'validation_duplicate_target_key_count')
+        $present = @($fields | Where-Object { $null -ne (Get-Property $Value $_) })
+        if ($present.Count -gt 0 -and $present.Count -ne $fields.Count) {
+            [void]$issues.Add("$Location`: Analysis validation fields must all be present or all be absent")
+        }
+        elseif ($present.Count -eq $fields.Count) {
+            $sourceRows = Get-Property $Value 'validation_source_non_null_count'
+            $sourceDistinct = Get-Property $Value 'validation_source_distinct_count'
+            $targetRows = Get-Property $Value 'validation_target_non_null_count'
+            $targetDistinct = Get-Property $Value 'validation_target_distinct_count'
+            $missing = Get-Property $Value 'validation_source_missing_target_count'
+            $unused = Get-Property $Value 'validation_unused_target_count'
+            $duplicates = Get-Property $Value 'validation_duplicate_target_key_count'
+            if ($sourceDistinct -gt $sourceRows -or (($sourceRows -eq 0) -ne ($sourceDistinct -eq 0))) {
+                [void]$issues.Add("$Location`: Source validation counts do not reconcile")
+            }
+            if ($targetDistinct -gt $targetRows -or (($targetRows -eq 0) -ne ($targetDistinct -eq 0))) {
+                [void]$issues.Add("$Location`: Target validation counts do not reconcile")
+            }
+            if ($missing -gt $sourceDistinct) {
+                [void]$issues.Add("$Location`: Missing-target count exceeds source distinct count")
+            }
+            if ($unused -gt $targetDistinct) {
+                [void]$issues.Add("$Location`: Unused-target count exceeds target distinct count")
+            }
+            if (($sourceDistinct - $missing) -ne ($targetDistinct - $unused)) {
+                [void]$issues.Add("$Location`: Matched distinct counts do not reconcile")
+            }
+            if ($duplicates -ne ($targetRows - $targetDistinct)) {
+                [void]$issues.Add("$Location`: Duplicate-target count does not reconcile")
+            }
+            $expected = if ($sourceRows -eq 0 -or $targetRows -eq 0) { 'inconclusive' }
+                elseif ($missing -eq 0 -and $duplicates -eq 0) { 'supported' } else { 'unsupported' }
+            if ((Get-Property $Value 'validation_result') -cne $expected) {
+                [void]$issues.Add("$Location`: Analysis validation result does not match its evidence")
             }
         }
     }
@@ -3186,6 +3247,8 @@ function Validate-Changes([hashtable]$Options) {
     $pending = Read-Pending $context
     $issues = New-Object System.Collections.ArrayList
     $states = New-Object System.Collections.ArrayList
+    $metadata = $null
+    $metadataStates = New-Object Collections.ArrayList
     foreach ($dataset in @($context.Datasets)) {
         $schema = Get-DatasetSchema $context $dataset
         $draft = @()
@@ -3234,6 +3297,7 @@ function Validate-Changes([hashtable]$Options) {
                         Effective = $records
                         OverlayError = $null
                     })
+                    [void]$metadataStates.Add($referenceStates[$referenceStates.Count - 1])
                 }
             }
             catch {
@@ -3274,6 +3338,34 @@ function Validate-Changes([hashtable]$Options) {
         truncated = $issues.Count -gt 200
         digest = Get-WorkspaceDigest $context
     }
+    if ($context.Area -ceq 'model' -and @($pending.Keys | Where-Object { $script:ModelingQualityDatasets -ccontains $_ }).Count -gt 0) {
+        $task = [string]$context.Current[0]
+        $evidence = Read-ModelingDecisions $context.Session $task
+        $quality = Get-ModelingQuality @($states) $evidence.decisions $evidence.noteFiles @($metadataStates)
+        if ($quality.required -and $null -eq $metadata) {
+            $quality.errors += @([ordered]@{ code = 'metadata_evidence_missing'; dataset = 'model'; key = [ordered]@{}; message = 'Fresh Metadata is required for modeling evidence review.' })
+            $quality.error_count++
+            $quality.errors = @($quality.errors | Select-Object -First 200)
+            $quality.truncated = $quality.error_count -gt 200 -or $quality.warning_count -gt 200
+            $quality.status = 'needs_evidence'
+        }
+        $decisionsPath = Join-Path (Join-Path $context.Session 'tasks') ($task + '.modeling-decisions.json')
+        if ($quality.required -and $null -eq $evidence.decisions) {
+            Write-JsonAtomic $decisionsPath $quality.template "`n"
+            $evidence = Read-ModelingDecisions $context.Session $task
+        }
+        $files = New-Object Collections.ArrayList
+        foreach ($file in $evidence.files) { [void]$files.Add($file) }
+        foreach ($snapshot in @($context, $metadata)) {
+            if ($null -eq $snapshot) { continue }
+            $relative = (Join-Path $snapshot.Root 'manifest.json').Substring($context.Session.Length + 1).Replace('\', '/')
+            $file = Read-ModelingEvidenceFile $context.Session $relative 8388608
+            [void]$files.Add([ordered]@{ path = $file.path; sha256 = $file.sha256 })
+        }
+        $qualityReport = Join-Path (Join-Path $context.Session 'tasks') ($task + '.modeling-quality.json')
+        Write-JsonAtomic $qualityReport ([ordered]@{ schema_version = '1.0'; task = $task; draft_digest = $output.digest; files = @($files); quality = $quality }) "`n"
+        $output['quality'] = [ordered]@{ required = $quality.required; status = $quality.status; report = $qualityReport; decisions = $decisionsPath; error_count = $quality.error_count; warning_count = $quality.warning_count; metrics = $quality.metrics }
+    }
     $reportIssues = New-Object Collections.ArrayList
     foreach ($repair in @($repairs)) {
         [void]$reportIssues.Add([ordered]@{
@@ -3312,6 +3404,9 @@ function Accept-Changes([hashtable]$Options) {
     $actual = Get-WorkspaceDigest $context
     if ($digest -ne $actual) { Fail "Local Change Set digest conflict: accepted $digest, found $actual." }
     $validation = Validate-Changes $Options
+    if ((Test-Property $validation 'quality') -and ($validation.quality.error_count -gt 0 -or $validation.quality.status -ceq 'needs_evidence')) {
+        Fail 'Required modeling evidence is missing or unresolved; inspect the modeling quality report.'
+    }
     $override = $Options.ContainsKey('override') -and $Options['override'] -eq 'true'
     if (-not $validation.valid -and -not $override) { Fail 'Local validation fails; fix issues or explicitly accept an override.' }
     if (-not $validation.valid) {
@@ -3329,6 +3424,9 @@ function Accept-Changes([hashtable]$Options) {
         $acceptance = @($actual, 'override', $Options['reason'], [string]$context.Manifest.snapshot_id, $revision)
         $context.Current[3] = 'overridden'
     }
+    if (Test-Property $validation 'quality') {
+        $acceptance += @([ordered]@{ modeling_quality = [ordered]@{ report_sha256 = Get-FileDigest $validation.quality.report } })
+    }
     Write-JsonAtomic (Join-Path (Join-Path $context.Session 'tasks') ([string]$context.Current[0] + '.accept.json')) $acceptance
     Write-JsonAtomic (Join-Path $context.Session 'session.json') $context.State
     return [ordered]@{
@@ -3336,6 +3434,118 @@ function Accept-Changes([hashtable]$Options) {
         state = [string]$context.Current[3]
         digest = $actual
     }
+}
+
+function Test-AppliedRecordEqual($Local, $Server, $Schema, $Root = $null, [string]$RecordType = '', [string]$Collection = '') {
+    # Retirement only: accepted bytes and Stage fingerprints must stay exact.
+    if ((ConvertTo-StableJson $Local) -ceq (ConvertTo-StableJson $Server)) { return $true }
+    if ($null -eq $Schema) { return $false }
+    if ($null -eq $Root) { $Root = $Schema }
+    $reference = Get-Property $Schema '$ref'
+    if ($reference -is [string]) {
+        if (-not $reference.StartsWith('#/$defs/', [StringComparison]::Ordinal)) { return $false }
+        $target = Get-Property (Get-Property $Root '$defs') $reference.Substring(8)
+        return Test-AppliedRecordEqual $Local $Server $target $Root $RecordType $Collection
+    }
+    $alternatives = Get-Property $Schema 'anyOf'
+    if ($null -eq $alternatives) { $alternatives = Get-Property $Schema 'oneOf' }
+    if ($alternatives -is [Array]) {
+        $hasNumber = $false
+        $hasNumericString = $false
+        foreach ($part in $alternatives) {
+            if ((Get-Property $part 'type') -ceq 'number') { $hasNumber = $true }
+            if ((Get-Property $part 'type') -ceq 'string' -and (Get-Property $part 'pattern') -is [string]) {
+                $hasNumericString = $true
+            }
+        }
+        if ($hasNumber -and $hasNumericString) {
+            $values = New-Object Collections.Generic.List[string]
+            foreach ($value in @($Local, $Server)) {
+                if (($value -isnot [string] -and -not (Test-JsonNumber $value)) -or
+                    @(Get-SchemaIssues -Value $value -Schema $Schema -Root $Root).Count -gt 0) { return $false }
+                $text = if ($value -is [string]) { $value } else { ConvertTo-StableJson $value }
+                $match = [regex]::Match($text, '^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$')
+                if (-not $match.Success) { return $false }
+                [long]$exponent = 0
+                if ($match.Groups[4].Success -and -not [long]::TryParse($match.Groups[4].Value, [ref]$exponent)) { return $false }
+                $exponent -= $match.Groups[3].Value.Length
+                if ($exponent -lt -9007199254740991 -or $exponent -gt 9007199254740991) { return $false }
+                $digits = ($match.Groups[2].Value + $match.Groups[3].Value).TrimStart([char]'0')
+                if ($digits.Length -eq 0) { $values.Add('0'); continue }
+                $trimmed = $digits.TrimEnd([char]'0')
+                $exponent += $digits.Length - $trimmed.Length
+                $sign = if ($match.Groups[1].Value -ceq '-') { '-' } else { '' }
+                $values.Add($sign + $trimmed + 'e' + $exponent.ToString([Globalization.CultureInfo]::InvariantCulture))
+            }
+            return $values[0] -ceq $values[1]
+        }
+        foreach ($part in $alternatives) {
+            if (@(Get-SchemaIssues -Value $Local -Schema $part -Root $Root).Count -eq 0 -and
+                @(Get-SchemaIssues -Value $Server -Schema $part -Root $Root).Count -eq 0 -and
+                (Test-AppliedRecordEqual $Local $Server $part $Root $RecordType $Collection)) { return $true }
+        }
+        return $false
+    }
+    if ($Local -is [Array] -or $Server -is [Array]) {
+        if ($Local -isnot [Array] -or $Server -isnot [Array] -or $Local.Count -ne $Server.Count) { return $false }
+        if ($Collection) {
+            # SQL orders owned collections by database ID/name; explicit source_order stays compared.
+            function Get-AppliedCollectionIdentity($Item) {
+                if ($null -eq $Item -or $Item -is [Array] -or $Item -is [string] -or $Item -is [ValueType]) { return $null }
+                if ($Collection -ceq 'submodels') {
+                    $name = Get-Property $Item 'submodel_name'
+                    if ($name -isnot [string]) { return $null }
+                    return ConvertTo-StableJson @('submodel', $name)
+                }
+                $kind = Get-Property $Item 'support_source_type'
+                $field = switch -CaseSensitive ($kind) {
+                    'object' { 'source_object' }; 'attribute' { 'source_attribute' }; 'assertion' { 'assertion_record' }
+                    default { $null }
+                }
+                if ($null -eq $field) { return $null }
+                $reference = Get-Property $Item $field
+                if ($null -eq $reference -or $reference -is [Array] -or $reference -is [string] -or $reference -is [ValueType]) { return $null }
+                return ConvertTo-StableJson @($kind, $reference)
+            }
+            $candidates = New-Object 'Collections.Generic.Dictionary[string,object]' ([StringComparer]::Ordinal)
+            foreach ($item in $Server) {
+                $key = Get-AppliedCollectionIdentity $item
+                if ($null -eq $key -or $candidates.ContainsKey($key)) { return $false }
+                $candidates[$key] = $item
+            }
+            foreach ($item in $Local) {
+                $key = Get-AppliedCollectionIdentity $item
+                if ($null -eq $key -or -not $candidates.ContainsKey($key) -or
+                    -not (Test-AppliedRecordEqual $item $candidates[$key] (Get-Property $Schema 'items') $Root $RecordType)) { return $false }
+                [void]$candidates.Remove($key)
+            }
+            return $candidates.Count -eq 0
+        }
+        for ($index = 0; $index -lt $Local.Count; $index++) {
+            if (-not (Test-AppliedRecordEqual $Local[$index] $Server[$index] (Get-Property $Schema 'items') $Root $RecordType)) { return $false }
+        }
+        return $true
+    }
+    if ($null -eq $Local -or $null -eq $Server -or $Local -is [string] -or $Server -is [string] -or
+        $Local -is [ValueType] -or $Server -is [ValueType]) { return $false }
+    $fields = New-Object 'System.Collections.Generic.HashSet[string]' ([StringComparer]::Ordinal)
+    foreach ($field in @((Get-PropertyNames $Local)) + @((Get-PropertyNames $Server))) { [void]$fields.Add($field) }
+    foreach ($field in $fields) {
+        $child = Get-Property (Get-Property $Schema 'properties') $field
+        $hasLocal = Test-Property $Local $field
+        $hasServer = Test-Property $Server $field
+        if ((-not $hasLocal -or -not $hasServer) -and
+            ($null -eq $child -or -not (Test-Property $child 'default') -or
+             (Get-Property $Schema 'required') -ccontains $field)) { return $false }
+        $left = if ($hasLocal) { Get-Property $Local $field } else { Get-Property $child 'default' }
+        $right = if ($hasServer) { Get-Property $Server $field } else { Get-Property $child 'default' }
+        $ownedCollection = if ([object]::ReferenceEquals($Schema, $Root) -and (
+            ($field -ceq 'supports' -and @('conceptual_object', 'conceptual_relationship') -ccontains $RecordType) -or
+            ($field -ceq 'sources' -and @('logical_entity', 'logical_attribute', 'dimensional_entity', 'dimensional_attribute') -ccontains $RecordType) -or
+            ($field -ceq 'submodels' -and @('logical_entity', 'dimensional_entity') -ccontains $RecordType))) { $field } else { '' }
+        if (-not (Test-AppliedRecordEqual $left $right $child $Root $RecordType $ownedCollection)) { return $false }
+    }
+    return $true
 }
 
 function Accept-RefreshedSnapshot([hashtable]$Options) {
@@ -3346,12 +3556,17 @@ function Accept-RefreshedSnapshot([hashtable]$Options) {
     $state = Read-SessionState $session
     if (-not (Test-Property $state 'stale') -or @($state.stale) -notcontains $area) { Fail "$area is not marked stale." }
     $marker = $null
+    $appliedTask = $null
     $tasks = @($state.tasks)
     for ($index = $tasks.Count - 1; $index -ge 0; $index--) {
         $task = $tasks[$index]
         if ($task[1] -ne $area -or $task[3] -ne 'applied') { continue }
         $path = Join-Path (Join-Path $session 'tasks') ([string]$task[0] + '.applied.json')
-        if (Test-Path -LiteralPath $path -PathType Leaf) { $marker = @(Read-Json $path 'Applied Snapshot marker'); break }
+        if (Test-Path -LiteralPath $path -PathType Leaf) {
+            $marker = @(Read-Json $path 'Applied Snapshot marker')
+            $appliedTask = [string]$task[0]
+            break
+        }
     }
     if ($null -eq $marker -or $marker.Count -ne 3 -or $marker[0] -ne $area) { Fail "No applied $area Snapshot marker is available." }
     $currentId = [string]$snapshot.Manifest.snapshot_id
@@ -3361,6 +3576,13 @@ function Accept-RefreshedSnapshot([hashtable]$Options) {
         Fail 'Refreshed Model Snapshot revision must be greater than the applied base revision.'
     }
     $changeDirectory = Resolve-RegularDirectory (Join-Path $session ($area + '-change-set')) 'Local Change Set'
+    $acceptancePath = Join-Path (Join-Path $session 'tasks') ($appliedTask + '.accept.json')
+    if (Test-Path -LiteralPath $acceptancePath -PathType Leaf) {
+        $acceptance = @(Read-Json $acceptancePath 'Task acceptance')
+        if ($acceptance.Count -lt 1 -or [string]$acceptance[0] -cne (Get-WorkspaceDigest @{ ChangeDirectory = $changeDirectory })) {
+            Fail 'Task accepted digest does not match the exact local Change Set after Apply.'
+        }
+    }
     $files = New-Object System.Collections.ArrayList
     foreach ($item in @(Get-ChildItem -LiteralPath $changeDirectory -Force)) {
         if ($item.PSIsContainer -or ($item.Attributes -band [IO.FileAttributes]::ReparsePoint) -or -not $item.Name.EndsWith('.json')) {
@@ -3378,6 +3600,7 @@ function Accept-RefreshedSnapshot([hashtable]$Options) {
         if ($records.Count -gt 0) {
             if (-not $snapshot.ByName.ContainsKey($name)) { Fail "Refreshed Snapshot has no dataset $name." }
             $dataset = $snapshot.ByName[$name]
+            $schema = Get-DatasetSchema $snapshot $dataset
             $baseline = @{}
             foreach ($record in @(Read-SnapshotRecords $snapshot $dataset)) {
                 $key = Get-CanonicalKey $area $dataset $record
@@ -3390,19 +3613,42 @@ function Accept-RefreshedSnapshot([hashtable]$Options) {
                 }
                 $key = Get-CanonicalKey $area $dataset $record
                 if (-not $baseline.ContainsKey($key) -or
-                    (ConvertTo-StableJson $baseline[$key]) -cne (ConvertTo-StableJson $record)) {
+                    -not (Test-AppliedRecordEqual $record $baseline[$key] $schema $schema $name)) {
                     Fail "Refreshed Snapshot does not contain the exact applied local record for $name."
                 }
             }
         }
         [void]$files.Add($item.FullName)
     }
-    foreach ($file in $files) { [IO.File]::Delete([string]$file) }
+    # Keep every pending byte recoverable until the stale-state update commits.
+    $retired = Join-Path $session ('.' + $area + '-retired-' + [Guid]::NewGuid().ToString('N'))
+    [void][IO.Directory]::CreateDirectory($retired)
+    $saved = Join-Path $retired 'records'
+    $moved = $false
     $remaining = @($state.stale | Where-Object { $_ -ne $area })
     if ($remaining.Count -eq 0) { Remove-Property $state 'stale' }
     else { Set-Property $state 'stale' $remaining }
-    Write-JsonAtomic (Join-Path $session 'session.json') $state
-    return [ordered]@{ area = $area; id = $currentId; revision = $revision; retired = $files.Count }
+    try {
+        [IO.Directory]::Move($changeDirectory, $saved)
+        $moved = $true
+        [void][IO.Directory]::CreateDirectory($changeDirectory)
+        Write-JsonAtomic (Join-Path $session 'session.json') $state
+    }
+    catch {
+        if ($moved) {
+            try {
+                if (Test-Path -LiteralPath $changeDirectory) { [IO.Directory]::Delete($changeDirectory, $false) }
+                [IO.Directory]::Move($saved, $changeDirectory)
+            }
+            catch { Fail "Snapshot refresh failed; local records are preserved at $saved. Restore them before authoring." }
+        }
+        try { Remove-SnapshotInstallDirectory $retired $session } catch { <# Keep recovery files. #> }
+        throw
+    }
+    $result = [ordered]@{ area = $area; id = $currentId; revision = $revision; retired = $files.Count }
+    try { Remove-SnapshotInstallDirectory $retired $session }
+    catch { $result['cleanup_pending'] = @($retired) }
+    return $result
 }
 
 function Remove-SnapshotInstallDirectory([string]$Path, [string]$Session) {
@@ -3527,32 +3773,53 @@ function Install-Snapshot([hashtable]$Options) {
         $movedNext = $true
         $installed = Find-Snapshot @{ session = $session; area = $area }
         $refreshed = $false
+        $cleanupPending = @()
         if ($stale) {
-            [void](Accept-RefreshedSnapshot @{ session = $session; area = $area })
+            $refresh = Accept-RefreshedSnapshot @{ session = $session; area = $area }
+            if (Test-Property $refresh 'cleanup_pending') { $cleanupPending = @($refresh.cleanup_pending) }
             $refreshed = $true
         }
-        Remove-SnapshotInstallDirectory $backup $session
-        $movedPrevious = $false
-        Remove-SnapshotInstallDirectory $stage $session
-        return [ordered]@{
+        $result = [ordered]@{
             area = $area
             snapshot_id = [string]$installed.Manifest.snapshot_id
             model_revision = if (Test-Property $installed.Manifest 'model_revision') { $installed.Manifest.model_revision } else { $null }
             dataset_count = @($installed.Datasets).Count
             refreshed = $refreshed
         }
+        if ($cleanupPending.Count -gt 0) { $result['cleanup_pending'] = $cleanupPending }
     }
     catch {
-        if ($movedNext -and (Test-Path -LiteralPath $destination)) {
-            Remove-Item -LiteralPath $destination -Recurse -Force
+        $failure = $_
+        try {
+            if ($movedNext -and (Test-Path -LiteralPath $destination)) {
+                Remove-Item -LiteralPath $destination -Recurse -Force
+            }
+            if ($movedPrevious -and (Test-Path -LiteralPath $backup)) {
+                [IO.Directory]::Move($backup, $destination)
+            }
         }
-        if ($movedPrevious -and (Test-Path -LiteralPath $backup)) {
-            [IO.Directory]::Move($backup, $destination)
+        catch {
+            Fail "Snapshot installation could not restore its previous folder, preserved at $backup. Close Workbench and release folder handles before recovery. $($failure.Exception.Message)"
         }
-        if (Test-Path -LiteralPath $stage) { Remove-SnapshotInstallDirectory $stage $session }
-        if (Test-Path -LiteralPath $backup) { Remove-SnapshotInstallDirectory $backup $session }
-        throw
+        try { if (Test-Path -LiteralPath $stage) { Remove-SnapshotInstallDirectory $stage $session } }
+        catch { <# Retain failed extraction for recovery; never remove the backup here. #> }
+        $exception = $failure.Exception
+        while ($null -ne $exception.InnerException) { $exception = $exception.InnerException }
+        if ($exception -is [UnauthorizedAccessException] -or
+            ($exception -is [IO.IOException] -and ($exception.HResult -band 0xffff) -in @(5, 16, 32, 33))) {
+            Fail 'Snapshot folder is in use or inaccessible. Close Workbench tabs using this session, move terminals outside its folders, then retry the same snapshot-install command. Previous Snapshot and local records are preserved.'
+        }
+        throw $failure
     }
+    # Refresh has committed. Cleanup failure must never roll back its Snapshot.
+    foreach ($target in @($backup, $stage)) {
+        try { Remove-SnapshotInstallDirectory $target $session }
+        catch {
+            if (-not $result.Contains('cleanup_pending')) { $result['cleanup_pending'] = @() }
+            $result['cleanup_pending'] = @($result['cleanup_pending']) + @($target)
+        }
+    }
+    return $result
 }
 
 function ConvertTo-StableJson($Value) {
@@ -3571,6 +3838,10 @@ function Assert-Accepted($Context) {
         ([string]$Context.Current[3] -ceq 'overridden' -and [string]$acceptance[1] -cne 'override') -or
         ([string]$Context.Current[3] -ceq 'staged' -and @('valid', 'override') -cnotcontains [string]$acceptance[1])) {
         Fail 'Task accepted digest does not match the exact local Change Set.'
+    }
+    if ($Context.Area -ceq 'model') {
+        $datasets = @(Get-ChildItem -LiteralPath $Context.ChangeDirectory | ForEach-Object { $_.BaseName })
+        Assert-ModelingQualityAcceptance $Context.Session ([string]$Context.Current[0]) $digest $acceptance $datasets
     }
     return $digest
 }
@@ -4462,6 +4733,8 @@ function Prepare-Stage([hashtable]$Options) {
     }
 }
 
+. (Join-Path $PSScriptRoot 'model-quality.ps1')
+
 try {
     $options = Parse-Options $RemainingArguments
     switch ($Command) {
@@ -4487,7 +4760,8 @@ try {
         'review' { $output = Review-Changes $options }
         'validate' { $output = Validate-Changes $options }
         'generate-dbml' { $output = Generate-LocalDbml $options }
-        'profile-plan' { . (Join-Path $PSScriptRoot 'profiling.ps1'); $output = New-ProfilePlan $options }
+        'profile-plan' { . (Join-Path $PSScriptRoot 'profiling.ps1'); $output = New-AggregatePlan $options 'profiling' }
+        'analysis-plan' { . (Join-Path $PSScriptRoot 'analysis.ps1'); $output = New-AggregatePlan $options 'analysis' }
         'accept' { $output = Accept-Changes $options }
         'snapshot-install' { $output = Install-Snapshot $options }
         'snapshot-refresh' { $output = Accept-RefreshedSnapshot $options }

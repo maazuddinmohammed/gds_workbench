@@ -6,15 +6,17 @@ For setup, query `command-contract --command session-init`, then run `session-in
 
 State: session/status/task commands, `subagent-policy`, `sql-policy`, `readiness`, `snapshot-install`, `snapshot-refresh`. Reads: `inspect`, `describe`, bounded `select`. Edits: `copy`, `upsert`, `upsert-batch`, `discard`. `profile-plan` generates standard aggregate SQL from saved selections; read `workflows/profiling.md` when needed.
 
+`analysis-plan --session <session> --plan-file <JSON-path>` writes bounded aggregate SQL for selected key, dependency, and join probes. It never executes queries or creates Analysis Results. Read `analysis-probes.md` for the exact probe format and interpretation; execution still follows the saved SQL policy.
+
 `subagent-policy --mode inherit|disabled|fixed` records the user's authorized delegation choice. `fixed` also requires the exact user-supplied VS Code model name. Never store prompts, tokens, credentials, or an agent-selected model.
 
-Download the MCP ZIP temporarily; run `snapshot-install` with exact returned `snapshot_id`, `size_bytes`, and `sha256`; delete it after success. Never expose the signed URL. Installation verifies every member, replaces safely, and reconciles stale areas.
+Follow `session.md` for verified Snapshot installation/recovery.
 
 Before notifying, run `validate`; it writes `reports/local-validation/<area>.json`. Run `review` only for a requested action summary. Local edits set the task to `review`. If it is still `doing` after a restore, set `task-state --task <ID> --state review`; after acknowledgement run `accept --digest <validated-digest>`. Never use local override to bypass an unresolved quality or safety failure.
 
 Then follow `server-handoff.md` to bind the active `draft-cache`; read `staging.md`, run `prepare-stage-request`, and invoke `gds_stageApprovedManifest` with only the returned path and accepted digest. Never read payload files or server pending rows into model context.
 
-When server validation returns `valid=false`, cache its active revision with `draft-cache --validation-failed true` before local repair. A corrected, revalidated, re-acknowledged digest may replace only that same task's failed draft through the Stage Runner; other overlap remains a conflict.
+For rejected server drafts, follow `server-handoff.md`; only the task-bound failed draft may be replaced after repair and renewed acknowledgement.
 
 Local `validate` shares Workbench validators; server validation remains authoritative.
 
@@ -28,6 +30,6 @@ Example bounded Snapshot read (replace the Entity name from actual scope):
 node scripts/gds-local.js select --session <session> --area model --dataset logical_attribute --where '{"logical_entity_name":"Customer"}' --limit 50
 ```
 
-Paths are relative to this skill directory; quote actual filesystem paths for the host shell. For PowerShell use `scripts/gds-local.ps1` and its same command contract. `--expected-digest` guards local edits; `task-plan` uses its separate plan digest. Read the specific `command-contract` rather than guessing flags. Local Snapshot reads, authoring helpers, Workbench and the Stage extension have separate jobs; the extension neither designs nor Applies results.
+Paths are relative to this skill; quote them for the host shell. PowerShell uses `scripts/gds-local.ps1` with the same command contract. `--expected-digest` guards edits; `task-plan` has a separate plan digest. Stage Runner neither designs nor Applies.
 
 For bounded edits: `copy` the matching complete records using the current `--expected-digest` (`empty` only for an empty draft). Read the resulting `<session>/<area>-change-set/<dataset>.json` array locally; preserve unknown fields and modify only intended fields. Pass complete changed records to `upsert-batch --changes <dataset-to-record-array-JSON>` with the returned digest. Pass large JSON through a script's process argument array; don't print records. The helper merges by canonical key, invalidates acceptance, and returns the new digest. Then validate the complete effective graph.

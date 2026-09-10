@@ -447,6 +447,7 @@ async def test_connector_returns_one_validated_aggregate_row() -> None:
         [(100, 90, 120, 120, 91, 30, 0, "unsupported")],
         [(100, 90, 120, 110, 0, 20, 9, "supported")],
         [(100, 90, 120, 120, 1, 31, 0, "supported")],
+        [(100, 90, 120, 120, 0, 29, 0, "supported")],
     ],
 )
 @pytest.mark.asyncio

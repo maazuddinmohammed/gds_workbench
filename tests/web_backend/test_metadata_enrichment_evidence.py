@@ -180,7 +180,7 @@ async def test_source_string_samples_override_conflicting_registered_numeric() -
     reader = _reader(executor)
     await reader.collect((item,))
     assert reader.infer_type(item, item.attributes[0]) == TypeEvidence(
-        "DECIMAL(4,2)", "source_sample", 2
+        "DECIMAL(38,2)", "source_sample", 2
     )
 
 

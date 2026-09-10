@@ -42,7 +42,7 @@ def test_router_has_simple_modes_and_no_server_contract_preflight() -> None:
     assert "Open Workbench only when the session is first created" in router
     assert "Read `references/workflow-targets.md` and only the active guide" in router
     assert "Guided also reads `references/guided-journey.md`" in router
-    assert "ask them to Refresh Workbench" in router
+    assert "ask them to refresh workbench" in router.lower()
     assert "Any unambiguous positive acknowledgement" in router
     assert "There is no packaged server-contract hash preflight" in router
     assert "inspect_metadata" in router
@@ -139,7 +139,7 @@ def test_resume_continues_from_recorded_state_without_rebuilding() -> None:
     local_helper = read(REFERENCES / "local-helper.md")
 
     assert "Treat `status.acceptance` as authoritative" in session
-    assert "do not rerun authoring, generators, validation, or review" in session
+    assert "without rerunning authoring, generators, validation or review" in session
     assert "Never inspect helper source to rediscover a command" in local_helper
 
 
@@ -180,17 +180,9 @@ def test_source_bronze_precedence_and_profiling_coordinates_are_exact() -> None:
     profiling = read(WORKFLOWS / "profiling.md")
 
     assert "use Bronze by default" in scope
-    for coordinate in (
-        "Connection `foreign_catalog`",
-        "Object `fc_object_schema`",
-        "Object `fc_object_name`",
-        "Attribute `fc_attribute_name`",
-    ):
-        assert coordinate in profiling
-    assert "Never connect directly to a Source" in profiling
-    assert "tenant_catalog" in profiling
-    assert "object_schema" in profiling
-    assert "attribute_name" in profiling
+    # Exact coordinates and refusal behavior are exercised by planner tests.
+    assert "registered Source foreign-catalog coordinates and Bronze placement" in profiling
+    assert "never substitute names or connect directly to Source" in profiling
 
 
 def test_target_metadata_placement_keeps_source_tenant_separate() -> None:
@@ -250,7 +242,7 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
     assert "PascalCase" in dimensional and "CustomerKey" in dimensional
     for policy in ("`never`", "`essential`", "`as_needed`"):
         assert policy in router
-    assert "never save physical rows, raw output, prompts, or secrets" in read(
+    assert "omit rows, raw output, prompts and secrets" in read(
         REFERENCES / "session.md"
     )
     for decision in (
@@ -258,11 +250,11 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
         "1NF",
         "2NF",
         "3NF",
-        "Challenge source-table-shaped results",
-        "meaning and grain agree",
+        "Source-shaped structures need grain/dependency justification",
+        "meaning/grain agree",
     ):
         assert decision in logical
-    assert "Use the saved SQL policy for specific gaps" in logical
+    assert "Query specific gaps under saved policy" in logical
     assert "operational model" in logical
     assert "Kimball's four decisions" in dimensional
     assert "process-to-dimension bus matrix" in dimensional
@@ -272,7 +264,7 @@ def test_conceptual_is_compact_and_naming_is_defaulted() -> None:
 def test_mapping_is_flexible_but_has_a_standard_default() -> None:
     mapping = read(WORKFLOWS / "mapping.md")
 
-    assert mapping.index("wait for user confirmation") < mapping.index("The work unit is")
+    assert mapping.index("wait for user confirmation") < mapping.index("Work unit:")
     assert "object-level and attribute-level JSON shape" in mapping
     assert "One confirmation covers selected targets sharing the structure" in mapping
     assert "structural changes require confirmation again" in mapping
@@ -281,7 +273,6 @@ def test_mapping_is_flexible_but_has_a_standard_default() -> None:
     assert "source System" in mapping
     assert "transformation_document" in mapping
     assert "follow the selected Output Template" in mapping
-    assert "Flexible storage and advisory templates" in mapping
     assert "`mapping_object_default` and `mapping_attribute_default`" in mapping
     assert (
         "configuration or evidence establishes it is installed; otherwise use JSON null" in mapping
@@ -309,9 +300,8 @@ def test_authoring_uses_inferred_types_and_independent_validation() -> None:
     code = read(WORKFLOWS / "code-generation.md")
     validation = read(WORKFLOWS / "validation.md")
 
-    assert "attribute_inferred_data_type" in changes
-    assert "does not change STRING storage" in changes
-    assert "never weaken validation" in changes
+    assert "Inferred meaning does not dictate target capacity" in changes
+    assert "constant passing checks" in changes
     assert "storage, inferred source and bound target types" in mapping
     assert "invalid-value handling" in mapping
     assert "explicit SQL-populated target columns in bound order" in code
@@ -411,7 +401,7 @@ def test_grill_with_docs_is_lazy_and_may_promote_decisions() -> None:
 
     frontmatter = router.split("---", maxsplit=2)[1]
     assert "Grill With Docs" in frontmatter
-    assert "read `references/grill-with-docs.md`" in router
+    assert "references/grill-with-docs.md" in router
     assert "not a target itself" in grill
     assert "Do not force a fixed document template" in grill
     for destination in (

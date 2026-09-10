@@ -26,6 +26,7 @@ def test_static_instruction_footprint_proxy_stays_bounded() -> None:
         V2_ROOT / "skills/gds/references/workflow-targets.md",
         V2_ROOT / "skills/gds/references/orchestration-rules.md",
         V2_ROOT / "skills/gds/references/change-sets.md",
+        V2_ROOT / "skills/gds/references/modeling-quality.md",
         V2_ROOT / "skills/gds/references/local-helper.md",
         V2_ROOT / "skills/gds/references/server-handoff.md",
         V2_ROOT / "skills/gds/references/staging.md",

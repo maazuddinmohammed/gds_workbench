@@ -318,9 +318,24 @@ async function bindSession(
     })}\n`,
     { mode: 0o600 },
   );
+  const acceptance: unknown[] = [acceptedDigest, "valid", snapshotId, area === "model" ? 8 : null];
+  if (area === "model") {
+    // Transport tests trust a helper report; modeling semantics have their own fixture suite.
+    const decisions = JSON.stringify({schema_version: "1.0", entities: [], relationships: []});
+    await writeFile(join(tasksDirectory, "01.modeling-decisions.json"), decisions);
+    const report = JSON.stringify({schema_version: "1.0", task: "01", draft_digest: acceptedDigest,
+      files: [
+        {path: "model/manifest.json", sha256: manifestSha256},
+        {path: "tasks/01.modeling-decisions.json", sha256: createHash("sha256").update(decisions).digest("hex")},
+      ],
+      quality: {required: true, status: "evidence_present", errors: []},
+    });
+    await writeFile(join(tasksDirectory, "01.modeling-quality.json"), report);
+    acceptance.push({modeling_quality: {report_sha256: createHash("sha256").update(report).digest("hex")}});
+  }
   await writeFile(
     join(tasksDirectory, "01.accept.json"),
-    `${JSON.stringify([acceptedDigest, "valid", snapshotId, area === "model" ? 8 : null])}\n`,
+    `${JSON.stringify(acceptance)}\n`,
     { mode: 0o600 },
   );
   return { manifestSha256, snapshotId };
@@ -530,6 +545,49 @@ async function addMetadataDataset(
 }
 
 describe("stageApprovedManifest", () => {
+  test.each(["missing_acceptance", "changed_decisions", "stale_metadata"])(
+    "rejects %s modeling evidence before MCP", async (scenario) => {
+      const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
+        "logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}],
+      );
+      if (scenario === "missing_acceptance") {
+        const acceptance = JSON.parse(await readFile(join(session, "tasks/01.accept.json"), "utf8"));
+        acceptance.pop();
+        await writeFile(join(session, "tasks/01.accept.json"), JSON.stringify(acceptance));
+      } else if (scenario === "changed_decisions") {
+        await writeFile(join(session, "tasks/01.modeling-decisions.json"), "{}");
+      } else {
+        const state = JSON.parse(await readFile(join(session, "session.json"), "utf8"));
+        state.stale = ["metadata"];
+        await writeFile(join(session, "session.json"), JSON.stringify(state));
+      }
+      let calls = 0;
+      await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+        workspaceRoots: [workspace], mcp: {async callTool() { calls++; return {}; }},
+      })).rejects.toMatchObject({code: "MODELING_EVIDENCE_CHANGED"});
+      expect(calls).toBe(0);
+    },
+  );
+
+  test("rechecks modeling evidence after remote reads and before the first write", async () => {
+    const {workspace, session, manifestPath, acceptedDigest} = await modelRequest(
+      "logical_entity", ["logical_entity_name"], [{logical_entity_name: "Customer"}],
+    );
+    let writes = 0;
+    const mcp: McpToolClient = {async callTool(name, input) {
+      if (name === "get_model_change_set") {
+        if (input.dataset) await writeFile(join(session, "tasks/01.modeling-decisions.json"), "{}");
+        return changeSetResponse("model", 3, input.dataset);
+      }
+      writes++;
+      return {};
+    }};
+    await expect(stageApprovedManifest({manifestPath, expectedDigest: acceptedDigest}, {
+      workspaceRoots: [workspace], mcp,
+    })).rejects.toMatchObject({code: "MODELING_EVIDENCE_CHANGED"});
+    expect(writes).toBe(0);
+  });
+
   test("rejects an oversized payload before hashing or contacting MCP", async () => {
     const { workspace, session, manifestPath, acceptedDigest } = await metadataRequest([]);
     await truncate(join(session, "metadata-change-set", "source_object.json"), 64 * 450 * 1024 + 1025);

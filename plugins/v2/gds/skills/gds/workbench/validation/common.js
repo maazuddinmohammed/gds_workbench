@@ -245,8 +245,34 @@
       }
     } else if (rule === "analysis_result") {
       const fields = ["validation_policy_version", "validation_result", "validation_source_non_null_count", "validation_source_distinct_count", "validation_target_non_null_count", "validation_target_distinct_count", "validation_source_missing_target_count", "validation_unused_target_count", "validation_duplicate_target_key_count"];
-      const present = fields.map((field) => value[field] !== null);
+      const present = fields.map((field) => value[field] !== null && value[field] !== undefined);
       if (present.some(Boolean) && !present.every(Boolean)) add("Analysis validation fields must all be present or all be absent");
+      if (present.every(Boolean)) {
+        const sourceRows = value.validation_source_non_null_count;
+        const sourceDistinct = value.validation_source_distinct_count;
+        const targetRows = value.validation_target_non_null_count;
+        const targetDistinct = value.validation_target_distinct_count;
+        const missing = value.validation_source_missing_target_count;
+        const unused = value.validation_unused_target_count;
+        const duplicates = value.validation_duplicate_target_key_count;
+        if (sourceDistinct > sourceRows || (sourceRows === 0) !== (sourceDistinct === 0)) {
+          add("Source validation counts do not reconcile");
+        }
+        if (targetDistinct > targetRows || (targetRows === 0) !== (targetDistinct === 0)) {
+          add("Target validation counts do not reconcile");
+        }
+        if (missing > sourceDistinct) add("Missing-target count exceeds source distinct count");
+        if (unused > targetDistinct) add("Unused-target count exceeds target distinct count");
+        if (sourceDistinct - missing !== targetDistinct - unused) {
+          add("Matched distinct counts do not reconcile");
+        }
+        if (duplicates !== targetRows - targetDistinct) add("Duplicate-target count does not reconcile");
+        const expected = sourceRows === 0 || targetRows === 0 ? "inconclusive"
+          : missing === 0 && duplicates === 0 ? "supported" : "unsupported";
+        if (value.validation_result !== expected) {
+          add("Analysis validation result does not match its evidence");
+        }
+      }
       if (sameNormalized(endpoint("from", true), endpoint("to", true))) add("Analysis endpoints must be different");
     } else if (rule === "modeling_assertion_document") {
       issues.push(...assertionJsonIssues(value.modeling_assertion_document_metadata, 65536, `${location}.modeling_assertion_document_metadata`));

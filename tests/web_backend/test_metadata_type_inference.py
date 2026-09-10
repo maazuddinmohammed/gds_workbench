@@ -46,11 +46,11 @@ from pydantic import JsonValue
         (["2026-09-05T12:00:00.1234567"], "STRING"),
         (["2026-09-05T25:00:00"], "STRING"),
         ([str(-(2**63)), str(2**63 - 1)], "BIGINT"),
-        ([str(-(2**63) - 1)], "DECIMAL(19,0)"),
-        ([str(2**63)], "DECIMAL(19,0)"),
-        (["9999", "1.25"], "DECIMAL(6,2)"),
-        (["0.01", "0.9"], "DECIMAL(2,2)"),
-        (["1e3", "0.125"], "DECIMAL(7,3)"),
+        ([str(-(2**63) - 1)], "DECIMAL(38,0)"),
+        ([str(2**63)], "DECIMAL(38,0)"),
+        (["9999", "1.25"], "DECIMAL(38,2)"),
+        (["0.01", "0.9"], "DECIMAL(38,2)"),
+        (["1e3", "0.125"], "DECIMAL(38,3)"),
         (["1e-38"], "DECIMAL(38,38)"),
         (["1e-39"], "STRING"),
         (["1e10000"], "STRING"),
@@ -73,6 +73,12 @@ def test_sample_inference_preserves_representations(
 def test_sample_inference_rejects_oversized_evidence(values: list[JsonValue]) -> None:
     with pytest.raises(InvalidRequestError, match="sample limits"):
         infer_sample_data_type(values)
+
+
+def test_small_decimal_sample_does_not_define_integer_capacity() -> None:
+    assert infer_sample_data_type(["0.00001", "0.00002"]) == "DECIMAL(38,5)"
+    # A declared source type is authoritative; widening applies only to samples.
+    assert normalize_data_type("decimal(5,5)") == "DECIMAL(5,5)"
 
 
 @pytest.mark.parametrize(

@@ -6,6 +6,7 @@ const fields = ["tenant_code", "system_code", "connection_code", "object_schema"
 const norm = (value) => normalize("metadata", "object_name", value);
 const key = (row, prefix = "") => JSON.stringify(fields.map((field) => norm(row[prefix + field])));
 const ownKey = (row) => Object.fromEntries(fields.map((field) => [field, row[field]]));
+const attributeKey = (row, prefix = "") => JSON.stringify([...fields, "attribute_name"].map((field) => norm(row[prefix + field])));
 const active = (row) => row.is_active !== false;
 const quote = (value) => {
   if (typeof value !== "string" || !value.trim() || value.includes("\0")) throw Error("Missing SQL coordinate.");
@@ -14,6 +15,16 @@ const quote = (value) => {
 const normalizedType = (value) => value.toUpperCase().replace(/\s+/g, "");
 const stringType = /^(?:STRING|VARCHAR(?:\(\d+\))?|CHAR(?:\(\d+\))?)$/;
 const scalarType = /^(?:BOOLEAN|BYTE|TINYINT|SHORT|SMALLINT|INT|INTEGER|LONG|BIGINT|FLOAT|REAL|DOUBLE|DATE|TIMESTAMP(?:_NTZ|_LTZ)?|DECIMAL\(\d+,\d+\)|NUMERIC\(\d+,\d+\))$/;
+
+function maskingKeys(metadata) {
+  // A mapped Source mask remains binding even when the Source Attribute is inactive.
+  const masked = new Set([...(metadata.source_attribute ?? []), ...(metadata.bronze_attribute ?? [])]
+    .filter((row) => row.is_masking_required === true).map((row) => attributeKey(row)));
+  for (const mapping of metadata.ingestion_attribute_mapping ?? []) {
+    if (active(mapping) && masked.has(attributeKey(mapping, "source_"))) masked.add(attributeKey(mapping, "target_"));
+  }
+  return masked;
+}
 
 function batchValue(value) {
   if (value !== null && (typeof value !== "string" || !value.trim() || value.length > 4000 || value.includes("\0"))) {
@@ -102,7 +113,7 @@ function planProfiling(metadata, scope, plan) {
   if (selectedKeys && selectedKeys.size !== selected.length) throw Error("Duplicate selected Object.");
   const scoped = scope.filter(active).filter((row) => !selectedKeys || selectedKeys.has(key(row)));
   if (!scoped.length || scoped.length > 2000 || (selectedKeys && selectedKeys.size !== scoped.length)) throw Error("Selection must match active Model Input Scope.");
-  const queries = [];
+  const queries = [], coverage = [], masked = maskingKeys(metadata);
   for (const scopedObject of scoped) {
     const object = objects.get(key(scopedObject));
     if (!object) throw Error("Scoped Object is absent from authorized Source/Bronze Metadata.");
@@ -114,9 +125,14 @@ function planProfiling(metadata, scope, plan) {
     const relation = [source ? connection.foreign_catalog : tenant.tenant_catalog,
       source ? object.fc_object_schema : object.object_schema,
       source ? object.fc_object_name : object.object_name].map(quote).join(".");
-    const members = attributes.filter((row) => key(row) === key(object)).sort((a, b) =>
+    const allMembers = attributes.filter((row) => key(row) === key(object)).sort((a, b) =>
       a.attribute_ordinal_position - b.attribute_ordinal_position || String(a.attribute_name).localeCompare(String(b.attribute_name)));
-    if (!members.length || members.length > 2000) throw Error("Object requires 1–2000 active Attributes.");
+    if (!allMembers.length || allMembers.length > 2000) throw Error("Object requires 1–2000 active Attributes.");
+    const members = allMembers.filter((row) => !masked.has(attributeKey(row)));
+    coverage.push({object: ownKey(object), active_attribute_count: allMembers.length,
+      planned_attribute_count: members.length, excluded: allMembers.filter((row) => masked.has(attributeKey(row)))
+        .map((row) => ({...ownKey(object), attribute_name: row.attribute_name, reason: "masking_required"}))});
+    if (!members.length) continue;
     const origins = source ? [object] : (metadata.ingestion_object_mapping ?? []).filter((row) => active(row) && key(row, "target_") === key(object))
       .map((row) => objects.get(key(row, "source_"))).filter((row) => row && norm(row.source_tenant_code) === norm(object.source_tenant_code));
     const originSystems = [...new Set(origins.map((row) => norm(row.system_code)))];
@@ -129,10 +145,11 @@ function planProfiling(metadata, scope, plan) {
     if (matched.length) batch = assignments.systems.get(matched[0]);
     if (object.batch_attribute_name && !origins.length && assignments.systems.size && !assignments.objects.has(key(object))) throw Error("Resolve Bronze originating System through ingestion Mapping.");
     if (assignments.objects.has(key(object))) batch = assignments.objects.get(key(object));
-    const batchAttribute = object.batch_attribute_name ? members.find((row) => norm(row.attribute_name) === norm(object.batch_attribute_name)) : null;
+    const batchAttribute = object.batch_attribute_name ? allMembers.find((row) => norm(row.attribute_name) === norm(object.batch_attribute_name)) : null;
     let filter = null;
     if (batch !== null && object.batch_attribute_name) {
       if (!batchAttribute) throw Error("Registered batch column is not an active Attribute.");
+      if (masked.has(attributeKey(batchAttribute))) throw Error("Masked batch Attribute cannot be used for Profiling.");
       const type = normalizedType(batchAttribute.attribute_data_type);
       if (!stringType.test(type) && !scalarType.test(type)) throw Error("Unsupported batch data type.");
       filter = {name: source ? batchAttribute.fc_attribute_name : batchAttribute.attribute_name, type, value: batch};
@@ -153,7 +170,8 @@ function planProfiling(metadata, scope, plan) {
       offset += count;
     }
   }
-  return queries;
+  return {queries, coverage};
 }
 
-module.exports = {buildQuery, planProfiling};
+module.exports = {buildQuery, planProfiling, fields, norm, key, ownKey, attributeKey, maskingKeys, quote,
+  normalizedType, stringType, scalarType};

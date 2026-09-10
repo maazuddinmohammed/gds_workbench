@@ -3134,7 +3134,7 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
             ) VALUES (
                 %s, 'legacy-agent-run', NULL, %s, %s, %s, %s, %s, %s,
                 'reference', 'high', 'Prior inference basis.',
-                %s, %s, 'supported', 9, 5, 10, 10, 1, 2, 0,
+                %s, %s, 'supported', 9, 5, 10, 10, 0, 5, 0,
                 'active', FALSE
             )
             """,
@@ -3350,8 +3350,8 @@ async def test_completed_analysis_draft_applies_once_and_preserves_validation(
         "validation_source_distinct_count": 5,
         "validation_target_non_null_count": 10,
         "validation_target_distinct_count": 10,
-        "validation_source_missing_target_count": 1,
-        "validation_unused_target_count": 2,
+        "validation_source_missing_target_count": 0,
+        "validation_unused_target_count": 5,
         "validation_duplicate_target_key_count": 0,
         "model_revision": 2,
         "model_change_set_status": "applied",

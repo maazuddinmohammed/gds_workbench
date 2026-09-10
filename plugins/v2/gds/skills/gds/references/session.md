@@ -1,6 +1,6 @@
 # Session contract
 
-Use one session per Tenant Code. It may be metadata-only; its selected Model cannot change.
+A session has one Tenant and at most one Model; its selected Model cannot change.
 
 ```text
 GDS/<TENANT_CODE>/<SESSION>/
@@ -11,49 +11,43 @@ GDS/<TENANT_CODE>/<SESSION>/
   code/
 ```
 
-`manifest.json` allocates unreused IDs. `session.json` keeps task, Model, SQL/subagent policy, stale areas, and server-draft cache. Never store prompts, secrets, raw rows, or history.
+`manifest.json` allocates unreused IDs. `session.json` stores tasks, Model, SQL/subagent policy, stale areas and draft cache. Never store prompts, secrets, raw rows or history.
 
-Open Workbench once after session creation. On resume call local `status`. Check the pending digest against acceptance and verify any Stage proof via `staging.md`. Treat `status.acceptance` as authoritative. If its digest matches and no Snapshot recovery is required, do not rerun authoring, generators, validation, or review. Continue handoff; do not reopen Workbench unless asked.
+Open Workbench once after creation. On resume call local `status`. Treat `status.acceptance` as authoritative; verify digest, evidence binding and any Stage proof using `staging.md`. If they match and no Snapshot recovery is required, continue handoff without rerunning authoring, generators, validation or review; do not reopen Workbench unless asked.
 
 ## Tasks and coverage
 
-Create one `task-add --area metadata|model` task before edits, including Code/Validation as Model records. Record Snapshot IDs and Model revision. Keep coverage in its plan using `task-plan` and the returned plan digest, separate from the Change Set digest:
+Create `task-add --area metadata|model` before edits; Code/Validation are Model records. Record Snapshot IDs/revision. Maintain coverage through `task-plan` and its returned plan digest, separate from Change Set digest:
 
 ```text
 Loop: target=<target>; phase=<phase>; scope=<n>; represented=<n>; context=<n>; excluded=<n>; blocked=<n>; next=<key|complete>
 ```
 
-Coverage proves each input was considered, not produced as output.
+Coverage proves consideration, not output counts. Task states are internal; edits invalidate acceptance.
 
-Task states are internal. Local edits invalidate digest acceptance.
+## Snapshots
 
-## Snapshot freshness
+The agent owns setup. For an unknown session path, ask once for working directory, run `session-init`, reuse the returned path.
 
-The agent owns setup. If the session path is unknown, ask once for the working directory, run `session-init`, and reuse its path.
+For missing/stale Snapshots without an unapplied revision conflict:
 
-When a required Snapshot is missing or stale (not an unapplied revision conflict):
+1. Call `create_metadata_snapshot` for the Tenant, including required authorized `source_tenant_ids`, or `create_model_snapshot` for its Model.
+2. Download the complete ZIP temporarily; never expose/save its signed URL.
+3. `snapshot-install` verifies returned ID, bytes and SHA-256, replaces the area, and retires accepted applied records. Retirement recognizes schema defaults/equivalent decimals; approval digests remain byte-exact.
+4. Delete ZIP; rerun `readiness`.
 
-1. Call `create_metadata_snapshot` for the session Tenant, including required authorized `source_tenant_ids` for cross-Tenant Source/Bronze context; or `create_model_snapshot` for its Model.
-2. Download its complete ZIP temporarily. Never expose or save the signed URL.
-3. Run `snapshot-install` with returned ID, bytes, and SHA-256. It verifies and replaces the area, retiring exact applied records when stale.
-4. Delete the ZIP and rerun `readiness`.
+Never edit Snapshots or infer freshness from timestamps. Before Model Stage compare authoritative and installed revisions; mismatch requires `workflows/revision-recovery.md` before draft creation/caching. Direct installation over pending work fails; never auto-merge. Metadata has no tenant-wide revision: require freshness, Tenant Lock and server validation. Notify again for changed content; byte-identical reassessment retains acknowledgement.
 
-Ask only for unresolved download/session information. Never edit Snapshots or infer freshness from timestamps.
+Apply marks its area stale; refresh before dependent work. Model replacement requires a newer revision. For a locked folder, close Workbench/terminals inside it and retry the verified ZIP; never delete pending work. `cleanup_pending` means installation succeeded but recoverable backup cleanup remains, not failed Apply.
 
-Before Model Stage, compare the authoritative Model revision with the installed Model Snapshot. On mismatch, follow `workflows/revision-recovery.md` before creating/caching a draft; direct install over pending work fails; never auto-merge. Metadata has no tenant-wide revision: require its Snapshot to be non-stale, acquire the Tenant Lock, and let server validation recheck current database state. Never infer a Metadata revision. Notify again only if local content changed; byte-identical content retains acknowledgement.
+Metadata Enrichment needs both Snapshots and the scope Model's revision check; its task area is `metadata`. For another Source Tenant, retain scope evidence in the Model session and use that Tenant's metadata-only session (`metadata-authoring` readiness). Never install a foreign-owned Model there. Apply each Metadata Change Set under its own Tenant Lock, then refresh the main combined Metadata Snapshot. Shared input context grants no write authority.
 
-Apply marks its area stale. Refresh before dependent work. Model replacement requires a newer revision.
+## Reads and reusable evidence
 
-Metadata Enrichment requires both Snapshots and a selected Model. Its task area is `metadata`; check Model revision before handoff because that Snapshot determines scope. Physical results are shared by every Model using those Objects. For another Source Tenant, keep scope evidence in the owning Model session and create a metadata-only session for that Source Tenant's edits (`metadata-authoring` readiness). Do not install a foreign-owned Model Snapshot there. Validate/apply each Metadata Change Set under its own Tenant Lock; then refresh the main session's combined Metadata Snapshot. Extra input context never grants Metadata write authority.
+`readiness` checks freshness, not applied workflow eligibility; check guide prerequisites. Bounded `select --where` reads Snapshot rows only. Overlay drafts by canonical key to inspect effective results.
 
-## Read the right data
+`inspect_metadata`/`read_model_section` read live applied data; compare returned Model revision and reassess changes. Follow MCP `next_cursor`. Generated Code/Validation use local Snapshots. Local `select` has no cursor: narrow `truncated=true` results by known keys; discover missing keys through paginated MCP inventory. Never call partial coverage complete.
 
-`readiness` checks Snapshot presence/freshness, not applied workflow eligibility. Check the active guide's prerequisites separately. Author against installed Snapshots using bounded `select --where`; it reads Snapshot rows only. To inspect the effective result, overlay the corresponding local draft records by canonical key. Do not confuse draft records with applied data.
+Keep `<session>/working/<task>/object-analysis/` with full physical Object keys indexing Markdown notes: grain, complete business-key tuples, dependencies, relationship decisions, evidence scope/method and open questions. Preserve Metadata findings before Apply. Cite Snapshot/query references; distinguish measured, documented and inferred evidence. Later phases read notes first; the modeling owner replaces superseded conclusions. No per-file JSON schema. `modeling-quality.md` binds cited notes to acceptance. Notes are temporary context, never Model state; omit rows, raw output, prompts and secrets.
 
-`inspect_metadata` and `read_model_section` read live applied data. Compare Model reads' returned revision to the installed revision; reassess on mismatch. Follow MCP `next_cursor` when traversing a dataset. Generated Code/Validation require local Snapshot reads. Local `select` has no cursor: when `truncated=true`, narrow by known entity/object/System/attribute keys; never call a partial page complete. Use paginated MCP inventory reads to discover missing keys.
-
-## Reusable investigation notes
-
-Keep `<session>/working/<task>/object-analysis/` with an index mapping full physical Object keys to freeform Markdown notes. Record grain, hypotheses, evidence references, decisions, corrections, and any other useful findings; no mandatory per-file JSON schema. Conceptual/Logical/Dimensional read applicable notes first. Reassess affected notes after evidence changes. These notes are temporary context, not Model state; never save physical rows, raw output, prompts, or secrets.
-
-`snapshot-install` installs a newly downloaded archive. `snapshot-refresh` only reconciles a replacement already on disk; it does not fetch a Snapshot. Use `snapshot-install` for the normal refresh path. Workbench **Refresh** only reloads local files.
+`snapshot-install` installs downloaded archives. `snapshot-refresh` reconciles an existing replacement without fetching. Workbench **Refresh** only reloads local files.

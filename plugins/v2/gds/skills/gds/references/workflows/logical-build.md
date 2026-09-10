@@ -1,38 +1,38 @@
 # Logical Build
 
-Require applied Model Input Scope and fresh Metadata/Model Snapshots. Read `model-input-scope.md`; load each phase guide when entering it. Use bounded Snapshot `select` and current-task draft evidence between phases; follow `../session.md` on live reads/revisions. Other workflows still require applied prerequisites.
+Require applied Model Input Scope and fresh Metadata/Model Snapshots. Read `model-input-scope.md`; load phase guides on entry. Use bounded Snapshot `select` plus current-task drafts; follow `../session.md` for live reads/revisions.
 
-## Intake and prerequisites
+## Intake
 
-Show existing results. Resolve whether the user is adding inputs, refining areas, or rebuilding selected work; reuse supplied intent. Select all scoped Objects or named inputs without changing membership. Preserve valid existing results, locks, and unrelated work; inspect downstream dependencies before structural changes.
+Show existing results; resolve add/refine/rebuild intent once. Select all scoped Objects or named inputs without changing membership. Preserve valid existing results, locks and unrelated work; inspect downstream dependencies before structural changes.
 
-Invoke `metadata-enrichment.md` for missing descriptions/inferred types. Reuse the saved overwrite/fill-missing policy or ask once. It is a separate physical Metadata task; Apply and refresh before dependent modeling. Unavailable evidence remains explicit, not fabricated. Read `../model-conventions.md` and confirm only missing naming/audit choices.
+Invoke `metadata-enrichment.md` for missing descriptions/types, reusing overwrite/fill-missing policy. Its separate Metadata task must Apply and refresh before dependent modeling. Keep unavailable evidence explicit. Read `../model-conventions.md`; confirm missing naming/audit choices only.
 
 ## Phases
 
-1. **Profiling:** read `profiling.md`; show existing Profiles and ask reuse, selected reprofile, or skip. Resolve batch choices only for requested measurements. Use the deterministic planner and saved SQL policy.
-2. **Analysis:** read `analysis.md`; understand every Object, propose relationships across the complete scope, measure supported candidates when permitted, and retain supported/rejected/unresolved findings.
-3. **Conceptual:** read `conceptual.md`; build high-level business concepts, consolidate equivalent meanings across Objects/Tenants/Systems, and account for every input. Do not reproduce the Logical inventory.
-4. **Logical:** use the evidence and reusable object-analysis notes to build the operational model below.
+1. **Profiling:** read `profiling.md`; resolve reuse, selected reprofile or skip from existing Profiles. Request batches only for measurements; use the deterministic planner and saved SQL policy.
+2. **Analysis:** read `analysis.md`; investigate Object meaning and relationships across scope, measure signaled candidates when permitted, and retain supported/rejected/unresolved findings.
+3. **Conceptual:** read `conceptual.md`; form reusable business concepts across Objects/Tenants/Systems, accounting for inputs without reproducing the Logical inventory.
+4. **Logical:** build the operational model from these findings and reusable object-analysis notes.
 
-Read `assertions.md` only for existing Assertions or user-confirmed business rules. Generated interpretation is not an Assertion. Reuse and update affected findings across phases; do not repeat full analysis on every run.
+Read `assertions.md` for existing Assertions or user-confirmed business rules. Generated interpretation is not an Assertion. Reuse findings; revisit affected evidence rather than restarting every phase.
 
 ## Logical decisions
 
-For each candidate Entity, state business grain, identifiers, lifecycle, source support, and Attribute determinants.
+Establish each Entity's row meaning, complete business-key tuple, lifecycle, source support and Attribute determinants. Explain retain/split/consolidate choices and plausible alternatives with evidence. A surrogate does not distinguish duplicate business occurrences.
 
-- Consolidate equivalent Entities across Tenants/Systems when meaning and grain agree. Source provenance is not a reason to separate them; similar names do not prove common row identity.
-- Consolidate equivalent Attributes after checking units, precision, code definitions, and time semantics. Preserve lineage and useful System-specific fields.
-- Apply 1NF/2NF/3NF where supported. Separate mixed grains, repeating groups, header/detail, independent lifecycles, and genuine many-to-many relationships. Do not create tiny lookup Entities just because values repeat.
-- Every Logical Entity has its own generated BIGINT surrogate first, ending `ID`. Foreign keys reference those surrogate values. Retain evidence-based natural identifiers; surrogate keys do not establish cross-System identity.
-- Use reliable inferred types, preserving leading-zero identifiers, exact decimals, and date/time meaning. Bronze STRING is storage, not the modeled type. Resolve unclear definitions before finalizing affected Attributes.
-- Define relationship direction, optionality, and cardinality from evidence. Clarify or defer only affected decisions when structural uncertainty remains.
-- Organize submodels by business capability. Share Entities through memberships, not copies per System/submodel.
+- Consolidate equivalent Entities when meaning/grain agree across Tenants/Systems. Preserve source-qualified keys or confirmed crosswalks when local identifiers overlap; similar names do not prove shared identity.
+- Consolidate Attributes only when units, precision, codes and time semantics agree. Preserve lineage and useful System-specific fields.
+- Apply 1NF/2NF/3NF where supported: separate mixed grains, repeating groups, header/detail, independent lifecycles and genuine many-to-many relationships. Repeated values alone do not justify lookup Entities.
+- Each Entity's generated BIGINT surrogate comes first, ending `ID`; foreign keys reference surrogates. Retain evidenced natural identifiers. Surrogates do not establish cross-System identity.
+- Preserve identifier formatting, decimal capacity and date/time meaning. Sample types do not define production bounds; assess units/range and cast failures. Bronze STRING describes storage. Resolve unclear meanings before finalizing affected Attributes.
+- Establish relationship direction, optionality, cardinality and complete source-key-to-surrogate lookup. Single-column Analysis cannot prove composite lookup: preserve tuple measurements in notes and cite applicable business Assertions where records cannot express them. Defer affected uncertain structures.
+- Group submodels by business capability; share Entity memberships rather than duplicate Entities.
 
-## Coverage and review
+## Review
 
-Account for every scoped Object AND Attribute as a contribution, context-only, excluded with a substantive reason, or blocked. Empty, unfamiliar, or single-System data is not automatically useless.
+Account for every scoped Object AND Attribute as contribution, context, substantive exclusion or blocked. Empty, unfamiliar or single-System data is not automatically useless.
 
-Review the effective graph for duplicate representations, missing consolidation, excessive splits, mixed grains, and unsupported exclusions. Challenge source-table-shaped results; keep them only when grain/dependency analysis supports them. Trace outputs back to evidence and inputs forward to outcomes. Use definitions/source rationale for meaningful exceptions; keep investigative notes in the scratchpad.
+Inspect actual effective records alongside `../modeling-quality.md` diagnostics. Challenge duplicate representations, mixed grains, missing consolidation, excessive splits and unsupported exclusions. Source-shaped structures need grain/dependency justification. Explain isolated Entities and audit share without manufacturing Entities/edges to improve metrics. Trace outputs to evidence and inputs to outcomes; retain investigation in notes.
 
-Use the saved SQL policy for specific gaps; static validity is not business correctness. Complete functional review before local validation and the normal Model Change Set handoff. Supported records are `active`; never manufacture `needs_review` status or call blocked coverage complete.
+For substantial builds, a fresh reviewer examines grain, dependencies, relationships and types; the modeling owner resolves findings. With delegation disabled, perform that review explicitly in the same task. Query specific gaps under saved policy. Complete functional review before local validation/handoff; structural validity does not prove business correctness. Supported records remain `active`; never invent `needs_review` status or call blocked coverage complete.

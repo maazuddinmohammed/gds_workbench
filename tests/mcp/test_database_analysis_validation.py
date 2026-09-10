@@ -1,17 +1,18 @@
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from hashlib import sha256
-import re
 from typing import TYPE_CHECKING, Any
 from uuid import uuid4
 
 import psycopg
 import pytest
-from tests.mcp.database_test_support import require_row
 from psycopg.errors import InsufficientPrivilege, RaiseException
 from psycopg.rows import dict_row
 from psycopg.types.json import Jsonb
+
+from tests.mcp.database_test_support import require_row
 from tests.mcp.test_database_profiling_execution_context import (
     ProfilingExecutionSeed,
     _execution_parameters,
@@ -266,7 +267,7 @@ def _validation_result(
 ) -> dict[str, Any]:
     source_non_null_count = count_base + 10
     source_distinct_count = count_base + 9
-    target_non_null_count = count_base + 8
+    target_non_null_count = count_base + 11
     target_distinct_count = target_non_null_count
     source_missing_target_count = 0
     duplicate_target_key_count = 0
@@ -288,7 +289,9 @@ def _validation_result(
         "validation_target_non_null_count": target_non_null_count,
         "validation_target_distinct_count": target_distinct_count,
         "validation_source_missing_target_count": source_missing_target_count,
-        "validation_unused_target_count": 2,
+        "validation_unused_target_count": (
+            target_distinct_count - (source_distinct_count - source_missing_target_count)
+        ),
         "validation_duplicate_target_key_count": duplicate_target_key_count,
     }
 

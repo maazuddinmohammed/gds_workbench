@@ -184,6 +184,71 @@ class ProfilingProfileRecord(PhysicalAttributeKey):
         return self
 
 
+type AnalysisValidationResult = Literal[
+    "supported",
+    "inconclusive",
+    "unsupported",
+]
+
+
+class AnalysisValidationEvidence(BaseModel):
+    """Aggregate integrity shared by deterministic execution and staged records."""
+
+    model_config = ConfigDict(extra="forbid", frozen=True, strict=True)
+
+    validation_source_non_null_count: int = Field(ge=0)
+    validation_source_distinct_count: int = Field(ge=0)
+    validation_target_non_null_count: int = Field(ge=0)
+    validation_target_distinct_count: int = Field(ge=0)
+    validation_source_missing_target_count: int = Field(ge=0)
+    validation_unused_target_count: int = Field(ge=0)
+    validation_duplicate_target_key_count: int = Field(ge=0)
+    validation_result: AnalysisValidationResult
+
+    @model_validator(mode="after")
+    def validate_evidence(self) -> AnalysisValidationEvidence:
+        if self.validation_source_distinct_count > self.validation_source_non_null_count:
+            raise ValueError("Source validation counts do not reconcile")
+        if (self.validation_source_non_null_count == 0) != (
+            self.validation_source_distinct_count == 0
+        ):
+            raise ValueError("Source validation counts do not reconcile")
+        if self.validation_target_distinct_count > self.validation_target_non_null_count:
+            raise ValueError("Target validation counts do not reconcile")
+        if (self.validation_target_non_null_count == 0) != (
+            self.validation_target_distinct_count == 0
+        ):
+            raise ValueError("Target validation counts do not reconcile")
+        if self.validation_source_missing_target_count > self.validation_source_distinct_count:
+            raise ValueError("Missing-target count exceeds source distinct count")
+        if self.validation_unused_target_count > self.validation_target_distinct_count:
+            raise ValueError("Unused-target count exceeds target distinct count")
+        if (
+            self.validation_source_distinct_count - self.validation_source_missing_target_count
+            != self.validation_target_distinct_count - self.validation_unused_target_count
+        ):
+            raise ValueError("Matched distinct counts do not reconcile")
+        expected_duplicate_count = (
+            self.validation_target_non_null_count - self.validation_target_distinct_count
+        )
+        if self.validation_duplicate_target_key_count != expected_duplicate_count:
+            raise ValueError("Duplicate-target count does not reconcile")
+
+        expected_result: AnalysisValidationResult
+        if self.validation_source_non_null_count == 0 or self.validation_target_non_null_count == 0:
+            expected_result = "inconclusive"
+        elif (
+            self.validation_source_missing_target_count == 0
+            and self.validation_duplicate_target_key_count == 0
+        ):
+            expected_result = "supported"
+        else:
+            expected_result = "unsupported"
+        if self.validation_result != expected_result:
+            raise ValueError("Analysis validation result does not match its evidence")
+        return self
+
+
 class AnalysisResultRecord(ModelingRecord):
     from_tenant_code: Code100
     from_system_code: Code100
@@ -219,6 +284,11 @@ class AnalysisResultRecord(ModelingRecord):
             value is None for value in validation_values
         ):
             raise ValueError("Analysis validation fields must all be present or all be absent.")
+        if self.validation_result is not None:
+            AnalysisValidationEvidence.model_validate(
+                {field: getattr(self, field) for field in ANALYSIS_VALIDATION_FIELDS[1:]},
+                strict=True,
+            )
         from_key = (
             normalize_model_key_value(self.from_tenant_code),
             normalize_model_key_value(self.from_system_code),

@@ -15,6 +15,7 @@ const workbenchAreas = {
   model: require("../workbench/model.js"),
 };
 const workbenchDbml = require("../workbench/dbml.js");
+const qualityFiles = require("./model-quality-files.js");
 
 function fail(message) {
   throw new Error(message);
@@ -45,27 +46,29 @@ const MODEL_STAGE_FRAGMENT_MAX_BYTES = 1024 * 1024;
 const STAGE_CHUNK_MAX_RECORDS = 5000;
 const STAGE_MAX_CHUNKS = 64;
 
-function profilePlan(options) {
+function aggregatePlan(options, kind) {
+  const title = kind === "analysis" ? "Analysis" : "Profiling";
   const context = changeSetContext({...options, area: "model"});
   const metadata = locateSnapshot({session: options.session, area: "metadata"});
   if (context.state.stale?.includes("metadata")) fail("Metadata Snapshot is stale.");
   if (!options["plan-file"]) fail("--plan-file is required.");
-  const plan = readJsonFile(path.resolve(options["plan-file"]), "Profiling selections");
+  const plan = readJsonFile(path.resolve(options["plan-file"]), `${title} selections`);
   const scopeDefinition = context.byName.get("model_input_scope");
   if (!scopeDefinition) fail("Model Input Scope is missing.");
   const datasets = Object.fromEntries(metadata.datasets.filter((dataset) =>
-    ["source_object", "bronze_object", "source_attribute", "bronze_attribute", "tenant", "connection", "ingestion_object_mapping"].includes(dataset.name))
+    ["source_object", "bronze_object", "source_attribute", "bronze_attribute", "tenant", "connection", "ingestion_object_mapping", "ingestion_attribute_mapping"].includes(dataset.name))
     .map((dataset) => [dataset.name, readSnapshotRecords(metadata, dataset)]));
-  const queries = require("./profiling.js").planProfiling(datasets,
-    readSnapshotRecords(context, scopeDefinition), plan);
+  const planner = kind === "analysis" ? require("./analysis.js").planAnalysis : require("./profiling.js").planProfiling;
+  const planned = planner(datasets, readSnapshotRecords(context, scopeDefinition), plan);
+  const queries = kind === "profiling" ? planned.queries : planned;
   let directory = context.session;
   for (const segment of ["working", context.current[0]]) {
     directory = path.join(directory, segment);
     if (!fs.existsSync(directory)) fs.mkdirSync(directory, {mode: 0o700});
     const stat = fs.lstatSync(directory);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) fail("Profiling output must be inside regular session directories.");
+    if (!stat.isDirectory() || stat.isSymbolicLink()) fail(`${title} output must be inside regular session directories.`);
   }
-  directory = fs.mkdtempSync(path.join(directory, "profiling-"));
+  directory = fs.mkdtempSync(path.join(directory, `${kind}-`));
   const entries = queries.map(({sql, ...query}, index) => {
     const file = `${String(index + 1).padStart(4, "0")}.sql`;
     fs.writeFileSync(path.join(directory, file), sql, {flag: "wx", mode: 0o600});
@@ -74,9 +77,10 @@ function profilePlan(options) {
   const manifest = path.join(directory, "plan.json");
   writeJsonAtomic(manifest, {schema_version: "1.0", model_snapshot_id: context.manifest.snapshot_id,
     metadata_snapshot_id: metadata.manifest.snapshot_id, model_revision: context.manifest.model_revision,
-    selections: plan, queries: entries});
+    selections: plan, queries: entries, ...(kind === "profiling" ? {coverage: planned.coverage} : {})});
   return {directory, manifest, query_count: queries.length,
-    attribute_count: queries.reduce((count, query) => count + query.attributes.length, 0)};
+    ...(kind === "profiling" ? {attribute_count: queries.reduce((count, query) => count + query.attributes.length, 0),
+      excluded_attribute_count: planned.coverage.reduce((count, object) => count + object.excluded.length, 0)} : {})};
 }
 
 function commandContract(options) {
@@ -993,6 +997,8 @@ function acceptedWorkspaceDigest(session, task, area) {
   ) {
     fail("Task accepted digest does not match the exact local Change Set.");
   }
+  if (area === "model") qualityFiles.verifyQualityAcceptance(session, task[0], actual,
+    acceptance, fs.readdirSync(pendingDirectory(session, area)).map((name) => name.slice(0, -5)));
   return actual;
 }
 
@@ -1463,12 +1469,14 @@ function validateChangeSet(options) {
     });
   }
   let metadata = null;
+  let metadataSnapshot = null;
   let metadataTenantCode = options.area === "metadata"
     ? context.manifest.tenant_code
     : context.catalog.model?.tenant_code ?? null;
   if (options.area === "model" && !context.state.stale?.includes("metadata")) {
     try {
       const snapshot = locateSnapshot({ session: context.session, area: "metadata" });
+      metadataSnapshot = snapshot;
       metadata = new Map();
       for (const dataset of snapshot.datasets) {
         const schema = datasetSchema(snapshot, dataset);
@@ -1528,6 +1536,36 @@ function validateChangeSet(options) {
     truncated: validationIssues.length > boundedIssues.length,
     digest: workspaceDigest(context),
   };
+  if (options.area === "model" && Object.keys(pending).some((name) => qualityFiles.modelingDatasets.has(name))) {
+    const task = context.current[0];
+    let evidence = qualityFiles.readDecisions(context.session, task);
+    const quality = require("../workbench/model-quality.js").evaluateQuality(loaded, evidence.decisions,
+      {noteFiles: evidence.noteFiles, metadataMap: metadata});
+    if (quality.required && !metadataSnapshot) {
+      quality.errors.push({code: "metadata_evidence_missing", dataset: "model", key: {},
+        message: "Fresh Metadata is required for modeling evidence review."});
+      quality.status = "needs_evidence";
+      quality.error_count += 1;
+      quality.errors = quality.errors.slice(0, 200);
+      quality.truncated = quality.error_count > 200 || quality.warning_count > 200;
+    }
+    const decisionsPath = path.join(context.session, "tasks", `${task}.modeling-decisions.json`);
+    if (quality.required && evidence.decisions === null) {
+      writeJsonAtomic(decisionsPath, quality.template);
+      evidence = qualityFiles.readDecisions(context.session, task);
+    }
+    const files = [...evidence.files];
+    for (const snapshot of [context, metadataSnapshot].filter(Boolean)) {
+      const relative = path.relative(context.session, path.join(snapshot.root, "manifest.json")).split(path.sep).join("/");
+      const file = qualityFiles.readEvidenceFile(context.session, relative, 8 * 1024 * 1024);
+      files.push({path: file.path, sha256: file.sha256});
+    }
+    const report = path.join(context.session, "tasks", `${task}.modeling-quality.json`);
+    writeJsonAtomic(report, {schema_version: "1.0", task, draft_digest: output.digest, files, quality});
+    output.quality = {required: quality.required, status: quality.status, report,
+      decisions: decisionsPath, error_count: quality.error_count, warning_count: quality.warning_count,
+      metrics: quality.metrics};
+  }
   writeValidationReport(context, validationIssues, output);
   return output;
 }
@@ -1635,6 +1673,9 @@ function acceptChangeSet(options) {
     fail("--override must be true or false.");
   }
   const validation = validateChangeSet(options);
+  if (validation.quality?.error_count || validation.quality?.status === "needs_evidence") {
+    fail("Required modeling evidence is missing or unresolved; inspect the modeling quality report.");
+  }
   if (!validation.valid && !override) {
     fail("Local validation fails; fix issues or explicitly accept an override.");
   }
@@ -1666,6 +1707,9 @@ function acceptChangeSet(options) {
         context.manifest.snapshot_id,
         context.manifest.model_revision ?? null,
       ];
+  if (validation.quality) acceptance.push({modeling_quality: {
+    report_sha256: fileDigest(validation.quality.report),
+  }});
   writeJsonAtomic(path.join(context.session, "tasks", `${task[0]}.accept.json`), acceptance);
   task[3] = nextState;
   writeJsonAtomic(path.join(context.session, "session.json"), context.state);
@@ -1674,6 +1718,83 @@ function acceptChangeSet(options) {
     state: nextState,
     digest: actual,
   };
+}
+
+function sameAppliedRecord(local, server, schema, root = schema, recordType = "", collection = "") {
+  // Retirement only: accepted bytes and Stage fingerprints must stay exact.
+  if (stableStringify(local) === stableStringify(server)) return true;
+  if (!schema || typeof schema !== "object") return false;
+  if (typeof schema.$ref === "string") {
+    if (!schema.$ref.startsWith("#/$defs/")) return false;
+    return sameAppliedRecord(local, server, root.$defs?.[schema.$ref.slice(8)], root, recordType, collection);
+  }
+  const alternatives = schema.anyOf ?? schema.oneOf;
+  if (Array.isArray(alternatives)) {
+    // Pydantic Decimal schemas explicitly allow both numbers and patterned strings.
+    if (alternatives.some((part) => part.type === "number") &&
+        alternatives.some((part) => part.type === "string" && typeof part.pattern === "string")) {
+      const values = [local, server].map((value) => {
+        if (!["string", "number"].includes(typeof value) ||
+            workbenchCommon.validateSchema(value, schema, root).length) return null;
+        const match = /^([+-]?)(\d+)(?:\.(\d*))?(?:[eE]([+-]?\d+))?$/.exec(String(value));
+        if (!match) return null;
+        const exponent = Number(match[4] ?? 0) - (match[3] ?? "").length;
+        if (!Number.isSafeInteger(exponent)) return null;
+        let digits = `${match[2]}${match[3] ?? ""}`.replace(/^0+/, "");
+        if (!digits) return "0";
+        const zeros = digits.length - digits.replace(/0+$/, "").length;
+        digits = digits.slice(0, digits.length - zeros);
+        return `${match[1] === "-" ? "-" : ""}${digits}e${exponent + zeros}`;
+      });
+      return values[0] !== null && values[0] === values[1];
+    }
+    return alternatives.some((part) =>
+      workbenchCommon.validateSchema(local, part, root).length === 0 &&
+      workbenchCommon.validateSchema(server, part, root).length === 0 &&
+      sameAppliedRecord(local, server, part, root, recordType, collection));
+  }
+  if (Array.isArray(local) || Array.isArray(server)) {
+    if (!Array.isArray(local) || !Array.isArray(server) || local.length !== server.length) return false;
+    if (collection) {
+      // SQL emits these owned collections by database ID/name. Explicit source_order stays compared.
+      const identity = (item) => {
+        if (!item || Array.isArray(item) || typeof item !== "object") return null;
+        if (collection === "submodels") return typeof item.submodel_name === "string"
+          ? stableStringify(["submodel", item.submodel_name]) : null;
+        const field = {object: "source_object", attribute: "source_attribute", assertion: "assertion_record"}[item.support_source_type];
+        return field && item[field] && typeof item[field] === "object" && !Array.isArray(item[field])
+          ? stableStringify([item.support_source_type, item[field]]) : null;
+      };
+      const candidates = new Map();
+      for (const item of server) {
+        const key = identity(item);
+        if (key === null || candidates.has(key)) return false;
+        candidates.set(key, item);
+      }
+      for (const item of local) {
+        const key = identity(item);
+        if (key === null || !candidates.has(key) ||
+            !sameAppliedRecord(item, candidates.get(key), schema.items, root, recordType)) return false;
+        candidates.delete(key);
+      }
+      return candidates.size === 0;
+    }
+    return local.every((value, index) => sameAppliedRecord(value, server[index], schema.items, root, recordType));
+  }
+  if (!local || !server || typeof local !== "object" || typeof server !== "object") return false;
+  for (const field of new Set([...Object.keys(local), ...Object.keys(server)])) {
+    const child = schema.properties?.[field];
+    const hasLocal = Object.hasOwn(local, field), hasServer = Object.hasOwn(server, field);
+    if ((!hasLocal || !hasServer) && (!child || !Object.hasOwn(child, "default") ||
+        schema.required?.includes(field))) return false;
+    const ownedCollection = schema === root && (
+      (field === "supports" && ["conceptual_object", "conceptual_relationship"].includes(recordType)) ||
+      (field === "sources" && ["logical_entity", "logical_attribute", "dimensional_entity", "dimensional_attribute"].includes(recordType)) ||
+      (field === "submodels" && ["logical_entity", "dimensional_entity"].includes(recordType))) ? field : "";
+    if (!sameAppliedRecord(hasLocal ? local[field] : child.default,
+      hasServer ? server[field] : child.default, child, root, recordType, ownedCollection)) return false;
+  }
+  return true;
 }
 
 function acceptRefreshedSnapshot(options) {
@@ -1687,12 +1808,14 @@ function acceptRefreshedSnapshot(options) {
     fail(`${options.area} is not marked stale.`);
   }
   let applied = null;
+  let appliedTask = null;
   for (let index = state.tasks.length - 1; index >= 0; index -= 1) {
     const task = state.tasks[index];
     if (task[1] !== options.area || task[3] !== "applied") continue;
     const markerPath = path.join(session, "tasks", `${task[0]}.applied.json`);
     if (fs.existsSync(markerPath)) {
       applied = readJsonFile(markerPath, "Applied Snapshot marker");
+      appliedTask = task[0];
       break;
     }
   }
@@ -1718,6 +1841,13 @@ function acceptRefreshedSnapshot(options) {
     fail("Refreshed Model Snapshot revision must be greater than the applied base revision.");
   }
   const changeDirectory = path.join(session, `${options.area}-change-set`);
+  const acceptancePath = path.join(session, "tasks", `${appliedTask}.accept.json`);
+  if (fs.existsSync(acceptancePath)) {
+    const acceptance = readJsonFile(acceptancePath, "Task acceptance");
+    if (!Array.isArray(acceptance) || acceptance[0] !== workspaceDigest({directory: changeDirectory})) {
+      fail("Task accepted digest does not match the exact local Change Set after Apply.");
+    }
+  }
   const files = [];
   for (const entry of fs.readdirSync(changeDirectory, { withFileTypes: true })) {
     if (!entry.isFile() || entry.isSymbolicLink() || !entry.name.endsWith(".json")) {
@@ -1730,6 +1860,7 @@ function acceptRefreshedSnapshot(options) {
       const name = entry.name.slice(0, -5);
       const dataset = current.byName.get(name);
       if (!dataset) fail(`Refreshed Snapshot has no dataset ${name}.`);
+      const schema = datasetSchema(current, dataset);
       const baseline = new Map();
       for (const record of readSnapshotRecords(current, dataset)) {
         const key = stableStringify(canonicalKey(options.area, dataset, record));
@@ -1741,18 +1872,40 @@ function acceptRefreshedSnapshot(options) {
           fail(`${name} pending file contains a non-object record.`);
         }
         const key = stableStringify(canonicalKey(options.area, dataset, record));
-        if (!baseline.has(key) || stableStringify(baseline.get(key)) !== stableStringify(record)) {
+        if (!baseline.has(key) || !sameAppliedRecord(record, baseline.get(key), schema, schema, name)) {
           fail(`Refreshed Snapshot does not contain the exact applied local record for ${name}.`);
         }
       }
     }
     files.push(filePath);
   }
-  for (const filePath of files) fs.unlinkSync(filePath);
+  // Keep all pending bytes recoverable until the stale-state update commits.
+  const retired = fs.mkdtempSync(path.join(session, `.${options.area}-retired-`));
+  const saved = path.join(retired, "records");
+  let moved = false;
   state.stale = state.stale.filter((area) => area !== options.area);
   if (!state.stale.length) delete state.stale;
-  writeJsonAtomic(path.join(session, "session.json"), state);
-  return { area: options.area, id: currentId, revision: currentRevision, retired: files.length };
+  try {
+    fs.renameSync(changeDirectory, saved);
+    moved = true;
+    fs.mkdirSync(changeDirectory, {mode: 0o700});
+    writeJsonAtomic(path.join(session, "session.json"), state);
+  } catch (error) {
+    if (moved) {
+      try {
+        if (fs.existsSync(changeDirectory)) fs.rmdirSync(changeDirectory);
+        fs.renameSync(saved, changeDirectory);
+      } catch (_restoreError) {
+        fail(`Snapshot refresh failed; local records are preserved at ${saved}. Restore them before authoring.`);
+      }
+    }
+    try { removeSnapshotInstallPath(retired, session); } catch (_cleanupError) { /* Keep recovery files. */ }
+    throw error;
+  }
+  const result = { area: options.area, id: currentId, revision: currentRevision, retired: files.length };
+  try { removeSnapshotInstallPath(retired, session); }
+  catch (_error) { result.cleanup_pending = [retired]; }
+  return result;
 }
 
 function removeSnapshotInstallPath(target, session) {
@@ -1863,6 +2016,7 @@ function installSnapshot(options) {
   const destination = path.join(session, options.area);
   let movedPrevious = false;
   let movedNext = false;
+  let result;
   try {
     const extraction = childProcess.spawnSync("tar", ["-xf", archive, "-C", extracted], {
       encoding: "utf8",
@@ -1883,27 +2037,40 @@ function installSnapshot(options) {
     movedNext = true;
     const installed = locateSnapshot({ session, area: options.area });
     let refreshed = false;
+    let cleanupPending = [];
     if (stale) {
-      acceptRefreshedSnapshot({ session, area: options.area });
+      const refresh = acceptRefreshedSnapshot({ session, area: options.area });
+      cleanupPending = refresh.cleanup_pending ?? [];
       refreshed = true;
     }
-    removeSnapshotInstallPath(backup, session);
-    movedPrevious = false;
-    removeSnapshotInstallPath(stage, session);
-    return {
+    result = {
       area: options.area,
       snapshot_id: installed.manifest.snapshot_id,
       model_revision: installed.manifest.model_revision ?? null,
       dataset_count: installed.datasets.length,
       refreshed,
     };
+    if (cleanupPending.length) result.cleanup_pending = cleanupPending;
   } catch (error) {
-    if (movedNext && fs.existsSync(destination)) fs.rmSync(destination, { recursive: true });
-    if (movedPrevious && fs.existsSync(backup)) fs.renameSync(backup, destination);
-    if (fs.existsSync(stage)) removeSnapshotInstallPath(stage, session);
-    if (fs.existsSync(backup)) removeSnapshotInstallPath(backup, session);
+    try {
+      if (movedNext && fs.existsSync(destination)) fs.rmSync(destination, { recursive: true });
+      if (movedPrevious && fs.existsSync(backup)) fs.renameSync(backup, destination);
+    } catch (_restoreError) {
+      fail(`Snapshot installation could not restore its previous folder, preserved at ${backup}. Close Workbench and release folder handles before recovery. ${error.message}`);
+    }
+    try { if (fs.existsSync(stage)) removeSnapshotInstallPath(stage, session); }
+    catch (_cleanupError) { /* Retain failed extraction for recovery; never remove the backup here. */ }
+    if (["EBUSY", "EACCES", "EPERM"].includes(error.code)) {
+      fail("Snapshot folder is in use or inaccessible. Close Workbench tabs using this session, move terminals outside its folders, then retry the same snapshot-install command. Previous Snapshot and local records are preserved.");
+    }
     throw error;
   }
+  // Refresh has committed. Cleanup failure must never roll back its Snapshot.
+  for (const target of [backup, stage]) {
+    try { removeSnapshotInstallPath(target, session); }
+    catch (_error) { (result.cleanup_pending ??= []).push(target); }
+  }
+  return result;
 }
 
 function assertAcceptedChangeSet(context) {
@@ -1925,6 +2092,8 @@ function assertAcceptedChangeSet(context) {
   ) {
     fail("Task accepted digest does not match the exact local Change Set.");
   }
+  if (optionsArea(context) === "model") qualityFiles.verifyQualityAcceptance(context.session,
+    task[0], digest, acceptance, fs.readdirSync(context.directory).map((name) => name.slice(0, -5)));
   return digest;
 }
 
@@ -2646,6 +2815,7 @@ function sessionStatus(options) {
     planDigest = fileDigest(planPath);
   }
   let acceptance = null;
+  let acceptanceIssue = null;
   if (current) {
     const acceptancePath = path.join(session, "tasks", `${current[0]}.accept.json`);
     if (fs.existsSync(acceptancePath)) {
@@ -2668,6 +2838,15 @@ function sessionStatus(options) {
         snapshot_id: accepted[offset],
         model_revision: accepted[offset + 1],
       };
+      if (current[1] === "model") {
+        try {
+          qualityFiles.verifyQualityAcceptance(session, current[0], accepted[0], accepted,
+            fs.readdirSync(pendingDirectory(session, "model")).map((name) => name.slice(0, -5)));
+        } catch (error) {
+          acceptance = null;
+          acceptanceIssue = error.message;
+        }
+      }
     }
   }
   const pending = {};
@@ -2703,6 +2882,7 @@ function sessionStatus(options) {
     pending,
     stashes,
     acceptance,
+    ...(acceptanceIssue ? {acceptance_issue: acceptanceIssue} : {}),
   };
 }
 
@@ -2755,7 +2935,8 @@ async function main() {
   else if (command === "status") output = sessionStatus(options);
   else if (command === "subagent-policy") output = setSubagentPolicy(options);
   else if (command === "sql-policy") output = setSqlPolicy(options);
-  else if (command === "profile-plan") output = profilePlan(options);
+  else if (command === "profile-plan") output = aggregatePlan(options, "profiling");
+  else if (command === "analysis-plan") output = aggregatePlan(options, "analysis");
   else if (command === "readiness") output = workflowReadiness(options);
   else if (command === "inspect") output = inspectSnapshot(options);
   else if (command === "describe") output = describeDataset(options);

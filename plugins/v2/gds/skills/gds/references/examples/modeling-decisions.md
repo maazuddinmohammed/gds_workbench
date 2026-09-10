@@ -11,14 +11,14 @@ Fictional evidence for reasoning only; inspect the user's own scope and schemas 
 
 ## Reconciled outputs
 
-**Analysis:** support OrderLine→Customer only within the documented System/key boundary, with the appropriate cardinality evidence. Reject equality of cross-System IDs as identity proof. Keep header/detail dependencies in model rationale, not fabricated `analysis_result` pairs. A name match remains a hypothesis.
+**Analysis:** measure candidate joins within their identifier domains. Reject equality of cross-System IDs as identity proof. Record header/detail dependencies in notes, not fabricated `analysis_result` pairs.
 
-**Conceptual:** retain Customer, Order and Product with business definitions and verb-based relationships. OrderLine describes an implementation of ordering detail; it need not be a separate business concept in this scope. CRMCustomer and ServiceClient become aliases/supports for Customer. Mailing and purchase addresses describe different roles; merging their values would destroy meaning. Every physical input is considered even though fewer concepts survive.
+**Conceptual:** Customer and Order explain the purchase process; OrderLine need not be a separate concept. CRM/Service may support shared Customer meaning without asserting common row identity. Address roles remain distinct.
 
-**Logical:** Sales submodel contains Order and OrderLine. Move order-level descriptors to Order; line attributes remain with the composite line key. CustomerManagement contains a shared Customer structure with source-qualified identity until an approved crosswalk exists. Sharing a table does not assert that two source records identify the same person. Other submodels reuse Customer through memberships.
+**Logical:** separate Order headers from OrderLine’s composite grain. Customer can share a structure with source-qualified identity until a crosswalk exists. Reuse through submodel memberships.
 
 Keep the order's historical address values with their documented order/role grain; current mailing address belongs with current customer state. Introduce CustomerAddress/Address entities only if evidence establishes multiple addresses, independent identity or lifecycle. Never deduplicate people by address. A proposed LineAmount requires a confirmed calculation, rounding/currency semantics and source rationale; do not label it Revenue by guesswork.
 
-**Dimensional:** an OrderLine fact is one line in one order. Quantity is valid at that grain; repeated OrderTotal is not a summable line measure. A separate order-grain fact or confirmed allocation can represent it. Customer Dimension conformance and historical lookup require identity and history rules. Missing Revenue/conformance rules remain explicit blockers for those outputs, not made-up measures or default Type 2 behavior.
+**Dimensional:** Quantity is valid at line grain; repeated OrderTotal is not summable there. Use order-grain facts or confirmed allocation. Revenue, conformance and historical lookups remain blocked pending their rules.
 
-After drafting, inspect the effective graph: superseded mutable CRMCustomer concepts need explicit retirement and repaired references. Merely omitting them leaves them active. Preserve locked/out-of-scope records. Confirm both input coverage and justification of every remaining output before technical validation.
+Inspect the effective graph: omission does not retire superseded concepts; explicit retirement needs repaired references. Preserve locks/scope and review input/output coverage.

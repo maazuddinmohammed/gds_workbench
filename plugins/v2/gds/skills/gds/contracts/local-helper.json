@@ -145,6 +145,11 @@
       "usage": "profile-plan --session <session> --plan-file <JSON-path>",
       "session_required": true,
       "mutates": true
+    },
+    "analysis-plan": {
+      "usage": "analysis-plan --session <session> --plan-file <JSON-path>",
+      "session_required": true,
+      "mutates": true
     }
   }
 }

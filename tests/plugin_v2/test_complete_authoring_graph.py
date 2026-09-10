@@ -282,3 +282,44 @@ def test_complete_graph_survives_local_authoring_and_repair(tmp_path: Path) -> N
         assert sorted(json.dumps(row, sort_keys=True) for row in rows) == sorted(
             json.dumps(row, sort_keys=True) for row in canonical[dataset["dataset"]]
         )
+
+    # Structural validity alone must not authorize a changed business definition.
+    revised = deepcopy(canonical)
+    revised["conceptual_object"][0]["conceptual_object_definition"] = (
+        "A customer's request to purchase goods, fulfilled through one or more lines."
+    )
+    changed = run_helper(
+        "upsert-batch", "--session", str(session), "--area", "model", "--changes",
+        json.dumps(revised), "--expected-digest", digest,
+    )
+    assert changed.returncode == 0, changed.stderr
+    digest = json.loads(changed.stdout)["digest"]
+    result = json.loads(run_helper("validate", "--session", str(session), "--area", "model").stdout)
+    assert result["valid"] is True
+    assert result["quality"]["status"] == "needs_evidence"
+    assert run_helper("accept", "--session", str(session), "--area", "model", "--digest", digest).returncode != 0
+
+    decisions_path = Path(result["quality"]["decisions"])
+    decisions = json.loads(decisions_path.read_text())
+    note_path = session / "working/01/object-analysis/orders.md"
+    note_path.parent.mkdir(parents=True, exist_ok=True)
+    note_path.write_text("Order is the purchase request; Customer places it. The approved rule establishes the relationship.")
+    for entry in decisions["entities"]:
+        entry["decision"] = "Retain the business concept and its existing grain; clarify its purchase role."
+        entry["evidence"] = [{"note": "working/01/object-analysis/orders.md"}]
+    for entry in decisions["relationships"]:
+        entry["decision"] = "Retain the approved customer role and cardinality."
+        entry["evidence"] = [{"dataset": "modeling_assertion_record", "key": {
+            "modeling_assertion_record_key": "order.customer",
+        }}]
+    decisions_path.write_text(json.dumps(decisions))
+    accepted = run_helper("accept", "--session", str(session), "--area", "model", "--digest", digest)
+    assert accepted.returncode == 0, accepted.stderr
+    # A change to the cited investigation invalidates handoff even with identical draft bytes.
+    note_path.write_text("The supplied business rule was withdrawn; the relationship needs reassessment.")
+    cached = run_helper("draft-cache", "--session", str(session), "--area", "model",
+                        "--id", str(uuid4()), "--revision", "1", "--status", "active")
+    assert cached.returncode != 0
+    status = json.loads(run_helper("status", "--session", str(session)).stdout)
+    assert status["acceptance"] is None
+    assert "changed" in status["acceptance_issue"]

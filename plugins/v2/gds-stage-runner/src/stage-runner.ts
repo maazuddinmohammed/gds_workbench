@@ -11,6 +11,8 @@ import { basename, dirname, isAbsolute, join, relative, sep } from "node:path";
 import { unicodeCasefold, unicodeLower } from "./unicode.js";
 // @ts-expect-error The shared CommonJS asset intentionally has no declaration file.
 import workbenchCore from "../../gds/skills/gds/workbench/core.js";
+// @ts-expect-error The shared CommonJS asset intentionally has no declaration file.
+import qualityFiles from "../../gds/skills/gds/scripts/model-quality-files.js";
 
 const stableStringify = workbenchCore.stableStringify as (value: unknown) => string;
 
@@ -424,6 +426,14 @@ async function verifyLocalStateBinding(request: StageRequest, session: string): 
       state.model[1] !== request.target.model_name)
   ) {
     fail("LOCAL_STATE_MISMATCH", "The session is bound to a different Model.");
+  }
+  if (request.area === "model") {
+    try {
+      qualityFiles.verifyQualityAcceptance(session, request.task, request.accepted_digest,
+        acceptance, request.datasets.map((item) => item.dataset));
+    } catch {
+      fail("MODELING_EVIDENCE_CHANGED", "Modeling evidence is missing, unresolved, or changed after acknowledgement.");
+    }
   }
 }
 

@@ -11,6 +11,19 @@ function Get-ProfileObjectKey($Row) {
     foreach ($field in $script:ProfileFields) { $key[$field] = Get-Property $Row $field }
     return $key
 }
+function Get-ProfileMaskingKeys($Metadata) {
+    $masked = @{}; $fields = @($script:ProfileFields) + @('attribute_name')
+    # A mapped Source mask remains binding even when the Source Attribute is inactive.
+    foreach ($row in @($Metadata.source_attribute) + @($Metadata.bronze_attribute)) {
+        if ($null -ne $row -and (Get-Property $row 'is_masking_required') -eq $true) { $masked[(Get-ProfileKey $row '' $fields)] = $true }
+    }
+    foreach ($mapping in @($Metadata.ingestion_attribute_mapping)) {
+        if ($null -ne $mapping -and (Get-Active $mapping) -ne $false -and $masked.ContainsKey((Get-ProfileKey $mapping 'source_' $fields))) {
+            $masked[(Get-ProfileKey $mapping 'target_' $fields)] = $true
+        }
+    }
+    return $masked
+}
 function Quote-ProfileName($Value) {
     if ($Value -isnot [string] -or [string]::IsNullOrWhiteSpace($Value) -or $Value.Contains([string][char]0)) { Fail 'Missing SQL coordinate.' }
     return '`' + $Value.Replace('`','``') + '`'
@@ -119,6 +132,9 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
     $scoped = @($Scope | Where-Object { (Get-Active $_) -and ($null -eq $selectedKeys -or $selectedKeys.ContainsKey((Get-ProfileKey $_))) })
     if ($scoped.Count -eq 0 -or $scoped.Count -gt 2000 -or ($null -ne $selectedKeys -and $selectedKeys.Count -ne $scoped.Count)) { Fail 'Selection must match active Model Input Scope.' }
     $queries = New-Object System.Collections.ArrayList
+    $coverage = New-Object System.Collections.ArrayList
+    $masked = Get-ProfileMaskingKeys $Metadata
+    $attributeFields = @($script:ProfileFields) + @('attribute_name')
     foreach ($scopedObject in $scoped) {
         $objectKey = Get-ProfileKey $scopedObject; $object = $objects[$objectKey]
         if ($null -eq $object) { Fail 'Scoped Object is absent from authorized Source/Bronze Metadata.' }
@@ -128,8 +144,16 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
         if ($null -eq $connection -or $null -eq $tenant) { Fail 'Object placement is not active in Metadata.' }
         $coords = if ($source) { @($connection.foreign_catalog,$object.fc_object_schema,$object.fc_object_name) } else { @($tenant.tenant_catalog,$object.object_schema,$object.object_name) }
         $relation = (@($coords | ForEach-Object { Quote-ProfileName $_ }) -join '.')
-        $members = @($attributes | Where-Object { (Get-ProfileKey $_) -ceq $objectKey } | Sort-Object { [int](Get-Property $_ 'attribute_ordinal_position') }, { [string](Get-Property $_ 'attribute_name') })
-        if ($members.Count -eq 0 -or $members.Count -gt 2000) { Fail 'Object requires 1-2000 active Attributes.' }
+        $allMembers = @($attributes | Where-Object { (Get-ProfileKey $_) -ceq $objectKey } | Sort-Object { [int](Get-Property $_ 'attribute_ordinal_position') }, { [string](Get-Property $_ 'attribute_name') })
+        if ($allMembers.Count -eq 0 -or $allMembers.Count -gt 2000) { Fail 'Object requires 1-2000 active Attributes.' }
+        $members = @($allMembers | Where-Object { -not $masked.ContainsKey((Get-ProfileKey $_ '' $attributeFields)) })
+        $excluded = @(foreach ($row in $allMembers) {
+            if ($masked.ContainsKey((Get-ProfileKey $row '' $attributeFields))) {
+                $entry = Get-ProfileObjectKey $object; $entry['attribute_name'] = $row.attribute_name; $entry['reason'] = 'masking_required'; $entry
+            }
+        })
+        [void]$coverage.Add([ordered]@{object=(Get-ProfileObjectKey $object);active_attribute_count=$allMembers.Count;planned_attribute_count=$members.Count;excluded=$excluded})
+        if ($members.Count -eq 0) { continue }
         $origins = @()
         if ($source) { $origins = @($object) } else {
             foreach ($mapping in @($Metadata.ingestion_object_mapping)) {
@@ -149,8 +173,9 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
         if ($assignments.objects.ContainsKey($objectKey)) { $batch = $assignments.objects[$objectKey] }
         $filter = $null
         if ($null -ne $batch -and $object.batch_attribute_name) {
-            $batchAttribute = @($members | Where-Object { (Normalize-Value 'metadata' 'attribute_name' $_.attribute_name) -ceq (Normalize-Value 'metadata' 'attribute_name' $object.batch_attribute_name) }) | Select-Object -First 1
+            $batchAttribute = @($allMembers | Where-Object { (Normalize-Value 'metadata' 'attribute_name' $_.attribute_name) -ceq (Normalize-Value 'metadata' 'attribute_name' $object.batch_attribute_name) }) | Select-Object -First 1
             if ($null -eq $batchAttribute) { Fail 'Registered batch column is not an active Attribute.' }
+            if ($masked.ContainsKey((Get-ProfileKey $batchAttribute '' $attributeFields))) { Fail 'Masked batch Attribute cannot be used for Profiling.' }
             $type = $batchAttribute.attribute_data_type.ToUpperInvariant() -replace '\s+', ''
             if ($type -cnotmatch $script:ProfileStringType -and $type -cnotmatch $script:ProfileScalarType) { Fail 'Unsupported batch data type.' }
             $filter = @{name=$(if ($source) { $batchAttribute.fc_attribute_name } else { $batchAttribute.attribute_name });type=$type;value=$batch}
@@ -176,38 +201,52 @@ function Plan-Profiling($Metadata, $Scope, $Plan) {
             $offset += $count
         }
     }
-    return $queries.ToArray()
+    return [ordered]@{queries=@($queries);coverage=@($coverage)}
 }
-function New-ProfilePlan([hashtable]$Options) {
+function New-AggregatePlan([hashtable]$Options, [string]$Kind) {
+    $title = if ($Kind -ceq 'analysis') { 'Analysis' } else { 'Profiling' }
     $modelOptions = @{} + $Options; $modelOptions['area'] = 'model'
     $context = Get-ChangeContext $modelOptions
     $metadata = Find-Snapshot @{session=$Options.session;area='metadata'}
-    if (@(Get-Property $context.State 'stale') -contains 'metadata') { Fail 'Metadata Snapshot is stale.' }
-    $plan = Read-Json (Require-Option $Options 'plan-file') 'Profiling selections'
+    $staleAreas = Get-Property $context.State 'stale'
+    if ($staleAreas -ccontains 'metadata') { Fail 'Metadata Snapshot is stale.' }
+    $plan = Read-Json (Require-Option $Options 'plan-file') ($title + ' selections')
     if (-not $context.ByName.ContainsKey('model_input_scope')) { Fail 'Model Input Scope is missing.' }
     $datasets = @{}
-    foreach ($name in @('source_object','bronze_object','source_attribute','bronze_attribute','tenant','connection','ingestion_object_mapping')) {
+    foreach ($name in @('source_object','bronze_object','source_attribute','bronze_attribute','tenant','connection','ingestion_object_mapping','ingestion_attribute_mapping')) {
         $datasets[$name] = if ($metadata.ByName.ContainsKey($name)) { @(Read-SnapshotRecords $metadata $metadata.ByName[$name]) } else { @() }
     }
-    $queries = @(Plan-Profiling $datasets @(Read-SnapshotRecords $context $context.ByName['model_input_scope']) $plan)
+    $scope = @(Read-SnapshotRecords $context $context.ByName['model_input_scope'])
+    $planned = if ($Kind -ceq 'analysis') { @(Plan-Analysis $datasets $scope $plan) } else { Plan-Profiling $datasets $scope $plan }
+    $queries = if ($Kind -ceq 'analysis') { @($planned) } else { $planned.queries }
     $directory = $context.Session
     foreach ($segment in @('working',$context.Current[0])) {
         $directory = Join-Path $directory $segment
         if (-not (Test-Path -LiteralPath $directory)) { [void](New-Item -ItemType Directory -Path $directory -ErrorAction Stop) }
-        $directory = Resolve-RegularDirectory $directory 'Profiling output'
+        $directory = Resolve-RegularDirectory $directory ($title + ' output')
     }
-    $directory = Join-Path $directory ('profiling-' + [Guid]::NewGuid().ToString('N'))
+    $directory = Join-Path $directory ($Kind + '-' + [Guid]::NewGuid().ToString('N'))
     [void](New-Item -ItemType Directory -Path $directory -ErrorAction Stop)
     $entries = New-Object System.Collections.ArrayList; $attributeCount = 0
     foreach ($query in $queries) {
         $file = '{0:D4}.sql' -f ($entries.Count+1)
         Write-TextAtomic (Join-Path $directory $file) $query.sql
         $entry = [ordered]@{}
-        foreach ($name in @('object','source_tenant_code','source_system_codes','batch_id','attributes')) { $entry[$name] = $query[$name] }
+        foreach ($name in @(Get-PropertyNames $query)) { if ($name -cne 'sql') { $entry[$name] = $query[$name] } }
         $entry['file']=$file; $entry['sha256']=Get-ByteDigest ([Text.Encoding]::UTF8.GetBytes($query.sql))
-        [void]$entries.Add($entry); $attributeCount += $query.attributes.Count
+        [void]$entries.Add($entry)
+        if ($Kind -ceq 'profiling') { $attributeCount += $query.attributes.Count }
     }
     $manifest = Join-Path $directory 'plan.json'
-    Write-JsonAtomic $manifest ([ordered]@{schema_version='1.0';model_snapshot_id=$context.Manifest.snapshot_id;metadata_snapshot_id=$metadata.Manifest.snapshot_id;model_revision=$context.Manifest.model_revision;selections=$plan;queries=@($entries)})
-    return [ordered]@{directory=$directory;manifest=$manifest;query_count=$entries.Count;attribute_count=$attributeCount}
+    $manifestData = [ordered]@{schema_version='1.0';model_snapshot_id=$context.Manifest.snapshot_id;metadata_snapshot_id=$metadata.Manifest.snapshot_id;model_revision=$context.Manifest.model_revision;selections=$plan;queries=@($entries)}
+    if ($Kind -ceq 'profiling') { $manifestData['coverage'] = $planned.coverage }
+    Write-JsonAtomic $manifest $manifestData
+    $output = [ordered]@{directory=$directory;manifest=$manifest;query_count=$entries.Count}
+    if ($Kind -ceq 'profiling') {
+        $output['attribute_count'] = $attributeCount
+        $excludedCount = 0
+        foreach ($entry in $planned.coverage) { $excludedCount += $entry.excluded.Count }
+        $output['excluded_attribute_count'] = $excludedCount
+    }
+    return $output
 }

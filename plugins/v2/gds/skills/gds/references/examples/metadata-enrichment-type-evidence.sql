@@ -1,6 +1,7 @@
 -- Replace quoted identifiers only, from registered eligible metadata.
 -- Do not execute for a masked Attribute or a masked resolved Source Attribute.
 -- Values stay inside this read; only type/count leave the SQL engine.
+-- Provisional syntax evidence only: never infer target capacity from sample width.
 WITH sample AS (
     SELECT CAST(`__attribute__` AS STRING) AS value
     FROM `__catalog__`.`__schema__`.`__table__`
@@ -66,7 +67,7 @@ SELECT CASE
            WHEN all_zoned THEN 'TIMESTAMP'
            WHEN exact_numeric AND integer_digits + scale <= 38 THEN
                CASE WHEN all_bigint THEN 'BIGINT'
-                   ELSE concat('DECIMAL(', greatest(1, integer_digits + scale), ',', scale, ')') END
+                   ELSE concat('DECIMAL(38,', scale, ')') END
            ELSE 'STRING'
        END AS inferred_data_type,
        sample_count
