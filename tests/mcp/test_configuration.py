@@ -3,7 +3,6 @@ from __future__ import annotations
 from uuid import UUID
 
 import pytest
-
 from gds_etl_workbench.configuration import (
     DATABASE_CONNECTION_BUDGET,
     DATABASE_CONNECTION_HEADROOM,
@@ -67,11 +66,12 @@ def test_local_principal_object_id_is_required_in_local_mode() -> None:
         RuntimeSettings.from_environment(values)
 
 
-def test_production_derives_easy_auth_https_and_exact_public_host() -> None:
+@pytest.mark.parametrize("sslmode", ["verify-full", "require"])
+def test_production_derives_easy_auth_https_and_exact_public_host(sslmode: str) -> None:
     settings = RuntimeSettings.from_environment(
         settings_values(
             GDS_ENVIRONMENT="production",
-            GDS_DATABASE_DSN=("postgresql://app@db.example.invalid/workbench?sslmode=verify-full"),
+            GDS_DATABASE_DSN=f"postgresql://app@db.example.invalid/workbench?sslmode={sslmode}",
         )
     )
 
@@ -127,9 +127,15 @@ def test_entra_identifiers_must_be_uuids(key: str) -> None:
         RuntimeSettings.from_environment(settings_values(**{key: "invalid"}))
 
 
-def test_production_requires_verify_full_database_tls() -> None:
-    with pytest.raises(ConfigurationError, match="sslmode=verify-full"):
-        RuntimeSettings.from_environment(settings_values(GDS_ENVIRONMENT="production"))
+@pytest.mark.parametrize("sslmode", [None, "disable", "allow", "prefer", "invalid"])
+def test_production_rejects_missing_or_unsupported_database_tls(sslmode: str | None) -> None:
+    dsn = "postgresql://app@db.example.invalid/workbench"
+    if sslmode is not None:
+        dsn += f"?sslmode={sslmode}"
+    with pytest.raises(ConfigurationError):
+        RuntimeSettings.from_environment(
+            settings_values(GDS_ENVIRONMENT="production", GDS_DATABASE_DSN=dsn)
+        )
 
 
 def test_production_oauth_discovery_requires_https_public_url() -> None:

@@ -238,12 +238,19 @@ private.
    - the complete runtime PostgreSQL DSN;
    - a random cursor-signing value of at least 32 bytes.
 
-The DSN must use the runtime login, the `gds_workbench` database, and
-`sslmode=verify-full`:
+The DSN must use the runtime login and the `gds_workbench` database. Use
+`sslmode=verify-full` for certificate and hostname verification:
 
 ```text
 host=<POSTGRES_SERVER>.postgres.database.azure.com port=5432 dbname=gds_workbench user=gds_mcp_runtime password=<RUNTIME_PASSWORD> sslmode=verify-full
 ```
+
+For deployments awaiting database CA trust configuration, an explicit
+`sslmode=require` is also accepted. It requires encryption but skips hostname
+verification and may skip certificate verification. Keep `GDS_ENVIRONMENT=production`.
+Remove the `PGSSLROOTCERT=system` App Service setting and any `sslrootcert=system`
+DSN parameter before using this mode; PostgreSQL rejects that combination.
+Return to `verify-full` once certificate trust is configured.
 
 ### Step 8: create the Linux web app
 

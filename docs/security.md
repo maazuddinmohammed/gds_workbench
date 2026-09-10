@@ -66,7 +66,11 @@ synthetic request actor `Local Developer`, skips Entra and Tenant role/visibilit
 checks, and permits all active Tenants to be listed. It does not change database
 Tenant Lock, revision, audit, or business invariants. Production derives Easy
 Auth and HTTPS, derives the host allowlist from `GDS_MCP_PUBLIC_URL`, and requires
-verified PostgreSQL TLS.
+PostgreSQL TLS. Use `sslmode=verify-full` for certificate and hostname verification.
+An explicit `sslmode=require` is supported while database CA trust is configured;
+it requires encryption but skips hostname verification and may skip certificate
+verification. This option does not change Easy Auth, HTTPS, Principal authorization,
+or Tenant Lock checks. Missing TLS mode and modes that permit plaintext are rejected.
 
 ## Tool policies
 

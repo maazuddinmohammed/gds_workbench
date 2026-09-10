@@ -106,8 +106,12 @@ class RuntimeSettings:
                 raise ConfigurationError("GDS_DATABASE_DSN is invalid") from exc
             if not dsn_parts.get("host") or not dsn_parts.get("dbname"):
                 raise ConfigurationError("production database DSN requires host and dbname")
-            if dsn_parts.get("sslmode") != "verify-full":
-                raise ConfigurationError("production database DSN requires sslmode=verify-full")
+            # ponytail: allow explicit require while database CA trust is being configured.
+            # It keeps TLS but does not verify the server hostname; prefer verify-full.
+            if dsn_parts.get("sslmode") not in {"verify-full", "require"}:
+                raise ConfigurationError(
+                    "production database DSN requires sslmode=verify-full or sslmode=require"
+                )
 
         cursor_signing_key = _required(source, "GDS_CURSOR_SIGNING_KEY").encode("utf-8")
         if not 32 <= len(cursor_signing_key) <= 4096:
