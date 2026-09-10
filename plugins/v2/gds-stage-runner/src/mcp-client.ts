@@ -178,7 +178,7 @@ export async function connectSdkProtocol(
   endpoint: URL,
   accessToken: string | undefined,
 ): Promise<ProtocolConnection> {
-  const client = new Client({ name: "gds-stage-runner", version: "0.1.0" });
+  const client = new Client({ name: "gds-stage-runner", version: "0.1.1" });
   const transport = new StreamableHTTPClientTransport(endpoint, {
     requestInit: {
       redirect: "error",

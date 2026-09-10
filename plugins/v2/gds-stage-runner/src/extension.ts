@@ -98,11 +98,11 @@ class StageApprovedManifestTool
         },
       });
       return new vscode.LanguageModelToolResult([
-        vscode.LanguageModelDataPart.json(receipt),
+        new vscode.LanguageModelTextPart(JSON.stringify(receipt)),
       ]);
     } catch (error) {
       return new vscode.LanguageModelToolResult([
-        vscode.LanguageModelDataPart.json(failureReceipt(error, stageStarted)),
+        new vscode.LanguageModelTextPart(JSON.stringify(failureReceipt(error, stageStarted))),
       ]);
     } finally {
       // Cleanup cannot replace the authoritative Stage receipt or trigger a retry.

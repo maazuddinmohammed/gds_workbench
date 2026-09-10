@@ -20,7 +20,13 @@ vi.mock("vscode", () => ({
   lm: { registerTool: mocks.registerTool },
   commands: { registerCommand: mocks.registerCommand },
   window: { showInformationMessage: mocks.information, showErrorMessage: mocks.error },
-  LanguageModelDataPart: { json: (value: unknown) => value },
+  LanguageModelDataPart: class {
+    constructor(public data: Uint8Array, public mimeType: string) {}
+    static json(value: unknown) {
+      return new this(Buffer.from(JSON.stringify(value)), "application/json");
+    }
+  },
+  LanguageModelTextPart: class { constructor(public value: string) {} },
   LanguageModelToolResult: class { constructor(public content: unknown[]) {} },
 }));
 vi.mock("../src/mcp-client.js", async (original) => ({
@@ -34,6 +40,7 @@ vi.mock("../src/stage-runner.js", async (original) => ({
 
 import { activate } from "../src/extension.js";
 import { StageMcpError } from "../src/mcp-client.js";
+import { LanguageModelTextPart } from "vscode";
 
 beforeEach(() => {
   vi.resetAllMocks();
@@ -57,6 +64,13 @@ function activatedTool() {
 
 const input = { manifestPath: "/workspace/tasks/01.stage-request.json", expectedDigest: "0".repeat(64) };
 const token = (cancelled = false) => ({ isCancellationRequested: cancelled }) as Vscode.CancellationToken;
+
+function receiptFrom(result: Vscode.LanguageModelToolResult | null | undefined) {
+  expect(result?.content).toHaveLength(1);
+  const part = result!.content[0];
+  expect(part).toBeInstanceOf(LanguageModelTextPart);
+  return JSON.parse((part as Vscode.LanguageModelTextPart).value);
+}
 
 describe("VS Code tool boundary", () => {
   test.each(["check", "stage"])("production %s uses normal Microsoft sign-in instead of a claimless challenge", async (operation) => {
@@ -87,7 +101,7 @@ describe("VS Code tool boundary", () => {
       expect(mocks.information).toHaveBeenCalledWith("GDS Stage Runner is ready (production).");
     } else {
       const result = await tool.invoke({ input, toolInvocationToken: undefined }, token());
-      expect(result?.content[0]).toMatchObject({ status: "staged" });
+      expect(receiptFrom(result)).toMatchObject({ status: "staged" });
     }
     expect(mocks.getSession).toHaveBeenCalledWith(
       "microsoft",
@@ -100,7 +114,7 @@ describe("VS Code tool boundary", () => {
     if (reason === "untrusted") mocks.workspace.isTrusted = false;
     if (reason === "no workspace") mocks.workspace.workspaceFolders = [];
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token(reason === "cancelled"));
-    expect(result?.content[0]).toMatchObject({ status: "failed", stageStarted: false });
+    expect(receiptFrom(result)).toMatchObject({ status: "failed", stageStarted: false });
     expect(mocks.createClient).not.toHaveBeenCalled();
     expect(mocks.stage).not.toHaveBeenCalled();
   });
@@ -111,7 +125,7 @@ describe("VS Code tool boundary", () => {
       throw new StageMcpError("MCP_OUTCOME_UNKNOWN", "Verify before retrying.");
     });
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
-    expect(result?.content[0]).toMatchObject({
+    expect(receiptFrom(result)).toMatchObject({
       status: "failed", stageStarted: started, legacyFallbackAllowed: !started,
     });
     expect(mocks.stage).toHaveBeenCalledOnce();
@@ -122,7 +136,7 @@ describe("VS Code tool boundary", () => {
     const receipt = { status: "staged", fingerprintVerified: true };
     mocks.stage.mockResolvedValue(receipt);
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
-    expect(result?.content).toEqual([receipt]);
+    expect(receiptFrom(result)).toEqual(receipt);
     expect(mocks.close).toHaveBeenCalledOnce();
   });
 
@@ -133,7 +147,7 @@ describe("VS Code tool boundary", () => {
 
     const result = await activatedTool().invoke({ input, toolInvocationToken: undefined }, token());
 
-    expect(result?.content[0]).toMatchObject({ status: staged ? "staged" : "failed" });
+    expect(receiptFrom(result)).toMatchObject({ status: staged ? "staged" : "failed" });
     expect(JSON.stringify(result)).not.toContain("private cleanup detail");
     expect(mocks.close).toHaveBeenCalledOnce();
   });

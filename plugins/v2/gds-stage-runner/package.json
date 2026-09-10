@@ -2,7 +2,7 @@
   "name": "gds-stage-runner",
   "displayName": "GDS Stage Runner",
   "description": "Deterministically stages approved GDS Change Sets without placing payloads in model context.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "publisher": "gds-workbench",
   "license": "UNLICENSED",
   "private": true,
@@ -94,7 +94,8 @@
     "test": "vitest run",
     "check": "tsc --noEmit",
     "compile": "npm run check && node esbuild.mjs",
-    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/gds-stage-runner-0.1.0.vsix"
+    "package:vsix": "npm run compile && vsce package --no-dependencies --skip-license --out ../dist/gds-stage-runner-0.1.1.vsix",
+    "test:host": "node test/run-vscode-host.mjs"
   },
   "devDependencies": {
     "@types/node": "24.10.0",

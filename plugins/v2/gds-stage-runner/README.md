@@ -46,6 +46,20 @@ extracted plugin's address does not update an already installed extension.
 - Payloads use only existing Stage MCP tools. There is no SQL, upload, Apply, discard, lock override, arbitrary URL, or arbitrary tool facility.
 - Output is a bounded redacted receipt. If any write started, legacy fallback is forbidden.
 
+## 0.1.1 receipt compatibility fix
+
+Success and failure receipts are JSON inside a `LanguageModelTextPart`. Version 0.1.0
+returned a JSON data part, which some Copilot hosts presented as an unreadable attachment.
+The receipt fields and Stage behavior are unchanged. Payload records remain outside model context.
+
+Install `gds-stage-runner-0.1.1.vsix`, reload VS Code, and confirm version **0.1.1** in
+Extensions. **Check Stage Runner** checks authentication and a read-only MCP call; it
+does not test a Stage transfer or the receipt returned to Copilot.
+
+An unreadable receipt can follow a completed Stage. Keep that draft pending and inspect
+its server status/revision before any recovery. Do not blindly Stage again or Apply;
+a server fingerprint alone cannot reconstruct a missing local approval-to-Stage proof.
+
 ## Build and test
 
 Use Node 22:
@@ -61,17 +75,24 @@ npm run package:vsix
 the organization's public or private VS Code Marketplace is the production signing/distribution
 step. Never distribute the local candidate as trusted production software.
 
-The host smoke test checks activation, command/tool registration, and JSON receipts
-inside VS Code. Run it against the unpacked VSIX with temporary settings:
+The host regression test invokes the tool from the actual unpacked VSIX using installed
+VS Code, synthetic approved files, and an in-memory loopback MCP server. It checks
+activation, readable success/failure receipts, direct and two-chunk transfers, changed
+approval rejection, lost-write handling, and fingerprint verification. No account,
+Azure service, or database is used.
+
+On macOS/Linux, with VS Code and `unzip` installed, run from this extension directory:
 
 ```sh
-stage_test_dir="$(mktemp -d)"
-unzip -q ../dist/gds-stage-runner-0.1.0.vsix -d "$stage_test_dir/candidate"
-code --user-data-dir "$stage_test_dir/user" --extensions-dir "$stage_test_dir/extensions" \
-  --extensionDevelopmentPath="$stage_test_dir/candidate/extension" \
-  --extensionTestsPath="$PWD/test/vscode-host.cjs" \
-  --disable-workspace-trust --skip-welcome --skip-release-notes
+npm run package:vsix
+npm run test:host
 ```
 
-This test does not sign in or stage against a deployed server. Keep the legacy
-fallback until a real signed-in Stage has also been verified.
+The runner creates a disposable workspace and isolated user/extension directories.
+Only that test profile enables automatic tool approval, using VS Code's API-test
+context flag. It requires an explicit completed host result; CLI exit zero is insufficient.
+Set `GDS_STAGE_TEST_CODE` to override the installed VS Code executable. An optional VSIX
+argument permits regression testing an older package: `npm run test:host -- /path/to/candidate.vsix`.
+
+These tests do not reproduce Windows, an actual Copilot conversation, or production
+Microsoft sign-in. Those still require verification in their actual environment.
